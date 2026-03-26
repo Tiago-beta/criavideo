@@ -104,8 +104,8 @@ def compose_video(
 
     # Build FFmpeg command
     input_args = []
-    for s in image_scenes:
-        input_args.extend(["-loop", "1", "-t", str(scene_durations[len(input_args) // 4]), "-i", s["image_path"]])
+    for i, s in enumerate(image_scenes):
+        input_args.extend(["-loop", "1", "-t", str(scene_durations[i]), "-i", s["image_path"]])
 
     # Audio input (last input)
     audio_idx = len(image_scenes)
