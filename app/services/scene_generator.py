@@ -60,13 +60,12 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
     full_prompt = style_prefix + prompt
 
     response = google_client.models.generate_content(
-        model="gemini-2.5-flash-preview-05-20",
+        model="gemini-2.5-flash-image",
         contents=[full_prompt],
         config=types.GenerateContentConfig(
             response_modalities=["IMAGE"],
             image_config=types.ImageConfig(
                 aspect_ratio=aspect_ratio,
-                image_size="2K"
             ),
         )
     )

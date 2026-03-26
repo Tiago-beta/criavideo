@@ -37,13 +37,12 @@ def generate_thumbnail(
     prompt += "Make it look like a professional music video thumbnail that gets clicks on YouTube."
 
     response = google_client.models.generate_content(
-        model="gemini-2.5-flash-preview-05-20",
+        model="gemini-2.5-flash-image",
         contents=[prompt],
         config=types.GenerateContentConfig(
             response_modalities=["IMAGE"],
             image_config=types.ImageConfig(
                 aspect_ratio="16:9",
-                image_size="2K"
             ),
         )
     )
