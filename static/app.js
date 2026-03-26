@@ -3,9 +3,22 @@
    ═══════════════════════════════════════════════ */
 
 const API = '/api';
+const LEVITA_URL = 'https://levita.pro';
 let token = localStorage.getItem('token') || '';
+let levitaSongs = [];
 
-// ── Auth helpers ──
+// ── Auth: auto-login via URL ?token=xxx from Levita ──
+(function autoLogin() {
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get('token');
+    if (urlToken) {
+        token = urlToken.trim();
+        localStorage.setItem('token', token);
+        // Clean URL without reload
+        window.history.replaceState({}, '', window.location.pathname);
+    }
+})();
+
 function getHeaders() {
     return {
         'Content-Type': 'application/json',
@@ -19,7 +32,7 @@ async function api(path, options = {}) {
         ...options,
     });
     if (resp.status === 401) {
-        promptLogin();
+        redirectToLevita();
         throw new Error('Unauthorized');
     }
     if (!resp.ok) {
@@ -29,12 +42,24 @@ async function api(path, options = {}) {
     return resp.json();
 }
 
-function promptLogin() {
-    const t = window.prompt('Cole seu token JWT do Levita:');
-    if (t) {
-        token = t.trim();
-        localStorage.setItem('token', token);
-        location.reload();
+function redirectToLevita() {
+    // Redireciona para o Levita para login, que retorna com ?token=
+    window.location.href = `${LEVITA_URL}/login?redirect=${encodeURIComponent(window.location.origin + '/video')}`;
+}
+
+// ── Levita Songs API ──
+async function loadLevitaSongs() {
+    try {
+        const resp = await fetch(`${LEVITA_URL}/api/feed/my-created-music`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!resp.ok) return [];
+        const data = await resp.json();
+        levitaSongs = data.songs || [];
+        return levitaSongs;
+    } catch (e) {
+        console.warn('Erro ao carregar músicas do Levita:', e);
+        return [];
     }
 }
 
@@ -67,7 +92,47 @@ function closeModal(id) {
 }
 
 // ═══ PROJECTS ═══
-document.getElementById('btn-new-project').addEventListener('click', () => openModal('modal-new-project'));
+document.getElementById('btn-new-project').addEventListener('click', async () => {
+    await populateSongSelector();
+    openModal('modal-new-project');
+});
+
+async function populateSongSelector() {
+    const select = document.getElementById('np-song-select');
+    const detailsDiv = document.getElementById('np-song-details');
+    select.innerHTML = '<option value="">Carregando músicas...</option>';
+    detailsDiv.style.display = 'none';
+
+    const songs = await loadLevitaSongs();
+    select.innerHTML = '<option value="">Selecione uma música do Levita</option>' +
+        '<option value="manual">✏️ Inserir manualmente</option>' +
+        songs.map((s, i) => `<option value="${i}">${esc(s.title || 'Sem título')}${s.artist ? ' — ' + esc(s.artist) : ''}</option>`).join('');
+}
+
+document.addEventListener('change', (e) => {
+    if (e.target.id !== 'np-song-select') return;
+    const val = e.target.value;
+    const manualFields = document.getElementById('np-manual-fields');
+    const detailsDiv = document.getElementById('np-song-details');
+
+    if (val === 'manual') {
+        manualFields.style.display = 'block';
+        detailsDiv.style.display = 'none';
+    } else if (val !== '' && levitaSongs[parseInt(val)]) {
+        const song = levitaSongs[parseInt(val)];
+        manualFields.style.display = 'none';
+        detailsDiv.style.display = 'block';
+        detailsDiv.innerHTML = `
+            <p>🎵 <strong>${esc(song.title || 'Sem título')}</strong></p>
+            ${song.artist ? `<p>🎤 ${esc(song.artist)}</p>` : ''}
+            ${song.duration ? `<p>⏱ ${Math.round(song.duration)}s</p>` : ''}
+            ${song.lyrics ? `<p style="max-height:100px;overflow-y:auto;font-size:.8rem;color:var(--text-muted)">${esc(song.lyrics).substring(0, 300)}...</p>` : ''}
+        `;
+    } else {
+        manualFields.style.display = 'none';
+        detailsDiv.style.display = 'none';
+    }
+});
 
 async function loadProjects() {
     const el = document.getElementById('projects-list');
@@ -96,16 +161,37 @@ async function loadProjects() {
 }
 
 async function createProject() {
+    const songVal = document.getElementById('np-song-select').value;
+    let trackTitle, trackArtist, audioPath, lyricsText, trackDuration;
+
+    if (songVal === 'manual') {
+        trackTitle = document.getElementById('np-track-title').value;
+        trackArtist = document.getElementById('np-artist').value;
+        audioPath = document.getElementById('np-audio').value;
+        lyricsText = document.getElementById('np-lyrics').value;
+        trackDuration = parseInt(document.getElementById('np-duration').value) || 180;
+    } else if (songVal !== '' && levitaSongs[parseInt(songVal)]) {
+        const song = levitaSongs[parseInt(songVal)];
+        trackTitle = song.title || '';
+        trackArtist = song.artist || '';
+        audioPath = `${LEVITA_URL}${song.audio_url}`;
+        lyricsText = song.lyrics || '';
+        trackDuration = Math.round(song.duration) || 180;
+    } else {
+        alert('Selecione uma música');
+        return;
+    }
+
     try {
         await api('/video/projects', {
             method: 'POST',
             body: JSON.stringify({
-                title: document.getElementById('np-title').value,
-                track_title: document.getElementById('np-track-title').value,
-                track_artist: document.getElementById('np-artist').value,
-                audio_path: document.getElementById('np-audio').value,
-                lyrics_text: document.getElementById('np-lyrics').value,
-                track_duration: parseInt(document.getElementById('np-duration').value) || 180,
+                title: document.getElementById('np-title').value || trackTitle,
+                track_title: trackTitle,
+                track_artist: trackArtist,
+                audio_path: audioPath,
+                lyrics_text: lyricsText,
+                track_duration: trackDuration,
                 aspect_ratio: document.getElementById('np-aspect').value,
                 style_prompt: document.getElementById('np-style').value,
             }),
@@ -349,7 +435,7 @@ function badgeClass(status) {
 
 // ── Init ──
 if (!token) {
-    promptLogin();
+    redirectToLevita();
 } else {
     loadProjects();
 }

@@ -107,28 +107,37 @@
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>Título do Projeto</label>
+                    <label>Música do Levita</label>
+                    <select id="np-song-select" class="input">
+                        <option value="">Selecione uma música</option>
+                    </select>
+                </div>
+                <div id="np-song-details" class="card" style="display:none;margin-bottom:1rem;padding:.75rem"></div>
+                <div class="form-group">
+                    <label>Título do Projeto (opcional)</label>
                     <input id="np-title" type="text" class="input" placeholder="Ex: Meu clipe oficial">
                 </div>
-                <div class="form-group">
-                    <label>Título da Música</label>
-                    <input id="np-track-title" type="text" class="input" placeholder="Nome da música">
-                </div>
-                <div class="form-group">
-                    <label>Artista</label>
-                    <input id="np-artist" type="text" class="input" placeholder="Nome do artista">
-                </div>
-                <div class="form-group">
-                    <label>Caminho do Áudio (no servidor)</label>
-                    <input id="np-audio" type="text" class="input" placeholder="/data/levita/stems/track.mp3">
-                </div>
-                <div class="form-group">
-                    <label>Letra da Música</label>
-                    <textarea id="np-lyrics" class="input" rows="6" placeholder="Cole a letra aqui..."></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Duração (segundos)</label>
-                    <input id="np-duration" type="number" class="input" value="180">
+                <div id="np-manual-fields" style="display:none">
+                    <div class="form-group">
+                        <label>Título da Música</label>
+                        <input id="np-track-title" type="text" class="input" placeholder="Nome da música">
+                    </div>
+                    <div class="form-group">
+                        <label>Artista</label>
+                        <input id="np-artist" type="text" class="input" placeholder="Nome do artista">
+                    </div>
+                    <div class="form-group">
+                        <label>URL do Áudio</label>
+                        <input id="np-audio" type="text" class="input" placeholder="https://levita.pro/api/create-music/audio/...">
+                    </div>
+                    <div class="form-group">
+                        <label>Letra da Música</label>
+                        <textarea id="np-lyrics" class="input" rows="6" placeholder="Cole a letra aqui..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Duração (segundos)</label>
+                        <input id="np-duration" type="number" class="input" value="180">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Formato</label>
