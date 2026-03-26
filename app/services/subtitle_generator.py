@@ -1,7 +1,9 @@
 """
 Subtitle Generator — Creates ASS (Advanced SubStation Alpha) karaoke subtitles
 from word-level timestamps (Whisper output stored in Levita's tracks table).
-"""import reimport logging
+"""
+import re
+import logging
 
 logger = logging.getLogger(__name__)
 
