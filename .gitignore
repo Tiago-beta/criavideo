@@ -9,3 +9,4 @@ build/
 gen_traefik.py
 criavideo.yaml
 migrate.py
+media/

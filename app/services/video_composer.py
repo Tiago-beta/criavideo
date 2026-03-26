@@ -84,30 +84,33 @@ def compose_video(
             # Image: Ken Burns zoom/pan
             input_args.extend(["-loop", "1", "-t", str(dur), "-i", sc["image_path"]])
 
-            effect = i % 4
-            if effect == 0:
-                zoom_expr = "min(zoom+0.0008,1.3)"
-                x_expr = "iw/2-(iw/zoom/2)"
-                y_expr = "ih/2-(ih/zoom/2)"
-            elif effect == 1:
-                zoom_expr = "if(eq(on\\,1)\\,1.3\\,max(zoom-0.0008\\,1.0))"
-                x_expr = "iw/2-(iw/zoom/2)"
-                y_expr = "ih/2-(ih/zoom/2)"
-            elif effect == 2:
-                zoom_expr = "1.1"
-                x_expr = "if(eq(on\\,1)\\,0\\,min(x+2\\,iw-iw/zoom))"
-                y_expr = "ih/2-(ih/zoom/2)"
-            else:
-                zoom_expr = "1.1"
-                x_expr = "if(eq(on\\,1)\\,iw-iw/zoom\\,max(x-2\\,0))"
-                y_expr = "ih/2-(ih/zoom/2)"
-
-            filters.append(
-                f"[{input_idx}:v]scale={width*4}:-1,zoompan=z='{zoom_expr}':"
-                f"x='{x_expr}':y='{y_expr}':"
-                f"d={frames}:s={width}x{height}:fps=30,"
-                f"setpts=PTS-STARTPTS[v{i}]"
-            )
+            # Simple alternating zoom effects using only basic expressions
+            effect = i % 3
+            if effect == 0:  # Slow zoom in
+                filters.append(
+                    f"[{input_idx}:v]scale={width*2}:{height*2},"
+                    f"zoompan=z='min(zoom+0.001,1.4)':"
+                    f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                    f"d={frames}:s={width}x{height}:fps=30,"
+                    f"setpts=PTS-STARTPTS[v{i}]"
+                )
+            elif effect == 1:  # Slow zoom out (start zoomed, zoom out)
+                zoom_rate = 0.4 / max(frames, 1)
+                filters.append(
+                    f"[{input_idx}:v]scale={width*2}:{height*2},"
+                    f"zoompan=z='max(1.4-on*{zoom_rate:.6f},1.0)':"
+                    f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                    f"d={frames}:s={width}x{height}:fps=30,"
+                    f"setpts=PTS-STARTPTS[v{i}]"
+                )
+            else:  # Slow pan right
+                filters.append(
+                    f"[{input_idx}:v]scale={width*2}:{height*2},"
+                    f"zoompan=z='1.2':"
+                    f"x='on*2':y='ih/2-(ih/zoom/2)':"
+                    f"d={frames}:s={width}x{height}:fps=30,"
+                    f"setpts=PTS-STARTPTS[v{i}]"
+                )
 
         concat_inputs.append(f"[v{i}]")
         input_idx += 1

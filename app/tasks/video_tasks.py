@@ -46,6 +46,30 @@ async def run_video_pipeline(project_id: int):
             if not project:
                 return
 
+            # ── Step 0: Download audio if URL ──
+            from app.services.video_composer import compose_video
+
+            audio_path = await download_audio_if_url(project.audio_path, project_id)
+            if not audio_path or not os.path.exists(audio_path):
+                raise FileNotFoundError(f"Audio file not found: {project.audio_path}")
+
+            # ── Step 0b: Transcribe audio with Whisper for accurate karaoke ──
+            transcribed_words = []
+            try:
+                from app.services.transcriber import transcribe_audio
+                import asyncio
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None, transcribe_audio, audio_path
+                )
+                transcribed_words = result.get("words", [])
+                # Use transcribed text if we had no lyrics
+                if not project.lyrics_text and result.get("text"):
+                    project.lyrics_text = result["text"]
+                    await db.commit()
+                logger.info(f"Whisper transcription: {len(transcribed_words)} words")
+            except Exception as e:
+                logger.warning(f"Whisper transcription failed, will use text fallback: {e}")
+
             # ── Step 1: Generate scenes (images) ──
             project.status = VideoStatus.GENERATING_SCENES
             project.progress = 5
@@ -115,7 +139,14 @@ async def run_video_pipeline(project_id: int):
             subtitle_dir.mkdir(parents=True, exist_ok=True)
             subtitle_path = str(subtitle_dir / "karaoke.ass")
 
-            if project.lyrics_words:
+            if transcribed_words:
+                # Best: Whisper word-level timestamps → accurate karaoke
+                generate_ass_subtitles(
+                    lyrics_words=transcribed_words,
+                    aspect_ratio=project.aspect_ratio,
+                    output_path=subtitle_path,
+                )
+            elif project.lyrics_words:
                 generate_ass_subtitles(
                     lyrics_words=project.lyrics_words,
                     aspect_ratio=project.aspect_ratio,
@@ -139,9 +170,6 @@ async def run_video_pipeline(project_id: int):
             project.progress = 75
             await db.commit()
 
-            from app.services.video_composer import compose_video
-
-            audio_path = await download_audio_if_url(project.audio_path, project_id)
             if not audio_path or not os.path.exists(audio_path):
                 raise FileNotFoundError(f"Audio file not found: {project.audio_path}")
 

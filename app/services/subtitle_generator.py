@@ -1,8 +1,7 @@
 """
 Subtitle Generator — Creates ASS (Advanced SubStation Alpha) karaoke subtitles
 from word-level timestamps (Whisper output stored in Levita's tracks table).
-"""
-import logging
+"""import reimport logging
 
 logger = logging.getLogger(__name__)
 
@@ -146,8 +145,10 @@ def generate_ass_from_text(
         margin_v=margin_v,
     )
 
+    # Strip structural markers like [Refrão], [Verso 1], [Ponte], etc.
+    cleaned = re.sub(r'\[.*?\]', '', lyrics_text)
     # Split lyrics into non-empty lines
-    raw_lines = [l.strip() for l in lyrics_text.strip().split("\n") if l.strip()]
+    raw_lines = [l.strip() for l in cleaned.strip().split("\n") if l.strip()]
     if not raw_lines:
         return ""
 
