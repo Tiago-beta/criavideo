@@ -20,6 +20,16 @@ settings = get_settings()
 _openai = openai.AsyncOpenAI(api_key=settings.openai_api_key)
 
 
+def _to_media_url(path: str | None) -> str | None:
+    """Convert absolute file path to web-accessible URL."""
+    if not path:
+        return None
+    media_prefix = settings.media_dir.rstrip("/")
+    if path.startswith(media_prefix):
+        return "/video/media" + path[len(media_prefix):]
+    return None
+
+
 class CreateProjectRequest(BaseModel):
     track_id: int = 0
     title: str = ""
@@ -169,6 +179,8 @@ async def get_project(
                 "file_size": r.file_size,
                 "thumbnail_path": r.thumbnail_path,
                 "duration": r.duration,
+                "video_url": _to_media_url(r.file_path),
+                "thumbnail_url": _to_media_url(r.thumbnail_path),
             }
             for r in renders
         ],

@@ -197,6 +197,25 @@
         </div>
     </div>
 
+    <!-- Video Player Modal -->
+    <div id="modal-player" class="modal">
+        <div class="modal-content" style="max-width:900px">
+            <div class="modal-header">
+                <h3 id="player-title">Vídeo</h3>
+                <button class="modal-close" onclick="closeModal('modal-player')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:0">
+                <video id="player-video" controls style="width:100%;border-radius:0 0 8px 8px;background:#000"></video>
+            </div>
+            <div class="modal-footer" style="justify-content:space-between;align-items:center">
+                <span id="player-info" style="font-size:.85rem;color:var(--text-muted)"></span>
+                <div>
+                    <a id="player-download" class="btn btn-primary" download style="text-decoration:none">⬇ Baixar Vídeo</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="/video/static/app.js"></script>
 </body>
 </html>

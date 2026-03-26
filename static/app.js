@@ -87,6 +87,10 @@ function openModal(id) {
 }
 function closeModal(id) {
     document.getElementById(id).classList.remove('open');
+    if (id === 'modal-player') {
+        const v = document.getElementById('player-video');
+        if (v) { v.pause(); v.src = ''; }
+    }
 }
 
 // ═══ PROJECTS ═══
@@ -149,6 +153,7 @@ async function loadProjects() {
                 ${p.progress != null ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${p.progress}%"></div></div>` : ''}
                 ${p.error_message ? `<p style="color:var(--danger);font-size:.8rem">${esc(p.error_message)}</p>` : ''}
                 <div class="card-actions">
+                    ${p.status === 'completed' ? `<button class="btn btn-primary btn-sm" onclick="watchVideo(${p.id})">▶ Assistir</button>` : ''}
                     ${p.status === 'pending' || p.status === 'failed' ? `<button class="btn btn-primary btn-sm" onclick="generateVideo(${p.id})">▶ Gerar Vídeo</button>` : ''}
                     <button class="btn btn-danger btn-sm" onclick="deleteProject(${p.id})">🗑</button>
                 </div>
@@ -226,6 +231,33 @@ async function deleteProject(id) {
         loadProjects();
     } catch (e) {
         alert('Erro: ' + e.message);
+    }
+}
+
+async function watchVideo(projectId) {
+    try {
+        const p = await api(`/video/projects/${projectId}`);
+        if (!p.renders || !p.renders.length) {
+            alert('Nenhum vídeo renderizado encontrado.');
+            return;
+        }
+        const r = p.renders[0];
+        document.getElementById('player-title').textContent = p.title || 'Vídeo';
+        const video = document.getElementById('player-video');
+        video.src = r.video_url;
+        video.load();
+
+        const sizeMB = r.file_size ? (r.file_size / 1048576).toFixed(1) + ' MB' : '';
+        const durMin = r.duration ? Math.floor(r.duration / 60) + ':' + String(Math.floor(r.duration % 60)).padStart(2, '0') : '';
+        document.getElementById('player-info').textContent = [r.format, durMin, sizeMB].filter(Boolean).join(' • ');
+
+        const dl = document.getElementById('player-download');
+        dl.href = r.video_url;
+        dl.download = (p.title || 'video') + '.mp4';
+
+        openModal('modal-player');
+    } catch (e) {
+        alert('Erro ao carregar vídeo: ' + e.message);
     }
 }
 
