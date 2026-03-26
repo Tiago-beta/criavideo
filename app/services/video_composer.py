@@ -1,7 +1,7 @@
 """
 Video Composer — Uses FFmpeg to compose the final music video:
   1. Image slideshow with Ken Burns effect (zoom/pan)
-  2. Optional Grok video clips at highlight moments
+  2. Grok video clips interleaved at highlight moments
   3. Audio overlay
   4. Karaoke ASS subtitle burn-in
   5. Output H.264 MP4
@@ -10,53 +10,11 @@ import os
 import json
 import logging
 import subprocess
-import shlex
 from pathlib import Path
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
-
-
-def _build_ken_burns_filter(scene_count: int, scene_durations: list[float], width: int, height: int) -> str:
-    """Build FFmpeg filter_complex for Ken Burns (zoom/pan) effect on images."""
-    filters = []
-    concat_inputs = []
-
-    for i in range(scene_count):
-        dur = scene_durations[i]
-        frames = int(dur * 30)  # 30fps
-
-        # Alternate between zoom-in, zoom-out, pan-left, pan-right
-        effect = i % 4
-        if effect == 0:  # Zoom in
-            zoom_expr = f"min(zoom+0.0008,1.3)"
-            x_expr = f"iw/2-(iw/zoom/2)"
-            y_expr = f"ih/2-(ih/zoom/2)"
-        elif effect == 1:  # Zoom out
-            zoom_expr = f"if(eq(on,1),1.3,max(zoom-0.0008,1.0))"
-            x_expr = f"iw/2-(iw/zoom/2)"
-            y_expr = f"ih/2-(ih/zoom/2)"
-        elif effect == 2:  # Pan right
-            zoom_expr = "1.1"
-            x_expr = f"if(eq(on,1),0,min(x+2,iw-iw/zoom))"
-            y_expr = f"ih/2-(ih/zoom/2)"
-        else:  # Pan left
-            zoom_expr = "1.1"
-            x_expr = f"if(eq(on,1),iw-iw/zoom,max(x-2,0))"
-            y_expr = f"ih/2-(ih/zoom/2)"
-
-        filters.append(
-            f"[{i}:v]scale=8000:-1,zoompan=z='{zoom_expr}':"
-            f"x='{x_expr}':y='{y_expr}':"
-            f"d={frames}:s={width}x{height}:fps=30,"
-            f"setpts=PTS-STARTPTS[v{i}]"
-        )
-        concat_inputs.append(f"[v{i}]")
-
-    filter_str = ";\n".join(filters)
-    concat = "".join(concat_inputs) + f"concat=n={scene_count}:v=1:a=0[slideshow]"
-    return f"{filter_str};\n{concat}"
 
 
 def compose_video(
@@ -69,7 +27,7 @@ def compose_video(
 ) -> dict:
     """Compose the final video using FFmpeg.
 
-    scenes: list of {"image_path": str, "clip_path": str|None, "start_time": float, "end_time": float, "scene_type": str}
+    ALL scenes are included in order — images get Ken Burns, clips get scaled.
     Returns: {"file_path": str, "duration": float, "file_size": int}
     """
     if not output_dir:
@@ -83,36 +41,85 @@ def compose_video(
 
     output_path = os.path.join(output_dir, f"video_{aspect_ratio.replace(':', 'x')}.mp4")
 
-    # Separate image-only scenes from video clip scenes
-    image_scenes = []
-    clip_inserts = []
-
+    # Build ordered list of valid scenes (image or clip)
+    valid_scenes = []
     for s in scenes:
-        if s.get("scene_type") == "video_clip" and s.get("clip_path") and os.path.exists(s["clip_path"]):
-            clip_inserts.append(s)
-        elif s.get("image_path") and os.path.exists(s["image_path"]):
-            image_scenes.append(s)
+        has_clip = (s.get("scene_type") == "video_clip"
+                    and s.get("clip_path")
+                    and os.path.exists(s.get("clip_path", "")))
+        has_image = s.get("image_path") and os.path.exists(s.get("image_path", ""))
+        if has_clip or has_image:
+            dur = s.get("end_time", 0) - s.get("start_time", 0)
+            valid_scenes.append({
+                **s,
+                "use_clip": has_clip,
+                "duration": max(dur, 3.0),
+            })
 
-    if not image_scenes and not clip_inserts:
+    if not valid_scenes:
         raise RuntimeError("No valid scenes to compose")
 
-    # Calculate durations for each image scene
-    scene_durations = []
-    for s in image_scenes:
-        dur = s.get("end_time", 0) - s.get("start_time", 0)
-        scene_durations.append(max(dur, 3.0))
+    logger.info(f"Composing {len(valid_scenes)} scenes ({sum(1 for v in valid_scenes if v['use_clip'])} clips, "
+                f"{sum(1 for v in valid_scenes if not v['use_clip'])} images)")
 
-    # Build FFmpeg command
+    # Build FFmpeg inputs and filter_complex
     input_args = []
-    for i, s in enumerate(image_scenes):
-        input_args.extend(["-loop", "1", "-t", str(scene_durations[i]), "-i", s["image_path"]])
+    filters = []
+    concat_inputs = []
+    input_idx = 0
 
-    # Audio input (last input)
-    audio_idx = len(image_scenes)
+    for i, sc in enumerate(valid_scenes):
+        dur = sc["duration"]
+        frames = int(dur * 30)
+
+        if sc["use_clip"]:
+            # Video clip: scale + pad to target res, set duration
+            input_args.extend(["-i", sc["clip_path"]])
+            filters.append(
+                f"[{input_idx}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,"
+                f"setpts=PTS-STARTPTS,fps=30[v{i}]"
+            )
+        else:
+            # Image: Ken Burns zoom/pan
+            input_args.extend(["-loop", "1", "-t", str(dur), "-i", sc["image_path"]])
+
+            effect = i % 4
+            if effect == 0:
+                zoom_expr = "min(zoom+0.0008,1.3)"
+                x_expr = "iw/2-(iw/zoom/2)"
+                y_expr = "ih/2-(ih/zoom/2)"
+            elif effect == 1:
+                zoom_expr = "if(eq(on\\,1)\\,1.3\\,max(zoom-0.0008\\,1.0))"
+                x_expr = "iw/2-(iw/zoom/2)"
+                y_expr = "ih/2-(ih/zoom/2)"
+            elif effect == 2:
+                zoom_expr = "1.1"
+                x_expr = "if(eq(on\\,1)\\,0\\,min(x+2\\,iw-iw/zoom))"
+                y_expr = "ih/2-(ih/zoom/2)"
+            else:
+                zoom_expr = "1.1"
+                x_expr = "if(eq(on\\,1)\\,iw-iw/zoom\\,max(x-2\\,0))"
+                y_expr = "ih/2-(ih/zoom/2)"
+
+            filters.append(
+                f"[{input_idx}:v]scale={width*4}:-1,zoompan=z='{zoom_expr}':"
+                f"x='{x_expr}':y='{y_expr}':"
+                f"d={frames}:s={width}x{height}:fps=30,"
+                f"setpts=PTS-STARTPTS[v{i}]"
+            )
+
+        concat_inputs.append(f"[v{i}]")
+        input_idx += 1
+
+    # Audio input
+    audio_idx = input_idx
     input_args.extend(["-i", audio_path])
 
-    # Build filter complex
-    filter_complex = _build_ken_burns_filter(len(image_scenes), scene_durations, width, height)
+    # Concat all scenes
+    filter_str = ";\n".join(filters)
+    concat = "".join(concat_inputs) + f"concat=n={len(valid_scenes)}:v=1:a=0[slideshow]"
+    filter_complex = f"{filter_str};\n{concat}"
 
     # Add subtitle burn-in if available
     if subtitle_path and os.path.exists(subtitle_path):
@@ -138,16 +145,14 @@ def compose_video(
         output_path
     ]
 
-    logger.info(f"Running FFmpeg: {' '.join(cmd[:10])}...")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    logger.info(f"Running FFmpeg compose for project {project_id}...")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=1200)
 
     if result.returncode != 0:
-        logger.error(f"FFmpeg error: {result.stderr[-1000:]}")
+        logger.error(f"FFmpeg error: {result.stderr[-2000:]}")
         raise RuntimeError(f"FFmpeg failed: {result.stderr[-500:]}")
 
     file_size = os.path.getsize(output_path)
-
-    # Get duration via ffprobe
     duration = _get_duration(output_path)
 
     logger.info(f"Video rendered: {output_path} ({file_size / 1024 / 1024:.1f} MB, {duration:.1f}s)")

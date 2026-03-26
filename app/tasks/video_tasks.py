@@ -109,7 +109,7 @@ async def run_video_pipeline(project_id: int):
             await db.commit()
 
             # ── Step 3: Generate karaoke subtitles ──
-            from app.services.subtitle_generator import generate_ass_subtitles
+            from app.services.subtitle_generator import generate_ass_subtitles, generate_ass_from_text
 
             subtitle_dir = Path(settings.media_dir) / "subtitles" / str(project_id)
             subtitle_dir.mkdir(parents=True, exist_ok=True)
@@ -118,6 +118,13 @@ async def run_video_pipeline(project_id: int):
             if project.lyrics_words:
                 generate_ass_subtitles(
                     lyrics_words=project.lyrics_words,
+                    aspect_ratio=project.aspect_ratio,
+                    output_path=subtitle_path,
+                )
+            elif project.lyrics_text:
+                generate_ass_from_text(
+                    lyrics_text=project.lyrics_text,
+                    duration=project.track_duration or 180,
                     aspect_ratio=project.aspect_ratio,
                     output_path=subtitle_path,
                 )
