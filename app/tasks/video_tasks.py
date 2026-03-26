@@ -3,6 +3,7 @@ Video Tasks — Async background tasks for the full video generation pipeline.
 """
 import os
 import logging
+import httpx
 from pathlib import Path
 from app.config import get_settings
 from app.database import async_session
@@ -10,6 +11,29 @@ from app.models import VideoProject, VideoScene, VideoRender, VideoStatus
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+async def download_audio_if_url(audio_path: str, project_id: int) -> str:
+    """If audio_path is a URL, download it locally and return the local path."""
+    if not audio_path or not audio_path.startswith(("http://", "https://")):
+        return audio_path
+
+    audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    local_path = str(audio_dir / "track.mp3")
+
+    if os.path.exists(local_path):
+        return local_path
+
+    logger.info(f"Downloading audio from {audio_path}")
+    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+        resp = await client.get(audio_path)
+        resp.raise_for_status()
+        with open(local_path, "wb") as f:
+            f.write(resp.content)
+
+    logger.info(f"Audio downloaded: {local_path} ({os.path.getsize(local_path)} bytes)")
+    return local_path
 
 
 async def run_video_pipeline(project_id: int):
@@ -110,9 +134,9 @@ async def run_video_pipeline(project_id: int):
 
             from app.services.video_composer import compose_video
 
-            audio_path = project.audio_path
+            audio_path = await download_audio_if_url(project.audio_path, project_id)
             if not audio_path or not os.path.exists(audio_path):
-                raise FileNotFoundError(f"Audio file not found: {audio_path}")
+                raise FileNotFoundError(f"Audio file not found: {project.audio_path}")
 
             render_result = compose_video(
                 project_id=project_id,
