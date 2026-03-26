@@ -1,23 +1,28 @@
 """
 Video Router — Endpoints for creating video projects, generating scenes/renders.
 """
+import json
+import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from pydantic import BaseModel
 from typing import Optional
+import openai
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import VideoProject, VideoScene, VideoRender, VideoStatus
 from app.config import get_settings
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/video", tags=["video"])
 settings = get_settings()
+_openai = openai.AsyncOpenAI(api_key=settings.openai_api_key)
 
 
 class CreateProjectRequest(BaseModel):
-    track_id: int
-    title: str
+    track_id: int = 0
+    title: str = ""
     description: str = ""
     tags: list[str] = []
     style_prompt: str = ""
@@ -29,6 +34,16 @@ class CreateProjectRequest(BaseModel):
     lyrics_text: str = ""
     lyrics_words: list[dict] = []
     audio_path: str = ""
+
+
+class QuickCreateRequest(BaseModel):
+    """Request from Levita's "Criar Vídeo" button — minimal data, AI fills the rest."""
+    song_title: str = ""
+    song_artist: str = ""
+    audio_url: str
+    lyrics: str = ""
+    duration: float = 0
+    aspect_ratio: str = "16:9"
 
 
 class ProjectResponse(BaseModel):
@@ -207,3 +222,86 @@ async def delete_project(
     await db.delete(project)
     await db.commit()
     return {"deleted": True}
+
+
+@router.post("/quick-create")
+async def quick_create(
+    req: QuickCreateRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """One-click video creation: AI generates title/description/style, creates project, starts pipeline."""
+    # Ask AI to generate creative metadata from song info
+    ai_prompt = f"""Você é um produtor criativo de vídeos musicais.
+Com base nos dados desta música, gere metadados criativos para um videoclipe.
+
+Título da música: {req.song_title or 'Desconhecido'}
+Artista: {req.song_artist or 'Desconhecido'}
+Duração: {req.duration:.0f} segundos
+Trecho da letra:
+{(req.lyrics or 'Sem letra disponível')[:800]}
+
+Responda SOMENTE um JSON com:
+- "title": título curto e criativo para o projeto de vídeo (máx 60 chars, em português)
+- "description": descrição envolvente para redes sociais (máx 200 chars, em português)
+- "style_prompt": prompt em INGLÊS descrevendo o estilo visual ideal (cores, cenário, mood, iluminação — máx 120 chars)
+- "tags": lista de 3-5 tags relevantes em português
+
+JSON apenas, sem markdown."""
+
+    title = req.song_title or "Meu Vídeo"
+    description = ""
+    style_prompt = "cinematic, vibrant colors, dynamic lighting"
+    tags = []
+
+    try:
+        resp = await _openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": ai_prompt}],
+            temperature=0.8,
+            max_tokens=300,
+        )
+        data = json.loads(resp.choices[0].message.content)
+        title = data.get("title", title)
+        description = data.get("description", description)
+        style_prompt = data.get("style_prompt", style_prompt)
+        tags = data.get("tags", tags)
+    except Exception as e:
+        logger.warning("AI metadata generation failed, using defaults: %s", e)
+
+    project = VideoProject(
+        user_id=user["id"],
+        track_id=0,
+        title=title,
+        description=description,
+        tags=tags,
+        style_prompt=style_prompt,
+        aspect_ratio=req.aspect_ratio,
+        track_title=req.song_title or "",
+        track_artist=req.song_artist or "",
+        track_duration=req.duration,
+        lyrics_text=req.lyrics or "",
+        lyrics_words=[],
+        audio_path=req.audio_url,
+    )
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+
+    # Auto-start generation
+    project.status = VideoStatus.GENERATING_SCENES
+    project.progress = 0
+    await db.commit()
+
+    from app.tasks.video_tasks import run_video_pipeline
+    background_tasks.add_task(run_video_pipeline, project.id)
+
+    return {
+        "id": project.id,
+        "title": title,
+        "description": description,
+        "style_prompt": style_prompt,
+        "tags": tags,
+        "status": "generating_scenes",
+    }

@@ -14,8 +14,6 @@ let levitaSongs = [];
     if (urlToken) {
         token = urlToken.trim();
         localStorage.setItem('token', token);
-        // Clean URL without reload
-        window.history.replaceState({}, '', window.location.pathname);
     }
 })();
 
@@ -149,8 +147,9 @@ async function loadProjects() {
                 <p>📐 ${p.aspect_ratio} &nbsp; ⏱ ${p.track_duration || '?'}s</p>
                 <p><span class="badge badge-${badgeClass(p.status)}">${p.status}</span></p>
                 ${p.progress != null ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${p.progress}%"></div></div>` : ''}
+                ${p.error_message ? `<p style="color:var(--danger);font-size:.8rem">${esc(p.error_message)}</p>` : ''}
                 <div class="card-actions">
-                    ${p.status === 'pending' ? `<button class="btn btn-primary btn-sm" onclick="generateVideo(${p.id})">▶ Gerar Vídeo</button>` : ''}
+                    ${p.status === 'pending' || p.status === 'failed' ? `<button class="btn btn-primary btn-sm" onclick="generateVideo(${p.id})">▶ Gerar Vídeo</button>` : ''}
                     <button class="btn btn-danger btn-sm" onclick="deleteProject(${p.id})">🗑</button>
                 </div>
             </div>
@@ -437,5 +436,91 @@ function badgeClass(status) {
 if (!token) {
     redirectToLevita();
 } else {
-    loadProjects();
+    // Check if Levita sent song data for quick-create
+    const params = new URLSearchParams(window.location.search);
+    const audioUrl = params.get('audio_url');
+    if (audioUrl) {
+        // Clean URL immediately
+        window.history.replaceState({}, '', window.location.pathname);
+        quickCreate({
+            song_title: params.get('song_title') || '',
+            song_artist: params.get('song_artist') || '',
+            audio_url: audioUrl,
+            lyrics: params.get('lyrics') || '',
+            duration: parseFloat(params.get('duration')) || 180,
+            aspect_ratio: params.get('aspect') || '16:9',
+        });
+    } else {
+        // Clean URL and load normal dashboard
+        window.history.replaceState({}, '', window.location.pathname);
+        loadProjects();
+    }
+}
+
+// ── Quick-Create: auto-create from Levita's "Criar Vídeo" button ──
+async function quickCreate(songData) {
+    const el = document.getElementById('projects-list');
+    el.innerHTML = `
+        <div class="card" style="text-align:center;padding:2rem;max-width:500px;margin:0 auto">
+            <h3>🎬 Preparando seu vídeo...</h3>
+            <p style="color:var(--text-muted)">🎵 ${esc(songData.song_title || 'Sua música')}</p>
+            <p style="color:var(--text-muted);font-size:.85rem">A IA está gerando título, descrição e estilo visual...</p>
+            <div class="progress-bar" style="margin-top:1rem"><div class="progress-bar-fill" style="width:5%"></div></div>
+        </div>`;
+
+    try {
+        const result = await api('/video/quick-create', {
+            method: 'POST',
+            body: JSON.stringify(songData),
+        });
+
+        // Show success and start polling
+        el.innerHTML = `
+            <div class="card" style="text-align:center;padding:2rem;max-width:500px;margin:0 auto">
+                <h3>✅ Projeto criado!</h3>
+                <p><strong>${esc(result.title)}</strong></p>
+                <p style="color:var(--text-muted);font-size:.85rem">${esc(result.description)}</p>
+                <p style="font-size:.8rem">🎨 ${esc(result.style_prompt)}</p>
+                <div class="progress-bar" style="margin-top:1rem"><div id="qc-progress" class="progress-bar-fill" style="width:10%"></div></div>
+                <p id="qc-status" style="margin-top:.5rem;font-size:.85rem;color:var(--accent)">Gerando cenas...</p>
+            </div>`;
+
+        // Poll for progress updates
+        pollProject(result.id);
+    } catch (e) {
+        el.innerHTML = `
+            <div class="card" style="text-align:center;padding:2rem;max-width:500px;margin:0 auto">
+                <h3>❌ Erro ao criar</h3>
+                <p style="color:var(--text-muted)">${esc(e.message)}</p>
+                <button class="btn btn-primary" onclick="loadProjects()" style="margin-top:1rem">Ver Projetos</button>
+            </div>`;
+    }
+}
+
+function pollProject(projectId) {
+    const poll = setInterval(async () => {
+        try {
+            const p = await api(`/video/projects/${projectId}`);
+            const bar = document.getElementById('qc-progress');
+            const status = document.getElementById('qc-status');
+            if (bar) bar.style.width = p.progress + '%';
+
+            const statusLabels = {
+                'generating_scenes': 'Gerando cenas com IA...',
+                'generating_clips': 'Criando clipes de vídeo...',
+                'rendering': 'Renderizando vídeo final...',
+                'completed': '✅ Vídeo pronto!',
+                'failed': '❌ Erro na geração',
+            };
+            if (status) status.textContent = statusLabels[p.status] || p.status;
+
+            if (p.status === 'completed' || p.status === 'failed') {
+                clearInterval(poll);
+                setTimeout(() => loadProjects(), 1500);
+            }
+        } catch {
+            clearInterval(poll);
+            loadProjects();
+        }
+    }, 4000);
 }
