@@ -55,7 +55,18 @@ def compose_video(
     if not valid_scenes:
         raise RuntimeError("No valid scenes to compose")
 
-    logger.info(f"Composing {len(valid_scenes)} image scenes")
+    # Get actual audio duration and redistribute scenes to cover it fully
+    audio_duration = _get_duration(audio_path)
+    if audio_duration > 0:
+        total_scene_dur = sum(s["duration"] for s in valid_scenes)
+        if abs(total_scene_dur - audio_duration) > 2.0:
+            # Scale all scene durations proportionally to match audio
+            ratio = audio_duration / total_scene_dur if total_scene_dur > 0 else 1.0
+            for s in valid_scenes:
+                s["duration"] = s["duration"] * ratio
+            logger.info(f"Adjusted scene durations: {total_scene_dur:.1f}s -> {audio_duration:.1f}s (ratio {ratio:.2f})")
+
+    logger.info(f"Composing {len(valid_scenes)} image scenes, total {sum(s['duration'] for s in valid_scenes):.1f}s")
 
     # Build FFmpeg inputs and filter_complex
     input_args = []
@@ -70,21 +81,20 @@ def compose_video(
         # Image: Ken Burns zoom/pan — single frame input, zoompan d controls duration
         input_args.extend(["-i", sc["image_path"]])
 
-        # Gentle alternating effects — subtle zoom to keep images alive
+        # Smooth alternating Ken Burns effects using linear interpolation (on/d)
         effect = i % 2
-        if effect == 0:  # Very slow zoom in
+        if effect == 0:  # Smooth zoom in: 1.0 -> 1.10
             filters.append(
                 f"[{input_idx}:v]scale={width*2}:{height*2},"
-                f"zoompan=z='min(zoom+0.0003,1.15)':"
+                f"zoompan=z='1.0+0.10*(on/{frames})':"
                 f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                 f"d={frames}:s={width}x{height}:fps=30,"
                 f"format=yuv420p,setpts=PTS-STARTPTS[v{i}]"
             )
-        else:  # Very slow zoom out
-            zoom_rate = 0.15 / max(frames, 1)
+        else:  # Smooth zoom out: 1.10 -> 1.0
             filters.append(
                 f"[{input_idx}:v]scale={width*2}:{height*2},"
-                f"zoompan=z='max(1.15-on*{zoom_rate:.6f},1.0)':"
+                f"zoompan=z='1.10-0.10*(on/{frames})':"
                 f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                 f"d={frames}:s={width}x{height}:fps=30,"
                 f"format=yuv420p,setpts=PTS-STARTPTS[v{i}]"
@@ -121,7 +131,6 @@ def compose_video(
         "-crf", "23",
         "-c:a", "aac",
         "-b:a", "192k",
-        "-shortest",
         "-movflags", "+faststart",
         output_path
     ]
