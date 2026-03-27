@@ -1,8 +1,27 @@
 apply plugin: 'com.android.application'
 
+import java.util.Properties
+import java.io.FileInputStream
+
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore/keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace "pro.criavideo.app"
     compileSdk rootProject.ext.compileSdkVersion
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file("${rootProject.projectDir}/keystore/${keystoreProperties['storeFile']}")
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     defaultConfig {
         applicationId "pro.criavideo.app"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -18,6 +37,9 @@ android {
     }
     buildTypes {
         release {
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
