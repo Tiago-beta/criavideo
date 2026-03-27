@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from urllib.parse import urljoin
 
 from fastapi import APIRouter, Depends, HTTPException
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2 import id_token as google_id_token
+import httpx
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +44,11 @@ class GoogleLoginRequest(BaseModel):
 
 class TokenExchangeRequest(BaseModel):
     token: str = Field(min_length=20)
+
+
+class LevitaLoginRequest(BaseModel):
+    email: str = Field(min_length=5, max_length=320)
+    password: str = Field(min_length=1, max_length=128)
 
 
 def _session_response(user: AppUser) -> dict:
@@ -159,6 +166,44 @@ async def exchange_levita_token(
     db: AsyncSession = Depends(get_db),
 ):
     user = await resolve_user_from_token(req.token, db)
+    return _session_response(user)
+
+
+@router.post("/login/levita")
+async def login_with_levita_credentials(
+    req: LevitaLoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    levita_base = (settings.levita_url or "https://levita.pro").rstrip("/") + "/"
+    levita_login_url = urljoin(levita_base, "api/auth/login")
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(
+                levita_login_url,
+                json={
+                    "email": req.email.strip().lower(),
+                    "password": req.password,
+                },
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Falha ao conectar com o Levita") from exc
+
+    if response.status_code >= 400:
+        detail = "Credenciais invalidas no Levita"
+        try:
+            payload = response.json()
+            detail = payload.get("detail") or payload.get("message") or detail
+        except ValueError:
+            pass
+        raise HTTPException(status_code=401, detail=detail)
+
+    payload = response.json()
+    levita_token = payload.get("token") or payload.get("access_token")
+    if not levita_token:
+        raise HTTPException(status_code=502, detail="Levita nao retornou token de sessao")
+
+    user = await resolve_user_from_token(str(levita_token), db)
     return _session_response(user)
 
 

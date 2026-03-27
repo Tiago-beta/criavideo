@@ -241,7 +241,22 @@ async function exchangeLevitaToken(rawToken) {
 
 function redirectToLevita() {
     const redirect = encodeURIComponent(`${window.location.origin}/video`);
-    window.location.href = `${providers.levita_url || "https://levita.pro"}/login?redirect=${redirect}`;
+    window.location.href = `${providers.levita_url || "https://levita.pro"}/?redirect=${redirect}`;
+}
+
+async function loginWithLevitaCredentials(email, password) {
+    const response = await fetch("/api/auth/login/levita", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+    });
+
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(getApiErrorMessage(body, "Nao foi possivel entrar com credenciais do Levita"));
+    }
+
+    return body;
 }
 
 function bindAuthEvents() {
@@ -254,22 +269,28 @@ function bindAuthEvents() {
     document.getElementById("login-form").addEventListener("submit", async (event) => {
         event.preventDefault();
         setAuthStatus("");
+        const email = document.getElementById("login-email").value;
+        const password = document.getElementById("login-password").value;
         try {
-            const data = await fetch("/api/auth/login", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    email: document.getElementById("login-email").value,
-                    password: document.getElementById("login-password").value,
-                }),
-            }).then(async (resp) => {
-                const body = await resp.json().catch(() => ({}));
-                if (!resp.ok) {
-                    throw new Error(getApiErrorMessage(body, "Falha ao entrar"));
-                }
-                return body;
-            });
-            clearLevitaSession();
+            let data;
+            try {
+                data = await fetch("/api/auth/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, password }),
+                }).then(async (resp) => {
+                    const body = await resp.json().catch(() => ({}));
+                    if (!resp.ok) {
+                        throw new Error(getApiErrorMessage(body, "Falha ao entrar"));
+                    }
+                    return body;
+                });
+                clearLevitaSession();
+            } catch (localError) {
+                // Fallback: try Levita credentials directly to avoid forcing an external redirect.
+                data = await loginWithLevitaCredentials(email, password);
+            }
+
             setSession(data.access_token, data.user);
             showApp();
             initDashboard();
