@@ -41,26 +41,21 @@ def compose_video(
 
     output_path = os.path.join(output_dir, f"video_{aspect_ratio.replace(':', 'x')}.mp4")
 
-    # Build ordered list of valid scenes (image or clip)
+    # Build ordered list of valid image scenes
     valid_scenes = []
     for s in scenes:
-        has_clip = (s.get("scene_type") == "video_clip"
-                    and s.get("clip_path")
-                    and os.path.exists(s.get("clip_path", "")))
         has_image = s.get("image_path") and os.path.exists(s.get("image_path", ""))
-        if has_clip or has_image:
+        if has_image:
             dur = s.get("end_time", 0) - s.get("start_time", 0)
             valid_scenes.append({
                 **s,
-                "use_clip": has_clip,
                 "duration": max(dur, 3.0),
             })
 
     if not valid_scenes:
         raise RuntimeError("No valid scenes to compose")
 
-    logger.info(f"Composing {len(valid_scenes)} scenes ({sum(1 for v in valid_scenes if v['use_clip'])} clips, "
-                f"{sum(1 for v in valid_scenes if not v['use_clip'])} images)")
+    logger.info(f"Composing {len(valid_scenes)} image scenes")
 
     # Build FFmpeg inputs and filter_complex
     input_args = []
@@ -72,45 +67,47 @@ def compose_video(
         dur = sc["duration"]
         frames = int(dur * 30)
 
-        if sc["use_clip"]:
-            # Video clip: scale + pad to target res, set duration
-            input_args.extend(["-i", sc["clip_path"]])
-            filters.append(
-                f"[{input_idx}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
-                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,"
-                f"setpts=PTS-STARTPTS,fps=30[v{i}]"
-            )
-        else:
-            # Image: Ken Burns zoom/pan — single frame input, zoompan d controls duration
-            input_args.extend(["-i", sc["image_path"]])
+        # Image: Ken Burns zoom/pan — single frame input, zoompan d controls duration
+        input_args.extend(["-i", sc["image_path"]])
 
-            # Simple alternating zoom effects using only basic expressions
-            effect = i % 3
-            if effect == 0:  # Slow zoom in
-                filters.append(
-                    f"[{input_idx}:v]scale={width*2}:{height*2},"
-                    f"zoompan=z='min(zoom+0.001,1.4)':"
-                    f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                    f"d={frames}:s={width}x{height}:fps=30,"
-                    f"setpts=PTS-STARTPTS[v{i}]"
-                )
-            elif effect == 1:  # Slow zoom out (start zoomed, zoom out)
-                zoom_rate = 0.4 / max(frames, 1)
-                filters.append(
-                    f"[{input_idx}:v]scale={width*2}:{height*2},"
-                    f"zoompan=z='max(1.4-on*{zoom_rate:.6f},1.0)':"
-                    f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                    f"d={frames}:s={width}x{height}:fps=30,"
-                    f"setpts=PTS-STARTPTS[v{i}]"
-                )
-            else:  # Slow pan right
-                filters.append(
-                    f"[{input_idx}:v]scale={width*2}:{height*2},"
-                    f"zoompan=z='1.2':"
-                    f"x='on*2':y='ih/2-(ih/zoom/2)':"
-                    f"d={frames}:s={width}x{height}:fps=30,"
-                    f"setpts=PTS-STARTPTS[v{i}]"
-                )
+        # Gentle alternating effects — subtle zoom to keep images alive
+        effect = i % 4
+        if effect == 0:  # Very slow zoom in
+            filters.append(
+                f"[{input_idx}:v]scale={width*2}:{height*2},"
+                f"zoompan=z='min(zoom+0.0003,1.15)':"
+                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f"d={frames}:s={width}x{height}:fps=30,"
+                f"setpts=PTS-STARTPTS[v{i}]"
+            )
+        elif effect == 1:  # Very slow zoom out
+            zoom_rate = 0.15 / max(frames, 1)
+            filters.append(
+                f"[{input_idx}:v]scale={width*2}:{height*2},"
+                f"zoompan=z='max(1.15-on*{zoom_rate:.6f},1.0)':"
+                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f"d={frames}:s={width}x{height}:fps=30,"
+                f"setpts=PTS-STARTPTS[v{i}]"
+            )
+        elif effect == 2:  # Slow pan right
+            pan_speed = max(1, int((width * 0.15) / max(frames, 1)))
+            filters.append(
+                f"[{input_idx}:v]scale={width*2}:{height*2},"
+                f"zoompan=z='1.08':"
+                f"x='on*{pan_speed}':y='ih/2-(ih/zoom/2)':"
+                f"d={frames}:s={width}x{height}:fps=30,"
+                f"setpts=PTS-STARTPTS[v{i}]"
+            )
+        else:  # Slow pan left (start offset, pan back)
+            pan_speed = max(1, int((width * 0.15) / max(frames, 1)))
+            start_x = int(width * 0.15)
+            filters.append(
+                f"[{input_idx}:v]scale={width*2}:{height*2},"
+                f"zoompan=z='1.08':"
+                f"x='{start_x}-on*{pan_speed}':y='ih/2-(ih/zoom/2)':"
+                f"d={frames}:s={width}x{height}:fps=30,"
+                f"setpts=PTS-STARTPTS[v{i}]"
+            )
 
         concat_inputs.append(f"[v{i}]")
         input_idx += 1

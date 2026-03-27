@@ -21,7 +21,7 @@ openai_client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
 async def analyze_lyrics_for_scenes(lyrics_text: str, lyrics_words: list, duration: float) -> list[dict]:
     """Use GPT-4o-mini to split lyrics into scenes with visual descriptions."""
     prompt = f"""You are a music video director. Given these song lyrics and total duration ({duration:.1f} seconds),
-split the song into 6-10 visual scenes for a music video.
+split the song into 15-20 visual scenes for a music video. Each scene should last between 8-15 seconds.
 
 For each scene, provide:
 - scene_index: sequential number starting from 0

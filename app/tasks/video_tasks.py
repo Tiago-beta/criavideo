@@ -103,36 +103,10 @@ async def run_video_pipeline(project_id: int):
             project.progress = 40
             await db.commit()
 
-            # ── Step 2: Generate Grok video clips for chorus highlights ──
-            project.status = VideoStatus.GENERATING_CLIPS
-            project.progress = 45
-            await db.commit()
-
-            from app.services.grok_video import generate_video_clip
-
-            clips_dir = Path(settings.media_dir) / "clips" / str(project_id)
-            clips_dir.mkdir(parents=True, exist_ok=True)
-
-            for s in scenes:
-                if not s.get("is_chorus") or not s.get("image_path"):
-                    continue
-                try:
-                    clip_path = str(clips_dir / f"clip_{s['scene_index']:03d}.mp4")
-                    await generate_video_clip(
-                        image_path=s["image_path"],
-                        prompt=s.get("visual_prompt", "Slow cinematic motion"),
-                        output_path=clip_path,
-                        duration=min(int(s.get("end_time", 0) - s.get("start_time", 0)), 10),
-                    )
-                    s["clip_path"] = clip_path
-                    s["scene_type"] = "video_clip"
-                except Exception as e:
-                    logger.warning(f"Grok clip generation failed for scene {s.get('scene_index')}: {e}")
-
             project.progress = 60
             await db.commit()
 
-            # ── Step 3: Generate karaoke subtitles ──
+            # ── Step 2: Generate karaoke subtitles ──
             from app.services.subtitle_generator import generate_ass_subtitles, generate_ass_from_text
 
             subtitle_dir = Path(settings.media_dir) / "subtitles" / str(project_id)
