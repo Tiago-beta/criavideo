@@ -81,8 +81,8 @@ def compose_video(
                 f"setpts=PTS-STARTPTS,fps=30[v{i}]"
             )
         else:
-            # Image: Ken Burns zoom/pan
-            input_args.extend(["-loop", "1", "-t", str(dur), "-i", sc["image_path"]])
+            # Image: Ken Burns zoom/pan — single frame input, zoompan d controls duration
+            input_args.extend(["-i", sc["image_path"]])
 
             # Simple alternating zoom effects using only basic expressions
             effect = i % 3
