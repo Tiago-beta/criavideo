@@ -1,0 +1,25 @@
+{
+  "name": "CriaVideo",
+  "short_name": "CriaVideo",
+  "description": "CriaVideo Studio para gerar e publicar videos.",
+  "start_url": "/video",
+  "scope": "/video",
+  "display": "standalone",
+  "background_color": "#041a34",
+  "theme_color": "#041a34",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/video/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/video/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

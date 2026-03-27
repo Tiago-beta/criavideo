@@ -4,6 +4,9 @@ __pycache__/
 .env
 .venv/
 .claude/
+node_modules/
+android/.gradle/
+android/local.properties
 *.egg-info/
 dist/
 build/

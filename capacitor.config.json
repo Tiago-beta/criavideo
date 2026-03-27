@@ -1,0 +1,9 @@
+{
+  "appId": "pro.criavideo.app",
+  "appName": "CriaVideo",
+  "webDir": "static",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#041a34"
+  }
+}
