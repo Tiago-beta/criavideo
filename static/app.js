@@ -107,11 +107,11 @@ function renderSession() {
     if (sessionMeta) {
         const sourceLabel =
             currentUser.source === "levita"
-                ? "Integrado com Levita"
+                ? "Levita"
                 : currentUser.source === "google"
-                    ? "Conta Google"
-                    : "Conta propria";
-        sessionMeta.textContent = `${sourceLabel} · ${currentUser.email || ""}`;
+                    ? "Google"
+                    : "Local";
+        sessionMeta.textContent = sourceLabel;
     }
 }
 

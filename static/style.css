@@ -283,6 +283,8 @@ a {
     background: rgba(8, 23, 39, 0.74);
     backdrop-filter: blur(18px);
     border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
 }
 
 .logo {
@@ -302,6 +304,7 @@ a {
     margin-top: 1.25rem;
     display: grid;
     gap: 0.35rem;
+    flex: 1;
 }
 
 .nav-links a {
@@ -338,26 +341,70 @@ a {
     font-size: clamp(1.9rem, 3vw, 2.6rem);
 }
 
-.session-card,
-.panel,
-.card,
-.song-details {
-    border: 1px solid var(--border);
-    background: var(--bg-card);
-    box-shadow: var(--shadow);
-}
-
-.session-card {
-    padding: 0.8rem;
-    border-radius: 18px;
+.sidebar-user {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    min-width: 280px;
-    justify-content: space-between;
+    gap: 0.75rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    margin-top: 1rem;
 }
 
-.session-card p,
+.user-avatar {
+    width: 38px;
+    height: 38px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+}
+
+.user-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.3;
+}
+
+.user-info strong {
+    font-size: 0.92rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user-role {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--success);
+}
+
+.btn-logout-icon {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 8px;
+    transition: color 0.2s, background 0.2s;
+}
+
+.btn-logout-icon:hover {
+    color: var(--danger);
+    background: rgba(255, 122, 108, 0.12);
+}
+
 .muted {
     color: var(--text-muted);
 }
@@ -391,6 +438,14 @@ a {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
     gap: 1rem;
+}
+
+.panel,
+.card,
+.song-details {
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    box-shadow: var(--shadow);
 }
 
 .card,
@@ -613,9 +668,9 @@ th {
         align-items: flex-start;
     }
 
-    .session-card {
-        min-width: 0;
-        width: 100%;
+    .sidebar-user {
+        margin-top: 0.75rem;
+        padding-top: 0.75rem;
     }
 }
 
