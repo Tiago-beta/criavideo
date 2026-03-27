@@ -71,42 +71,23 @@ def compose_video(
         input_args.extend(["-i", sc["image_path"]])
 
         # Gentle alternating effects — subtle zoom to keep images alive
-        effect = i % 4
+        effect = i % 2
         if effect == 0:  # Very slow zoom in
             filters.append(
                 f"[{input_idx}:v]scale={width*2}:{height*2},"
                 f"zoompan=z='min(zoom+0.0003,1.15)':"
                 f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                 f"d={frames}:s={width}x{height}:fps=30,"
-                f"setpts=PTS-STARTPTS[v{i}]"
+                f"format=yuv420p,setpts=PTS-STARTPTS[v{i}]"
             )
-        elif effect == 1:  # Very slow zoom out
+        else:  # Very slow zoom out
             zoom_rate = 0.15 / max(frames, 1)
             filters.append(
                 f"[{input_idx}:v]scale={width*2}:{height*2},"
                 f"zoompan=z='max(1.15-on*{zoom_rate:.6f},1.0)':"
                 f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                 f"d={frames}:s={width}x{height}:fps=30,"
-                f"setpts=PTS-STARTPTS[v{i}]"
-            )
-        elif effect == 2:  # Slow pan right
-            pan_speed = max(1, int((width * 0.15) / max(frames, 1)))
-            filters.append(
-                f"[{input_idx}:v]scale={width*2}:{height*2},"
-                f"zoompan=z='1.08':"
-                f"x='on*{pan_speed}':y='ih/2-(ih/zoom/2)':"
-                f"d={frames}:s={width}x{height}:fps=30,"
-                f"setpts=PTS-STARTPTS[v{i}]"
-            )
-        else:  # Slow pan left (start offset, pan back)
-            pan_speed = max(1, int((width * 0.15) / max(frames, 1)))
-            start_x = int(width * 0.15)
-            filters.append(
-                f"[{input_idx}:v]scale={width*2}:{height*2},"
-                f"zoompan=z='1.08':"
-                f"x='{start_x}-on*{pan_speed}':y='ih/2-(ih/zoom/2)':"
-                f"d={frames}:s={width}x{height}:fps=30,"
-                f"setpts=PTS-STARTPTS[v{i}]"
+                f"format=yuv420p,setpts=PTS-STARTPTS[v{i}]"
             )
 
         concat_inputs.append(f"[v{i}]")
@@ -146,11 +127,15 @@ def compose_video(
     ]
 
     logger.info(f"Running FFmpeg compose for project {project_id}...")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=1200)
+    logger.info(f"FFmpeg filter_complex: {filter_complex[:500]}...")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
 
     if result.returncode != 0:
-        logger.error(f"FFmpeg error: {result.stderr[-2000:]}")
-        raise RuntimeError(f"FFmpeg failed: {result.stderr[-500:]}")
+        # Extract actual error lines from stderr (skip progress lines)
+        err_lines = [l for l in result.stderr.split('\n') if l.strip() and 'size=' not in l and 'speed=' not in l]
+        err_msg = '\n'.join(err_lines[-20:]) if err_lines else result.stderr[-2000:]
+        logger.error(f"FFmpeg error:\n{err_msg}")
+        raise RuntimeError(f"FFmpeg failed: {err_msg[-500:]}")
 
     file_size = os.path.getsize(output_path)
     duration = _get_duration(output_path)
