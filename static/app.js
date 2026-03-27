@@ -113,6 +113,16 @@ function renderSession() {
                     : "Local";
         sessionMeta.textContent = sourceLabel;
     }
+    // Profile page
+    const profileName = document.getElementById("profile-name");
+    const profileEmail = document.getElementById("profile-email");
+    const profileBadge = document.getElementById("profile-role-badge");
+    if (profileName) profileName.textContent = currentUser.name || "Usuario";
+    if (profileEmail) profileEmail.textContent = currentUser.email || "-";
+    if (profileBadge) {
+        const src = currentUser.source === "levita" ? "Levita" : currentUser.source === "google" ? "Google" : "Local";
+        profileBadge.textContent = src;
+    }
 }
 
 function showAuth(message = "") {
@@ -333,18 +343,44 @@ function bindAuthEvents() {
     });
 }
 
+function navigateTo(pageName) {
+    document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
+    const target = document.getElementById("page-" + pageName);
+    if (target) target.classList.add("active");
+    // Update sidebar active
+    document.querySelectorAll(".sidebar-nav .nav-item").forEach((item) => {
+        item.classList.toggle("active", item.dataset.page === pageName);
+    });
+    // Update mobile tabs active
+    document.querySelectorAll(".mobile-nav-tab").forEach((tab) => {
+        tab.classList.toggle("active", tab.dataset.mobilePage === pageName);
+    });
+    loadPageData(pageName);
+}
+
 function bindNavigation() {
-    document.querySelectorAll(".nav-links a").forEach((link) => {
+    // Sidebar nav items
+    document.querySelectorAll(".sidebar-nav .nav-item").forEach((link) => {
         link.addEventListener("click", (event) => {
             event.preventDefault();
-            const page = link.dataset.page;
-            document.querySelectorAll(".page").forEach((section) => section.classList.remove("active"));
-            document.querySelectorAll(".nav-links a").forEach((item) => item.classList.remove("active"));
-            document.getElementById(`page-${page}`).classList.add("active");
-            link.classList.add("active");
-            loadPageData(page);
+            navigateTo(link.dataset.page);
         });
     });
+    // Mobile bottom tabs
+    document.querySelectorAll(".mobile-nav-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+            navigateTo(tab.dataset.mobilePage);
+        });
+    });
+    // Profile logout button
+    const profileLogout = document.getElementById("btn-profile-logout");
+    if (profileLogout) {
+        profileLogout.addEventListener("click", () => {
+            clearSession();
+            clearLevitaSession();
+            showAuth("Sessao encerrada.");
+        });
+    }
 }
 
 function bindDashboardEvents() {
