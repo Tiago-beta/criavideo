@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CriaVideo</title>
+    <link rel="stylesheet" href="/video/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+    <div class="page-shell">
+        <section id="auth-shell" class="auth-shell" hidden>
+            <div class="auth-brand">
+                <div class="brand-mark">
+                    <span class="brand-ring"></span>
+                    <span class="brand-play"></span>
+                </div>
+                <div>
+                    <p class="eyebrow">Studio de videos</p>
+                    <h1>CriaVideo</h1>
+                    <p class="auth-copy">Entre com sua conta, use Google ou siga direto do Levita sem nova verificacao.</p>
+                </div>
+            </div>
+
+            <div class="auth-card">
+                <div class="auth-card-header">
+                    <h2 id="auth-title">Entrar</h2>
+                    <p id="auth-subtitle">Acesse seus projetos e publique em multiplos canais.</p>
+                </div>
+
+                <p id="auth-status" class="auth-status" hidden></p>
+
+                <form id="login-form" class="auth-form">
+                    <label class="field">
+                        <span>Email</span>
+                        <input id="login-email" class="input" type="email" placeholder="seu@email.com" autocomplete="email">
+                    </label>
+                    <label class="field">
+                        <span>Senha</span>
+                        <input id="login-password" class="input" type="password" placeholder="Sua senha" autocomplete="current-password">
+                    </label>
+                    <button class="btn btn-primary btn-block" type="submit">Entrar</button>
+                </form>
+
+                <form id="register-form" class="auth-form" hidden>
+                    <label class="field">
+                        <span>Nome</span>
+                        <input id="register-name" class="input" type="text" placeholder="Seu nome" autocomplete="name">
+                    </label>
+                    <label class="field">
+                        <span>Email</span>
+                        <input id="register-email" class="input" type="email" placeholder="seu@email.com" autocomplete="email">
+                    </label>
+                    <label class="field">
+                        <span>Senha</span>
+                        <input id="register-password" class="input" type="password" placeholder="Crie uma senha" autocomplete="new-password">
+                    </label>
+                    <button class="btn btn-primary btn-block" type="submit">Criar conta</button>
+                </form>
+
+                <div class="auth-divider">
+                    <span>ou</span>
+                </div>
+
+                <div class="provider-stack">
+                    <div id="google-login" class="google-login" hidden>
+                        <div id="google-login-button"></div>
+                    </div>
+                    <button id="btn-levita-login" class="btn btn-provider btn-block" type="button">Entrar com Levita</button>
+                </div>
+
+                <p class="auth-switch">
+                    <span id="auth-switch-copy">Nao tem conta?</span>
+                    <button id="auth-switch-button" class="link-button" type="button">Criar conta</button>
+                </p>
+            </div>
+        </section>
+
+        <div id="app-shell" hidden>
+            <div id="app">
+                <nav id="sidebar">
+                    <div class="logo">
+                        <div class="brand-mark brand-mark-small">
+                            <span class="brand-ring"></span>
+                            <span class="brand-play"></span>
+                        </div>
+                        <div>
+                            <p class="eyebrow">Studio</p>
+                            <h1>CriaVideo</h1>
+                        </div>
+                    </div>
+
+                    <ul class="nav-links">
+                        <li><a href="#" data-page="projects" class="active">Projetos</a></li>
+                        <li><a href="#" data-page="publish">Publicar</a></li>
+                        <li><a href="#" data-page="schedule">Agendamento</a></li>
+                        <li><a href="#" data-page="accounts">Contas sociais</a></li>
+                    </ul>
+                </nav>
+
+                <main id="content">
+                    <header class="topbar">
+                        <div>
+                            <p class="eyebrow">Painel</p>
+                            <h2 id="topbar-title">Seus videos</h2>
+                        </div>
+                        <div class="session-card">
+                            <div>
+                                <strong id="session-name">Cliente</strong>
+                                <p id="session-meta">Sem sessao</p>
+                            </div>
+                            <button id="btn-logout" class="btn btn-secondary btn-sm" type="button">Sair</button>
+                        </div>
+                    </header>
+
+                    <section id="page-projects" class="page active">
+                        <div class="page-header">
+                            <div>
+                                <p class="eyebrow">Criacao</p>
+                                <h3>Projetos de video</h3>
+                            </div>
+                            <button id="btn-new-project" class="btn btn-primary" type="button">Novo projeto</button>
+                        </div>
+                        <div id="projects-list" class="cards-grid">
+                            <div class="loading">Carregando projetos...</div>
+                        </div>
+                    </section>
+
+                    <section id="page-publish" class="page">
+                        <div class="page-header">
+                            <div>
+                                <p class="eyebrow">Distribuicao</p>
+                                <h3>Publicar videos</h3>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <div id="publish-form-area">
+                                <div class="form-group">
+                                    <label>Video renderizado</label>
+                                    <select id="pub-render-select" class="input"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Plataformas</label>
+                                    <div class="checkbox-group">
+                                        <label><input type="checkbox" value="youtube"> YouTube</label>
+                                        <label><input type="checkbox" value="tiktok"> TikTok</label>
+                                        <label><input type="checkbox" value="instagram"> Instagram</label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Titulo</label>
+                                    <input id="pub-title" type="text" class="input" placeholder="Titulo do video">
+                                </div>
+                                <div class="form-group">
+                                    <label>Descricao</label>
+                                    <textarea id="pub-description" class="input" rows="3" placeholder="Descricao"></textarea>
+                                </div>
+                                <button id="btn-publish" class="btn btn-primary" type="button">Publicar agora</button>
+                            </div>
+                        </div>
+                        <h3 class="section-title">Historico de publicacoes</h3>
+                        <div id="publish-jobs-list" class="table-wrapper panel">
+                            <div class="loading">Carregando...</div>
+                        </div>
+                    </section>
+
+                    <section id="page-schedule" class="page">
+                        <div class="page-header">
+                            <div>
+                                <p class="eyebrow">Rotina</p>
+                                <h3>Agendamento automatico</h3>
+                            </div>
+                            <button id="btn-new-schedule" class="btn btn-primary" type="button">Novo agendamento</button>
+                        </div>
+                        <div id="schedules-list" class="cards-grid">
+                            <div class="loading">Carregando agendamentos...</div>
+                        </div>
+                    </section>
+
+                    <section id="page-accounts" class="page">
+                        <div class="page-header">
+                            <div>
+                                <p class="eyebrow">Canais</p>
+                                <h3>Contas sociais</h3>
+                            </div>
+                        </div>
+                        <div class="connect-buttons">
+                            <button class="btn btn-provider" onclick="connectPlatform('youtube')" type="button">Conectar YouTube</button>
+                            <button class="btn btn-provider" onclick="connectPlatform('tiktok')" type="button">Conectar TikTok</button>
+                            <button class="btn btn-provider" onclick="connectPlatform('instagram')" type="button">Conectar Instagram</button>
+                        </div>
+                        <div id="accounts-list" class="cards-grid" style="margin-top: 1.5rem;">
+                            <div class="loading">Carregando contas...</div>
+                        </div>
+                    </section>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-new-project" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Novo projeto de video</h3>
+                <button class="modal-close" onclick="closeModal('modal-new-project')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Biblioteca Levita</label>
+                    <select id="np-song-select" class="input">
+                        <option value="">Selecione uma musica</option>
+                    </select>
+                </div>
+                <div id="np-song-details" class="song-details" hidden></div>
+                <div class="form-group">
+                    <label>Titulo do projeto</label>
+                    <input id="np-title" type="text" class="input" placeholder="Ex: Clipe oficial">
+                </div>
+                <div id="np-manual-fields" hidden>
+                    <div class="form-group">
+                        <label>Titulo da musica</label>
+                        <input id="np-track-title" type="text" class="input" placeholder="Nome da musica">
+                    </div>
+                    <div class="form-group">
+                        <label>Artista</label>
+                        <input id="np-artist" type="text" class="input" placeholder="Nome do artista">
+                    </div>
+                    <div class="form-group">
+                        <label>URL do audio</label>
+                        <input id="np-audio" type="text" class="input" placeholder="https://...">
+                    </div>
+                    <div class="form-group">
+                        <label>Letra da musica</label>
+                        <textarea id="np-lyrics" class="input" rows="6" placeholder="Cole a letra aqui"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Duracao (segundos)</label>
+                        <input id="np-duration" type="number" class="input" value="180">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Formato</label>
+                    <select id="np-aspect" class="input">
+                        <option value="16:9">16:9 (YouTube)</option>
+                        <option value="9:16">9:16 (TikTok/Reels)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Estilo visual</label>
+                    <input id="np-style" type="text" class="input" placeholder="Ex: cinematic worship, urbano, editorial">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-new-project')" type="button">Cancelar</button>
+                <button class="btn btn-primary" onclick="createProject()" type="button">Criar projeto</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-new-schedule" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Novo agendamento</h3>
+                <button class="modal-close" onclick="closeModal('modal-new-schedule')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Plataforma</label>
+                    <select id="ns-platform" class="input">
+                        <option value="youtube">YouTube</option>
+                        <option value="tiktok">TikTok</option>
+                        <option value="instagram">Instagram</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Conta social</label>
+                    <select id="ns-account" class="input"></select>
+                </div>
+                <div class="form-group">
+                    <label>Frequencia</label>
+                    <select id="ns-frequency" class="input">
+                        <option value="daily">Diario</option>
+                        <option value="weekly">Semanal</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Horario (UTC)</label>
+                    <input id="ns-time" type="time" class="input" value="14:00">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-new-schedule')" type="button">Cancelar</button>
+                <button class="btn btn-primary" onclick="createSchedule()" type="button">Criar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-player" class="modal">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h3 id="player-title">Video</h3>
+                <button class="modal-close" onclick="closeModal('modal-player')" type="button">&times;</button>
+            </div>
+            <div class="modal-body modal-video">
+                <video id="player-video" controls></video>
+            </div>
+            <div class="modal-footer modal-footer-space">
+                <span id="player-info" class="muted"></span>
+                <a id="player-download" class="btn btn-primary" download>Baixar video</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="/video/static/app.js"></script>
+</body>
+</html>

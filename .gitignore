@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+*.egg-info/
+dist/
+build/
+.vscode/
+gen_traefik.py
+criavideo.yaml
+migrate.py

@@ -1,0 +1,19 @@
+services:
+  levita-video:
+    build: .
+    container_name: levita-video
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    volumes:
+      - /opt/levita-video/media:/opt/levita-video/media
+      - /opt/olevita/backend/stems:/opt/olevita/backend/stems:ro
+      - /opt/olevita/backend/uploads:/opt/olevita/backend/uploads:ro
+    networks:
+      - olevita_default
+
+networks:
+  olevita_default:
+    external: true
