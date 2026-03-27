@@ -33,7 +33,7 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: str = Field(min_length=5, max_length=320)
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class GoogleLoginRequest(BaseModel):
@@ -99,6 +99,11 @@ async def login(
 ):
     user = await authenticate_local_user(req.email, req.password, db)
     if not user:
+        existing = await find_user_by_email(req.email, db)
+        if existing and existing.auth_source == "levita" and not existing.password_hash:
+            raise HTTPException(status_code=401, detail="Esta conta usa login pelo Levita. Clique em 'Entrar com Levita'.")
+        if existing and existing.auth_source == "google" and not existing.password_hash:
+            raise HTTPException(status_code=401, detail="Esta conta usa login Google. Clique em 'Fazer login com o Google'.")
         raise HTTPException(status_code=401, detail="Email ou senha invalidos")
     return _session_response(user)
 

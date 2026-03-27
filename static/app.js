@@ -13,6 +13,37 @@ let providers = {
 let authMode = "login";
 let levitaSongs = [];
 
+function getApiErrorMessage(body, fallback = "Erro inesperado") {
+    if (!body) {
+        return fallback;
+    }
+
+    const detail = body.detail ?? body.message ?? body.error ?? body;
+    if (typeof detail === "string") {
+        return detail;
+    }
+
+    if (Array.isArray(detail)) {
+        const messages = detail.map((item) => {
+            if (typeof item === "string") {
+                return item;
+            }
+            if (item && typeof item === "object") {
+                const location = Array.isArray(item.loc) ? `${item.loc.join(".")}: ` : "";
+                return `${location}${item.msg || "Erro de validacao"}`;
+            }
+            return String(item);
+        });
+        return messages.join(" | ");
+    }
+
+    if (detail && typeof detail === "object") {
+        return detail.message || JSON.stringify(detail);
+    }
+
+    return fallback;
+}
+
 function getHeaders(extra = {}) {
     return {
         "Content-Type": "application/json",
@@ -33,7 +64,7 @@ async function api(path, options = {}) {
     }
     if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.detail || response.statusText || "Erro inesperado");
+        throw new Error(getApiErrorMessage(data, response.statusText || "Erro inesperado"));
     }
     if (response.status === 204) {
         return null;
@@ -165,7 +196,7 @@ async function handleGoogleCredential(response) {
         }).then(async (resp) => {
             if (!resp.ok) {
                 const err = await resp.json().catch(() => ({}));
-                throw new Error(err.detail || "Falha ao entrar com Google");
+                throw new Error(getApiErrorMessage(err, "Falha ao entrar com Google"));
             }
             return resp.json();
         });
@@ -201,7 +232,7 @@ async function exchangeLevitaToken(rawToken) {
     });
     if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.detail || "Nao foi possivel validar o login do Levita");
+        throw new Error(getApiErrorMessage(error, "Nao foi possivel validar o login do Levita"));
     }
     const data = await response.json();
     setSession(data.access_token, data.user, rawToken);
@@ -234,7 +265,7 @@ function bindAuthEvents() {
             }).then(async (resp) => {
                 const body = await resp.json().catch(() => ({}));
                 if (!resp.ok) {
-                    throw new Error(body.detail || "Falha ao entrar");
+                    throw new Error(getApiErrorMessage(body, "Falha ao entrar"));
                 }
                 return body;
             });
@@ -261,7 +292,7 @@ function bindAuthEvents() {
             }).then(async (resp) => {
                 const body = await resp.json().catch(() => ({}));
                 if (!resp.ok) {
-                    throw new Error(body.detail || "Falha ao criar conta");
+                    throw new Error(getApiErrorMessage(body, "Falha ao criar conta"));
                 }
                 return body;
             });
