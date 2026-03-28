@@ -73,11 +73,12 @@ async def connect_platform(
     redirect_uri = f"{settings.site_url}/api/social/callback/{platform}"
 
     if platform == "youtube":
+        if not settings.google_oauth_client_id:
+            raise HTTPException(status_code=500, detail="Google OAuth client_id não configurado no servidor")
         config = YOUTUBE_OAUTH_CONFIG
-        # User needs to set up Google OAuth client_id and client_secret via .env
         auth_url = (
             f"{config['auth_uri']}?"
-            f"client_id={{GOOGLE_CLIENT_ID}}"
+            f"client_id={settings.google_oauth_client_id}"
             f"&redirect_uri={redirect_uri}"
             f"&response_type=code"
             f"&scope={config['scope']}"
@@ -86,20 +87,24 @@ async def connect_platform(
             f"&state={user['id']}"
         )
     elif platform == "tiktok":
+        if not settings.tiktok_client_key:
+            raise HTTPException(status_code=500, detail="TikTok client_key não configurado no servidor")
         config = TIKTOK_OAUTH_CONFIG
         auth_url = (
             f"{config['auth_uri']}?"
-            f"client_key={{TIKTOK_CLIENT_KEY}}"
+            f"client_key={settings.tiktok_client_key}"
             f"&redirect_uri={redirect_uri}"
             f"&response_type=code"
             f"&scope={config['scope']}"
             f"&state={user['id']}"
         )
     elif platform == "instagram":
+        if not settings.facebook_app_id:
+            raise HTTPException(status_code=500, detail="Facebook app_id não configurado no servidor")
         config = INSTAGRAM_OAUTH_CONFIG
         auth_url = (
             f"{config['auth_uri']}?"
-            f"client_id={{FACEBOOK_APP_ID}}"
+            f"client_id={settings.facebook_app_id}"
             f"&redirect_uri={redirect_uri}"
             f"&response_type=code"
             f"&scope={config['scope']}"
@@ -131,23 +136,23 @@ async def oauth_callback(
         if platform == "youtube":
             resp = await client.post(YOUTUBE_OAUTH_CONFIG["token_uri"], data={
                 "code": code,
-                "client_id": "",  # from env
-                "client_secret": "",  # from env
+                "client_id": settings.google_oauth_client_id,
+                "client_secret": settings.google_oauth_client_secret,
                 "redirect_uri": redirect_uri,
                 "grant_type": "authorization_code",
             })
         elif platform == "tiktok":
             resp = await client.post(TIKTOK_OAUTH_CONFIG["token_uri"], json={
-                "client_key": "",  # from env
-                "client_secret": "",  # from env
+                "client_key": settings.tiktok_client_key,
+                "client_secret": settings.tiktok_client_secret,
                 "code": code,
                 "grant_type": "authorization_code",
                 "redirect_uri": redirect_uri,
             })
         elif platform == "instagram":
             resp = await client.get(INSTAGRAM_OAUTH_CONFIG["token_uri"], params={
-                "client_id": "",  # from env
-                "client_secret": "",  # from env
+                "client_id": settings.facebook_app_id,
+                "client_secret": settings.facebook_app_secret,
                 "redirect_uri": redirect_uri,
                 "code": code,
             })

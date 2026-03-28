@@ -9,6 +9,11 @@ class Settings(BaseSettings):
     auth_token_expiration_hours: int = 24 * 30
     google_ai_api_key: str = ""
     google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    tiktok_client_key: str = ""
+    tiktok_client_secret: str = ""
+    facebook_app_id: str = ""
+    facebook_app_secret: str = ""
     xai_api_key: str = ""
     openai_api_key: str = ""
     host: str = "0.0.0.0"
