@@ -257,60 +257,283 @@
     </div>
 
     <div id="modal-new-project" class="modal">
-        <div class="modal-content">
+        <div class="modal-content modal-content-wide">
             <div class="modal-header">
-                <h3>Novo projeto de video</h3>
+                <h3 id="create-modal-title">Novo projeto de video</h3>
                 <button class="modal-close" onclick="closeModal('modal-new-project')" type="button">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label>Biblioteca Levita</label>
-                    <select id="np-song-select" class="input">
-                        <option value="">Selecione uma musica</option>
-                    </select>
+
+                <!-- Tab selector -->
+                <div class="create-tabs-row">
+                    <button class="create-tab active" data-create-mode="wizard" type="button">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        Assistente
+                    </button>
+                    <button class="create-tab" data-create-mode="script" type="button">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        Meu Roteiro
+                    </button>
+                    <button class="create-tab" data-create-mode="library" type="button">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                        Biblioteca
+                    </button>
                 </div>
-                <div id="np-song-details" class="song-details" hidden></div>
-                <div class="form-group">
-                    <label>Titulo do projeto</label>
-                    <input id="np-title" type="text" class="input" placeholder="Ex: Clipe oficial">
+
+                <!-- ═══ PANEL: Assistente (Wizard) ═══ -->
+                <div id="create-panel-wizard" class="create-panel">
+                    <!-- Step 1: Topic -->
+                    <div class="wizard-step" data-step="1">
+                        <h3 class="wizard-question">Sobre o que e o video?</h3>
+                        <p class="wizard-hint">Descreva o tema, assunto ou objetivo do video</p>
+                        <div class="wizard-input-wrap">
+                            <input type="text" class="wizard-input" id="wizard-topic"
+                                   placeholder="Ex: 5 dicas de produtividade, historia do cafe, receita de bolo...">
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Tone -->
+                    <div class="wizard-step" data-step="2" hidden>
+                        <h3 class="wizard-question">Qual o tom da narracao?</h3>
+                        <p class="wizard-hint">Escolha como o conteudo sera apresentado</p>
+                        <div class="wizard-grid">
+                            <button class="wizard-option" data-value="informativo" type="button">Informativo</button>
+                            <button class="wizard-option" data-value="inspirador" type="button">Inspirador</button>
+                            <button class="wizard-option" data-value="descontraido" type="button">Descontraido</button>
+                            <button class="wizard-option" data-value="educativo" type="button">Educativo</button>
+                            <button class="wizard-option" data-value="dramatico" type="button">Dramatico</button>
+                            <button class="wizard-option" data-value="motivacional" type="button">Motivacional</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Voice -->
+                    <div class="wizard-step" data-step="3" hidden>
+                        <h3 class="wizard-question">Escolha a voz da narracao</h3>
+                        <p class="wizard-hint">Selecione o tipo de voz para o audio</p>
+                        <div class="wizard-grid">
+                            <button class="wizard-option" data-value="onyx" type="button">Masculina Grave</button>
+                            <button class="wizard-option" data-value="echo" type="button">Masculina Suave</button>
+                            <button class="wizard-option" data-value="nova" type="button">Feminina Clara</button>
+                            <button class="wizard-option" data-value="shimmer" type="button">Feminina Suave</button>
+                            <button class="wizard-option" data-value="alloy" type="button">Neutra</button>
+                            <button class="wizard-option" data-value="fable" type="button">Narrativa</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Duration + Format + Style + Generate -->
+                    <div class="wizard-step" data-step="4" hidden>
+                        <h3 class="wizard-question">Detalhes finais</h3>
+                        <p class="wizard-hint">Ajuste duracao, formato e estilo visual</p>
+                        <div class="wizard-details-grid">
+                            <div class="form-group">
+                                <label>Duracao (segundos)</label>
+                                <div class="duration-options">
+                                    <button class="duration-option" data-value="30" type="button">~30s</button>
+                                    <button class="duration-option selected" data-value="60" type="button">~1min</button>
+                                    <button class="duration-option" data-value="120" type="button">~2min</button>
+                                    <button class="duration-option" data-value="180" type="button">~3min</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Formato</label>
+                                <select id="wizard-aspect" class="input">
+                                    <option value="16:9">16:9 (YouTube)</option>
+                                    <option value="9:16">9:16 (TikTok/Reels)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Estilo visual</label>
+                                <input id="wizard-style" type="text" class="input" placeholder="Ex: cinematic, minimalista, colorido">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Wizard Navigation -->
+                    <div class="wizard-nav">
+                        <button class="btn btn-secondary btn-sm wizard-back-btn" id="wizard-back" type="button" hidden>Voltar</button>
+                        <div class="wizard-dots">
+                            <span class="wizard-dot active"></span>
+                            <span class="wizard-dot"></span>
+                            <span class="wizard-dot"></span>
+                            <span class="wizard-dot"></span>
+                        </div>
+                        <button class="btn btn-primary btn-sm wizard-next-btn" id="wizard-next" type="button">Proximo &rarr;</button>
+                    </div>
+                    <button class="btn btn-primary btn-block btn-create-video" id="wizard-create-btn" type="button" hidden>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        Criar Video com IA
+                    </button>
                 </div>
-                <div id="np-manual-fields" hidden>
+
+                <!-- ═══ PANEL: Meu Roteiro ═══ -->
+                <div id="create-panel-script" class="create-panel" hidden>
+                    <!-- Step 1: Write script -->
+                    <div class="wizard-step" data-step="1">
+                        <h3 class="wizard-question">Escreva o roteiro do video</h3>
+                        <p class="wizard-hint">Cole ou escreva o texto que sera narrado no video</p>
+                        <textarea id="script-text" class="wizard-textarea" rows="10" maxlength="5000"
+                                  placeholder="Cole ou escreva o roteiro completo da narracao aqui..."></textarea>
+                        <div class="script-actions">
+                            <span class="char-count"><span id="script-char-count">0</span> / 5.000</span>
+                            <button class="btn btn-secondary btn-sm" id="btn-ai-suggest-script" type="button">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                                Sugestao de IA
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Voice -->
+                    <div class="wizard-step" data-step="2" hidden>
+                        <h3 class="wizard-question">Escolha a voz da narracao</h3>
+                        <p class="wizard-hint">Selecione o tipo de voz para o audio</p>
+                        <div class="wizard-grid">
+                            <button class="wizard-option" data-value="onyx" type="button">Masculina Grave</button>
+                            <button class="wizard-option" data-value="echo" type="button">Masculina Suave</button>
+                            <button class="wizard-option" data-value="nova" type="button">Feminina Clara</button>
+                            <button class="wizard-option" data-value="shimmer" type="button">Feminina Suave</button>
+                            <button class="wizard-option" data-value="alloy" type="button">Neutra</button>
+                            <button class="wizard-option" data-value="fable" type="button">Narrativa</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Format + Style -->
+                    <div class="wizard-step" data-step="3" hidden>
+                        <h3 class="wizard-question">Detalhes finais</h3>
+                        <p class="wizard-hint">Ajuste formato e estilo visual</p>
+                        <div class="wizard-details-grid">
+                            <div class="form-group">
+                                <label>Titulo do projeto</label>
+                                <input id="script-title" type="text" class="input" placeholder="Ex: 5 Dicas de Produtividade">
+                            </div>
+                            <div class="form-group">
+                                <label>Formato</label>
+                                <select id="script-aspect" class="input">
+                                    <option value="16:9">16:9 (YouTube)</option>
+                                    <option value="9:16">9:16 (TikTok/Reels)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Estilo visual</label>
+                                <input id="script-style" type="text" class="input" placeholder="Ex: cinematic, minimalista, colorido">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Script Wizard Navigation -->
+                    <div class="wizard-nav">
+                        <button class="btn btn-secondary btn-sm wizard-back-btn" id="script-back" type="button" hidden>Voltar</button>
+                        <div class="wizard-dots">
+                            <span class="wizard-dot active"></span>
+                            <span class="wizard-dot"></span>
+                            <span class="wizard-dot"></span>
+                        </div>
+                        <button class="btn btn-primary btn-sm wizard-next-btn" id="script-next" type="button">Proximo &rarr;</button>
+                    </div>
+                    <button class="btn btn-primary btn-block btn-create-video" id="script-create-btn" type="button" hidden>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        Criar Video com IA
+                    </button>
+                </div>
+
+                <!-- ═══ PANEL: Biblioteca (existing flow) ═══ -->
+                <div id="create-panel-library" class="create-panel" hidden>
                     <div class="form-group">
-                        <label>Titulo da musica</label>
-                        <input id="np-track-title" type="text" class="input" placeholder="Nome da musica">
+                        <label>Biblioteca Levita</label>
+                        <select id="np-song-select" class="input">
+                            <option value="">Selecione uma musica</option>
+                        </select>
+                    </div>
+                    <div id="np-song-details" class="song-details" hidden></div>
+                    <div class="form-group">
+                        <label>Titulo do projeto</label>
+                        <input id="np-title" type="text" class="input" placeholder="Ex: Clipe oficial">
+                    </div>
+                    <div id="np-manual-fields" hidden>
+                        <div class="form-group">
+                            <label>Titulo da musica</label>
+                            <input id="np-track-title" type="text" class="input" placeholder="Nome da musica">
+                        </div>
+                        <div class="form-group">
+                            <label>Artista</label>
+                            <input id="np-artist" type="text" class="input" placeholder="Nome do artista">
+                        </div>
+                        <div class="form-group">
+                            <label>URL do audio</label>
+                            <input id="np-audio" type="text" class="input" placeholder="https://...">
+                        </div>
+                        <div class="form-group">
+                            <label>Letra da musica</label>
+                            <textarea id="np-lyrics" class="input" rows="6" placeholder="Cole a letra aqui"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Duracao (segundos)</label>
+                            <input id="np-duration" type="number" class="input" value="180">
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label>Artista</label>
-                        <input id="np-artist" type="text" class="input" placeholder="Nome do artista">
+                        <label>Formato</label>
+                        <select id="np-aspect" class="input">
+                            <option value="16:9">16:9 (YouTube)</option>
+                            <option value="9:16">9:16 (TikTok/Reels)</option>
+                        </select>
                     </div>
                     <div class="form-group">
-                        <label>URL do audio</label>
-                        <input id="np-audio" type="text" class="input" placeholder="https://...">
+                        <label>Estilo visual</label>
+                        <input id="np-style" type="text" class="input" placeholder="Ex: cinematic worship, urbano, editorial">
+                    </div>
+                    <div class="wizard-nav" style="margin-top: 1rem;">
+                        <div></div>
+                        <div></div>
+                        <button class="btn btn-primary" onclick="createProjectFromLibrary()" type="button">Criar projeto</button>
+                    </div>
+                </div>
+
+                <!-- ═══ AI Suggestion Modal (inline) ═══ -->
+                <div id="ai-suggest-panel" class="ai-suggest-panel" hidden>
+                    <h3 class="wizard-question">Gerar roteiro com IA</h3>
+                    <p class="wizard-hint">Descreva o tema e a IA criara um roteiro completo</p>
+                    <div class="form-group">
+                        <label>Tema do video</label>
+                        <input id="ai-suggest-topic" type="text" class="input" placeholder="Ex: beneficios da meditacao, como fazer pao caseiro...">
                     </div>
                     <div class="form-group">
-                        <label>Letra da musica</label>
-                        <textarea id="np-lyrics" class="input" rows="6" placeholder="Cole a letra aqui"></textarea>
+                        <label>Tom da narracao</label>
+                        <select id="ai-suggest-tone" class="input">
+                            <option value="informativo">Informativo</option>
+                            <option value="inspirador">Inspirador</option>
+                            <option value="descontraido">Descontraido</option>
+                            <option value="educativo">Educativo</option>
+                            <option value="dramatico">Dramatico</option>
+                            <option value="motivacional">Motivacional</option>
+                        </select>
                     </div>
                     <div class="form-group">
-                        <label>Duracao (segundos)</label>
-                        <input id="np-duration" type="number" class="input" value="180">
+                        <label>Duracao aproximada</label>
+                        <select id="ai-suggest-duration" class="input">
+                            <option value="30">~30 segundos</option>
+                            <option value="60" selected>~1 minuto</option>
+                            <option value="120">~2 minutos</option>
+                            <option value="180">~3 minutos</option>
+                        </select>
+                    </div>
+                    <div class="wizard-nav">
+                        <button class="btn btn-secondary btn-sm" id="ai-suggest-cancel" type="button">Voltar</button>
+                        <div></div>
+                        <button class="btn btn-primary btn-sm" id="ai-suggest-generate" type="button">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                            Gerar Roteiro
+                        </button>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>Formato</label>
-                    <select id="np-aspect" class="input">
-                        <option value="16:9">16:9 (YouTube)</option>
-                        <option value="9:16">9:16 (TikTok/Reels)</option>
-                    </select>
+
+                <!-- ═══ Progress overlay ═══ -->
+                <div id="create-progress" class="create-progress" hidden>
+                    <div class="create-spinner">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-dasharray="60" stroke-dashoffset="20"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/></circle></svg>
+                    </div>
+                    <p id="create-progress-text">Gerando roteiro com IA...</p>
                 </div>
-                <div class="form-group">
-                    <label>Estilo visual</label>
-                    <input id="np-style" type="text" class="input" placeholder="Ex: cinematic worship, urbano, editorial">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('modal-new-project')" type="button">Cancelar</button>
-                <button class="btn btn-primary" onclick="createProject()" type="button">Criar projeto</button>
+
             </div>
         </div>
     </div>

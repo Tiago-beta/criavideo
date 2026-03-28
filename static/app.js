@@ -384,8 +384,8 @@ function bindNavigation() {
 }
 
 function bindDashboardEvents() {
-    document.getElementById("btn-new-project").addEventListener("click", async () => {
-        await populateSongSelector();
+    document.getElementById("btn-new-project").addEventListener("click", () => {
+        resetCreateWizard();
         openModal("modal-new-project");
     });
     document.getElementById("btn-publish").addEventListener("click", async () => {
@@ -449,6 +449,9 @@ function bindDashboardEvents() {
         manualFields.hidden = true;
         details.hidden = true;
     });
+
+    // ── Creation Wizard Event Bindings ──
+    initCreateWizard();
 }
 
 async function bootstrap() {
@@ -595,7 +598,299 @@ async function loadProjects() {
     }
 }
 
-async function createProject() {
+// ═══ Creation Wizard State ═══
+let createMode = "wizard"; // "wizard" | "script" | "library"
+let wizardStep = 1;
+let wizardData = { topic: "", tone: "", voice: "", duration: 60, aspect: "16:9", style: "" };
+let scriptStep = 1;
+let scriptData = { text: "", voice: "", title: "", aspect: "16:9", style: "" };
+
+function initCreateWizard() {
+    // Tab switching
+    document.querySelectorAll(".create-tab").forEach((tab) => {
+        tab.addEventListener("click", () => switchCreateMode(tab.dataset.createMode));
+    });
+
+    // Wizard nav
+    document.getElementById("wizard-next").addEventListener("click", wizardNext);
+    document.getElementById("wizard-back").addEventListener("click", wizardBack);
+    document.getElementById("wizard-create-btn").addEventListener("click", handleWizardCreate);
+
+    // Script nav
+    document.getElementById("script-next").addEventListener("click", scriptNext);
+    document.getElementById("script-back").addEventListener("click", scriptBack);
+    document.getElementById("script-create-btn").addEventListener("click", handleScriptCreate);
+
+    // Script char count
+    document.getElementById("script-text").addEventListener("input", () => {
+        const len = document.getElementById("script-text").value.length;
+        document.getElementById("script-char-count").textContent = len.toLocaleString("pt-BR");
+    });
+
+    // AI suggestion buttons
+    document.getElementById("btn-ai-suggest-script").addEventListener("click", showAiSuggestPanel);
+    document.getElementById("ai-suggest-cancel").addEventListener("click", hideAiSuggestPanel);
+    document.getElementById("ai-suggest-generate").addEventListener("click", generateAiScript);
+
+    // Wizard option clicks (event delegation)
+    document.getElementById("modal-new-project").addEventListener("click", (e) => {
+        const opt = e.target.closest(".wizard-option");
+        if (opt) {
+            const grid = opt.closest(".wizard-grid");
+            grid.querySelectorAll(".wizard-option").forEach((o) => o.classList.remove("selected"));
+            opt.classList.add("selected");
+        }
+        const dur = e.target.closest(".duration-option");
+        if (dur) {
+            dur.closest(".duration-options").querySelectorAll(".duration-option").forEach((d) => d.classList.remove("selected"));
+            dur.classList.add("selected");
+        }
+    });
+}
+
+function switchCreateMode(mode) {
+    createMode = mode;
+    document.querySelectorAll(".create-tab").forEach((t) => {
+        t.classList.toggle("active", t.dataset.createMode === mode);
+    });
+    document.querySelectorAll(".create-panel").forEach((p) => (p.hidden = true));
+    const panel = document.getElementById(`create-panel-${mode}`);
+    if (panel) panel.hidden = false;
+    document.getElementById("ai-suggest-panel").hidden = true;
+    document.getElementById("create-progress").hidden = true;
+
+    if (mode === "library") {
+        populateSongSelector();
+    }
+}
+
+function resetCreateWizard() {
+    createMode = "wizard";
+    wizardStep = 1;
+    wizardData = { topic: "", tone: "", voice: "", duration: 60, aspect: "16:9", style: "" };
+    scriptStep = 1;
+    scriptData = { text: "", voice: "", title: "", aspect: "16:9", style: "" };
+
+    // Reset tabs
+    document.querySelectorAll(".create-tab").forEach((t) => {
+        t.classList.toggle("active", t.dataset.createMode === "wizard");
+    });
+
+    // Reset panels
+    document.querySelectorAll(".create-panel").forEach((p) => (p.hidden = true));
+    document.getElementById("create-panel-wizard").hidden = false;
+    document.getElementById("ai-suggest-panel").hidden = true;
+    document.getElementById("create-progress").hidden = true;
+
+    // Reset wizard steps
+    updateWizardUI("create-panel-wizard", wizardStep, 4, "wizard");
+    updateWizardUI("create-panel-script", scriptStep, 3, "script");
+
+    // Reset inputs
+    document.getElementById("wizard-topic").value = "";
+    document.getElementById("script-text").value = "";
+    document.getElementById("script-char-count").textContent = "0";
+    document.getElementById("script-title").value = "";
+
+    // Reset selections
+    document.querySelectorAll(".wizard-option.selected").forEach((o) => o.classList.remove("selected"));
+    document.querySelectorAll(".duration-option").forEach((d) => {
+        d.classList.toggle("selected", d.dataset.value === "60");
+    });
+}
+
+function updateWizardUI(panelId, step, totalSteps, prefix) {
+    const panel = document.getElementById(panelId);
+    panel.querySelectorAll(".wizard-step").forEach((s) => {
+        s.hidden = parseInt(s.dataset.step) !== step;
+    });
+    panel.querySelectorAll(".wizard-dot").forEach((dot, i) => {
+        dot.classList.toggle("active", i < step);
+    });
+    const backBtn = document.getElementById(`${prefix}-back`);
+    const nextBtn = document.getElementById(`${prefix}-next`);
+    const createBtn = document.getElementById(`${prefix}-create-btn`);
+    if (backBtn) backBtn.hidden = step <= 1;
+    if (nextBtn) nextBtn.hidden = step >= totalSteps;
+    if (createBtn) createBtn.hidden = step < totalSteps;
+}
+
+// ── Wizard (Assistente) Navigation ──
+
+function wizardNext() {
+    if (wizardStep === 1) {
+        const topic = document.getElementById("wizard-topic").value.trim();
+        if (!topic) { alert("Digite o tema do video."); return; }
+        wizardData.topic = topic;
+    }
+    if (wizardStep === 2) {
+        const sel = document.querySelector("#create-panel-wizard .wizard-step[data-step='2'] .wizard-option.selected");
+        if (!sel) { alert("Escolha o tom da narracao."); return; }
+        wizardData.tone = sel.dataset.value;
+    }
+    if (wizardStep === 3) {
+        const sel = document.querySelector("#create-panel-wizard .wizard-step[data-step='3'] .wizard-option.selected");
+        if (!sel) { alert("Escolha a voz."); return; }
+        wizardData.voice = sel.dataset.value;
+    }
+    wizardStep = Math.min(wizardStep + 1, 4);
+    updateWizardUI("create-panel-wizard", wizardStep, 4, "wizard");
+}
+
+function wizardBack() {
+    wizardStep = Math.max(wizardStep - 1, 1);
+    updateWizardUI("create-panel-wizard", wizardStep, 4, "wizard");
+}
+
+async function handleWizardCreate() {
+    // Collect step 4 data
+    const durBtn = document.querySelector("#create-panel-wizard .duration-option.selected");
+    wizardData.duration = durBtn ? parseInt(durBtn.dataset.value) : 60;
+    wizardData.aspect = document.getElementById("wizard-aspect").value;
+    wizardData.style = document.getElementById("wizard-style").value;
+
+    showCreateProgress("Gerando roteiro com IA...");
+
+    try {
+        // Step 1: Generate script
+        const scriptResult = await api("/video/generate-script", {
+            method: "POST",
+            body: JSON.stringify({
+                topic: wizardData.topic,
+                tone: wizardData.tone,
+                duration_seconds: wizardData.duration,
+            }),
+        });
+
+        showCreateProgress("Gerando narracao com voz IA...");
+
+        // Step 2: Generate audio + create project
+        const result = await api("/video/generate-audio", {
+            method: "POST",
+            body: JSON.stringify({
+                script: scriptResult.script,
+                voice: wizardData.voice,
+                title: wizardData.topic,
+                aspect_ratio: wizardData.aspect,
+                style_prompt: wizardData.style,
+            }),
+        });
+
+        closeModal("modal-new-project");
+        pollProject(result.id);
+        loadProjects();
+    } catch (error) {
+        hideCreateProgress();
+        alert(`Erro: ${error.message}`);
+    }
+}
+
+// ── Script (Meu Roteiro) Navigation ──
+
+function scriptNext() {
+    if (scriptStep === 1) {
+        const text = document.getElementById("script-text").value.trim();
+        if (!text || text.length < 20) { alert("Escreva um roteiro com pelo menos 20 caracteres."); return; }
+        scriptData.text = text;
+    }
+    if (scriptStep === 2) {
+        const sel = document.querySelector("#create-panel-script .wizard-step[data-step='2'] .wizard-option.selected");
+        if (!sel) { alert("Escolha a voz."); return; }
+        scriptData.voice = sel.dataset.value;
+    }
+    scriptStep = Math.min(scriptStep + 1, 3);
+    updateWizardUI("create-panel-script", scriptStep, 3, "script");
+}
+
+function scriptBack() {
+    scriptStep = Math.max(scriptStep - 1, 1);
+    updateWizardUI("create-panel-script", scriptStep, 3, "script");
+}
+
+async function handleScriptCreate() {
+    scriptData.title = document.getElementById("script-title").value.trim();
+    scriptData.aspect = document.getElementById("script-aspect").value;
+    scriptData.style = document.getElementById("script-style").value;
+
+    showCreateProgress("Gerando narracao com voz IA...");
+
+    try {
+        const result = await api("/video/generate-audio", {
+            method: "POST",
+            body: JSON.stringify({
+                script: scriptData.text,
+                voice: scriptData.voice,
+                title: scriptData.title || "Video com roteiro",
+                aspect_ratio: scriptData.aspect,
+                style_prompt: scriptData.style,
+            }),
+        });
+
+        closeModal("modal-new-project");
+        pollProject(result.id);
+        loadProjects();
+    } catch (error) {
+        hideCreateProgress();
+        alert(`Erro: ${error.message}`);
+    }
+}
+
+// ── AI Script Suggestion ──
+
+function showAiSuggestPanel() {
+    document.getElementById("create-panel-script").hidden = true;
+    document.getElementById("ai-suggest-panel").hidden = false;
+}
+
+function hideAiSuggestPanel() {
+    document.getElementById("ai-suggest-panel").hidden = true;
+    document.getElementById("create-panel-script").hidden = false;
+}
+
+async function generateAiScript() {
+    const topic = document.getElementById("ai-suggest-topic").value.trim();
+    if (!topic) { alert("Digite o tema do video."); return; }
+
+    showCreateProgress("Gerando roteiro com IA...");
+
+    try {
+        const result = await api("/video/generate-script", {
+            method: "POST",
+            body: JSON.stringify({
+                topic,
+                tone: document.getElementById("ai-suggest-tone").value,
+                duration_seconds: parseInt(document.getElementById("ai-suggest-duration").value),
+            }),
+        });
+
+        hideCreateProgress();
+        document.getElementById("script-text").value = result.script;
+        document.getElementById("script-char-count").textContent = result.script.length.toLocaleString("pt-BR");
+        hideAiSuggestPanel();
+    } catch (error) {
+        hideCreateProgress();
+        alert(`Erro ao gerar roteiro: ${error.message}`);
+    }
+}
+
+// ── Progress helpers ──
+
+function showCreateProgress(message) {
+    document.querySelectorAll(".create-panel").forEach((p) => (p.hidden = true));
+    document.getElementById("ai-suggest-panel").hidden = true;
+    document.getElementById("create-progress").hidden = false;
+    document.getElementById("create-progress-text").textContent = message;
+}
+
+function hideCreateProgress() {
+    document.getElementById("create-progress").hidden = true;
+    const panel = document.getElementById(`create-panel-${createMode}`);
+    if (panel) panel.hidden = false;
+}
+
+// ── Library (existing flow, renamed) ──
+
+async function createProjectFromLibrary() {
     const songValue = document.getElementById("np-song-select").value;
     let trackTitle = "";
     let trackArtist = "";

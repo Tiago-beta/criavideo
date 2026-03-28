@@ -317,3 +317,97 @@ JSON apenas, sem markdown."""
         "tags": tags,
         "status": "generating_scenes",
     }
+
+
+# ── Script & Audio Generation ──────────────────────────────────
+
+
+class GenerateScriptRequest(BaseModel):
+    topic: str
+    tone: str = "informativo"
+    duration_seconds: int = 60
+
+
+class GenerateTTSRequest(BaseModel):
+    script: str
+    voice: str = "onyx"
+    title: str = ""
+    aspect_ratio: str = "16:9"
+    style_prompt: str = ""
+
+
+@router.post("/generate-script")
+async def generate_script_endpoint(
+    req: GenerateScriptRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Generate a video narration script using AI."""
+    from app.services.script_audio import generate_script
+    result = await generate_script(
+        topic=req.topic,
+        tone=req.tone,
+        duration_seconds=req.duration_seconds,
+    )
+    return result
+
+
+@router.post("/generate-audio")
+async def generate_audio_endpoint(
+    req: GenerateTTSRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate TTS audio from script, create project, and start video pipeline."""
+    from app.services.script_audio import generate_tts_audio
+
+    # Create project first to get an ID for the audio path
+    project = VideoProject(
+        user_id=user["id"],
+        track_id=0,
+        title=req.title or "Video com IA",
+        description="",
+        tags=[],
+        style_prompt=req.style_prompt or "cinematic, vibrant colors, dynamic lighting",
+        aspect_ratio=req.aspect_ratio,
+        track_title=req.title or "Narração IA",
+        track_artist="CriaVideo AI",
+        track_duration=0,
+        lyrics_text=req.script,
+        lyrics_words=[],
+        audio_path="",
+    )
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+
+    try:
+        audio_path = await generate_tts_audio(
+            text=req.script,
+            voice=req.voice,
+            project_id=project.id,
+        )
+        project.audio_path = audio_path
+
+        # Estimate duration from word count (~2.5 words/sec for TTS)
+        word_count = len(req.script.split())
+        project.track_duration = round(word_count / 2.5)
+
+        project.status = VideoStatus.GENERATING_SCENES
+        project.progress = 0
+        await db.commit()
+
+        from app.tasks.video_tasks import run_video_pipeline
+        background_tasks.add_task(run_video_pipeline, project.id)
+
+        return {
+            "id": project.id,
+            "title": project.title,
+            "status": "generating_scenes",
+            "estimated_duration": project.track_duration,
+        }
+    except Exception as e:
+        project.status = VideoStatus.FAILED
+        project.error_message = str(e)
+        await db.commit()
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar audio: {e}")
