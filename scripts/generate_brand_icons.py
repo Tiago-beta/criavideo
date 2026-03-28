@@ -1,116 +1,143 @@
+"""
+Generate CriaVideo brand icons — gold ring + play symbol on dark background.
+Renders at 4x supersampling then downscales for clean anti-aliasing.
+"""
+import math
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
-
 ROOT = Path(__file__).resolve().parent.parent
 ICONS_DIR = ROOT / "static" / "icons"
+EXPORT_DIR = ROOT.parent / "CriaVideo-icones"
+
+SCALE = 4  # supersampling factor
 
 
-def blend_hex(start: str, end: str, ratio: float) -> tuple[int, int, int, int]:
-    start = start.lstrip("#")
-    end = end.lstrip("#")
-    start_rgb = tuple(int(start[index:index + 2], 16) for index in range(0, 6, 2))
-    end_rgb = tuple(int(end[index:index + 2], 16) for index in range(0, 6, 2))
-    mixed = tuple(int(start_rgb[i] + (end_rgb[i] - start_rgb[i]) * ratio) for i in range(3))
-    return mixed + (255,)
+def hex_to_rgba(h: str, alpha: int = 255) -> tuple[int, int, int, int]:
+    h = h.lstrip("#")
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), alpha)
 
 
-def make_icon(size: int) -> Image.Image:
-    background = "#081A2F"
-    glow = "#17395F"
-    gold_start = "#FFD45E"
-    gold_end = "#F6A52F"
-    highlight = "#FFE189"
+def make_icon(target_size: int) -> Image.Image:
+    """Render icon at SCALE× then downscale for crisp result."""
+    s = target_size * SCALE
+    cx, cy = s / 2, s / 2
 
-    image = Image.new("RGBA", (size, size), background)
+    bg_color = hex_to_rgba("#081A2F")
+    ring_color = hex_to_rgba("#F6A52F")
+    ring_highlight = hex_to_rgba("#FFCD57")
+    play_color = hex_to_rgba("#FFBF40")
+    dot_color = hex_to_rgba("#FFE08C", 220)
+    glow_color = hex_to_rgba("#1A3D64")
 
-    glow_layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    glow_draw = ImageDraw.Draw(glow_layer)
-    glow_draw.ellipse(
-        (
-            int(size * 0.07),
-            int(size * 0.02),
-            int(size * 0.92),
-            int(size * 0.82),
-        ),
-        fill=glow,
+    img = Image.new("RGBA", (s, s), bg_color)
+
+    # --- Centered radial glow ---
+    glow = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    glow_r = s * 0.38
+    gd.ellipse(
+        (cx - glow_r, cy - glow_r, cx + glow_r, cy + glow_r),
+        fill=glow_color,
     )
-    glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=max(6, size // 18)))
-    image.alpha_composite(glow_layer)
+    glow = glow.filter(ImageFilter.GaussianBlur(radius=s * 0.18))
+    img.alpha_composite(glow)
 
-    ring_layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    ring_draw = ImageDraw.Draw(ring_layer)
-    ring_box = (
-        int(size * 0.25),
-        int(size * 0.25),
-        int(size * 0.75),
-        int(size * 0.75),
+    # --- Gold ring (outer circle - inner circle) ---
+    ring_layer = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    rd = ImageDraw.Draw(ring_layer)
+    ring_outer_r = s * 0.36
+    ring_width = s * 0.055
+    ring_inner_r = ring_outer_r - ring_width
+
+    # Outer edge (highlight)
+    rd.ellipse(
+        (cx - ring_outer_r, cy - ring_outer_r, cx + ring_outer_r, cy + ring_outer_r),
+        fill=ring_highlight,
     )
-    ring_width = max(8, size // 18)
-    ring_steps = max(24, size // 10)
-    for step in range(ring_steps):
-        ratio = step / max(1, ring_steps - 1)
-        color = blend_hex(gold_start, gold_end, ratio)
-        inset = int(step * (ring_width / ring_steps))
-        ring_draw.ellipse(
-            (
-                ring_box[0] + inset,
-                ring_box[1] + inset,
-                ring_box[2] - inset,
-                ring_box[3] - inset,
-            ),
-            outline=color,
-            width=max(1, ring_width // 3),
-        )
-    ring_layer = ring_layer.filter(ImageFilter.GaussianBlur(radius=max(1, size // 256)))
-    image.alpha_composite(ring_layer)
+    # Inner gold
+    rd.ellipse(
+        (cx - ring_outer_r + ring_width * 0.3,
+         cy - ring_outer_r + ring_width * 0.3,
+         cx + ring_outer_r - ring_width * 0.3,
+         cy + ring_outer_r - ring_width * 0.3),
+        fill=ring_color,
+    )
+    # Punch out center
+    rd.ellipse(
+        (cx - ring_inner_r, cy - ring_inner_r, cx + ring_inner_r, cy + ring_inner_r),
+        fill=(0, 0, 0, 0),
+    )
+    img.alpha_composite(ring_layer)
 
-    play_layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    play_draw = ImageDraw.Draw(play_layer)
+    # --- Play triangle (centered with optical offset) ---
+    play_layer = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    pd = ImageDraw.Draw(play_layer)
+    tri_h = s * 0.22
+    tri_w = tri_h * 0.9
+    # Shift right slightly for optical centering of a triangle
+    offset_x = tri_w * 0.12
+    tri_cx = cx + offset_x
+    tri_cy = cy
     play_points = [
-        (int(size * 0.455), int(size * 0.40)),
-        (int(size * 0.655), int(size * 0.50)),
-        (int(size * 0.455), int(size * 0.60)),
+        (tri_cx - tri_w * 0.42, tri_cy - tri_h / 2),
+        (tri_cx + tri_w * 0.58, tri_cy),
+        (tri_cx - tri_w * 0.42, tri_cy + tri_h / 2),
     ]
-    play_draw.polygon(play_points, fill=blend_hex(highlight, gold_end, 0.35))
-    image.alpha_composite(play_layer)
+    pd.polygon(play_points, fill=play_color)
+    img.alpha_composite(play_layer)
 
-    dot_layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    dot_draw = ImageDraw.Draw(dot_layer)
-    dot_radius = max(5, size // 26)
-    dot_center = (int(size * 0.684), int(size * 0.344))
-    dot_draw.ellipse(
-        (
-            dot_center[0] - dot_radius,
-            dot_center[1] - dot_radius,
-            dot_center[0] + dot_radius,
-            dot_center[1] + dot_radius,
-        ),
-        fill=(255, 225, 137, 235),
+    # --- Small accent dot (top-right of ring) ---
+    dot_layer = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    dd = ImageDraw.Draw(dot_layer)
+    dot_angle = math.radians(-40)
+    dot_dist = ring_outer_r - ring_width / 2
+    dot_x = cx + dot_dist * math.cos(dot_angle)
+    dot_y = cy + dot_dist * math.sin(dot_angle)
+    dot_r = s * 0.028
+    dd.ellipse(
+        (dot_x - dot_r, dot_y - dot_r, dot_x + dot_r, dot_y + dot_r),
+        fill=dot_color,
     )
-    dot_layer = dot_layer.filter(ImageFilter.GaussianBlur(radius=max(1, size // 120)))
-    image.alpha_composite(dot_layer)
+    dot_layer = dot_layer.filter(ImageFilter.GaussianBlur(radius=max(1, s * 0.004)))
+    img.alpha_composite(dot_layer)
 
-    return image
+    # --- Downscale with high-quality resampling ---
+    return img.resize((target_size, target_size), Image.LANCZOS)
 
 
 def main() -> None:
     ICONS_DIR.mkdir(parents=True, exist_ok=True)
-    icon_512 = make_icon(512)
-    icon_192 = make_icon(192)
-    favicon_32 = make_icon(32)
-    upload_120 = make_icon(120)
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    icon_512.save(ICONS_DIR / "icon-512.png")
-    icon_192.save(ICONS_DIR / "icon-192.png")
-    favicon_32.save(ICONS_DIR / "favicon-32.png")
-    upload_120.save(ICONS_DIR / "logo-upload-120.png")
-    favicon_32.save(ICONS_DIR / "favicon.ico", sizes=[(32, 32), (16, 16)])
+    sizes = {
+        "icon-512.png": 512,
+        "icon-192.png": 192,
+        "favicon-32.png": 32,
+        "logo-upload-120.png": 120,
+    }
 
-    print("Generated icons:")
-    for name in ["icon-512.png", "icon-192.png", "favicon-32.png", "favicon.ico", "logo-upload-120.png"]:
-        print(ICONS_DIR / name)
+    icons = {}
+    for name, sz in sizes.items():
+        icons[name] = make_icon(sz)
+        icons[name].save(ICONS_DIR / name)
+        icons[name].save(EXPORT_DIR / name)
+
+    # Favicon ICO (multi-size)
+    icons["favicon-32.png"].save(
+        ICONS_DIR / "favicon.ico", sizes=[(32, 32), (16, 16)]
+    )
+    icons["favicon-32.png"].save(
+        EXPORT_DIR / "favicon.ico", sizes=[(32, 32), (16, 16)]
+    )
+
+    print("Generated icons in:")
+    print(f"  {ICONS_DIR}")
+    print(f"  {EXPORT_DIR}")
+    for name in sizes:
+        print(f"  - {name}")
+    print("  - favicon.ico")
 
 
 if __name__ == "__main__":
