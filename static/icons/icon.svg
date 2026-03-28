@@ -1,0 +1,21 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="112" fill="#081A2F"/>
+  <rect x="18" y="18" width="476" height="476" rx="94" fill="url(#bgGlow)" fill-opacity="0.4"/>
+  <circle cx="256" cy="256" r="126" stroke="url(#goldRing)" stroke-width="28"/>
+  <path d="M232 192L336 256L232 320V192Z" fill="url(#goldFill)"/>
+  <circle cx="350" cy="176" r="20" fill="#FFD978" fill-opacity="0.9"/>
+  <defs>
+    <radialGradient id="bgGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(171 138) rotate(52.4314) scale(385.591)">
+      <stop stop-color="#18395F"/>
+      <stop offset="1" stop-color="#081A2F" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="goldRing" x1="150" y1="124" x2="367" y2="384" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFCD57"/>
+      <stop offset="1" stop-color="#F6A52F"/>
+    </linearGradient>
+    <linearGradient id="goldFill" x1="232" y1="192" x2="336" y2="320" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE08C"/>
+      <stop offset="1" stop-color="#F6A52F"/>
+    </linearGradient>
+  </defs>
+</svg>
