@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CriaVideo — Crie e publique videos com inteligencia artificial</title>
+    <meta name="description" content="CriaVideo e uma plataforma de criacao e publicacao automatizada de videos com IA. Gere roteiros, narracoes, legendas e publique diretamente no YouTube, TikTok e Instagram.">
+    <link rel="icon" type="image/x-icon" href="/video/static/icons/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #081a2f;
+            --bg-card: rgba(12, 35, 60, 0.92);
+            --border: rgba(79, 126, 173, 0.32);
+            --text: #f7f3ec;
+            --text-muted: #98aec4;
+            --accent: #f6a52f;
+            --accent-soft: rgba(246, 165, 47, 0.18);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            min-height: 100vh;
+            font-family: "Manrope", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(25, 70, 120, 0.55), transparent 28%),
+                radial-gradient(circle at right center, rgba(246, 165, 47, 0.12), transparent 30%),
+                linear-gradient(180deg, #071729 0%, #081a2f 48%, #071423 100%);
+            display: flex;
+            flex-direction: column;
+        }
+
+        a { color: var(--accent); }
+
+        h1, h2, h3 { font-family: "Outfit", sans-serif; }
+
+        /* ── Header ── */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px clamp(20px, 5vw, 80px);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+
+        .logo img {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+        }
+
+        .logo span {
+            font-family: "Outfit", sans-serif;
+            font-weight: 700;
+            font-size: 1.4rem;
+            color: var(--text);
+        }
+
+        .header-links {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+        }
+
+        .header-links a {
+            text-decoration: none;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .header-links a:hover {
+            color: var(--accent);
+        }
+
+        .btn-cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 28px;
+            border-radius: 999px;
+            background: var(--accent);
+            color: #081a2f;
+            font-weight: 700;
+            font-size: 0.95rem;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+
+        .btn-cta:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 24px rgba(246, 165, 47, 0.35);
+        }
+
+        /* ── Hero ── */
+        .hero {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 60px clamp(20px, 5vw, 80px) 40px;
+        }
+
+        .hero .eyebrow {
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            font-size: 0.72rem;
+            color: var(--accent);
+            margin-bottom: 16px;
+        }
+
+        .hero h1 {
+            font-size: clamp(2.2rem, 6vw, 3.8rem);
+            line-height: 1.15;
+            max-width: 720px;
+            margin-bottom: 20px;
+        }
+
+        .hero h1 .accent {
+            color: var(--accent);
+        }
+
+        .hero .subtitle {
+            font-size: clamp(1rem, 2.5vw, 1.2rem);
+            color: var(--text-muted);
+            max-width: 600px;
+            line-height: 1.7;
+            margin-bottom: 36px;
+        }
+
+        /* ── Features ── */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            width: min(960px, calc(100% - 40px));
+            margin: 0 auto 60px;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 28px;
+        }
+
+        .feature-card .icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: var(--accent-soft);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+            color: var(--accent);
+        }
+
+        .feature-card h3 {
+            font-size: 1.05rem;
+            margin-bottom: 8px;
+        }
+
+        .feature-card p {
+            color: var(--text-muted);
+            font-size: 0.88rem;
+            line-height: 1.6;
+        }
+
+        /* ── Footer ── */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 28px clamp(20px, 5vw, 80px);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+        }
+
+        footer a {
+            color: var(--text-muted);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            color: var(--accent);
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 24px;
+        }
+
+        @media (max-width: 640px) {
+            header { flex-direction: column; gap: 16px; }
+            .header-links { gap: 16px; }
+            .hero { padding-top: 32px; }
+            footer { flex-direction: column; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <a href="/" class="logo">
+            <img src="/video/static/icons/favicon-32.png" alt="CriaVideo" width="40" height="40">
+            <span>CriaVideo</span>
+        </a>
+        <nav class="header-links">
+            <a href="/privacy">Politica de Privacidade</a>
+            <a href="/terms">Termos de Servico</a>
+            <a href="/video" class="btn-cta">Acessar plataforma</a>
+        </nav>
+    </header>
+
+    <!-- Hero -->
+    <section class="hero">
+        <p class="eyebrow">Plataforma de criacao de videos com IA</p>
+        <h1>Crie e publique videos com <span class="accent">inteligencia artificial</span></h1>
+        <p class="subtitle">
+            O CriaVideo e uma plataforma que utiliza inteligencia artificial para gerar roteiros, narracoes, legendas e thumbnails automaticamente — e publicar seus videos diretamente no YouTube, TikTok e Instagram.
+        </p>
+        <a href="/video" class="btn-cta">Comecar agora &rarr;</a>
+    </section>
+
+    <!-- Features -->
+    <section class="features">
+        <div class="feature-card">
+            <div class="icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+            </div>
+            <h3>Geracao automatica de videos</h3>
+            <p>Crie videos completos a partir de um tema. A IA gera o roteiro, seleciona cenas e monta o video com narracao e legendas.</p>
+        </div>
+        <div class="feature-card">
+            <div class="icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            </div>
+            <h3>Publicacao em multiplas redes</h3>
+            <p>Conecte suas contas do YouTube, TikTok e Instagram e publique seus videos diretamente pela plataforma.</p>
+        </div>
+        <div class="feature-card">
+            <div class="icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <h3>Agendamento inteligente</h3>
+            <p>Agende a publicacao dos seus videos para os melhores horarios e mantenha uma frequencia constante de conteudo.</p>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <span>&copy; 2026 CriaVideo. Todos os direitos reservados.</span>
+        <nav class="footer-links">
+            <a href="/privacy">Politica de Privacidade</a>
+            <a href="/terms">Termos de Servico</a>
+            <a href="mailto:tgsantos66@hotmail.com">Contato</a>
+        </nav>
+    </footer>
+
+</body>
+</html>

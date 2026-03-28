@@ -86,6 +86,12 @@ if static_path.exists():
     app.mount("/video/static", StaticFiles(directory=str(static_path)), name="static")
 
 
+@app.get("/")
+async def landing():
+    """Public landing page — visible to Google verification."""
+    return static_file_response("landing.html")
+
+
 @app.get("/video")
 async def dashboard():
     """Serve the web dashboard."""
