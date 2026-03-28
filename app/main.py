@@ -42,6 +42,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+def static_file_response(filename: str) -> FileResponse:
+    return FileResponse(str(static_path / filename))
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -85,7 +89,21 @@ if static_path.exists():
 @app.get("/video")
 async def dashboard():
     """Serve the web dashboard."""
-    return FileResponse(str(static_path / "index.html"))
+    return static_file_response("index.html")
+
+
+@app.get("/privacy")
+@app.get("/video/privacy")
+async def privacy_page():
+    """Serve the privacy policy page."""
+    return static_file_response("privacy.html")
+
+
+@app.get("/terms")
+@app.get("/video/terms")
+async def terms_page():
+    """Serve the terms of service page."""
+    return static_file_response("terms.html")
 
 
 @app.get("/video/health")
