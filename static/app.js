@@ -1252,7 +1252,7 @@ function badgeClass(status) {
 }
 
 window.closeModal = closeModal;
-window.createProject = createProject;
+window.createProject = createProjectFromLibrary;
 window.generateVideo = generateVideo;
 window.deleteProject = deleteProject;
 window.watchVideo = watchVideo;
