@@ -92,6 +92,12 @@ async def landing():
     return static_file_response("landing.html")
 
 
+@app.get("/google3b8734f6a78a1e9f.html")
+async def google_site_verification():
+    """Google Search Console domain verification file."""
+    return static_file_response("google3b8734f6a78a1e9f.html")
+
+
 @app.get("/video")
 async def dashboard():
     """Serve the web dashboard."""
