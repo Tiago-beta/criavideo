@@ -151,18 +151,23 @@ def _split_text_for_tts(text: str, max_chars: int = 3800) -> list[str]:
 
 async def _generate_single_tts(text: str, voice: str, tts_instructions: str, output_path: str):
     """Generate a single TTS audio file."""
-    if tts_instructions:
+    # Custom voice IDs start with "voice_" — pass as dict per OpenAI API spec
+    voice_param = {"id": voice} if voice.startswith("voice_") else voice
+
+    if tts_instructions or voice_param != voice:
+        # Use gpt-4o-mini-tts for custom voices or when instructions are provided
         tts_kwargs = {
             "model": "gpt-4o-mini-tts",
-            "voice": voice,
+            "voice": voice_param,
             "input": text,
-            "instructions": tts_instructions,
             "response_format": "mp3",
         }
+        if tts_instructions:
+            tts_kwargs["instructions"] = tts_instructions
     else:
         tts_kwargs = {
             "model": "tts-1-hd",
-            "voice": voice,
+            "voice": voice_param,
             "input": text,
             "response_format": "mp3",
         }

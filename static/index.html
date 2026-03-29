@@ -14,7 +14,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260328-2">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260328-2">
     <link rel="apple-touch-icon" href="/video/static/icons/icon-192.png?v=20260328-2">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260329-17">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260329-18">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -346,6 +346,35 @@
                                         <button class="btn btn-primary btn-sm" onclick="savePersonaVoice('wizard')" type="button">Salvar</button>
                                         <button class="btn-icon-sm" onclick="cancelPersonaPreview('wizard')" type="button">&times;</button>
                                     </div>
+                                </div>
+                                <!-- Consent step for voice cloning -->
+                                <div id="wizard-consent-step" class="consent-step" hidden>
+                                    <div class="consent-header">
+                                        <span class="consent-icon">🔐</span>
+                                        <span class="consent-title">Autorização de Voz</span>
+                                    </div>
+                                    <p class="consent-desc">Para clonar sua voz, leia a frase abaixo em voz alta e grave:</p>
+                                    <div class="consent-phrase" id="wizard-consent-phrase"></div>
+                                    <div class="consent-actions">
+                                        <button class="persona-record-btn" id="wizard-consent-record-btn" onclick="startConsentRecording('wizard')" type="button">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                            Gravar Autorização
+                                        </button>
+                                    </div>
+                                    <div id="wizard-consent-recording-area" class="persona-recording-area" hidden>
+                                        <div class="recording-pulse"></div>
+                                        <span id="wizard-consent-rec-time">0:00</span>
+                                        <button class="btn btn-sm btn-danger" onclick="stopConsentRecording('wizard')" type="button">Parar</button>
+                                    </div>
+                                    <div id="wizard-consent-preview" hidden>
+                                        <audio id="wizard-consent-audio" controls style="width:100%;height:36px;margin:8px 0"></audio>
+                                        <div style="display:flex;gap:8px">
+                                            <button class="btn btn-primary btn-sm" id="wizard-consent-submit-btn" onclick="submitConsentAndCreateVoice('wizard')" type="button" style="flex:1">Criar Minha Voz</button>
+                                            <button class="btn btn-sm" onclick="retryConsent('wizard')" type="button">Regravar</button>
+                                            <button class="btn-icon-sm" onclick="cancelConsent('wizard')" type="button">&times;</button>
+                                        </div>
+                                    </div>
+                                    <div id="wizard-consent-status" class="consent-status" hidden></div>
                                 </div>
                                 <p class="persona-hint">Grave ou envie 10-30s falando para criar seu perfil de voz</p>
                             </div>
@@ -803,7 +832,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260329-14"></script>
+    <script src="/video/static/app.js?v=20260329-15"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>

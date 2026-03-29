@@ -1497,6 +1497,81 @@ th {
     flex: 1;
 }
 
+/* Consent Step for Voice Cloning */
+.consent-step {
+    padding: 14px;
+    background: rgba(246,165,47,0.05);
+    border: 1px solid rgba(246,165,47,0.25);
+    border-radius: 10px;
+    margin-bottom: 12px;
+}
+
+.consent-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.consent-icon {
+    font-size: 1.2rem;
+}
+
+.consent-title {
+    font-weight: 700;
+    font-size: 0.92rem;
+}
+
+.consent-desc {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+}
+
+.consent-phrase {
+    padding: 12px 14px;
+    background: rgba(255,255,255,0.06);
+    border: 1px dashed rgba(246,165,47,0.4);
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-style: italic;
+    line-height: 1.5;
+    margin-bottom: 12px;
+    color: var(--text);
+}
+
+.consent-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.consent-status {
+    font-size: 0.82rem;
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-top: 8px;
+    text-align: center;
+}
+
+.consent-status.success {
+    background: rgba(46,204,113,0.12);
+    color: #2ecc71;
+    border: 1px solid rgba(46,204,113,0.3);
+}
+
+.consent-status.error {
+    background: rgba(231,76,60,0.12);
+    color: #e74c3c;
+    border: 1px solid rgba(231,76,60,0.3);
+}
+
+.consent-status.loading {
+    background: rgba(246,165,47,0.12);
+    color: var(--accent);
+    border: 1px solid rgba(246,165,47,0.3);
+}
+
 .voice-section {
     margin-bottom: 16px;
 }

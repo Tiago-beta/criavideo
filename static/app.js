@@ -1512,7 +1512,7 @@ function renderPersonaList(prefix) {
             <div class="persona-item-icon">🎤</div>
             <div class="persona-item-info">
                 <div class="persona-item-name">${esc(p.name)}</div>
-                <div class="persona-item-meta">${p.has_sample ? 'Com amostra' : 'Voz IA'}${badge ? ' · ' : ''}${badge}</div>
+                <div class="persona-item-meta">${p.has_custom_voice ? '✅ Voz clonada' : (p.has_sample ? 'Com amostra' : 'Voz IA')}${badge ? ' · ' : ''}${badge}</div>
             </div>
             <div class="persona-item-actions">
                 <button class="btn-icon-sm" onclick="event.stopPropagation();deleteVoiceProfile(${p.id})" title="Excluir" style="color:#e74c3c;width:28px;height:28px;font-size:0.9rem">✕</button>
@@ -1609,6 +1609,13 @@ function cancelPersonaPreview(prefix) {
     personaSampleBlobs[prefix] = null;
 }
 
+// Track pending profile for consent flow
+let pendingConsentProfileId = {};
+let consentMediaRecorder = null;
+let consentRecordedChunks = [];
+let consentRecordingTimer = null;
+let consentBlobs = {};
+
 async function savePersonaVoice(prefix) {
     const nameInput = document.getElementById(`${prefix}-persona-name`);
     const name = nameInput.value.trim();
@@ -1642,15 +1649,151 @@ async function savePersonaVoice(prefix) {
 
         personaSampleBlobs[prefix] = null;
         cancelPersonaPreview(prefix);
-        await loadVoiceProfiles();
-        
-        // Auto-select the new profile
-        setTimeout(() => {
-            const item = document.querySelector(`#${prefix}-persona-list .persona-item[data-profile-id="${profile.id}"]`);
-            if (item) selectPersona(item, prefix);
-        }, 100);
+
+        // Store profile ID and show consent step
+        pendingConsentProfileId[prefix] = profile.id;
+        showConsentStep(prefix);
+
     } catch (error) {
         alert(`Erro ao salvar: ${error.message}`);
+    }
+}
+
+async function showConsentStep(prefix) {
+    // Fetch consent phrase from API
+    try {
+        const data = await api("/voice/consent-phrase");
+        document.getElementById(`${prefix}-consent-phrase`).textContent = `"${data.phrase}"`;
+    } catch {
+        document.getElementById(`${prefix}-consent-phrase`).textContent =
+            '"Eu sou o proprietário desta voz e autorizo o OpenAI a usá-la para criar um modelo de voz sintética."';
+    }
+    document.getElementById(`${prefix}-consent-step`).hidden = false;
+    document.getElementById(`${prefix}-consent-preview`).hidden = true;
+    document.getElementById(`${prefix}-consent-recording-area`).hidden = true;
+    const statusEl = document.getElementById(`${prefix}-consent-status`);
+    statusEl.hidden = true;
+}
+
+async function startConsentRecording(prefix) {
+    if (consentMediaRecorder && consentMediaRecorder.state === "recording") {
+        stopConsentRecording(prefix);
+        return;
+    }
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        consentRecordedChunks = [];
+        consentMediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+        consentMediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) consentRecordedChunks.push(e.data);
+        };
+        consentMediaRecorder.onstop = () => {
+            stream.getTracks().forEach(t => t.stop());
+            const blob = new Blob(consentRecordedChunks, { type: "audio/webm" });
+            consentBlobs[prefix] = blob;
+            // Show preview
+            const url = URL.createObjectURL(blob);
+            document.getElementById(`${prefix}-consent-audio`).src = url;
+            document.getElementById(`${prefix}-consent-preview`).hidden = false;
+            document.getElementById(`${prefix}-consent-recording-area`).hidden = true;
+        };
+        consentMediaRecorder.start();
+
+        document.getElementById(`${prefix}-consent-recording-area`).hidden = false;
+        document.getElementById(`${prefix}-consent-record-btn`).hidden = true;
+        let seconds = 0;
+        consentRecordingTimer = setInterval(() => {
+            seconds++;
+            const el = document.getElementById(`${prefix}-consent-rec-time`);
+            if (el) el.textContent = `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
+            if (seconds >= 15) stopConsentRecording(prefix);
+        }, 1000);
+    } catch {
+        alert("Nao foi possivel acessar o microfone.");
+    }
+}
+
+function stopConsentRecording(prefix) {
+    if (consentMediaRecorder && consentMediaRecorder.state === "recording") {
+        consentMediaRecorder.stop();
+    }
+    clearInterval(consentRecordingTimer);
+    document.getElementById(`${prefix}-consent-record-btn`).hidden = false;
+}
+
+function retryConsent(prefix) {
+    document.getElementById(`${prefix}-consent-preview`).hidden = true;
+    document.getElementById(`${prefix}-consent-audio`).src = '';
+    consentBlobs[prefix] = null;
+}
+
+function cancelConsent(prefix) {
+    document.getElementById(`${prefix}-consent-step`).hidden = true;
+    document.getElementById(`${prefix}-consent-preview`).hidden = true;
+    consentBlobs[prefix] = null;
+    const profileId = pendingConsentProfileId[prefix];
+    pendingConsentProfileId[prefix] = null;
+    // Profile was created but consent cancelled — still load it (without cloning)
+    loadVoiceProfiles();
+    if (profileId) {
+        setTimeout(() => {
+            const item = document.querySelector(`#${prefix}-persona-list .persona-item[data-profile-id="${profileId}"]`);
+            if (item) selectPersona(item, prefix);
+        }, 200);
+    }
+}
+
+async function submitConsentAndCreateVoice(prefix) {
+    const profileId = pendingConsentProfileId[prefix];
+    const consentBlob = consentBlobs[prefix];
+    if (!profileId || !consentBlob) {
+        alert("Grave a autorizacao primeiro.");
+        return;
+    }
+
+    const statusEl = document.getElementById(`${prefix}-consent-status`);
+    const submitBtn = document.getElementById(`${prefix}-consent-submit-btn`);
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Criando voz...";
+    statusEl.hidden = false;
+    statusEl.className = "consent-status loading";
+    statusEl.textContent = "Criando sua voz personalizada... Isso pode levar alguns segundos.";
+
+    try {
+        const formData = new FormData();
+        formData.append("consent_file", consentBlob, "consent.webm");
+
+        const resp = await fetch(`/api/voice/profiles/${profileId}/create-custom-voice`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+            body: formData,
+        });
+
+        const result = await resp.json();
+
+        if (resp.ok && result.ok) {
+            statusEl.className = "consent-status success";
+            statusEl.textContent = "✅ Voz criada com sucesso! Seus videos usarao sua voz.";
+            consentBlobs[prefix] = null;
+            pendingConsentProfileId[prefix] = null;
+
+            await loadVoiceProfiles();
+            setTimeout(() => {
+                document.getElementById(`${prefix}-consent-step`).hidden = true;
+                const item = document.querySelector(`#${prefix}-persona-list .persona-item[data-profile-id="${profileId}"]`);
+                if (item) selectPersona(item, prefix);
+            }, 1500);
+        } else {
+            const detail = result.detail || "Erro desconhecido";
+            statusEl.className = "consent-status error";
+            statusEl.textContent = `❌ ${detail}`;
+        }
+    } catch (error) {
+        statusEl.className = "consent-status error";
+        statusEl.textContent = `❌ Erro: ${error.message}`;
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Criar Minha Voz";
     }
 }
 
@@ -1796,6 +1939,11 @@ window.stopPersonaRecording = stopPersonaRecording;
 window.handlePersonaUpload = handlePersonaUpload;
 window.savePersonaVoice = savePersonaVoice;
 window.cancelPersonaPreview = cancelPersonaPreview;
+window.startConsentRecording = startConsentRecording;
+window.stopConsentRecording = stopConsentRecording;
+window.retryConsent = retryConsent;
+window.cancelConsent = cancelConsent;
+window.submitConsentAndCreateVoice = submitConsentAndCreateVoice;
 window.openVoiceManager = openVoiceManager;
 window.showCreateVoiceProfile = showCreateVoiceProfile;
 window.cancelCreateVoiceProfile = cancelCreateVoiceProfile;

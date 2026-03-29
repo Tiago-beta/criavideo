@@ -361,7 +361,7 @@ async def preview_voice(
     try:
         voice_param = profile.builtin_voice or "onyx"
         if profile.openai_voice_id:
-            voice_param = profile.openai_voice_id
+            voice_param = {"id": profile.openai_voice_id}
 
         tts_kwargs = {
             "model": "gpt-4o-mini-tts",
