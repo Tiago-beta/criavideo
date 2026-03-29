@@ -60,7 +60,26 @@ def compose_video(
     audio_duration = _get_duration(audio_path)
     if audio_duration > 0:
         total_scene_dur = sum(s["duration"] for s in valid_scenes)
-        if abs(total_scene_dur - audio_duration) > 2.0:
+
+        # For long videos: cycle scenes so each image shows ~12s instead of stretching
+        if total_scene_dur > 0 and audio_duration / total_scene_dur > 2.0:
+            target_per_scene = 12.0  # seconds per scene appearance
+            needed_total = audio_duration
+            cycle_scenes = []
+            t = 0.0
+            idx = 0
+            while t < needed_total:
+                src = valid_scenes[idx % len(valid_scenes)]
+                dur = min(target_per_scene, needed_total - t)
+                if dur < 2.0:
+                    break
+                cycle_scenes.append({**src, "duration": dur})
+                t += dur
+                idx += 1
+            valid_scenes = cycle_scenes
+            logger.info(f"Long video: cycled {len(valid_scenes)} scene slots ({audio_duration:.0f}s, "
+                         f"{len(scenes)} unique images)")
+        elif abs(total_scene_dur - audio_duration) > 2.0:
             # Scale all scene durations proportionally to match audio
             ratio = audio_duration / total_scene_dur if total_scene_dur > 0 else 1.0
             for s in valid_scenes:
@@ -109,11 +128,11 @@ def compose_video(
     input_args.extend(["-i", audio_path])
     input_idx += 1
 
-    # Background music input (optional)
+    # Background music input (optional — loop seamlessly for long videos)
     music_idx = None
     if background_music_path and os.path.exists(background_music_path):
         music_idx = input_idx
-        input_args.extend(["-i", background_music_path])
+        input_args.extend(["-stream_loop", "-1", "-i", background_music_path])
         input_idx += 1
 
     # Concat all scenes
@@ -142,6 +161,9 @@ def compose_video(
     else:
         audio_output = f"{audio_idx}:a"
 
+    # Use faster encoding preset for long videos to keep render time reasonable
+    encode_preset = "fast" if audio_duration > 600 else "medium"
+
     cmd = [
         "ffmpeg", "-y",
         *input_args,
@@ -149,7 +171,7 @@ def compose_video(
         "-map", video_output,
         "-map", audio_output,
         "-c:v", "libx264",
-        "-preset", "medium",
+        "-preset", encode_preset,
         "-crf", "23",
         "-c:a", "aac",
         "-b:a", "192k",
@@ -157,9 +179,11 @@ def compose_video(
         output_path
     ]
 
-    logger.info(f"Running FFmpeg compose for project {project_id}...")
+    logger.info(f"Running FFmpeg compose for project {project_id} (preset={encode_preset})...")
     logger.info(f"FFmpeg filter_complex: {filter_complex[:500]}...")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+    # Timeout scales with video duration: min 30 min, max 4 hours
+    ffmpeg_timeout = max(1800, min(int(audio_duration * 4), 14400))
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=ffmpeg_timeout)
 
     if result.returncode != 0:
         # Extract actual error lines from stderr (skip progress lines)
