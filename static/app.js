@@ -567,10 +567,13 @@ async function populateSongSelector() {
     }).join("");
 }
 
+let _projectsCache = [];
+
 async function loadProjects() {
     const container = document.getElementById("projects-list");
     try {
         const data = await api("/video/projects");
+        _projectsCache = data;
         if (!data.length) {
             container.innerHTML = "<p class='loading'>Nenhum projeto ainda. Crie o primeiro.</p>";
             return;
@@ -588,6 +591,7 @@ async function loadProjects() {
                     <div class="card-actions">
                         ${project.status === "completed" ? `<button class="btn btn-secondary btn-sm" onclick="watchVideo(${project.id})" type="button">Assistir</button>` : ""}
                         ${(project.status === "pending" || project.status === "failed") ? `<button class="btn btn-primary btn-sm" onclick="generateVideo(${project.id})" type="button">Gerar video</button>` : ""}
+                        ${project.lyrics_text ? `<button class="btn btn-similar btn-sm" onclick="createSimilar(${project.id})" type="button">Criar Semelhante</button>` : ""}
                         <button class="btn btn-provider btn-sm" onclick="deleteProject(${project.id})" type="button">Excluir</button>
                     </div>
                 </div>
@@ -604,6 +608,26 @@ let wizardStep = 1;
 let wizardData = { topic: "", tone: "", voice: "", duration: 60, aspect: "16:9", style: "" };
 let scriptStep = 1;
 let scriptData = { text: "", voice: "", title: "", aspect: "16:9", style: "" };
+
+async function createSimilar(projectId) {
+    const project = _projectsCache.find(p => p.id === projectId);
+    if (!project || !project.lyrics_text) {
+        alert("Roteiro nao disponivel para este projeto.");
+        return;
+    }
+    resetCreateWizard();
+    openModal("modal-new-project");
+    switchCreateMode("script");
+    document.getElementById("script-text").value = project.lyrics_text;
+    document.getElementById("script-char-count").textContent = project.lyrics_text.length.toLocaleString("pt-BR");
+    document.getElementById("script-title").value = project.title || "";
+    if (project.style_prompt) {
+        document.getElementById("script-style").value = project.style_prompt;
+    }
+    if (project.aspect_ratio) {
+        document.getElementById("script-aspect").value = project.aspect_ratio;
+    }
+}
 
 function initCreateWizard() {
     // Tab switching
@@ -1282,6 +1306,7 @@ window.createProject = createProjectFromLibrary;
 window.generateVideo = generateVideo;
 window.deleteProject = deleteProject;
 window.watchVideo = watchVideo;
+window.createSimilar = createSimilar;
 window.createSchedule = createSchedule;
 window.toggleSchedule = toggleSchedule;
 window.deleteSchedule = deleteSchedule;

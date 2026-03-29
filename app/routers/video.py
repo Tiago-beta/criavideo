@@ -119,6 +119,8 @@ async def list_projects(
             "aspect_ratio": p.aspect_ratio,
             "error_message": p.error_message,
             "created_at": p.created_at.isoformat() if p.created_at else None,
+            "lyrics_text": p.lyrics_text or "",
+            "style_prompt": p.style_prompt or "",
         }
         for p in projects
     ]

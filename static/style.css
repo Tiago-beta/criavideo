@@ -289,6 +289,15 @@ a {
     border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
+.btn-similar {
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+}
+.btn-similar:hover {
+    background: rgba(76, 175, 80, 0.25);
+}
+
 #app {
     display: flex;
     min-height: 100vh;
