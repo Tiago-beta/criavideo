@@ -2,6 +2,7 @@
 Video Tasks — Async background tasks for the full video generation pipeline.
 """
 import os
+import asyncio
 import logging
 import httpx
 from pathlib import Path
@@ -69,6 +70,41 @@ async def run_video_pipeline(project_id: int):
                 logger.info(f"Whisper transcription: {len(transcribed_words)} words")
             except Exception as e:
                 logger.warning(f"Whisper transcription failed, will use text fallback: {e}")
+
+            # ── Early: Start Suno background music generation (runs in parallel with scenes) ──
+            suno_music_task = None
+            bgm_mood = "inspiracional"
+            if audio_path and os.path.basename(audio_path) == "narration.mp3":
+                try:
+                    from app.services.suno_music import generate_suno_music
+                    from app.services.video_composer import _get_duration as get_audio_duration
+
+                    music_dir = Path(settings.media_dir) / "audio" / str(project_id)
+                    music_dir.mkdir(parents=True, exist_ok=True)
+                    music_path = str(music_dir / "background_music.mp3")
+
+                    audio_dur = get_audio_duration(audio_path)
+                    if audio_dur > 0:
+                        # Detect mood from project data
+                        text_hint = f"{project.style_prompt or ''} {project.title or ''}".lower()
+                        if any(w in text_hint for w in ["terror", "horror", "misterio", "dark", "suspense"]):
+                            bgm_mood = "misterioso"
+                        elif any(w in text_hint for w in ["urgente", "alerta", "crise", "perigo"]):
+                            bgm_mood = "urgente"
+                        elif any(w in text_hint for w in ["motivac", "superac", "força", "poder"]):
+                            bgm_mood = "motivacional"
+                        elif any(w in text_hint for w in ["reflex", "calma", "paz", "tranquil"]):
+                            bgm_mood = "reflexivo"
+                        elif any(w in text_hint for w in ["drama", "triste", "emocio"]):
+                            bgm_mood = "dramatico"
+
+                        topic_hint = project.title or project.style_prompt or ""
+                        suno_music_task = asyncio.create_task(
+                            generate_suno_music(music_path, audio_dur, bgm_mood, topic_hint)
+                        )
+                        logger.info(f"Suno music generation started in background (mood={bgm_mood})")
+                except Exception as e:
+                    logger.warning(f"Failed to start Suno music task: {e}")
 
             # ── Step 1: Generate scenes (images) ──
             project.status = VideoStatus.GENERATING_SCENES
@@ -139,9 +175,17 @@ async def run_video_pipeline(project_id: int):
             project.progress = 70
             await db.commit()
 
-            # ── Step 3: Generate background music for TTS narrations ──
+            # ── Step 3: Get background music (Suno task started earlier) ──
             background_music_path = ""
-            if audio_path and os.path.basename(audio_path) == "narration.mp3":
+            if suno_music_task is not None:
+                try:
+                    background_music_path = await suno_music_task
+                    logger.info(f"Suno background music result: {background_music_path}")
+                except Exception as e:
+                    logger.warning(f"Suno music await failed: {e}")
+
+            # Fallback to FFmpeg synthesis if Suno didn't produce music
+            if not background_music_path and audio_path and os.path.basename(audio_path) == "narration.mp3":
                 try:
                     from app.services.script_audio import generate_background_music
                     from app.services.video_composer import _get_duration as get_audio_duration
@@ -152,27 +196,13 @@ async def run_video_pipeline(project_id: int):
 
                     audio_dur = get_audio_duration(audio_path)
                     if audio_dur > 0:
-                        # Detect mood from project data
-                        mood = "inspiracional"
-                        text_hint = f"{project.style_prompt or ''} {project.title or ''}".lower()
-                        if any(w in text_hint for w in ["terror", "horror", "misterio", "dark", "suspense"]):
-                            mood = "misterioso"
-                        elif any(w in text_hint for w in ["urgente", "alerta", "crise", "perigo"]):
-                            mood = "urgente"
-                        elif any(w in text_hint for w in ["motivac", "superac", "força", "poder"]):
-                            mood = "motivacional"
-                        elif any(w in text_hint for w in ["reflex", "calma", "paz", "tranquil"]):
-                            mood = "reflexivo"
-                        elif any(w in text_hint for w in ["drama", "triste", "emocio"]):
-                            mood = "dramatico"
-
                         import asyncio
                         background_music_path = await asyncio.get_event_loop().run_in_executor(
-                            None, generate_background_music, music_path, audio_dur, mood
+                            None, generate_background_music, music_path, audio_dur, bgm_mood
                         )
-                        logger.info(f"Background music ready: {background_music_path} (mood={mood})")
+                        logger.info(f"FFmpeg fallback music ready: {background_music_path}")
                 except Exception as e:
-                    logger.warning(f"Background music generation failed, continuing without: {e}")
+                    logger.warning(f"FFmpeg fallback music also failed: {e}")
 
             # ── Step 4: Compose video with FFmpeg ──
             project.status = VideoStatus.RENDERING

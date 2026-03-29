@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     facebook_app_secret: str = ""
     xai_api_key: str = ""
     openai_api_key: str = ""
+    suno_api_key: str = ""
     host: str = "0.0.0.0"
     port: int = 8000
     site_url: str = "https://criavideo.pro"
