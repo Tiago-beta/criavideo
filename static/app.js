@@ -667,9 +667,9 @@ function switchCreateMode(mode) {
 function resetCreateWizard() {
     createMode = "wizard";
     wizardStep = 1;
-    wizardData = { topic: "", tone: "", voice: "", duration: 60, aspect: "16:9", style: "" };
+    wizardData = { topic: "", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "" };
     scriptStep = 1;
-    scriptData = { text: "", voice: "", title: "", aspect: "16:9", style: "" };
+    scriptData = { text: "", voice: "", voiceProfileId: 0, title: "", aspect: "16:9", style: "" };
 
     // Reset tabs
     document.querySelectorAll(".create-tab").forEach((t) => {
@@ -697,6 +697,9 @@ function resetCreateWizard() {
     document.querySelectorAll(".duration-option").forEach((d) => {
         d.classList.toggle("selected", d.dataset.value === "60");
     });
+
+    // Load voice profiles into selectors
+    loadVoiceProfiles();
 }
 
 function updateWizardUI(panelId, step, totalSteps, prefix) {
@@ -732,6 +735,7 @@ function wizardNext() {
         const sel = document.querySelector("#create-panel-wizard .wizard-step[data-step='3'] .wizard-option.selected");
         if (!sel) { alert("Escolha a voz."); return; }
         wizardData.voice = sel.dataset.value;
+        wizardData.voiceProfileId = parseInt(sel.dataset.profileId || "0");
     }
     wizardStep = Math.min(wizardStep + 1, 4);
     updateWizardUI("create-panel-wizard", wizardStep, 4, "wizard");
@@ -770,6 +774,7 @@ async function handleWizardCreate() {
             body: JSON.stringify({
                 script: scriptResult.script,
                 voice: wizardData.voice,
+                voice_profile_id: wizardData.voiceProfileId,
                 title: wizardData.topic,
                 aspect_ratio: wizardData.aspect,
                 style_prompt: wizardData.style,
@@ -797,6 +802,7 @@ function scriptNext() {
         const sel = document.querySelector("#create-panel-script .wizard-step[data-step='2'] .wizard-option.selected");
         if (!sel) { alert("Escolha a voz."); return; }
         scriptData.voice = sel.dataset.value;
+        scriptData.voiceProfileId = parseInt(sel.dataset.profileId || "0");
     }
     scriptStep = Math.min(scriptStep + 1, 3);
     updateWizardUI("create-panel-script", scriptStep, 3, "script");
@@ -820,6 +826,7 @@ async function handleScriptCreate() {
             body: JSON.stringify({
                 script: scriptData.text,
                 voice: scriptData.voice,
+                voice_profile_id: scriptData.voiceProfileId,
                 title: scriptData.title || "Video com roteiro",
                 aspect_ratio: scriptData.aspect,
                 style_prompt: scriptData.style,
@@ -1262,5 +1269,265 @@ window.deleteSchedule = deleteSchedule;
 window.connectPlatform = connectPlatform;
 window.disconnectAccount = disconnectAccount;
 window.loadProjects = loadProjects;
+
+// ── Voice Profile System ──
+
+let voiceProfiles = [];
+let voiceMediaRecorder = null;
+let voiceRecordedChunks = [];
+let voiceRecordingTimer = null;
+let voiceSampleBlob = null;
+
+async function loadVoiceProfiles() {
+    try {
+        voiceProfiles = await api("/voice/profiles");
+    } catch {
+        voiceProfiles = [];
+    }
+    renderVoiceProfileButtons("wizard-my-voices");
+    renderVoiceProfileButtons("script-my-voices");
+}
+
+function renderVoiceProfileButtons(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    if (!voiceProfiles.length) {
+        container.innerHTML = '<div class="voice-empty-msg">Nenhum perfil criado</div>';
+        return;
+    }
+    container.innerHTML = voiceProfiles.map(p => {
+        const defaultDot = p.is_default ? '<span class="voice-default-badge"></span>' : '';
+        const label = p.name + (p.is_default ? ' ⭐' : '');
+        return `<button class="wizard-option voice-profile-option" data-value="${p.builtin_voice || ''}" data-profile-id="${p.id}" data-voice-type="profile" type="button">${label}${defaultDot}</button>`;
+    }).join('');
+}
+
+function openVoiceManager() {
+    openModal("modal-voice-manager");
+    showVoiceProfilesList();
+    loadVoiceManagerProfiles();
+}
+
+async function loadVoiceManagerProfiles() {
+    try {
+        voiceProfiles = await api("/voice/profiles");
+    } catch {
+        voiceProfiles = [];
+    }
+    renderVoiceManagerList();
+}
+
+function renderVoiceManagerList() {
+    const container = document.getElementById("vm-profiles-list");
+    if (!voiceProfiles.length) {
+        container.innerHTML = '<p class="muted">Nenhum perfil de voz criado ainda. Crie um para personalizar suas narracoes!</p>';
+        return;
+    }
+    container.innerHTML = voiceProfiles.map(p => {
+        const icon = p.has_sample ? '🎤' : '🔊';
+        const meta = [];
+        if (p.builtin_voice) {
+            const names = {onyx:'Grave',echo:'Suave',ash:'Natural M',nova:'Clara',shimmer:'Suave F',coral:'Natural F',alloy:'Neutra',fable:'Narrativa',sage:'Calma'};
+            meta.push('Base: ' + (names[p.builtin_voice] || p.builtin_voice));
+        }
+        if (p.has_custom_voice) meta.push('Voz clonada');
+        if (p.has_sample) meta.push('Com amostra');
+        if (p.tts_instructions) meta.push('Instrucoes personalizadas');
+
+        return `<div class="vm-profile-card ${p.is_default ? 'is-default' : ''}">
+            <div class="vm-profile-icon">${icon}</div>
+            <div class="vm-profile-info">
+                <div class="vm-profile-name">${p.name}${p.is_default ? ' <span style="color:var(--accent);font-size:0.75rem">✦ Padrao</span>' : ''}</div>
+                <div class="vm-profile-meta">${meta.join(' · ')}</div>
+            </div>
+            <div class="vm-profile-actions">
+                ${!p.is_default ? `<button class="btn-icon-sm" onclick="setDefaultVoice(${p.id})" title="Definir como padrao">⭐</button>` : ''}
+                <button class="btn-icon-sm" onclick="previewVoice(${p.id})" title="Ouvir preview">▶</button>
+                <button class="btn-icon-sm" onclick="deleteVoiceProfile(${p.id})" title="Excluir" style="color:#e74c3c">✕</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function showVoiceProfilesList() {
+    document.getElementById("vm-profiles-section").hidden = false;
+    document.getElementById("vm-create-section").hidden = true;
+}
+
+function showCreateVoiceProfile() {
+    document.getElementById("vm-profiles-section").hidden = true;
+    document.getElementById("vm-create-section").hidden = false;
+    document.getElementById("vm-name").value = "";
+    document.getElementById("vm-instructions").value = "";
+    document.getElementById("vm-set-default").checked = true;
+    document.getElementById("vm-sample-preview").hidden = true;
+    document.getElementById("vm-recording-indicator").hidden = true;
+    voiceSampleBlob = null;
+    document.querySelectorAll("#vm-base-voice-grid .wizard-option").forEach(o => o.classList.remove("selected"));
+}
+
+function cancelCreateVoiceProfile() {
+    stopVoiceRecording();
+    showVoiceProfilesList();
+}
+
+async function saveVoiceProfile() {
+    const name = document.getElementById("vm-name").value.trim();
+    if (!name) { alert("Digite um nome para o perfil."); return; }
+
+    const baseSel = document.querySelector("#vm-base-voice-grid .wizard-option.selected");
+    if (!baseSel) { alert("Escolha uma voz base."); return; }
+
+    const btn = document.getElementById("vm-save-btn");
+    btn.textContent = "Salvando...";
+    btn.disabled = true;
+
+    try {
+        const profile = await api("/voice/profiles", {
+            method: "POST",
+            body: JSON.stringify({
+                name: name,
+                builtin_voice: baseSel.dataset.value,
+                tts_instructions: document.getElementById("vm-instructions").value.trim(),
+                is_default: document.getElementById("vm-set-default").checked,
+            }),
+        });
+
+        // Upload sample if recorded/uploaded
+        if (voiceSampleBlob && profile.id) {
+            const formData = new FormData();
+            formData.append("file", voiceSampleBlob, "sample.webm");
+            await fetch(`/api/voice/profiles/${profile.id}/upload-sample`, {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+                body: formData,
+            });
+        }
+
+        voiceSampleBlob = null;
+        await loadVoiceManagerProfiles();
+        showVoiceProfilesList();
+        // Refresh voice buttons in wizards
+        renderVoiceProfileButtons("wizard-my-voices");
+        renderVoiceProfileButtons("script-my-voices");
+    } catch (error) {
+        alert(`Erro ao salvar: ${error.message}`);
+    } finally {
+        btn.textContent = "Salvar Perfil";
+        btn.disabled = false;
+    }
+}
+
+async function setDefaultVoice(profileId) {
+    try {
+        await api(`/voice/profiles/${profileId}/set-default`, { method: "POST" });
+        await loadVoiceManagerProfiles();
+        renderVoiceProfileButtons("wizard-my-voices");
+        renderVoiceProfileButtons("script-my-voices");
+    } catch (error) {
+        alert(`Erro: ${error.message}`);
+    }
+}
+
+async function previewVoice(profileId) {
+    try {
+        const result = await api(`/voice/profiles/${profileId}/preview`, { method: "POST" });
+        if (result.preview_url) {
+            const audio = new Audio(result.preview_url + "?t=" + Date.now());
+            audio.play();
+        }
+    } catch (error) {
+        alert(`Erro ao gerar preview: ${error.message}`);
+    }
+}
+
+async function deleteVoiceProfile(profileId) {
+    if (!confirm("Excluir este perfil de voz?")) return;
+    try {
+        await api(`/voice/profiles/${profileId}`, { method: "DELETE" });
+        await loadVoiceManagerProfiles();
+        renderVoiceProfileButtons("wizard-my-voices");
+        renderVoiceProfileButtons("script-my-voices");
+    } catch (error) {
+        alert(`Erro: ${error.message}`);
+    }
+}
+
+// ── Voice Recording ──
+
+async function toggleVoiceRecording() {
+    if (voiceMediaRecorder && voiceMediaRecorder.state === "recording") {
+        stopVoiceRecording();
+        return;
+    }
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        voiceRecordedChunks = [];
+        voiceMediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+        voiceMediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) voiceRecordedChunks.push(e.data);
+        };
+        voiceMediaRecorder.onstop = () => {
+            stream.getTracks().forEach(t => t.stop());
+            voiceSampleBlob = new Blob(voiceRecordedChunks, { type: "audio/webm" });
+            showSamplePreview(voiceSampleBlob);
+        };
+        voiceMediaRecorder.start();
+
+        document.getElementById("vm-recording-indicator").hidden = false;
+        document.getElementById("vm-record-btn").textContent = "Gravando...";
+
+        let seconds = 0;
+        voiceRecordingTimer = setInterval(() => {
+            seconds++;
+            document.getElementById("vm-recording-time").textContent =
+                `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
+            if (seconds >= 30) stopVoiceRecording();
+        }, 1000);
+    } catch (err) {
+        alert("Nao foi possivel acessar o microfone. Verifique as permissoes do navegador.");
+    }
+}
+
+function stopVoiceRecording() {
+    if (voiceMediaRecorder && voiceMediaRecorder.state === "recording") {
+        voiceMediaRecorder.stop();
+    }
+    clearInterval(voiceRecordingTimer);
+    document.getElementById("vm-recording-indicator").hidden = true;
+    document.getElementById("vm-record-btn").innerHTML =
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> Gravar Voz';
+}
+
+function handleVoiceUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    voiceSampleBlob = file;
+    showSamplePreview(file);
+}
+
+function showSamplePreview(blob) {
+    const url = URL.createObjectURL(blob);
+    document.getElementById("vm-sample-audio").src = url;
+    document.getElementById("vm-sample-preview").hidden = false;
+}
+
+function removeSamplePreview() {
+    voiceSampleBlob = null;
+    document.getElementById("vm-sample-preview").hidden = true;
+    document.getElementById("vm-sample-audio").src = "";
+}
+
+window.openVoiceManager = openVoiceManager;
+window.showCreateVoiceProfile = showCreateVoiceProfile;
+window.cancelCreateVoiceProfile = cancelCreateVoiceProfile;
+window.saveVoiceProfile = saveVoiceProfile;
+window.setDefaultVoice = setDefaultVoice;
+window.previewVoice = previewVoice;
+window.deleteVoiceProfile = deleteVoiceProfile;
+window.toggleVoiceRecording = toggleVoiceRecording;
+window.stopVoiceRecording = stopVoiceRecording;
+window.handleVoiceUpload = handleVoiceUpload;
+window.removeSamplePreview = removeSamplePreview;
 
 bootstrap();

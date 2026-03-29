@@ -73,19 +73,36 @@ async def generate_tts_audio(
     text: str,
     voice: str = "onyx",
     project_id: int = 0,
+    tts_instructions: str = "",
 ) -> str:
-    """Generate TTS audio using OpenAI and save to media directory. Returns file path."""
+    """Generate TTS audio using OpenAI and save to media directory. Returns file path.
+
+    Supports both built-in voice names (str) and custom voice IDs.
+    Uses gpt-4o-mini-tts when instructions are provided, otherwise tts-1-hd.
+    """
     audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
     audio_dir.mkdir(parents=True, exist_ok=True)
     output_path = audio_dir / "narration.mp3"
 
     try:
-        response = await _openai.audio.speech.create(
-            model="tts-1-hd",
-            voice=voice,
-            input=text,
-            response_format="mp3",
-        )
+        if tts_instructions:
+            # Use gpt-4o-mini-tts which supports instructions for voice control
+            tts_kwargs = {
+                "model": "gpt-4o-mini-tts",
+                "voice": voice,
+                "input": text,
+                "instructions": tts_instructions,
+                "response_format": "mp3",
+            }
+        else:
+            tts_kwargs = {
+                "model": "tts-1-hd",
+                "voice": voice,
+                "input": text,
+                "response_format": "mp3",
+            }
+
+        response = await _openai.audio.speech.create(**tts_kwargs)
         response.stream_to_file(str(output_path))
         logger.info("TTS audio saved: %s", output_path)
         return str(output_path)

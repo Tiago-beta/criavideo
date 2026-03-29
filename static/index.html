@@ -309,14 +309,34 @@
                     <!-- Step 3: Voice -->
                     <div class="wizard-step" data-step="3" hidden>
                         <h3 class="wizard-question">Escolha a voz da narracao</h3>
-                        <p class="wizard-hint">Selecione o tipo de voz para o audio</p>
-                        <div class="wizard-grid">
-                            <button class="wizard-option" data-value="onyx" type="button">Masculina Grave</button>
-                            <button class="wizard-option" data-value="echo" type="button">Masculina Suave</button>
-                            <button class="wizard-option" data-value="nova" type="button">Feminina Clara</button>
-                            <button class="wizard-option" data-value="shimmer" type="button">Feminina Suave</button>
-                            <button class="wizard-option" data-value="alloy" type="button">Neutra</button>
-                            <button class="wizard-option" data-value="fable" type="button">Narrativa</button>
+                        <p class="wizard-hint">Selecione uma voz ou crie seu perfil personalizado</p>
+                        <div id="wizard-voice-selector" class="voice-selector">
+                            <div class="voice-section">
+                                <div class="voice-section-header">
+                                    <span class="voice-section-title">Minhas Vozes</span>
+                                    <button class="btn-voice-manage" onclick="openVoiceManager()" type="button">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                        Gerenciar
+                                    </button>
+                                </div>
+                                <div id="wizard-my-voices" class="wizard-grid voice-profiles-grid">
+                                    <div class="voice-empty-msg">Nenhum perfil criado</div>
+                                </div>
+                            </div>
+                            <div class="voice-section">
+                                <span class="voice-section-title">Vozes Genericas</span>
+                                <div class="wizard-grid" id="wizard-builtin-voices">
+                                    <button class="wizard-option" data-value="onyx" data-voice-type="builtin" type="button">Masculina Grave</button>
+                                    <button class="wizard-option" data-value="echo" data-voice-type="builtin" type="button">Masculina Suave</button>
+                                    <button class="wizard-option" data-value="ash" data-voice-type="builtin" type="button">Masculina Natural</button>
+                                    <button class="wizard-option" data-value="nova" data-voice-type="builtin" type="button">Feminina Clara</button>
+                                    <button class="wizard-option" data-value="shimmer" data-voice-type="builtin" type="button">Feminina Suave</button>
+                                    <button class="wizard-option" data-value="coral" data-voice-type="builtin" type="button">Feminina Natural</button>
+                                    <button class="wizard-option" data-value="alloy" data-voice-type="builtin" type="button">Neutra</button>
+                                    <button class="wizard-option" data-value="fable" data-voice-type="builtin" type="button">Narrativa</button>
+                                    <button class="wizard-option" data-value="sage" data-voice-type="builtin" type="button">Calma e Clara</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -385,14 +405,34 @@
                     <!-- Step 2: Voice -->
                     <div class="wizard-step" data-step="2" hidden>
                         <h3 class="wizard-question">Escolha a voz da narracao</h3>
-                        <p class="wizard-hint">Selecione o tipo de voz para o audio</p>
-                        <div class="wizard-grid">
-                            <button class="wizard-option" data-value="onyx" type="button">Masculina Grave</button>
-                            <button class="wizard-option" data-value="echo" type="button">Masculina Suave</button>
-                            <button class="wizard-option" data-value="nova" type="button">Feminina Clara</button>
-                            <button class="wizard-option" data-value="shimmer" type="button">Feminina Suave</button>
-                            <button class="wizard-option" data-value="alloy" type="button">Neutra</button>
-                            <button class="wizard-option" data-value="fable" type="button">Narrativa</button>
+                        <p class="wizard-hint">Selecione uma voz ou crie seu perfil personalizado</p>
+                        <div id="script-voice-selector" class="voice-selector">
+                            <div class="voice-section">
+                                <div class="voice-section-header">
+                                    <span class="voice-section-title">Minhas Vozes</span>
+                                    <button class="btn-voice-manage" onclick="openVoiceManager()" type="button">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                        Gerenciar
+                                    </button>
+                                </div>
+                                <div id="script-my-voices" class="wizard-grid voice-profiles-grid">
+                                    <div class="voice-empty-msg">Nenhum perfil criado</div>
+                                </div>
+                            </div>
+                            <div class="voice-section">
+                                <span class="voice-section-title">Vozes Genericas</span>
+                                <div class="wizard-grid" id="script-builtin-voices">
+                                    <button class="wizard-option" data-value="onyx" data-voice-type="builtin" type="button">Masculina Grave</button>
+                                    <button class="wizard-option" data-value="echo" data-voice-type="builtin" type="button">Masculina Suave</button>
+                                    <button class="wizard-option" data-value="ash" data-voice-type="builtin" type="button">Masculina Natural</button>
+                                    <button class="wizard-option" data-value="nova" data-voice-type="builtin" type="button">Feminina Clara</button>
+                                    <button class="wizard-option" data-value="shimmer" data-voice-type="builtin" type="button">Feminina Suave</button>
+                                    <button class="wizard-option" data-value="coral" data-voice-type="builtin" type="button">Feminina Natural</button>
+                                    <button class="wizard-option" data-value="alloy" data-voice-type="builtin" type="button">Neutra</button>
+                                    <button class="wizard-option" data-value="fable" data-voice-type="builtin" type="button">Narrativa</button>
+                                    <button class="wizard-option" data-value="sage" data-voice-type="builtin" type="button">Calma e Clara</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -592,7 +632,96 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260328-4"></script>
+    <!-- ═══ Voice Manager Modal ═══ -->
+    <div id="modal-voice-manager" class="modal">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h3>Gerenciar Vozes</h3>
+                <button class="modal-close" onclick="closeModal('modal-voice-manager')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Voice Profiles List -->
+                <div id="vm-profiles-section">
+                    <div class="vm-header-row">
+                        <h4>Meus Perfis de Voz</h4>
+                        <button class="btn btn-primary btn-sm" onclick="showCreateVoiceProfile()" type="button">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Nova Voz
+                        </button>
+                    </div>
+                    <div id="vm-profiles-list" class="vm-profiles-list">
+                        <p class="muted">Carregando...</p>
+                    </div>
+                </div>
+
+                <!-- Create Voice Profile Form -->
+                <div id="vm-create-section" hidden>
+                    <h4 id="vm-create-title">Criar Perfil de Voz</h4>
+                    <div class="form-group">
+                        <label>Nome do perfil</label>
+                        <input id="vm-name" type="text" class="input" placeholder="Ex: Minha voz, Voz profissional...">
+                    </div>
+                    <div class="form-group">
+                        <label>Voz base</label>
+                        <p class="wizard-hint">Escolha a voz que mais se aproxima do que deseja</p>
+                        <div class="wizard-grid" id="vm-base-voice-grid">
+                            <button class="wizard-option" data-value="onyx" type="button">Masculina Grave</button>
+                            <button class="wizard-option" data-value="echo" type="button">Masculina Suave</button>
+                            <button class="wizard-option" data-value="ash" type="button">Masculina Natural</button>
+                            <button class="wizard-option" data-value="nova" type="button">Feminina Clara</button>
+                            <button class="wizard-option" data-value="shimmer" type="button">Feminina Suave</button>
+                            <button class="wizard-option" data-value="coral" type="button">Feminina Natural</button>
+                            <button class="wizard-option" data-value="alloy" type="button">Neutra</button>
+                            <button class="wizard-option" data-value="fable" type="button">Narrativa</button>
+                            <button class="wizard-option" data-value="sage" type="button">Calma e Clara</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Instrucoes de voz (opcional)</label>
+                        <p class="wizard-hint">Descreva como a voz deve soar: tom, velocidade, sotaque, emocao...</p>
+                        <textarea id="vm-instructions" class="input" rows="3" placeholder="Ex: Fale de forma calma e pausada, com sotaque brasileiro, tom amigavel e acolhedor..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Amostra de voz (opcional)</label>
+                        <p class="wizard-hint">Grave ou envie um audio de ate 30 segundos para personalizar ainda mais</p>
+                        <div class="voice-record-area">
+                            <button id="vm-record-btn" class="btn btn-secondary btn-sm" onclick="toggleVoiceRecording()" type="button">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                Gravar Voz
+                            </button>
+                            <span class="voice-record-or">ou</span>
+                            <label class="btn btn-secondary btn-sm voice-upload-label">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                Enviar Audio
+                                <input id="vm-upload-input" type="file" accept="audio/*" onchange="handleVoiceUpload(event)" hidden>
+                            </label>
+                        </div>
+                        <div id="vm-recording-indicator" class="voice-recording-indicator" hidden>
+                            <div class="recording-pulse"></div>
+                            <span id="vm-recording-time">0:00</span>
+                            <button class="btn btn-sm btn-danger" onclick="stopVoiceRecording()" type="button">Parar</button>
+                        </div>
+                        <div id="vm-sample-preview" class="voice-sample-preview" hidden>
+                            <audio id="vm-sample-audio" controls></audio>
+                            <button class="btn-icon-sm" onclick="removeSamplePreview()" type="button">&times;</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input id="vm-set-default" type="checkbox" checked> Definir como voz padrao
+                        </label>
+                    </div>
+                    <div class="wizard-nav" style="margin-top: 1rem;">
+                        <button class="btn btn-secondary btn-sm" onclick="cancelCreateVoiceProfile()" type="button">Cancelar</button>
+                        <div></div>
+                        <button class="btn btn-primary btn-sm" id="vm-save-btn" onclick="saveVoiceProfile()" type="button">Salvar Perfil</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/video/static/app.js?v=20260328-5"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>

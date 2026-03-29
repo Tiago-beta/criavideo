@@ -170,3 +170,23 @@ class PublishSchedule(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     social_account = relationship("SocialAccount")
+
+
+class VoiceProfile(Base):
+    __tablename__ = "voice_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    voice_type = Column(String(20), nullable=False, default="builtin")  # "builtin" or "custom"
+    # Built-in voice identifier (onyx, echo, nova, etc.)
+    builtin_voice = Column(String(50))
+    # OpenAI custom voice ID (returned by /v1/audio/voices)
+    openai_voice_id = Column(String(255))
+    # Path to the original voice sample uploaded by user
+    sample_path = Column(Text)
+    # TTS instructions for gpt-4o-mini-tts (tone, speed, accent, etc.)
+    tts_instructions = Column(Text, default="")
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

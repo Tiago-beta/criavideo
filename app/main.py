@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown events."""
     # Ensure media directories exist
     Path(settings.media_dir).mkdir(parents=True, exist_ok=True)
-    for sub in ["scenes", "clips", "subtitles", "renders", "thumbnails"]:
+    for sub in ["scenes", "clips", "subtitles", "renders", "thumbnails", "voices"]:
         (Path(settings.media_dir) / sub).mkdir(exist_ok=True)
 
     start_scheduler()
@@ -68,12 +68,14 @@ from app.routers.auth import router as auth_router
 from app.routers.social import router as social_router
 from app.routers.publish import router as publish_router
 from app.routers.schedule import router as schedule_router
+from app.routers.voice import router as voice_router
 
 app.include_router(auth_router)
 app.include_router(video_router)
 app.include_router(social_router)
 app.include_router(publish_router)
 app.include_router(schedule_router)
+app.include_router(voice_router)
 
 # ── Serve rendered media files ──
 media_path = Path(settings.media_dir)

@@ -330,7 +330,8 @@ class GenerateScriptRequest(BaseModel):
 
 class GenerateTTSRequest(BaseModel):
     script: str
-    voice: str = "onyx"
+    voice: str = ""
+    voice_profile_id: int = 0
     title: str = ""
     aspect_ratio: str = "16:9"
     style_prompt: str = ""
@@ -360,6 +361,36 @@ async def generate_audio_endpoint(
 ):
     """Generate TTS audio from script, create project, and start video pipeline."""
     from app.services.script_audio import generate_tts_audio
+    from app.models import VoiceProfile
+
+    # Resolve voice from profile or direct parameter
+    voice = req.voice or "onyx"
+    tts_instructions = ""
+
+    if req.voice_profile_id:
+        profile = await db.get(VoiceProfile, req.voice_profile_id)
+        if profile and profile.user_id == user["id"]:
+            if profile.openai_voice_id:
+                voice = profile.openai_voice_id
+            elif profile.builtin_voice:
+                voice = profile.builtin_voice
+            tts_instructions = profile.tts_instructions or ""
+    elif not req.voice:
+        # Try user's default voice profile
+        from sqlalchemy import select
+        result = await db.execute(
+            select(VoiceProfile).where(
+                VoiceProfile.user_id == user["id"],
+                VoiceProfile.is_default == True
+            )
+        )
+        default_profile = result.scalar_one_or_none()
+        if default_profile:
+            if default_profile.openai_voice_id:
+                voice = default_profile.openai_voice_id
+            elif default_profile.builtin_voice:
+                voice = default_profile.builtin_voice
+            tts_instructions = default_profile.tts_instructions or ""
 
     # Create project first to get an ID for the audio path
     project = VideoProject(
@@ -384,8 +415,9 @@ async def generate_audio_endpoint(
     try:
         audio_path = await generate_tts_audio(
             text=req.script,
-            voice=req.voice,
+            voice=voice,
             project_id=project.id,
+            tts_instructions=tts_instructions,
         )
         project.audio_path = audio_path
 
