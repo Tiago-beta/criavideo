@@ -826,7 +826,7 @@ function resetCreateWizard() {
     document.getElementById("create-progress").hidden = true;
 
     // Reset wizard steps
-    updateWizardUI("create-panel-wizard", wizardStep, 4, "wizard");
+    updateWizardUI("create-panel-wizard", wizardStep, 5, "wizard");
     updateWizardUI("create-panel-script", scriptStep, 3, "script");
 
     // Reset inputs
@@ -893,17 +893,17 @@ function wizardNext() {
             alert("Escolha a voz."); return;
         }
     }
-    wizardStep = Math.min(wizardStep + 1, 4);
-    updateWizardUI("create-panel-wizard", wizardStep, 4, "wizard");
+    wizardStep = Math.min(wizardStep + 1, 5);
+    updateWizardUI("create-panel-wizard", wizardStep, 5, "wizard");
 }
 
 function wizardBack() {
     wizardStep = Math.max(wizardStep - 1, 1);
-    updateWizardUI("create-panel-wizard", wizardStep, 4, "wizard");
+    updateWizardUI("create-panel-wizard", wizardStep, 5, "wizard");
 }
 
 async function handleWizardCreate() {
-    // Collect step 4 data
+    // Collect step 4 (style) + step 5 (duration/format) data
     const durBtn = document.querySelector("#create-panel-wizard .duration-option.selected");
     wizardData.duration = durBtn ? parseInt(durBtn.dataset.value) : 60;
     wizardData.aspect = document.getElementById("wizard-aspect").value;

@@ -14,7 +14,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260328-2">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260328-2">
     <link rel="apple-touch-icon" href="/video/static/icons/icon-192.png?v=20260328-2">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260329-16">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260329-17">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -367,10 +367,31 @@
                         </div>
                     </div>
 
-                    <!-- Step 4: Duration + Format + Style + Generate -->
+                    <!-- Step 4: Estilo Visual -->
                     <div class="wizard-step" data-step="4" hidden>
+                        <h3 class="wizard-question">Estilo visual</h3>
+                        <p class="wizard-hint">Escolha o estilo das imagens do video (opcional)</p>
+                        <div class="style-tags" id="wizard-style-tags">
+                            <button class="style-tag" data-value="cinematic" type="button">Cinematic</button>
+                            <button class="style-tag" data-value="minimalista" type="button">Minimalista</button>
+                            <button class="style-tag" data-value="colorido" type="button">Colorido</button>
+                            <button class="style-tag" data-value="dark" type="button">Dark</button>
+                            <button class="style-tag" data-value="neon" type="button">Neon</button>
+                            <button class="style-tag" data-value="vintage" type="button">Vintage</button>
+                            <button class="style-tag" data-value="futurista" type="button">Futurista</button>
+                            <button class="style-tag" data-value="natureza" type="button">Natureza</button>
+                            <button class="style-tag" data-value="urbano" type="button">Urbano</button>
+                            <button class="style-tag" data-value="editorial" type="button">Editorial</button>
+                            <button class="style-tag" data-value="anime" type="button">Anime</button>
+                            <button class="style-tag" data-value="aquarela" type="button">Aquarela</button>
+                            <button class="style-tag" data-value="tela_preta" type="button">Tela Preta</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 5: Duration + Format -->
+                    <div class="wizard-step" data-step="5" hidden>
                         <h3 class="wizard-question">Detalhes finais</h3>
-                        <p class="wizard-hint">Ajuste duracao, formato e estilo visual</p>
+                        <p class="wizard-hint">Ajuste duracao e formato do video</p>
                         <div class="wizard-details-grid">
                             <div class="form-group">
                                 <label>Duracao</label>
@@ -393,24 +414,6 @@
                                     <option value="1:1">1:1 (Instagram)</option>
                                 </select>
                             </div>
-                            <div class="form-group">
-                                <label>Estilo visual <small style="opacity:0.5">(opcional - a IA escolhe se vazio)</small></label>
-                                <div class="style-tags" id="wizard-style-tags">
-                                    <button class="style-tag" data-value="cinematic" type="button">Cinematic</button>
-                                    <button class="style-tag" data-value="minimalista" type="button">Minimalista</button>
-                                    <button class="style-tag" data-value="colorido" type="button">Colorido</button>
-                                    <button class="style-tag" data-value="dark" type="button">Dark</button>
-                                    <button class="style-tag" data-value="neon" type="button">Neon</button>
-                                    <button class="style-tag" data-value="vintage" type="button">Vintage</button>
-                                    <button class="style-tag" data-value="futurista" type="button">Futurista</button>
-                                    <button class="style-tag" data-value="natureza" type="button">Natureza</button>
-                                    <button class="style-tag" data-value="urbano" type="button">Urbano</button>
-                                    <button class="style-tag" data-value="editorial" type="button">Editorial</button>
-                                    <button class="style-tag" data-value="anime" type="button">Anime</button>
-                                    <button class="style-tag" data-value="aquarela" type="button">Aquarela</button>
-                                    <button class="style-tag" data-value="tela_preta" type="button">Tela Preta</button>
-                                </div>
-                            </div>
                         </div>
                     </div>
 
@@ -419,6 +422,7 @@
                         <button class="btn btn-secondary btn-sm wizard-back-btn" id="wizard-back" type="button" hidden>Voltar</button>
                         <div class="wizard-dots">
                             <span class="wizard-dot active"></span>
+                            <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
@@ -799,7 +803,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260329-13"></script>
+    <script src="/video/static/app.js?v=20260329-14"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>
