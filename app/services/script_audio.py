@@ -222,9 +222,9 @@ def _generate_silence(duration: float, output_path: str):
     """Generate a silence audio file of the given duration using FFmpeg."""
     cmd = [
         "ffmpeg", "-y",
-        "-f", "lavfi", "-i", f"anullsrc=r=24000:cl=mono",
+        "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
         "-t", str(duration),
-        "-c:a", "libmp3lame", "-b:a", "64k",
+        "-c:a", "libmp3lame", "-b:a", "64k", "-ar", "44100",
         output_path,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -287,7 +287,7 @@ async def _generate_with_pauses(
     if len(all_parts) == 1:
         os.rename(all_parts[0], output_path)
     else:
-        _concat_audio_files(all_parts, output_path)
+        _concat_audio_files_reencode(all_parts, output_path)
     
     # Cleanup temp files
     for p in all_parts:
@@ -354,6 +354,27 @@ def _concat_audio_files(paths: list[str], output_path: str):
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
             raise RuntimeError(f"FFmpeg concat failed: {result.stderr[-300:]}")
+    finally:
+        os.unlink(list_file.name)
+
+
+def _concat_audio_files_reencode(paths: list[str], output_path: str):
+    """Concatenate audio files with re-encoding to normalize sample rate/channels."""
+    list_file = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
+    try:
+        for p in paths:
+            safe = p.replace("'", "'\\''")
+            list_file.write(f"file '{safe}'\n")
+        list_file.close()
+        cmd = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            "-i", list_file.name,
+            "-c:a", "libmp3lame", "-b:a", "192k", "-ar", "44100", "-ac", "1",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            raise RuntimeError(f"FFmpeg concat-reencode failed: {result.stderr[-300:]}")
     finally:
         os.unlink(list_file.name)
 
