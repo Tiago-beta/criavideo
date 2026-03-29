@@ -667,8 +667,8 @@ a {
 
 /* Hide title on desktop — thumbnail already shows it */
 @media (min-width: 769px) {
-    .card-title {
-        display: none;
+    .card-body .card-title {
+        display: none !important;
     }
 }
 
