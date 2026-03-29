@@ -608,8 +608,8 @@ async function loadProjects() {
                 <div class="card">
                     ${thumb}
                     <div class="card-body">
-                        <h4>${esc(project.title)}</h4>
-                        <span class="badge badge-${badgeClass(project.status)}">${esc(statusPt)}</span>
+                        <h4 class="card-title">${esc(project.title)}</h4>
+                        ${project.status !== "completed" ? `<span class="badge badge-${badgeClass(project.status)}">${esc(statusPt)}</span>` : ""}
                         ${project.progress != null && project.status !== "completed" && project.status !== "failed" && project.status !== "pending" ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${project.progress}%"></div></div>` : ""}
                         ${project.error_message ? `<p class="card-error">${esc(project.error_message)}</p>` : ""}
                     </div>

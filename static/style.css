@@ -665,6 +665,13 @@ a {
     overflow: hidden;
 }
 
+/* Hide title on desktop — thumbnail already shows it */
+@media (min-width: 769px) {
+    .card-title {
+        display: none;
+    }
+}
+
 .card-meta {
     color: var(--text-muted);
     font-size: 0.78rem;
