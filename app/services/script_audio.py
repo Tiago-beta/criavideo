@@ -2,6 +2,7 @@
 Script & Audio Generator — Creates video scripts with AI and generates TTS narration via OpenAI.
 """
 import logging
+import subprocess
 from pathlib import Path
 
 import openai
@@ -18,31 +19,40 @@ async def generate_script(
     tone: str = "informativo",
     duration_seconds: int = 60,
 ) -> dict:
-    """Use GPT-4o-mini to generate a video narration script."""
-    prompt = f"""Você é um roteirista profissional de vídeos para redes sociais.
+    """Use GPT-4o to generate a viral video narration script."""
+    word_target = int(duration_seconds * 2.5)
+    prompt = f"""Você é um roteirista VIRAL de vídeos curtos que acumula milhões de views no YouTube Shorts, TikTok e Instagram Reels.
+Seu estilo combina storytelling emocional, ganchos psicológicos e linguagem que prende desde o primeiro segundo.
 
-Crie um roteiro de narração para um vídeo sobre o tema abaixo.
+TEMA: {topic}
+TOM: {tone}
+DURAÇÃO: ~{duration_seconds} segundos (~{word_target} palavras)
 
-Tema: {topic}
-Tom: {tone}
-Duração aproximada: {duration_seconds} segundos de narração
+ESTRUTURA OBRIGATÓRIA:
+1. GANCHO (primeiros 3 segundos): Uma frase CHOCANTE, reveladora ou provocativa que torne impossível parar de assistir. Use padrões como: "Você sabia que...", "Ninguém te conta isso sobre...", "O segredo que...", "A verdade sobre..."
+2. DESENVOLVIMENTO: Revele informações de forma crescente, criando tensão e curiosidade. Cada frase deve fazer o espectador querer ouvir a próxima. Use dados reais, histórias ou exemplos concretos.
+3. CLÍMAX: O momento de revelação ou insight principal — a informação mais valiosa ou emocionante.
+4. FECHAMENTO: Chamada para ação poderosa ou frase de reflexão que fica na mente.
 
-Regras:
-- Escreva APENAS o texto da narração (o que será falado no vídeo)
-- Use linguagem natural e envolvente para o público brasileiro
-- Não inclua indicações técnicas como [CENA], [CORTE], etc.
-- O texto deve fluir naturalmente quando lido em voz alta
-- Adapte o tamanho para caber em ~{duration_seconds} segundos (média 150 palavras por minuto)
-- Comece com uma frase de impacto para prender atenção
-- Termine com uma chamada para ação ou reflexão
+REGRAS DE OURO:
+- Escreva APENAS o texto falado (narração pura, sem indicações técnicas como [CENA])
+- Use frases CURTAS e DIRETAS — como se estivesse conversando com um amigo
+- Provoque EMOÇÃO: surpresa, curiosidade, urgência, empatia
+- Use pausas retóricas com "..." para criar suspense natural
+- Inclua pelo menos 1 dado surpreendente, fato real ou história concreta
+- Linguagem brasileira natural, acessível, com energia e ritmo
+- PROIBIDO: ser genérico, usar clichês vazios, soar como robô ou texto de blog
 
-Responda SOMENTE com o texto do roteiro, sem títulos ou formatação extra."""
+Responda SOMENTE com o texto do roteiro. Sem títulos, sem formatação."""
 
     try:
         resp = await _openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.8,
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "Você é o melhor roteirista de vídeos virais do Brasil. Seus textos são magnéticos — quem ouve não consegue parar."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.85,
             max_tokens=2000,
         )
         script_text = resp.choices[0].message.content.strip()
@@ -82,3 +92,77 @@ async def generate_tts_audio(
     except Exception as e:
         logger.error("TTS generation failed: %s", e)
         raise
+
+
+def generate_background_music(
+    output_path: str,
+    duration: float,
+    mood: str = "inspiracional",
+) -> str:
+    """Generate soft ambient background music using FFmpeg audio synthesis.
+
+    Creates a gentle atmospheric pad with harmonically related tones
+    that works as background under narration.
+    """
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+    # Musical chord tones (Hz) by mood
+    mood_chords = {
+        "inspiracional": [130.81, 164.81, 196.00, 261.63],   # C major
+        "informativo":   [146.83, 185.00, 220.00, 293.66],   # D major
+        "misterioso":    [110.00, 130.81, 164.81, 220.00],   # A minor
+        "motivacional":  [146.83, 185.00, 220.00, 293.66],   # D major
+        "urgente":       [130.81, 155.56, 196.00, 261.63],   # C minor
+        "reflexivo":     [123.47, 146.83, 185.00, 246.94],   # B minor
+        "dramatico":     [110.00, 130.81, 164.81, 220.00],   # A minor
+    }
+
+    freqs = mood_chords.get(mood.lower(), mood_chords["inspiracional"])
+    dur = duration + 2  # extra margin for fades
+
+    # Build layered sine tones with slow tremolo
+    inputs = []
+    labels = []
+    for i, freq in enumerate(freqs):
+        vol = max(0.035 - (i * 0.007), 0.01)
+        trem = 0.04 + (i * 0.015)
+        inputs.extend([
+            "-f", "lavfi", "-i",
+            f"sine=f={freq}:d={dur},tremolo=f={trem}:d=0.5,volume={vol}",
+        ])
+        labels.append(f"[{i}:a]")
+
+    # Soft pink-noise bed
+    ni = len(freqs)
+    inputs.extend([
+        "-f", "lavfi", "-i",
+        f"anoisesrc=d={dur}:c=pink:s=44100,lowpass=f=400,highpass=f=60,volume=0.01",
+    ])
+    labels.append(f"[{ni}:a]")
+
+    n = len(labels)
+    fc = (
+        "".join(labels)
+        + f"amix=inputs={n}:duration=longest,"
+          f"lowpass=f=2000,"
+          f"afade=t=in:d=3,afade=t=out:d=4"
+    )
+
+    cmd = [
+        "ffmpeg", "-y", *inputs,
+        "-filter_complex", fc,
+        "-c:a", "libmp3lame", "-q:a", "4",
+        "-t", str(duration),
+        output_path,
+    ]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            logger.warning("Background music generation failed: %s", result.stderr[-300:])
+            return ""
+        logger.info("Background music generated: %s", output_path)
+        return output_path
+    except Exception as e:
+        logger.warning("Background music error: %s", e)
+        return ""

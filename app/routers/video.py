@@ -269,7 +269,7 @@ JSON apenas, sem markdown."""
 
     try:
         resp = await _openai.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[{"role": "user", "content": ai_prompt}],
             temperature=0.8,
             max_tokens=300,

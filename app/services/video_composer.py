@@ -24,6 +24,7 @@ def compose_video(
     subtitle_path: str,
     aspect_ratio: str = "16:9",
     output_dir: str = "",
+    background_music_path: str = "",
 ) -> dict:
     """Compose the final video using FFmpeg.
 
@@ -106,6 +107,14 @@ def compose_video(
     # Audio input
     audio_idx = input_idx
     input_args.extend(["-i", audio_path])
+    input_idx += 1
+
+    # Background music input (optional)
+    music_idx = None
+    if background_music_path and os.path.exists(background_music_path):
+        music_idx = input_idx
+        input_args.extend(["-i", background_music_path])
+        input_idx += 1
 
     # Concat all scenes
     filter_str = ";\n".join(filters)
@@ -120,12 +129,24 @@ def compose_video(
     else:
         video_output = "[slideshow]"
 
+    # Mix narration with background music if provided
+    if music_idx is not None:
+        fade_start = max(audio_duration - 4, 0)
+        filter_complex += (
+            f";\n[{audio_idx}:a]volume=1.0[narration];"
+            f"[{music_idx}:a]volume=0.15,afade=t=out:st={fade_start}:d=4[bgm];"
+            f"[narration][bgm]amix=inputs=2:duration=first:dropout_transition=3[audioout]"
+        )
+        audio_output = "[audioout]"
+    else:
+        audio_output = f"{audio_idx}:a"
+
     cmd = [
         "ffmpeg", "-y",
         *input_args,
         "-filter_complex", filter_complex,
         "-map", video_output,
-        "-map", f"{audio_idx}:a",
+        "-map", audio_output,
         "-c:v", "libx264",
         "-preset", "medium",
         "-crf", "23",
