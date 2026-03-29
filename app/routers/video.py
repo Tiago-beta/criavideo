@@ -410,12 +410,14 @@ async def generate_audio_endpoint(
     # Resolve voice from profile or direct parameter
     voice = req.voice or "onyx"
     tts_instructions = ""
+    voice_type = "builtin"
 
     if req.voice_profile_id:
         profile = await db.get(VoiceProfile, req.voice_profile_id)
         if profile and profile.user_id == user["id"]:
             if profile.openai_voice_id:
                 voice = profile.openai_voice_id
+                voice_type = "custom"
             elif profile.builtin_voice:
                 voice = profile.builtin_voice
             tts_instructions = profile.tts_instructions or ""
@@ -432,6 +434,7 @@ async def generate_audio_endpoint(
         if default_profile:
             if default_profile.openai_voice_id:
                 voice = default_profile.openai_voice_id
+                voice_type = "custom"
             elif default_profile.builtin_voice:
                 voice = default_profile.builtin_voice
             tts_instructions = default_profile.tts_instructions or ""
@@ -462,6 +465,7 @@ async def generate_audio_endpoint(
             voice=voice,
             project_id=project.id,
             tts_instructions=tts_instructions,
+            voice_type=voice_type,
         )
         project.audio_path = audio_path
 

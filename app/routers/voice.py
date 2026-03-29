@@ -1,5 +1,5 @@
 """
-Voice Router — Manage voice profiles: built-in voices, custom voice cloning via OpenAI,
+Voice Router — Manage voice profiles: built-in voices, custom voice cloning via Fish Audio,
 record/upload samples, set default voice.
 """
 import os
@@ -34,12 +34,6 @@ BUILTIN_VOICES = [
     {"id": "fable", "name": "Narrativa", "gender": "neutral", "model": "tts-1-hd"},
     {"id": "sage", "name": "Calma e Clara", "gender": "neutral", "model": "tts-1-hd"},
 ]
-
-# Portuguese consent phrase required by OpenAI Custom Voices API
-CONSENT_PHRASE_PT = (
-    "Eu sou o proprietário desta voz e autorizo o OpenAI "
-    "a usá-la para criar um modelo de voz sintética."
-)
 
 
 class CreateVoiceProfileRequest(BaseModel):
@@ -254,7 +248,7 @@ async def upload_voice_sample(
     with open(sample_path, "wb") as f:
         f.write(content)
 
-    # Auto-trim to 30s if longer (OpenAI requires <= 30s)
+    # Auto-trim to 30s if longer
     try:
         import subprocess
         probe = subprocess.run(
@@ -277,89 +271,30 @@ async def upload_voice_sample(
 
     profile.sample_path = sample_path
     profile.voice_type = "custom"
+
+    # Auto-clone voice via Fish Audio (instant, no consent needed)
+    clone_error = None
+    try:
+        from app.services.fish_audio import create_voice_clone
+        model_id = await create_voice_clone(sample_path, profile.name or f"Voice {profile_id}")
+        if model_id:
+            profile.openai_voice_id = model_id  # Reuse field for Fish Audio model ID
+            logger.info(f"Voice cloned via Fish Audio: {model_id}")
+        else:
+            clone_error = "Falha ao clonar voz. A voz IA padrao sera usada."
+    except Exception as e:
+        logger.error(f"Fish Audio clone failed: {e}")
+        clone_error = "Falha ao clonar voz. A voz IA padrao sera usada."
+
     await db.commit()
 
     logger.info(f"Voice sample uploaded for profile {profile_id}: {sample_path}")
-    return {"ok": True, "sample_path": sample_path}
-
-
-@router.post("/profiles/{profile_id}/create-custom-voice")
-async def create_custom_voice(
-    profile_id: int,
-    consent_file: UploadFile = File(...),
-    user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Create a custom OpenAI voice from the sample + consent recording.
-
-    Requires: 1) Voice sample already uploaded via /upload-sample
-              2) Consent recording (reading the required phrase)
-    """
-    profile = await db.get(VoiceProfile, profile_id)
-    if not profile or profile.user_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Perfil nao encontrado")
-    if not profile.sample_path or not os.path.exists(profile.sample_path):
-        raise HTTPException(status_code=400, detail="Envie primeiro uma amostra de voz")
-
-    voice_dir = Path(settings.media_dir) / "voices" / str(user["id"]) / str(profile_id)
-    voice_dir.mkdir(parents=True, exist_ok=True)
-    consent_path = str(voice_dir / "consent.webm")
-
-    content = await consent_file.read()
-    with open(consent_path, "wb") as f:
-        f.write(content)
-
-    try:
-        # Step 1: Upload consent recording
-        import httpx
-        headers = {
-            "Authorization": f"Bearer {settings.openai_api_key}",
-        }
-
-        async with httpx.AsyncClient(timeout=60) as client:
-            with open(consent_path, "rb") as cf:
-                consent_resp = await client.post(
-                    "https://api.openai.com/v1/audio/voice_consents",
-                    headers=headers,
-                    files={"recording": ("consent.webm", cf, "audio/webm")},
-                    data={"name": f"criavideo_user{user['id']}_p{profile_id}", "language": "pt"},
-                )
-
-            if consent_resp.status_code not in (200, 201):
-                logger.warning(f"Custom voice consent failed: {consent_resp.text}")
-                raise HTTPException(status_code=400,
-                    detail="Nao foi possivel criar a voz customizada. "
-                           "Este recurso pode nao estar disponivel na sua conta OpenAI.")
-
-            consent_id = consent_resp.json().get("id")
-
-            # Step 2: Create voice from sample + consent
-            with open(profile.sample_path, "rb") as sf:
-                voice_resp = await client.post(
-                    "https://api.openai.com/v1/audio/voices",
-                    headers=headers,
-                    files={"audio_sample": ("sample.webm", sf, "audio/webm")},
-                    data={"name": f"criavideo_{user['id']}_{profile_id}", "consent": consent_id},
-                )
-
-            if voice_resp.status_code not in (200, 201):
-                logger.warning(f"Custom voice creation failed: {voice_resp.text}")
-                raise HTTPException(status_code=400,
-                    detail="Falha ao criar voz. Verifique a qualidade do audio.")
-
-            voice_id = voice_resp.json().get("voice_id") or voice_resp.json().get("id")
-            profile.openai_voice_id = voice_id
-            profile.voice_type = "custom"
-            await db.commit()
-
-            logger.info(f"Custom voice created: {voice_id} for profile {profile_id}")
-            return {"ok": True, "voice_id": voice_id}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Custom voice creation error: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao criar voz: {e}")
+    return {
+        "ok": True,
+        "sample_path": sample_path,
+        "cloned": bool(profile.openai_voice_id),
+        "clone_error": clone_error,
+    }
 
 
 @router.post("/profiles/{profile_id}/preview")
@@ -380,21 +315,25 @@ async def preview_voice(
     preview_path = str(voice_dir / "preview.mp3")
 
     try:
-        voice_param = profile.builtin_voice or "onyx"
-        if profile.openai_voice_id:
-            voice_param = {"id": profile.openai_voice_id}
-
-        tts_kwargs = {
-            "model": "gpt-4o-mini-tts",
-            "voice": voice_param,
-            "input": preview_text,
-            "response_format": "mp3",
-        }
-        if profile.tts_instructions:
-            tts_kwargs["instructions"] = profile.tts_instructions
-
-        response = await _openai.audio.speech.create(**tts_kwargs)
-        response.stream_to_file(preview_path)
+        # Use Fish Audio for cloned voices
+        if profile.openai_voice_id and profile.voice_type == "custom":
+            from app.services.fish_audio import generate_tts
+            ok = await generate_tts(preview_text, profile.openai_voice_id, preview_path)
+            if not ok:
+                raise Exception("Fish Audio preview generation failed")
+        else:
+            # Use OpenAI for builtin voices
+            voice_param = profile.builtin_voice or "onyx"
+            tts_kwargs = {
+                "model": "gpt-4o-mini-tts",
+                "voice": voice_param,
+                "input": preview_text,
+                "response_format": "mp3",
+            }
+            if profile.tts_instructions:
+                tts_kwargs["instructions"] = profile.tts_instructions
+            response = await _openai.audio.speech.create(**tts_kwargs)
+            response.stream_to_file(preview_path)
 
         return {
             "ok": True,
@@ -403,9 +342,3 @@ async def preview_voice(
     except Exception as e:
         logger.error(f"Voice preview failed: {e}")
         raise HTTPException(status_code=500, detail=f"Erro ao gerar preview: {e}")
-
-
-@router.get("/consent-phrase")
-async def get_consent_phrase():
-    """Return the consent phrase that must be read for custom voice creation."""
-    return {"phrase": CONSENT_PHRASE_PT, "language": "pt"}

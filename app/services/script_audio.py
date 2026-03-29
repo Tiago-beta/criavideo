@@ -94,11 +94,12 @@ async def generate_tts_audio(
     voice: str = "onyx",
     project_id: int = 0,
     tts_instructions: str = "",
+    voice_type: str = "builtin",
 ) -> str:
-    """Generate TTS audio using OpenAI and save to media directory. Returns file path.
+    """Generate TTS audio and save to media directory. Returns file path.
 
-    Supports both built-in voice names (str) and custom voice IDs.
-    Uses gpt-4o-mini-tts when instructions are provided, otherwise tts-1-hd.
+    For custom voices (voice_type="custom"), uses Fish Audio with the voice as reference_id.
+    For builtin voices, uses OpenAI TTS.
     Automatically chunks long texts (>4000 chars) and concatenates.
     """
     audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
@@ -106,8 +107,14 @@ async def generate_tts_audio(
     output_path = audio_dir / "narration.mp3"
 
     try:
+        # Custom voices use Fish Audio
+        if voice_type == "custom" and voice:
+            from app.services.fish_audio import generate_tts_long
+            ok = await generate_tts_long(text, voice, str(output_path))
+            if not ok:
+                raise RuntimeError("Fish Audio TTS generation failed")
         # For long texts, split into chunks and concatenate
-        if len(text) > 4000:
+        elif len(text) > 4000:
             chunks = _split_text_for_tts(text, max_chars=3800)
             logger.info(f"Long text ({len(text)} chars) split into {len(chunks)} TTS chunks")
             chunk_paths = []
@@ -150,15 +157,11 @@ def _split_text_for_tts(text: str, max_chars: int = 3800) -> list[str]:
 
 
 async def _generate_single_tts(text: str, voice: str, tts_instructions: str, output_path: str):
-    """Generate a single TTS audio file."""
-    # Custom voice IDs start with "voice_" — pass as dict per OpenAI API spec
-    voice_param = {"id": voice} if voice.startswith("voice_") else voice
-
-    if tts_instructions or voice_param != voice:
-        # Use gpt-4o-mini-tts for custom voices or when instructions are provided
+    """Generate a single TTS audio file via OpenAI (builtin voices only)."""
+    if tts_instructions:
         tts_kwargs = {
             "model": "gpt-4o-mini-tts",
-            "voice": voice_param,
+            "voice": voice,
             "input": text,
             "response_format": "mp3",
         }
@@ -167,7 +170,7 @@ async def _generate_single_tts(text: str, voice: str, tts_instructions: str, out
     else:
         tts_kwargs = {
             "model": "tts-1-hd",
-            "voice": voice_param,
+            "voice": voice,
             "input": text,
             "response_format": "mp3",
         }
