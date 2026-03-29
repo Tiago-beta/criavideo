@@ -243,14 +243,23 @@ async def run_video_pipeline(project_id: int):
             if not audio_path or not os.path.exists(audio_path):
                 raise FileNotFoundError(f"Audio file not found: {project.audio_path}")
 
-            render_result = compose_video(
-                project_id=project_id,
-                scenes=scenes,
-                audio_path=audio_path,
-                subtitle_path=subtitle_path,
-                aspect_ratio=project.aspect_ratio,
-                background_music_path=background_music_path,
+            # Run FFmpeg in thread pool to avoid blocking event loop and DB timeout
+            import asyncio
+            render_result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: compose_video(
+                    project_id=project_id,
+                    scenes=scenes,
+                    audio_path=audio_path,
+                    subtitle_path=subtitle_path,
+                    aspect_ratio=project.aspect_ratio,
+                    background_music_path=background_music_path,
+                ),
             )
+
+            # Refresh DB session after long render to avoid stale connections
+            await db.rollback()
+            project = await db.get(VideoProject, project_id)
 
             project.progress = 90
             await db.commit()
