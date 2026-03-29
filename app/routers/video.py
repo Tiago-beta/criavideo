@@ -366,6 +366,10 @@ JSON apenas, sem markdown."""
 # ── Script & Audio Generation ──────────────────────────────────
 
 
+class FixTextRequest(BaseModel):
+    text: str
+
+
 class GenerateScriptRequest(BaseModel):
     topic: str
     tone: str = "informativo"
@@ -380,6 +384,44 @@ class GenerateTTSRequest(BaseModel):
     aspect_ratio: str = "16:9"
     style_prompt: str = ""
     pause_level: str = "normal"
+
+
+@router.post("/fix-text")
+async def fix_text_endpoint(
+    req: FixTextRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Fix spelling, grammar and punctuation errors in user text using GPT."""
+    import openai
+    from app.config import get_settings
+    settings = get_settings()
+    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+
+    resp = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": (
+                "Voce e um corretor ortografico e gramatical de portugues brasileiro. "
+                "Corrija APENAS erros de ortografia, acentuacao, pontuacao e gramatica no texto. "
+                "NAO altere o significado, o estilo, o tom ou a estrutura do texto. "
+                "NAO remova nem adicione frases. NAO reescreva o texto. "
+                "Mantenha exatamente as reticencias (...), quebras de linha e formatacao original. "
+                "Retorne SOMENTE o texto corrigido, sem explicacoes."
+            )},
+            {"role": "user", "content": req.text},
+        ],
+        temperature=0.1,
+        max_tokens=min(len(req.text) * 2, 16000),
+    )
+    corrected = resp.choices[0].message.content.strip()
+
+    # Count approximate changes
+    original_words = req.text.split()
+    corrected_words = corrected.split()
+    changes = sum(1 for a, b in zip(original_words, corrected_words) if a != b)
+    changes += abs(len(original_words) - len(corrected_words))
+
+    return {"text": corrected, "changes": changes}
 
 
 @router.post("/generate-script")
