@@ -1107,72 +1107,209 @@ th {
     margin: 0 auto;
 }
 
+/* Minha Voz Button (Levita-style) */
+.minha-voz-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 14px 20px;
+    margin-bottom: 16px;
+    background: var(--bg-card);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.minha-voz-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.minha-voz-btn.active {
+    border-color: var(--accent);
+    background: rgba(246,165,47,0.06);
+    color: var(--accent);
+}
+
+/* Persona Panel */
+.persona-panel {
+    margin-bottom: 16px;
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    animation: fadeIn 0.2s;
+}
+
+.persona-panel.hidden {
+    display: none;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Persona List */
+.persona-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.persona-list:empty {
+    display: none;
+}
+
+.persona-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.persona-item:hover {
+    border-color: rgba(246,165,47,0.3);
+}
+
+.persona-item.selected {
+    border-color: var(--accent);
+    background: rgba(246,165,47,0.06);
+}
+
+.persona-item-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.1rem;
+}
+
+.persona-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.persona-item-name {
+    font-weight: 600;
+    font-size: 0.88rem;
+}
+
+.persona-item-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.persona-item-badge {
+    font-size: 0.7rem;
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.persona-item-actions {
+    display: flex;
+    gap: 4px;
+}
+
+/* Persona Actions (Record/Upload) */
+.persona-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.persona-upload-btn,
+.persona-record-btn {
+    flex: 1;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.03);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s;
+}
+
+.persona-record-btn:hover,
+.persona-upload-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.persona-hint {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    text-align: center;
+    margin: 0;
+}
+
+/* Recording Area */
+.persona-recording-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(231, 76, 60, 0.08);
+    border: 1px solid rgba(231, 76, 60, 0.3);
+    border-radius: 10px;
+    margin-bottom: 12px;
+}
+
+/* Preview + Save */
+.persona-preview {
+    margin-bottom: 12px;
+}
+
+.persona-preview audio {
+    width: 100%;
+    height: 36px;
+    margin-bottom: 8px;
+}
+
+.persona-save-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.persona-save-row .input {
+    flex: 1;
+}
+
 .voice-section {
     margin-bottom: 16px;
 }
 
-.voice-section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-}
-
 .voice-section-title {
+    display: block;
     font-size: 0.82rem;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-}
-
-.btn-voice-manage {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    padding: 4px 10px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.btn-voice-manage:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-}
-
-.voice-profiles-grid {
-    min-height: 46px;
-}
-
-.voice-empty-msg {
-    grid-column: 1 / -1;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 0.82rem;
-    padding: 10px;
-    border: 1px dashed var(--border);
-    border-radius: 10px;
-}
-
-.wizard-option.voice-profile-option {
-    position: relative;
-    padding-left: 12px;
-    padding-right: 12px;
-}
-
-.wizard-option .voice-default-badge {
-    position: absolute;
-    top: 4px;
-    right: 6px;
-    width: 8px;
-    height: 8px;
-    background: var(--accent);
-    border-radius: 50%;
+    margin-bottom: 8px;
 }
 
 /* Voice Manager Modal */
@@ -1278,36 +1415,6 @@ th {
 
 /* Voice Record Area */
 
-.voice-record-area {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.voice-record-or {
-    color: var(--text-muted);
-    font-size: 0.82rem;
-}
-
-.voice-upload-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    cursor: pointer;
-}
-
-.voice-recording-indicator {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    background: rgba(231, 76, 60, 0.08);
-    border: 1px solid rgba(231, 76, 60, 0.3);
-    border-radius: 10px;
-    margin-top: 8px;
-}
-
 .recording-pulse {
     width: 12px;
     height: 12px;
@@ -1319,16 +1426,4 @@ th {
 @keyframes pulse-recording {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(1.2); }
-}
-
-.voice-sample-preview {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 8px;
-}
-
-.voice-sample-preview audio {
-    height: 36px;
-    flex: 1;
 }

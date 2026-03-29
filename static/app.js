@@ -639,6 +639,11 @@ function initCreateWizard() {
             const grid = opt.closest(".wizard-grid");
             grid.querySelectorAll(".wizard-option").forEach((o) => o.classList.remove("selected"));
             opt.classList.add("selected");
+            // When selecting a builtin voice, deselect any persona selection
+            const voiceSelector = opt.closest(".voice-selector");
+            if (voiceSelector) {
+                voiceSelector.querySelectorAll(".persona-item.selected").forEach(o => o.classList.remove("selected"));
+            }
         }
         const dur = e.target.closest(".duration-option");
         if (dur) {
@@ -732,10 +737,17 @@ function wizardNext() {
         wizardData.tone = sel.dataset.value;
     }
     if (wizardStep === 3) {
-        const sel = document.querySelector("#create-panel-wizard .wizard-step[data-step='3'] .wizard-option.selected");
-        if (!sel) { alert("Escolha a voz."); return; }
-        wizardData.voice = sel.dataset.value;
-        wizardData.voiceProfileId = parseInt(sel.dataset.profileId || "0");
+        const personaSel = document.querySelector("#wizard-persona-list .persona-item.selected");
+        const builtinSel = document.querySelector("#create-panel-wizard .wizard-step[data-step='3'] .wizard-option.selected");
+        if (personaSel) {
+            wizardData.voice = personaSel.dataset.value;
+            wizardData.voiceProfileId = parseInt(personaSel.dataset.profileId || "0");
+        } else if (builtinSel) {
+            wizardData.voice = builtinSel.dataset.value;
+            wizardData.voiceProfileId = 0;
+        } else {
+            alert("Escolha a voz."); return;
+        }
     }
     wizardStep = Math.min(wizardStep + 1, 4);
     updateWizardUI("create-panel-wizard", wizardStep, 4, "wizard");
@@ -799,10 +811,17 @@ function scriptNext() {
         scriptData.text = text;
     }
     if (scriptStep === 2) {
-        const sel = document.querySelector("#create-panel-script .wizard-step[data-step='2'] .wizard-option.selected");
-        if (!sel) { alert("Escolha a voz."); return; }
-        scriptData.voice = sel.dataset.value;
-        scriptData.voiceProfileId = parseInt(sel.dataset.profileId || "0");
+        const personaSel = document.querySelector("#script-persona-list .persona-item.selected");
+        const builtinSel = document.querySelector("#create-panel-script .wizard-step[data-step='2'] .wizard-option.selected");
+        if (personaSel) {
+            scriptData.voice = personaSel.dataset.value;
+            scriptData.voiceProfileId = parseInt(personaSel.dataset.profileId || "0");
+        } else if (builtinSel) {
+            scriptData.voice = builtinSel.dataset.value;
+            scriptData.voiceProfileId = 0;
+        } else {
+            alert("Escolha a voz."); return;
+        }
     }
     scriptStep = Math.min(scriptStep + 1, 3);
     updateWizardUI("create-panel-script", scriptStep, 3, "script");
@@ -1270,13 +1289,13 @@ window.connectPlatform = connectPlatform;
 window.disconnectAccount = disconnectAccount;
 window.loadProjects = loadProjects;
 
-// ── Voice Profile System ──
+// ── Voice Profile System (Levita-style) ──
 
 let voiceProfiles = [];
-let voiceMediaRecorder = null;
-let voiceRecordedChunks = [];
-let voiceRecordingTimer = null;
-let voiceSampleBlob = null;
+let personaMediaRecorder = null;
+let personaRecordedChunks = [];
+let personaRecordingTimer = null;
+let personaSampleBlobs = {}; // keyed by prefix: 'wizard' or 'script'
 
 async function loadVoiceProfiles() {
     try {
@@ -1284,23 +1303,166 @@ async function loadVoiceProfiles() {
     } catch {
         voiceProfiles = [];
     }
-    renderVoiceProfileButtons("wizard-my-voices");
-    renderVoiceProfileButtons("script-my-voices");
+    renderPersonaList("wizard");
+    renderPersonaList("script");
 }
 
-function renderVoiceProfileButtons(containerId) {
-    const container = document.getElementById(containerId);
+function renderPersonaList(prefix) {
+    const container = document.getElementById(`${prefix}-persona-list`);
     if (!container) return;
     if (!voiceProfiles.length) {
-        container.innerHTML = '<div class="voice-empty-msg">Nenhum perfil criado</div>';
+        container.innerHTML = '';
         return;
     }
     container.innerHTML = voiceProfiles.map(p => {
-        const defaultDot = p.is_default ? '<span class="voice-default-badge"></span>' : '';
-        const label = p.name + (p.is_default ? ' ⭐' : '');
-        return `<button class="wizard-option voice-profile-option" data-value="${p.builtin_voice || ''}" data-profile-id="${p.id}" data-voice-type="profile" type="button">${label}${defaultDot}</button>`;
+        const badge = p.is_default ? '<span class="persona-item-badge">Padrao</span>' : '';
+        return `<div class="persona-item" data-profile-id="${p.id}" data-value="${p.builtin_voice || 'alloy'}" data-voice-type="profile" onclick="selectPersona(this, '${prefix}')">
+            <div class="persona-item-icon">🎤</div>
+            <div class="persona-item-info">
+                <div class="persona-item-name">${esc(p.name)}</div>
+                <div class="persona-item-meta">${p.has_sample ? 'Com amostra' : 'Voz IA'}${badge ? ' · ' : ''}${badge}</div>
+            </div>
+            <div class="persona-item-actions">
+                <button class="btn-icon-sm" onclick="event.stopPropagation();deleteVoiceProfile(${p.id})" title="Excluir" style="color:#e74c3c;width:28px;height:28px;font-size:0.9rem">✕</button>
+            </div>
+        </div>`;
     }).join('');
 }
+
+function selectPersona(el, prefix) {
+    // Deselect all options in this voice selector (both persona items and wizard-options)
+    const selector = document.getElementById(`${prefix}-voice-selector`);
+    selector.querySelectorAll('.persona-item.selected, .wizard-option.selected').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+}
+
+function toggleMinhaVoz(prefix) {
+    const btn = document.getElementById(`${prefix}-minha-voz-btn`);
+    const panel = document.getElementById(`${prefix}-persona-panel`);
+    const isOpen = !panel.classList.contains('hidden');
+    
+    if (isOpen) {
+        panel.classList.add('hidden');
+        btn.classList.remove('active');
+    } else {
+        panel.classList.remove('hidden');
+        btn.classList.add('active');
+        loadVoiceProfiles();
+    }
+}
+
+// ── Persona Recording (inline in panel) ──
+
+async function startPersonaRecording(prefix) {
+    if (personaMediaRecorder && personaMediaRecorder.state === "recording") {
+        stopPersonaRecording(prefix);
+        return;
+    }
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        personaRecordedChunks = [];
+        personaMediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+        personaMediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) personaRecordedChunks.push(e.data);
+        };
+        personaMediaRecorder.onstop = () => {
+            stream.getTracks().forEach(t => t.stop());
+            const blob = new Blob(personaRecordedChunks, { type: "audio/webm" });
+            personaSampleBlobs[prefix] = blob;
+            showPersonaPreview(prefix, blob);
+        };
+        personaMediaRecorder.start();
+
+        document.getElementById(`${prefix}-recording-area`).hidden = false;
+        let seconds = 0;
+        personaRecordingTimer = setInterval(() => {
+            seconds++;
+            const el = document.getElementById(`${prefix}-rec-time`);
+            if (el) el.textContent = `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
+            if (seconds >= 30) stopPersonaRecording(prefix);
+        }, 1000);
+    } catch (err) {
+        alert("Nao foi possivel acessar o microfone. Verifique as permissoes do navegador.");
+    }
+}
+
+function stopPersonaRecording(prefix) {
+    if (personaMediaRecorder && personaMediaRecorder.state === "recording") {
+        personaMediaRecorder.stop();
+    }
+    clearInterval(personaRecordingTimer);
+    const area = document.getElementById(`${prefix}-recording-area`);
+    if (area) area.hidden = true;
+}
+
+function handlePersonaUpload(event, prefix) {
+    const file = event.target.files[0];
+    if (!file) return;
+    personaSampleBlobs[prefix] = file;
+    showPersonaPreview(prefix, file);
+    event.target.value = '';
+}
+
+function showPersonaPreview(prefix, blob) {
+    const url = URL.createObjectURL(blob);
+    document.getElementById(`${prefix}-persona-audio`).src = url;
+    document.getElementById(`${prefix}-persona-preview`).hidden = false;
+    document.getElementById(`${prefix}-persona-name`).value = '';
+    document.getElementById(`${prefix}-persona-name`).focus();
+}
+
+function cancelPersonaPreview(prefix) {
+    document.getElementById(`${prefix}-persona-preview`).hidden = true;
+    document.getElementById(`${prefix}-persona-audio`).src = '';
+    personaSampleBlobs[prefix] = null;
+}
+
+async function savePersonaVoice(prefix) {
+    const nameInput = document.getElementById(`${prefix}-persona-name`);
+    const name = nameInput.value.trim();
+    if (!name) { alert("Digite um nome para o perfil."); return; }
+
+    const blob = personaSampleBlobs[prefix];
+    if (!blob) { alert("Grave ou envie um audio primeiro."); return; }
+
+    try {
+        // Create profile with default base voice (alloy)
+        const profile = await api("/voice/profiles", {
+            method: "POST",
+            body: JSON.stringify({
+                name: name,
+                builtin_voice: "alloy",
+                tts_instructions: "",
+                is_default: true,
+            }),
+        });
+
+        // Upload the sample
+        if (profile.id) {
+            const formData = new FormData();
+            formData.append("file", blob, "sample.webm");
+            await fetch(`/api/voice/profiles/${profile.id}/upload-sample`, {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+                body: formData,
+            });
+        }
+
+        personaSampleBlobs[prefix] = null;
+        cancelPersonaPreview(prefix);
+        await loadVoiceProfiles();
+        
+        // Auto-select the new profile
+        setTimeout(() => {
+            const item = document.querySelector(`#${prefix}-persona-list .persona-item[data-profile-id="${profile.id}"]`);
+            if (item) selectPersona(item, prefix);
+        }, 100);
+    } catch (error) {
+        alert(`Erro ao salvar: ${error.message}`);
+    }
+}
+
+// ── Voice Manager Modal (for managing profiles with IA settings) ──
 
 function openVoiceManager() {
     openModal("modal-voice-manager");
@@ -1360,14 +1522,10 @@ function showCreateVoiceProfile() {
     document.getElementById("vm-name").value = "";
     document.getElementById("vm-instructions").value = "";
     document.getElementById("vm-set-default").checked = true;
-    document.getElementById("vm-sample-preview").hidden = true;
-    document.getElementById("vm-recording-indicator").hidden = true;
-    voiceSampleBlob = null;
     document.querySelectorAll("#vm-base-voice-grid .wizard-option").forEach(o => o.classList.remove("selected"));
 }
 
 function cancelCreateVoiceProfile() {
-    stopVoiceRecording();
     showVoiceProfilesList();
 }
 
@@ -1383,7 +1541,7 @@ async function saveVoiceProfile() {
     btn.disabled = true;
 
     try {
-        const profile = await api("/voice/profiles", {
+        await api("/voice/profiles", {
             method: "POST",
             body: JSON.stringify({
                 name: name,
@@ -1393,23 +1551,10 @@ async function saveVoiceProfile() {
             }),
         });
 
-        // Upload sample if recorded/uploaded
-        if (voiceSampleBlob && profile.id) {
-            const formData = new FormData();
-            formData.append("file", voiceSampleBlob, "sample.webm");
-            await fetch(`/api/voice/profiles/${profile.id}/upload-sample`, {
-                method: "POST",
-                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
-                body: formData,
-            });
-        }
-
-        voiceSampleBlob = null;
         await loadVoiceManagerProfiles();
         showVoiceProfilesList();
-        // Refresh voice buttons in wizards
-        renderVoiceProfileButtons("wizard-my-voices");
-        renderVoiceProfileButtons("script-my-voices");
+        renderPersonaList("wizard");
+        renderPersonaList("script");
     } catch (error) {
         alert(`Erro ao salvar: ${error.message}`);
     } finally {
@@ -1422,8 +1567,8 @@ async function setDefaultVoice(profileId) {
     try {
         await api(`/voice/profiles/${profileId}/set-default`, { method: "POST" });
         await loadVoiceManagerProfiles();
-        renderVoiceProfileButtons("wizard-my-voices");
-        renderVoiceProfileButtons("script-my-voices");
+        renderPersonaList("wizard");
+        renderPersonaList("script");
     } catch (error) {
         alert(`Erro: ${error.message}`);
     }
@@ -1445,79 +1590,20 @@ async function deleteVoiceProfile(profileId) {
     if (!confirm("Excluir este perfil de voz?")) return;
     try {
         await api(`/voice/profiles/${profileId}`, { method: "DELETE" });
+        await loadVoiceProfiles();
         await loadVoiceManagerProfiles();
-        renderVoiceProfileButtons("wizard-my-voices");
-        renderVoiceProfileButtons("script-my-voices");
     } catch (error) {
         alert(`Erro: ${error.message}`);
     }
 }
 
-// ── Voice Recording ──
-
-async function toggleVoiceRecording() {
-    if (voiceMediaRecorder && voiceMediaRecorder.state === "recording") {
-        stopVoiceRecording();
-        return;
-    }
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        voiceRecordedChunks = [];
-        voiceMediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-        voiceMediaRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) voiceRecordedChunks.push(e.data);
-        };
-        voiceMediaRecorder.onstop = () => {
-            stream.getTracks().forEach(t => t.stop());
-            voiceSampleBlob = new Blob(voiceRecordedChunks, { type: "audio/webm" });
-            showSamplePreview(voiceSampleBlob);
-        };
-        voiceMediaRecorder.start();
-
-        document.getElementById("vm-recording-indicator").hidden = false;
-        document.getElementById("vm-record-btn").textContent = "Gravando...";
-
-        let seconds = 0;
-        voiceRecordingTimer = setInterval(() => {
-            seconds++;
-            document.getElementById("vm-recording-time").textContent =
-                `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
-            if (seconds >= 30) stopVoiceRecording();
-        }, 1000);
-    } catch (err) {
-        alert("Nao foi possivel acessar o microfone. Verifique as permissoes do navegador.");
-    }
-}
-
-function stopVoiceRecording() {
-    if (voiceMediaRecorder && voiceMediaRecorder.state === "recording") {
-        voiceMediaRecorder.stop();
-    }
-    clearInterval(voiceRecordingTimer);
-    document.getElementById("vm-recording-indicator").hidden = true;
-    document.getElementById("vm-record-btn").innerHTML =
-        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> Gravar Voz';
-}
-
-function handleVoiceUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    voiceSampleBlob = file;
-    showSamplePreview(file);
-}
-
-function showSamplePreview(blob) {
-    const url = URL.createObjectURL(blob);
-    document.getElementById("vm-sample-audio").src = url;
-    document.getElementById("vm-sample-preview").hidden = false;
-}
-
-function removeSamplePreview() {
-    voiceSampleBlob = null;
-    document.getElementById("vm-sample-preview").hidden = true;
-    document.getElementById("vm-sample-audio").src = "";
-}
-
+window.toggleMinhaVoz = toggleMinhaVoz;
+window.selectPersona = selectPersona;
+window.startPersonaRecording = startPersonaRecording;
+window.stopPersonaRecording = stopPersonaRecording;
+window.handlePersonaUpload = handlePersonaUpload;
+window.savePersonaVoice = savePersonaVoice;
+window.cancelPersonaPreview = cancelPersonaPreview;
 window.openVoiceManager = openVoiceManager;
 window.showCreateVoiceProfile = showCreateVoiceProfile;
 window.cancelCreateVoiceProfile = cancelCreateVoiceProfile;
@@ -1525,9 +1611,5 @@ window.saveVoiceProfile = saveVoiceProfile;
 window.setDefaultVoice = setDefaultVoice;
 window.previewVoice = previewVoice;
 window.deleteVoiceProfile = deleteVoiceProfile;
-window.toggleVoiceRecording = toggleVoiceRecording;
-window.stopVoiceRecording = stopVoiceRecording;
-window.handleVoiceUpload = handleVoiceUpload;
-window.removeSamplePreview = removeSamplePreview;
 
 bootstrap();

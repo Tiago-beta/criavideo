@@ -14,7 +14,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260328-2">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260328-2">
     <link rel="apple-touch-icon" href="/video/static/icons/icon-192.png?v=20260328-2">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260328-3">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260329-1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -309,22 +309,45 @@
                     <!-- Step 3: Voice -->
                     <div class="wizard-step" data-step="3" hidden>
                         <h3 class="wizard-question">Escolha a voz da narracao</h3>
-                        <p class="wizard-hint">Selecione uma voz ou crie seu perfil personalizado</p>
+                        <p class="wizard-hint">Use uma voz IA ou grave sua propria voz</p>
                         <div id="wizard-voice-selector" class="voice-selector">
-                            <div class="voice-section">
-                                <div class="voice-section-header">
-                                    <span class="voice-section-title">Minhas Vozes</span>
-                                    <button class="btn-voice-manage" onclick="openVoiceManager()" type="button">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                                        Gerenciar
+                            <!-- Minha Voz button -->
+                            <button class="minha-voz-btn" id="wizard-minha-voz-btn" onclick="toggleMinhaVoz('wizard')" type="button">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                Minha Voz
+                            </button>
+                            <!-- Persona panel -->
+                            <div class="persona-panel hidden" id="wizard-persona-panel">
+                                <div id="wizard-persona-list" class="persona-list"></div>
+                                <div class="persona-actions">
+                                    <button class="persona-record-btn" onclick="startPersonaRecording('wizard')" type="button">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                        Gravar Voz
                                     </button>
+                                    <label class="persona-upload-btn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                        Enviar Audio
+                                        <input type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'wizard')" hidden>
+                                    </label>
                                 </div>
-                                <div id="wizard-my-voices" class="wizard-grid voice-profiles-grid">
-                                    <div class="voice-empty-msg">Nenhum perfil criado</div>
+                                <div id="wizard-recording-area" class="persona-recording-area" hidden>
+                                    <div class="recording-pulse"></div>
+                                    <span id="wizard-rec-time">0:00</span>
+                                    <button class="btn btn-sm btn-danger" onclick="stopPersonaRecording('wizard')" type="button">Parar</button>
                                 </div>
+                                <div id="wizard-persona-preview" class="persona-preview" hidden>
+                                    <audio id="wizard-persona-audio" controls></audio>
+                                    <div class="persona-save-row">
+                                        <input id="wizard-persona-name" type="text" class="input" placeholder="Nome do perfil (ex: Minha voz)">
+                                        <button class="btn btn-primary btn-sm" onclick="savePersonaVoice('wizard')" type="button">Salvar</button>
+                                        <button class="btn-icon-sm" onclick="cancelPersonaPreview('wizard')" type="button">&times;</button>
+                                    </div>
+                                </div>
+                                <p class="persona-hint">Grave ou envie 10-30s falando para criar seu perfil de voz</p>
                             </div>
+                            <!-- Vozes IA -->
                             <div class="voice-section">
-                                <span class="voice-section-title">Vozes Genericas</span>
+                                <span class="voice-section-title">Vozes IA</span>
                                 <div class="wizard-grid" id="wizard-builtin-voices">
                                     <button class="wizard-option" data-value="onyx" data-voice-type="builtin" type="button">Masculina Grave</button>
                                     <button class="wizard-option" data-value="echo" data-voice-type="builtin" type="button">Masculina Suave</button>
@@ -405,22 +428,45 @@
                     <!-- Step 2: Voice -->
                     <div class="wizard-step" data-step="2" hidden>
                         <h3 class="wizard-question">Escolha a voz da narracao</h3>
-                        <p class="wizard-hint">Selecione uma voz ou crie seu perfil personalizado</p>
+                        <p class="wizard-hint">Use uma voz IA ou grave sua propria voz</p>
                         <div id="script-voice-selector" class="voice-selector">
-                            <div class="voice-section">
-                                <div class="voice-section-header">
-                                    <span class="voice-section-title">Minhas Vozes</span>
-                                    <button class="btn-voice-manage" onclick="openVoiceManager()" type="button">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                                        Gerenciar
+                            <!-- Minha Voz button -->
+                            <button class="minha-voz-btn" id="script-minha-voz-btn" onclick="toggleMinhaVoz('script')" type="button">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                Minha Voz
+                            </button>
+                            <!-- Persona panel -->
+                            <div class="persona-panel hidden" id="script-persona-panel">
+                                <div id="script-persona-list" class="persona-list"></div>
+                                <div class="persona-actions">
+                                    <button class="persona-record-btn" onclick="startPersonaRecording('script')" type="button">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                        Gravar Voz
                                     </button>
+                                    <label class="persona-upload-btn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                        Enviar Audio
+                                        <input type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'script')" hidden>
+                                    </label>
                                 </div>
-                                <div id="script-my-voices" class="wizard-grid voice-profiles-grid">
-                                    <div class="voice-empty-msg">Nenhum perfil criado</div>
+                                <div id="script-recording-area" class="persona-recording-area" hidden>
+                                    <div class="recording-pulse"></div>
+                                    <span id="script-rec-time">0:00</span>
+                                    <button class="btn btn-sm btn-danger" onclick="stopPersonaRecording('script')" type="button">Parar</button>
                                 </div>
+                                <div id="script-persona-preview" class="persona-preview" hidden>
+                                    <audio id="script-persona-audio" controls></audio>
+                                    <div class="persona-save-row">
+                                        <input id="script-persona-name" type="text" class="input" placeholder="Nome do perfil (ex: Minha voz)">
+                                        <button class="btn btn-primary btn-sm" onclick="savePersonaVoice('script')" type="button">Salvar</button>
+                                        <button class="btn-icon-sm" onclick="cancelPersonaPreview('script')" type="button">&times;</button>
+                                    </div>
+                                </div>
+                                <p class="persona-hint">Grave ou envie 10-30s falando para criar seu perfil de voz</p>
                             </div>
+                            <!-- Vozes IA -->
                             <div class="voice-section">
-                                <span class="voice-section-title">Vozes Genericas</span>
+                                <span class="voice-section-title">Vozes IA</span>
                                 <div class="wizard-grid" id="script-builtin-voices">
                                     <button class="wizard-option" data-value="onyx" data-voice-type="builtin" type="button">Masculina Grave</button>
                                     <button class="wizard-option" data-value="echo" data-voice-type="builtin" type="button">Masculina Suave</button>
@@ -654,7 +700,7 @@
                     </div>
                 </div>
 
-                <!-- Create Voice Profile Form -->
+                <!-- Create Voice Profile Form (simplified) -->
                 <div id="vm-create-section" hidden>
                     <h4 id="vm-create-title">Criar Perfil de Voz</h4>
                     <div class="form-group">
@@ -682,31 +728,6 @@
                         <textarea id="vm-instructions" class="input" rows="3" placeholder="Ex: Fale de forma calma e pausada, com sotaque brasileiro, tom amigavel e acolhedor..."></textarea>
                     </div>
                     <div class="form-group">
-                        <label>Amostra de voz (opcional)</label>
-                        <p class="wizard-hint">Grave ou envie um audio de ate 30 segundos para personalizar ainda mais</p>
-                        <div class="voice-record-area">
-                            <button id="vm-record-btn" class="btn btn-secondary btn-sm" onclick="toggleVoiceRecording()" type="button">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                                Gravar Voz
-                            </button>
-                            <span class="voice-record-or">ou</span>
-                            <label class="btn btn-secondary btn-sm voice-upload-label">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                Enviar Audio
-                                <input id="vm-upload-input" type="file" accept="audio/*" onchange="handleVoiceUpload(event)" hidden>
-                            </label>
-                        </div>
-                        <div id="vm-recording-indicator" class="voice-recording-indicator" hidden>
-                            <div class="recording-pulse"></div>
-                            <span id="vm-recording-time">0:00</span>
-                            <button class="btn btn-sm btn-danger" onclick="stopVoiceRecording()" type="button">Parar</button>
-                        </div>
-                        <div id="vm-sample-preview" class="voice-sample-preview" hidden>
-                            <audio id="vm-sample-audio" controls></audio>
-                            <button class="btn-icon-sm" onclick="removeSamplePreview()" type="button">&times;</button>
-                        </div>
-                    </div>
-                    <div class="form-group">
                         <label>
                             <input id="vm-set-default" type="checkbox" checked> Definir como voz padrao
                         </label>
@@ -721,7 +742,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260328-5"></script>
+    <script src="/video/static/app.js?v=20260329-1"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>
