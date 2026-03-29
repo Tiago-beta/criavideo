@@ -254,6 +254,27 @@ async def upload_voice_sample(
     with open(sample_path, "wb") as f:
         f.write(content)
 
+    # Auto-trim to 30s if longer (OpenAI requires <= 30s)
+    try:
+        import subprocess
+        probe = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+             "-of", "csv=p=0", sample_path],
+            capture_output=True, text=True, timeout=10,
+        )
+        dur = float(probe.stdout.strip())
+        if dur > 30:
+            trimmed_path = str(voice_dir / f"sample_trimmed{ext}")
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", sample_path, "-t", "30", "-c", "copy", trimmed_path],
+                capture_output=True, timeout=30,
+            )
+            if os.path.exists(trimmed_path) and os.path.getsize(trimmed_path) > 0:
+                os.replace(trimmed_path, sample_path)
+                logger.info(f"Trimmed voice sample from {dur:.1f}s to 30s")
+    except Exception as e:
+        logger.warning(f"Could not check/trim audio duration: {e}")
+
     profile.sample_path = sample_path
     profile.voice_type = "custom"
     await db.commit()

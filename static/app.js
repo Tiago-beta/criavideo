@@ -1587,12 +1587,86 @@ function stopPersonaRecording(prefix) {
     if (area) area.hidden = true;
 }
 
-function handlePersonaUpload(event, prefix) {
+async function handlePersonaUpload(event, prefix) {
     const file = event.target.files[0];
     if (!file) return;
-    personaSampleBlobs[prefix] = file;
-    showPersonaPreview(prefix, file);
+    const hint = document.querySelector(`#${prefix}-persona-panel .persona-hint`);
+    if (hint) hint.textContent = "Processando audio...";
+    const result = await trimAudioTo30s(file);
+    if (result.tooLarge) {
+        alert("Audio muito grande. Grave pelo microfone ou envie um arquivo menor (max 10MB).");
+        if (hint) hint.textContent = "Grave ou envie 10-30s falando para criar seu perfil de voz";
+        event.target.value = '';
+        return;
+    }
+    personaSampleBlobs[prefix] = result.blob;
+    showPersonaPreview(prefix, result.blob);
+    if (result.wasTrimmed && hint) {
+        const min = Math.floor(result.duration / 60);
+        const sec = String(Math.floor(result.duration % 60)).padStart(2, '0');
+        hint.textContent = `Audio cortado para 30s (original: ${min}:${sec})`;
+    } else if (hint) {
+        hint.textContent = "Grave ou envie 10-30s falando para criar seu perfil de voz";
+    }
     event.target.value = '';
+}
+
+async function trimAudioTo30s(blob) {
+    if (blob.size > 15 * 1024 * 1024) {
+        return { blob: null, wasTrimmed: false, duration: 0, tooLarge: true };
+    }
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const arrayBuffer = await blob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const duration = audioBuffer.duration;
+        if (duration <= 30) {
+            audioContext.close();
+            return { blob, wasTrimmed: false, duration };
+        }
+        const rate = audioBuffer.sampleRate;
+        const channels = audioBuffer.numberOfChannels;
+        const maxSamples = Math.floor(30 * rate);
+        const offlineCtx = new OfflineAudioContext(channels, maxSamples, rate);
+        const source = offlineCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(offlineCtx.destination);
+        source.start(0, 0, 30);
+        const rendered = await offlineCtx.startRendering();
+        audioContext.close();
+        const wavBlob = audioBufferToWav(rendered);
+        return { blob: wavBlob, wasTrimmed: true, duration };
+    } catch (e) {
+        console.warn("Could not trim audio:", e);
+        return { blob, wasTrimmed: false, duration: 0 };
+    }
+}
+
+function audioBufferToWav(buffer) {
+    const numCh = buffer.numberOfChannels;
+    const rate = buffer.sampleRate;
+    const bps = 16;
+    const blockAlign = numCh * (bps / 8);
+    const dataSize = buffer.length * blockAlign;
+    const buf = new ArrayBuffer(44 + dataSize);
+    const v = new DataView(buf);
+    const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    ws(0, 'RIFF'); v.setUint32(4, 36 + dataSize, true);
+    ws(8, 'WAVE'); ws(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+    v.setUint16(22, numCh, true); v.setUint32(24, rate, true);
+    v.setUint32(28, rate * blockAlign, true);
+    v.setUint16(32, blockAlign, true); v.setUint16(34, bps, true);
+    ws(36, 'data'); v.setUint32(40, dataSize, true);
+    let off = 44;
+    for (let i = 0; i < buffer.length; i++) {
+        for (let ch = 0; ch < numCh; ch++) {
+            const s = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+            v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            off += 2;
+        }
+    }
+    return new Blob([buf], { type: 'audio/wav' });
 }
 
 function showPersonaPreview(prefix, blob) {
@@ -1639,7 +1713,8 @@ async function savePersonaVoice(prefix) {
         // Upload the sample
         if (profile.id) {
             const formData = new FormData();
-            formData.append("file", blob, "sample.webm");
+            const fname = blob.type === 'audio/wav' ? 'sample.wav' : 'sample.webm';
+            formData.append("file", blob, fname);
             await fetch(`/api/voice/profiles/${profile.id}/upload-sample`, {
                 method: "POST",
                 headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
