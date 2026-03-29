@@ -684,13 +684,33 @@ function _updateCardInPlace(project) {
         const simBtn = card.querySelector("[onclick*='createSimilar(" + project.id + ")']");
         const delBtn = card.querySelector("[onclick*='deleteProject(" + project.id + ")']");
         if (watchBtn || genBtn || simBtn || delBtn) {
-            const badge = card.querySelector(".badge");
-            if (badge) {
+            const body = card.querySelector(".card-body");
+            // Update or create badge
+            const isActive = project.status !== "completed" && project.status !== "failed" && project.status !== "pending";
+            let badge = card.querySelector(".badge");
+            if (project.status !== "completed") {
+                if (!badge) {
+                    badge = document.createElement("span");
+                    body.appendChild(badge);
+                }
                 badge.textContent = _statusPt(project.status);
                 badge.className = `badge badge-${badgeClass(project.status)}`;
+            } else if (badge) {
+                badge.remove();
             }
-            const bar = card.querySelector(".progress-bar-fill");
-            if (bar) bar.style.width = project.progress + "%";
+            // Update or create progress bar
+            let barWrap = card.querySelector(".progress-bar");
+            if (isActive && project.progress != null) {
+                if (!barWrap) {
+                    barWrap = document.createElement("div");
+                    barWrap.className = "progress-bar";
+                    barWrap.innerHTML = '<div class="progress-bar-fill"></div>';
+                    body.appendChild(barWrap);
+                }
+                barWrap.querySelector(".progress-bar-fill").style.width = project.progress + "%";
+            } else if (barWrap) {
+                barWrap.remove();
+            }
             break;
         }
     }

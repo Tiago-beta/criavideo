@@ -88,6 +88,7 @@ async def generate_all_scenes(
     duration: float,
     aspect_ratio: str = "16:9",
     style_hint: str = "",
+    on_progress=None,
 ) -> list[dict]:
     """Full pipeline: analyze lyrics → generate images for each scene."""
     media_dir = Path(settings.media_dir) / "images" / str(project_id)
@@ -99,8 +100,9 @@ async def generate_all_scenes(
     # Step 2: Generate images for each scene (in thread pool, sequential to avoid rate limits)
     loop = asyncio.get_event_loop()
     results = []
+    total = len(scenes)
 
-    for scene in scenes:
+    for i, scene in enumerate(scenes):
         idx = scene.get("scene_index", len(results))
         visual_prompt = scene.get("visual_prompt", "Abstract colorful background")
         if style_hint:
@@ -118,5 +120,8 @@ async def generate_all_scenes(
             scene["image_path"] = None
 
         results.append(scene)
+
+        if on_progress and total > 0:
+            await on_progress(i + 1, total)
 
     return results

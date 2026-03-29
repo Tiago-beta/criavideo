@@ -113,6 +113,12 @@ async def run_video_pipeline(project_id: int):
 
             from app.services.scene_generator import generate_all_scenes
 
+            async def _scene_progress(done, total):
+                # Map scene progress to 5-40% range
+                pct = 5 + int((done / total) * 35)
+                project.progress = min(pct, 40)
+                await db.commit()
+
             scenes = await generate_all_scenes(
                 project_id=project_id,
                 lyrics_text=project.lyrics_text or "",
@@ -120,6 +126,7 @@ async def run_video_pipeline(project_id: int):
                 duration=project.track_duration or 180,
                 aspect_ratio=project.aspect_ratio,
                 style_hint=project.style_prompt,
+                on_progress=_scene_progress,
             )
 
             # Save scenes to DB
