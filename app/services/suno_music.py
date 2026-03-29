@@ -61,6 +61,7 @@ async def generate_suno_music(
         "prompt": "",
         "style": style,
         "title": "Background Music",
+        "callBackUrl": f"{settings.site_url}/api/suno-callback/bgm",
     }
 
     logger.info(f"Suno: requesting instrumental music (mood={mood}, style={style[:60]}...)")
@@ -74,10 +75,18 @@ async def generate_suno_music(
                 headers=headers,
             )
             resp.raise_for_status()
-            data = resp.json()
-            task_id = data.get("data", {}).get("taskId")
+            resp_data = resp.json()
+            logger.info(f"Suno: generate response: {resp_data}")
+            
+            # Handle various response formats
+            inner = resp_data.get("data") or resp_data
+            if isinstance(inner, dict):
+                task_id = inner.get("taskId") or inner.get("task_id")
+            else:
+                task_id = None
+            
             if not task_id:
-                logger.warning(f"Suno: no taskId in response: {data}")
+                logger.warning(f"Suno: no taskId in response: {resp_data}")
                 return ""
 
             logger.info(f"Suno: generation started, taskId={task_id}")
@@ -110,7 +119,21 @@ async def _poll_suno_task(
     task_id: str,
     max_wait: int = 300,
 ) -> str:
-    """Poll Suno API for task completion. Returns audio_url or empty string."""
+    """Poll Suno API for task completion. Returns audio_url or empty string.
+    
+    Suno response format on success:
+    {
+        "data": {
+            "status": "SUCCESS",
+            "response": {
+                "sunoData": [
+                    {"audioUrl": "https://...", "duration": 257.28, ...},
+                    ...
+                ]
+            }
+        }
+    }
+    """
     elapsed = 0
     interval = 5
 
@@ -128,21 +151,46 @@ async def _poll_suno_task(
             resp.raise_for_status()
             result = resp.json()
 
-            status = result.get("data", {}).get("status", "")
+            if elapsed <= 10:
+                logger.info(f"Suno: poll response (truncated): code={result.get('code')}, status={result.get('data', {}).get('status')}")
+
+            inner = result.get("data") or {}
+            if not isinstance(inner, dict):
+                inner = {}
+            status = inner.get("status", "")
 
             if status == "SUCCESS":
-                tracks = result.get("data", {}).get("data", [])
-                if tracks and tracks[0].get("audio_url"):
-                    logger.info(f"Suno: task completed after {elapsed}s")
-                    return tracks[0]["audio_url"]
+                # Tracks are in data.response.sunoData[] with audioUrl (camelCase)
+                response_obj = inner.get("response") or {}
+                tracks = response_obj.get("sunoData", [])
+                if isinstance(tracks, list) and tracks:
+                    audio_url = tracks[0].get("audioUrl") or tracks[0].get("audio_url") or ""
+                    if audio_url:
+                        duration = tracks[0].get("duration")
+                        logger.info(f"Suno: task completed after {elapsed}s, duration={duration}s")
+                        return audio_url
+                    else:
+                        logger.warning(f"Suno: SUCCESS but no audioUrl in tracks: {tracks[0].keys()}")
+                
+                # Also try legacy format data.data[]
+                legacy_tracks = inner.get("data", [])
+                if isinstance(legacy_tracks, list) and legacy_tracks:
+                    audio_url = legacy_tracks[0].get("audio_url") or legacy_tracks[0].get("audioUrl") or ""
+                    if audio_url:
+                        logger.info(f"Suno: task completed (legacy format) after {elapsed}s")
+                        return audio_url
+
+                logger.warning(f"Suno: SUCCESS but no audio URL found in response")
+                return ""
 
             elif status == "FAILED":
-                logger.warning(f"Suno: task failed after {elapsed}s")
+                err = inner.get("errorMessage") or inner.get("errorCode") or "unknown"
+                logger.warning(f"Suno: task failed after {elapsed}s, error: {err}")
                 return ""
 
             # Still PENDING, continue polling
             if elapsed % 30 == 0:
-                logger.info(f"Suno: still generating... ({elapsed}s)")
+                logger.info(f"Suno: still generating... ({elapsed}s), status={status}")
 
         except Exception as e:
             logger.warning(f"Suno poll error: {e}")
