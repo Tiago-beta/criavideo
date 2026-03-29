@@ -141,7 +141,7 @@ def generate_background_music(
     inputs = []
     labels = []
     for i, freq in enumerate(freqs):
-        vol = max(0.035 - (i * 0.007), 0.01)
+        vol = max(0.15 - (i * 0.025), 0.05)
         # tremolo freq must be >= 0.1 Hz per FFmpeg spec
         trem = 0.1 + (i * 0.05)
         inputs.extend([
@@ -154,7 +154,7 @@ def generate_background_music(
     ni = len(freqs)
     inputs.extend([
         "-f", "lavfi", "-i",
-        f"anoisesrc=d={dur}:c=pink:a=0.01,lowpass=f=400,highpass=f=60",
+        f"anoisesrc=d={dur}:c=pink:a=0.04,lowpass=f=400,highpass=f=60",
     ])
     labels.append(f"[{ni}:a]")
 
@@ -163,7 +163,8 @@ def generate_background_music(
         "".join(labels)
         + f"amix=inputs={n}:duration=longest:normalize=0,"
           f"lowpass=f=2000,"
-          f"afade=t=in:d=3,afade=t=out:d=4"
+          f"afade=t=in:d=3,afade=t=out:d=4,"
+          f"loudnorm=I=-24:TP=-2:LRA=11"
     )
 
     cmd = [
