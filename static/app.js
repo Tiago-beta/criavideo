@@ -823,6 +823,8 @@ function resetCreateWizard() {
 
     // Load voice profiles into selectors
     loadVoiceProfiles();
+    // Initialize voice preview buttons
+    initVoicePreview();
 }
 
 function updateWizardUI(panelId, step, totalSteps, prefix) {
@@ -1397,6 +1399,37 @@ window.deleteSchedule = deleteSchedule;
 window.connectPlatform = connectPlatform;
 window.disconnectAccount = disconnectAccount;
 window.loadProjects = loadProjects;
+
+// ── Voice Preview System ──
+let _voicePreviewAudio = null;
+
+function initVoicePreview() {
+    document.querySelectorAll(".voice-preview-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const voiceId = btn.dataset.voice;
+            // If already playing this voice, stop it
+            if (_voicePreviewAudio && btn.classList.contains("playing")) {
+                _voicePreviewAudio.pause();
+                _voicePreviewAudio = null;
+                btn.classList.remove("playing");
+                return;
+            }
+            // Stop any other playing preview
+            if (_voicePreviewAudio) {
+                _voicePreviewAudio.pause();
+                document.querySelectorAll(".voice-preview-btn.playing").forEach(b => b.classList.remove("playing"));
+            }
+            btn.classList.add("playing");
+            _voicePreviewAudio = new Audio(`/api/video/voice-demo/${voiceId}`);
+            _voicePreviewAudio.play().catch(() => {});
+            _voicePreviewAudio.onended = () => {
+                btn.classList.remove("playing");
+                _voicePreviewAudio = null;
+            };
+        });
+    });
+}
 
 // ── Voice Profile System (Levita-style) ──
 

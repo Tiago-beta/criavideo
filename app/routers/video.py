@@ -3,7 +3,10 @@ Video Router — Endpoints for creating video projects, generating scenes/render
 """
 import json
 import logging
+import os
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
@@ -19,6 +22,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/video", tags=["video"])
 settings = get_settings()
 _openai = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+
+# Voice demo config: name, label, demo phrase
+VOICE_DEMOS = {
+    "onyx":    {"name": "Lucas",   "label": "Masculina Grave",   "text": "Oi, eu sou o Lucas! Com minha voz grave e marcante, vou dar presença aos seus vídeos. Me escolha!"},
+    "echo":    {"name": "Rafael",  "label": "Masculina Suave",   "text": "Olá, sou o Rafael! Minha voz suave e envolvente vai conquistar seu público. Me escolha!"},
+    "ash":     {"name": "Pedro",   "label": "Masculina Natural", "text": "E aí, sou o Pedro! Com minha voz natural e autêntica, seus vídeos vão ficar incríveis. Me escolha!"},
+    "nova":    {"name": "Clara",   "label": "Feminina Clara",    "text": "Oi, eu sou a Clara! Minha voz clara e vibrante vai dar vida aos seus vídeos. Me escolha!"},
+    "shimmer": {"name": "Sofia",   "label": "Feminina Suave",    "text": "Olá, sou a Sofia! Com minha voz suave e delicada, vou encantar quem assistir. Me escolha!"},
+    "coral":   {"name": "Beatriz", "label": "Feminina Natural",  "text": "Oi, eu sou a Beatriz! Minha voz natural e expressiva é perfeita para seus vídeos. Me escolha!"},
+    "alloy":   {"name": "Alex",    "label": "Neutra",            "text": "Olá, sou Alex! Minha voz versátil se adapta a qualquer tipo de conteúdo. Me escolha!"},
+    "fable":   {"name": "Mateus",  "label": "Narrativa",         "text": "Olá, sou o Mateus! Minha voz narrativa vai transformar seus vídeos em histórias inesquecíveis. Me escolha!"},
+    "sage":    {"name": "Luna",    "label": "Calma e Clara",     "text": "Oi, eu sou a Luna! Com minha voz calma e clara, vou transmitir tranquilidade nos seus vídeos. Me escolha!"},
+}
+
+VOICE_DEMO_DIR = os.path.join(settings.media_dir, "voice_demos")
+os.makedirs(VOICE_DEMO_DIR, exist_ok=True)
+
+
+@router.get("/voice-demo/{voice_id}")
+async def get_voice_demo(voice_id: str):
+    """Return a cached TTS demo for the given voice. Generates on first request."""
+    if voice_id not in VOICE_DEMOS:
+        raise HTTPException(404, "Voice not found")
+
+    cache_path = os.path.join(VOICE_DEMO_DIR, f"{voice_id}.mp3")
+    if not os.path.exists(cache_path):
+        demo = VOICE_DEMOS[voice_id]
+        resp = await _openai.audio.speech.create(
+            model="tts-1",
+            voice=voice_id,
+            input=demo["text"],
+            response_format="mp3",
+        )
+        Path(cache_path).write_bytes(resp.content)
+
+    return FileResponse(cache_path, media_type="audio/mpeg")
 
 
 def _to_media_url(path: str | None) -> str | None:
