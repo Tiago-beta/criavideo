@@ -379,6 +379,7 @@ class GenerateTTSRequest(BaseModel):
     title: str = ""
     aspect_ratio: str = "16:9"
     style_prompt: str = ""
+    pause_level: str = "normal"
 
 
 @router.post("/generate-script")
@@ -466,6 +467,7 @@ async def generate_audio_endpoint(
             project_id=project.id,
             tts_instructions=tts_instructions,
             voice_type=voice_type,
+            pause_level=req.pause_level,
         )
         project.audio_path = audio_path
 

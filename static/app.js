@@ -849,6 +849,8 @@ function resetCreateWizard() {
     initVoicePreview();
     // Initialize style tag toggles
     initStyleTags();
+    // Initialize pause option buttons
+    initPauseOptions();
 }
 
 function updateWizardUI(panelId, step, totalSteps, prefix) {
@@ -908,6 +910,7 @@ async function handleWizardCreate() {
     wizardData.duration = durBtn ? parseInt(durBtn.dataset.value) : 60;
     wizardData.aspect = document.getElementById("wizard-aspect").value;
     wizardData.style = getSelectedStyles("wizard-style-tags");
+    wizardData.pauseLevel = getSelectedPause("wizard-pause-options");
 
     showCreateProgress("Gerando roteiro com IA...");
 
@@ -934,6 +937,7 @@ async function handleWizardCreate() {
                 title: wizardData.topic,
                 aspect_ratio: wizardData.aspect,
                 style_prompt: wizardData.style,
+                pause_level: wizardData.pauseLevel,
             }),
         });
 
@@ -980,6 +984,7 @@ async function handleScriptCreate() {
     scriptData.title = document.getElementById("script-title").value.trim();
     scriptData.aspect = document.getElementById("script-aspect").value;
     scriptData.style = getSelectedStyles("script-style-tags");
+    scriptData.pauseLevel = getSelectedPause("script-pause-options");
 
     showCreateProgress("Gerando narracao com voz IA...");
 
@@ -993,6 +998,7 @@ async function handleScriptCreate() {
                 title: scriptData.title || "Video com roteiro",
                 aspect_ratio: scriptData.aspect,
                 style_prompt: scriptData.style,
+                pause_level: scriptData.pauseLevel,
             }),
         });
 
@@ -1433,6 +1439,23 @@ function initStyleTags() {
             tag.classList.add("selected");
         });
     });
+}
+
+function initPauseOptions() {
+    document.querySelectorAll(".pause-option").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const container = btn.closest(".pause-options");
+            container.querySelectorAll(".pause-option").forEach(b => b.classList.remove("selected"));
+            btn.classList.add("selected");
+        });
+    });
+}
+
+function getSelectedPause(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return "normal";
+    const sel = container.querySelector(".pause-option.selected");
+    return sel ? sel.dataset.value : "normal";
 }
 
 function getSelectedStyles(containerId) {

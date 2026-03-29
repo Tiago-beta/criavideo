@@ -1127,6 +1127,43 @@ th {
     color: var(--accent);
 }
 
+/* Pause options */
+.pause-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.pause-option {
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+}
+
+.pause-option:hover {
+    border-color: rgba(246, 165, 47, 0.4);
+}
+
+.pause-option.selected {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.pause-hint {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
 /* Style tags */
 .style-tags {
     display: flex;

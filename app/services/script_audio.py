@@ -3,7 +3,9 @@ Script & Audio Generator — Creates video scripts with AI and generates TTS nar
 """
 import os
 import logging
+import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 import openai
@@ -95,20 +97,32 @@ async def generate_tts_audio(
     project_id: int = 0,
     tts_instructions: str = "",
     voice_type: str = "builtin",
+    pause_level: str = "normal",
 ) -> str:
     """Generate TTS audio and save to media directory. Returns file path.
 
     For custom voices (voice_type="custom"), uses Fish Audio with the voice as reference_id.
     For builtin voices, uses OpenAI TTS.
-    Automatically chunks long texts (>4000 chars) and concatenates.
+    pause_level: "normal" | "relaxed" | "deep" — controls silence insertion between segments.
     """
     audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
     audio_dir.mkdir(parents=True, exist_ok=True)
     output_path = audio_dir / "narration.mp3"
 
+    # Enhance TTS instructions based on pause level (for gpt-4o-mini-tts)
+    if pause_level in ("relaxed", "deep"):
+        pacing = _get_pacing_instructions(pause_level)
+        tts_instructions = f"{tts_instructions}\n{pacing}" if tts_instructions else pacing
+
     try:
+        # For non-normal pause levels, use segment-based generation with silence insertion
+        if pause_level in ("relaxed", "deep"):
+            await _generate_with_pauses(
+                text, voice, tts_instructions, str(output_path),
+                pause_level, voice_type, audio_dir,
+            )
         # Custom voices use Fish Audio
-        if voice_type == "custom" and voice:
+        elif voice_type == "custom" and voice:
             from app.services.fish_audio import generate_tts_long
             ok = await generate_tts_long(text, voice, str(output_path))
             if not ok:
@@ -123,7 +137,6 @@ async def generate_tts_audio(
                 await _generate_single_tts(chunk, voice, tts_instructions, str(chunk_path))
                 chunk_paths.append(str(chunk_path))
             _concat_audio_files(chunk_paths, str(output_path))
-            # Clean up chunks
             for cp in chunk_paths:
                 try:
                     os.remove(cp)
@@ -137,6 +150,152 @@ async def generate_tts_audio(
     except Exception as e:
         logger.error("TTS generation failed: %s", e)
         raise
+
+
+def _get_pacing_instructions(pause_level: str) -> str:
+    """Return TTS pacing instructions based on pause level."""
+    if pause_level == "relaxed":
+        return (
+            "Fale de forma calma e tranquila, com ritmo pausado. "
+            "Faça pequenas pausas naturais nas vírgulas e pausas mais longas nas reticências. "
+            "Mantenha um tom sereno e acolhedor."
+        )
+    elif pause_level == "deep":
+        return (
+            "Fale de forma muito lenta e profunda, como em uma sessão de meditação guiada ou hipnose. "
+            "Faça pausas longas e marcantes nas reticências e nos pontos finais. "
+            "Respire entre as frases. Tom extremamente calmo, suave e hipnótico. "
+            "Cada palavra deve ser pronunciada com clareza e serenidade."
+        )
+    return ""
+
+
+def _split_at_pause_markers(text: str, pause_level: str) -> list[dict]:
+    """Split text into segments at pause markers, returning segments with silence durations.
+    
+    Returns list of {"text": str, "silence_after": float} dicts.
+    """
+    if pause_level == "relaxed":
+        # Split at "..." markers — insert 1.2s silence
+        parts = re.split(r'(\.{3,}|…)', text)
+        segments = []
+        for i, part in enumerate(parts):
+            part = part.strip()
+            if not part:
+                continue
+            if re.match(r'^(\.{3,}|…)$', part):
+                # This is an ellipsis — add silence to previous segment
+                if segments:
+                    segments[-1]["silence_after"] = 1.2
+            else:
+                segments.append({"text": part, "silence_after": 0.3})
+        return segments if segments else [{"text": text, "silence_after": 0}]
+
+    elif pause_level == "deep":
+        # Split at "..." (2.0s) and at sentence ends "." (1.0s)
+        # First, replace ... with a unique marker
+        marked = re.sub(r'\.{3,}|…', ' |||ELLIPSIS||| ', text)
+        # Split at sentence boundaries
+        raw_parts = re.split(r'(?<=[.!?])\s+', marked)
+        segments = []
+        for part in raw_parts:
+            part = part.strip()
+            if not part:
+                continue
+            if '|||ELLIPSIS|||' in part:
+                # Split further at ellipsis markers
+                sub_parts = part.split('|||ELLIPSIS|||')
+                for j, sp in enumerate(sub_parts):
+                    sp = sp.strip()
+                    if not sp:
+                        continue
+                    silence = 2.5 if j < len(sub_parts) - 1 else 1.0
+                    segments.append({"text": sp, "silence_after": silence})
+            else:
+                segments.append({"text": part, "silence_after": 1.0})
+        return segments if segments else [{"text": text, "silence_after": 0}]
+
+    return [{"text": text, "silence_after": 0}]
+
+
+def _generate_silence(duration: float, output_path: str):
+    """Generate a silence audio file of the given duration using FFmpeg."""
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "lavfi", "-i", f"anullsrc=r=24000:cl=mono",
+        "-t", str(duration),
+        "-c:a", "libmp3lame", "-b:a", "64k",
+        output_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        raise RuntimeError(f"FFmpeg silence generation failed: {result.stderr[-300:]}")
+
+
+async def _generate_with_pauses(
+    text: str, voice: str, tts_instructions: str, output_path: str,
+    pause_level: str, voice_type: str, audio_dir: Path,
+):
+    """Generate TTS with real silence inserted between segments based on pause_level."""
+    segments = _split_at_pause_markers(text, pause_level)
+    logger.info(f"Pause level '{pause_level}': split into {len(segments)} segments")
+
+    all_parts = []  # paths of audio files (TTS + silence) to concatenate
+    
+    for i, seg in enumerate(segments):
+        seg_text = seg["text"].strip()
+        if not seg_text:
+            continue
+        
+        # Generate TTS for this segment
+        seg_path = str(audio_dir / f"pause_seg_{i:04d}.mp3")
+        
+        if voice_type == "custom" and voice:
+            from app.services.fish_audio import generate_tts, generate_tts_long
+            if len(seg_text) > 4000:
+                ok = await generate_tts_long(seg_text, voice, seg_path)
+            else:
+                ok = await generate_tts(seg_text, voice, seg_path)
+            if not ok:
+                raise RuntimeError(f"Fish Audio TTS failed for segment {i}")
+        elif len(seg_text) > 4000:
+            # Long segment — split into sub-chunks
+            chunks = _split_text_for_tts(seg_text, max_chars=3800)
+            chunk_paths = []
+            for ci, chunk in enumerate(chunks):
+                cp = str(audio_dir / f"pause_seg_{i:04d}_chunk_{ci:03d}.mp3")
+                await _generate_single_tts(chunk, voice, tts_instructions, cp)
+                chunk_paths.append(cp)
+            _concat_audio_files(chunk_paths, seg_path)
+            for cp in chunk_paths:
+                try:
+                    os.remove(cp)
+                except OSError:
+                    pass
+        else:
+            await _generate_single_tts(seg_text, voice, tts_instructions, seg_path)
+        
+        all_parts.append(seg_path)
+        
+        # Add silence after this segment (if needed)
+        silence_dur = seg["silence_after"]
+        if silence_dur > 0 and i < len(segments) - 1:
+            sil_path = str(audio_dir / f"pause_sil_{i:04d}.mp3")
+            _generate_silence(silence_dur, sil_path)
+            all_parts.append(sil_path)
+
+    if len(all_parts) == 1:
+        os.rename(all_parts[0], output_path)
+    else:
+        _concat_audio_files(all_parts, output_path)
+    
+    # Cleanup temp files
+    for p in all_parts:
+        try:
+            if os.path.exists(p):
+                os.remove(p)
+        except OSError:
+            pass
 
 
 def _split_text_for_tts(text: str, max_chars: int = 3800) -> list[str]:
