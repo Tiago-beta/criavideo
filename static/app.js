@@ -1717,7 +1717,7 @@ async function savePersonaVoice(prefix) {
             formData.append("file", blob, fname);
             await fetch(`/api/voice/profiles/${profile.id}/upload-sample`, {
                 method: "POST",
-                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+                headers: { "Authorization": `Bearer ${token}` },
                 body: formData,
             });
         }
@@ -1840,7 +1840,7 @@ async function submitConsentAndCreateVoice(prefix) {
 
         const resp = await fetch(`/api/voice/profiles/${profileId}/create-custom-voice`, {
             method: "POST",
-            headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+            headers: { "Authorization": `Bearer ${token}` },
             body: formData,
         });
 
