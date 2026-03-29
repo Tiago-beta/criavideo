@@ -137,15 +137,16 @@ def generate_background_music(
     freqs = mood_chords.get(mood.lower(), mood_chords["inspiracional"])
     dur = duration + 2  # extra margin for fades
 
-    # Build layered sine tones with slow tremolo
+    # Build layered sine tones with gentle volume modulation
     inputs = []
     labels = []
     for i, freq in enumerate(freqs):
         vol = max(0.035 - (i * 0.007), 0.01)
-        trem = 0.04 + (i * 0.015)
+        # tremolo freq must be >= 0.1 Hz per FFmpeg spec
+        trem = 0.1 + (i * 0.05)
         inputs.extend([
             "-f", "lavfi", "-i",
-            f"sine=f={freq}:d={dur},tremolo=f={trem}:d=0.5,volume={vol}",
+            f"sine=f={freq}:d={dur},tremolo=f={trem}:d=0.4,volume={vol}",
         ])
         labels.append(f"[{i}:a]")
 
@@ -153,14 +154,14 @@ def generate_background_music(
     ni = len(freqs)
     inputs.extend([
         "-f", "lavfi", "-i",
-        f"anoisesrc=d={dur}:c=pink:s=44100,lowpass=f=400,highpass=f=60,volume=0.01",
+        f"anoisesrc=d={dur}:c=pink:a=0.01,lowpass=f=400,highpass=f=60",
     ])
     labels.append(f"[{ni}:a]")
 
     n = len(labels)
     fc = (
         "".join(labels)
-        + f"amix=inputs={n}:duration=longest,"
+        + f"amix=inputs={n}:duration=longest:normalize=0,"
           f"lowpass=f=2000,"
           f"afade=t=in:d=3,afade=t=out:d=4"
     )
