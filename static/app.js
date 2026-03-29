@@ -1428,7 +1428,9 @@ window.loadProjects = loadProjects;
 function initStyleTags() {
     document.querySelectorAll(".style-tag").forEach((tag) => {
         tag.addEventListener("click", () => {
-            tag.classList.toggle("selected");
+            const container = tag.closest(".style-tags");
+            container.querySelectorAll(".style-tag").forEach(t => t.classList.remove("selected"));
+            tag.classList.add("selected");
         });
     });
 }
@@ -1436,9 +1438,10 @@ function initStyleTags() {
 function getSelectedStyles(containerId) {
     const container = document.getElementById(containerId);
     if (!container) return "";
-    return Array.from(container.querySelectorAll(".style-tag.selected"))
+    const selected = Array.from(container.querySelectorAll(".style-tag.selected"))
         .map(t => t.dataset.value)
-        .join(", ");
+        .filter(v => v !== "ia_escolhe");
+    return selected.join(", ");
 }
 
 function setSelectedStyles(containerId, styleStr) {
