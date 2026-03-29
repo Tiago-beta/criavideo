@@ -111,23 +111,47 @@ async def run_video_pipeline(project_id: int):
             project.progress = 5
             await db.commit()
 
-            from app.services.scene_generator import generate_all_scenes
+            style_prompt = project.style_prompt or ""
+            is_black_screen = "tela_preta" in style_prompt.lower()
 
-            async def _scene_progress(done, total):
-                # Map scene progress to 5-40% range
-                pct = 5 + int((done / total) * 35)
-                project.progress = min(pct, 40)
+            if is_black_screen:
+                # Black screen mode — no image generation, create a single black frame
+                from PIL import Image
+                if project.aspect_ratio == "9:16":
+                    bw, bh = 1080, 1920
+                elif project.aspect_ratio == "1:1":
+                    bw, bh = 1080, 1080
+                else:
+                    bw, bh = 1920, 1080
+                black_dir = Path(settings.media_dir) / "images" / str(project_id)
+                black_dir.mkdir(parents=True, exist_ok=True)
+                black_path = str(black_dir / "black.png")
+                Image.new("RGB", (bw, bh), (0, 0, 0)).save(black_path)
+                dur = project.track_duration or 180
+                scenes = [{"scene_index": 0, "start_time": 0, "end_time": dur,
+                           "visual_prompt": "black screen", "image_path": black_path,
+                           "lyrics_segment": "", "is_chorus": False}]
+                project.progress = 40
                 await db.commit()
+                logger.info(f"Black screen mode: single black frame for {dur:.0f}s")
+            else:
+                from app.services.scene_generator import generate_all_scenes
 
-            scenes = await generate_all_scenes(
-                project_id=project_id,
-                lyrics_text=project.lyrics_text or "",
-                lyrics_words=project.lyrics_words or [],
-                duration=project.track_duration or 180,
-                aspect_ratio=project.aspect_ratio,
-                style_hint=project.style_prompt,
-                on_progress=_scene_progress,
-            )
+                async def _scene_progress(done, total):
+                    # Map scene progress to 5-40% range
+                    pct = 5 + int((done / total) * 35)
+                    project.progress = min(pct, 40)
+                    await db.commit()
+
+                scenes = await generate_all_scenes(
+                    project_id=project_id,
+                    lyrics_text=project.lyrics_text or "",
+                    lyrics_words=project.lyrics_words or [],
+                    duration=project.track_duration or 180,
+                    aspect_ratio=project.aspect_ratio,
+                    style_hint=style_prompt,
+                    on_progress=_scene_progress,
+                )
 
             # Save scenes to DB
             for s in scenes:

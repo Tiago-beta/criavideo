@@ -14,7 +14,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260328-2">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260328-2">
     <link rel="apple-touch-icon" href="/video/static/icons/icon-192.png?v=20260328-2">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260329-15">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260329-16">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -373,9 +373,8 @@
                         <p class="wizard-hint">Ajuste duracao, formato e estilo visual</p>
                         <div class="wizard-details-grid">
                             <div class="form-group">
-                                <label>Duracao (segundos)</label>
+                                <label>Duracao</label>
                                 <div class="duration-options">
-                                    <button class="duration-option" data-value="30" type="button">~30s</button>
                                     <button class="duration-option selected" data-value="60" type="button">~1min</button>
                                     <button class="duration-option" data-value="120" type="button">~2min</button>
                                     <button class="duration-option" data-value="180" type="button">~3min</button>
@@ -409,6 +408,7 @@
                                     <button class="style-tag" data-value="editorial" type="button">Editorial</button>
                                     <button class="style-tag" data-value="anime" type="button">Anime</button>
                                     <button class="style-tag" data-value="aquarela" type="button">Aquarela</button>
+                                    <button class="style-tag" data-value="tela_preta" type="button">Tela Preta</button>
                                 </div>
                             </div>
                         </div>
@@ -537,6 +537,7 @@
                                     <button class="style-tag" data-value="editorial" type="button">Editorial</button>
                                     <button class="style-tag" data-value="anime" type="button">Anime</button>
                                     <button class="style-tag" data-value="aquarela" type="button">Aquarela</button>
+                                    <button class="style-tag" data-value="tela_preta" type="button">Tela Preta</button>
                                 </div>
                             </div>
                         </div>
@@ -616,6 +617,7 @@
                             <button class="style-tag" data-value="editorial" type="button">Editorial</button>
                             <button class="style-tag" data-value="anime" type="button">Anime</button>
                             <button class="style-tag" data-value="aquarela" type="button">Aquarela</button>
+                            <button class="style-tag" data-value="tela_preta" type="button">Tela Preta</button>
                         </div>
                     </div>
                     <div class="wizard-nav" style="margin-top: 1rem;">
@@ -647,7 +649,6 @@
                     <div class="form-group">
                         <label>Duracao aproximada</label>
                         <select id="ai-suggest-duration" class="input">
-                            <option value="30">~30 segundos</option>
                             <option value="60" selected>~1 minuto</option>
                             <option value="120">~2 minutos</option>
                             <option value="180">~3 minutos</option>
@@ -798,7 +799,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260329-12"></script>
+    <script src="/video/static/app.js?v=20260329-13"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>

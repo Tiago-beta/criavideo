@@ -1100,12 +1100,12 @@ th {
 
 .duration-options {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
 .duration-option {
-    flex: 1;
-    padding: 10px 12px;
+    padding: 10px 16px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.03);
