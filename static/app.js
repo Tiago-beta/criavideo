@@ -600,9 +600,10 @@ async function loadProjects() {
             const dt = project.created_at ? new Date(project.created_at) : null;
             const dateStr = dt ? `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")} · ${dt.toLocaleDateString("pt-BR")}` : "-";
             const statusPt = _statusPt(project.status);
+            const thumbClick = project.status === "completed" ? `onclick="watchVideo(${project.id})" style="cursor:pointer"` : "";
             const thumb = project.thumbnail_url
-                ? `<img class="card-thumb" src="${project.thumbnail_url}" alt="" loading="lazy">`
-                : `<div class="card-thumb card-thumb-placeholder"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
+                ? `<img class="card-thumb" src="${project.thumbnail_url}" alt="" loading="lazy" ${thumbClick}>`
+                : `<div class="card-thumb card-thumb-placeholder" ${thumbClick}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
             return `
                 <div class="card">
                     ${thumb}
