@@ -134,10 +134,11 @@ def compose_video(
         fade_start = max(audio_duration - 4, 0)
         filter_complex += (
             f";\n[{audio_idx}:a]volume=1.0[narration];"
-            f"[{music_idx}:a]volume=0.25,afade=t=out:st={fade_start}:d=4[bgm];"
-            f"[narration][bgm]amix=inputs=2:duration=first:dropout_transition=3[audioout]"
+            f"[{music_idx}:a]volume=0.15,afade=t=out:st={fade_start}:d=4[bgm];"
+            f"[narration][bgm]amix=inputs=2:duration=first:dropout_transition=3:normalize=0[audioout]"
         )
         audio_output = "[audioout]"
+        logger.info(f"Audio mixing: narration[{audio_idx}] + bgm[{music_idx}] with normalize=0")
     else:
         audio_output = f"{audio_idx}:a"
 
