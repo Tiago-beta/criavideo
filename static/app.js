@@ -716,7 +716,7 @@ async function createSimilar(projectId) {
     document.getElementById("script-char-count").textContent = project.lyrics_text.length.toLocaleString("pt-BR");
     document.getElementById("script-title").value = project.title || "";
     if (project.style_prompt) {
-        document.getElementById("script-style").value = project.style_prompt;
+        setSelectedStyles("script-style-tags", project.style_prompt);
     }
     if (project.aspect_ratio) {
         document.getElementById("script-aspect").value = project.aspect_ratio;
@@ -820,11 +820,15 @@ function resetCreateWizard() {
     document.querySelectorAll(".duration-option").forEach((d) => {
         d.classList.toggle("selected", d.dataset.value === "60");
     });
+    // Reset style tags
+    document.querySelectorAll(".style-tag.selected").forEach((t) => t.classList.remove("selected"));
 
     // Load voice profiles into selectors
     loadVoiceProfiles();
     // Initialize voice preview buttons
     initVoicePreview();
+    // Initialize style tag toggles
+    initStyleTags();
 }
 
 function updateWizardUI(panelId, step, totalSteps, prefix) {
@@ -883,7 +887,7 @@ async function handleWizardCreate() {
     const durBtn = document.querySelector("#create-panel-wizard .duration-option.selected");
     wizardData.duration = durBtn ? parseInt(durBtn.dataset.value) : 60;
     wizardData.aspect = document.getElementById("wizard-aspect").value;
-    wizardData.style = document.getElementById("wizard-style").value;
+    wizardData.style = getSelectedStyles("wizard-style-tags");
 
     showCreateProgress("Gerando roteiro com IA...");
 
@@ -955,7 +959,7 @@ function scriptBack() {
 async function handleScriptCreate() {
     scriptData.title = document.getElementById("script-title").value.trim();
     scriptData.aspect = document.getElementById("script-aspect").value;
-    scriptData.style = document.getElementById("script-style").value;
+    scriptData.style = getSelectedStyles("script-style-tags");
 
     showCreateProgress("Gerando narracao com voz IA...");
 
@@ -1071,7 +1075,7 @@ async function createProjectFromLibrary() {
                 lyrics_text: lyricsText,
                 track_duration: trackDuration,
                 aspect_ratio: document.getElementById("np-aspect").value,
-                style_prompt: document.getElementById("np-style").value,
+                style_prompt: getSelectedStyles("np-style-tags"),
             }),
         });
         closeModal("modal-new-project");
@@ -1399,6 +1403,32 @@ window.deleteSchedule = deleteSchedule;
 window.connectPlatform = connectPlatform;
 window.disconnectAccount = disconnectAccount;
 window.loadProjects = loadProjects;
+
+// ── Style Tags System ──
+function initStyleTags() {
+    document.querySelectorAll(".style-tag").forEach((tag) => {
+        tag.addEventListener("click", () => {
+            tag.classList.toggle("selected");
+        });
+    });
+}
+
+function getSelectedStyles(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return "";
+    return Array.from(container.querySelectorAll(".style-tag.selected"))
+        .map(t => t.dataset.value)
+        .join(", ");
+}
+
+function setSelectedStyles(containerId, styleStr) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const values = styleStr.toLowerCase().split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+    container.querySelectorAll(".style-tag").forEach(tag => {
+        tag.classList.toggle("selected", values.includes(tag.dataset.value));
+    });
+}
 
 // ── Voice Preview System ──
 let _voicePreviewAudio = null;

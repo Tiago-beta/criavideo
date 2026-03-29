@@ -14,7 +14,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260328-2">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260328-2">
     <link rel="apple-touch-icon" href="/video/static/icons/icon-192.png?v=20260328-2">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260329-13">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260329-14">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -386,11 +386,25 @@
                                 <select id="wizard-aspect" class="input">
                                     <option value="16:9">16:9 (YouTube)</option>
                                     <option value="9:16">9:16 (TikTok/Reels)</option>
+                                    <option value="1:1">1:1 (Instagram)</option>
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>Estilo visual</label>
-                                <input id="wizard-style" type="text" class="input" placeholder="Ex: cinematic, minimalista, colorido">
+                                <label>Estilo visual <small style="opacity:0.5">(opcional - a IA escolhe se vazio)</small></label>
+                                <div class="style-tags" id="wizard-style-tags">
+                                    <button class="style-tag" data-value="cinematic" type="button">Cinematic</button>
+                                    <button class="style-tag" data-value="minimalista" type="button">Minimalista</button>
+                                    <button class="style-tag" data-value="colorido" type="button">Colorido</button>
+                                    <button class="style-tag" data-value="dark" type="button">Dark</button>
+                                    <button class="style-tag" data-value="neon" type="button">Neon</button>
+                                    <button class="style-tag" data-value="vintage" type="button">Vintage</button>
+                                    <button class="style-tag" data-value="futurista" type="button">Futurista</button>
+                                    <button class="style-tag" data-value="natureza" type="button">Natureza</button>
+                                    <button class="style-tag" data-value="urbano" type="button">Urbano</button>
+                                    <button class="style-tag" data-value="editorial" type="button">Editorial</button>
+                                    <button class="style-tag" data-value="anime" type="button">Anime</button>
+                                    <button class="style-tag" data-value="aquarela" type="button">Aquarela</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -500,11 +514,25 @@
                                 <select id="script-aspect" class="input">
                                     <option value="16:9">16:9 (YouTube)</option>
                                     <option value="9:16">9:16 (TikTok/Reels)</option>
+                                    <option value="1:1">1:1 (Instagram)</option>
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>Estilo visual</label>
-                                <input id="script-style" type="text" class="input" placeholder="Ex: cinematic, minimalista, colorido">
+                                <label>Estilo visual <small style="opacity:0.5">(opcional - a IA escolhe se vazio)</small></label>
+                                <div class="style-tags" id="script-style-tags">
+                                    <button class="style-tag" data-value="cinematic" type="button">Cinematic</button>
+                                    <button class="style-tag" data-value="minimalista" type="button">Minimalista</button>
+                                    <button class="style-tag" data-value="colorido" type="button">Colorido</button>
+                                    <button class="style-tag" data-value="dark" type="button">Dark</button>
+                                    <button class="style-tag" data-value="neon" type="button">Neon</button>
+                                    <button class="style-tag" data-value="vintage" type="button">Vintage</button>
+                                    <button class="style-tag" data-value="futurista" type="button">Futurista</button>
+                                    <button class="style-tag" data-value="natureza" type="button">Natureza</button>
+                                    <button class="style-tag" data-value="urbano" type="button">Urbano</button>
+                                    <button class="style-tag" data-value="editorial" type="button">Editorial</button>
+                                    <button class="style-tag" data-value="anime" type="button">Anime</button>
+                                    <button class="style-tag" data-value="aquarela" type="button">Aquarela</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -565,11 +593,25 @@
                         <select id="np-aspect" class="input">
                             <option value="16:9">16:9 (YouTube)</option>
                             <option value="9:16">9:16 (TikTok/Reels)</option>
+                            <option value="1:1">1:1 (Instagram)</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Estilo visual</label>
-                        <input id="np-style" type="text" class="input" placeholder="Ex: cinematic worship, urbano, editorial">
+                        <label>Estilo visual <small style="opacity:0.5">(opcional - a IA escolhe se vazio)</small></label>
+                        <div class="style-tags" id="np-style-tags">
+                            <button class="style-tag" data-value="cinematic" type="button">Cinematic</button>
+                            <button class="style-tag" data-value="minimalista" type="button">Minimalista</button>
+                            <button class="style-tag" data-value="colorido" type="button">Colorido</button>
+                            <button class="style-tag" data-value="dark" type="button">Dark</button>
+                            <button class="style-tag" data-value="neon" type="button">Neon</button>
+                            <button class="style-tag" data-value="vintage" type="button">Vintage</button>
+                            <button class="style-tag" data-value="futurista" type="button">Futurista</button>
+                            <button class="style-tag" data-value="natureza" type="button">Natureza</button>
+                            <button class="style-tag" data-value="urbano" type="button">Urbano</button>
+                            <button class="style-tag" data-value="editorial" type="button">Editorial</button>
+                            <button class="style-tag" data-value="anime" type="button">Anime</button>
+                            <button class="style-tag" data-value="aquarela" type="button">Aquarela</button>
+                        </div>
                     </div>
                     <div class="wizard-nav" style="margin-top: 1rem;">
                         <div></div>
@@ -746,7 +788,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260329-9"></script>
+    <script src="/video/static/app.js?v=20260329-10"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>
