@@ -341,9 +341,6 @@ a {
 .sidebar-collapsed .main-content {
     margin-left: 0;
 }
-.sidebar-collapsed .modal {
-    left: 0;
-}
 
 .sidebar-header {
     padding: 20px 16px;
@@ -863,15 +860,13 @@ th {
 .modal {
     position: fixed;
     inset: 0;
-    left: 240px;
     display: none;
     align-items: center;
     justify-content: center;
     padding: 1.5rem 1rem;
-    background: rgba(1, 8, 17, 0.7);
-    backdrop-filter: blur(12px);
-    z-index: 40;
-    transition: left 0.3s ease;
+    background: rgba(1, 8, 17, 0.92);
+    backdrop-filter: blur(18px);
+    z-index: 200;
 }
 
 .modal.open {
@@ -1205,10 +1200,6 @@ th {
     /* Hide desktop sidebar */
     .sidebar {
         display: none !important;
-    }
-
-    .modal {
-        left: 0;
     }
 
     .main-content {
