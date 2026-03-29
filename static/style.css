@@ -306,10 +306,23 @@ a {
     top: 0;
     z-index: 100;
     border-right: 1px solid var(--border);
+    transition: transform 0.3s ease;
+}
+
+/* Sidebar collapsed state */
+.sidebar-collapsed .sidebar {
+    transform: translateX(-100%);
+}
+.sidebar-collapsed .main-content {
+    margin-left: 0;
+}
+.sidebar-collapsed .modal {
+    left: 0;
 }
 
 .sidebar-header {
     padding: 20px 16px;
+    cursor: pointer;
 }
 
 .logo {
@@ -453,6 +466,7 @@ a {
     flex: 1;
     min-height: 100vh;
     padding: 24px 32px;
+    transition: margin-left 0.3s ease;
 }
 
 .muted {
@@ -832,6 +846,7 @@ th {
     background: rgba(1, 8, 17, 0.7);
     backdrop-filter: blur(12px);
     z-index: 40;
+    transition: left 0.3s ease;
 }
 
 .modal.open {

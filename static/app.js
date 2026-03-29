@@ -366,6 +366,13 @@ function bindNavigation() {
             navigateTo(link.dataset.page);
         });
     });
+    // Logo click toggles sidebar
+    const logo = document.querySelector(".sidebar-header .logo");
+    if (logo) {
+        logo.addEventListener("click", () => {
+            document.getElementById("app").classList.toggle("sidebar-collapsed");
+        });
+    }
     // Mobile bottom tabs
     document.querySelectorAll(".mobile-nav-tab").forEach((tab) => {
         tab.addEventListener("click", () => {
@@ -513,6 +520,9 @@ function loadPageData(page) {
 
 function openModal(id) {
     document.getElementById(id).classList.add("open");
+    if (id === "modal-player") {
+        document.getElementById("app").classList.add("sidebar-collapsed");
+    }
 }
 
 function closeModal(id) {
@@ -523,6 +533,7 @@ function closeModal(id) {
             video.pause();
             video.src = "";
         }
+        document.getElementById("app").classList.remove("sidebar-collapsed");
     }
 }
 
