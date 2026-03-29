@@ -373,6 +373,13 @@ function bindNavigation() {
             document.getElementById("app").classList.toggle("sidebar-collapsed");
         });
     }
+    // Toggle button reopens sidebar
+    const sidebarToggle = document.getElementById("sidebar-toggle");
+    if (sidebarToggle) {
+        sidebarToggle.addEventListener("click", () => {
+            document.getElementById("app").classList.remove("sidebar-collapsed");
+        });
+    }
     // Mobile bottom tabs
     document.querySelectorAll(".mobile-nav-tab").forEach((tab) => {
         tab.addEventListener("click", () => {
