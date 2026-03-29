@@ -579,26 +579,99 @@ async function loadProjects() {
             return;
         }
         container.innerHTML = data.map((project) => {
-            const created = project.created_at ? new Date(project.created_at).toLocaleDateString("pt-BR") : "-";
+            const dt = project.created_at ? new Date(project.created_at) : null;
+            const dateStr = dt ? `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")} · ${dt.toLocaleDateString("pt-BR")}` : "-";
+            const statusPt = _statusPt(project.status);
+            const thumb = project.thumbnail_url
+                ? `<img class="card-thumb" src="${project.thumbnail_url}" alt="" loading="lazy">`
+                : `<div class="card-thumb card-thumb-placeholder"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
             return `
                 <div class="card">
-                    <h4>${esc(project.title)}</h4>
-                    <p>${esc(project.track_title || "")} ${project.track_artist ? `- ${esc(project.track_artist)}` : ""}</p>
-                    <p>${project.aspect_ratio} · ${project.created_at ? created : "Sem data"}</p>
-                    <p><span class="badge badge-${badgeClass(project.status)}">${esc(project.status)}</span></p>
-                    ${project.progress != null ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${project.progress}%"></div></div>` : ""}
-                    ${project.error_message ? `<p style="color: var(--danger);">${esc(project.error_message)}</p>` : ""}
+                    ${thumb}
+                    <div class="card-body">
+                        <h4>${esc(project.title)}</h4>
+                        <p class="card-meta">${project.aspect_ratio} · ${dateStr}</p>
+                        <span class="badge badge-${badgeClass(project.status)}">${esc(statusPt)}</span>
+                        ${project.progress != null && project.status !== "completed" && project.status !== "failed" && project.status !== "pending" ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${project.progress}%"></div></div>` : ""}
+                        ${project.error_message ? `<p class="card-error">${esc(project.error_message)}</p>` : ""}
+                    </div>
                     <div class="card-actions">
-                        ${project.status === "completed" ? `<button class="btn btn-secondary btn-sm" onclick="watchVideo(${project.id})" type="button">Assistir</button>` : ""}
-                        ${(project.status === "pending" || project.status === "failed") ? `<button class="btn btn-primary btn-sm" onclick="generateVideo(${project.id})" type="button">Gerar video</button>` : ""}
-                        ${project.lyrics_text ? `<button class="btn btn-similar btn-sm" onclick="createSimilar(${project.id})" type="button">Criar Semelhante</button>` : ""}
-                        <button class="btn btn-provider btn-sm" onclick="deleteProject(${project.id})" type="button">Excluir</button>
+                        ${project.status === "completed" ? `<button class="card-btn card-btn-watch" onclick="watchVideo(${project.id})" type="button" title="Assistir"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
+                        ${(project.status === "pending" || project.status === "failed") ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
+                        ${project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : ""}
+                        <button class="card-btn card-btn-delete" onclick="deleteProject(${project.id})" type="button" title="Excluir"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
                     </div>
                 </div>
             `;
         }).join("");
+        // Start polling for in-progress projects
+        _pollInProgress(data);
     } catch (error) {
         container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
+    }
+}
+
+function _statusPt(status) {
+    const map = {
+        "pending": "Pendente",
+        "generating_scenes": "Gerando cenas...",
+        "generating_clips": "Gerando clipes...",
+        "rendering": "Renderizando...",
+        "completed": "Concluído",
+        "failed": "Falhou",
+        "published": "Publicado",
+    };
+    return map[status] || status;
+}
+
+let _pollTimer = null;
+function _pollInProgress(projects) {
+    if (_pollTimer) clearInterval(_pollTimer);
+    const active = projects.filter(p =>
+        p.status !== "completed" && p.status !== "failed" && p.status !== "pending"
+    );
+    if (!active.length) return;
+    _pollTimer = setInterval(async () => {
+        try {
+            const data = await api("/video/projects");
+            _projectsCache = data;
+            const stillActive = data.filter(p =>
+                p.status !== "completed" && p.status !== "failed" && p.status !== "pending"
+            );
+            // Update cards in-place instead of full re-render
+            for (const p of data) {
+                _updateCardInPlace(p);
+            }
+            if (!stillActive.length) {
+                clearInterval(_pollTimer);
+                _pollTimer = null;
+                loadProjects(); // Full refresh to get thumbnails
+            }
+        } catch (_) {
+            clearInterval(_pollTimer);
+            _pollTimer = null;
+        }
+    }, 3000);
+}
+
+function _updateCardInPlace(project) {
+    const container = document.getElementById("projects-list");
+    const cards = container.querySelectorAll(".card");
+    for (const card of cards) {
+        const watchBtn = card.querySelector("[onclick*='watchVideo(" + project.id + ")']");
+        const genBtn = card.querySelector("[onclick*='generateVideo(" + project.id + ")']");
+        const simBtn = card.querySelector("[onclick*='createSimilar(" + project.id + ")']");
+        const delBtn = card.querySelector("[onclick*='deleteProject(" + project.id + ")']");
+        if (watchBtn || genBtn || simBtn || delBtn) {
+            const badge = card.querySelector(".badge");
+            if (badge) {
+                badge.textContent = _statusPt(project.status);
+                badge.className = `badge badge-${badgeClass(project.status)}`;
+            }
+            const bar = card.querySelector(".progress-bar-fill");
+            if (bar) bar.style.width = project.progress + "%";
+            break;
+        }
     }
 }
 
@@ -988,18 +1061,7 @@ async function createProjectFromLibrary() {
 async function generateVideo(id) {
     try {
         await api(`/video/projects/${id}/generate`, { method: "POST" });
-        loadProjects();
-        const poll = setInterval(async () => {
-            try {
-                const project = await api(`/video/projects/${id}`);
-                loadProjects();
-                if (project.status === "completed" || project.status === "failed") {
-                    clearInterval(poll);
-                }
-            } catch (_) {
-                clearInterval(poll);
-            }
-        }, 5000);
+        loadProjects(); // Will auto-start polling via _pollInProgress
     } catch (error) {
         alert(`Erro: ${error.message}`);
     }

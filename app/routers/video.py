@@ -6,6 +6,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
+from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from typing import Optional
 import openai
@@ -104,6 +105,7 @@ async def list_projects(
     """List all video projects for the current user."""
     result = await db.execute(
         select(VideoProject)
+        .options(selectinload(VideoProject.renders))
         .where(VideoProject.user_id == user["id"])
         .order_by(VideoProject.created_at.desc())
     )
@@ -121,6 +123,7 @@ async def list_projects(
             "created_at": p.created_at.isoformat() if p.created_at else None,
             "lyrics_text": p.lyrics_text or "",
             "style_prompt": p.style_prompt or "",
+            "thumbnail_url": _to_media_url(p.renders[0].thumbnail_path) if p.renders else None,
         }
         for p in projects
     ]
