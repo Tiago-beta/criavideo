@@ -827,7 +827,7 @@ th {
     display: none;
     align-items: center;
     justify-content: center;
-    padding: 1.25rem;
+    padding: 1.5rem 2.5rem;
     background: rgba(1, 8, 17, 0.7);
     backdrop-filter: blur(12px);
     z-index: 40;
@@ -848,7 +848,7 @@ th {
 }
 
 .modal-content-wide {
-    width: min(100%, 920px);
+    width: min(calc(100% - 2rem), 860px);
 }
 
 .modal-header,
