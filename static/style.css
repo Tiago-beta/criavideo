@@ -885,12 +885,17 @@ th {
 
 .modal-video {
     padding: 0;
+    display: flex;
+    justify-content: center;
+    background: #000;
 }
 
 #player-video {
     width: 100%;
+    max-height: 70vh;
     display: block;
     background: #000;
+    object-fit: contain;
 }
 
 /* ═══ Creation Wizard Styles ═══ */
