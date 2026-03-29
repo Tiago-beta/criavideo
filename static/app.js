@@ -1093,6 +1093,7 @@ async function watchVideo(projectId) {
         const video = document.getElementById("player-video");
         video.src = render.video_url;
         video.load();
+        video.play().catch(() => {});
         const sizeMb = render.file_size ? `${(render.file_size / 1048576).toFixed(1)} MB` : "";
         const duration = render.duration ? `${Math.floor(render.duration / 60)}:${String(Math.floor(render.duration % 60)).padStart(2, "0")}` : "";
         document.getElementById("player-info").textContent = [render.format, duration, sizeMb].filter(Boolean).join(" · ");
