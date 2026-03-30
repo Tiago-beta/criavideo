@@ -14,6 +14,18 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def _find_custom_background_music(project_id: int) -> str:
+    """Return custom uploaded background music path if present."""
+    audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
+    if not audio_dir.exists():
+        return ""
+    for ext in (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus", ".webm"):
+        candidate = audio_dir / f"custom_background_music{ext}"
+        if candidate.exists():
+            return str(candidate)
+    return ""
+
+
 async def download_audio_if_url(audio_path: str, project_id: int) -> str:
     """If audio_path is a URL, download it locally and return the local path."""
     if not audio_path or not audio_path.startswith(("http://", "https://")):
@@ -74,7 +86,10 @@ async def run_video_pipeline(project_id: int):
             # ── Early: Start Suno background music generation (runs in parallel with scenes) ──
             suno_music_task = None
             bgm_mood = "inspiracional"
-            if audio_path and os.path.basename(audio_path) == "narration.mp3":
+            custom_bgm_path = _find_custom_background_music(project_id)
+            if custom_bgm_path:
+                logger.info(f"Using custom uploaded background music for project {project_id}: {custom_bgm_path}")
+            if not custom_bgm_path and audio_path and os.path.basename(audio_path) == "narration.mp3":
                 try:
                     from app.services.suno_music import generate_suno_music
                     from app.services.video_composer import _get_duration as get_audio_duration
@@ -211,7 +226,7 @@ async def run_video_pipeline(project_id: int):
             await db.commit()
 
             # ── Step 3: Get background music (Suno task started earlier) ──
-            background_music_path = ""
+            background_music_path = custom_bgm_path or ""
             if suno_music_task is not None:
                 try:
                     background_music_path = await suno_music_task
@@ -220,7 +235,7 @@ async def run_video_pipeline(project_id: int):
                     logger.warning(f"Suno music await failed: {e}")
 
             # Fallback to FFmpeg synthesis if Suno didn't produce music
-            if not background_music_path and audio_path and os.path.basename(audio_path) == "narration.mp3":
+            if not custom_bgm_path and not background_music_path and audio_path and os.path.basename(audio_path) == "narration.mp3":
                 try:
                     from app.services.script_audio import generate_background_music
                     from app.services.video_composer import _get_duration as get_audio_duration

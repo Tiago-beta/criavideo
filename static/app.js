@@ -73,6 +73,31 @@ async function api(path, options = {}) {
     return response.json();
 }
 
+async function apiForm(path, formData, options = {}) {
+    const response = await fetch(`${API}${path}`, {
+        method: options.method || "POST",
+        ...options,
+        body: formData,
+        headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(options.headers || {}),
+        },
+    });
+    if (response.status === 401) {
+        clearSession();
+        showAuth("Sua sessao expirou. Entre novamente.");
+        throw new Error("Unauthorized");
+    }
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(getApiErrorMessage(data, response.statusText || "Erro inesperado"));
+    }
+    if (response.status === 204) {
+        return null;
+    }
+    return response.json();
+}
+
 function setSession(accessToken, user, rawLevitaToken = null) {
     token = accessToken;
     currentUser = user;
@@ -834,6 +859,8 @@ function resetCreateWizard() {
     document.getElementById("script-text").value = "";
     document.getElementById("script-char-count").textContent = "0";
     document.getElementById("script-title").value = "";
+    const bgmInput = document.getElementById("script-bgm-file");
+    if (bgmInput) bgmInput.value = "";
 
     // Reset selections
     document.querySelectorAll(".wizard-option.selected").forEach((o) => o.classList.remove("selected"));
@@ -990,22 +1017,25 @@ async function handleScriptCreate() {
     scriptData.aspect = document.getElementById("script-aspect").value;
     scriptData.style = getSelectedStyles("script-style-tags");
     scriptData.pauseLevel = getSelectedPause("script-pause-options");
+    const bgmFileInput = document.getElementById("script-bgm-file");
+    const bgmFile = bgmFileInput && bgmFileInput.files ? bgmFileInput.files[0] : null;
 
     showCreateProgress("Gerando narracao com voz IA...");
 
     try {
-        const result = await api("/video/generate-audio", {
-            method: "POST",
-            body: JSON.stringify({
-                script: scriptData.text,
-                voice: scriptData.voice,
-                voice_profile_id: scriptData.voiceProfileId,
-                title: scriptData.title || "Video com roteiro",
-                aspect_ratio: scriptData.aspect,
-                style_prompt: scriptData.style,
-                pause_level: scriptData.pauseLevel,
-            }),
-        });
+        const formData = new FormData();
+        formData.append("script", scriptData.text);
+        formData.append("voice", scriptData.voice || "");
+        formData.append("voice_profile_id", String(scriptData.voiceProfileId || 0));
+        formData.append("title", scriptData.title || "Video com roteiro");
+        formData.append("aspect_ratio", scriptData.aspect);
+        formData.append("style_prompt", scriptData.style);
+        formData.append("pause_level", scriptData.pauseLevel || "normal");
+        if (bgmFile) {
+            formData.append("background_music", bgmFile);
+        }
+
+        const result = await apiForm("/video/generate-audio", formData);
 
         closeModal("modal-new-project");
         pollProject(result.id);

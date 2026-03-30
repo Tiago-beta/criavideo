@@ -5,7 +5,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -483,7 +483,7 @@ async def generate_script_endpoint(
 
 @router.post("/generate-audio")
 async def generate_audio_endpoint(
-    req: GenerateTTSRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -491,6 +491,27 @@ async def generate_audio_endpoint(
     """Generate TTS audio from script, create project, and start video pipeline."""
     from app.services.script_audio import generate_tts_audio
     from app.models import VoiceProfile
+
+    # Accept both JSON and multipart/form-data (with optional background_music upload)
+    content_type = request.headers.get("content-type", "")
+    bgm_upload: UploadFile | None = None
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        req = GenerateTTSRequest(
+            script=str(form.get("script", "")),
+            voice=str(form.get("voice", "")),
+            voice_profile_id=int(form.get("voice_profile_id", 0) or 0),
+            title=str(form.get("title", "")),
+            aspect_ratio=str(form.get("aspect_ratio", "16:9")),
+            style_prompt=str(form.get("style_prompt", "")),
+            pause_level=str(form.get("pause_level", "normal")),
+        )
+        raw_upload = form.get("background_music")
+        if isinstance(raw_upload, UploadFile):
+            bgm_upload = raw_upload
+    else:
+        payload = await request.json()
+        req = GenerateTTSRequest(**payload)
 
     # Resolve voice from profile or direct parameter
     voice = req.voice or "onyx"
@@ -543,6 +564,21 @@ async def generate_audio_endpoint(
     db.add(project)
     await db.commit()
     await db.refresh(project)
+
+    # Save optional custom background music. The pipeline will prioritize this file over Suno.
+    if bgm_upload and bgm_upload.filename:
+        try:
+            ext = Path(bgm_upload.filename).suffix.lower()
+            if ext not in {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus", ".webm"}:
+                ext = ".mp3"
+            music_dir = Path(settings.media_dir) / "audio" / str(project.id)
+            music_dir.mkdir(parents=True, exist_ok=True)
+            target = music_dir / f"custom_background_music{ext}"
+            with open(target, "wb") as f:
+                f.write(await bgm_upload.read())
+            logger.info(f"Custom background music uploaded for project {project.id}: {target}")
+        except Exception as e:
+            logger.warning(f"Failed to save custom background music for project {project.id}: {e}")
 
     try:
         audio_path = await generate_tts_audio(
