@@ -101,11 +101,14 @@ def compose_video(
         # Image: Ken Burns zoom/pan — single frame input, zoompan d controls duration
         input_args.extend(["-i", sc["image_path"]])
 
+        # For long videos (>10min), skip 2x upscale to keep render feasible
+        zoom_scale = 1 if audio_duration > 600 else 2
+
         # Ken Burns zoom/pan effect
         effect = i % 2
         if effect == 0:  # Suave zoom in: 1.0 -> 1.06
             filters.append(
-                f"[{input_idx}:v]scale={width*2}:{height*2},"
+                f"[{input_idx}:v]scale={width*zoom_scale}:{height*zoom_scale},"
                 f"zoompan=z='1.0+0.06*(on/{frames})':"
                 f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                 f"d={frames}:s={width}x{height}:fps=30,"
@@ -113,7 +116,7 @@ def compose_video(
             )
         else:  # Suave zoom out: 1.06 -> 1.0
             filters.append(
-                f"[{input_idx}:v]scale={width*2}:{height*2},"
+                f"[{input_idx}:v]scale={width*zoom_scale}:{height*zoom_scale},"
                 f"zoompan=z='1.06-0.06*(on/{frames})':"
                 f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                 f"d={frames}:s={width}x{height}:fps=30,"
@@ -162,7 +165,7 @@ def compose_video(
         audio_output = f"{audio_idx}:a"
 
     # Use faster encoding preset for long videos to keep render time reasonable
-    encode_preset = "fast" if audio_duration > 600 else "medium"
+    encode_preset = "ultrafast" if audio_duration > 900 else ("fast" if audio_duration > 600 else "medium")
 
     cmd = [
         "ffmpeg", "-y",
