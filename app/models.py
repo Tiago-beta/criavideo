@@ -75,6 +75,8 @@ class VideoProject(Base):
     audio_path = Column(Text)  # path to audio file
     use_custom_images = Column(Boolean, default=False)  # user uploaded own photos
     enable_subtitles = Column(Boolean, default=True)  # subtitle toggle
+    zoom_images = Column(Boolean, default=True)  # enable zoom effect on still images
+    image_display_seconds = Column(Float, default=0)  # custom seconds per image (0=auto)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

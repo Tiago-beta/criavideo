@@ -1168,6 +1168,13 @@ th {
     font-size: 0.75rem;
 }
 
+.field-hint {
+    display: block;
+    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
 /* Style tags */
 .style-tags {
     display: flex;

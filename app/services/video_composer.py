@@ -25,6 +25,7 @@ def compose_video(
     aspect_ratio: str = "16:9",
     output_dir: str = "",
     background_music_path: str = "",
+    enable_zoom: bool = True,
 ) -> dict:
     """Compose the final video using FFmpeg.
 
@@ -104,21 +105,29 @@ def compose_video(
         # For long videos (>10min), skip 2x upscale to keep render feasible
         zoom_scale = 1 if audio_duration > 600 else 2
 
-        # Ken Burns zoom/pan effect
-        effect = i % 2
-        if effect == 0:  # Suave zoom in: 1.0 -> 1.06
+        # Ken Burns zoom/pan effect (optional)
+        if enable_zoom:
+            effect = i % 2
+            if effect == 0:  # Suave zoom in: 1.0 -> 1.06
+                filters.append(
+                    f"[{input_idx}:v]scale={width*zoom_scale}:{height*zoom_scale},"
+                    f"zoompan=z='1.0+0.06*(on/{frames})':"
+                    f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                    f"d={frames}:s={width}x{height}:fps=30,"
+                    f"format=yuv420p,setpts=PTS-STARTPTS[v{i}]"
+                )
+            else:  # Suave zoom out: 1.06 -> 1.0
+                filters.append(
+                    f"[{input_idx}:v]scale={width*zoom_scale}:{height*zoom_scale},"
+                    f"zoompan=z='1.06-0.06*(on/{frames})':"
+                    f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                    f"d={frames}:s={width}x{height}:fps=30,"
+                    f"format=yuv420p,setpts=PTS-STARTPTS[v{i}]"
+                )
+        else:
             filters.append(
-                f"[{input_idx}:v]scale={width*zoom_scale}:{height*zoom_scale},"
-                f"zoompan=z='1.0+0.06*(on/{frames})':"
-                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                f"d={frames}:s={width}x{height}:fps=30,"
-                f"format=yuv420p,setpts=PTS-STARTPTS[v{i}]"
-            )
-        else:  # Suave zoom out: 1.06 -> 1.0
-            filters.append(
-                f"[{input_idx}:v]scale={width*zoom_scale}:{height*zoom_scale},"
-                f"zoompan=z='1.06-0.06*(on/{frames})':"
-                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f"[{input_idx}:v]scale={width}:{height},"
+                f"zoompan=z='1.0':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                 f"d={frames}:s={width}x{height}:fps=30,"
                 f"format=yuv420p,setpts=PTS-STARTPTS[v{i}]"
             )

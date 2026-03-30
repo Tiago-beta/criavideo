@@ -427,6 +427,8 @@ class GenerateTTSRequest(BaseModel):
     style_prompt: str = ""
     pause_level: str = "normal"
     enable_subtitles: bool = True
+    zoom_images: bool = True
+    image_display_seconds: float = 0
 
 
 @router.post("/fix-text")
@@ -500,6 +502,8 @@ async def generate_audio_endpoint(
     if "multipart/form-data" in content_type:
         form = await request.form()
         enable_sub_raw = str(form.get("enable_subtitles", "true")).lower()
+        zoom_raw = str(form.get("zoom_images", "true")).lower()
+        image_seconds_raw = form.get("image_display_seconds", 0)
         req = GenerateTTSRequest(
             script=str(form.get("script", "")),
             voice=str(form.get("voice", "")),
@@ -509,6 +513,8 @@ async def generate_audio_endpoint(
             style_prompt=str(form.get("style_prompt", "")),
             pause_level=str(form.get("pause_level", "normal")),
             enable_subtitles=enable_sub_raw not in ("false", "0", "no"),
+            zoom_images=zoom_raw not in ("false", "0", "no"),
+            image_display_seconds=float(image_seconds_raw or 0),
         )
         raw_upload = form.get("background_music")
         if isinstance(raw_upload, UploadFile) and raw_upload.filename:
@@ -568,6 +574,7 @@ async def generate_audio_endpoint(
 
     # Create project first to get an ID for the audio path
     has_custom_images = len(custom_image_uploads) > 0
+    image_display_seconds = req.image_display_seconds if req.image_display_seconds and req.image_display_seconds > 0 else 0
     project = VideoProject(
         user_id=user["id"],
         track_id=0,
@@ -584,6 +591,8 @@ async def generate_audio_endpoint(
         audio_path="",
         use_custom_images=has_custom_images,
         enable_subtitles=req.enable_subtitles,
+        zoom_images=req.zoom_images,
+        image_display_seconds=image_display_seconds,
     )
     db.add(project)
     await db.commit()

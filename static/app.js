@@ -746,7 +746,7 @@ let createMode = "wizard"; // "wizard" | "script" | "library"
 let wizardStep = 1;
 let wizardData = { topic: "", tone: "", voice: "", duration: 60, aspect: "16:9", style: "" };
 let scriptStep = 1;
-let scriptData = { text: "", tone: "", voice: "", title: "", aspect: "16:9", style: "", useCustomImages: false, createNarration: true, enableSubtitles: true };
+let scriptData = { text: "", tone: "", voice: "", title: "", aspect: "16:9", style: "", useCustomImages: false, createNarration: true, enableSubtitles: true, zoomImages: true, imageDisplaySeconds: 0 };
 
 async function createSimilar(projectId) {
     const project = _projectsCache.find(p => p.id === projectId);
@@ -839,7 +839,7 @@ function resetCreateWizard() {
     wizardStep = 1;
     wizardData = { topic: "", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "" };
     scriptStep = 1;
-    scriptData = { text: "", tone: "", voice: "", voiceProfileId: 0, title: "", aspect: "16:9", style: "", useCustomImages: false, createNarration: true, enableSubtitles: true };
+    scriptData = { text: "", tone: "", voice: "", voiceProfileId: 0, title: "", aspect: "16:9", style: "", useCustomImages: false, createNarration: true, enableSubtitles: true, zoomImages: true, imageDisplaySeconds: 0 };
 
     // Reset tabs
     document.querySelectorAll(".create-tab").forEach((t) => {
@@ -880,6 +880,10 @@ function resetCreateWizard() {
     // Reset subtitle toggle
     const subCb = document.getElementById("script-enable-subtitles");
     if (subCb) subCb.checked = true;
+    const imageSecondsInput = document.getElementById("script-image-seconds");
+    if (imageSecondsInput) imageSecondsInput.value = "";
+    const zoomOptions = document.querySelectorAll("#script-zoom-options .pause-option");
+    zoomOptions.forEach((btn) => btn.classList.toggle("selected", btn.dataset.value === "on"));
 
     // Reset selections
     document.querySelectorAll(".wizard-option.selected").forEach((o) => o.classList.remove("selected"));
@@ -1068,6 +1072,8 @@ async function handleScriptCreate() {
     scriptData.aspect = document.getElementById("script-aspect").value;
     scriptData.style = getSelectedStyles("script-style-tags");
     scriptData.pauseLevel = getSelectedPause("script-pause-options");
+    scriptData.zoomImages = getSelectedPause("script-zoom-options") !== "off";
+    scriptData.imageDisplaySeconds = parseFloat(document.getElementById("script-image-seconds").value || "0") || 0;
     scriptData.useCustomImages = document.getElementById("script-use-photos").checked && scriptPhotos.length > 0;
     scriptData.createNarration = !scriptData.useCustomImages || document.getElementById("script-create-narration").checked;
     if (!scriptData.createNarration) {
@@ -1096,6 +1102,8 @@ async function handleScriptCreate() {
         formData.append("style_prompt", scriptData.style);
         formData.append("pause_level", scriptData.pauseLevel || "normal");
         formData.append("enable_subtitles", scriptData.enableSubtitles ? "true" : "false");
+        formData.append("zoom_images", scriptData.zoomImages ? "true" : "false");
+        formData.append("image_display_seconds", String(scriptData.imageDisplaySeconds > 0 ? scriptData.imageDisplaySeconds : 0));
         if (bgmFile) {
             formData.append("background_music", bgmFile);
         }

@@ -65,13 +65,16 @@ async def run_video_pipeline(project_id: int):
 
             audio_path = await download_audio_if_url(project.audio_path, project_id) if project.audio_path else ""
             use_custom_images = getattr(project, "use_custom_images", False) or False
+            image_display_seconds = float(getattr(project, "image_display_seconds", 0) or 0)
+            zoom_images = bool(getattr(project, "zoom_images", True))
             is_music_only_mode = use_custom_images and not (project.lyrics_text or "").strip()
 
             if (not audio_path or not os.path.exists(audio_path)) and is_music_only_mode:
                 # Photo-only mode without uploaded music: generate instrumental soundtrack automatically.
                 img_dir = Path(settings.media_dir) / "images" / str(project_id)
                 user_images_count = len([p for p in img_dir.glob("user_*") if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}])
-                target_dur = max(30.0, min(240.0, float(max(user_images_count, 1) * 8)))
+                base_seconds = image_display_seconds if image_display_seconds > 0 else 8.0
+                target_dur = max(30.0, min(240.0, float(max(user_images_count, 1) * base_seconds)))
 
                 text_hint = f"{project.style_prompt or ''} {project.title or ''}".lower()
                 bgm_mood = "inspiracional"
@@ -203,7 +206,10 @@ async def run_video_pipeline(project_id: int):
 
                 dur = project.track_duration or 180
                 # Distribute images evenly across audio duration, cycling if needed
-                per_image = max(dur / len(user_images), 5.0) if len(user_images) <= 20 else 5.0
+                if image_display_seconds > 0:
+                    per_image = max(image_display_seconds, 1.0)
+                else:
+                    per_image = max(dur / len(user_images), 5.0) if len(user_images) <= 20 else 5.0
                 scenes = []
                 t = 0.0
                 idx = 0
@@ -376,6 +382,7 @@ async def run_video_pipeline(project_id: int):
                     subtitle_path=subtitle_path,
                     aspect_ratio=project.aspect_ratio,
                     background_music_path=background_music_path,
+                    enable_zoom=zoom_images,
                 ),
             )
 

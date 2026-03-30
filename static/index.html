@@ -14,7 +14,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260328-2">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260328-2">
     <link rel="apple-touch-icon" href="/video/static/icons/icon-192.png?v=20260328-2">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260330-30">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260330-31">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -591,6 +591,18 @@
                                 </div>
                             </div>
                             <div class="form-group">
+                                <label>Zoom nas imagens</label>
+                                <div class="pause-options" id="script-zoom-options">
+                                    <button class="pause-option selected" data-value="on" type="button">Com Zoom</button>
+                                    <button class="pause-option" data-value="off" type="button">Sem Zoom</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Tempo por imagem (segundos)</label>
+                                <input id="script-image-seconds" type="number" class="input" min="1" max="30" step="1" placeholder="Automatico (duracao total)">
+                                <small class="field-hint">Defina quantos segundos cada foto fica na tela antes de trocar.</small>
+                            </div>
+                            <div class="form-group">
                                 <label>Legendas</label>
                                 <div class="subtitle-toggle-row">
                                     <label class="toggle-switch">
@@ -891,7 +903,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260330-30"></script>
+    <script src="/video/static/app.js?v=20260330-31"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>
