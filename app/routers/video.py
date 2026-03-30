@@ -511,11 +511,20 @@ async def generate_audio_endpoint(
             enable_subtitles=enable_sub_raw not in ("false", "0", "no"),
         )
         raw_upload = form.get("background_music")
-        if isinstance(raw_upload, UploadFile):
+        if isinstance(raw_upload, UploadFile) and raw_upload.filename:
             bgm_upload = raw_upload
+        elif getattr(raw_upload, "filename", ""):
+            bgm_upload = raw_upload
+
         # Collect custom image uploads (multiple files under "custom_images")
-        for key, value in form.multi_items():
-            if key == "custom_images" and isinstance(value, UploadFile) and value.filename:
+        try:
+            uploaded_images = form.getlist("custom_images")
+        except Exception:
+            uploaded_images = []
+        for value in uploaded_images:
+            if isinstance(value, UploadFile) and value.filename:
+                custom_image_uploads.append(value)
+            elif getattr(value, "filename", ""):
                 custom_image_uploads.append(value)
     else:
         payload = await request.json()

@@ -746,7 +746,7 @@ let createMode = "wizard"; // "wizard" | "script" | "library"
 let wizardStep = 1;
 let wizardData = { topic: "", tone: "", voice: "", duration: 60, aspect: "16:9", style: "" };
 let scriptStep = 1;
-let scriptData = { text: "", tone: "", voice: "", title: "", aspect: "16:9", style: "", useCustomImages: false, enableSubtitles: true };
+let scriptData = { text: "", tone: "", voice: "", title: "", aspect: "16:9", style: "", useCustomImages: false, createNarration: true, enableSubtitles: true };
 
 async function createSimilar(projectId) {
     const project = _projectsCache.find(p => p.id === projectId);
@@ -839,7 +839,7 @@ function resetCreateWizard() {
     wizardStep = 1;
     wizardData = { topic: "", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "" };
     scriptStep = 1;
-    scriptData = { text: "", tone: "", voice: "", voiceProfileId: 0, title: "", aspect: "16:9", style: "", useCustomImages: false, enableSubtitles: true };
+    scriptData = { text: "", tone: "", voice: "", voiceProfileId: 0, title: "", aspect: "16:9", style: "", useCustomImages: false, createNarration: true, enableSubtitles: true };
 
     // Reset tabs
     document.querySelectorAll(".create-tab").forEach((t) => {
@@ -872,6 +872,10 @@ function resetCreateWizard() {
     if (photoGrid) photoGrid.innerHTML = "";
     const photoCount = document.getElementById("script-photo-count");
     if (photoCount) photoCount.hidden = true;
+    const narChoice = document.getElementById("script-narration-choice");
+    if (narChoice) narChoice.hidden = true;
+    const narCb = document.getElementById("script-create-narration");
+    if (narCb) narCb.checked = true;
 
     // Reset subtitle toggle
     const subCb = document.getElementById("script-enable-subtitles");
@@ -999,17 +1003,25 @@ function scriptNext() {
         const title = document.getElementById("script-title").value.trim();
         const text = document.getElementById("script-text").value.trim();
         const usePhotos = document.getElementById("script-use-photos").checked;
+        const createNarration = !usePhotos || document.getElementById("script-create-narration").checked;
         if (!title) { alert("Digite o titulo do projeto."); return; }
-        if (!usePhotos && (!text || text.length < 20)) {
+        if (createNarration && (!text || text.length < 20)) {
             alert("Escreva um roteiro com pelo menos 20 caracteres.");
             return;
         }
-        if (usePhotos && text && text.length < 20) {
-            alert("Se enviar roteiro, use pelo menos 20 caracteres.");
+        if (!createNarration && scriptPhotos.length === 0) {
+            alert("Envie fotos para criar o video sem narracao.");
             return;
         }
         scriptData.title = title;
-        scriptData.text = text;
+        scriptData.useCustomImages = usePhotos && scriptPhotos.length > 0;
+        scriptData.createNarration = createNarration;
+        scriptData.text = createNarration ? text : "";
+        if (!createNarration) {
+            scriptStep = 4;
+            updateWizardUI("create-panel-script", scriptStep, 5, "script");
+            return;
+        }
     }
     if (scriptStep === 2) {
         if (!scriptData.text) {
@@ -1043,7 +1055,11 @@ function scriptNext() {
 }
 
 function scriptBack() {
-    scriptStep = Math.max(scriptStep - 1, 1);
+    if (scriptStep === 4 && scriptData.useCustomImages && !scriptData.createNarration) {
+        scriptStep = 1;
+    } else {
+        scriptStep = Math.max(scriptStep - 1, 1);
+    }
     updateWizardUI("create-panel-script", scriptStep, 5, "script");
 }
 
@@ -1053,6 +1069,12 @@ async function handleScriptCreate() {
     scriptData.style = getSelectedStyles("script-style-tags");
     scriptData.pauseLevel = getSelectedPause("script-pause-options");
     scriptData.useCustomImages = document.getElementById("script-use-photos").checked && scriptPhotos.length > 0;
+    scriptData.createNarration = !scriptData.useCustomImages || document.getElementById("script-create-narration").checked;
+    if (!scriptData.createNarration) {
+        scriptData.text = "";
+        scriptData.voice = "";
+        scriptData.voiceProfileId = 0;
+    }
     scriptData.enableSubtitles = document.getElementById("script-enable-subtitles").checked;
     const bgmFileInput = document.getElementById("script-bgm-file");
     const bgmFile = bgmFileInput && bgmFileInput.files ? bgmFileInput.files[0] : null;
@@ -1140,6 +1162,37 @@ const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
 function togglePhotoUpload() {
     const checked = document.getElementById("script-use-photos").checked;
     document.getElementById("script-photo-area").hidden = !checked;
+    if (!checked) {
+        scriptData.createNarration = true;
+        const narCb = document.getElementById("script-create-narration");
+        if (narCb) narCb.checked = true;
+    }
+    updateNarrationChoiceVisibility();
+}
+
+function toggleScriptNarration() {
+    const usePhotos = document.getElementById("script-use-photos").checked;
+    const createNarration = document.getElementById("script-create-narration").checked;
+    const textarea = document.getElementById("script-text");
+    const fixBtn = document.getElementById("btn-fix-script");
+    const aiBtn = document.getElementById("btn-ai-suggest-script");
+    scriptData.createNarration = !usePhotos || createNarration;
+    const disableText = usePhotos && !createNarration;
+    textarea.disabled = disableText;
+    if (fixBtn) fixBtn.disabled = disableText;
+    if (aiBtn) aiBtn.disabled = disableText;
+    if (disableText) {
+        textarea.placeholder = "Narracao desativada. O video sera criado com fotos + fundo musical.";
+    } else {
+        textarea.placeholder = "Cole ou escreva o roteiro completo da narracao aqui...";
+    }
+}
+
+function updateNarrationChoiceVisibility() {
+    const usePhotos = document.getElementById("script-use-photos").checked;
+    const narChoice = document.getElementById("script-narration-choice");
+    if (narChoice) narChoice.hidden = !(usePhotos && scriptPhotos.length > 0);
+    toggleScriptNarration();
 }
 
 function handlePhotoSelect(event) {
@@ -1196,6 +1249,7 @@ function renderPhotoPreview() {
 
     countEl.hidden = scriptPhotos.length === 0;
     numEl.textContent = scriptPhotos.length;
+    updateNarrationChoiceVisibility();
 }
 
 // Drag and drop support

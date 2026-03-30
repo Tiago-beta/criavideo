@@ -1386,6 +1386,33 @@ svg.spin {
     color: var(--text-muted);
 }
 
+.narration-choice {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(96, 129, 162, 0.2);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.narration-choice-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.narration-choice-text strong {
+    font-size: 0.9rem;
+    color: var(--text);
+}
+
+.narration-choice-text small {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+}
+
 /* ── Toggle Switch ── */
 .toggle-switch {
     position: relative;
