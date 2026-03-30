@@ -1001,6 +1001,10 @@ th {
     margin-bottom: 6px;
 }
 
+.style-step-title {
+    margin-top: 12px;
+}
+
 .wizard-hint {
     text-align: center;
     color: var(--text-muted);
