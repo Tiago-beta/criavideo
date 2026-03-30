@@ -107,6 +107,129 @@ async def upload_temp_audio(
     return {"upload_id": upload_id, "size": len(content)}
 
 
+@router.post("/upload-temp-chunk/start")
+async def upload_temp_chunk_start(
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    payload = await request.json()
+    filename = str(payload.get("filename", "")).strip()
+    kind = str(payload.get("kind", "image")).strip().lower() or "image"
+    size = int(payload.get("size", 0) or 0)
+
+    if not filename:
+        raise HTTPException(status_code=400, detail="Nome de arquivo invalido")
+
+    ext = Path(filename).suffix.lower()
+    if kind == "audio":
+        allowed = AUDIO_EXTS
+        max_size = 80 * 1024 * 1024
+    else:
+        allowed = IMAGE_EXTS
+        max_size = 10 * 1024 * 1024
+
+    if ext not in allowed:
+        raise HTTPException(status_code=400, detail="Formato de arquivo nao suportado")
+    if size <= 0 or size > max_size:
+        raise HTTPException(status_code=400, detail="Tamanho de arquivo invalido")
+
+    user_dir = _temp_user_dir(user["id"])
+    session_id = uuid.uuid4().hex
+    part_path = user_dir / f"{session_id}.part"
+    meta_path = user_dir / f"{session_id}.json"
+
+    with open(part_path, "wb") as f:
+        f.truncate(size)
+
+    meta = {
+        "filename": filename,
+        "ext": ext,
+        "kind": kind,
+        "size": size,
+        "received": 0,
+    }
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    return {"session_id": session_id, "chunk_size": 512 * 1024}
+
+
+@router.post("/upload-temp-chunk/{session_id}")
+async def upload_temp_chunk(
+    session_id: str,
+    request: Request,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    user_dir = _temp_user_dir(user["id"])
+    meta_path = user_dir / f"{session_id}.json"
+    part_path = user_dir / f"{session_id}.part"
+    if not meta_path.exists() or not part_path.exists():
+        raise HTTPException(status_code=404, detail="Sessao de upload nao encontrada")
+
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Metadados de upload invalidos")
+
+    try:
+        offset = int(request.headers.get("x-upload-offset", "0"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Offset invalido")
+
+    received = int(meta.get("received", 0))
+    if offset != received:
+        return {"received": received, "size": int(meta.get("size", 0)), "mismatch": True}
+
+    chunk = await file.read()
+    if not chunk:
+        raise HTTPException(status_code=400, detail="Chunk vazio")
+
+    size = int(meta.get("size", 0))
+    new_received = received + len(chunk)
+    if new_received > size:
+        raise HTTPException(status_code=400, detail="Chunk excede tamanho total")
+
+    with open(part_path, "r+b") as f:
+        f.seek(offset)
+        f.write(chunk)
+
+    meta["received"] = new_received
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    return {"received": new_received, "size": size, "done": new_received >= size}
+
+
+@router.post("/upload-temp-chunk/{session_id}/finish")
+async def upload_temp_chunk_finish(
+    session_id: str,
+    user: dict = Depends(get_current_user),
+):
+    user_dir = _temp_user_dir(user["id"])
+    meta_path = user_dir / f"{session_id}.json"
+    part_path = user_dir / f"{session_id}.part"
+    if not meta_path.exists() or not part_path.exists():
+        raise HTTPException(status_code=404, detail="Sessao de upload nao encontrada")
+
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Metadados de upload invalidos")
+
+    size = int(meta.get("size", 0))
+    received = int(meta.get("received", 0))
+    if received < size:
+        raise HTTPException(status_code=400, detail="Upload incompleto")
+
+    ext = str(meta.get("ext", "")).lower()
+    upload_id = f"{uuid.uuid4().hex}{ext}"
+    target = user_dir / upload_id
+    os.replace(part_path, target)
+    try:
+        meta_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+    return {"upload_id": upload_id, "size": size, "kind": meta.get("kind", "image")}
+
+
 @router.get("/voice-demo/{voice_id}")
 async def get_voice_demo(voice_id: str):
     """Return a cached TTS demo for the given voice. Generates on first request."""

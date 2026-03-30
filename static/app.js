@@ -1116,14 +1116,14 @@ async function handleScriptCreate() {
         if (scriptData.useCustomImages) {
             for (let i = 0; i < scriptPhotos.length; i++) {
                 showCreateProgress(`Enviando foto ${i + 1}/${scriptPhotos.length}...`);
-                const uploaded = await uploadTempFileWithRetry(scriptPhotos[i], "/video/upload-temp-image", `foto ${i + 1}`);
+                const uploaded = await uploadTempFileWithRetry(scriptPhotos[i], "image", `foto ${i + 1}`);
                 uploadedImageIds.push(uploaded.upload_id);
             }
         }
 
         if (bgmFile) {
             showCreateProgress("Enviando fundo musical...");
-            const uploadedAudio = await uploadTempFileWithRetry(bgmFile, "/video/upload-temp-audio", "audio");
+            const uploadedAudio = await uploadTempFileWithRetry(bgmFile, "audio", "audio");
             uploadedMusicId = uploadedAudio.upload_id || "";
         }
 
@@ -1160,25 +1160,60 @@ async function handleScriptCreate() {
     }
 }
 
-async function uploadTempFileWithRetry(file, endpoint, label) {
-    const maxAttempts = 5;
-    let lastError = null;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-            const fd = new FormData();
-            fd.append("file", file);
-            return await apiForm(endpoint, fd);
-        } catch (error) {
-            lastError = error;
-            if (attempt >= maxAttempts) {
+async function uploadTempFileWithRetry(file, kind, label) {
+    const start = await api("/video/upload-temp-chunk/start", {
+        method: "POST",
+        body: JSON.stringify({
+            filename: file.name,
+            kind,
+            size: file.size,
+        }),
+    });
+
+    const sessionId = start.session_id;
+    const chunkSize = start.chunk_size || 512 * 1024;
+    let offset = 0;
+
+    while (offset < file.size) {
+        const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
+        let uploaded = false;
+        let lastError = null;
+
+        for (let attempt = 1; attempt <= 8; attempt++) {
+            try {
+                const fd = new FormData();
+                fd.append("file", chunk, `${file.name}.part`);
+                const resp = await apiForm(`/video/upload-temp-chunk/${sessionId}`, fd, {
+                    headers: {
+                        "x-upload-offset": String(offset),
+                    },
+                });
+                if (resp.mismatch) {
+                    offset = parseInt(resp.received || "0");
+                } else {
+                    offset = parseInt(resp.received || "0");
+                }
+                uploaded = true;
                 break;
+            } catch (error) {
+                lastError = error;
+                const delay = Math.min(7000, 600 * Math.pow(2, attempt - 1));
+                showCreateProgress(`Internet oscilando. Reenviando ${label} (${attempt}/8)...`);
+                await new Promise((resolve) => setTimeout(resolve, delay));
             }
-            const delay = Math.min(5000, 700 * Math.pow(2, attempt - 1));
-            showCreateProgress(`Internet oscilando. Reenviando ${label} (${attempt + 1}/${maxAttempts})...`);
-            await new Promise((resolve) => setTimeout(resolve, delay));
         }
+
+        if (!uploaded) {
+            throw lastError || new Error(`Falha no envio de ${label}`);
+        }
+
+        const pct = Math.max(1, Math.min(100, Math.round((offset / file.size) * 100)));
+        showCreateProgress(`Enviando ${label}: ${pct}%`);
     }
-    throw lastError || new Error("Falha no envio do arquivo.");
+
+    return await api(`/video/upload-temp-chunk/${sessionId}/finish`, {
+        method: "POST",
+    });
 }
 
 // ── AI Script Suggestion ──
