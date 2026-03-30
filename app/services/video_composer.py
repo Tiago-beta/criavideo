@@ -116,7 +116,7 @@ def compose_video(
                     f"zoompan=z='1.0+0.06*(on/{frames})':"
                     f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                     f"d={frames}:s={width}x{height}:fps=30,"
-                    f"format=yuv420p,setpts=PTS-STARTPTS[v{i}]"
+                    f"format=yuv420p,setsar=1,setpts=PTS-STARTPTS[v{i}]"
                 )
             else:  # Suave zoom out: 1.06 -> 1.0
                 filters.append(
@@ -124,14 +124,14 @@ def compose_video(
                     f"zoompan=z='1.06-0.06*(on/{frames})':"
                     f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                     f"d={frames}:s={width}x{height}:fps=30,"
-                    f"format=yuv420p,setpts=PTS-STARTPTS[v{i}]"
+                    f"format=yuv420p,setsar=1,setpts=PTS-STARTPTS[v{i}]"
                 )
         else:
             filters.append(
                 f"[{input_idx}:v]scale={width}:{height},"
                 f"zoompan=z='1.0':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                 f"d={frames}:s={width}x{height}:fps=30,"
-                f"format=yuv420p,setpts=PTS-STARTPTS[v{i}]"
+                f"format=yuv420p,setsar=1,setpts=PTS-STARTPTS[v{i}]"
             )
 
         concat_inputs.append(f"[v{i}]")
@@ -204,10 +204,10 @@ def compose_video(
         err_lines = [l for l in result.stderr.split('\n') if l.strip() and 'size=' not in l and 'speed=' not in l]
         err_msg = '\n'.join(err_lines[-20:]) if err_lines else result.stderr[-2000:]
         logger.error(f"FFmpeg error:\n{err_msg}")
-        logger.warning("Trying safe fallback renderer (static image + audio)")
+        logger.warning("Trying safe fallback renderer (all images, no zoom)")
         try:
             _render_static_fallback(
-                image_path=valid_scenes[0]["image_path"],
+                valid_scenes=valid_scenes,
                 audio_path=audio_path,
                 output_path=output_path,
                 width=width,
@@ -245,7 +245,7 @@ def _get_duration(file_path: str) -> float:
 
 
 def _render_static_fallback(
-    image_path: str,
+    valid_scenes: list[dict],
     audio_path: str,
     output_path: str,
     width: int,
@@ -253,24 +253,41 @@ def _render_static_fallback(
     duration: float,
     subtitle_path: str = "",
     background_music_path: str = "",
+    **_kwargs,
 ) -> None:
-    """Safe fallback renderer: static image + audio, robust against complex filter failures."""
+    """Safe fallback renderer: static slideshow (all images) + audio, no zoompan."""
     if duration <= 0:
         duration = max(_get_duration(audio_path), 5.0)
 
-    input_args = ["-loop", "1", "-i", image_path, "-i", audio_path]
-    audio_idx = 1
-    music_idx = None
+    input_args = []
+    filters = []
+    concat_inputs = []
 
+    for i, sc in enumerate(valid_scenes):
+        dur = sc.get("duration", 10.0)
+        frames = max(int(dur * 30), 1)
+        input_args.extend(["-i", sc["image_path"]])
+        filters.append(
+            f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+            f"fps=30,format=yuv420p,setsar=1,"
+            f"trim=duration={dur:.3f},setpts=PTS-STARTPTS[v{i}]"
+        )
+        concat_inputs.append(f"[v{i}]")
+
+    audio_idx = len(valid_scenes)
+    input_args.extend(["-i", audio_path])
+
+    music_idx = None
     if background_music_path and os.path.exists(background_music_path):
-        music_idx = 2
+        music_idx = audio_idx + 1
         input_args.extend(["-stream_loop", "-1", "-i", background_music_path])
 
-    filter_complex = (
-        f"[0:v]scale={width}:{height},fps=30,format=yuv420p,trim=duration={duration},setpts=PTS-STARTPTS[slideshow]"
-    )
-    video_output = "[slideshow]"
+    filter_str = ";\n".join(filters)
+    concat = "".join(concat_inputs) + f"concat=n={len(valid_scenes)}:v=1:a=0[slideshow]"
+    filter_complex = f"{filter_str};\n{concat}"
 
+    video_output = "[slideshow]"
     if subtitle_path and os.path.exists(subtitle_path):
         sub_path_escaped = subtitle_path.replace("\\", "/").replace(":", "\\:")
         filter_complex += f";[slideshow]ass='{sub_path_escaped}'[final]"
@@ -302,6 +319,7 @@ def _render_static_fallback(
         output_path,
     ]
 
+    logger.info(f"Fallback renderer: {len(valid_scenes)} images, {duration:.1f}s")
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
     if result.returncode != 0:
         err_lines = [l for l in result.stderr.split('\n') if l.strip() and 'size=' not in l and 'speed=' not in l]
