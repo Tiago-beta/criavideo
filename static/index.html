@@ -14,7 +14,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260328-2">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260328-2">
     <link rel="apple-touch-icon" href="/video/static/icons/icon-192.png?v=20260328-2">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260330-23">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260330-24">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -450,7 +450,10 @@
                     <!-- Step 1: Write script -->
                     <div class="wizard-step" data-step="1">
                         <h3 class="wizard-question">Escreva o roteiro do video</h3>
-                        <p class="wizard-hint">Cole ou escreva o texto que sera narrado no video</p>
+                        <div class="form-group">
+                            <label>Titulo do projeto</label>
+                            <input id="script-title" type="text" class="input" placeholder="Ex: 5 Dicas de Produtividade">
+                        </div>
                         <textarea id="script-text" class="wizard-textarea" rows="10" maxlength="20000"
                                   placeholder="Cole ou escreva o roteiro completo da narracao aqui..."></textarea>
                         <div class="script-actions">
@@ -469,7 +472,6 @@
                     <!-- Step 2: Tone -->
                     <div class="wizard-step" data-step="2" hidden>
                         <h3 class="wizard-question">Qual o tom da narracao?</h3>
-                        <p class="wizard-hint">Escolha como o conteudo sera apresentado</p>
                         <div class="wizard-grid">
                             <button class="wizard-option" data-value="informativo" type="button">Informativo</button>
                             <button class="wizard-option" data-value="inspirador" type="button">Inspirador</button>
@@ -483,7 +485,6 @@
                     <!-- Step 3: Voice -->
                     <div class="wizard-step" data-step="3" hidden>
                         <h3 class="wizard-question">Escolha a voz da narracao</h3>
-                        <p class="wizard-hint">Use uma voz IA ou grave sua propria voz</p>
                         <div id="script-voice-selector" class="voice-selector">
                             <!-- Minha Voz button -->
                             <button class="minha-voz-btn" id="script-minha-voz-btn" onclick="toggleMinhaVoz('script')" type="button">
@@ -537,15 +538,10 @@
                         </div>
                     </div>
 
-                    <!-- Step 4: Format + Style -->
+                    <!-- Step 4: Format + Audio -->
                     <div class="wizard-step" data-step="4" hidden>
                         <h3 class="wizard-question">Detalhes finais</h3>
-                        <p class="wizard-hint">Ajuste formato e estilo visual</p>
                         <div class="wizard-details-grid">
-                            <div class="form-group">
-                                <label>Titulo do projeto</label>
-                                <input id="script-title" type="text" class="input" placeholder="Ex: 5 Dicas de Produtividade">
-                            </div>
                             <div class="form-group">
                                 <label>Formato</label>
                                 <select id="script-aspect" class="input">
@@ -568,6 +564,13 @@
                                 <input id="script-bgm-file" type="file" class="input" accept="audio/*">
                                 <small class="pause-hint">Se enviar um audio, ele sera usado como fundo no lugar do Suno</small>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 5: Style -->
+                    <div class="wizard-step" data-step="5" hidden>
+                        <h3 class="wizard-question">Estilo visual</h3>
+                        <div class="wizard-details-grid">
                             <div class="form-group">
                                 <label>Estilo visual</label>
                                 <div class="style-tags" id="script-style-tags">
@@ -595,6 +598,7 @@
                         <button class="btn btn-secondary btn-sm wizard-back-btn" id="script-back" type="button" hidden>Voltar</button>
                         <div class="wizard-dots">
                             <span class="wizard-dot active"></span>
+                            <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
@@ -848,7 +852,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260330-23"></script>
+    <script src="/video/static/app.js?v=20260330-24"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>

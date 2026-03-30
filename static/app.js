@@ -854,7 +854,7 @@ function resetCreateWizard() {
 
     // Reset wizard steps
     updateWizardUI("create-panel-wizard", wizardStep, 5, "wizard");
-    updateWizardUI("create-panel-script", scriptStep, 4, "script");
+    updateWizardUI("create-panel-script", scriptStep, 5, "script");
     document.getElementById("wizard-topic").value = "";
     document.getElementById("script-text").value = "";
     document.getElementById("script-char-count").textContent = "0";
@@ -981,8 +981,11 @@ async function handleWizardCreate() {
 
 function scriptNext() {
     if (scriptStep === 1) {
+        const title = document.getElementById("script-title").value.trim();
         const text = document.getElementById("script-text").value.trim();
+        if (!title) { alert("Digite o titulo do projeto."); return; }
         if (!text || text.length < 20) { alert("Escreva um roteiro com pelo menos 20 caracteres."); return; }
+        scriptData.title = title;
         scriptData.text = text;
     }
     if (scriptStep === 2) {
@@ -1003,13 +1006,13 @@ function scriptNext() {
             alert("Escolha a voz."); return;
         }
     }
-    scriptStep = Math.min(scriptStep + 1, 4);
-    updateWizardUI("create-panel-script", scriptStep, 4, "script");
+    scriptStep = Math.min(scriptStep + 1, 5);
+    updateWizardUI("create-panel-script", scriptStep, 5, "script");
 }
 
 function scriptBack() {
     scriptStep = Math.max(scriptStep - 1, 1);
-    updateWizardUI("create-panel-script", scriptStep, 4, "script");
+    updateWizardUI("create-panel-script", scriptStep, 5, "script");
 }
 
 async function handleScriptCreate() {
