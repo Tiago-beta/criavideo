@@ -14,7 +14,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260328-2">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260328-2">
     <link rel="apple-touch-icon" href="/video/static/icons/icon-192.png?v=20260328-2">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260330-24">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260330-25">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -289,7 +289,6 @@
                     <!-- Step 1: Topic -->
                     <div class="wizard-step" data-step="1">
                         <h3 class="wizard-question">Sobre o que e o video?</h3>
-                        <p class="wizard-hint">Descreva o tema, assunto ou objetivo do video</p>
                         <div class="wizard-input-wrap">
                             <input type="text" class="wizard-input" id="wizard-topic"
                                    placeholder="Ex: 5 dicas de produtividade, historia do cafe, receita de bolo...">
@@ -299,7 +298,6 @@
                     <!-- Step 2: Tone -->
                     <div class="wizard-step" data-step="2" hidden>
                         <h3 class="wizard-question">Qual o tom da narracao?</h3>
-                        <p class="wizard-hint">Escolha como o conteudo sera apresentado</p>
                         <div class="wizard-grid">
                             <button class="wizard-option" data-value="informativo" type="button">Informativo</button>
                             <button class="wizard-option" data-value="inspirador" type="button">Inspirador</button>
@@ -313,7 +311,6 @@
                     <!-- Step 3: Voice -->
                     <div class="wizard-step" data-step="3" hidden>
                         <h3 class="wizard-question">Escolha a voz da narracao</h3>
-                        <p class="wizard-hint">Use uma voz IA ou grave sua propria voz</p>
                         <div id="wizard-voice-selector" class="voice-selector">
                             <!-- Minha Voz button -->
                             <button class="minha-voz-btn" id="wizard-minha-voz-btn" onclick="toggleMinhaVoz('wizard')" type="button">
@@ -370,7 +367,6 @@
                     <!-- Step 4: Estilo Visual -->
                     <div class="wizard-step" data-step="4" hidden>
                         <h3 class="wizard-question">Estilo visual</h3>
-                        <p class="wizard-hint">Escolha o estilo das imagens do video</p>
                         <div class="style-tags" id="wizard-style-tags">
                             <button class="style-tag selected" data-value="ia_escolhe" type="button">IA Escolhe</button>
                             <button class="style-tag" data-value="cinematic" type="button">Cinematic</button>
@@ -392,7 +388,6 @@
                     <!-- Step 5: Duration + Format -->
                     <div class="wizard-step" data-step="5" hidden>
                         <h3 class="wizard-question">Detalhes finais</h3>
-                        <p class="wizard-hint">Ajuste duracao e formato do video</p>
                         <div class="wizard-details-grid">
                             <div class="form-group">
                                 <label>Duracao</label>
@@ -852,7 +847,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260330-24"></script>
+    <script src="/video/static/app.js?v=20260330-25"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>
