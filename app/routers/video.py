@@ -245,6 +245,48 @@ async def generate_video(
     if project.status not in (VideoStatus.PENDING, VideoStatus.FAILED):
         raise HTTPException(status_code=400, detail=f"Project is already {project.status.value}")
 
+    # If audio is missing but we have the script, regenerate TTS
+    if (not project.audio_path or not os.path.exists(project.audio_path)) and project.lyrics_text:
+        from app.services.script_audio import generate_tts_audio
+        try:
+            voice = "onyx"
+            tts_instructions = ""
+            voice_type = "builtin"
+
+            # Check if user has a default voice profile
+            from app.models import VoiceProfile
+            from sqlalchemy import select
+            result = await db.execute(
+                select(VoiceProfile).where(
+                    VoiceProfile.user_id == user["id"],
+                    VoiceProfile.is_default == True
+                )
+            )
+            default_profile = result.scalar_one_or_none()
+            if default_profile:
+                if default_profile.openai_voice_id:
+                    voice = default_profile.openai_voice_id
+                    voice_type = "custom"
+                elif default_profile.builtin_voice:
+                    voice = default_profile.builtin_voice
+                tts_instructions = default_profile.tts_instructions or ""
+
+            audio_path = await generate_tts_audio(
+                text=project.lyrics_text,
+                voice=voice,
+                project_id=project.id,
+                tts_instructions=tts_instructions,
+                voice_type=voice_type,
+            )
+            project.audio_path = audio_path
+            word_count = len(project.lyrics_text.split())
+            project.track_duration = round(word_count / 2.5)
+        except Exception as e:
+            project.status = VideoStatus.FAILED
+            project.error_message = f"Erro ao gerar audio: {e}"
+            await db.commit()
+            raise HTTPException(status_code=500, detail=f"Erro ao gerar audio: {e}")
+
     project.status = VideoStatus.GENERATING_SCENES
     project.progress = 0
     project.error_message = None
