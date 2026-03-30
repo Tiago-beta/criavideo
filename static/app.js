@@ -74,15 +74,32 @@ async function api(path, options = {}) {
 }
 
 async function apiForm(path, formData, options = {}) {
-    const response = await fetch(`${API}${path}`, {
-        method: options.method || "POST",
-        ...options,
-        body: formData,
-        headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            ...(options.headers || {}),
-        },
-    });
+    let response = null;
+    let lastError = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            response = await fetch(`${API}${path}`, {
+                method: options.method || "POST",
+                ...options,
+                body: formData,
+                headers: {
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                    ...(options.headers || {}),
+                },
+            });
+            break;
+        } catch (error) {
+            lastError = error;
+            const isNetworkError = error && /failed to fetch|networkerror|load failed/i.test(String(error.message || error));
+            if (!isNetworkError || attempt === 1) {
+                throw new Error("Falha de conexao ao enviar arquivos. Verifique a internet e tente novamente.");
+            }
+            await new Promise((resolve) => setTimeout(resolve, 800));
+        }
+    }
+    if (!response) {
+        throw new Error(lastError?.message || "Falha ao enviar requisicao.");
+    }
     if (response.status === 401) {
         clearSession();
         showAuth("Sua sessao expirou. Entre novamente.");
