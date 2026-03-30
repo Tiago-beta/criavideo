@@ -65,23 +65,28 @@ async def run_video_pipeline(project_id: int):
             audio_path = await download_audio_if_url(project.audio_path, project_id)
             if not audio_path or not os.path.exists(audio_path):
                 raise FileNotFoundError(f"Audio file not found: {project.audio_path}")
+            audio_basename = os.path.basename(audio_path).lower()
+            is_music_only_mode = audio_basename.startswith("custom_background_music")
 
             # ── Step 0b: Transcribe audio with Whisper for accurate karaoke ──
             transcribed_words = []
-            try:
-                from app.services.transcriber import transcribe_audio
-                import asyncio
-                result = await asyncio.get_event_loop().run_in_executor(
-                    None, transcribe_audio, audio_path
-                )
-                transcribed_words = result.get("words", [])
-                # Use transcribed text if we had no lyrics
-                if not project.lyrics_text and result.get("text"):
-                    project.lyrics_text = result["text"]
-                    await db.commit()
-                logger.info(f"Whisper transcription: {len(transcribed_words)} words")
-            except Exception as e:
-                logger.warning(f"Whisper transcription failed, will use text fallback: {e}")
+            if not is_music_only_mode:
+                try:
+                    from app.services.transcriber import transcribe_audio
+                    import asyncio
+                    result = await asyncio.get_event_loop().run_in_executor(
+                        None, transcribe_audio, audio_path
+                    )
+                    transcribed_words = result.get("words", [])
+                    # Use transcribed text if we had no lyrics
+                    if not project.lyrics_text and result.get("text"):
+                        project.lyrics_text = result["text"]
+                        await db.commit()
+                    logger.info(f"Whisper transcription: {len(transcribed_words)} words")
+                except Exception as e:
+                    logger.warning(f"Whisper transcription failed, will use text fallback: {e}")
+            else:
+                logger.info(f"Music-only mode for project {project_id}: skipping Whisper transcription")
 
             # ── Early: Start Suno background music generation (runs in parallel with scenes) ──
             suno_music_task = None
@@ -267,7 +272,7 @@ async def run_video_pipeline(project_id: int):
             await db.commit()
 
             # ── Step 3: Get background music (Suno task started earlier) ──
-            background_music_path = custom_bgm_path or ""
+            background_music_path = "" if is_music_only_mode else (custom_bgm_path or "")
             if suno_music_task is not None:
                 try:
                     background_music_path = await suno_music_task

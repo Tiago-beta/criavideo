@@ -521,6 +521,12 @@ async def generate_audio_endpoint(
         payload = await request.json()
         req = GenerateTTSRequest(**payload)
 
+    script_text = (req.script or "").strip()
+    if not script_text and not custom_image_uploads:
+        raise HTTPException(status_code=400, detail="Sem narracao, envie fotos para criar um video personalizado.")
+    if not script_text and bgm_upload is None:
+        raise HTTPException(status_code=400, detail="Sem narracao, envie um fundo musical para criar o video somente com fotos.")
+
     # Resolve voice from profile or direct parameter
     voice = req.voice or "onyx"
     tts_instructions = ""
@@ -598,6 +604,7 @@ async def generate_audio_endpoint(
                 logger.warning(f"Failed to save custom image {idx} for project {project.id}: {e}")
 
     # Save optional custom background music. The pipeline will prioritize this file over Suno.
+    custom_bgm_path = ""
     if bgm_upload and bgm_upload.filename:
         try:
             ext = Path(bgm_upload.filename).suffix.lower()
@@ -608,24 +615,35 @@ async def generate_audio_endpoint(
             target = music_dir / f"custom_background_music{ext}"
             with open(target, "wb") as f:
                 f.write(await bgm_upload.read())
+            custom_bgm_path = str(target)
             logger.info(f"Custom background music uploaded for project {project.id}: {target}")
         except Exception as e:
             logger.warning(f"Failed to save custom background music for project {project.id}: {e}")
 
     try:
-        audio_path = await generate_tts_audio(
-            text=req.script,
-            voice=voice,
-            project_id=project.id,
-            tts_instructions=tts_instructions,
-            voice_type=voice_type,
-            pause_level=req.pause_level,
-        )
-        project.audio_path = audio_path
+        if script_text:
+            audio_path = await generate_tts_audio(
+                text=req.script,
+                voice=voice,
+                project_id=project.id,
+                tts_instructions=tts_instructions,
+                voice_type=voice_type,
+                pause_level=req.pause_level,
+            )
+            project.audio_path = audio_path
 
-        # Estimate duration from word count (~2.5 words/sec for TTS)
-        word_count = len(req.script.split())
-        project.track_duration = round(word_count / 2.5)
+            # Estimate duration from word count (~2.5 words/sec for TTS)
+            word_count = len(req.script.split())
+            project.track_duration = round(word_count / 2.5)
+        else:
+            if not custom_bgm_path:
+                raise HTTPException(status_code=400, detail="Sem narracao, envie um fundo musical valido.")
+            from app.services.video_composer import _get_duration as get_audio_duration
+
+            project.audio_path = custom_bgm_path
+            bgm_duration = get_audio_duration(custom_bgm_path)
+            project.track_duration = round(bgm_duration) if bgm_duration > 0 else 60
+            project.enable_subtitles = False
 
         project.status = VideoStatus.GENERATING_SCENES
         project.progress = 0
@@ -640,6 +658,11 @@ async def generate_audio_endpoint(
             "status": "generating_scenes",
             "estimated_duration": project.track_duration,
         }
+    except HTTPException:
+        project.status = VideoStatus.FAILED
+        project.error_message = "Configuracao invalida para geracao de audio"
+        await db.commit()
+        raise
     except Exception as e:
         project.status = VideoStatus.FAILED
         project.error_message = str(e)

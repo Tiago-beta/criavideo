@@ -998,17 +998,33 @@ function scriptNext() {
     if (scriptStep === 1) {
         const title = document.getElementById("script-title").value.trim();
         const text = document.getElementById("script-text").value.trim();
+        const usePhotos = document.getElementById("script-use-photos").checked;
         if (!title) { alert("Digite o titulo do projeto."); return; }
-        if (!text || text.length < 20) { alert("Escreva um roteiro com pelo menos 20 caracteres."); return; }
+        if (!usePhotos && (!text || text.length < 20)) {
+            alert("Escreva um roteiro com pelo menos 20 caracteres.");
+            return;
+        }
+        if (usePhotos && text && text.length < 20) {
+            alert("Se enviar roteiro, use pelo menos 20 caracteres.");
+            return;
+        }
         scriptData.title = title;
         scriptData.text = text;
     }
     if (scriptStep === 2) {
+        if (!scriptData.text) {
+            scriptData.tone = "informativo";
+        } else {
         const sel = document.querySelector("#create-panel-script .wizard-step[data-step='2'] .wizard-option.selected");
         if (!sel) { alert("Escolha o tom da narracao."); return; }
         scriptData.tone = sel.dataset.value;
+        }
     }
     if (scriptStep === 3) {
+        if (!scriptData.text) {
+            scriptData.voice = "onyx";
+            scriptData.voiceProfileId = 0;
+        } else {
         const personaSel = document.querySelector("#script-persona-list .persona-item.selected");
         const builtinSel = document.querySelector("#create-panel-script .wizard-step[data-step='3'] .wizard-option.selected");
         if (personaSel) {
@@ -1019,6 +1035,7 @@ function scriptNext() {
             scriptData.voiceProfileId = 0;
         } else {
             alert("Escolha a voz."); return;
+        }
         }
     }
     scriptStep = Math.min(scriptStep + 1, 5);
@@ -1040,7 +1057,16 @@ async function handleScriptCreate() {
     const bgmFileInput = document.getElementById("script-bgm-file");
     const bgmFile = bgmFileInput && bgmFileInput.files ? bgmFileInput.files[0] : null;
 
-    showCreateProgress("Gerando narracao com voz IA...");
+    if (!scriptData.text && !scriptData.useCustomImages) {
+        alert("Sem narracao, envie fotos para criar um video personalizado.");
+        return;
+    }
+    if (!scriptData.text && !bgmFile) {
+        alert("Sem narracao, envie um fundo musical para criar o video somente com fotos.");
+        return;
+    }
+
+    showCreateProgress(scriptData.text ? "Gerando narracao com voz IA..." : "Preparando video com fotos e fundo musical...");
 
     try {
         const formData = new FormData();
