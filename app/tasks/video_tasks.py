@@ -173,35 +173,39 @@ async def run_video_pipeline(project_id: int):
             project.progress = 60
             await db.commit()
 
-            # ── Step 2: Generate karaoke subtitles ──
-            from app.services.subtitle_generator import generate_ass_subtitles, generate_ass_from_text
+            # ── Step 2: Generate karaoke subtitles (skip for tela_preta) ──
+            subtitle_path = ""
+            if not is_black_screen:
+                from app.services.subtitle_generator import generate_ass_subtitles, generate_ass_from_text
 
-            subtitle_dir = Path(settings.media_dir) / "subtitles" / str(project_id)
-            subtitle_dir.mkdir(parents=True, exist_ok=True)
-            subtitle_path = str(subtitle_dir / "karaoke.ass")
+                subtitle_dir = Path(settings.media_dir) / "subtitles" / str(project_id)
+                subtitle_dir.mkdir(parents=True, exist_ok=True)
+                subtitle_path = str(subtitle_dir / "karaoke.ass")
 
-            if transcribed_words:
-                # Best: Whisper word-level timestamps → accurate karaoke
-                generate_ass_subtitles(
-                    lyrics_words=transcribed_words,
-                    aspect_ratio=project.aspect_ratio,
-                    output_path=subtitle_path,
-                )
-            elif project.lyrics_words:
-                generate_ass_subtitles(
-                    lyrics_words=project.lyrics_words,
-                    aspect_ratio=project.aspect_ratio,
-                    output_path=subtitle_path,
-                )
-            elif project.lyrics_text:
-                generate_ass_from_text(
-                    lyrics_text=project.lyrics_text,
-                    duration=project.track_duration or 180,
-                    aspect_ratio=project.aspect_ratio,
-                    output_path=subtitle_path,
-                )
+                if transcribed_words:
+                    # Best: Whisper word-level timestamps → accurate karaoke
+                    generate_ass_subtitles(
+                        lyrics_words=transcribed_words,
+                        aspect_ratio=project.aspect_ratio,
+                        output_path=subtitle_path,
+                    )
+                elif project.lyrics_words:
+                    generate_ass_subtitles(
+                        lyrics_words=project.lyrics_words,
+                        aspect_ratio=project.aspect_ratio,
+                        output_path=subtitle_path,
+                    )
+                elif project.lyrics_text:
+                    generate_ass_from_text(
+                        lyrics_text=project.lyrics_text,
+                        duration=project.track_duration or 180,
+                        aspect_ratio=project.aspect_ratio,
+                        output_path=subtitle_path,
+                    )
+                else:
+                    subtitle_path = ""
             else:
-                subtitle_path = ""
+                logger.info(f"Tela preta mode: skipping subtitle generation")
 
             project.progress = 70
             await db.commit()

@@ -157,15 +157,21 @@ def _get_pacing_instructions(pause_level: str) -> str:
     if pause_level == "relaxed":
         return (
             "Fale de forma calma e tranquila, com ritmo pausado. "
+            "ENFATIZE as palavras-chave com variação de tom — palavras importantes devem ser ditas com mais peso e intenção. "
             "Faça pequenas pausas naturais nas vírgulas e pausas mais longas nas reticências. "
-            "Mantenha um tom sereno e acolhedor."
+            "Varie a entonação para manter o ouvinte envolvido. Nunca soe monótono ou robótico. "
+            "Mantenha um tom sereno e acolhedor, como se estivesse conversando com alguém."
         )
     elif pause_level == "deep":
         return (
-            "Fale de forma muito lenta e profunda, como em uma sessão de meditação guiada ou hipnose. "
+            "Você é um hipnoterapeuta profissional conduzindo uma sessão de hipnose. "
+            "Fale de forma lenta, profunda e HIPNÓTICA. "
+            "ENFATIZE palavras-chave como 'relaxar', 'profundo', 'calma', 'mente', 'corpo' — diga-as com mais peso, mais suavidade e intenção. "
+            "Varie a entonação de forma sutil: suba levemente o tom para criar expectativa e desça para induzir relaxamento. "
             "Faça pausas longas e marcantes nas reticências e nos pontos finais. "
-            "Respire entre as frases. Tom extremamente calmo, suave e hipnótico. "
-            "Cada palavra deve ser pronunciada com clareza e serenidade."
+            "Respire entre as frases. Tom extremamente calmo, suave e envolvente. "
+            "Cada palavra deve ser pronunciada com CLAREZA, INTENÇÃO e SERENIDADE. "
+            "NÃO leia o texto — conduza o ouvinte numa jornada. Soe natural, empático e profundamente relaxante."
         )
     return ""
 
@@ -315,24 +321,26 @@ def _split_text_for_tts(text: str, max_chars: int = 3800) -> list[str]:
     return chunks if chunks else [text]
 
 
+def _get_default_tts_instructions() -> str:
+    """Default TTS instructions for natural, expressive narration."""
+    return (
+        "Fale de forma natural e expressiva, como um narrador profissional. "
+        "ENFATIZE palavras-chave e conceitos importantes com variação de tom. "
+        "Varie a entonação para manter o ouvinte envolvido — nunca soe monótono ou como se estivesse apenas lendo. "
+        "Use ritmo dinâmico: acelere em momentos de empolgação, desacelere em momentos reflexivos."
+    )
+
+
 async def _generate_single_tts(text: str, voice: str, tts_instructions: str, output_path: str):
-    """Generate a single TTS audio file via OpenAI (builtin voices only)."""
-    if tts_instructions:
-        tts_kwargs = {
-            "model": "gpt-4o-mini-tts",
-            "voice": voice,
-            "input": text,
-            "response_format": "mp3",
-        }
-        if tts_instructions:
-            tts_kwargs["instructions"] = tts_instructions
-    else:
-        tts_kwargs = {
-            "model": "tts-1-hd",
-            "voice": voice,
-            "input": text,
-            "response_format": "mp3",
-        }
+    """Generate a single TTS audio file via OpenAI. Always uses gpt-4o-mini-tts for expressiveness."""
+    instructions = tts_instructions or _get_default_tts_instructions()
+    tts_kwargs = {
+        "model": "gpt-4o-mini-tts",
+        "voice": voice,
+        "input": text,
+        "instructions": instructions,
+        "response_format": "mp3",
+    }
     response = await _openai.audio.speech.create(**tts_kwargs)
     response.stream_to_file(output_path)
 
