@@ -721,7 +721,7 @@ let createMode = "wizard"; // "wizard" | "script" | "library"
 let wizardStep = 1;
 let wizardData = { topic: "", tone: "", voice: "", duration: 60, aspect: "16:9", style: "" };
 let scriptStep = 1;
-let scriptData = { text: "", voice: "", title: "", aspect: "16:9", style: "" };
+let scriptData = { text: "", tone: "", voice: "", title: "", aspect: "16:9", style: "" };
 
 async function createSimilar(projectId) {
     const project = _projectsCache.find(p => p.id === projectId);
@@ -814,7 +814,7 @@ function resetCreateWizard() {
     wizardStep = 1;
     wizardData = { topic: "", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "" };
     scriptStep = 1;
-    scriptData = { text: "", voice: "", voiceProfileId: 0, title: "", aspect: "16:9", style: "" };
+    scriptData = { text: "", tone: "", voice: "", voiceProfileId: 0, title: "", aspect: "16:9", style: "" };
 
     // Reset tabs
     document.querySelectorAll(".create-tab").forEach((t) => {
@@ -829,9 +829,7 @@ function resetCreateWizard() {
 
     // Reset wizard steps
     updateWizardUI("create-panel-wizard", wizardStep, 5, "wizard");
-    updateWizardUI("create-panel-script", scriptStep, 3, "script");
-
-    // Reset inputs
+    updateWizardUI("create-panel-script", scriptStep, 4, "script");
     document.getElementById("wizard-topic").value = "";
     document.getElementById("script-text").value = "";
     document.getElementById("script-char-count").textContent = "0";
@@ -961,8 +959,13 @@ function scriptNext() {
         scriptData.text = text;
     }
     if (scriptStep === 2) {
+        const sel = document.querySelector("#create-panel-script .wizard-step[data-step='2'] .wizard-option.selected");
+        if (!sel) { alert("Escolha o tom da narracao."); return; }
+        scriptData.tone = sel.dataset.value;
+    }
+    if (scriptStep === 3) {
         const personaSel = document.querySelector("#script-persona-list .persona-item.selected");
-        const builtinSel = document.querySelector("#create-panel-script .wizard-step[data-step='2'] .wizard-option.selected");
+        const builtinSel = document.querySelector("#create-panel-script .wizard-step[data-step='3'] .wizard-option.selected");
         if (personaSel) {
             scriptData.voice = personaSel.dataset.value;
             scriptData.voiceProfileId = parseInt(personaSel.dataset.profileId || "0");
@@ -973,13 +976,13 @@ function scriptNext() {
             alert("Escolha a voz."); return;
         }
     }
-    scriptStep = Math.min(scriptStep + 1, 3);
-    updateWizardUI("create-panel-script", scriptStep, 3, "script");
+    scriptStep = Math.min(scriptStep + 1, 4);
+    updateWizardUI("create-panel-script", scriptStep, 4, "script");
 }
 
 function scriptBack() {
     scriptStep = Math.max(scriptStep - 1, 1);
-    updateWizardUI("create-panel-script", scriptStep, 3, "script");
+    updateWizardUI("create-panel-script", scriptStep, 4, "script");
 }
 
 async function handleScriptCreate() {

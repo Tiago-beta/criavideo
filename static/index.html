@@ -14,7 +14,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260328-2">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260328-2">
     <link rel="apple-touch-icon" href="/video/static/icons/icon-192.png?v=20260328-2">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260329-21">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260330-22">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -304,7 +304,7 @@
                             <button class="wizard-option" data-value="informativo" type="button">Informativo</button>
                             <button class="wizard-option" data-value="inspirador" type="button">Inspirador</button>
                             <button class="wizard-option" data-value="descontraido" type="button">Descontraido</button>
-                            <button class="wizard-option" data-value="educativo" type="button">Educativo</button>
+                            <button class="wizard-option" data-value="profundo" type="button">Profundo</button>
                             <button class="wizard-option" data-value="dramatico" type="button">Dramatico</button>
                             <button class="wizard-option" data-value="motivacional" type="button">Motivacional</button>
                         </div>
@@ -466,8 +466,22 @@
                         </div>
                     </div>
 
-                    <!-- Step 2: Voice -->
+                    <!-- Step 2: Tone -->
                     <div class="wizard-step" data-step="2" hidden>
+                        <h3 class="wizard-question">Qual o tom da narracao?</h3>
+                        <p class="wizard-hint">Escolha como o conteudo sera apresentado</p>
+                        <div class="wizard-grid">
+                            <button class="wizard-option" data-value="informativo" type="button">Informativo</button>
+                            <button class="wizard-option" data-value="inspirador" type="button">Inspirador</button>
+                            <button class="wizard-option" data-value="descontraido" type="button">Descontraido</button>
+                            <button class="wizard-option" data-value="profundo" type="button">Profundo</button>
+                            <button class="wizard-option" data-value="dramatico" type="button">Dramatico</button>
+                            <button class="wizard-option" data-value="motivacional" type="button">Motivacional</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Voice -->
+                    <div class="wizard-step" data-step="3" hidden>
                         <h3 class="wizard-question">Escolha a voz da narracao</h3>
                         <p class="wizard-hint">Use uma voz IA ou grave sua propria voz</p>
                         <div id="script-voice-selector" class="voice-selector">
@@ -523,8 +537,8 @@
                         </div>
                     </div>
 
-                    <!-- Step 3: Format + Style -->
-                    <div class="wizard-step" data-step="3" hidden>
+                    <!-- Step 4: Format + Style -->
+                    <div class="wizard-step" data-step="4" hidden>
                         <h3 class="wizard-question">Detalhes finais</h3>
                         <p class="wizard-hint">Ajuste formato e estilo visual</p>
                         <div class="wizard-details-grid">
@@ -576,6 +590,7 @@
                         <button class="btn btn-secondary btn-sm wizard-back-btn" id="script-back" type="button" hidden>Voltar</button>
                         <div class="wizard-dots">
                             <span class="wizard-dot active"></span>
+                            <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
                         </div>
@@ -670,7 +685,7 @@
                             <option value="informativo">Informativo</option>
                             <option value="inspirador">Inspirador</option>
                             <option value="descontraido">Descontraido</option>
-                            <option value="educativo">Educativo</option>
+                            <option value="profundo">Profundo</option>
                             <option value="dramatico">Dramatico</option>
                             <option value="motivacional">Motivacional</option>
                         </select>
@@ -828,7 +843,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260329-21"></script>
+    <script src="/video/static/app.js?v=20260330-22"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>
