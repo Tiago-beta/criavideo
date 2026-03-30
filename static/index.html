@@ -14,7 +14,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260328-2">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260328-2">
     <link rel="apple-touch-icon" href="/video/static/icons/icon-192.png?v=20260328-2">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260330-25">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260330-26">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -535,7 +535,7 @@
 
                     <!-- Step 4: Format + Audio -->
                     <div class="wizard-step" data-step="4" hidden>
-                        <h3 class="wizard-question">Detalhes finais</h3>
+                        <h3 class="wizard-question">Outros Detalhes</h3>
                         <div class="wizard-details-grid">
                             <div class="form-group">
                                 <label>Formato</label>
@@ -546,18 +546,16 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>Ritmo da narracao</label>
+                                <label>Pausas</label>
                                 <div class="pause-options" id="script-pause-options">
                                     <button class="pause-option selected" data-value="normal" type="button">Normal</button>
-                                    <button class="pause-option" data-value="relaxed" type="button">Pausas Suaves</button>
-                                    <button class="pause-option" data-value="deep" type="button">Pausas Profundas</button>
+                                    <button class="pause-option" data-value="relaxed" type="button">Suaves</button>
+                                    <button class="pause-option" data-value="deep" type="button">Profundas</button>
                                 </div>
-                                <small class="pause-hint">Pausas profundas ideal para meditacao, hipnose e relaxamento</small>
                             </div>
                             <div class="form-group">
                                 <label>Fundo musical (opcional)</label>
                                 <input id="script-bgm-file" type="file" class="input" accept="audio/*">
-                                <small class="pause-hint">Se enviar um audio, ele sera usado como fundo no lugar do Suno</small>
                             </div>
                         </div>
                     </div>
@@ -847,7 +845,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260330-25"></script>
+    <script src="/video/static/app.js?v=20260330-26"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>
