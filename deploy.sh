@@ -33,6 +33,22 @@ async def migrate():
 asyncio.run(migrate())
 "
 
+echo "📊 Running SQL migrations (add new columns)..."
+docker exec levita-video python -c "
+import asyncio
+from app.database import engine
+from sqlalchemy import text
+
+async def run_migrations():
+    async with engine.begin() as conn:
+        await conn.execute(text('ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS use_custom_images BOOLEAN DEFAULT FALSE'))
+        await conn.execute(text('ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS enable_subtitles BOOLEAN DEFAULT TRUE'))
+        await conn.execute(text('ALTER TABLE video_scenes ADD COLUMN IF NOT EXISTS is_user_uploaded BOOLEAN DEFAULT FALSE'))
+    print('SQL migrations applied successfully')
+
+asyncio.run(run_migrations())
+"
+
 echo "✅ Deploy complete!"
 echo "🌐 Dashboard: http://$(hostname -I | awk '{print \$1}'):8002/video"
 echo "📡 API: http://$(hostname -I | awk '{print \$1}'):8002/api/"

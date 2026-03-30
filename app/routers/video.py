@@ -426,6 +426,7 @@ class GenerateTTSRequest(BaseModel):
     aspect_ratio: str = "16:9"
     style_prompt: str = ""
     pause_level: str = "normal"
+    enable_subtitles: bool = True
 
 
 @router.post("/fix-text")
@@ -495,8 +496,10 @@ async def generate_audio_endpoint(
     # Accept both JSON and multipart/form-data (with optional background_music upload)
     content_type = request.headers.get("content-type", "")
     bgm_upload: UploadFile | None = None
+    custom_image_uploads: list[UploadFile] = []
     if "multipart/form-data" in content_type:
         form = await request.form()
+        enable_sub_raw = str(form.get("enable_subtitles", "true")).lower()
         req = GenerateTTSRequest(
             script=str(form.get("script", "")),
             voice=str(form.get("voice", "")),
@@ -505,10 +508,15 @@ async def generate_audio_endpoint(
             aspect_ratio=str(form.get("aspect_ratio", "16:9")),
             style_prompt=str(form.get("style_prompt", "")),
             pause_level=str(form.get("pause_level", "normal")),
+            enable_subtitles=enable_sub_raw not in ("false", "0", "no"),
         )
         raw_upload = form.get("background_music")
         if isinstance(raw_upload, UploadFile):
             bgm_upload = raw_upload
+        # Collect custom image uploads (multiple files under "custom_images")
+        for key, value in form.multi_items():
+            if key == "custom_images" and isinstance(value, UploadFile) and value.filename:
+                custom_image_uploads.append(value)
     else:
         payload = await request.json()
         req = GenerateTTSRequest(**payload)
@@ -546,6 +554,7 @@ async def generate_audio_endpoint(
             tts_instructions = default_profile.tts_instructions or ""
 
     # Create project first to get an ID for the audio path
+    has_custom_images = len(custom_image_uploads) > 0
     project = VideoProject(
         user_id=user["id"],
         track_id=0,
@@ -560,10 +569,33 @@ async def generate_audio_endpoint(
         lyrics_text=req.script,
         lyrics_words=[],
         audio_path="",
+        use_custom_images=has_custom_images,
+        enable_subtitles=req.enable_subtitles,
     )
     db.add(project)
     await db.commit()
     await db.refresh(project)
+
+    # Save custom images uploaded by user (max 20, max 10MB each)
+    if custom_image_uploads:
+        img_dir = Path(settings.media_dir) / "images" / str(project.id)
+        img_dir.mkdir(parents=True, exist_ok=True)
+        allowed_ext = {".jpg", ".jpeg", ".png", ".webp"}
+        for idx, img_upload in enumerate(custom_image_uploads[:20]):
+            try:
+                ext = Path(img_upload.filename).suffix.lower()
+                if ext not in allowed_ext:
+                    ext = ".jpg"
+                target = img_dir / f"user_{idx:03d}{ext}"
+                content = await img_upload.read()
+                if len(content) > 10 * 1024 * 1024:
+                    logger.warning(f"Skipping image {img_upload.filename}: exceeds 10MB")
+                    continue
+                with open(target, "wb") as f:
+                    f.write(content)
+                logger.info(f"Saved custom image {idx} for project {project.id}: {target}")
+            except Exception as e:
+                logger.warning(f"Failed to save custom image {idx} for project {project.id}: {e}")
 
     # Save optional custom background music. The pipeline will prioritize this file over Suno.
     if bgm_upload and bgm_upload.filename:

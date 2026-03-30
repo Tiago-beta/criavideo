@@ -14,7 +14,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260328-2">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260328-2">
     <link rel="apple-touch-icon" href="/video/static/icons/icon-192.png?v=20260328-2">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260330-27">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260330-28">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -462,6 +462,33 @@
                                 Sugestao de IA
                             </button>
                         </div>
+
+                        <!-- Upload de fotos proprias -->
+                        <div class="photo-upload-section">
+                            <div class="photo-upload-header">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="script-use-photos" onchange="togglePhotoUpload()">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <span class="photo-upload-label">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                    Usar minhas fotos no video
+                                </span>
+                                <span class="photo-upload-hint">(max 20 fotos, 10MB cada)</span>
+                            </div>
+                            <div id="script-photo-area" class="photo-upload-area" hidden>
+                                <div id="script-photo-dropzone" class="photo-dropzone" onclick="document.getElementById('script-photo-input').click()">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                    <p>Clique ou arraste fotos aqui</p>
+                                    <small>JPG, PNG ou WebP &bull; Max 20 fotos &bull; 10MB cada</small>
+                                </div>
+                                <input id="script-photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handlePhotoSelect(event)">
+                                <div id="script-photo-preview" class="photo-preview-grid"></div>
+                                <div id="script-photo-count" class="photo-count" hidden>
+                                    <span id="script-photo-num">0</span> / 20 fotos
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Step 2: Tone -->
@@ -551,6 +578,16 @@
                                     <button class="pause-option selected" data-value="normal" type="button">Normal</button>
                                     <button class="pause-option" data-value="relaxed" type="button">Suaves</button>
                                     <button class="pause-option" data-value="deep" type="button">Profundas</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Legendas</label>
+                                <div class="subtitle-toggle-row">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="script-enable-subtitles" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <span class="subtitle-toggle-label">Exibir legendas no video</span>
                                 </div>
                             </div>
                             <div class="form-group">
@@ -844,7 +881,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260330-27"></script>
+    <script src="/video/static/app.js?v=20260330-28"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>

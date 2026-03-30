@@ -746,7 +746,7 @@ let createMode = "wizard"; // "wizard" | "script" | "library"
 let wizardStep = 1;
 let wizardData = { topic: "", tone: "", voice: "", duration: 60, aspect: "16:9", style: "" };
 let scriptStep = 1;
-let scriptData = { text: "", tone: "", voice: "", title: "", aspect: "16:9", style: "" };
+let scriptData = { text: "", tone: "", voice: "", title: "", aspect: "16:9", style: "", useCustomImages: false, enableSubtitles: true };
 
 async function createSimilar(projectId) {
     const project = _projectsCache.find(p => p.id === projectId);
@@ -839,7 +839,7 @@ function resetCreateWizard() {
     wizardStep = 1;
     wizardData = { topic: "", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "" };
     scriptStep = 1;
-    scriptData = { text: "", tone: "", voice: "", voiceProfileId: 0, title: "", aspect: "16:9", style: "" };
+    scriptData = { text: "", tone: "", voice: "", voiceProfileId: 0, title: "", aspect: "16:9", style: "", useCustomImages: false, enableSubtitles: true };
 
     // Reset tabs
     document.querySelectorAll(".create-tab").forEach((t) => {
@@ -861,6 +861,21 @@ function resetCreateWizard() {
     document.getElementById("script-title").value = "";
     const bgmInput = document.getElementById("script-bgm-file");
     if (bgmInput) bgmInput.value = "";
+
+    // Reset photo upload
+    scriptPhotos = [];
+    const photoCb = document.getElementById("script-use-photos");
+    if (photoCb) photoCb.checked = false;
+    const photoArea = document.getElementById("script-photo-area");
+    if (photoArea) photoArea.hidden = true;
+    const photoGrid = document.getElementById("script-photo-preview");
+    if (photoGrid) photoGrid.innerHTML = "";
+    const photoCount = document.getElementById("script-photo-count");
+    if (photoCount) photoCount.hidden = true;
+
+    // Reset subtitle toggle
+    const subCb = document.getElementById("script-enable-subtitles");
+    if (subCb) subCb.checked = true;
 
     // Reset selections
     document.querySelectorAll(".wizard-option.selected").forEach((o) => o.classList.remove("selected"));
@@ -1020,6 +1035,8 @@ async function handleScriptCreate() {
     scriptData.aspect = document.getElementById("script-aspect").value;
     scriptData.style = getSelectedStyles("script-style-tags");
     scriptData.pauseLevel = getSelectedPause("script-pause-options");
+    scriptData.useCustomImages = document.getElementById("script-use-photos").checked && scriptPhotos.length > 0;
+    scriptData.enableSubtitles = document.getElementById("script-enable-subtitles").checked;
     const bgmFileInput = document.getElementById("script-bgm-file");
     const bgmFile = bgmFileInput && bgmFileInput.files ? bgmFileInput.files[0] : null;
 
@@ -1034,8 +1051,14 @@ async function handleScriptCreate() {
         formData.append("aspect_ratio", scriptData.aspect);
         formData.append("style_prompt", scriptData.style);
         formData.append("pause_level", scriptData.pauseLevel || "normal");
+        formData.append("enable_subtitles", scriptData.enableSubtitles ? "true" : "false");
         if (bgmFile) {
             formData.append("background_music", bgmFile);
+        }
+        if (scriptData.useCustomImages) {
+            for (const photo of scriptPhotos) {
+                formData.append("custom_images", photo);
+            }
         }
 
         const result = await apiForm("/video/generate-audio", formData);
@@ -1082,6 +1105,86 @@ async function fixScriptText() {
         btn.disabled = false;
     }
 }
+
+// ── Photo Upload (Meu Roteiro) ──
+let scriptPhotos = []; // array of File objects
+const MAX_PHOTOS = 20;
+const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
+
+function togglePhotoUpload() {
+    const checked = document.getElementById("script-use-photos").checked;
+    document.getElementById("script-photo-area").hidden = !checked;
+}
+
+function handlePhotoSelect(event) {
+    const files = Array.from(event.target.files || []);
+    addPhotos(files);
+    event.target.value = "";
+}
+
+function addPhotos(files) {
+    for (const file of files) {
+        if (scriptPhotos.length >= MAX_PHOTOS) {
+            alert(`Maximo de ${MAX_PHOTOS} fotos atingido.`);
+            break;
+        }
+        if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+            alert(`Formato nao suportado: ${file.name}. Use JPG, PNG ou WebP.`);
+            continue;
+        }
+        if (file.size > MAX_PHOTO_SIZE) {
+            alert(`${file.name} excede 10MB. Reduza o tamanho.`);
+            continue;
+        }
+        scriptPhotos.push(file);
+    }
+    renderPhotoPreview();
+}
+
+function removePhoto(index) {
+    scriptPhotos.splice(index, 1);
+    renderPhotoPreview();
+}
+
+function renderPhotoPreview() {
+    const grid = document.getElementById("script-photo-preview");
+    const countEl = document.getElementById("script-photo-count");
+    const numEl = document.getElementById("script-photo-num");
+
+    grid.innerHTML = "";
+    scriptPhotos.forEach((file, i) => {
+        const div = document.createElement("div");
+        div.className = "photo-preview-item";
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(file);
+        img.onload = () => URL.revokeObjectURL(img.src);
+        const btn = document.createElement("button");
+        btn.className = "photo-remove-btn";
+        btn.type = "button";
+        btn.textContent = "\u00d7";
+        btn.onclick = () => removePhoto(i);
+        div.appendChild(img);
+        div.appendChild(btn);
+        grid.appendChild(div);
+    });
+
+    countEl.hidden = scriptPhotos.length === 0;
+    numEl.textContent = scriptPhotos.length;
+}
+
+// Drag and drop support
+document.addEventListener("DOMContentLoaded", () => {
+    const dz = document.getElementById("script-photo-dropzone");
+    if (!dz) return;
+    dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("dragover"); });
+    dz.addEventListener("dragleave", () => dz.classList.remove("dragover"));
+    dz.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dz.classList.remove("dragover");
+        const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"));
+        addPhotos(files);
+    });
+});
 
 function showAiSuggestPanel() {
     document.getElementById("create-panel-script").hidden = true;

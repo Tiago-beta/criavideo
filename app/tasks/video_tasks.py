@@ -128,8 +128,45 @@ async def run_video_pipeline(project_id: int):
 
             style_prompt = project.style_prompt or ""
             is_black_screen = "tela_preta" in style_prompt.lower()
+            use_custom_images = getattr(project, "use_custom_images", False) or False
 
-            if is_black_screen:
+            if use_custom_images:
+                # User uploaded their own photos — use them directly, skip AI generation
+                img_dir = Path(settings.media_dir) / "images" / str(project_id)
+                user_images = sorted(
+                    [str(p) for p in img_dir.glob("user_*") if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}]
+                )
+                if not user_images:
+                    raise RuntimeError("Nenhuma foto encontrada. Envie pelo menos uma foto.")
+
+                dur = project.track_duration or 180
+                # Distribute images evenly across audio duration, cycling if needed
+                per_image = max(dur / len(user_images), 5.0) if len(user_images) <= 20 else 5.0
+                scenes = []
+                t = 0.0
+                idx = 0
+                while t < dur:
+                    image_path = user_images[idx % len(user_images)]
+                    end_t = min(t + per_image, dur)
+                    if dur - end_t < 2.0:
+                        end_t = dur
+                    scenes.append({
+                        "scene_index": len(scenes),
+                        "start_time": t,
+                        "end_time": end_t,
+                        "visual_prompt": "user uploaded photo",
+                        "image_path": image_path,
+                        "lyrics_segment": "",
+                        "is_chorus": False,
+                        "is_user_uploaded": True,
+                    })
+                    t = end_t
+                    idx += 1
+                project.progress = 40
+                await db.commit()
+                logger.info(f"Custom images mode: {len(user_images)} photos, {len(scenes)} scene slots, {dur:.0f}s total")
+
+            elif is_black_screen:
                 # Black screen mode — no image generation, create a single black frame
                 from PIL import Image
                 if project.aspect_ratio == "9:16":
@@ -179,6 +216,7 @@ async def run_video_pipeline(project_id: int):
                     start_time=s.get("start_time", 0),
                     end_time=s.get("end_time", 0),
                     lyrics_segment=s.get("lyrics_segment", ""),
+                    is_user_uploaded=s.get("is_user_uploaded", False),
                 )
                 db.add(scene)
 
@@ -188,9 +226,12 @@ async def run_video_pipeline(project_id: int):
             project.progress = 60
             await db.commit()
 
-            # ── Step 2: Generate karaoke subtitles (skip for tela_preta) ──
+            # ── Step 2: Generate karaoke subtitles (skip for tela_preta or disabled) ──
             subtitle_path = ""
-            if not is_black_screen:
+            enable_subtitles = getattr(project, "enable_subtitles", True)
+            if enable_subtitles is None:
+                enable_subtitles = True
+            if not is_black_screen and enable_subtitles:
                 from app.services.subtitle_generator import generate_ass_subtitles, generate_ass_from_text
 
                 subtitle_dir = Path(settings.media_dir) / "subtitles" / str(project_id)
@@ -220,7 +261,7 @@ async def run_video_pipeline(project_id: int):
                 else:
                     subtitle_path = ""
             else:
-                logger.info(f"Tela preta mode: skipping subtitle generation")
+                logger.info(f"Skipping subtitle generation (tela_preta={is_black_screen}, enable_subtitles={enable_subtitles})")
 
             project.progress = 70
             await db.commit()

@@ -73,6 +73,8 @@ class VideoProject(Base):
     lyrics_text = Column(Text)
     lyrics_words = Column(JSON)  # word-level timestamps
     audio_path = Column(Text)  # path to audio file
+    use_custom_images = Column(Boolean, default=False)  # user uploaded own photos
+    enable_subtitles = Column(Boolean, default=True)  # subtitle toggle
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -91,6 +93,7 @@ class VideoScene(Base):
     prompt = Column(Text)  # prompt used for generation
     image_path = Column(Text)  # local path to generated image
     clip_path = Column(Text)  # local path to generated video clip (Grok)
+    is_user_uploaded = Column(Boolean, default=False)  # user-uploaded image
     start_time = Column(Float)  # seconds in audio
     end_time = Column(Float)  # seconds in audio
     lyrics_segment = Column(Text)  # lyrics for this scene
