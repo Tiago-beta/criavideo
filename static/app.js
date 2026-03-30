@@ -1161,59 +1161,26 @@ async function handleScriptCreate() {
 }
 
 async function uploadTempFileWithRetry(file, kind, label) {
-    const start = await api("/video/upload-temp-chunk/start", {
-        method: "POST",
-        body: JSON.stringify({
-            filename: file.name,
-            kind,
-            size: file.size,
-        }),
-    });
+    // Try simple direct upload first (most reliable)
+    const endpoint = kind === "audio" ? "/video/upload-temp-audio" : "/video/upload-temp-image";
+    const maxRetries = 5;
 
-    const sessionId = start.session_id;
-    const chunkSize = start.chunk_size || 512 * 1024;
-    let offset = 0;
-
-    while (offset < file.size) {
-        const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
-        let uploaded = false;
-        let lastError = null;
-
-        for (let attempt = 1; attempt <= 8; attempt++) {
-            try {
-                const fd = new FormData();
-                fd.append("file", chunk, `${file.name}.part`);
-                const resp = await apiForm(`/video/upload-temp-chunk/${sessionId}`, fd, {
-                    headers: {
-                        "x-upload-offset": String(offset),
-                    },
-                });
-                if (resp.mismatch) {
-                    offset = parseInt(resp.received || "0");
-                } else {
-                    offset = parseInt(resp.received || "0");
-                }
-                uploaded = true;
-                break;
-            } catch (error) {
-                lastError = error;
-                const delay = Math.min(7000, 600 * Math.pow(2, attempt - 1));
-                showCreateProgress(`Internet oscilando. Reenviando ${label} (${attempt}/8)...`);
-                await new Promise((resolve) => setTimeout(resolve, delay));
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const fd = new FormData();
+            fd.append("file", file);
+            showCreateProgress(`Enviando ${label}...`);
+            const result = await apiForm(endpoint, fd);
+            return result;
+        } catch (error) {
+            if (attempt === maxRetries) {
+                throw new Error(`Falha ao enviar ${label} apos ${maxRetries} tentativas. Verifique sua conexao.`);
             }
+            const delay = Math.min(5000, 500 * Math.pow(2, attempt - 1));
+            showCreateProgress(`Reenviando ${label} (${attempt}/${maxRetries})...`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
         }
-
-        if (!uploaded) {
-            throw lastError || new Error(`Falha no envio de ${label}`);
-        }
-
-        const pct = Math.max(1, Math.min(100, Math.round((offset / file.size) * 100)));
-        showCreateProgress(`Enviando ${label}: ${pct}%`);
     }
-
-    return await api(`/video/upload-temp-chunk/${sessionId}/finish`, {
-        method: "POST",
-    });
 }
 
 // ── AI Script Suggestion ──
