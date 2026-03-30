@@ -1083,12 +1083,8 @@ async function handleScriptCreate() {
         alert("Sem narracao, envie fotos para criar um video personalizado.");
         return;
     }
-    if (!scriptData.text && !bgmFile) {
-        alert("Sem narracao, envie um fundo musical para criar o video somente com fotos.");
-        return;
-    }
 
-    showCreateProgress(scriptData.text ? "Gerando narracao com voz IA..." : "Preparando video com fotos e fundo musical...");
+    showCreateProgress(scriptData.text ? "Gerando narracao com voz IA..." : "Preparando video com fotos (musica automatica se nao enviar)...");
 
     try {
         const formData = new FormData();

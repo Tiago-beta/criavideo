@@ -533,8 +533,6 @@ async def generate_audio_endpoint(
     script_text = (req.script or "").strip()
     if not script_text and not custom_image_uploads:
         raise HTTPException(status_code=400, detail="Sem narracao, envie fotos para criar um video personalizado.")
-    if not script_text and bgm_upload is None:
-        raise HTTPException(status_code=400, detail="Sem narracao, envie um fundo musical para criar o video somente com fotos.")
 
     # Resolve voice from profile or direct parameter
     voice = req.voice or "onyx"
@@ -645,13 +643,16 @@ async def generate_audio_endpoint(
             word_count = len(req.script.split())
             project.track_duration = round(word_count / 2.5)
         else:
-            if not custom_bgm_path:
-                raise HTTPException(status_code=400, detail="Sem narracao, envie um fundo musical valido.")
-            from app.services.video_composer import _get_duration as get_audio_duration
+            if custom_bgm_path:
+                from app.services.video_composer import _get_duration as get_audio_duration
 
-            project.audio_path = custom_bgm_path
-            bgm_duration = get_audio_duration(custom_bgm_path)
-            project.track_duration = round(bgm_duration) if bgm_duration > 0 else 60
+                project.audio_path = custom_bgm_path
+                bgm_duration = get_audio_duration(custom_bgm_path)
+                project.track_duration = round(bgm_duration) if bgm_duration > 0 else 60
+            else:
+                # No narration + no uploaded music: pipeline will generate instrumental music automatically.
+                project.audio_path = ""
+                project.track_duration = 0
             project.enable_subtitles = False
 
         project.status = VideoStatus.GENERATING_SCENES

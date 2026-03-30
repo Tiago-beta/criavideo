@@ -61,12 +61,70 @@ async def run_video_pipeline(project_id: int):
 
             # ── Step 0: Download audio if URL ──
             from app.services.video_composer import compose_video
+            from app.services.video_composer import _get_duration as get_audio_duration
 
-            audio_path = await download_audio_if_url(project.audio_path, project_id)
+            audio_path = await download_audio_if_url(project.audio_path, project_id) if project.audio_path else ""
+            use_custom_images = getattr(project, "use_custom_images", False) or False
+            is_music_only_mode = use_custom_images and not (project.lyrics_text or "").strip()
+
+            if (not audio_path or not os.path.exists(audio_path)) and is_music_only_mode:
+                # Photo-only mode without uploaded music: generate instrumental soundtrack automatically.
+                img_dir = Path(settings.media_dir) / "images" / str(project_id)
+                user_images_count = len([p for p in img_dir.glob("user_*") if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}])
+                target_dur = max(30.0, min(240.0, float(max(user_images_count, 1) * 8)))
+
+                text_hint = f"{project.style_prompt or ''} {project.title or ''}".lower()
+                bgm_mood = "inspiracional"
+                if any(w in text_hint for w in ["terror", "horror", "misterio", "dark", "suspense"]):
+                    bgm_mood = "misterioso"
+                elif any(w in text_hint for w in ["urgente", "alerta", "crise", "perigo"]):
+                    bgm_mood = "urgente"
+                elif any(w in text_hint for w in ["motivac", "superac", "força", "poder"]):
+                    bgm_mood = "motivacional"
+                elif any(w in text_hint for w in ["reflex", "calma", "paz", "tranquil"]):
+                    bgm_mood = "reflexivo"
+                elif any(w in text_hint for w in ["drama", "triste", "emocio"]):
+                    bgm_mood = "dramatico"
+
+                music_dir = Path(settings.media_dir) / "audio" / str(project_id)
+                music_dir.mkdir(parents=True, exist_ok=True)
+                main_music_path = str(music_dir / "music_only_main.mp3")
+
+                try:
+                    from app.services.suno_music import generate_suno_music
+
+                    topic_hint = project.title or project.style_prompt or ""
+                    generated = await generate_suno_music(main_music_path, target_dur, bgm_mood, topic_hint)
+                    if generated and os.path.exists(generated):
+                        audio_path = generated
+                        logger.info(f"Music-only mode: Suno main audio generated for project {project_id}: {generated}")
+                except Exception as e:
+                    logger.warning(f"Music-only mode: Suno main audio failed for project {project_id}: {e}")
+
+                if not audio_path or not os.path.exists(audio_path):
+                    try:
+                        from app.services.script_audio import generate_background_music
+
+                        generated = await asyncio.get_event_loop().run_in_executor(
+                            None, generate_background_music, main_music_path, target_dur, bgm_mood
+                        )
+                        if generated and os.path.exists(generated):
+                            audio_path = generated
+                            logger.info(f"Music-only mode: FFmpeg fallback main audio generated for project {project_id}: {generated}")
+                    except Exception as e:
+                        logger.warning(f"Music-only mode: FFmpeg fallback main audio failed for project {project_id}: {e}")
+
+                if audio_path and os.path.exists(audio_path):
+                    project.audio_path = audio_path
+                    real_dur = get_audio_duration(audio_path)
+                    project.track_duration = round(real_dur) if real_dur > 0 else round(target_dur)
+                    await db.commit()
+
             if not audio_path or not os.path.exists(audio_path):
                 raise FileNotFoundError(f"Audio file not found: {project.audio_path}")
+
             audio_basename = os.path.basename(audio_path).lower()
-            is_music_only_mode = audio_basename.startswith("custom_background_music")
+            is_music_only_mode = is_music_only_mode or audio_basename.startswith("custom_background_music") or audio_basename.startswith("music_only_main")
 
             # ── Step 0b: Transcribe audio with Whisper for accurate karaoke ──
             transcribed_words = []
@@ -133,7 +191,6 @@ async def run_video_pipeline(project_id: int):
 
             style_prompt = project.style_prompt or ""
             is_black_screen = "tela_preta" in style_prompt.lower()
-            use_custom_images = getattr(project, "use_custom_images", False) or False
 
             if use_custom_images:
                 # User uploaded their own photos — use them directly, skip AI generation
