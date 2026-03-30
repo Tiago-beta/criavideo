@@ -1110,6 +1110,25 @@ async function handleScriptCreate() {
     showCreateProgress(scriptData.text ? "Gerando narracao com voz IA..." : "Preparando video com fotos (musica automatica se nao enviar)...");
 
     try {
+        const uploadedImageIds = [];
+        let uploadedMusicId = "";
+
+        if (scriptData.useCustomImages) {
+            for (let i = 0; i < scriptPhotos.length; i++) {
+                showCreateProgress(`Enviando foto ${i + 1}/${scriptPhotos.length}...`);
+                const uploaded = await uploadTempFileWithRetry(scriptPhotos[i], "/video/upload-temp-image", `foto ${i + 1}`);
+                uploadedImageIds.push(uploaded.upload_id);
+            }
+        }
+
+        if (bgmFile) {
+            showCreateProgress("Enviando fundo musical...");
+            const uploadedAudio = await uploadTempFileWithRetry(bgmFile, "/video/upload-temp-audio", "audio");
+            uploadedMusicId = uploadedAudio.upload_id || "";
+        }
+
+        showCreateProgress(scriptData.text ? "Gerando narracao com voz IA..." : "Preparando video com fotos (musica automatica se nao enviar)...");
+
         const formData = new FormData();
         formData.append("script", scriptData.text);
         formData.append("voice", scriptData.voice || "");
@@ -1121,12 +1140,12 @@ async function handleScriptCreate() {
         formData.append("enable_subtitles", scriptData.enableSubtitles ? "true" : "false");
         formData.append("zoom_images", scriptData.zoomImages ? "true" : "false");
         formData.append("image_display_seconds", String(scriptData.imageDisplaySeconds > 0 ? scriptData.imageDisplaySeconds : 0));
-        if (bgmFile) {
-            formData.append("background_music", bgmFile);
+        if (uploadedMusicId) {
+            formData.append("background_music_id", uploadedMusicId);
         }
-        if (scriptData.useCustomImages) {
-            for (const photo of scriptPhotos) {
-                formData.append("custom_images", photo);
+        if (uploadedImageIds.length > 0) {
+            for (const uploadId of uploadedImageIds) {
+                formData.append("custom_image_ids", uploadId);
             }
         }
 
@@ -1139,6 +1158,27 @@ async function handleScriptCreate() {
         hideCreateProgress();
         alert(`Erro: ${error.message}`);
     }
+}
+
+async function uploadTempFileWithRetry(file, endpoint, label) {
+    const maxAttempts = 5;
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const fd = new FormData();
+            fd.append("file", file);
+            return await apiForm(endpoint, fd);
+        } catch (error) {
+            lastError = error;
+            if (attempt >= maxAttempts) {
+                break;
+            }
+            const delay = Math.min(5000, 700 * Math.pow(2, attempt - 1));
+            showCreateProgress(`Internet oscilando. Reenviando ${label} (${attempt + 1}/${maxAttempts})...`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+    }
+    throw lastError || new Error("Falha no envio do arquivo.");
 }
 
 // ── AI Script Suggestion ──

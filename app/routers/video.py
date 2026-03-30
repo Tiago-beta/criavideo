@@ -4,8 +4,10 @@ Video Router — Endpoints for creating video projects, generating scenes/render
 import json
 import logging
 import os
+import shutil
+import uuid
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -38,6 +40,71 @@ VOICE_DEMOS = {
 
 VOICE_DEMO_DIR = os.path.join(settings.media_dir, "voice_demos")
 os.makedirs(VOICE_DEMO_DIR, exist_ok=True)
+
+TEMP_UPLOAD_DIR = Path(settings.media_dir) / "temp_uploads"
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus", ".webm"}
+
+
+def _temp_user_dir(user_id: int) -> Path:
+    path = TEMP_UPLOAD_DIR / str(user_id)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _resolve_temp_file(user_id: int, upload_id: str, allowed_exts: set[str]) -> Path | None:
+    # upload_id format: <uuid><ext>
+    if not upload_id or "/" in upload_id or "\\" in upload_id:
+        return None
+    ext = Path(upload_id).suffix.lower()
+    if ext not in allowed_exts:
+        return None
+    candidate = _temp_user_dir(user_id) / upload_id
+    return candidate if candidate.exists() else None
+
+
+@router.post("/upload-temp-image")
+async def upload_temp_image(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Arquivo de imagem invalido")
+    ext = Path(file.filename).suffix.lower()
+    if ext not in IMAGE_EXTS:
+        raise HTTPException(status_code=400, detail="Formato de imagem nao suportado")
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Imagem excede 10MB")
+
+    upload_id = f"{uuid.uuid4().hex}{ext}"
+    target = _temp_user_dir(user["id"]) / upload_id
+    with open(target, "wb") as f:
+        f.write(content)
+    return {"upload_id": upload_id, "size": len(content)}
+
+
+@router.post("/upload-temp-audio")
+async def upload_temp_audio(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Arquivo de audio invalido")
+    ext = Path(file.filename).suffix.lower()
+    if ext not in AUDIO_EXTS:
+        raise HTTPException(status_code=400, detail="Formato de audio nao suportado")
+
+    content = await file.read()
+    if len(content) > 80 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Audio excede 80MB")
+
+    upload_id = f"{uuid.uuid4().hex}{ext}"
+    target = _temp_user_dir(user["id"]) / upload_id
+    with open(target, "wb") as f:
+        f.write(content)
+    return {"upload_id": upload_id, "size": len(content)}
 
 
 @router.get("/voice-demo/{voice_id}")
@@ -499,6 +566,8 @@ async def generate_audio_endpoint(
     content_type = request.headers.get("content-type", "")
     bgm_upload: UploadFile | None = None
     custom_image_uploads: list[UploadFile] = []
+    custom_image_ids: list[str] = []
+    background_music_id: str = ""
     if "multipart/form-data" in content_type:
         form = await request.form()
         enable_sub_raw = str(form.get("enable_subtitles", "true")).lower()
@@ -532,12 +601,17 @@ async def generate_audio_endpoint(
                 custom_image_uploads.append(value)
             elif getattr(value, "filename", ""):
                 custom_image_uploads.append(value)
+        try:
+            custom_image_ids = [str(v).strip() for v in form.getlist("custom_image_ids") if str(v).strip()]
+        except Exception:
+            custom_image_ids = []
+        background_music_id = str(form.get("background_music_id", "")).strip()
     else:
         payload = await request.json()
         req = GenerateTTSRequest(**payload)
 
     script_text = (req.script or "").strip()
-    if not script_text and not custom_image_uploads:
+    if not script_text and not custom_image_uploads and not custom_image_ids:
         raise HTTPException(status_code=400, detail="Sem narracao, envie fotos para criar um video personalizado.")
 
     # Resolve voice from profile or direct parameter
@@ -573,7 +647,7 @@ async def generate_audio_endpoint(
             tts_instructions = default_profile.tts_instructions or ""
 
     # Create project first to get an ID for the audio path
-    has_custom_images = len(custom_image_uploads) > 0
+    has_custom_images = len(custom_image_uploads) > 0 or len(custom_image_ids) > 0
     image_display_seconds = req.image_display_seconds if req.image_display_seconds and req.image_display_seconds > 0 else 0
     project = VideoProject(
         user_id=user["id"],
@@ -599,11 +673,26 @@ async def generate_audio_endpoint(
     await db.refresh(project)
 
     # Save custom images uploaded by user (max 20, max 10MB each)
-    if custom_image_uploads:
+    if custom_image_uploads or custom_image_ids:
         img_dir = Path(settings.media_dir) / "images" / str(project.id)
         img_dir.mkdir(parents=True, exist_ok=True)
-        allowed_ext = {".jpg", ".jpeg", ".png", ".webp"}
-        for idx, img_upload in enumerate(custom_image_uploads[:20]):
+        idx = 0
+
+        for upload_id in custom_image_ids[:20]:
+            try:
+                src = _resolve_temp_file(user["id"], upload_id, IMAGE_EXTS)
+                if not src:
+                    logger.warning(f"Invalid temp image ID for project {project.id}: {upload_id}")
+                    continue
+                ext = src.suffix.lower()
+                target = img_dir / f"user_{idx:03d}{ext}"
+                shutil.copy2(src, target)
+                idx += 1
+            except Exception as e:
+                logger.warning(f"Failed to move temp image {upload_id} for project {project.id}: {e}")
+
+        allowed_ext = IMAGE_EXTS
+        for img_upload in custom_image_uploads[: max(20 - idx, 0)]:
             try:
                 ext = Path(img_upload.filename).suffix.lower()
                 if ext not in allowed_ext:
@@ -616,6 +705,7 @@ async def generate_audio_endpoint(
                 with open(target, "wb") as f:
                     f.write(content)
                 logger.info(f"Saved custom image {idx} for project {project.id}: {target}")
+                idx += 1
             except Exception as e:
                 logger.warning(f"Failed to save custom image {idx} for project {project.id}: {e}")
 
@@ -635,6 +725,19 @@ async def generate_audio_endpoint(
             logger.info(f"Custom background music uploaded for project {project.id}: {target}")
         except Exception as e:
             logger.warning(f"Failed to save custom background music for project {project.id}: {e}")
+    elif background_music_id:
+        try:
+            src = _resolve_temp_file(user["id"], background_music_id, AUDIO_EXTS)
+            if src:
+                ext = src.suffix.lower()
+                music_dir = Path(settings.media_dir) / "audio" / str(project.id)
+                music_dir.mkdir(parents=True, exist_ok=True)
+                target = music_dir / f"custom_background_music{ext}"
+                shutil.copy2(src, target)
+                custom_bgm_path = str(target)
+                logger.info(f"Custom temp background music moved for project {project.id}: {target}")
+        except Exception as e:
+            logger.warning(f"Failed to move custom temp background music for project {project.id}: {e}")
 
     try:
         if script_text:
