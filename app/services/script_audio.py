@@ -192,7 +192,7 @@ def _split_at_pause_markers(text: str, pause_level: str) -> list[dict]:
     Returns list of {"text": str, "silence_after": float} dicts.
     """
     if pause_level == "relaxed":
-        # Split at "..." markers — insert 1.2s silence
+        # Split at "..." markers — insert 1.8s silence
         parts = re.split(r'(\.{3,}|…)', text)
         segments = []
         for i, part in enumerate(parts):
@@ -202,29 +202,49 @@ def _split_at_pause_markers(text: str, pause_level: str) -> list[dict]:
             if re.match(r'^(\.{3,}|…)$', part):
                 # This is an ellipsis — add silence to previous segment
                 if segments:
-                    segments[-1]["silence_after"] = 1.2
+                    segments[-1]["silence_after"] = 1.8
             else:
-                segments.append({"text": part, "silence_after": 0.3})
+                segments.append({"text": part, "silence_after": 0.5})
         return segments if segments else [{"text": text, "silence_after": 0}]
 
     elif pause_level == "deep":
-        # For deep/hypnosis: keep LARGE text blocks so the model builds emotional flow.
-        # Only split into blocks of ~500-800 chars at ellipsis boundaries.
-        # Keep the "..." IN the text so the model uses them as natural pause cues.
-        parts = re.split(r'(?<=\.{3})\s+|(?<=…)\s+', text)
-        segments = []
-        current_block = ""
-        for part in parts:
-            part = part.strip()
-            if not part:
+        # For deep/hypnosis: split at EVERY "..." to force real silence pauses.
+        # Group 2-3 short phrases together so model keeps emotional context,
+        # but never let blocks get too big (max ~350 chars).
+        raw_parts = re.split(r'(\.{3,}|…)', text)
+        # Merge text parts with their trailing ellipsis for context
+        phrases = []
+        current = ""
+        for part in raw_parts:
+            part_stripped = part.strip()
+            if not part_stripped:
                 continue
-            if len(current_block) + len(part) + 1 > 700 and current_block:
-                segments.append({"text": current_block.strip(), "silence_after": 2.0})
-                current_block = part
+            if re.match(r'^(\.{3,}|…)$', part_stripped):
+                # Ellipsis — append to current phrase and mark as pause point
+                current += "..."
+                if current.strip():
+                    phrases.append(current.strip())
+                    current = ""
             else:
-                current_block = f"{current_block} {part}" if current_block else part
-        if current_block.strip():
-            segments.append({"text": current_block.strip(), "silence_after": 0})
+                current = f"{current} {part_stripped}" if current else part_stripped
+        if current.strip():
+            phrases.append(current.strip())
+
+        # Now group phrases: max 2 phrases per segment, or max ~350 chars
+        segments = []
+        group = ""
+        group_count = 0
+        for phrase in phrases:
+            if group and (group_count >= 2 or len(group) + len(phrase) + 1 > 350):
+                segments.append({"text": group.strip(), "silence_after": 2.5})
+                group = phrase
+                group_count = 1
+            else:
+                group = f"{group} {phrase}" if group else phrase
+                group_count += 1
+        if group.strip():
+            segments.append({"text": group.strip(), "silence_after": 0})
+
         return segments if segments else [{"text": text, "silence_after": 0}]
 
     return [{"text": text, "silence_after": 0}]
