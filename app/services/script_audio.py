@@ -156,22 +156,32 @@ def _get_pacing_instructions(pause_level: str) -> str:
     """Return TTS pacing instructions based on pause level."""
     if pause_level == "relaxed":
         return (
-            "Fale de forma calma e tranquila, com ritmo pausado. "
-            "ENFATIZE as palavras-chave com variação de tom — palavras importantes devem ser ditas com mais peso e intenção. "
-            "Faça pequenas pausas naturais nas vírgulas e pausas mais longas nas reticências. "
-            "Varie a entonação para manter o ouvinte envolvido. Nunca soe monótono ou robótico. "
-            "Mantenha um tom sereno e acolhedor, como se estivesse conversando com alguém."
+            "Você é um narrador profissional de audiobooks e meditações guiadas. "
+            "Fale com SENTIMENTO e EMOÇÃO — cada frase deve transmitir a emoção do conteúdo. "
+            "Fale de forma calma, pausada e envolvente. "
+            "ENFATIZE palavras-chave com variação real de tom — palavras importantes devem soar mais suaves, mais profundas ou mais intensas. "
+            "Faça pausas naturais nas reticências (...). "
+            "Varie a entonação: suba o tom para curiosidade, desça para seriedade, suavize para conforto. "
+            "Nunca soe monótono, robótico ou como quem está lendo um texto. "
+            "Soe como alguém que SENTE profundamente o que está dizendo."
         )
     elif pause_level == "deep":
         return (
-            "Você é um hipnoterapeuta profissional conduzindo uma sessão de hipnose. "
-            "Fale de forma lenta, profunda e HIPNÓTICA. "
-            "ENFATIZE palavras-chave como 'relaxar', 'profundo', 'calma', 'mente', 'corpo' — diga-as com mais peso, mais suavidade e intenção. "
-            "Varie a entonação de forma sutil: suba levemente o tom para criar expectativa e desça para induzir relaxamento. "
-            "Faça pausas longas e marcantes nas reticências e nos pontos finais. "
-            "Respire entre as frases. Tom extremamente calmo, suave e envolvente. "
-            "Cada palavra deve ser pronunciada com CLAREZA, INTENÇÃO e SERENIDADE. "
-            "NÃO leia o texto — conduza o ouvinte numa jornada. Soe natural, empático e profundamente relaxante."
+            "Você é um HIPNOTERAPEUTA PROFISSIONAL renomado conduzindo uma sessão real de hipnose terapêutica. "
+            "Isto NÃO é uma leitura de texto — é uma INDUÇÃO HIPNÓTICA. Cada palavra deve carregar INTENÇÃO e SENTIMENTO. "
+            "\n\nCOMO FALAR:"
+            "\n- Fale MUITO lentamente, com profundidade emocional. Respire entre as frases."
+            "\n- Dê PESO emocional a cada palavra — como se cada sílaba importasse."
+            "\n- Nas reticências (...) faça pausas longas e significativas, deixando o silêncio trabalhar."
+            "\n- Palavras como 'relaxar', 'profundo', 'calma', 'mente', 'corpo', 'respiração', 'soltar', 'confortável', 'tranquilo', 'suave' devem ser ditas com SUAVIDADE especial — mais lentas, mais graves, quase sussurradas."
+            "\n- Palavras como 'feche os olhos', 'solte', 'deixe ir', 'permita-se' devem soar como um CONVITE gentil e acolhedor."
+            "\n\nTOM E EMOÇÃO:"
+            "\n- Tom grave, suave, aveludado e profundamente ACOLHEDOR."
+            "\n- Varie a entonação: suba sutilmente para criar expectativa, desça para induzir relaxamento profundo."
+            "\n- Transmita SEGURANÇA e CONFIANÇA — o ouvinte precisa sentir que está em boas mãos."
+            "\n- Soe empático, caloroso e genuinamente presente — como se estivesse sentado ao lado da pessoa."
+            "\n- NUNCA soe como um robô, narrador de notícias ou leitor de teleprompter."
+            "\n- Imagine que você é Milton Erickson conduzindo uma induição — cada palavra é medicine."
         )
     return ""
 
@@ -198,27 +208,23 @@ def _split_at_pause_markers(text: str, pause_level: str) -> list[dict]:
         return segments if segments else [{"text": text, "silence_after": 0}]
 
     elif pause_level == "deep":
-        # Split at "..." (2.0s) and at sentence ends "." (1.0s)
-        # First, replace ... with a unique marker
-        marked = re.sub(r'\.{3,}|…', ' |||ELLIPSIS||| ', text)
-        # Split at sentence boundaries
-        raw_parts = re.split(r'(?<=[.!?])\s+', marked)
+        # For deep/hypnosis: keep LARGE text blocks so the model builds emotional flow.
+        # Only split into blocks of ~500-800 chars at ellipsis boundaries.
+        # Keep the "..." IN the text so the model uses them as natural pause cues.
+        parts = re.split(r'(?<=\.{3})\s+|(?<=…)\s+', text)
         segments = []
-        for part in raw_parts:
+        current_block = ""
+        for part in parts:
             part = part.strip()
             if not part:
                 continue
-            if '|||ELLIPSIS|||' in part:
-                # Split further at ellipsis markers
-                sub_parts = part.split('|||ELLIPSIS|||')
-                for j, sp in enumerate(sub_parts):
-                    sp = sp.strip()
-                    if not sp:
-                        continue
-                    silence = 2.5 if j < len(sub_parts) - 1 else 1.0
-                    segments.append({"text": sp, "silence_after": silence})
+            if len(current_block) + len(part) + 1 > 700 and current_block:
+                segments.append({"text": current_block.strip(), "silence_after": 2.0})
+                current_block = part
             else:
-                segments.append({"text": part, "silence_after": 1.0})
+                current_block = f"{current_block} {part}" if current_block else part
+        if current_block.strip():
+            segments.append({"text": current_block.strip(), "silence_after": 0})
         return segments if segments else [{"text": text, "silence_after": 0}]
 
     return [{"text": text, "silence_after": 0}]
@@ -324,10 +330,13 @@ def _split_text_for_tts(text: str, max_chars: int = 3800) -> list[str]:
 def _get_default_tts_instructions() -> str:
     """Default TTS instructions for natural, expressive narration."""
     return (
-        "Fale de forma natural e expressiva, como um narrador profissional. "
-        "ENFATIZE palavras-chave e conceitos importantes com variação de tom. "
-        "Varie a entonação para manter o ouvinte envolvido — nunca soe monótono ou como se estivesse apenas lendo. "
-        "Use ritmo dinâmico: acelere em momentos de empolgação, desacelere em momentos reflexivos."
+        "Você é um narrador profissional de vídeos virais. "
+        "Fale com EMOÇÃO e SENTIMENTO — cada frase deve transmitir a emoção do conteúdo. "
+        "ENFATIZE palavras-chave com variação real de tom e intensidade. "
+        "Varie a entonação constantemente: surpreenda, provoque curiosidade, crie suspense. "
+        "Nunca soe monótono, robótico ou como quem está apenas lendo um texto. "
+        "Use ritmo dinâmico: acelere na empolgação e desacelere na reflexão. "
+        "Soe como alguém que ACREDITA no que diz e quer envolver o ouvinte."
     )
 
 
