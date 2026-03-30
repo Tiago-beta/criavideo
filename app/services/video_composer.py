@@ -38,6 +38,8 @@ def compose_video(
 
     if aspect_ratio == "9:16":
         width, height = 1080, 1920
+    elif aspect_ratio == "1:1":
+        width, height = 1080, 1080
     else:
         width, height = 1920, 1080
 
@@ -97,7 +99,7 @@ def compose_video(
 
     for i, sc in enumerate(valid_scenes):
         dur = sc["duration"]
-        frames = int(dur * 30)
+        frames = max(int(dur * 30), 1)
 
         # Image: Ken Burns zoom/pan — single frame input, zoompan d controls duration
         input_args.extend(["-i", sc["image_path"]])
@@ -202,7 +204,25 @@ def compose_video(
         err_lines = [l for l in result.stderr.split('\n') if l.strip() and 'size=' not in l and 'speed=' not in l]
         err_msg = '\n'.join(err_lines[-20:]) if err_lines else result.stderr[-2000:]
         logger.error(f"FFmpeg error:\n{err_msg}")
-        raise RuntimeError(f"FFmpeg failed: {err_msg[-500:]}")
+        logger.warning("Trying safe fallback renderer (static image + audio)")
+        try:
+            _render_static_fallback(
+                image_path=valid_scenes[0]["image_path"],
+                audio_path=audio_path,
+                output_path=output_path,
+                width=width,
+                height=height,
+                duration=audio_duration,
+                subtitle_path=subtitle_path,
+                background_music_path=background_music_path,
+            )
+            file_size = os.path.getsize(output_path)
+            duration = _get_duration(output_path)
+            logger.info(f"Fallback video rendered: {output_path} ({file_size / 1024 / 1024:.1f} MB, {duration:.1f}s)")
+            return {"file_path": output_path, "duration": duration, "file_size": file_size}
+        except Exception as fallback_error:
+            logger.error(f"Fallback renderer also failed: {fallback_error}")
+            raise RuntimeError(f"FFmpeg failed: {err_msg[-500:]}")
 
     file_size = os.path.getsize(output_path)
     duration = _get_duration(output_path)
@@ -222,3 +242,68 @@ def _get_duration(file_path: str) -> float:
         return float(info["format"]["duration"])
     except Exception:
         return 0.0
+
+
+def _render_static_fallback(
+    image_path: str,
+    audio_path: str,
+    output_path: str,
+    width: int,
+    height: int,
+    duration: float,
+    subtitle_path: str = "",
+    background_music_path: str = "",
+) -> None:
+    """Safe fallback renderer: static image + audio, robust against complex filter failures."""
+    if duration <= 0:
+        duration = max(_get_duration(audio_path), 5.0)
+
+    input_args = ["-loop", "1", "-i", image_path, "-i", audio_path]
+    audio_idx = 1
+    music_idx = None
+
+    if background_music_path and os.path.exists(background_music_path):
+        music_idx = 2
+        input_args.extend(["-stream_loop", "-1", "-i", background_music_path])
+
+    filter_complex = (
+        f"[0:v]scale={width}:{height},fps=30,format=yuv420p,trim=duration={duration},setpts=PTS-STARTPTS[slideshow]"
+    )
+    video_output = "[slideshow]"
+
+    if subtitle_path and os.path.exists(subtitle_path):
+        sub_path_escaped = subtitle_path.replace("\\", "/").replace(":", "\\:")
+        filter_complex += f";[slideshow]ass='{sub_path_escaped}'[final]"
+        video_output = "[final]"
+
+    if music_idx is not None:
+        fade_start = max(duration - 4, 0)
+        filter_complex += (
+            f";[{audio_idx}:a]volume=1.0[narration];"
+            f"[{music_idx}:a]volume=0.18,afade=t=out:st={fade_start}:d=4[bgm];"
+            f"[narration][bgm]amix=inputs=2:duration=first:dropout_transition=3:normalize=0[audioout]"
+        )
+        audio_output = "[audioout]"
+    else:
+        audio_output = f"{audio_idx}:a"
+
+    cmd = [
+        "ffmpeg", "-y",
+        *input_args,
+        "-filter_complex", filter_complex,
+        "-map", video_output,
+        "-map", audio_output,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
+        output_path,
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+    if result.returncode != 0:
+        err_lines = [l for l in result.stderr.split('\n') if l.strip() and 'size=' not in l and 'speed=' not in l]
+        err_msg = '\n'.join(err_lines[-20:]) if err_lines else result.stderr[-2000:]
+        raise RuntimeError(f"Fallback FFmpeg failed: {err_msg[-500:]}")
