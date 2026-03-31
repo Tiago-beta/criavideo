@@ -1254,7 +1254,14 @@ function toggleScriptNarration() {
 function updateNarrationChoiceVisibility() {
     const usePhotos = document.getElementById("script-use-photos").checked;
     const narChoice = document.getElementById("script-narration-choice");
-    if (narChoice) narChoice.hidden = !(usePhotos && scriptPhotos.length > 0);
+    const narCb = document.getElementById("script-create-narration");
+    const wasHidden = narChoice ? narChoice.hidden : true;
+    const shouldShow = usePhotos && scriptPhotos.length > 0;
+    if (narChoice) narChoice.hidden = !shouldShow;
+    // When photos are first added, default narration to OFF
+    if (shouldShow && wasHidden && narCb) {
+        narCb.checked = false;
+    }
     toggleScriptNarration();
 }
 
