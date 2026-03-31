@@ -208,6 +208,28 @@ async def run_video_pipeline(project_id: int):
                 # Distribute images evenly across audio duration, cycling if needed
                 if image_display_seconds > 0:
                     per_image = max(image_display_seconds, 1.0)
+                    desired_dur = per_image * len(user_images)
+                    # Trim audio to match user's desired total duration
+                    if dur > desired_dur + 2.0:
+                        trimmed_path = str(Path(audio_path).parent / "trimmed_audio.mp3")
+                        try:
+                            import subprocess
+                            trim_cmd = [
+                                "ffmpeg", "-y", "-i", audio_path,
+                                "-t", f"{desired_dur:.2f}",
+                                "-af", f"afade=t=out:st={max(desired_dur - 3, 0):.2f}:d=3",
+                                "-c:a", "libmp3lame", "-b:a", "192k", trimmed_path,
+                            ]
+                            subprocess.run(trim_cmd, capture_output=True, text=True, timeout=120)
+                            if os.path.exists(trimmed_path) and os.path.getsize(trimmed_path) > 0:
+                                audio_path = trimmed_path
+                                project.audio_path = audio_path
+                                project.track_duration = round(desired_dur)
+                                await db.commit()
+                                logger.info(f"Audio trimmed to {desired_dur:.1f}s to match user image_display_seconds")
+                        except Exception as e:
+                            logger.warning(f"Audio trim failed, using original: {e}")
+                    dur = desired_dur
                 else:
                     per_image = max(dur / len(user_images), 5.0) if len(user_images) <= 20 else 5.0
                 scenes = []
