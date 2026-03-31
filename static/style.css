@@ -1041,6 +1041,7 @@ th {
 .wizard-textarea {
     width: 100%;
     padding: 14px 18px;
+    padding-bottom: 44px;
     border: 2px dashed rgba(246, 165, 47, 0.35);
     border-radius: 14px;
     background: var(--bg-input);
@@ -1051,6 +1052,38 @@ th {
     outline: none;
     transition: border-color 0.2s;
     font-family: "Manrope", sans-serif;
+}
+
+.textarea-wrapper {
+    position: relative;
+}
+
+.textarea-inline-actions {
+    position: absolute;
+    bottom: 10px;
+    right: 12px;
+    display: flex;
+    gap: 6px;
+}
+
+.textarea-icon-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.textarea-icon-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(246, 165, 47, 0.1);
 }
 
 .wizard-textarea:focus {
