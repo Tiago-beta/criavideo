@@ -811,8 +811,6 @@ function initCreateWizard() {
     document.getElementById("btn-ai-suggest-script").addEventListener("click", showAiSuggestPanel);
     document.getElementById("ai-suggest-cancel").addEventListener("click", hideAiSuggestPanel);
     document.getElementById("ai-suggest-generate").addEventListener("click", generateAiScript);
-    // Fix text button
-    document.getElementById("btn-fix-script").addEventListener("click", fixScriptText);
 
     // Wizard option clicks (event delegation)
     document.getElementById("modal-new-project").addEventListener("click", (e) => {
@@ -1185,38 +1183,6 @@ async function uploadTempFileWithRetry(file, kind, label) {
 
 // ── AI Script Suggestion ──
 
-async function fixScriptText() {
-    const textarea = document.getElementById("script-text");
-    const text = textarea.value.trim();
-    if (!text || text.length < 10) { alert("Escreva um texto com pelo menos 10 caracteres."); return; }
-
-    const btn = document.getElementById("btn-fix-script");
-    const originalText = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Corrigindo...';
-
-    try {
-        const result = await api("/video/fix-text", {
-            method: "POST",
-            body: JSON.stringify({ text }),
-        });
-        textarea.value = result.text;
-        document.getElementById("script-char-count").textContent = result.text.length.toLocaleString("pt-BR");
-        if (result.changes > 0) {
-            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> ' + result.changes + ' correcao(oes)';
-            setTimeout(() => { btn.innerHTML = originalText; }, 3000);
-        } else {
-            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Nenhum erro encontrado';
-            setTimeout(() => { btn.innerHTML = originalText; }, 3000);
-        }
-    } catch (error) {
-        alert(`Erro ao corrigir: ${error.message}`);
-        btn.innerHTML = originalText;
-    } finally {
-        btn.disabled = false;
-    }
-}
-
 // ── Photo Upload (Meu Roteiro) ──
 let scriptPhotos = []; // array of File objects
 const MAX_PHOTOS = 20;
@@ -1237,12 +1203,10 @@ function toggleScriptNarration() {
     const usePhotos = document.getElementById("script-use-photos").checked;
     const createNarration = document.getElementById("script-create-narration").checked;
     const textarea = document.getElementById("script-text");
-    const fixBtn = document.getElementById("btn-fix-script");
     const aiBtn = document.getElementById("btn-ai-suggest-script");
     scriptData.createNarration = !usePhotos || createNarration;
     const disableText = usePhotos && !createNarration;
     textarea.disabled = disableText;
-    if (fixBtn) fixBtn.disabled = disableText;
     if (aiBtn) aiBtn.disabled = disableText;
     if (disableText) {
         textarea.placeholder = "Narracao desativada. O video sera criado com fotos + fundo musical.";
