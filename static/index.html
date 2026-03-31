@@ -587,19 +587,12 @@
                                     <button class="pause-option" data-value="deep" type="button">Profundas</button>
                                 </div>
                             </div>
-                            <div class="form-group">
-                                <label>Zoom nas imagens</label>
-                                <div class="pause-options" id="script-zoom-options">
-                                    <button class="pause-option selected" data-value="on" type="button">Com Zoom</button>
-                                    <button class="pause-option" data-value="off" type="button">Sem Zoom</button>
-                                </div>
-                            </div>
-                            <div class="form-group">
+                            <div class="form-group" id="script-photo-seconds-group" hidden>
                                 <label>Tempo por imagem (segundos)</label>
                                 <input id="script-image-seconds" type="number" class="input" min="1" max="30" step="1" placeholder="Automatico (duracao total)">
                                 <small class="field-hint">Defina quantos segundos cada foto fica na tela antes de trocar.</small>
                             </div>
-                            <div class="form-group">
+                            <div class="form-group" id="script-subtitles-group" hidden>
                                 <label>Legendas</label>
                                 <div class="subtitle-toggle-row">
                                     <label class="toggle-switch">
@@ -900,7 +893,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260331-2"></script>
+    <script src="/video/static/app.js?v=20260331-4"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>

@@ -897,8 +897,7 @@ function resetCreateWizard() {
     if (subCb) subCb.checked = true;
     const imageSecondsInput = document.getElementById("script-image-seconds");
     if (imageSecondsInput) imageSecondsInput.value = "";
-    const zoomOptions = document.querySelectorAll("#script-zoom-options .pause-option");
-    zoomOptions.forEach((btn) => btn.classList.toggle("selected", btn.dataset.value === "on"));
+    toggleScriptPhotoDependentFields();
 
     // Reset selections
     document.querySelectorAll(".wizard-option.selected").forEach((o) => o.classList.remove("selected"));
@@ -1087,16 +1086,19 @@ async function handleScriptCreate() {
     scriptData.aspect = document.getElementById("script-aspect").value;
     scriptData.style = getSelectedStyles("script-style-tags");
     scriptData.pauseLevel = getSelectedPause("script-pause-options");
-    scriptData.zoomImages = getSelectedPause("script-zoom-options") !== "off";
-    scriptData.imageDisplaySeconds = parseFloat(document.getElementById("script-image-seconds").value || "0") || 0;
-    scriptData.useCustomImages = document.getElementById("script-use-photos").checked && scriptPhotos.length > 0;
+    const usePhotosSelected = document.getElementById("script-use-photos").checked;
+    scriptData.zoomImages = true;
+    scriptData.imageDisplaySeconds = usePhotosSelected
+        ? (parseFloat(document.getElementById("script-image-seconds").value || "0") || 0)
+        : 0;
+    scriptData.useCustomImages = usePhotosSelected && scriptPhotos.length > 0;
     scriptData.createNarration = !scriptData.useCustomImages || document.getElementById("script-create-narration").checked;
     if (!scriptData.createNarration) {
         scriptData.text = "";
         scriptData.voice = "";
         scriptData.voiceProfileId = 0;
     }
-    scriptData.enableSubtitles = document.getElementById("script-enable-subtitles").checked;
+    scriptData.enableSubtitles = usePhotosSelected ? document.getElementById("script-enable-subtitles").checked : true;
     const bgmFileInput = document.getElementById("script-bgm-file");
     const bgmFile = bgmFileInput && bgmFileInput.files ? bgmFileInput.files[0] : null;
 
@@ -1191,12 +1193,21 @@ const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
 function togglePhotoUpload() {
     const checked = document.getElementById("script-use-photos").checked;
     document.getElementById("script-photo-area").hidden = !checked;
+    toggleScriptPhotoDependentFields();
     if (!checked) {
         scriptData.createNarration = true;
         const narCb = document.getElementById("script-create-narration");
         if (narCb) narCb.checked = true;
     }
     updateNarrationChoiceVisibility();
+}
+
+function toggleScriptPhotoDependentFields() {
+    const usePhotos = document.getElementById("script-use-photos").checked;
+    const imageSecondsGroup = document.getElementById("script-photo-seconds-group");
+    const subtitlesGroup = document.getElementById("script-subtitles-group");
+    if (imageSecondsGroup) imageSecondsGroup.hidden = !usePhotos;
+    if (subtitlesGroup) subtitlesGroup.hidden = !usePhotos;
 }
 
 function toggleScriptNarration() {
