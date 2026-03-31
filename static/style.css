@@ -1056,6 +1056,7 @@ th {
 
 .textarea-wrapper {
     position: relative;
+    margin-top: 16px;
 }
 
 .textarea-inline-actions {
