@@ -46,6 +46,22 @@ async def run_migrations():
         await conn.execute(text('ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS zoom_images BOOLEAN DEFAULT TRUE'))
         await conn.execute(text('ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS image_display_seconds REAL DEFAULT 0'))
         await conn.execute(text('ALTER TABLE video_scenes ADD COLUMN IF NOT EXISTS is_user_uploaded BOOLEAN DEFAULT FALSE'))
+        # Image Bank table
+        await conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS image_bank (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+                style TEXT NOT NULL DEFAULT '',
+                aspect_ratio VARCHAR(10) NOT NULL DEFAULT '16:9',
+                prompt TEXT NOT NULL DEFAULT '',
+                file_path TEXT NOT NULL,
+                reuse_count INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        '''))
+        await conn.execute(text('CREATE INDEX IF NOT EXISTS idx_image_bank_user_aspect ON image_bank (user_id, aspect_ratio)'))
+        await conn.execute(text('CREATE INDEX IF NOT EXISTS idx_image_bank_tags ON image_bank USING GIN (tags)'))
     print('SQL migrations applied successfully')
 
 asyncio.run(run_migrations())

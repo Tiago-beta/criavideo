@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, Boolean, Enum, ForeignKey, JSON, Float
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -117,6 +118,20 @@ class VideoRender(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     project = relationship("VideoProject", back_populates="renders")
+
+
+class ImageBank(Base):
+    __tablename__ = "image_bank"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    tags = Column(ARRAY(Text), default=list)  # ["sunset", "ocean", "warm", "beach"]
+    style = Column(Text, default="")  # style_hint used during generation
+    aspect_ratio = Column(String(10), default="16:9")
+    prompt = Column(Text, default="")  # original visual_prompt
+    file_path = Column(Text, nullable=False)  # absolute path to image
+    reuse_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class SocialAccount(Base):

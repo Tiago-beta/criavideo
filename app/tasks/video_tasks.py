@@ -292,6 +292,7 @@ async def run_video_pipeline(project_id: int):
                     duration=project.track_duration or 180,
                     aspect_ratio=project.aspect_ratio,
                     style_hint=style_prompt,
+                    user_id=project.user_id,
                     on_progress=_scene_progress,
                 )
 

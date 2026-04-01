@@ -1,15 +1,20 @@
 """
 Scene Generator — Uses Google Nano Banana (Gemini 3.1 Flash Image)
 to generate background images for each scene of the music video.
+Includes Image Bank: reuses previously generated images via semantic tags.
 """
 import os
+import shutil
 import asyncio
 import logging
+import uuid
 from pathlib import Path
 from google import genai
 from google.genai import types
 import openai
+from sqlalchemy import select, update, text
 from app.config import get_settings
+from app.database import async_session
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -38,6 +43,7 @@ For each scene, provide:
 - end_time: approximate end in seconds
 - lyrics_segment: the lyrics for this section
 - visual_prompt: a detailed description for generating a background image (describe mood, colors, setting, objects — NO text/words in the image)
+- tags: an array of 5-8 English keywords describing the image content. Include diverse categories: setting (forest, city, ocean), time (night, dawn, sunset), mood (melancholic, joyful, dramatic), colors (golden, blue, red), objects (candle, rain, mountains), style (abstract, realistic, aerial). Example: ["sunset", "ocean", "warm", "golden", "beach", "peaceful", "waves"]
 - is_chorus: whether this is a chorus/highlight moment
 
 The lyrics:
@@ -90,6 +96,107 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
     raise RuntimeError("Nano Banana did not return an image")
 
 
+# ── Image Bank: search & save ──
+
+async def search_image_bank(user_id: int, tags: list[str], aspect_ratio: str,
+                            style: str, exclude_ids: set[int] | None = None) -> dict | None:
+    """Search the image bank for a reusable image matching the given tags.
+    Requires at least 3 tags in common. Prefers same style, then most tags matched.
+    exclude_ids prevents reusing the same bank image twice in one video."""
+    if not tags or len(tags) < 3:
+        return None
+
+    async with async_session() as db:
+        tag_array = "{" + ",".join(tags) + "}"
+
+        # Build exclusion clause
+        exclude_clause = ""
+        params = {
+            "uid": user_id,
+            "ar": aspect_ratio,
+            "tag_arr": tag_array,
+            "style": style or "",
+        }
+        if exclude_ids:
+            exclude_clause = "AND id != ALL(:excluded)"
+            params["excluded"] = list(exclude_ids)
+
+        query = text(f"""
+            SELECT id, file_path, tags, style, prompt,
+                   array_length(
+                       ARRAY(SELECT unnest(tags) INTERSECT SELECT unnest(:tag_arr::text[])),
+                       1
+                   ) AS match_count
+            FROM image_bank
+            WHERE user_id = :uid
+              AND aspect_ratio = :ar
+              AND tags && :tag_arr::text[]
+              {exclude_clause}
+            ORDER BY
+                CASE WHEN style = :style THEN 0 ELSE 1 END,
+                match_count DESC
+            LIMIT 1
+        """)
+        result = await db.execute(query, {
+            "uid": user_id,
+            "ar": aspect_ratio,
+            "tag_arr": tag_array,
+            "style": style or "",
+        })
+        row = result.fetchone()
+
+        if row and row.match_count and row.match_count >= 3:
+            # Increment reuse count
+            await db.execute(
+                text("UPDATE image_bank SET reuse_count = reuse_count + 1 WHERE id = :id"),
+                {"id": row.id},
+            )
+            await db.commit()
+            logger.info(f"Image bank HIT: id={row.id}, matched {row.match_count} tags, path={row.file_path}")
+            return {"id": row.id, "file_path": row.file_path, "tags": row.tags, "prompt": row.prompt}
+
+    return None
+
+
+async def save_to_image_bank(user_id: int, tags: list[str], style: str,
+                              aspect_ratio: str, prompt: str, source_path: str) -> None:
+    """Save a newly generated image to the image bank for future reuse."""
+    if not tags or not os.path.exists(source_path):
+        return
+
+    # Copy to bank directory with unique name
+    bank_dir = Path(settings.media_dir) / "image_bank" / str(user_id)
+    bank_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(source_path).suffix or ".png"
+    bank_filename = f"{uuid.uuid4().hex}{ext}"
+    bank_path = str(bank_dir / bank_filename)
+
+    try:
+        shutil.copy2(source_path, bank_path)
+    except Exception as e:
+        logger.warning(f"Failed to copy image to bank: {e}")
+        return
+
+    async with async_session() as db:
+        tag_array = "{" + ",".join(tags) + "}"
+        await db.execute(
+            text("""
+                INSERT INTO image_bank (user_id, tags, style, aspect_ratio, prompt, file_path)
+                VALUES (:uid, :tags::text[], :style, :ar, :prompt, :path)
+            """),
+            {
+                "uid": user_id,
+                "tags": tag_array,
+                "style": style or "",
+                "ar": aspect_ratio,
+                "prompt": prompt,
+                "path": bank_path,
+            },
+        )
+        await db.commit()
+        logger.info(f"Image saved to bank: {bank_path} tags={tags}")
+
+
 async def generate_all_scenes(
     project_id: int,
     lyrics_text: str,
@@ -97,40 +204,80 @@ async def generate_all_scenes(
     duration: float,
     aspect_ratio: str = "16:9",
     style_hint: str = "",
+    user_id: int = 0,
     on_progress=None,
 ) -> list[dict]:
-    """Full pipeline: analyze lyrics → generate images for each scene."""
+    """Full pipeline: analyze lyrics → search bank / generate images for each scene."""
     media_dir = Path(settings.media_dir) / "images" / str(project_id)
     media_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Analyze lyrics into scenes
+    # Step 1: Analyze lyrics into scenes (now includes tags)
     scenes = await analyze_lyrics_for_scenes(lyrics_text, lyrics_words, duration)
 
-    # Step 2: Generate images for each scene (in thread pool, sequential to avoid rate limits)
+    # Step 2: For each scene, try bank first, then generate
     loop = asyncio.get_event_loop()
     results = []
     total = len(scenes)
+    reused = 0
+    used_bank_ids = set()  # prevent same bank image in multiple scenes
 
     for i, scene in enumerate(scenes):
         idx = scene.get("scene_index", len(results))
         visual_prompt = scene.get("visual_prompt", "Abstract colorful background")
+        scene_tags = scene.get("tags", [])
         if style_hint:
             visual_prompt = f"{style_hint}. {visual_prompt}"
 
         output_path = str(media_dir / f"scene_{idx:03d}.png")
 
-        try:
-            path = await loop.run_in_executor(
-                None, generate_scene_image, visual_prompt, aspect_ratio, output_path
-            )
-            scene["image_path"] = path
-        except Exception as e:
-            logger.error(f"Failed to generate scene {idx}: {e}")
-            scene["image_path"] = None
+        # Try image bank first
+        bank_hit = None
+        if user_id and scene_tags:
+            try:
+                bank_hit = await search_image_bank(user_id, scene_tags, aspect_ratio, style_hint, used_bank_ids)
+            except Exception as e:
+                logger.warning(f"Image bank search failed: {e}")
+
+        if bank_hit and os.path.exists(bank_hit["file_path"]):
+            # Reuse from bank — copy to project dir
+            try:
+                shutil.copy2(bank_hit["file_path"], output_path)
+                scene["image_path"] = output_path
+                scene["from_bank"] = True
+                used_bank_ids.add(bank_hit["id"])
+                reused += 1
+                logger.info(f"Scene {idx}: reused from bank (tags match: {scene_tags})")
+            except Exception as e:
+                logger.warning(f"Bank copy failed, generating new: {e}")
+                bank_hit = None
+
+        if not bank_hit or not scene.get("image_path"):
+            # Generate new image
+            try:
+                path = await loop.run_in_executor(
+                    None, generate_scene_image, visual_prompt, aspect_ratio, output_path
+                )
+                scene["image_path"] = path
+                scene["from_bank"] = False
+
+                # Save to bank for future reuse
+                if user_id and scene_tags:
+                    try:
+                        await save_to_image_bank(
+                            user_id, scene_tags, style_hint, aspect_ratio, visual_prompt, path
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to save to image bank: {e}")
+            except Exception as e:
+                logger.error(f"Failed to generate scene {idx}: {e}")
+                scene["image_path"] = None
 
         results.append(scene)
 
         if on_progress and total > 0:
             await on_progress(i + 1, total)
+
+    if reused > 0:
+        logger.info(f"Image bank summary: {reused}/{total} scenes reused, {total - reused} newly generated")
 
     return results
