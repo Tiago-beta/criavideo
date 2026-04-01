@@ -669,7 +669,7 @@ async function loadProjects() {
                         <div class="card-actions">
                             ${project.status === "completed" ? `<button class="card-btn card-btn-watch" onclick="watchVideo(${project.id})" type="button" title="Assistir"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
                             ${(project.status === "pending" || project.status === "failed") ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
-                            ${project.status === "completed" ? `<button class="card-btn card-btn-similar" onclick="openCopyFormatModal(${project.id})" type="button" title="Criar cópia em outro formato"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
+                            ${project.status === "completed" ? `<button class="card-btn card-btn-similar" onclick="openCopyChoiceModal(${project.id})" type="button" title="Criar copia"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
                             <button class="card-btn card-btn-delete" onclick="deleteProject(${project.id})" type="button" title="Excluir"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
                         </div>
                         <span class="card-date">${dateStr}</span>
@@ -796,6 +796,9 @@ async function createSimilar(projectId) {
 }
 
 function openCopyFormatModal(projectId) {
+    if (!projectId) {
+        projectId = _copyFormatSourceProjectId;
+    }
     const project = _projectsCache.find(p => p.id === projectId);
     if (!project || project.status !== "completed") {
         alert("Somente videos concluidos podem ser copiados de formato.");
@@ -812,6 +815,40 @@ function openCopyFormatModal(projectId) {
         selectEl.value = ["16:9", "9:16", "1:1"].includes(fallback) ? fallback : "9:16";
     }
     openModal("modal-copy-format");
+}
+
+function openCopyChoiceModal(projectId) {
+    const project = _projectsCache.find(p => p.id === projectId);
+    if (!project || project.status !== "completed") {
+        alert("Somente videos concluidos podem ser copiados.");
+        return;
+    }
+    _copyFormatSourceProjectId = projectId;
+    const sourceEl = document.getElementById("copy-choice-source");
+    if (sourceEl) {
+        sourceEl.textContent = `Origem: ${project.title || "Video"} (${project.aspect_ratio || "16:9"})`;
+    }
+    openModal("modal-copy-choice");
+}
+
+function chooseCopyScript() {
+    const projectId = _copyFormatSourceProjectId;
+    if (!projectId) {
+        alert("Nenhum video selecionado para copia.");
+        return;
+    }
+    closeModal("modal-copy-choice");
+    _copyFormatSourceProjectId = 0;
+    createSimilar(projectId);
+}
+
+function chooseCopyFormat() {
+    if (!_copyFormatSourceProjectId) {
+        alert("Nenhum video selecionado para copia.");
+        return;
+    }
+    closeModal("modal-copy-choice");
+    openCopyFormatModal();
 }
 
 async function createFormatCopy() {
@@ -1770,6 +1807,9 @@ window.generateVideo = generateVideo;
 window.deleteProject = deleteProject;
 window.watchVideo = watchVideo;
 window.createSimilar = createSimilar;
+window.openCopyChoiceModal = openCopyChoiceModal;
+window.chooseCopyScript = chooseCopyScript;
+window.chooseCopyFormat = chooseCopyFormat;
 window.openCopyFormatModal = openCopyFormatModal;
 window.createFormatCopy = createFormatCopy;
 window.createSchedule = createSchedule;

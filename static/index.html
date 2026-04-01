@@ -775,6 +775,32 @@
         </div>
     </div>
 
+    <div id="modal-copy-choice" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Como deseja copiar este video?</h3>
+                <button class="modal-close" onclick="closeModal('modal-copy-choice')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="copy-choice-source" class="muted">Video selecionado</p>
+                <p class="copy-choice-subtitle">Escolha uma opcao:</p>
+                <div class="copy-choice-grid">
+                    <button class="copy-choice-card" onclick="chooseCopyScript()" type="button">
+                        <strong>COPIAR ROTEIRO</strong>
+                        <span>Abre novo projeto com o texto do roteiro para voce ajustar e gerar novamente.</span>
+                    </button>
+                    <button class="copy-choice-card" onclick="chooseCopyFormat()" type="button">
+                        <strong>NOVO FORMATO</strong>
+                        <span>Cria copia exata do video atual mudando apenas o formato final.</span>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-copy-choice')" type="button">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="modal-copy-format" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -917,7 +943,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260331-6"></script>
+    <script src="/video/static/app.js?v=20260331-7"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>
