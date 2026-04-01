@@ -217,39 +217,56 @@ def _split_at_pause_markers(text: str, pause_level: str) -> list[dict]:
 
     elif pause_level == "deep":
         # For deep/hypnosis: split at EVERY "..." to force real silence pauses.
+        # "..." (3 dots) = normal pause (2.5s)
+        # "......" (6+ dots) = extended pause (7.5s) — 3x longer
         # Group 2-3 short phrases together so model keeps emotional context,
         # but never let blocks get too big (max ~350 chars).
-        raw_parts = re.split(r'(\.{3,}|…)', text)
+        raw_parts = re.split(r'(\.{6,}|\.{3,5}|…)', text)
         # Merge text parts with their trailing ellipsis for context
         phrases = []
+        pause_durations = []  # track pause duration per phrase
         current = ""
         for part in raw_parts:
             part_stripped = part.strip()
             if not part_stripped:
                 continue
-            if re.match(r'^(\.{3,}|…)$', part_stripped):
-                # Ellipsis — append to current phrase and mark as pause point
+            if re.match(r'^\.{6,}$', part_stripped):
+                # Extended ellipsis (6+ dots) — 3x longer pause
                 current += "..."
                 if current.strip():
                     phrases.append(current.strip())
+                    pause_durations.append(7.5)
+                    current = ""
+            elif re.match(r'^(\.{3,5}|…)$', part_stripped):
+                # Normal ellipsis (3 dots) — standard pause
+                current += "..."
+                if current.strip():
+                    phrases.append(current.strip())
+                    pause_durations.append(2.5)
                     current = ""
             else:
                 current = f"{current} {part_stripped}" if current else part_stripped
         if current.strip():
             phrases.append(current.strip())
+            pause_durations.append(0)
 
         # Now group phrases: max 2 phrases per segment, or max ~350 chars
+        # When grouping, use the LONGEST pause of the group
         segments = []
         group = ""
         group_count = 0
-        for phrase in phrases:
+        group_max_pause = 2.5
+        for idx, phrase in enumerate(phrases):
+            p_dur = pause_durations[idx] if idx < len(pause_durations) else 2.5
             if group and (group_count >= 2 or len(group) + len(phrase) + 1 > 350):
-                segments.append({"text": group.strip(), "silence_after": 2.5})
+                segments.append({"text": group.strip(), "silence_after": group_max_pause})
                 group = phrase
                 group_count = 1
+                group_max_pause = p_dur
             else:
                 group = f"{group} {phrase}" if group else phrase
                 group_count += 1
+                group_max_pause = max(group_max_pause, p_dur)
         if group.strip():
             segments.append({"text": group.strip(), "silence_after": 0})
 
