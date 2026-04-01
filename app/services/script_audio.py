@@ -223,12 +223,10 @@ def _split_at_pause_markers(text: str, pause_level: str) -> list[dict]:
         # For deep/hypnosis: split at EVERY "..." to force real silence pauses.
         # "..." (3 dots) = normal pause (2.5s)
         # "......" (6+ dots) = extended pause (7.5s) — 3x longer
-        # Group 2-3 short phrases together so model keeps emotional context,
-        # but never let blocks get too big (max ~350 chars).
+        # EVERY ellipsis gets its own segment = guaranteed real silence via FFmpeg.
         raw_parts = re.split(r'(\.{6,}|\.{3,5}|…)', text)
-        # Merge text parts with their trailing ellipsis for context
-        phrases = []
-        pause_durations = []  # track pause duration per phrase
+        # Build one segment per phrase — no grouping, so every "..." gets a real pause
+        segments = []
         current = ""
         for part in raw_parts:
             part_stripped = part.strip()
@@ -238,41 +236,18 @@ def _split_at_pause_markers(text: str, pause_level: str) -> list[dict]:
                 # Extended ellipsis (6+ dots) — 3x longer pause
                 current += "..."
                 if current.strip():
-                    phrases.append(current.strip())
-                    pause_durations.append(7.5)
+                    segments.append({"text": current.strip(), "silence_after": 7.5})
                     current = ""
             elif re.match(r'^(\.{3,5}|…)$', part_stripped):
                 # Normal ellipsis (3 dots) — standard pause
                 current += "..."
                 if current.strip():
-                    phrases.append(current.strip())
-                    pause_durations.append(2.5)
+                    segments.append({"text": current.strip(), "silence_after": 2.5})
                     current = ""
             else:
                 current = f"{current} {part_stripped}" if current else part_stripped
         if current.strip():
-            phrases.append(current.strip())
-            pause_durations.append(0)
-
-        # Now group phrases: max 2 phrases per segment, or max ~350 chars
-        # When grouping, use the LONGEST pause of the group
-        segments = []
-        group = ""
-        group_count = 0
-        group_max_pause = 2.5
-        for idx, phrase in enumerate(phrases):
-            p_dur = pause_durations[idx] if idx < len(pause_durations) else 2.5
-            if group and (group_count >= 2 or len(group) + len(phrase) + 1 > 350):
-                segments.append({"text": group.strip(), "silence_after": group_max_pause})
-                group = phrase
-                group_count = 1
-                group_max_pause = p_dur
-            else:
-                group = f"{group} {phrase}" if group else phrase
-                group_count += 1
-                group_max_pause = max(group_max_pause, p_dur)
-        if group.strip():
-            segments.append({"text": group.strip(), "silence_after": 0})
+            segments.append({"text": current.strip(), "silence_after": 0})
 
         return segments if segments else [{"text": text, "silence_after": 0}]
 
