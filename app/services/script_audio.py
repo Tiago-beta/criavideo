@@ -272,6 +272,55 @@ def _generate_silence(duration: float, output_path: str):
         raise RuntimeError(f"FFmpeg silence generation failed: {result.stderr[-300:]}")
 
 
+def _build_segment_instructions(seg_text: str, base_instructions: str, pause_level: str) -> str:
+    """Build per-segment TTS instructions with specific prosody directions.
+    
+    Analyzes the text for phrases ending with '...' and adds explicit
+    per-phrase tone-lowering cues to the instructions.
+    """
+    if pause_level not in ("deep", "relaxed"):
+        return base_instructions
+
+    # Find all phrases/sentences ending with "..."
+    ellipsis_phrases = re.findall(r'[^.!?\n]*?\.{3,}', seg_text)
+    # Find phrases ending with ! or ?
+    has_exclamation = '!' in seg_text
+    has_question = '?' in seg_text
+
+    if not ellipsis_phrases:
+        return base_instructions
+
+    # Build specific per-phrase directions
+    phrase_directions = []
+    for phrase in ellipsis_phrases:
+        phrase = phrase.strip()
+        if len(phrase) > 8:  # Only annotate meaningful phrases
+            # Get last ~6 words before the "..."
+            words = phrase.rstrip('.').split()
+            tail = ' '.join(words[-6:]) if len(words) > 6 else ' '.join(words)
+            phrase_directions.append(f'  → "{tail}..." — tom DESCENDO, voz mais GRAVE e PROFUNDA no final')
+
+    if not phrase_directions:
+        return base_instructions
+
+    specific_cues = "\n".join(phrase_directions)
+    
+    reinforcement = (
+        f"\n\n⚠️ DIREÇÃO DE TOM ESPECÍFICA PARA ESTE TRECHO (OBRIGATÓRIA):"
+        f"\nAs seguintes frases DEVEM terminar com tom DESCENDENTE — a voz BAIXA, fica grave, profunda, como mergulhando:"
+        f"\n{specific_cues}"
+        f"\n\nATENÇÃO: '...' (reticências) = voz DESCE SEMPRE. É PROIBIDO subir o tom antes de reticências."
+        f"\nA última palavra antes de cada '...' deve ser a mais grave e lenta de toda a frase."
+    )
+
+    if has_exclamation or has_question:
+        reinforcement += (
+            f"\nApenas frases com {'!' if has_exclamation else ''}{'/' if has_exclamation and has_question else ''}{'?' if has_question else ''} podem ter tom ascendente."
+        )
+
+    return base_instructions + reinforcement
+
+
 async def _generate_with_pauses(
     text: str, voice: str, tts_instructions: str, output_path: str,
     pause_level: str, voice_type: str, audio_dir: Path,
@@ -286,6 +335,9 @@ async def _generate_with_pauses(
         seg_text = seg["text"].strip()
         if not seg_text:
             continue
+        
+        # Build per-segment instructions with specific prosody cues
+        seg_instructions = _build_segment_instructions(seg_text, tts_instructions, pause_level)
         
         # Generate TTS for this segment
         seg_path = str(audio_dir / f"pause_seg_{i:04d}.mp3")
@@ -304,7 +356,7 @@ async def _generate_with_pauses(
             chunk_paths = []
             for ci, chunk in enumerate(chunks):
                 cp = str(audio_dir / f"pause_seg_{i:04d}_chunk_{ci:03d}.mp3")
-                await _generate_single_tts(chunk, voice, tts_instructions, cp)
+                await _generate_single_tts(chunk, voice, seg_instructions, cp)
                 chunk_paths.append(cp)
             _concat_audio_files(chunk_paths, seg_path)
             for cp in chunk_paths:
@@ -313,7 +365,7 @@ async def _generate_with_pauses(
                 except OSError:
                     pass
         else:
-            await _generate_single_tts(seg_text, voice, tts_instructions, seg_path)
+            await _generate_single_tts(seg_text, voice, seg_instructions, seg_path)
         
         all_parts.append(seg_path)
         
