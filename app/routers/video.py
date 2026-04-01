@@ -286,6 +286,10 @@ class QuickCreateRequest(BaseModel):
     aspect_ratio: str = "16:9"
 
 
+class CopyFormatRequest(BaseModel):
+    aspect_ratio: str = "9:16"
+
+
 class ProjectResponse(BaseModel):
     id: int
     status: str
@@ -486,6 +490,75 @@ async def generate_video(
     background_tasks.add_task(run_video_pipeline, project_id)
 
     return {"status": "started", "project_id": project_id}
+
+
+@router.post("/projects/{project_id}/copy-format")
+async def copy_project_with_format(
+    project_id: int,
+    req: CopyFormatRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create an exact copy of a completed project and re-render in another aspect ratio."""
+    if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
+        raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1")
+
+    source = await db.get(VideoProject, project_id)
+    if not source or source.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if source.status != VideoStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Somente projetos concluidos podem ser copiados")
+
+    source_render_res = await db.execute(
+        select(VideoRender)
+        .where(VideoRender.project_id == source.id)
+        .order_by(VideoRender.created_at.desc())
+    )
+    source_render = source_render_res.scalars().first()
+    if not source_render or not source_render.file_path:
+        raise HTTPException(status_code=400, detail="Projeto origem sem video renderizado")
+    if not os.path.exists(source_render.file_path):
+        raise HTTPException(status_code=400, detail="Arquivo do video origem nao foi encontrado")
+
+    title = (source.title or source.track_title or "Video").strip()
+    new_title = f"{title} [{req.aspect_ratio}]"
+
+    project = VideoProject(
+        user_id=source.user_id,
+        track_id=source.track_id,
+        title=new_title,
+        description=source.description or "",
+        tags=source.tags or [],
+        style_prompt=source.style_prompt or "",
+        aspect_ratio=req.aspect_ratio,
+        track_title=source.track_title or "",
+        track_artist=source.track_artist or "",
+        track_duration=source.track_duration or 0,
+        lyrics_text=source.lyrics_text or "",
+        lyrics_words=source.lyrics_words or [],
+        audio_path=source.audio_path or "",
+        use_custom_images=bool(getattr(source, "use_custom_images", False)),
+        enable_subtitles=bool(getattr(source, "enable_subtitles", True)),
+        zoom_images=bool(getattr(source, "zoom_images", True)),
+        image_display_seconds=float(getattr(source, "image_display_seconds", 0) or 0),
+        status=VideoStatus.RENDERING,
+        progress=10,
+        error_message=None,
+    )
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+
+    from app.tasks.video_tasks import run_video_format_copy_pipeline
+    background_tasks.add_task(run_video_format_copy_pipeline, project.id, source_render.file_path)
+
+    return {
+        "id": project.id,
+        "status": "started",
+        "source_project_id": source.id,
+        "aspect_ratio": project.aspect_ratio,
+    }
 
 
 @router.delete("/projects/{project_id}")

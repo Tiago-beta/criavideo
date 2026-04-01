@@ -231,6 +231,68 @@ def compose_video(
     return {"file_path": output_path, "duration": duration, "file_size": file_size}
 
 
+def reformat_video(
+    project_id: int,
+    source_video_path: str,
+    aspect_ratio: str = "16:9",
+    output_dir: str = "",
+) -> dict:
+    """Create a format-converted copy from an already rendered video.
+
+    This keeps the same visual content and audio, only adapting framing/resolution
+    to the requested aspect ratio for cross-platform posting.
+    """
+    if not source_video_path or not os.path.exists(source_video_path):
+        raise FileNotFoundError(f"Source video not found: {source_video_path}")
+
+    if not output_dir:
+        output_dir = os.path.join(settings.media_dir, "renders", str(project_id))
+    os.makedirs(output_dir, exist_ok=True)
+
+    if aspect_ratio == "9:16":
+        width, height = 1080, 1920
+    elif aspect_ratio == "1:1":
+        width, height = 1080, 1080
+    else:
+        width, height = 1920, 1080
+
+    output_path = os.path.join(output_dir, f"video_{aspect_ratio.replace(':', 'x')}.mp4")
+    filter_v = (
+        f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height}"
+    )
+
+    src_duration = max(_get_duration(source_video_path), 1.0)
+    timeout = max(600, min(int(src_duration * 4), 7200))
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", source_video_path,
+        "-vf", filter_v,
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-crf", "22",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
+        output_path,
+    ]
+
+    logger.info(
+        f"Reformatting video for project {project_id}: {source_video_path} -> {aspect_ratio}"
+    )
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    if result.returncode != 0:
+        err_lines = [l for l in result.stderr.split('\n') if l.strip() and 'size=' not in l and 'speed=' not in l]
+        err_msg = '\n'.join(err_lines[-20:]) if err_lines else result.stderr[-2000:]
+        raise RuntimeError(f"FFmpeg reformat failed: {err_msg[-500:]}")
+
+    file_size = os.path.getsize(output_path)
+    duration = _get_duration(output_path)
+    logger.info(f"Reformatted video: {output_path} ({file_size / 1024 / 1024:.1f} MB, {duration:.1f}s)")
+    return {"file_path": output_path, "duration": duration, "file_size": file_size}
+
+
 def _get_duration(file_path: str) -> float:
     """Get video duration using ffprobe."""
     try:

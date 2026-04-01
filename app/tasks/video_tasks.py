@@ -462,3 +462,76 @@ async def run_video_pipeline(project_id: int):
                 project.status = VideoStatus.FAILED
                 project.error_message = str(e)[:1000]
                 await db.commit()
+
+
+async def run_video_format_copy_pipeline(project_id: int, source_video_path: str):
+    """Create a new project render by reformatting an existing rendered video."""
+    async with async_session() as db:
+        project = None
+        try:
+            project = await db.get(VideoProject, project_id)
+            if not project:
+                return
+
+            project.status = VideoStatus.RENDERING
+            project.progress = 20
+            project.error_message = None
+            await db.commit()
+
+            from app.services.video_composer import reformat_video
+            import asyncio
+
+            render_result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: reformat_video(
+                    project_id=project_id,
+                    source_video_path=source_video_path,
+                    aspect_ratio=project.aspect_ratio,
+                ),
+            )
+
+            await db.rollback()
+            project = await db.get(VideoProject, project_id)
+            if not project:
+                return
+
+            project.progress = 90
+            await db.commit()
+
+            from app.services.thumbnail_generator import generate_thumbnail_from_frame
+
+            thumb_dir = Path(settings.media_dir) / "thumbnails" / str(project_id)
+            thumb_dir.mkdir(parents=True, exist_ok=True)
+            thumb_path = str(thumb_dir / "thumbnail.jpg")
+
+            generate_thumbnail_from_frame(
+                video_path=render_result["file_path"],
+                title=project.track_title or project.title,
+                artist=project.track_artist or "",
+                output_path=thumb_path,
+            )
+
+            render = VideoRender(
+                project_id=project_id,
+                format=project.aspect_ratio,
+                file_path=render_result["file_path"],
+                file_size=render_result["file_size"],
+                thumbnail_path=thumb_path,
+                duration=render_result["duration"],
+            )
+            db.add(render)
+
+            project.status = VideoStatus.COMPLETED
+            project.progress = 100
+            await db.commit()
+
+            logger.info(f"Format-copy pipeline complete for project {project_id}")
+
+        except Exception as e:
+            logger.error(f"Format-copy pipeline failed for project {project_id}: {e}", exc_info=True)
+            if project is None:
+                project = await db.get(VideoProject, project_id)
+            if project:
+                project.status = VideoStatus.FAILED
+                project.error_message = str(e)[:1000]
+                await db.commit()

@@ -775,6 +775,30 @@
         </div>
     </div>
 
+    <div id="modal-copy-format" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Criar copia em outro formato</h3>
+                <button class="modal-close" onclick="closeModal('modal-copy-format')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="copy-format-source" class="muted">Video selecionado</p>
+                <div class="form-group">
+                    <label>Novo formato</label>
+                    <select id="copy-format-aspect" class="input">
+                        <option value="9:16">9:16 (TikTok/Reels)</option>
+                        <option value="16:9">16:9 (YouTube)</option>
+                        <option value="1:1">1:1 (Instagram Feed)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-copy-format')" type="button">Cancelar</button>
+                <button class="btn btn-primary" onclick="createFormatCopy()" type="button">Criar copia</button>
+            </div>
+        </div>
+    </div>
+
     <div id="modal-new-schedule" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -893,7 +917,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260331-5"></script>
+    <script src="/video/static/app.js?v=20260331-6"></script>
     <script src="/video/static/pwa.js?v=20260327-1"></script>
 </body>
 </html>
