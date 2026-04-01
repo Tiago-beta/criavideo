@@ -540,6 +540,15 @@ function initDashboard() {
     const params = new URLSearchParams(window.location.search);
     const audioUrl = params.get("audio_url");
     if (audioUrl) {
+        const requestedAspect =
+            params.get("aspect") ||
+            params.get("aspect_ratio") ||
+            params.get("video_format") ||
+            params.get("format") ||
+            "16:9";
+        const aspectRatio = ["16:9", "9:16", "1:1"].includes(requestedAspect)
+            ? requestedAspect
+            : "16:9";
         window.history.replaceState({}, "", window.location.pathname);
         quickCreate({
             song_title: params.get("song_title") || "",
@@ -547,7 +556,7 @@ function initDashboard() {
             audio_url: audioUrl,
             lyrics: params.get("lyrics") || "",
             duration: parseFloat(params.get("duration")) || 180,
-            aspect_ratio: params.get("aspect") || "16:9",
+            aspect_ratio: aspectRatio,
         });
         return;
     }
