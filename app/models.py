@@ -78,6 +78,7 @@ class VideoProject(Base):
     enable_subtitles = Column(Boolean, default=True)  # subtitle toggle
     zoom_images = Column(Boolean, default=True)  # enable zoom effect on still images
     image_display_seconds = Column(Float, default=0)  # custom seconds per image (0=auto)
+    no_background_music = Column(Boolean, default=False)  # disable background music entirely
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

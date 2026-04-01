@@ -692,6 +692,7 @@ class GenerateTTSRequest(BaseModel):
     enable_subtitles: bool = True
     zoom_images: bool = True
     image_display_seconds: float = 0
+    no_background_music: bool = False
 
 
 @router.post("/fix-text")
@@ -769,6 +770,7 @@ async def generate_audio_endpoint(
         enable_sub_raw = str(form.get("enable_subtitles", "true")).lower()
         zoom_raw = str(form.get("zoom_images", "true")).lower()
         image_seconds_raw = form.get("image_display_seconds", 0)
+        no_bgm_raw = str(form.get("no_background_music", "false")).lower()
         req = GenerateTTSRequest(
             script=str(form.get("script", "")),
             voice=str(form.get("voice", "")),
@@ -780,6 +782,7 @@ async def generate_audio_endpoint(
             enable_subtitles=enable_sub_raw not in ("false", "0", "no"),
             zoom_images=zoom_raw not in ("false", "0", "no"),
             image_display_seconds=float(image_seconds_raw or 0),
+            no_background_music=no_bgm_raw in ("true", "1", "yes"),
         )
         raw_upload = form.get("background_music")
         if isinstance(raw_upload, UploadFile) and raw_upload.filename:
@@ -863,6 +866,7 @@ async def generate_audio_endpoint(
         enable_subtitles=req.enable_subtitles,
         zoom_images=req.zoom_images,
         image_display_seconds=image_display_seconds,
+        no_background_music=req.no_background_music,
     )
     db.add(project)
     await db.commit()

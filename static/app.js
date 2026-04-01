@@ -898,6 +898,19 @@ function initCreateWizard() {
     document.getElementById("ai-suggest-cancel").addEventListener("click", hideAiSuggestPanel);
     document.getElementById("ai-suggest-generate").addEventListener("click", generateAiScript);
 
+    // Background music toggle
+    const bgmToggle = document.getElementById("script-enable-bgm");
+    if (bgmToggle) {
+        bgmToggle.addEventListener("change", () => {
+            const area = document.getElementById("script-bgm-upload-area");
+            if (area) area.hidden = !bgmToggle.checked;
+            if (!bgmToggle.checked) {
+                const fi = document.getElementById("script-bgm-file");
+                if (fi) fi.value = "";
+            }
+        });
+    }
+
     // Wizard option clicks (event delegation)
     document.getElementById("modal-new-project").addEventListener("click", (e) => {
         const opt = e.target.closest(".wizard-option");
@@ -962,6 +975,10 @@ function resetCreateWizard() {
     document.getElementById("script-title").value = "";
     const bgmInput = document.getElementById("script-bgm-file");
     if (bgmInput) bgmInput.value = "";
+    const bgmToggle = document.getElementById("script-enable-bgm");
+    if (bgmToggle) bgmToggle.checked = true;
+    const bgmUploadArea = document.getElementById("script-bgm-upload-area");
+    if (bgmUploadArea) bgmUploadArea.hidden = false;
 
     // Reset photo upload
     scriptPhotos = [];
@@ -1185,8 +1202,9 @@ async function handleScriptCreate() {
         scriptData.voiceProfileId = 0;
     }
     scriptData.enableSubtitles = usePhotosSelected ? document.getElementById("script-enable-subtitles").checked : true;
+    const bgmEnabled = document.getElementById("script-enable-bgm") ? document.getElementById("script-enable-bgm").checked : true;
     const bgmFileInput = document.getElementById("script-bgm-file");
-    const bgmFile = bgmFileInput && bgmFileInput.files ? bgmFileInput.files[0] : null;
+    const bgmFile = bgmEnabled && bgmFileInput && bgmFileInput.files ? bgmFileInput.files[0] : null;
 
     if (!scriptData.text && !scriptData.useCustomImages) {
         alert("Sem narracao, envie fotos para criar um video personalizado.");
@@ -1226,6 +1244,7 @@ async function handleScriptCreate() {
         formData.append("enable_subtitles", scriptData.enableSubtitles ? "true" : "false");
         formData.append("zoom_images", scriptData.zoomImages ? "true" : "false");
         formData.append("image_display_seconds", String(scriptData.imageDisplaySeconds > 0 ? scriptData.imageDisplaySeconds : 0));
+        formData.append("no_background_music", bgmEnabled ? "false" : "true");
         if (uploadedMusicId) {
             formData.append("background_music_id", uploadedMusicId);
         }
