@@ -277,6 +277,19 @@ a {
     color: #231100;
 }
 
+.btn-add-project {
+    min-width: 54px;
+    width: 54px;
+    height: 54px;
+    padding: 0;
+    border-radius: 14px;
+    font-size: 2rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .btn-secondary {
     background: rgba(96, 129, 162, 0.16);
     color: var(--text);
