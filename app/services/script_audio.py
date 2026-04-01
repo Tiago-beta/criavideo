@@ -199,6 +199,10 @@ def _split_at_pause_markers(text: str, pause_level: str) -> list[dict]:
     
     Returns list of {"text": str, "silence_after": float} dicts.
     """
+    # Normalize: replace unicode ellipsis with 3 dots, collapse spaces around dots
+    text = text.replace('…', '...')
+    # Normalize mixed patterns like ". . ." or ". . . . . ." into consecutive dots
+    text = re.sub(r'(\.\s*){3,}', lambda m: '.' * m.group().count('.'), text)
     if pause_level == "relaxed":
         # Split at "..." markers — insert 1.8s silence
         parts = re.split(r'(\.{3,}|…)', text)
@@ -352,6 +356,10 @@ async def _generate_with_pauses(
         seg_text = seg["text"].strip()
         if not seg_text:
             continue
+        
+        # Normalize dots: any sequence of 4+ dots → "..." (3 dots max)
+        # The actual pause duration is handled by FFmpeg silence, not by dots in text
+        seg_text = re.sub(r'\.{4,}', '...', seg_text)
         
         # Build per-segment instructions with specific prosody cues
         seg_instructions = _build_segment_instructions(seg_text, tts_instructions, pause_level)
