@@ -117,6 +117,7 @@ async def generate_tts_audio(
         tts_instructions = f"{tts_instructions}\n{pacing}" if tts_instructions else pacing
 
     try:
+        logger.info(f"TTS generation: voice_type={voice_type}, pause_level={pause_level}, tone={tone}, voice={voice[:20] if voice else 'none'}")
         # For non-normal pause levels, use segment-based generation with silence insertion
         if pause_level in ("relaxed", "deep"):
             await _generate_with_pauses(

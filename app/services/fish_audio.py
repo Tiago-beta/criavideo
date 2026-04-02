@@ -86,6 +86,7 @@ async def generate_tts(text: str, reference_id: str, output_path: str,
 
     # Pre-process text with S2-Pro prosody tags based on pause_level and tone
     processed_text = _add_prosody_tags(text, pause_level, tone)
+    logger.info(f"Fish TTS text (tone={tone}, pause={pause_level}): {processed_text[:300]}")
 
     try:
         async with httpx.AsyncClient(timeout=120) as client:
@@ -129,43 +130,26 @@ def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") ->
     """
     import re
 
-    # Normalize unicode ellipsis to 3 dots
+    # Normalize unicode ellipsis and any sequence of 3+ dots to exactly "..."
     text = text.replace('\u2026', '...')
+    text = re.sub(r'\.{3,}', '...', text)
 
     is_deep_tone = tone in ("profundo", "reflexivo")
+
+    if not is_deep_tone and pause_level == "normal":
+        return text
 
     # For deep tone, add [calm] at start so S2-Pro sets overall calm pacing
     if is_deep_tone:
         text = "[calm] " + text
 
-    if pause_level == "relaxed" or (pause_level == "normal" and is_deep_tone):
-        # Insert [soft tone] before last word + [pause] replacing the ...
-        text = re.sub(
-            r'(\S+)\s*\.{6,}',
-            r'[soft tone] \1 [pause]',
-            text,
-        )
-        text = re.sub(
-            r'(\S+)\s*\.{3,5}',
-            r'[soft tone] \1 [pause]',
-            text,
-        )
-        return text
-
-    if pause_level == "deep":
-        # Extended ellipsis (6+ dots) → soft tone + long pause
-        text = re.sub(
-            r'(\S+)\s*\.{6,}',
-            r'[soft tone] \1 [long pause]',
-            text,
-        )
-        # Normal ellipsis → soft tone + pause
-        text = re.sub(
-            r'(\S+)\s*\.{3,5}',
-            r'[soft tone] \1 [pause]',
-            text,
-        )
-        return text
+    # Insert [soft tone] before last word + [pause] replacing the ...
+    text = re.sub(
+        r'(\S+)\s*\.\.\.',
+        r'[soft tone] \1 [pause]',
+        text,
+    )
+    return text
 
     return text
 
