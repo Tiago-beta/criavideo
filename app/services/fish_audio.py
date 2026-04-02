@@ -121,11 +121,15 @@ async def generate_tts(text: str, reference_id: str, output_path: str,
 
 
 def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") -> str:
-    """Insert S2-Pro [bracket] prosody tags into text based on pause_level and tone.
+    """Insert S2-Pro prosody tags into text based on pause_level and tone.
     
-    S2-Pro uses natural language [bracket] tags like [whisper], [calm], [softly].
-    For 'profundo' tone: adds [calm] globally, replaces '...' with [pause],
-    and inserts [softly] before sentences that had ellipsis to lower the voice.
+    S2-Pro documented tags used:
+    - [calm] — sets overall calm pacing (sentence start)
+    - [whispering] — very soft, quiet voice (sentence start)
+    - Ellipsis "..." — kept as-is for natural pauses (Fish Audio respects punctuation)
+    
+    For 'profundo' tone: splits text at every "...", prefixes each phrase
+    with [whispering] so the voice drops to a soft, low tone before each pause.
     """
     import re
 
@@ -138,24 +142,26 @@ def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") ->
     if not is_deep_tone and pause_level == "normal":
         return text
 
-    # Split into sentences/phrases at "..." boundaries, process each
-    # Pattern: capture text before "..." and the "..." itself
+    # Split at "..." to process each phrase individually
     parts = re.split(r'(\.\.\.)', text)
     
     result = []
-    if is_deep_tone:
-        result.append("[calm]")
     
     for i, part in enumerate(parts):
         if part == '...':
-            result.append('[pause]')
+            # Keep the actual ellipsis — Fish Audio respects it as a natural pause
+            result.append('...')
         elif part.strip():
-            # If this phrase is followed by "..." (next part), add [softly] before it
+            phrase = part.strip()
+            # If this phrase is followed by "...", prefix with [whispering]
+            # so the entire phrase is spoken softly before the pause
             next_is_ellipsis = (i + 1 < len(parts) and parts[i + 1] == '...')
             if next_is_ellipsis and is_deep_tone:
-                result.append('[softly] ' + part.strip())
+                result.append('[whispering] ' + phrase)
+            elif is_deep_tone:
+                result.append('[calm] ' + phrase)
             else:
-                result.append(part.strip())
+                result.append(phrase)
     
     return ' '.join(result)
 
