@@ -434,11 +434,6 @@ a {
 }
 
 /* ── Credits Display & Modal ── */
-.page-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
 .sidebar-credits {
     display: flex;
     align-items: center;
@@ -807,10 +802,24 @@ a {
 .page-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
     gap: 1rem;
     margin-bottom: 1.5rem;
     flex-wrap: wrap;
+}
+
+.page-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.page-header-left .btn-add-project {
+    min-width: 36px;
+    width: 36px;
+    height: 36px;
+    font-size: 1.4rem;
+    border-radius: 10px;
 }
 
 .page-header h1 {
