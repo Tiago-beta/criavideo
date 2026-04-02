@@ -147,11 +147,34 @@ async def generate_tts_audio(
         else:
             await _generate_single_tts(text, voice, tts_instructions, str(output_path))
 
+        # Post-process: slow down audio for profundo/reflexivo tone (Fish Audio custom voices)
+        if tone in ("profundo", "reflexivo") and voice_type == "custom" and os.path.exists(str(output_path)):
+            _slow_down_audio(str(output_path), factor=0.90)
+
         logger.info("TTS audio saved: %s", output_path)
         return str(output_path)
     except Exception as e:
         logger.error("TTS generation failed: %s", e)
         raise
+
+
+def _slow_down_audio(path: str, factor: float = 0.90):
+    """Slow down audio using FFmpeg atempo filter. factor < 1.0 = slower."""
+    tmp = path + ".tmp.mp3"
+    cmd = [
+        "ffmpeg", "-y", "-i", path,
+        "-filter:a", f"atempo={factor}",
+        "-c:a", "libmp3lame", "-b:a", "192k",
+        tmp,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if result.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0:
+        os.replace(tmp, path)
+        logger.info(f"Audio slowed down by atempo={factor}: {path}")
+    else:
+        logger.warning(f"atempo slowdown failed: {result.stderr[-300:]}")
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 
 def _get_pacing_instructions(pause_level: str) -> str:
