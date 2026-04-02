@@ -135,11 +135,9 @@ def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") ->
 
     is_deep_tone = tone in ("profundo", "reflexivo")
 
-    # For deep tone, set slow calm pacing and add pauses between sentences
+    # For deep tone, insert [pause] between sentences and commas to force slow pace
     if is_deep_tone:
-        text = "[speak slowly, calmly, with deep feeling] " + text
         # Add [pause] after sentence-ending punctuation (. ! ?) that are NOT ellipsis
-        # This slows the rhythm between sentences
         text = re.sub(r'(?<!\.)\.(?!\.)\s+', r'. [pause] ', text)
         text = re.sub(r'\?\s+', r'? [pause] ', text)
         text = re.sub(r'!\s+', r'! [pause] ', text)
