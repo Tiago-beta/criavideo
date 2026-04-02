@@ -108,6 +108,9 @@ async def generate_tts(text: str, reference_id: str, output_path: str,
         if resp.status_code == 200:
             with open(output_path, "wb") as f:
                 f.write(resp.content)
+            # Slow down audio for profundo/reflexivo tone using FFmpeg atempo
+            if tone in ("profundo", "reflexivo"):
+                _slow_down_audio(output_path, 0.85)
             logger.info(f"Fish Audio TTS saved: {output_path}")
             return True
         else:
@@ -117,6 +120,29 @@ async def generate_tts(text: str, reference_id: str, output_path: str,
     except Exception as e:
         logger.error(f"Fish Audio TTS error: {e}")
         return False
+
+
+def _slow_down_audio(file_path: str, speed: float = 0.85):
+    """Slow down an audio file in-place using FFmpeg atempo filter.
+    
+    speed: 0.85 = 15% slower (calmer), 1.0 = normal.
+    """
+    import subprocess
+    import os
+    tmp_path = file_path + ".slow.mp3"
+    cmd = [
+        "ffmpeg", "-y", "-i", file_path,
+        "-filter:a", f"atempo={speed}",
+        "-c:a", "libmp3lame", "-b:a", "192k",
+        tmp_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if result.returncode == 0 and os.path.exists(tmp_path):
+        os.replace(tmp_path, file_path)
+    else:
+        logger.warning(f"FFmpeg slowdown failed: {result.stderr[-300:]}")
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") -> str:
