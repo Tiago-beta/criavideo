@@ -63,6 +63,24 @@ async def run_migrations():
         '''))
         await conn.execute(text('CREATE INDEX IF NOT EXISTS idx_image_bank_user_aspect ON image_bank (user_id, aspect_ratio)'))
         await conn.execute(text('CREATE INDEX IF NOT EXISTS idx_image_bank_tags ON image_bank USING GIN (tags)'))
+        # Credits system
+        await conn.execute(text('ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS credits INTEGER NOT NULL DEFAULT 50'))
+        await conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS credit_purchases (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                credits INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                type VARCHAR(20) NOT NULL DEFAULT 'pix',
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                reference VARCHAR(100) NOT NULL UNIQUE,
+                mp_payment_id VARCHAR(100),
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        '''))
+        await conn.execute(text('CREATE INDEX IF NOT EXISTS idx_credit_purchases_user ON credit_purchases (user_id)'))
+        await conn.execute(text('CREATE INDEX IF NOT EXISTS idx_credit_purchases_ref ON credit_purchases (reference)'))
     print('SQL migrations applied successfully')
 
 asyncio.run(run_migrations())

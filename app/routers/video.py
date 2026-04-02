@@ -631,6 +631,13 @@ JSON apenas, sem markdown."""
     except Exception as e:
         logger.warning("AI metadata generation failed, using defaults: %s", e)
 
+    # ── Credit check: deduct based on song duration ──
+    from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
+    import math
+    est_minutes = max(1, math.ceil((req.duration or 60) / 60))
+    credits_needed = est_minutes * CREDITS_PER_MINUTE
+    await deduct_credits(db, user["id"], credits_needed)
+
     project = VideoProject(
         user_id=user["id"],
         track_id=0,
@@ -812,6 +819,17 @@ async def generate_audio_endpoint(
     script_text = (req.script or "").strip()
     if not script_text and not custom_image_uploads and not custom_image_ids:
         raise HTTPException(status_code=400, detail="Sem narracao, envie fotos para criar um video personalizado.")
+
+    # ── Credit check: estimate duration → deduct credits ──
+    from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
+    import math
+    if script_text:
+        word_count = len(script_text.split())
+        est_minutes = max(1, math.ceil(word_count / 150))  # ~150 words/min narration
+    else:
+        est_minutes = 1  # photo-only: minimum 1 min
+    credits_needed = est_minutes * CREDITS_PER_MINUTE
+    await deduct_credits(db, user["id"], credits_needed)
 
     # Resolve voice from profile or direct parameter
     voice = req.voice or "onyx"

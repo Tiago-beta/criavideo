@@ -537,6 +537,7 @@ async function bootstrap() {
 
 function initDashboard() {
     renderSession();
+    updateCreditsDisplay();
     const params = new URLSearchParams(window.location.search);
     const audioUrl = params.get("audio_url");
     if (audioUrl) {
@@ -1211,6 +1212,15 @@ async function handleScriptCreate() {
         return;
     }
 
+    // Credit check: estimate minutes from word count
+    const wordCount = scriptData.text ? scriptData.text.split(/\s+/).filter(Boolean).length : 0;
+    const estMinutes = Math.max(1, Math.ceil(wordCount / 150));
+    const creditsNeeded = estMinutes * _creditsPerMinute;
+    if (_userCredits < creditsNeeded) {
+        showCreditsPurchaseModal();
+        return;
+    }
+
     showCreateProgress(scriptData.text ? "Gerando narracao com voz IA..." : "Preparando video com fotos (musica automatica se nao enviar)...");
 
     try {
@@ -1257,11 +1267,16 @@ async function handleScriptCreate() {
         const result = await apiForm("/video/generate-audio", formData);
 
         closeModal("modal-new-project");
+        updateCreditsDisplay();
         pollProject(result.id);
         loadProjects();
     } catch (error) {
         hideCreateProgress();
-        alert(`Erro: ${error.message}`);
+        if (error.message && error.message.includes("insuficientes")) {
+            showCreditsPurchaseModal();
+        } else {
+            alert(`Erro: ${error.message}`);
+        }
     }
 }
 
@@ -1740,6 +1755,13 @@ async function disconnectAccount(id) {
 }
 
 async function quickCreate(songData) {
+    // Credit check
+    const estMinutes = Math.max(1, Math.ceil((songData.duration || 60) / 60));
+    const creditsNeeded = estMinutes * _creditsPerMinute;
+    if (_userCredits < creditsNeeded) {
+        showCreditsPurchaseModal();
+        return;
+    }
     const container = document.getElementById("projects-list");
     container.innerHTML = `
         <div class="card" style="text-align:center;">
@@ -1765,6 +1787,7 @@ async function quickCreate(songData) {
             </div>
         `;
         pollProject(result.id);
+        updateCreditsDisplay();
     } catch (error) {
         container.innerHTML = `
             <div class="card" style="text-align:center;">
@@ -2320,5 +2343,147 @@ window.saveVoiceProfile = saveVoiceProfile;
 window.setDefaultVoice = setDefaultVoice;
 window.previewVoice = previewVoice;
 window.deleteVoiceProfile = deleteVoiceProfile;
+
+// ============ CREDITS SYSTEM ============
+let _userCredits = 0;
+let _creditsPerMinute = 5;
+let _creditPackages = [];
+let _selectedCreditPkg = 0;
+
+async function updateCreditsDisplay() {
+    const countEl = document.getElementById("credits-count");
+    if (countEl && _userCredits > 0) countEl.textContent = _userCredits;
+    try {
+        const data = await api("/credits");
+        _userCredits = data.credits;
+        _creditsPerMinute = data.creditsPerMinute || 5;
+        _creditPackages = data.packages || [];
+        if (countEl) countEl.textContent = _userCredits;
+    } catch {}
+}
+
+function showCreditsPurchaseModal() {
+    const existing = document.getElementById("credits-modal-overlay");
+    if (existing) existing.remove();
+
+    const pkgs = _creditPackages.length ? _creditPackages : [
+        { credits: 100, price: 4.99 },
+        { credits: 250, price: 9.99 },
+        { credits: 600, price: 19.99 },
+    ];
+
+    let pkgHtml = "";
+    pkgs.forEach((p, i) => {
+        const sel = i === 0 ? " credit-package-selected" : "";
+        const badge = i === pkgs.length - 1
+            ? '<span class="credit-pkg-badge">Melhor custo</span>'
+            : "";
+        pkgHtml += `
+            <label class="credit-package${sel}" data-pkg="${i}" onclick="selectCreditPackage(${i})">
+                <span class="credit-pkg-amount">${p.credits} créditos</span>
+                <span class="credit-pkg-price">R$ ${p.price.toFixed(2).replace(".", ",")}</span>
+                ${badge}
+            </label>`;
+    });
+
+    const overlay = document.createElement("div");
+    overlay.id = "credits-modal-overlay";
+    overlay.className = "credits-modal-overlay";
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    overlay.innerHTML = `
+        <div class="credits-modal">
+            <button class="credits-modal-close" onclick="document.getElementById('credits-modal-overlay').remove()">&times;</button>
+            <h2 class="credits-modal-title">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f0a030" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                Comprar Créditos
+            </h2>
+            <div class="credit-packages">${pkgHtml}</div>
+            <div class="credits-cta">
+                <button class="credits-btn credits-btn-pix" onclick="purchaseCredits('pix')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><circle cx="17.5" cy="17.5" r="3.5"/></svg>
+                    Pagar com PIX
+                </button>
+                <button class="credits-btn credits-btn-card" onclick="purchaseCredits('card')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                    Pagar com Cartão
+                </button>
+            </div>
+            <p class="credits-hint">Cada minuto de vídeo consome ${_creditsPerMinute} créditos</p>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    _selectedCreditPkg = 0;
+}
+
+function selectCreditPackage(idx) {
+    _selectedCreditPkg = idx;
+    document.querySelectorAll(".credit-package").forEach((el, i) => {
+        el.classList.toggle("credit-package-selected", i === idx);
+    });
+}
+
+async function purchaseCredits(method) {
+    try {
+        const endpoint = method === "pix" ? "/credits/purchase/pix" : "/credits/purchase/card";
+        const data = await api(endpoint, {
+            method: "POST",
+            body: JSON.stringify({ packageIndex: _selectedCreditPkg }),
+        });
+        document.getElementById("credits-modal-overlay")?.remove();
+
+        if (method === "pix" && data.pixCopiaECola) {
+            showPixQrModal(data);
+            pollCreditStatus(data.reference);
+        } else if (data.checkoutUrl) {
+            window.open(data.checkoutUrl, "_blank");
+            pollCreditStatus(data.reference);
+        }
+    } catch (err) {
+        alert(err.message || "Erro ao processar compra.");
+    }
+}
+
+function showPixQrModal(data) {
+    const existing = document.getElementById("pix-modal-overlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "pix-modal-overlay";
+    overlay.className = "pix-modal-overlay";
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    overlay.innerHTML = `
+        <div class="pix-modal">
+            <h3>Pague com PIX</h3>
+            ${data.qrBase64 ? `<img class="pix-qr-img" src="data:image/png;base64,${data.qrBase64}" alt="QR Code PIX"/>` : ""}
+            <div class="pix-code-box" id="pix-code">${data.pixCopiaECola}</div>
+            <button class="pix-copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('pix-code').textContent);this.textContent='Copiado!';">Copiar código PIX</button>
+            <p class="pix-waiting">Aguardando pagamento...</p>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+}
+
+async function pollCreditStatus(reference) {
+    for (let i = 0; i < 120; i++) {
+        await new Promise((r) => setTimeout(r, 5000));
+        try {
+            const data = await api(`/credits/status/${encodeURIComponent(reference)}`);
+            if (data.status === "confirmed") {
+                document.getElementById("pix-modal-overlay")?.remove();
+                alert(`${data.credits} créditos adicionados!`);
+                updateCreditsDisplay();
+                return;
+            }
+        } catch {}
+    }
+}
+
+// Wire up sidebar credits click
+document.getElementById("sidebar-credits")?.addEventListener("click", () => {
+    showCreditsPurchaseModal();
+});
+
+window.selectCreditPackage = selectCreditPackage;
+window.purchaseCredits = purchaseCredits;
 
 bootstrap();

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     suno_api_key: str = ""
     fish_audio_api_key: str = ""
+    mp_access_token: str = ""
     host: str = "0.0.0.0"
     port: int = 8000
     site_url: str = "https://criavideo.pro"
