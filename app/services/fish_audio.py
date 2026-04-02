@@ -121,7 +121,7 @@ def _add_prosody_tags(text: str, pause_level: str) -> str:
     """Insert S2-Pro [bracket] prosody tags into text based on pause_level.
     
     S2-Pro interprets [bracket] tags as natural language emotion/prosody cues.
-    This replaces the OpenAI 'instructions' approach that doesn't work with Fish Audio.
+    Uses minimal, single tags to avoid the model reading them as literal text.
     """
     import re
 
@@ -129,49 +129,19 @@ def _add_prosody_tags(text: str, pause_level: str) -> str:
         return text
 
     if pause_level == "relaxed":
-        # Add calm, expressive narration cues
-        # Replace ellipsis with pause + descending tone cue
-        text = re.sub(
-            r'\.{6,}',
-            ' [long pause] [soft tone] ',
-            text,
-        )
-        text = re.sub(
-            r'\.{3,5}',
-            ' [pause] [soft tone] ',
-            text,
-        )
-        text = text.replace('\u2026', ' [pause] [soft tone] ')
+        # Extended ellipsis → long break
+        text = re.sub(r'\.{6,}', ' [pause] ', text)
+        # Normal ellipsis → short break
+        text = re.sub(r'\.{3,5}', ' [pause] ', text)
+        text = text.replace('\u2026', ' [pause] ')
         return text
 
     if pause_level == "deep":
-        # Hypnosis mode: deep, slow, descending tone, heavy pauses
-        # Extended ellipsis (6+ dots) = very long pause
-        text = re.sub(
-            r'\.{6,}',
-            ' [long pause] [whisper] [soft tone] ',
-            text,
-        )
-        # Normal ellipsis = pause with descending tone
-        text = re.sub(
-            r'\.{3,5}',
-            ' [pause] [soft tone] ',
-            text,
-        )
-        text = text.replace('\u2026', ' [pause] [soft tone] ')
-
-        # Key hypnosis words get emphasis tags
-        hypno_words = (
-            r'\b(relaxar|profundo|profunda|calma|mente|corpo|respira\w*|'
-            r'soltar|solte|confort\w*|tranquil\w*|suave|feche os olhos|'
-            r'deixe ir|permita-se|sono|dormir|paz|sereno|serenidade)\b'
-        )
-        text = re.sub(
-            hypno_words,
-            lambda m: f'[emphasis] {m.group(0)} [soft tone]',
-            text,
-            flags=re.IGNORECASE,
-        )
+        # Extended ellipsis (6+ dots) → long break
+        text = re.sub(r'\.{6,}', ' [long pause] ', text)
+        # Normal ellipsis → pause
+        text = re.sub(r'\.{3,5}', ' [pause] ', text)
+        text = text.replace('\u2026', ' [pause] ')
         return text
 
     return text
