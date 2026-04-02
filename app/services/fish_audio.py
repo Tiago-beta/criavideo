@@ -123,7 +123,7 @@ async def generate_tts(text: str, reference_id: str, output_path: str,
 def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") -> str:
     """Insert S2-Pro prosody tags into text based on pause_level and tone.
     
-    For 'profundo' tone: prefixes EVERY phrase with [calm] for uniform soft pacing.
+    For 'profundo' tone: prefixes EVERY phrase with [whispering] for uniform soft pacing.
     Ellipsis "..." is kept as-is — Fish Audio respects punctuation as natural pauses.
     Uses a single consistent tag throughout to avoid pace variation.
     """
@@ -150,7 +150,7 @@ def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") ->
             phrase = part.strip()
             if is_deep_tone:
                 # Same tag on EVERY phrase — keeps uniform pacing throughout
-                result.append('[calm] ' + phrase)
+                result.append('[whispering] ' + phrase)
             else:
                 result.append(phrase)
     
