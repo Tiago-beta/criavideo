@@ -139,8 +139,8 @@ def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") ->
         return text
 
     if is_deep_tone:
-        # Add [calm] before the last word immediately preceding each "..."
-        text = re.sub(r'(\S+)(\s*\.\.\.)', r'[calm]\1\2', text)
+        # Add [whispering] before the last word immediately preceding each "..."
+        text = re.sub(r'(\S+)(\s*\.\.\.)', r'[whispering]\1\2', text)
 
     return text
 
