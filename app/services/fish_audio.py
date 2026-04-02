@@ -123,10 +123,9 @@ async def generate_tts(text: str, reference_id: str, output_path: str,
 def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") -> str:
     """Insert S2-Pro [bracket] prosody tags into text based on pause_level and tone.
     
-    S2-Pro interprets [bracket] tags as natural language emotion/prosody cues.
-    Inserts [soft tone] before the last word preceding each ellipsis so the
-    voice descends in tone, then adds [pause] for the silence.
-    For tone 'profundo', adds [calm] pacing cues throughout.
+    S2-Pro uses natural language [bracket] tags like [whisper], [calm], [softly].
+    For 'profundo' tone: adds [calm] globally, replaces '...' with [pause],
+    and inserts [softly] before sentences that had ellipsis to lower the voice.
     """
     import re
 
@@ -139,19 +138,26 @@ def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") ->
     if not is_deep_tone and pause_level == "normal":
         return text
 
-    # For deep tone, add [calm] at start so S2-Pro sets overall calm pacing
+    # Split into sentences/phrases at "..." boundaries, process each
+    # Pattern: capture text before "..." and the "..." itself
+    parts = re.split(r'(\.\.\.)', text)
+    
+    result = []
     if is_deep_tone:
-        text = "[calm] " + text
-
-    # Insert [soft tone] before last word + [pause] replacing the ...
-    text = re.sub(
-        r'(\S+)\s*\.\.\.',
-        r'[soft tone] \1 [pause]',
-        text,
-    )
-    return text
-
-    return text
+        result.append("[calm]")
+    
+    for i, part in enumerate(parts):
+        if part == '...':
+            result.append('[pause]')
+        elif part.strip():
+            # If this phrase is followed by "..." (next part), add [softly] before it
+            next_is_ellipsis = (i + 1 < len(parts) and parts[i + 1] == '...')
+            if next_is_ellipsis and is_deep_tone:
+                result.append('[softly] ' + part.strip())
+            else:
+                result.append(part.strip())
+    
+    return ' '.join(result)
 
 
 async def generate_tts_long(text: str, reference_id: str, output_path: str,
