@@ -434,12 +434,16 @@ a {
 }
 
 /* ── Credits Display & Modal ── */
+.page-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
 .sidebar-credits {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 14px;
-    margin-bottom: 12px;
+    padding: 8px 14px;
     border-radius: 12px;
     background: rgba(246, 165, 47, 0.08);
     border: 1px solid rgba(246, 165, 47, 0.25);
@@ -448,6 +452,7 @@ a {
     font-weight: 600;
     color: #f0a030;
     transition: all 0.2s;
+    white-space: nowrap;
 }
 .sidebar-credits:hover {
     background: rgba(246, 165, 47, 0.15);

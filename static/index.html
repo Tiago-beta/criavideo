@@ -132,10 +132,6 @@
                     </nav>
 
                     <div class="sidebar-footer">
-                        <div class="sidebar-credits" id="sidebar-credits" title="Clique para comprar créditos">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f0a030" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                            <span id="credits-count">0</span> créditos
-                        </div>
                         <div class="sidebar-user">
                             <div class="user-avatar">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -160,7 +156,13 @@
                     <section id="page-projects" class="page active">
                         <div class="page-header">
                             <h1>Projetos de video</h1>
-                            <button id="btn-new-project" class="btn btn-primary btn-add-project" type="button" title="Adicionar novo projeto" aria-label="Adicionar novo projeto">+</button>
+                            <div class="page-header-actions">
+                                <div class="sidebar-credits" id="sidebar-credits" title="Clique para comprar créditos">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f0a030" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                                    <span id="credits-count">0</span> créditos
+                                </div>
+                                <button id="btn-new-project" class="btn btn-primary btn-add-project" type="button" title="Adicionar novo projeto" aria-label="Adicionar novo projeto">+</button>
+                            </div>
                         </div>
                         <div id="projects-list" class="cards-grid">
                             <div class="loading">Carregando projetos...</div>
