@@ -123,13 +123,9 @@ async def generate_tts(text: str, reference_id: str, output_path: str,
 def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") -> str:
     """Insert S2-Pro prosody tags into text based on pause_level and tone.
     
-    S2-Pro documented tags used:
-    - [calm] — sets overall calm pacing (sentence start)
-    - [whispering] — very soft, quiet voice (sentence start)
-    - Ellipsis "..." — kept as-is for natural pauses (Fish Audio respects punctuation)
-    
-    For 'profundo' tone: splits text at every "...", prefixes each phrase
-    with [whispering] so the voice drops to a soft, low tone before each pause.
+    For 'profundo' tone: prefixes EVERY phrase with [calm] for uniform soft pacing.
+    Ellipsis "..." is kept as-is — Fish Audio respects punctuation as natural pauses.
+    Uses a single consistent tag throughout to avoid pace variation.
     """
     import re
 
@@ -147,18 +143,13 @@ def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") ->
     
     result = []
     
-    for i, part in enumerate(parts):
+    for part in parts:
         if part == '...':
-            # Keep the actual ellipsis — Fish Audio respects it as a natural pause
             result.append('...')
         elif part.strip():
             phrase = part.strip()
-            # If this phrase is followed by "...", prefix with [whispering]
-            # so the entire phrase is spoken softly before the pause
-            next_is_ellipsis = (i + 1 < len(parts) and parts[i + 1] == '...')
-            if next_is_ellipsis and is_deep_tone:
-                result.append('[whispering] ' + phrase)
-            elif is_deep_tone:
+            if is_deep_tone:
+                # Same tag on EVERY phrase — keeps uniform pacing throughout
                 result.append('[calm] ' + phrase)
             else:
                 result.append(phrase)
