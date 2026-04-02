@@ -36,7 +36,7 @@ def _generate_reference() -> str:
     return f"CV{secrets.token_hex(8).upper()}"
 
 
-async def _mp_request(endpoint: str, method: str = "GET", body: dict | None = None) -> dict:
+async def _mp_request(endpoint: str, method: str = "GET", body: dict | None = None, idempotency_key: str = "") -> dict:
     mp_token = settings.mp_access_token
     if not mp_token:
         raise HTTPException(status_code=503, detail="Pagamentos não configurados.")
@@ -45,6 +45,8 @@ async def _mp_request(endpoint: str, method: str = "GET", body: dict | None = No
         "Authorization": f"Bearer {mp_token}",
         "Content-Type": "application/json",
     }
+    if idempotency_key:
+        headers["X-Idempotency-Key"] = idempotency_key
     async with httpx.AsyncClient(timeout=30) as client:
         if method == "POST":
             resp = await client.post(url, json=body, headers=headers)
@@ -118,7 +120,7 @@ async def purchase_pix(
         "notification_url": f"{settings.site_url}/api/credits/webhook",
     }
 
-    result = await _mp_request("/v1/payments", method="POST", body=payment_data)
+    result = await _mp_request("/v1/payments", method="POST", body=payment_data, idempotency_key=reference)
 
     if result.get("id"):
         await db.execute(
@@ -182,7 +184,7 @@ async def purchase_card(
         "back_url": f"{settings.site_url}/video?payment=credits",
     }
 
-    result = await _mp_request("/v1/payments", method="POST", body=payment_data)
+    result = await _mp_request("/v1/payments", method="POST", body=payment_data, idempotency_key=reference)
 
     if result.get("id"):
         await db.execute(
