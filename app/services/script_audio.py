@@ -124,7 +124,7 @@ async def generate_tts_audio(
         # Custom voices use Fish Audio
         elif voice_type == "custom" and voice:
             from app.services.fish_audio import generate_tts_long
-            ok = await generate_tts_long(text, voice, str(output_path))
+            ok = await generate_tts_long(text, voice, str(output_path), pause_level=pause_level)
             if not ok:
                 raise RuntimeError("Fish Audio TTS generation failed")
         # For long texts, split into chunks and concatenate
@@ -345,9 +345,9 @@ async def _generate_with_pauses(
         if voice_type == "custom" and voice:
             from app.services.fish_audio import generate_tts, generate_tts_long
             if len(seg_text) > 4000:
-                ok = await generate_tts_long(seg_text, voice, seg_path)
+                ok = await generate_tts_long(seg_text, voice, seg_path, pause_level=pause_level)
             else:
-                ok = await generate_tts(seg_text, voice, seg_path)
+                ok = await generate_tts(seg_text, voice, seg_path, pause_level=pause_level)
             if not ok:
                 raise RuntimeError(f"Fish Audio TTS failed for segment {i}")
         elif len(seg_text) > 4000:

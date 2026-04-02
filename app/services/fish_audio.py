@@ -71,14 +71,19 @@ async def create_voice_clone(sample_path: str, name: str) -> str | None:
         return None
 
 
-async def generate_tts(text: str, reference_id: str, output_path: str) -> bool:
-    """Generate TTS audio using a cloned voice on Fish Audio.
+async def generate_tts(text: str, reference_id: str, output_path: str,
+                       pause_level: str = "normal") -> bool:
+    """Generate TTS audio using a cloned voice on Fish Audio (S2-Pro).
 
     Returns True on success.
+    pause_level: controls prosody tag insertion for relaxed/deep modes.
     """
     if not settings.fish_audio_api_key:
         logger.error("Fish Audio API key not configured")
         return False
+
+    # Pre-process text with S2-Pro prosody tags based on pause_level
+    processed_text = _add_prosody_tags(text, pause_level)
 
     try:
         async with httpx.AsyncClient(timeout=120) as client:
@@ -87,12 +92,14 @@ async def generate_tts(text: str, reference_id: str, output_path: str) -> bool:
                 headers={
                     **_headers(),
                     "Content-Type": "application/json",
+                    "model": "s2-pro",
                 },
                 json={
-                    "text": text,
+                    "text": processed_text,
                     "reference_id": reference_id,
                     "format": "mp3",
                     "language": "pt",
+                    "normalize": False,
                 },
             )
 
@@ -110,10 +117,71 @@ async def generate_tts(text: str, reference_id: str, output_path: str) -> bool:
         return False
 
 
-async def generate_tts_long(text: str, reference_id: str, output_path: str) -> bool:
+def _add_prosody_tags(text: str, pause_level: str) -> str:
+    """Insert S2-Pro [bracket] prosody tags into text based on pause_level.
+    
+    S2-Pro interprets [bracket] tags as natural language emotion/prosody cues.
+    This replaces the OpenAI 'instructions' approach that doesn't work with Fish Audio.
+    """
+    import re
+
+    if pause_level == "normal":
+        return text
+
+    if pause_level == "relaxed":
+        # Add calm, expressive narration cues
+        # Replace ellipsis with pause + descending tone cue
+        text = re.sub(
+            r'\.{6,}',
+            ' [long pause] [soft tone] ',
+            text,
+        )
+        text = re.sub(
+            r'\.{3,5}',
+            ' [pause] [soft tone] ',
+            text,
+        )
+        text = text.replace('\u2026', ' [pause] [soft tone] ')
+        return text
+
+    if pause_level == "deep":
+        # Hypnosis mode: deep, slow, descending tone, heavy pauses
+        # Extended ellipsis (6+ dots) = very long pause
+        text = re.sub(
+            r'\.{6,}',
+            ' [long pause] [whisper] [soft tone] ',
+            text,
+        )
+        # Normal ellipsis = pause with descending tone
+        text = re.sub(
+            r'\.{3,5}',
+            ' [pause] [soft tone] ',
+            text,
+        )
+        text = text.replace('\u2026', ' [pause] [soft tone] ')
+
+        # Key hypnosis words get emphasis tags
+        hypno_words = (
+            r'\b(relaxar|profundo|profunda|calma|mente|corpo|respira\w*|'
+            r'soltar|solte|confort\w*|tranquil\w*|suave|feche os olhos|'
+            r'deixe ir|permita-se|sono|dormir|paz|sereno|serenidade)\b'
+        )
+        text = re.sub(
+            hypno_words,
+            lambda m: f'[emphasis] {m.group(0)} [soft tone]',
+            text,
+            flags=re.IGNORECASE,
+        )
+        return text
+
+    return text
+
+
+async def generate_tts_long(text: str, reference_id: str, output_path: str,
+                            pause_level: str = "normal") -> bool:
     """Generate TTS for long texts by chunking and concatenating."""
     if len(text) <= 4000:
-        return await generate_tts(text, reference_id, output_path)
+        return await generate_tts(text, reference_id, output_path, pause_level=pause_level)
 
     import re
     import os
@@ -139,7 +207,7 @@ async def generate_tts_long(text: str, reference_id: str, output_path: str) -> b
 
     for i, chunk in enumerate(chunks):
         chunk_path = str(out_dir / f"fish_chunk_{i:03d}.mp3")
-        ok = await generate_tts(chunk, reference_id, chunk_path)
+        ok = await generate_tts(chunk, reference_id, chunk_path, pause_level=pause_level)
         if not ok:
             logger.error(f"Fish Audio chunk {i} failed, falling back")
             for cp in chunk_paths:
