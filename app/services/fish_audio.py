@@ -125,7 +125,8 @@ def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") ->
     S2-Pro interprets [bracket] tags as natural language emotion/prosody cues.
     Inserts [soft tone] before the last word preceding each ellipsis so the
     voice descends in tone, then adds [pause] for the silence.
-    For tone 'profundo', adds [calm] pacing cues throughout.
+    For tone 'profundo', slows the overall pace with [speak slowly] and
+    inserts [pause] after every sentence to reduce rush.
     """
     import re
 
@@ -134,9 +135,16 @@ def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") ->
 
     is_deep_tone = tone in ("profundo", "reflexivo")
 
-    # For deep tone, add [calm] at start so S2-Pro sets overall calm pacing
+    # For deep tone, set slow calm pacing and add pauses between sentences
     if is_deep_tone:
-        text = "[calm] " + text
+        text = "[speak slowly, calmly, with deep feeling] " + text
+        # Add [pause] after sentence-ending punctuation (. ! ?) that are NOT ellipsis
+        # This slows the rhythm between sentences
+        text = re.sub(r'(?<!\.)\.(?!\.)\s+', r'. [pause] ', text)
+        text = re.sub(r'\?\s+', r'? [pause] ', text)
+        text = re.sub(r'!\s+', r'! [pause] ', text)
+        # Add [pause] after commas for breathing room
+        text = re.sub(r',\s+', r', [pause] ', text)
 
     if pause_level == "relaxed" or (pause_level == "normal" and is_deep_tone):
         # Insert [soft tone] before last word + [pause] replacing the ...
