@@ -72,18 +72,20 @@ async def create_voice_clone(sample_path: str, name: str) -> str | None:
 
 
 async def generate_tts(text: str, reference_id: str, output_path: str,
-                       pause_level: str = "normal") -> bool:
+                       pause_level: str = "normal",
+                       tone: str = "informativo") -> bool:
     """Generate TTS audio using a cloned voice on Fish Audio (S2-Pro).
 
     Returns True on success.
     pause_level: controls prosody tag insertion for relaxed/deep modes.
+    tone: narration tone — 'profundo' triggers calm/slow pacing tags.
     """
     if not settings.fish_audio_api_key:
         logger.error("Fish Audio API key not configured")
         return False
 
-    # Pre-process text with S2-Pro prosody tags based on pause_level
-    processed_text = _add_prosody_tags(text, pause_level)
+    # Pre-process text with S2-Pro prosody tags based on pause_level and tone
+    processed_text = _add_prosody_tags(text, pause_level, tone)
 
     try:
         async with httpx.AsyncClient(timeout=120) as client:
@@ -117,22 +119,26 @@ async def generate_tts(text: str, reference_id: str, output_path: str,
         return False
 
 
-def _add_prosody_tags(text: str, pause_level: str) -> str:
-    """Insert S2-Pro [bracket] prosody tags into text based on pause_level.
+def _add_prosody_tags(text: str, pause_level: str, tone: str = "informativo") -> str:
+    """Insert S2-Pro [bracket] prosody tags into text based on pause_level and tone.
     
     S2-Pro interprets [bracket] tags as natural language emotion/prosody cues.
     Inserts [soft tone] before the last word preceding each ellipsis so the
     voice descends in tone, then adds [pause] for the silence.
+    For tone 'profundo', adds [calm] pacing cues throughout.
     """
     import re
-
-    if pause_level == "normal":
-        return text
 
     # Normalize unicode ellipsis to 3 dots
     text = text.replace('\u2026', '...')
 
-    if pause_level == "relaxed":
+    is_deep_tone = tone in ("profundo", "reflexivo")
+
+    # For deep tone, add [calm] at start so S2-Pro sets overall calm pacing
+    if is_deep_tone:
+        text = "[calm] " + text
+
+    if pause_level == "relaxed" or (pause_level == "normal" and is_deep_tone):
         # Insert [soft tone] before last word + [pause] replacing the ...
         text = re.sub(
             r'(\S+)\s*\.{6,}',
@@ -165,10 +171,11 @@ def _add_prosody_tags(text: str, pause_level: str) -> str:
 
 
 async def generate_tts_long(text: str, reference_id: str, output_path: str,
-                            pause_level: str = "normal") -> bool:
+                            pause_level: str = "normal",
+                            tone: str = "informativo") -> bool:
     """Generate TTS for long texts by chunking and concatenating."""
     if len(text) <= 4000:
-        return await generate_tts(text, reference_id, output_path, pause_level=pause_level)
+        return await generate_tts(text, reference_id, output_path, pause_level=pause_level, tone=tone)
 
     import re
     import os
@@ -194,7 +201,7 @@ async def generate_tts_long(text: str, reference_id: str, output_path: str,
 
     for i, chunk in enumerate(chunks):
         chunk_path = str(out_dir / f"fish_chunk_{i:03d}.mp3")
-        ok = await generate_tts(chunk, reference_id, chunk_path, pause_level=pause_level)
+        ok = await generate_tts(chunk, reference_id, chunk_path, pause_level=pause_level, tone=tone)
         if not ok:
             logger.error(f"Fish Audio chunk {i} failed, falling back")
             for cp in chunk_paths:

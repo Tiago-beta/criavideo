@@ -1106,6 +1106,7 @@ async function handleWizardCreate() {
                 aspect_ratio: wizardData.aspect,
                 style_prompt: wizardData.style,
                 pause_level: wizardData.pauseLevel,
+                tone: wizardData.tone,
             }),
         });
 
@@ -1251,6 +1252,7 @@ async function handleScriptCreate() {
         formData.append("aspect_ratio", scriptData.aspect);
         formData.append("style_prompt", scriptData.style);
         formData.append("pause_level", scriptData.pauseLevel || "normal");
+        formData.append("tone", scriptData.tone || "informativo");
         formData.append("enable_subtitles", scriptData.enableSubtitles ? "true" : "false");
         formData.append("zoom_images", scriptData.zoomImages ? "true" : "false");
         formData.append("image_display_seconds", String(scriptData.imageDisplaySeconds > 0 ? scriptData.imageDisplaySeconds : 0));

@@ -98,12 +98,14 @@ async def generate_tts_audio(
     tts_instructions: str = "",
     voice_type: str = "builtin",
     pause_level: str = "normal",
+    tone: str = "informativo",
 ) -> str:
     """Generate TTS audio and save to media directory. Returns file path.
 
     For custom voices (voice_type="custom"), uses Fish Audio with the voice as reference_id.
     For builtin voices, uses OpenAI TTS.
     pause_level: "normal" | "relaxed" | "deep" — controls silence insertion between segments.
+    tone: narration tone — passed to Fish Audio for prosody control.
     """
     audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
     audio_dir.mkdir(parents=True, exist_ok=True)
@@ -119,12 +121,12 @@ async def generate_tts_audio(
         if pause_level in ("relaxed", "deep"):
             await _generate_with_pauses(
                 text, voice, tts_instructions, str(output_path),
-                pause_level, voice_type, audio_dir,
+                pause_level, voice_type, audio_dir, tone=tone,
             )
         # Custom voices use Fish Audio
         elif voice_type == "custom" and voice:
             from app.services.fish_audio import generate_tts_long
-            ok = await generate_tts_long(text, voice, str(output_path), pause_level=pause_level)
+            ok = await generate_tts_long(text, voice, str(output_path), pause_level=pause_level, tone=tone)
             if not ok:
                 raise RuntimeError("Fish Audio TTS generation failed")
         # For long texts, split into chunks and concatenate
@@ -320,6 +322,7 @@ def _build_segment_instructions(seg_text: str, base_instructions: str, pause_lev
 async def _generate_with_pauses(
     text: str, voice: str, tts_instructions: str, output_path: str,
     pause_level: str, voice_type: str, audio_dir: Path,
+    tone: str = "informativo",
 ):
     """Generate TTS with real silence inserted between segments based on pause_level."""
     segments = _split_at_pause_markers(text, pause_level)
@@ -345,9 +348,9 @@ async def _generate_with_pauses(
         if voice_type == "custom" and voice:
             from app.services.fish_audio import generate_tts, generate_tts_long
             if len(seg_text) > 4000:
-                ok = await generate_tts_long(seg_text, voice, seg_path, pause_level=pause_level)
+                ok = await generate_tts_long(seg_text, voice, seg_path, pause_level=pause_level, tone=tone)
             else:
-                ok = await generate_tts(seg_text, voice, seg_path, pause_level=pause_level)
+                ok = await generate_tts(seg_text, voice, seg_path, pause_level=pause_level, tone=tone)
             if not ok:
                 raise RuntimeError(f"Fish Audio TTS failed for segment {i}")
         elif len(seg_text) > 4000:

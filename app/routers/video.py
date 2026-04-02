@@ -696,6 +696,7 @@ class GenerateTTSRequest(BaseModel):
     aspect_ratio: str = "16:9"
     style_prompt: str = ""
     pause_level: str = "normal"
+    tone: str = "informativo"
     enable_subtitles: bool = True
     zoom_images: bool = True
     image_display_seconds: float = 0
@@ -786,6 +787,7 @@ async def generate_audio_endpoint(
             aspect_ratio=str(form.get("aspect_ratio", "16:9")),
             style_prompt=str(form.get("style_prompt", "")),
             pause_level=str(form.get("pause_level", "normal")),
+            tone=str(form.get("tone", "informativo")),
             enable_subtitles=enable_sub_raw not in ("false", "0", "no"),
             zoom_images=zoom_raw not in ("false", "0", "no"),
             image_display_seconds=float(image_seconds_raw or 0),
@@ -966,6 +968,7 @@ async def generate_audio_endpoint(
                 tts_instructions=tts_instructions,
                 voice_type=voice_type,
                 pause_level=req.pause_level,
+                tone=req.tone,
             )
             project.audio_path = audio_path
 
