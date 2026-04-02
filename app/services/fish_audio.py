@@ -121,27 +121,44 @@ def _add_prosody_tags(text: str, pause_level: str) -> str:
     """Insert S2-Pro [bracket] prosody tags into text based on pause_level.
     
     S2-Pro interprets [bracket] tags as natural language emotion/prosody cues.
-    Uses minimal, single tags to avoid the model reading them as literal text.
+    Inserts [soft tone] before the last word preceding each ellipsis so the
+    voice descends in tone, then adds [pause] for the silence.
     """
     import re
 
     if pause_level == "normal":
         return text
 
+    # Normalize unicode ellipsis to 3 dots
+    text = text.replace('\u2026', '...')
+
     if pause_level == "relaxed":
-        # Extended ellipsis → long break
-        text = re.sub(r'\.{6,}', ' [pause] ', text)
-        # Normal ellipsis → short break
-        text = re.sub(r'\.{3,5}', ' [pause] ', text)
-        text = text.replace('\u2026', ' [pause] ')
+        # Insert [soft tone] before last word + [pause] replacing the ...
+        text = re.sub(
+            r'(\S+)\s*\.{6,}',
+            r'[soft tone] \1 [pause]',
+            text,
+        )
+        text = re.sub(
+            r'(\S+)\s*\.{3,5}',
+            r'[soft tone] \1 [pause]',
+            text,
+        )
         return text
 
     if pause_level == "deep":
-        # Extended ellipsis (6+ dots) → long break
-        text = re.sub(r'\.{6,}', ' [long pause] ', text)
-        # Normal ellipsis → pause
-        text = re.sub(r'\.{3,5}', ' [pause] ', text)
-        text = text.replace('\u2026', ' [pause] ')
+        # Extended ellipsis (6+ dots) → soft tone + long pause
+        text = re.sub(
+            r'(\S+)\s*\.{6,}',
+            r'[soft tone] \1 [long pause]',
+            text,
+        )
+        # Normal ellipsis → soft tone + pause
+        text = re.sub(
+            r'(\S+)\s*\.{3,5}',
+            r'[soft tone] \1 [pause]',
+            text,
+        )
         return text
 
     return text
