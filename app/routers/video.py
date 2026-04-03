@@ -841,6 +841,10 @@ async def generate_audio_endpoint(
     if req.use_custom_audio and not has_custom_audio:
         raise HTTPException(status_code=400, detail="Usar meu audio esta ativo, mas nenhum arquivo foi enviado.")
 
+    if req.use_custom_audio and req.audio_is_music:
+        req.remove_vocals = True
+        req.enable_subtitles = True
+
     if not script_text and not custom_image_uploads and not custom_image_ids and not has_custom_audio:
         raise HTTPException(status_code=400, detail="Sem narracao, envie fotos ou audio para criar um video personalizado.")
 

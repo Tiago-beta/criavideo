@@ -1041,11 +1041,7 @@ function resetCreateWizard() {
         userAudioName.textContent = "";
     }
     const audioIsMusicCb = document.getElementById("script-audio-is-music");
-    if (audioIsMusicCb) audioIsMusicCb.checked = true;
-    const removeVocalsCb = document.getElementById("script-remove-vocals");
-    if (removeVocalsCb) removeVocalsCb.checked = false;
-    const removeVocalsRow = document.getElementById("script-remove-vocals-row");
-    if (removeVocalsRow) removeVocalsRow.hidden = true;
+    if (audioIsMusicCb) audioIsMusicCb.checked = false;
 
     // Reset subtitle toggle
     const subCb = document.getElementById("script-enable-subtitles");
@@ -1200,7 +1196,7 @@ function scriptNext() {
         scriptData.useCustomImages = usePhotos && scriptPhotos.length > 0;
         scriptData.useCustomAudio = hasUserAudio;
         scriptData.audioIsMusic = hasUserAudio ? !!document.getElementById("script-audio-is-music")?.checked : false;
-        scriptData.removeVocals = hasUserAudio && scriptData.audioIsMusic ? !!document.getElementById("script-remove-vocals")?.checked : false;
+        scriptData.removeVocals = hasUserAudio && scriptData.audioIsMusic;
         scriptData.createNarration = hasUserAudio ? false : createNarration;
         scriptData.text = hasUserAudio ? text : (createNarration ? text : "");
         if (!scriptData.createNarration || hasUserAudio) {
@@ -1266,7 +1262,7 @@ async function handleScriptCreate() {
     scriptData.useCustomImages = usePhotosSelected && scriptPhotos.length > 0;
     scriptData.useCustomAudio = useAudioSelected && !!scriptUserAudioFile;
     scriptData.audioIsMusic = scriptData.useCustomAudio ? !!document.getElementById("script-audio-is-music")?.checked : false;
-    scriptData.removeVocals = scriptData.useCustomAudio && scriptData.audioIsMusic ? !!document.getElementById("script-remove-vocals")?.checked : false;
+    scriptData.removeVocals = scriptData.useCustomAudio && scriptData.audioIsMusic;
     scriptData.createNarration = scriptData.useCustomAudio
         ? false
         : (!scriptData.useCustomImages || document.getElementById("script-create-narration").checked);
@@ -1276,6 +1272,9 @@ async function handleScriptCreate() {
         scriptData.voiceProfileId = 0;
     }
     scriptData.enableSubtitles = usePhotosSelected ? document.getElementById("script-enable-subtitles").checked : true;
+    if (scriptData.useCustomAudio && scriptData.audioIsMusic) {
+        scriptData.enableSubtitles = true;
+    }
     const bgmEnabled = document.getElementById("script-enable-bgm") ? document.getElementById("script-enable-bgm").checked : true;
     const bgmFileInput = document.getElementById("script-bgm-file");
     const bgmFile = bgmEnabled && bgmFileInput && bgmFileInput.files ? bgmFileInput.files[0] : null;
@@ -1437,8 +1436,6 @@ function toggleUserAudioUpload() {
             nameEl.hidden = true;
             nameEl.textContent = "";
         }
-        const removeCb = document.getElementById("script-remove-vocals");
-        if (removeCb) removeCb.checked = false;
     }
 
     toggleAudioMusicOptions();
@@ -1447,13 +1444,8 @@ function toggleUserAudioUpload() {
 function toggleAudioMusicOptions() {
     const useAudio = document.getElementById("script-use-user-audio")?.checked && !!scriptUserAudioFile;
     const isMusic = !!document.getElementById("script-audio-is-music")?.checked;
-    const row = document.getElementById("script-remove-vocals-row");
-    if (row) row.hidden = !(useAudio && isMusic);
-
-    if (!isMusic || !useAudio) {
-        const removeCb = document.getElementById("script-remove-vocals");
-        if (removeCb) removeCb.checked = false;
-    }
+    scriptData.audioIsMusic = useAudio && isMusic;
+    scriptData.removeVocals = useAudio && isMusic;
 }
 
 function handleUserAudioSelect(event) {
