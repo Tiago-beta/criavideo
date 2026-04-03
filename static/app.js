@@ -1763,6 +1763,9 @@ function stopKaraokeProgressPolling() {
         karaokeProgressTimer = null;
     }
     karaokeProgressOperationId = "";
+    // Restore verbose text visibility
+    const progressTextEl = document.getElementById("create-progress-text");
+    if (progressTextEl) progressTextEl.hidden = false;
 }
 
 function startKaraokeProgressPolling(operationId) {
@@ -1771,6 +1774,10 @@ function startKaraokeProgressPolling(operationId) {
     }
     stopKaraokeProgressPolling();
     karaokeProgressOperationId = operationId;
+
+    // Hide verbose message text during vocal removal — keep only spinner, stage and %
+    const progressTextEl = document.getElementById("create-progress-text");
+    if (progressTextEl) progressTextEl.hidden = true;
 
     const pollOnce = async () => {
         if (!karaokeProgressOperationId || karaokeProgressOperationId !== operationId) {
@@ -1792,8 +1799,7 @@ function startKaraokeProgressPolling(operationId) {
                 : status === "completed"
                     ? "Remocao concluida"
                     : "Removendo voz...";
-            const message = String(state.message || "Removendo voz no Levita...").trim();
-            setCreateProgress(progress, stage, message || "Removendo voz no Levita...");
+            setCreateProgress(progress, stage);
 
             if (status === "failed") {
                 stopKaraokeProgressPolling();
