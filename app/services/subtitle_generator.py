@@ -18,7 +18,7 @@ PlayResY: {play_res_y}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Karaoke,Arial,{font_size},&H00FFFFFF,&H0000FFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,40,40,{margin_v},1
+Style: Karaoke,Arial,{font_size},&H0000FFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,40,40,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -41,7 +41,7 @@ def _build_karaoke_line(words: list[dict]) -> str:
     parts = []
     for w in words:
         duration_cs = max(1, int((w["end"] - w["start"]) * 100))
-        text = w["word"].strip()
+        text = w["word"].strip().upper()
         if text:
             parts.append(f"{{\\k{duration_cs}}}{text}")
     return " ".join(parts) if parts else ""
@@ -105,8 +105,8 @@ def generate_ass_subtitles(
     for line_words in lines:
         if not line_words:
             continue
-        start = line_words[0]["start"]
-        end = line_words[-1]["end"] + 0.3  # small buffer after last word
+        start = max(0.0, line_words[0]["start"] - 0.3)  # appear slightly early
+        end = line_words[-1]["end"] + 0.5  # buffer after last word
         karaoke_text = _build_karaoke_line(line_words)
         start_str = _format_ass_time(start)
         end_str = _format_ass_time(end)
@@ -162,12 +162,12 @@ def generate_ass_from_text(
         start = i * time_per_line
         end = start + time_per_line - 0.1
         # Karaoke-style: whole line highlights word by word
-        words = line.split()
+        words = line.upper().split()
         if words:
             word_dur_cs = max(1, int((time_per_line / len(words)) * 100))
             karaoke_parts = " ".join(f"{{\\k{word_dur_cs}}}{w}" for w in words)
         else:
-            karaoke_parts = line
+            karaoke_parts = line.upper()
         start_str = _format_ass_time(start)
         end_str = _format_ass_time(end)
         events.append(
