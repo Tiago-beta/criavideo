@@ -101,6 +101,68 @@ def _mix_candidate_urls(base_url: str, track_id: str | int, auth_token: str = ""
     return urls
 
 
+async def _download_and_merge_stems(
+    stem_urls: dict[str, str],
+    headers: dict[str, str],
+    output_path: str,
+    progress_callback: ProgressCallback | None = None,
+) -> str:
+    """Download individual non-vocal stems and merge them with FFmpeg amix."""
+    import tempfile
+    temp_files: list[str] = []
+    try:
+        await _emit_progress(progress_callback, 89, "Removendo voz: baixando stems individuais...")
+        for stem_name, stem_url in stem_urls.items():
+            try:
+                tmp = tempfile.NamedTemporaryFile(
+                    suffix=f"_{stem_name}.wav", delete=False
+                )
+                tmp.close()
+                await _download_with_optional_auth(stem_url, tmp.name, headers)
+                if os.path.exists(tmp.name) and os.path.getsize(tmp.name) > 0:
+                    temp_files.append(tmp.name)
+                else:
+                    os.unlink(tmp.name)
+            except Exception as dl_err:
+                logger.warning(f"Failed to download stem '{stem_name}': {dl_err}")
+
+        if not temp_files:
+            return ""
+
+        await _emit_progress(
+            progress_callback, 93, f"Removendo voz: mixando {len(temp_files)} stems..."
+        )
+
+        if len(temp_files) == 1:
+            shutil.move(temp_files[0], output_path)
+            temp_files.clear()
+        else:
+            inputs: list[str] = []
+            for tf in temp_files:
+                inputs.extend(["-i", tf])
+            cmd = [
+                "ffmpeg", "-y", *inputs,
+                "-filter_complex",
+                f"amix=inputs={len(temp_files)}:duration=longest:normalize=0",
+                "-ac", "2", "-ar", "44100", output_path,
+            ]
+            proc = subprocess.run(cmd, capture_output=True, timeout=120)
+            if proc.returncode != 0:
+                logger.warning(f"FFmpeg amix failed: {proc.stderr[-400:]}")
+                return ""
+
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            await _emit_progress(progress_callback, 96, "Instrumental montado a partir das stems.")
+            return output_path
+        return ""
+    finally:
+        for tf in temp_files:
+            try:
+                os.unlink(tf)
+            except OSError:
+                pass
+
+
 async def _extract_olevita_instrumental(
     payload: dict,
     base_url: str,
@@ -123,6 +185,7 @@ async def _extract_olevita_instrumental(
 
     stems = payload.get("stems") or {}
     if isinstance(stems, dict):
+        # Try pre-mixed no_vocals / instrumental first
         for key in ("no_vocals", "instrumental"):
             stem_url = _to_absolute_url(base_url, stems.get(key))
             if not stem_url:
@@ -135,6 +198,19 @@ async def _extract_olevita_instrumental(
                     return output_path
             except Exception as stem_err:
                 logger.warning(f"Failed to download Olevita stem '{key}': {stem_err}")
+
+        # Fallback: download all non-vocal stems and merge with FFmpeg
+        non_vocal_stems = {
+            k: _to_absolute_url(base_url, v)
+            for k, v in stems.items()
+            if k.lower() != "vocals" and _to_absolute_url(base_url, v)
+        }
+        if non_vocal_stems:
+            merged = await _download_and_merge_stems(
+                non_vocal_stems, headers, output_path, progress_callback
+            )
+            if merged:
+                return merged
 
     for key in ("instrumental_url", "instrumental", "audio_url", "url"):
         candidate_url = _to_absolute_url(base_url, payload.get(key))
