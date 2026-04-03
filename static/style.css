@@ -1672,6 +1672,10 @@ svg.spin {
     border-top: 1px solid rgba(96, 129, 162, 0.12);
 }
 
+.script-title-gap {
+    margin-top: 14px;
+}
+
 .photo-upload-header {
     display: flex;
     align-items: center;
