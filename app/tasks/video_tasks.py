@@ -139,7 +139,6 @@ async def run_video_pipeline(project_id: int):
             if not is_music_only_mode:
                 try:
                     from app.services.transcriber import transcribe_audio
-                    import asyncio
                     lyrics_hint = (project.lyrics_text or "").strip()
                     result = await asyncio.get_event_loop().run_in_executor(
                         None, lambda: transcribe_audio(audio_path, prompt=lyrics_hint)
@@ -457,7 +456,6 @@ async def run_video_pipeline(project_id: int):
 
                     audio_dur = get_audio_duration(audio_path)
                     if audio_dur > 0:
-                        import asyncio
                         background_music_path = await asyncio.get_event_loop().run_in_executor(
                             None, generate_background_music, music_path, audio_dur, bgm_mood
                         )
@@ -474,7 +472,6 @@ async def run_video_pipeline(project_id: int):
                 raise FileNotFoundError(f"Audio file not found: {project.audio_path}")
 
             # Run FFmpeg in thread pool to avoid blocking event loop and DB timeout
-            import asyncio
             render_result = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: compose_video(
@@ -559,7 +556,6 @@ async def run_video_format_copy_pipeline(project_id: int, source_video_path: str
             await db.commit()
 
             from app.services.video_composer import reformat_video
-            import asyncio
 
             render_result = await asyncio.get_event_loop().run_in_executor(
                 None,
