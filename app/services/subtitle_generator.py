@@ -81,6 +81,8 @@ def generate_ass_subtitles(
     output_path: str = "karaoke.ass",
 ) -> str:
     """Generate a complete ASS subtitle file with karaoke highlighting.
+    Always shows 2 lines: the current line with karaoke effect
+    and the next line in dim color so the user can read ahead.
 
     lyrics_words: list of {"word": str, "start": float, "end": float}
     """
@@ -102,12 +104,24 @@ def generate_ass_subtitles(
     lines = group_words_into_lines(lyrics_words)
     events = []
 
-    for line_words in lines:
+    # Dim color for the "next line" preview (light gray)
+    next_line_color = r"{\1c&H00AAAAAA&\2c&H00AAAAAA&}"
+
+    for i, line_words in enumerate(lines):
         if not line_words:
             continue
         start = max(0.0, line_words[0]["start"] - 0.3)  # appear slightly early
         end = line_words[-1]["end"] + 0.5  # buffer after last word
+
         karaoke_text = _build_karaoke_line(line_words)
+
+        # Add next line preview if available
+        if i + 1 < len(lines):
+            next_words = lines[i + 1]
+            next_text = " ".join(w["word"].strip().upper() for w in next_words if w.get("word", "").strip())
+            if next_text:
+                karaoke_text += r"\N" + next_line_color + next_text
+
         start_str = _format_ass_time(start)
         end_str = _format_ass_time(end)
         events.append(
@@ -131,6 +145,7 @@ def generate_ass_from_text(
 ) -> str:
     """Generate ASS subtitles from plain text lyrics (no word timestamps).
     Distributes lines evenly across the song duration with highlight effect.
+    Always shows 2 lines: current highlighted + next line preview.
     """
     if aspect_ratio == "9:16":
         play_res_y = 1920
@@ -154,6 +169,9 @@ def generate_ass_from_text(
     if not raw_lines:
         return ""
 
+    # Dim color for the "next line" preview
+    next_line_color = r"{\1c&H00AAAAAA&\2c&H00AAAAAA&}"
+
     # Distribute lines evenly across duration (with small gaps)
     time_per_line = duration / len(raw_lines)
     events = []
@@ -168,6 +186,13 @@ def generate_ass_from_text(
             karaoke_parts = " ".join(f"{{\\k{word_dur_cs}}}{w}" for w in words)
         else:
             karaoke_parts = line.upper()
+
+        # Add next line preview if available
+        if i + 1 < len(raw_lines):
+            next_text = raw_lines[i + 1].upper()
+            if next_text:
+                karaoke_parts += r"\N" + next_line_color + next_text
+
         start_str = _format_ass_time(start)
         end_str = _format_ass_time(end)
         events.append(
