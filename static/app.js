@@ -1199,6 +1199,17 @@ function scriptNext() {
         scriptData.removeVocals = hasUserAudio && scriptData.audioIsMusic;
         scriptData.createNarration = hasUserAudio ? false : createNarration;
         scriptData.text = hasUserAudio ? text : (createNarration ? text : "");
+
+        // If karaoke is detected in step 1, keep background music off by default in step 4.
+        const bgmToggle = document.getElementById("script-enable-bgm");
+        const bgmUploadArea = document.getElementById("script-bgm-upload-area");
+        const bgmInput = document.getElementById("script-bgm-file");
+        if (bgmToggle && scriptData.useCustomAudio && scriptData.audioIsMusic) {
+            bgmToggle.checked = false;
+            if (bgmUploadArea) bgmUploadArea.hidden = true;
+            if (bgmInput) bgmInput.value = "";
+        }
+
         if (!scriptData.createNarration || hasUserAudio) {
             scriptStep = 4;
             updateWizardUI("create-panel-script", scriptStep, 5, "script");
