@@ -7,6 +7,7 @@ Strategy:
 3) Final fallback to local FFmpeg center-channel attenuation.
 """
 import asyncio
+import inspect
 import logging
 import os
 import shutil
@@ -14,6 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 from urllib.parse import quote, urljoin
+from typing import Callable, Awaitable
 
 import httpx
 
@@ -24,6 +26,7 @@ settings = get_settings()
 OLEVITA_SYNC_TIMEOUT_SECONDS = 30 * 60
 OLEVITA_JOB_TIMEOUT_SECONDS = 45 * 60
 OLEVITA_JOB_POLL_SECONDS = 3
+ProgressCallback = Callable[[int, str], Awaitable[None] | None]
 
 
 def _ensure_output_dir(project_id: int) -> Path:
@@ -70,6 +73,18 @@ async def _download_with_optional_auth(url: str, output_path: str, headers: dict
     return output_path
 
 
+async def _emit_progress(progress_callback: ProgressCallback | None, progress: int, message: str) -> None:
+    if not progress_callback:
+        return
+    try:
+        safe_progress = max(0, min(100, int(progress)))
+        result = progress_callback(safe_progress, message)
+        if inspect.isawaitable(result):
+            await result
+    except Exception as exc:
+        logger.debug(f"Progress callback failed: {exc}")
+
+
 def _normalized_bearer_token(auth_token: str = "") -> str:
     token = (auth_token or settings.levita_api_token or "").strip()
     if token.lower().startswith("bearer "):
@@ -91,13 +106,16 @@ async def _extract_olevita_instrumental(
     headers: dict[str, str],
     output_path: str,
     auth_token: str = "",
+    progress_callback: ProgressCallback | None = None,
 ) -> str:
     track_id = payload.get("trackId") or payload.get("track_id")
     if track_id:
+        await _emit_progress(progress_callback, 88, "Removendo voz: baixando instrumental do Levita...")
         for mix_url in _mix_candidate_urls(base_url, track_id, auth_token):
             try:
                 await _download_with_optional_auth(mix_url, output_path, headers)
                 if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                    await _emit_progress(progress_callback, 96, "Instrumental recebido do Levita.")
                     return output_path
             except Exception as mix_err:
                 logger.warning(f"Failed to download Olevita playback mix for track {track_id}: {mix_err}")
@@ -109,8 +127,10 @@ async def _extract_olevita_instrumental(
             if not stem_url:
                 continue
             try:
+                await _emit_progress(progress_callback, 90, f"Removendo voz: baixando stem {key}...")
                 await _download_with_optional_auth(stem_url, output_path, headers)
                 if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                    await _emit_progress(progress_callback, 96, "Instrumental recebido do Levita.")
                     return output_path
             except Exception as stem_err:
                 logger.warning(f"Failed to download Olevita stem '{key}': {stem_err}")
@@ -120,8 +140,10 @@ async def _extract_olevita_instrumental(
         if not candidate_url:
             continue
         try:
+            await _emit_progress(progress_callback, 90, "Removendo voz: baixando instrumental...")
             await _download_with_optional_auth(candidate_url, output_path, headers)
             if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                await _emit_progress(progress_callback, 96, "Instrumental recebido do Levita.")
                 return output_path
         except Exception as url_err:
             logger.warning(f"Failed to download Olevita instrumental URL from key '{key}': {url_err}")
@@ -129,7 +151,12 @@ async def _extract_olevita_instrumental(
     return ""
 
 
-async def _try_remove_vocals_with_olevita_demucs_sync(input_path: str, output_path: str, auth_token: str = "") -> str:
+async def _try_remove_vocals_with_olevita_demucs_sync(
+    input_path: str,
+    output_path: str,
+    auth_token: str = "",
+    progress_callback: ProgressCallback | None = None,
+) -> str:
     base_url = _levita_base_url()
     separate_url = f"{base_url}/api/separate"
     headers = _levita_auth_headers(auth_token)
@@ -139,6 +166,7 @@ async def _try_remove_vocals_with_olevita_demucs_sync(input_path: str, output_pa
         return ""
 
     logger.info(f"Trying Olevita Demucs sync separation: {separate_url}")
+    await _emit_progress(progress_callback, 15, "Removendo voz: enviando audio para o Levita...")
     try:
         async with httpx.AsyncClient(timeout=OLEVITA_SYNC_TIMEOUT_SECONDS, follow_redirects=True) as client:
             with open(input_path, "rb") as f:
@@ -158,13 +186,25 @@ async def _try_remove_vocals_with_olevita_demucs_sync(input_path: str, output_pa
             logger.warning("Olevita sync separation returned non-JSON response")
             return ""
 
-        return await _extract_olevita_instrumental(payload, base_url, headers, output_path, auth_token=auth_token)
+        return await _extract_olevita_instrumental(
+            payload,
+            base_url,
+            headers,
+            output_path,
+            auth_token=auth_token,
+            progress_callback=progress_callback,
+        )
     except Exception as exc:
         logger.warning(f"Olevita sync separation unavailable: {exc}")
         return ""
 
 
-async def _try_remove_vocals_with_olevita_demucs_async(input_path: str, output_path: str, auth_token: str = "") -> str:
+async def _try_remove_vocals_with_olevita_demucs_async(
+    input_path: str,
+    output_path: str,
+    auth_token: str = "",
+    progress_callback: ProgressCallback | None = None,
+) -> str:
     base_url = _levita_base_url()
     start_url = f"{base_url}/api/separate/start"
     headers = _levita_auth_headers(auth_token)
@@ -174,6 +214,7 @@ async def _try_remove_vocals_with_olevita_demucs_async(input_path: str, output_p
         return ""
 
     logger.info(f"Trying Olevita Demucs async separation: {start_url}")
+    await _emit_progress(progress_callback, 12, "Removendo voz: iniciando separacao no Levita...")
 
     try:
         async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
@@ -213,6 +254,15 @@ async def _try_remove_vocals_with_olevita_demucs_async(input_path: str, output_p
                         logger.warning("Olevita status endpoint returned non-JSON response")
                         return ""
 
+                    remote_progress_raw = job_payload.get("progress")
+                    remote_message = str(job_payload.get("message") or "Removendo voz no Levita...").strip()
+                    if isinstance(remote_progress_raw, (int, float)):
+                        remote_progress = int(remote_progress_raw)
+                    else:
+                        remote_progress = 0
+                    mapped_progress = max(15, min(88, remote_progress))
+                    await _emit_progress(progress_callback, mapped_progress, f"Removendo voz: {remote_message}")
+
                     status = str(job_payload.get("status") or "").strip().lower()
                     if status == "completed":
                         break
@@ -225,20 +275,43 @@ async def _try_remove_vocals_with_olevita_demucs_async(input_path: str, output_p
                     logger.warning("Olevita Demucs async job timed out while waiting for completion")
                     return ""
 
-            return await _extract_olevita_instrumental(job_payload, base_url, headers, output_path, auth_token=auth_token)
+            return await _extract_olevita_instrumental(
+                job_payload,
+                base_url,
+                headers,
+                output_path,
+                auth_token=auth_token,
+                progress_callback=progress_callback,
+            )
     except Exception as exc:
         logger.warning(f"Olevita Demucs async unavailable: {exc}")
         return ""
 
 
-async def _try_remove_vocals_with_olevita_demucs(input_path: str, output_path: str, auth_token: str = "") -> str:
-    sync_path = await _try_remove_vocals_with_olevita_demucs_sync(input_path, output_path, auth_token=auth_token)
-    if sync_path:
-        return sync_path
-
-    async_path = await _try_remove_vocals_with_olevita_demucs_async(input_path, output_path, auth_token=auth_token)
+async def _try_remove_vocals_with_olevita_demucs(
+    input_path: str,
+    output_path: str,
+    auth_token: str = "",
+    progress_callback: ProgressCallback | None = None,
+) -> str:
+    # Async flow first gives meaningful progress updates from Olevita.
+    async_path = await _try_remove_vocals_with_olevita_demucs_async(
+        input_path,
+        output_path,
+        auth_token=auth_token,
+        progress_callback=progress_callback,
+    )
     if async_path:
         return async_path
+
+    sync_path = await _try_remove_vocals_with_olevita_demucs_sync(
+        input_path,
+        output_path,
+        auth_token=auth_token,
+        progress_callback=progress_callback,
+    )
+    if sync_path:
+        return sync_path
 
     return ""
 
@@ -328,19 +401,29 @@ async def remove_vocals_track(
     project_id: int,
     auth_token: str = "",
     allow_ffmpeg_fallback: bool = True,
+    progress_callback: ProgressCallback | None = None,
 ) -> str:
     """Return an instrumental version of input audio for karaoke flows."""
     out_dir = _ensure_output_dir(project_id)
     output_path = str(out_dir / "instrumental_no_vocals.mp3")
 
-    olevita_path = await _try_remove_vocals_with_olevita_demucs(input_path, output_path, auth_token=auth_token)
+    await _emit_progress(progress_callback, 8, "Removendo voz: preparando arquivo...")
+
+    olevita_path = await _try_remove_vocals_with_olevita_demucs(
+        input_path,
+        output_path,
+        auth_token=auth_token,
+        progress_callback=progress_callback,
+    )
     if olevita_path:
         logger.info(f"Vocal removal completed via Olevita Demucs: {olevita_path}")
+        await _emit_progress(progress_callback, 100, "Voz removida com sucesso.")
         return olevita_path
 
     legacy_path = await _try_remove_vocals_with_legacy_endpoint(input_path, output_path, auth_token=auth_token)
     if legacy_path:
         logger.info(f"Vocal removal completed via legacy Levita endpoint: {legacy_path}")
+        await _emit_progress(progress_callback, 100, "Voz removida com sucesso.")
         return legacy_path
 
     if not allow_ffmpeg_fallback:

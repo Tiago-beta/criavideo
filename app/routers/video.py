@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File
 from fastapi.responses import FileResponse
@@ -44,6 +45,73 @@ os.makedirs(VOICE_DEMO_DIR, exist_ok=True)
 TEMP_UPLOAD_DIR = Path(settings.media_dir) / "temp_uploads"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus", ".webm"}
+KARAOKE_PROGRESS_TTL_MINUTES = 120
+_karaoke_progress_store: dict[str, dict] = {}
+
+
+def _cleanup_karaoke_progress_store() -> None:
+    if not _karaoke_progress_store:
+        return
+    cutoff = datetime.utcnow() - timedelta(minutes=KARAOKE_PROGRESS_TTL_MINUTES)
+    stale_keys = [
+        op_id
+        for op_id, state in _karaoke_progress_store.items()
+        if datetime.fromisoformat(state.get("updated_at", "1970-01-01T00:00:00")) < cutoff
+    ]
+    for key in stale_keys:
+        _karaoke_progress_store.pop(key, None)
+
+
+def _set_karaoke_progress(
+    operation_id: str,
+    user_id: int,
+    progress: int,
+    message: str,
+    *,
+    status: str = "running",
+    stage: str = "removing_vocals",
+    error: str = "",
+) -> None:
+    if not operation_id:
+        return
+    _cleanup_karaoke_progress_store()
+    now_iso = datetime.utcnow().isoformat()
+    _karaoke_progress_store[operation_id] = {
+        "operation_id": operation_id,
+        "user_id": int(user_id),
+        "status": status,
+        "stage": stage,
+        "progress": max(0, min(100, int(progress))),
+        "message": message,
+        "error": error,
+        "updated_at": now_iso,
+    }
+
+
+@router.get("/karaoke-progress/{operation_id}")
+async def get_karaoke_progress(operation_id: str, user: dict = Depends(get_current_user)):
+    _cleanup_karaoke_progress_store()
+    state = _karaoke_progress_store.get(operation_id)
+    if not state or int(state.get("user_id", 0)) != int(user["id"]):
+        return {
+            "operation_id": operation_id,
+            "status": "pending",
+            "stage": "removing_vocals",
+            "progress": 0,
+            "message": "Aguardando inicio da remocao de voz...",
+            "error": "",
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+
+    return {
+        "operation_id": state.get("operation_id"),
+        "status": state.get("status", "running"),
+        "stage": state.get("stage", "removing_vocals"),
+        "progress": state.get("progress", 0),
+        "message": state.get("message", ""),
+        "error": state.get("error", ""),
+        "updated_at": state.get("updated_at", datetime.utcnow().isoformat()),
+    }
 
 
 def _temp_user_dir(user_id: int) -> Path:
@@ -778,6 +846,7 @@ async def generate_audio_endpoint(
     custom_image_ids: list[str] = []
     background_music_id: str = ""
     custom_audio_id: str = ""
+    karaoke_operation_id: str = ""
     if "multipart/form-data" in content_type:
         form = await request.form()
         enable_sub_raw = str(form.get("enable_subtitles", "true")).lower()
@@ -832,9 +901,21 @@ async def generate_audio_endpoint(
             custom_image_ids = []
         background_music_id = str(form.get("background_music_id", "")).strip()
         custom_audio_id = str(form.get("custom_audio_id", "")).strip()
+        karaoke_operation_id = str(form.get("karaoke_operation_id", "")).strip()
     else:
         payload = await request.json()
+        karaoke_operation_id = str(payload.get("karaoke_operation_id", "")).strip()
         req = GenerateTTSRequest(**payload)
+
+    if karaoke_operation_id:
+        _set_karaoke_progress(
+            karaoke_operation_id,
+            user["id"],
+            5,
+            "Preparando remocao de voz no Levita...",
+            status="running",
+            stage="removing_vocals",
+        )
 
     script_text = (req.script or "").strip()
     has_custom_audio = bool(custom_audio_id) or bool(custom_audio_upload and custom_audio_upload.filename)
@@ -1064,22 +1145,66 @@ async def generate_audio_endpoint(
                     if not levita_auth_token:
                         levita_auth_token = str(settings.levita_api_token or "").strip()
 
+                    async def _karaoke_progress_callback(progress: int, message: str):
+                        if not karaoke_operation_id:
+                            return
+                        _set_karaoke_progress(
+                            karaoke_operation_id,
+                            user["id"],
+                            progress,
+                            message,
+                            status="running",
+                            stage="removing_vocals",
+                        )
+
                     try:
                         instrumental_path = await remove_vocals_track(
                             custom_main_audio_path,
                             project.id,
                             auth_token=levita_auth_token,
                             allow_ffmpeg_fallback=False,
+                            progress_callback=_karaoke_progress_callback,
                         )
                     except Exception as sep_err:
                         logger.warning(f"Karaoke vocal removal failed on Olevita for project {project.id}: {sep_err}")
+                        if karaoke_operation_id:
+                            _set_karaoke_progress(
+                                karaoke_operation_id,
+                                user["id"],
+                                100,
+                                "Falha ao remover voz no Levita.",
+                                status="failed",
+                                stage="removing_vocals",
+                                error=str(sep_err),
+                            )
                         raise HTTPException(
                             status_code=502,
                             detail="A separacao de voz no Olevita ainda nao concluiu. Tente novamente em alguns minutos.",
                         )
 
                     if not instrumental_path or not os.path.exists(instrumental_path):
+                        if karaoke_operation_id:
+                            _set_karaoke_progress(
+                                karaoke_operation_id,
+                                user["id"],
+                                100,
+                                "Nao foi possivel baixar o audio sem voz.",
+                                status="failed",
+                                stage="removing_vocals",
+                                error="instrumental_output_missing",
+                            )
                         raise HTTPException(status_code=500, detail="Nao foi possivel remover a voz do audio.")
+
+                    if karaoke_operation_id:
+                        _set_karaoke_progress(
+                            karaoke_operation_id,
+                            user["id"],
+                            100,
+                            "Voz removida com sucesso.",
+                            status="completed",
+                            stage="removing_vocals",
+                        )
+
                     project.audio_path = instrumental_path
                     logger.info(f"Karaoke instrumental created for project {project.id}: {instrumental_path}")
         except HTTPException:

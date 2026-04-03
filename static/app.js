@@ -586,6 +586,9 @@ function openModal(id) {
 
 function closeModal(id) {
     document.getElementById(id).classList.remove("open");
+    if (id === "modal-new-project") {
+        stopKaraokeProgressPolling();
+    }
     if (id === "modal-player") {
         const video = document.getElementById("player-video");
         if (video) {
@@ -790,6 +793,9 @@ let scriptData = {
     zoomImages: true,
     imageDisplaySeconds: 0,
 };
+const CREATE_PROGRESS_BASE = 8;
+let karaokeProgressTimer = null;
+let karaokeProgressOperationId = "";
 
 async function createSimilar(projectId) {
     const project = _projectsCache.find(p => p.id === projectId);
@@ -965,6 +971,7 @@ function switchCreateMode(mode) {
 }
 
 function resetCreateWizard() {
+    stopKaraokeProgressPolling();
     createMode = "wizard";
     wizardStep = 1;
     wizardData = { topic: "", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "" };
@@ -997,6 +1004,7 @@ function resetCreateWizard() {
     document.getElementById("create-panel-wizard").hidden = false;
     document.getElementById("ai-suggest-panel").hidden = true;
     document.getElementById("create-progress").hidden = true;
+    setCreateProgress(CREATE_PROGRESS_BASE, "Processando...", "Gerando roteiro com IA...");
 
     // Reset wizard steps
     updateWizardUI("create-panel-wizard", wizardStep, 5, "wizard");
@@ -1312,34 +1320,46 @@ async function handleScriptCreate() {
     const startMessage = scriptData.useCustomAudio
         ? "Preparando video a partir do seu audio..."
         : (scriptData.text ? "Gerando narracao com voz IA..." : "Preparando video com fotos (musica automatica se nao enviar)...");
-    showCreateProgress(startMessage);
+    const startStage = scriptData.removeVocals ? "Removendo voz..." : "Processando...";
+    showCreateProgress(startMessage, { progress: 12, stage: startStage });
 
     try {
         const uploadedImageIds = [];
         let uploadedMusicId = "";
         let uploadedMainAudioId = "";
+        let karaokeOperationId = "";
 
         if (scriptData.useCustomImages) {
             for (let i = 0; i < scriptPhotos.length; i++) {
-                showCreateProgress(`Enviando foto ${i + 1}/${scriptPhotos.length}...`);
+                const uploadProgress = Math.round(15 + ((i + 1) / scriptPhotos.length) * 25);
+                showCreateProgress(`Enviando foto ${i + 1}/${scriptPhotos.length}...`, {
+                    progress: uploadProgress,
+                    stage: "Enviando arquivos...",
+                });
                 const uploaded = await uploadTempFileWithRetry(scriptPhotos[i], "image", `foto ${i + 1}`);
                 uploadedImageIds.push(uploaded.upload_id);
             }
         }
 
         if (bgmFile) {
-            showCreateProgress("Enviando fundo musical...");
+            showCreateProgress("Enviando fundo musical...", { progress: 42, stage: "Enviando arquivos..." });
             const uploadedAudio = await uploadTempFileWithRetry(bgmFile, "audio", "audio");
             uploadedMusicId = uploadedAudio.upload_id || "";
         }
 
         if (scriptData.useCustomAudio && scriptUserAudioFile) {
-            showCreateProgress("Enviando audio principal...");
+            showCreateProgress("Enviando audio principal...", { progress: 48, stage: "Enviando arquivos..." });
             const uploadedMainAudio = await uploadTempFileWithRetry(scriptUserAudioFile, "audio", "audio principal");
             uploadedMainAudioId = uploadedMainAudio.upload_id || "";
         }
 
-        showCreateProgress(startMessage);
+        if (scriptData.removeVocals) {
+            karaokeOperationId = createKaraokeOperationId();
+            showCreateProgress("Removendo voz no Levita...", { progress: 52, stage: "Removendo voz..." });
+            startKaraokeProgressPolling(karaokeOperationId);
+        } else {
+            showCreateProgress(startMessage, { progress: 52, stage: "Processando..." });
+        }
 
         const formData = new FormData();
         formData.append("script", scriptData.text);
@@ -1359,6 +1379,9 @@ async function handleScriptCreate() {
 
         const disableBackgroundMusic = scriptData.useCustomAudio || !bgmEnabled;
         formData.append("no_background_music", disableBackgroundMusic ? "true" : "false");
+        if (karaokeOperationId) {
+            formData.append("karaoke_operation_id", karaokeOperationId);
+        }
 
         if (uploadedMainAudioId) {
             formData.append("custom_audio_id", uploadedMainAudioId);
@@ -1373,12 +1396,15 @@ async function handleScriptCreate() {
         }
 
         const result = await apiForm("/video/generate-audio", formData);
+        stopKaraokeProgressPolling();
+        setCreateProgress(100, "Concluido", "Audio processado com sucesso.");
 
         closeModal("modal-new-project");
         updateCreditsDisplay();
         pollProject(result.id);
         loadProjects();
     } catch (error) {
+        stopKaraokeProgressPolling();
         hideCreateProgress();
         if (error.message && error.message.includes("insuficientes")) {
             showCreditsPurchaseModal();
@@ -1397,7 +1423,7 @@ async function uploadTempFileWithRetry(file, kind, label) {
         try {
             const fd = new FormData();
             fd.append("file", file);
-            showCreateProgress(`Enviando ${label}...`);
+            showCreateProgress(`Enviando ${label}...`, { stage: "Enviando arquivos..." });
             const result = await apiForm(endpoint, fd);
             return result;
         } catch (error) {
@@ -1405,7 +1431,7 @@ async function uploadTempFileWithRetry(file, kind, label) {
                 throw new Error(`Falha ao enviar ${label} apos ${maxRetries} tentativas. Verifique sua conexao.`);
             }
             const delay = Math.min(5000, 500 * Math.pow(2, attempt - 1));
-            showCreateProgress(`Reenviando ${label} (${attempt}/${maxRetries})...`);
+            showCreateProgress(`Reenviando ${label} (${attempt}/${maxRetries})...`, { stage: "Enviando arquivos..." });
             await new Promise((resolve) => setTimeout(resolve, delay));
         }
     }
@@ -1649,17 +1675,90 @@ async function generateAiScript() {
 
 // ── Progress helpers ──
 
-function showCreateProgress(message) {
+function setCreateProgress(progress, stage = "Processando...", message = "") {
+    const normalized = Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress))) : CREATE_PROGRESS_BASE;
+    const fill = document.getElementById("create-progress-fill");
+    const stageEl = document.getElementById("create-progress-stage");
+    const percentEl = document.getElementById("create-progress-percent");
+    const textEl = document.getElementById("create-progress-text");
+
+    if (fill) fill.style.width = `${normalized}%`;
+    if (stageEl) stageEl.textContent = stage || "Processando...";
+    if (percentEl) percentEl.textContent = `${normalized}%`;
+    if (textEl && message) textEl.textContent = message;
+}
+
+function showCreateProgress(message, options = {}) {
     document.querySelectorAll(".create-panel").forEach((p) => (p.hidden = true));
     document.getElementById("ai-suggest-panel").hidden = true;
     document.getElementById("create-progress").hidden = false;
-    document.getElementById("create-progress-text").textContent = message;
+    const progress = Number.isFinite(options.progress) ? options.progress : CREATE_PROGRESS_BASE;
+    const stage = options.stage || "Processando...";
+    setCreateProgress(progress, stage, message);
 }
 
 function hideCreateProgress() {
+    stopKaraokeProgressPolling();
     document.getElementById("create-progress").hidden = true;
     const panel = document.getElementById(`create-panel-${createMode}`);
     if (panel) panel.hidden = false;
+}
+
+function createKaraokeOperationId() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return window.crypto.randomUUID();
+    }
+    return `karaoke-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function stopKaraokeProgressPolling() {
+    if (karaokeProgressTimer) {
+        clearInterval(karaokeProgressTimer);
+        karaokeProgressTimer = null;
+    }
+    karaokeProgressOperationId = "";
+}
+
+function startKaraokeProgressPolling(operationId) {
+    if (!operationId) {
+        return;
+    }
+    stopKaraokeProgressPolling();
+    karaokeProgressOperationId = operationId;
+
+    const pollOnce = async () => {
+        if (!karaokeProgressOperationId || karaokeProgressOperationId !== operationId) {
+            return;
+        }
+        try {
+            const state = await api(`/video/karaoke-progress/${operationId}`);
+            if (!state || karaokeProgressOperationId !== operationId) {
+                return;
+            }
+
+            const status = String(state.status || "running").toLowerCase();
+            const serverProgress = Number(state.progress);
+            const progress = Number.isFinite(serverProgress)
+                ? Math.max(CREATE_PROGRESS_BASE, Math.min(100, Math.round(serverProgress)))
+                : CREATE_PROGRESS_BASE;
+            const stage = status === "failed"
+                ? "Falha na remocao"
+                : status === "completed"
+                    ? "Remocao concluida"
+                    : "Removendo voz...";
+            const message = String(state.message || "Removendo voz no Levita...").trim();
+            setCreateProgress(progress, stage, message || "Removendo voz no Levita...");
+
+            if (status === "failed") {
+                stopKaraokeProgressPolling();
+            }
+        } catch (_) {
+            // Ignore transient poll errors; request completion will still drive final UI state.
+        }
+    };
+
+    pollOnce();
+    karaokeProgressTimer = setInterval(pollOnce, 2000);
 }
 
 // ── Library (existing flow, renamed) ──
