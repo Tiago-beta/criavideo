@@ -15,6 +15,10 @@
     --accent-soft: rgba(238, 171, 71, 0.17);
     --accent-rgb: 238, 171, 71;
     --accent-strong-rgb: 247, 197, 98;
+    --accent-next: #efaf50;
+    --accent-next-strong: #f7c86a;
+    --accent-next-rgb: 239, 175, 80;
+    --accent-next-strong-rgb: 247, 200, 106;
     --tech-purple: #7b61ff;
     --tech-neon: #00d4ff;
     --success: #7addab;
@@ -320,6 +324,16 @@ a {
 .btn-primary:hover {
     transform: translateY(-1px) scale(1.03);
     box-shadow: 0 12px 24px rgba(var(--accent-rgb), 0.28), 0 0 12px rgba(var(--accent-rgb), 0.3);
+}
+
+.wizard-next-btn {
+    background: linear-gradient(135deg, var(--accent-next) 0%, var(--accent-next-strong) 100%);
+    border: 1px solid rgba(var(--accent-next-rgb), 0.55);
+    box-shadow: 0 10px 22px rgba(var(--accent-next-rgb), 0.3), 0 0 0 1px rgba(var(--accent-next-strong-rgb), 0.2);
+}
+
+.wizard-next-btn:hover {
+    box-shadow: 0 14px 28px rgba(var(--accent-next-rgb), 0.34), 0 0 14px rgba(var(--accent-next-rgb), 0.34);
 }
 
 .btn-add-project {
