@@ -797,6 +797,34 @@ const CREATE_PROGRESS_BASE = 8;
 let karaokeProgressTimer = null;
 let karaokeProgressOperationId = "";
 
+// Smooth progress animation state
+let _smoothProgressTarget = CREATE_PROGRESS_BASE;
+let _smoothProgressCurrent = CREATE_PROGRESS_BASE;
+let _smoothProgressTimer = null;
+
+function _startSmoothProgress() {
+    if (_smoothProgressTimer) return;
+    _smoothProgressTimer = setInterval(() => {
+        if (_smoothProgressCurrent >= _smoothProgressTarget) return;
+        // Increment by small step toward target
+        const gap = _smoothProgressTarget - _smoothProgressCurrent;
+        const step = Math.max(0.3, gap * 0.08);
+        _smoothProgressCurrent = Math.min(_smoothProgressTarget, _smoothProgressCurrent + step);
+        const display = Math.round(_smoothProgressCurrent);
+        const fill = document.getElementById("create-progress-fill");
+        const percentEl = document.getElementById("create-progress-percent");
+        if (fill) fill.style.width = `${display}%`;
+        if (percentEl) percentEl.textContent = `${display}%`;
+    }, 150);
+}
+
+function _stopSmoothProgress() {
+    if (_smoothProgressTimer) {
+        clearInterval(_smoothProgressTimer);
+        _smoothProgressTimer = null;
+    }
+}
+
 async function createSimilar(projectId) {
     const project = _projectsCache.find(p => p.id === projectId);
     if (!project || !project.lyrics_text) {
@@ -964,7 +992,6 @@ function switchCreateMode(mode) {
     if (panel) panel.hidden = false;
     document.getElementById("ai-suggest-panel").hidden = true;
     document.getElementById("create-progress").hidden = true;
-    setCreateProgressBarOnly(false);
 
     if (mode === "library") {
         populateSongSelector();
@@ -1005,7 +1032,9 @@ function resetCreateWizard() {
     document.getElementById("create-panel-wizard").hidden = false;
     document.getElementById("ai-suggest-panel").hidden = true;
     document.getElementById("create-progress").hidden = true;
-    setCreateProgressBarOnly(false);
+    _stopSmoothProgress();
+    _smoothProgressTarget = CREATE_PROGRESS_BASE;
+    _smoothProgressCurrent = CREATE_PROGRESS_BASE;
     setCreateProgress(CREATE_PROGRESS_BASE, "Processando...", "Gerando roteiro com IA...");
 
     // Reset wizard steps
@@ -1357,10 +1386,10 @@ async function handleScriptCreate() {
 
         if (scriptData.removeVocals) {
             karaokeOperationId = createKaraokeOperationId();
-            showCreateProgress("", { progress: 52, stage: "Removendo voz...", barOnly: true });
+            showCreateProgress("Removendo voz do audio...", { progress: 52, stage: "Removendo voz..." });
             startKaraokeProgressPolling(karaokeOperationId);
         } else {
-            showCreateProgress(startMessage, { progress: 52, stage: "Processando...", barOnly: false });
+            showCreateProgress(startMessage, { progress: 52, stage: "Processando..." });
         }
 
         const formData = new FormData();
@@ -1679,21 +1708,27 @@ async function generateAiScript() {
 
 function setCreateProgress(progress, stage = "Processando...", message = "") {
     const normalized = Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress))) : CREATE_PROGRESS_BASE;
-    const fill = document.getElementById("create-progress-fill");
     const stageEl = document.getElementById("create-progress-stage");
-    const percentEl = document.getElementById("create-progress-percent");
     const textEl = document.getElementById("create-progress-text");
 
-    if (fill) fill.style.width = `${normalized}%`;
-    if (stageEl) stageEl.textContent = stage || "Processando...";
-    if (percentEl) percentEl.textContent = `${normalized}%`;
-    if (textEl && message) textEl.textContent = message;
-}
+    // Set target for smooth animation
+    _smoothProgressTarget = normalized;
+    if (_smoothProgressCurrent > normalized) _smoothProgressCurrent = normalized; // allow reset down
+    _startSmoothProgress();
 
-function setCreateProgressBarOnly(enabled = false) {
-    const progressEl = document.getElementById("create-progress");
-    if (!progressEl) return;
-    progressEl.classList.toggle("create-progress--bar-only", !!enabled);
+    // Update text immediately
+    if (stageEl) stageEl.textContent = stage || "Processando...";
+    if (textEl && message) textEl.textContent = message;
+
+    // If 100%, snap immediately
+    if (normalized >= 100) {
+        _smoothProgressCurrent = 100;
+        const fill = document.getElementById("create-progress-fill");
+        const percentEl = document.getElementById("create-progress-percent");
+        if (fill) fill.style.width = "100%";
+        if (percentEl) percentEl.textContent = "100%";
+        _stopSmoothProgress();
+    }
 }
 
 function showCreateProgress(message, options = {}) {
@@ -1702,13 +1737,14 @@ function showCreateProgress(message, options = {}) {
     document.getElementById("create-progress").hidden = false;
     const progress = Number.isFinite(options.progress) ? options.progress : CREATE_PROGRESS_BASE;
     const stage = options.stage || "Processando...";
-    setCreateProgressBarOnly(!!options.barOnly);
     setCreateProgress(progress, stage, message);
 }
 
 function hideCreateProgress() {
     stopKaraokeProgressPolling();
-    setCreateProgressBarOnly(false);
+    _stopSmoothProgress();
+    _smoothProgressTarget = CREATE_PROGRESS_BASE;
+    _smoothProgressCurrent = CREATE_PROGRESS_BASE;
     document.getElementById("create-progress").hidden = true;
     const panel = document.getElementById(`create-panel-${createMode}`);
     if (panel) panel.hidden = false;
@@ -1735,7 +1771,6 @@ function startKaraokeProgressPolling(operationId) {
     }
     stopKaraokeProgressPolling();
     karaokeProgressOperationId = operationId;
-    setCreateProgressBarOnly(true);
 
     const pollOnce = async () => {
         if (!karaokeProgressOperationId || karaokeProgressOperationId !== operationId) {
