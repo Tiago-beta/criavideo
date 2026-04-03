@@ -1001,6 +1001,7 @@ async def generate_audio_endpoint(
         zoom_images=req.zoom_images,
         image_display_seconds=image_display_seconds,
         no_background_music=(req.no_background_music or has_custom_audio),
+        is_karaoke=(req.use_custom_audio and req.audio_is_music and req.remove_vocals),
     )
     db.add(project)
     await db.commit()

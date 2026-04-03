@@ -202,8 +202,52 @@ async def run_video_pipeline(project_id: int):
 
             style_prompt = project.style_prompt or ""
             is_black_screen = "tela_preta" in style_prompt.lower()
+            is_karaoke = getattr(project, "is_karaoke", False) or False
 
-            if use_custom_images:
+            if is_karaoke and not use_custom_images:
+                # Karaoke mode: generate a single background image for the entire video
+                from app.services.scene_generator import generate_scene_image
+                img_dir = Path(settings.media_dir) / "images" / str(project_id)
+                img_dir.mkdir(parents=True, exist_ok=True)
+                output_path = str(img_dir / "scene_000.png")
+
+                visual_prompt = style_prompt or "cinematic, vibrant colors, dynamic lighting"
+                karaoke_prompt = f"{visual_prompt}. Abstract musical background, no text, no people, atmospheric, suitable for karaoke lyrics overlay"
+
+                if is_black_screen:
+                    from PIL import Image
+                    ar = project.aspect_ratio or "16:9"
+                    bw, bh = (1080, 1920) if ar == "9:16" else (1080, 1080) if ar == "1:1" else (1920, 1080)
+                    Image.new("RGB", (bw, bh), (0, 0, 0)).save(output_path)
+                else:
+                    try:
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(
+                            None, generate_scene_image, karaoke_prompt,
+                            project.aspect_ratio or "16:9", output_path,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Karaoke image generation failed, using black screen: {e}")
+                        from PIL import Image
+                        ar = project.aspect_ratio or "16:9"
+                        bw, bh = (1080, 1920) if ar == "9:16" else (1080, 1080) if ar == "1:1" else (1920, 1080)
+                        Image.new("RGB", (bw, bh), (0, 0, 0)).save(output_path)
+
+                dur = project.track_duration or 180
+                scenes = [{
+                    "scene_index": 0,
+                    "start_time": 0,
+                    "end_time": dur,
+                    "visual_prompt": karaoke_prompt,
+                    "image_path": output_path,
+                    "lyrics_segment": "",
+                    "is_chorus": False,
+                }]
+                project.progress = 40
+                await db.commit()
+                logger.info(f"Karaoke mode: single background image for {dur:.0f}s")
+
+            elif use_custom_images:
                 # User uploaded their own photos — use them directly, skip AI generation
                 img_dir = Path(settings.media_dir) / "images" / str(project_id)
                 user_images = sorted(
