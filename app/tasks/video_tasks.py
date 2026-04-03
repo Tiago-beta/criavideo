@@ -127,7 +127,12 @@ async def run_video_pipeline(project_id: int):
                 raise FileNotFoundError(f"Audio file not found: {project.audio_path}")
 
             audio_basename = os.path.basename(audio_path).lower()
-            is_music_only_mode = is_music_only_mode or audio_basename.startswith("custom_background_music") or audio_basename.startswith("music_only_main")
+            is_music_only_mode = (
+                is_music_only_mode
+                or audio_basename.startswith("custom_background_music")
+                or audio_basename.startswith("music_only_main")
+                or "instrumental_no_vocals" in audio_basename
+            )
 
             # ── Step 0b: Transcribe audio with Whisper for accurate karaoke ──
             transcribed_words = []

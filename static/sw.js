@@ -1,10 +1,10 @@
-const CACHE_NAME = "criavideo-shell-v17";
+const CACHE_NAME = "criavideo-shell-v18";
 const ASSETS = [
   "/video",
   "/video/static/index.html",
   "/video/static/style.css?v=20260403-4",
-  "/video/static/app.js?v=20260331-7",
-  "/video/static/pwa.js?v=20260403-4",
+  "/video/static/app.js?v=20260403-5",
+  "/video/static/pwa.js?v=20260403-5",
   "/video/static/icons/icon-192.png",
   "/video/static/icons/icon-512.png",
 ];

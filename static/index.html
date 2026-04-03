@@ -490,6 +490,51 @@
                             </div>
                         </div>
 
+                        <!-- Upload de audio proprio -->
+                        <div class="photo-upload-section">
+                            <div class="photo-upload-header">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="script-use-user-audio" onchange="toggleUserAudioUpload()">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <span class="photo-upload-label">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                                    Usar meu audio no video
+                                </span>
+                            </div>
+                            <div id="script-user-audio-area" class="photo-upload-area" hidden>
+                                <div id="script-audio-dropzone" class="photo-dropzone" onclick="document.getElementById('script-user-audio-input').click()">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                    <p>Clique ou arraste seu audio aqui</p>
+                                    <small>MP3, WAV, M4A, OGG, FLAC, OPUS ou WEBM &bull; Max 80MB</small>
+                                </div>
+                                <input id="script-user-audio-input" type="file" accept="audio/*" hidden onchange="handleUserAudioSelect(event)">
+                                <div id="script-user-audio-name" class="photo-count" hidden></div>
+
+                                <div class="narration-choice">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="script-audio-is-music" checked onchange="toggleAudioMusicOptions()">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <div class="narration-choice-text">
+                                        <strong>Audio e musica (modo karaoke)</strong>
+                                        <small>Ideal para clipes sem narracao.</small>
+                                    </div>
+                                </div>
+
+                                <div id="script-remove-vocals-row" class="narration-choice" hidden>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="script-remove-vocals">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <div class="narration-choice-text">
+                                        <strong>Remover voz do audio</strong>
+                                        <small>Transcrevemos antes para manter legenda no karaoke.</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="textarea-wrapper">
                             <textarea id="script-text" class="wizard-textarea" rows="10" maxlength="20000"
                                       placeholder="Cole ou escreva o roteiro completo da narracao aqui..."></textarea>
@@ -959,7 +1004,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260331-7"></script>
-    <script src="/video/static/pwa.js?v=20260403-4"></script>
+    <script src="/video/static/app.js?v=20260403-5"></script>
+    <script src="/video/static/pwa.js?v=20260403-5"></script>
 </body>
 </html>

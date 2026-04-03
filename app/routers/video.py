@@ -701,6 +701,9 @@ class GenerateTTSRequest(BaseModel):
     zoom_images: bool = True
     image_display_seconds: float = 0
     no_background_music: bool = False
+    use_custom_audio: bool = False
+    audio_is_music: bool = False
+    remove_vocals: bool = False
 
 
 @router.post("/fix-text")
@@ -770,15 +773,20 @@ async def generate_audio_endpoint(
     # Accept both JSON and multipart/form-data (with optional background_music upload)
     content_type = request.headers.get("content-type", "")
     bgm_upload: UploadFile | None = None
+    custom_audio_upload: UploadFile | None = None
     custom_image_uploads: list[UploadFile] = []
     custom_image_ids: list[str] = []
     background_music_id: str = ""
+    custom_audio_id: str = ""
     if "multipart/form-data" in content_type:
         form = await request.form()
         enable_sub_raw = str(form.get("enable_subtitles", "true")).lower()
         zoom_raw = str(form.get("zoom_images", "true")).lower()
         image_seconds_raw = form.get("image_display_seconds", 0)
         no_bgm_raw = str(form.get("no_background_music", "false")).lower()
+        use_custom_audio_raw = str(form.get("use_custom_audio", "false")).lower()
+        audio_is_music_raw = str(form.get("audio_is_music", "false")).lower()
+        remove_vocals_raw = str(form.get("remove_vocals", "false")).lower()
         req = GenerateTTSRequest(
             script=str(form.get("script", "")),
             voice=str(form.get("voice", "")),
@@ -792,12 +800,21 @@ async def generate_audio_endpoint(
             zoom_images=zoom_raw not in ("false", "0", "no"),
             image_display_seconds=float(image_seconds_raw or 0),
             no_background_music=no_bgm_raw in ("true", "1", "yes"),
+            use_custom_audio=use_custom_audio_raw in ("true", "1", "yes"),
+            audio_is_music=audio_is_music_raw in ("true", "1", "yes"),
+            remove_vocals=remove_vocals_raw in ("true", "1", "yes"),
         )
         raw_upload = form.get("background_music")
         if isinstance(raw_upload, UploadFile) and raw_upload.filename:
             bgm_upload = raw_upload
         elif getattr(raw_upload, "filename", ""):
             bgm_upload = raw_upload
+
+        raw_main_audio = form.get("custom_audio")
+        if isinstance(raw_main_audio, UploadFile) and raw_main_audio.filename:
+            custom_audio_upload = raw_main_audio
+        elif getattr(raw_main_audio, "filename", ""):
+            custom_audio_upload = raw_main_audio
 
         # Collect custom image uploads (multiple files under "custom_images")
         try:
@@ -814,22 +831,33 @@ async def generate_audio_endpoint(
         except Exception:
             custom_image_ids = []
         background_music_id = str(form.get("background_music_id", "")).strip()
+        custom_audio_id = str(form.get("custom_audio_id", "")).strip()
     else:
         payload = await request.json()
         req = GenerateTTSRequest(**payload)
 
     script_text = (req.script or "").strip()
-    if not script_text and not custom_image_uploads and not custom_image_ids:
-        raise HTTPException(status_code=400, detail="Sem narracao, envie fotos para criar um video personalizado.")
+    has_custom_audio = bool(custom_audio_id) or bool(custom_audio_upload and custom_audio_upload.filename)
+    if req.use_custom_audio and not has_custom_audio:
+        raise HTTPException(status_code=400, detail="Usar meu audio esta ativo, mas nenhum arquivo foi enviado.")
+
+    if not script_text and not custom_image_uploads and not custom_image_ids and not has_custom_audio:
+        raise HTTPException(status_code=400, detail="Sem narracao, envie fotos ou audio para criar um video personalizado.")
 
     # ── Credit check: estimate duration → deduct credits ──
     from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
     import math
-    if script_text:
+    if has_custom_audio and custom_audio_id:
+        from app.services.video_composer import _get_duration as get_audio_duration
+
+        src_audio = _resolve_temp_file(user["id"], custom_audio_id, AUDIO_EXTS)
+        audio_seconds = get_audio_duration(str(src_audio)) if src_audio else 0
+        est_minutes = max(1, math.ceil(audio_seconds / 60)) if audio_seconds > 0 else 1
+    elif script_text:
         word_count = len(script_text.split())
         est_minutes = max(1, math.ceil(word_count / 150))  # ~150 words/min narration
     else:
-        est_minutes = 1  # photo-only: minimum 1 min
+        est_minutes = 1  # photo-only / audio-only fallback: minimum 1 min
     credits_needed = est_minutes * CREDITS_PER_MINUTE
     await deduct_credits(db, user["id"], credits_needed)
 
@@ -867,6 +895,7 @@ async def generate_audio_endpoint(
 
     # Create project first to get an ID for the audio path
     has_custom_images = len(custom_image_uploads) > 0 or len(custom_image_ids) > 0
+    has_custom_audio = req.use_custom_audio and has_custom_audio
     image_display_seconds = req.image_display_seconds if req.image_display_seconds and req.image_display_seconds > 0 else 0
     project = VideoProject(
         user_id=user["id"],
@@ -876,8 +905,8 @@ async def generate_audio_endpoint(
         tags=[],
         style_prompt=req.style_prompt or "cinematic, vibrant colors, dynamic lighting",
         aspect_ratio=req.aspect_ratio,
-        track_title=req.title or "Narração IA",
-        track_artist="CriaVideo AI",
+        track_title=req.title or ("Audio enviado" if has_custom_audio else "Narração IA"),
+        track_artist="Usuario" if has_custom_audio else "CriaVideo AI",
         track_duration=0,
         lyrics_text=req.script,
         lyrics_words=[],
@@ -886,7 +915,7 @@ async def generate_audio_endpoint(
         enable_subtitles=req.enable_subtitles,
         zoom_images=req.zoom_images,
         image_display_seconds=image_display_seconds,
-        no_background_music=req.no_background_music,
+        no_background_music=(req.no_background_music or has_custom_audio),
     )
     db.add(project)
     await db.commit()
@@ -959,8 +988,88 @@ async def generate_audio_endpoint(
         except Exception as e:
             logger.warning(f"Failed to move custom temp background music for project {project.id}: {e}")
 
+    # Save optional custom main audio. If present, this becomes the primary video track.
+    custom_main_audio_path = ""
+    if has_custom_audio:
+        try:
+            audio_dir = Path(settings.media_dir) / "audio" / str(project.id)
+            audio_dir.mkdir(parents=True, exist_ok=True)
+
+            source_path = None
+            ext = ".mp3"
+
+            if custom_audio_id:
+                source_path = _resolve_temp_file(user["id"], custom_audio_id, AUDIO_EXTS)
+                if not source_path:
+                    raise HTTPException(status_code=400, detail="Audio enviado nao foi encontrado.")
+                ext = source_path.suffix.lower() if source_path.suffix else ".mp3"
+
+            target = audio_dir / f"user_main_audio{ext}"
+
+            if source_path:
+                shutil.copy2(source_path, target)
+            elif custom_audio_upload and custom_audio_upload.filename:
+                ext = Path(custom_audio_upload.filename).suffix.lower()
+                if ext not in AUDIO_EXTS:
+                    ext = ".mp3"
+                target = audio_dir / f"user_main_audio{ext}"
+                with open(target, "wb") as f:
+                    f.write(await custom_audio_upload.read())
+            else:
+                raise HTTPException(status_code=400, detail="Audio principal nao enviado.")
+
+            custom_main_audio_path = str(target)
+            project.audio_path = custom_main_audio_path
+
+            from app.services.video_composer import _get_duration as get_audio_duration
+
+            audio_dur = get_audio_duration(custom_main_audio_path)
+            project.track_duration = round(audio_dur) if audio_dur > 0 else 0
+            logger.info(f"Custom main audio saved for project {project.id}: {custom_main_audio_path}")
+
+            # For karaoke/music mode, transcribe original audio before optional vocal removal.
+            if req.audio_is_music:
+                try:
+                    from app.services.transcriber import transcribe_audio
+                    import asyncio
+
+                    transcribed = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        transcribe_audio,
+                        custom_main_audio_path,
+                    )
+                    words = transcribed.get("words", []) if isinstance(transcribed, dict) else []
+                    text = (transcribed.get("text", "") if isinstance(transcribed, dict) else "").strip()
+                    if words:
+                        project.lyrics_words = words
+                    if text and not (project.lyrics_text or "").strip():
+                        project.lyrics_text = text
+                    logger.info(f"Karaoke transcription ready for project {project.id}: {len(words)} words")
+                except Exception as e:
+                    logger.warning(f"Failed to transcribe custom music for project {project.id}: {e}")
+
+                if req.remove_vocals:
+                    from app.services.audio_tools import remove_vocals_track
+
+                    instrumental_path = await remove_vocals_track(custom_main_audio_path, project.id)
+                    if not instrumental_path or not os.path.exists(instrumental_path):
+                        raise HTTPException(status_code=500, detail="Nao foi possivel remover a voz do audio.")
+                    project.audio_path = instrumental_path
+                    logger.info(f"Karaoke instrumental created for project {project.id}: {instrumental_path}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Failed to save custom main audio for project {project.id}: {e}")
+            raise HTTPException(status_code=400, detail=f"Falha ao processar audio enviado: {e}")
+
     try:
-        if script_text:
+        if custom_main_audio_path:
+            if project.track_duration <= 0:
+                from app.services.video_composer import _get_duration as get_audio_duration
+
+                custom_duration = get_audio_duration(project.audio_path)
+                project.track_duration = round(custom_duration) if custom_duration > 0 else 60
+        elif script_text:
             audio_path = await generate_tts_audio(
                 text=req.script,
                 voice=voice,

@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     port: int = 8000
     site_url: str = "https://criavideo.pro"
     levita_url: str = "https://levita.pro"
+    levita_remove_vocals_url: str = ""
+    levita_api_token: str = ""
     levita_stems_dir: str = "/opt/olevita/backend/stems"
     levita_uploads_dir: str = "/opt/olevita/backend/uploads"
     media_dir: str = "/opt/levita-video/media"
