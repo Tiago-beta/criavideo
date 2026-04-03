@@ -1119,10 +1119,11 @@ async def generate_audio_endpoint(
                     from app.services.transcriber import transcribe_audio
                     import asyncio
 
+                    # Pass user-provided lyrics as prompt to guide Whisper accuracy
+                    lyrics_hint = (project.lyrics_text or "").strip()
                     transcribed = await asyncio.get_event_loop().run_in_executor(
                         None,
-                        transcribe_audio,
-                        custom_main_audio_path,
+                        lambda: transcribe_audio(custom_main_audio_path, prompt=lyrics_hint),
                     )
                     words = transcribed.get("words", []) if isinstance(transcribed, dict) else []
                     text = (transcribed.get("text", "") if isinstance(transcribed, dict) else "").strip()

@@ -140,8 +140,9 @@ async def run_video_pipeline(project_id: int):
                 try:
                     from app.services.transcriber import transcribe_audio
                     import asyncio
+                    lyrics_hint = (project.lyrics_text or "").strip()
                     result = await asyncio.get_event_loop().run_in_executor(
-                        None, transcribe_audio, audio_path
+                        None, lambda: transcribe_audio(audio_path, prompt=lyrics_hint)
                     )
                     transcribed_words = result.get("words", [])
                     # Use transcribed text if we had no lyrics
@@ -204,6 +205,32 @@ async def run_video_pipeline(project_id: int):
             is_black_screen = "tela_preta" in style_prompt.lower()
             is_karaoke = getattr(project, "is_karaoke", False) or False
 
+            # Map style tags to rich English descriptions for better image generation
+            _STYLE_DESCRIPTIONS = {
+                "cinematic": "cinematic, dramatic lighting, movie-like atmosphere, depth of field",
+                "minimalista": "minimalist, clean, simple geometric shapes, subtle colors, elegant",
+                "colorido": "colorful, vibrant, bright saturated colors, dynamic composition",
+                "dark": "dark, moody, deep shadows, mysterious atmosphere, dramatic contrast",
+                "neon": "neon lights, glowing colors, cyberpunk aesthetic, electric atmosphere",
+                "vintage": "vintage, retro, film grain, warm nostalgic tones, 1970s",
+                "futurista": "futuristic, sci-fi, high-tech, sleek modern design, holographic",
+                "natureza": "beautiful nature landscape, lush green forest, mountains, rivers, flowers, golden sunlight, scenic",
+                "urbano": "urban cityscape, city skyline at night, street lights, metropolitan architecture",
+                "editorial": "editorial, fashion, high contrast, stylish composition, magazine quality",
+                "anime": "anime style, Japanese animation, vibrant cel-shaded, detailed illustration",
+                "aquarela": "watercolor painting, soft brushstrokes, artistic, pastel colors, dreamy",
+            }
+
+            def _expand_style_prompt(raw: str) -> str:
+                """Expand style tags into rich English descriptions."""
+                if not raw:
+                    return "cinematic, vibrant colors, dynamic lighting"
+                parts = [t.strip().lower() for t in raw.split(",")]
+                expanded = []
+                for p in parts:
+                    expanded.append(_STYLE_DESCRIPTIONS.get(p, p))
+                return ", ".join(expanded) if expanded else raw
+
             if is_karaoke and not use_custom_images:
                 # Karaoke mode: generate a single background image for the entire video
                 from app.services.scene_generator import generate_scene_image
@@ -211,7 +238,7 @@ async def run_video_pipeline(project_id: int):
                 img_dir.mkdir(parents=True, exist_ok=True)
                 output_path = str(img_dir / "scene_000.png")
 
-                visual_prompt = style_prompt or "cinematic, vibrant colors, dynamic lighting"
+                visual_prompt = _expand_style_prompt(style_prompt)
                 karaoke_prompt = f"{visual_prompt}. Abstract musical background, no text, no people, atmospheric, suitable for karaoke lyrics overlay"
 
                 if is_black_screen:
@@ -343,7 +370,7 @@ async def run_video_pipeline(project_id: int):
                     lyrics_words=project.lyrics_words or [],
                     duration=project.track_duration or 180,
                     aspect_ratio=project.aspect_ratio,
-                    style_hint=style_prompt,
+                    style_hint=_expand_style_prompt(style_prompt),
                     user_id=project.user_id,
                     on_progress=_scene_progress,
                 )
