@@ -26,6 +26,7 @@ settings = get_settings()
 OLEVITA_SYNC_TIMEOUT_SECONDS = 30 * 60
 OLEVITA_JOB_TIMEOUT_SECONDS = 45 * 60
 OLEVITA_JOB_POLL_SECONDS = 3
+OLEVITA_JOB_FAIL_GRACE_SECONDS = 5 * 60
 ProgressCallback = Callable[[int, str], Awaitable[None] | None]
 
 
@@ -241,9 +242,29 @@ async def _try_remove_vocals_with_olevita_demucs_async(
             if job_id:
                 status_url = f"{base_url}/api/separate/status/{job_id}"
                 deadline = time.monotonic() + OLEVITA_JOB_TIMEOUT_SECONDS
+                failed_since = 0.0
 
                 while time.monotonic() < deadline:
-                    status_resp = await client.get(status_url, headers=headers)
+                    try:
+                        status_resp = await client.get(status_url, headers=headers)
+                    except Exception as status_exc:
+                        logger.warning(f"Olevita status request failed for job {job_id}: {status_exc}")
+                        await _emit_progress(progress_callback, 15, "Removendo voz: aguardando status do Levita...")
+                        await asyncio.sleep(OLEVITA_JOB_POLL_SECONDS)
+                        continue
+
+                    if status_resp.status_code in (401, 403):
+                        logger.warning(f"Olevita status auth failed ({status_resp.status_code}) for job {job_id}")
+                        return ""
+
+                    if status_resp.status_code == 404 or status_resp.status_code >= 500:
+                        logger.warning(
+                            f"Olevita status temporarily unavailable ({status_resp.status_code}) for job {job_id}: {status_resp.text[:240]}"
+                        )
+                        await _emit_progress(progress_callback, 15, "Removendo voz: fila do Levita em andamento...")
+                        await asyncio.sleep(OLEVITA_JOB_POLL_SECONDS)
+                        continue
+
                     if status_resp.status_code >= 400:
                         logger.warning(f"Olevita status check failed ({status_resp.status_code}): {status_resp.text[:240]}")
                         return ""
@@ -252,7 +273,9 @@ async def _try_remove_vocals_with_olevita_demucs_async(
                         job_payload = status_resp.json()
                     except Exception:
                         logger.warning("Olevita status endpoint returned non-JSON response")
-                        return ""
+                        await _emit_progress(progress_callback, 15, "Removendo voz: aguardando resposta valida do Levita...")
+                        await asyncio.sleep(OLEVITA_JOB_POLL_SECONDS)
+                        continue
 
                     remote_progress_raw = job_payload.get("progress")
                     remote_message = str(job_payload.get("message") or "Removendo voz no Levita...").strip()
@@ -265,10 +288,34 @@ async def _try_remove_vocals_with_olevita_demucs_async(
 
                     status = str(job_payload.get("status") or "").strip().lower()
                     if status == "completed":
-                        break
-                    if status == "failed":
-                        logger.warning(f"Olevita Demucs job failed: {job_payload.get('error')}")
+                        extracted_path = await _extract_olevita_instrumental(
+                            job_payload,
+                            base_url,
+                            headers,
+                            output_path,
+                            auth_token=auth_token,
+                            progress_callback=progress_callback,
+                        )
+                        if extracted_path:
+                            return extracted_path
+                        await _emit_progress(progress_callback, 92, "Removendo voz: finalizando arquivos no Levita...")
+                        await asyncio.sleep(OLEVITA_JOB_POLL_SECONDS)
+                        continue
+                    if status in {"failed", "error"}:
+                        if not failed_since:
+                            failed_since = time.monotonic()
+                            await _emit_progress(
+                                progress_callback,
+                                mapped_progress,
+                                "Removendo voz: Levita ainda processando, aguardando nova tentativa...",
+                            )
+                        if time.monotonic() - failed_since < OLEVITA_JOB_FAIL_GRACE_SECONDS:
+                            await asyncio.sleep(OLEVITA_JOB_POLL_SECONDS)
+                            continue
+                        logger.warning(f"Olevita Demucs job failed after grace period: {job_payload.get('error')}")
                         return ""
+                    else:
+                        failed_since = 0.0
 
                     await asyncio.sleep(OLEVITA_JOB_POLL_SECONDS)
                 else:

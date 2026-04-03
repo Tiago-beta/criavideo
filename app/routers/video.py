@@ -1179,7 +1179,7 @@ async def generate_audio_endpoint(
                             )
                         raise HTTPException(
                             status_code=502,
-                            detail="A separacao de voz no Olevita ainda nao concluiu. Tente novamente em alguns minutos.",
+                            detail="Nao foi possivel concluir a remocao de voz agora. Tente novamente em alguns minutos.",
                         )
 
                     if not instrumental_path or not os.path.exists(instrumental_path):
