@@ -1688,6 +1688,21 @@ th {
     color: var(--text-muted);
 }
 
+.create-progress.create-progress--bar-only {
+    min-height: 120px;
+    gap: 10px;
+}
+
+.create-progress.create-progress--bar-only .create-spinner,
+.create-progress.create-progress--bar-only #create-progress-text,
+.create-progress.create-progress--bar-only .create-progress-meta {
+    display: none;
+}
+
+.create-progress.create-progress--bar-only .create-progress-track {
+    width: min(460px, 100%);
+}
+
 svg.spin {
     animation: spin 1s linear infinite;
 }

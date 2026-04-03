@@ -964,6 +964,7 @@ function switchCreateMode(mode) {
     if (panel) panel.hidden = false;
     document.getElementById("ai-suggest-panel").hidden = true;
     document.getElementById("create-progress").hidden = true;
+    setCreateProgressBarOnly(false);
 
     if (mode === "library") {
         populateSongSelector();
@@ -1004,6 +1005,7 @@ function resetCreateWizard() {
     document.getElementById("create-panel-wizard").hidden = false;
     document.getElementById("ai-suggest-panel").hidden = true;
     document.getElementById("create-progress").hidden = true;
+    setCreateProgressBarOnly(false);
     setCreateProgress(CREATE_PROGRESS_BASE, "Processando...", "Gerando roteiro com IA...");
 
     // Reset wizard steps
@@ -1355,10 +1357,10 @@ async function handleScriptCreate() {
 
         if (scriptData.removeVocals) {
             karaokeOperationId = createKaraokeOperationId();
-            showCreateProgress("Removendo voz no Levita...", { progress: 52, stage: "Removendo voz..." });
+            showCreateProgress("", { progress: 52, stage: "Removendo voz...", barOnly: true });
             startKaraokeProgressPolling(karaokeOperationId);
         } else {
-            showCreateProgress(startMessage, { progress: 52, stage: "Processando..." });
+            showCreateProgress(startMessage, { progress: 52, stage: "Processando...", barOnly: false });
         }
 
         const formData = new FormData();
@@ -1688,17 +1690,25 @@ function setCreateProgress(progress, stage = "Processando...", message = "") {
     if (textEl && message) textEl.textContent = message;
 }
 
+function setCreateProgressBarOnly(enabled = false) {
+    const progressEl = document.getElementById("create-progress");
+    if (!progressEl) return;
+    progressEl.classList.toggle("create-progress--bar-only", !!enabled);
+}
+
 function showCreateProgress(message, options = {}) {
     document.querySelectorAll(".create-panel").forEach((p) => (p.hidden = true));
     document.getElementById("ai-suggest-panel").hidden = true;
     document.getElementById("create-progress").hidden = false;
     const progress = Number.isFinite(options.progress) ? options.progress : CREATE_PROGRESS_BASE;
     const stage = options.stage || "Processando...";
+    setCreateProgressBarOnly(!!options.barOnly);
     setCreateProgress(progress, stage, message);
 }
 
 function hideCreateProgress() {
     stopKaraokeProgressPolling();
+    setCreateProgressBarOnly(false);
     document.getElementById("create-progress").hidden = true;
     const panel = document.getElementById(`create-panel-${createMode}`);
     if (panel) panel.hidden = false;
@@ -1725,6 +1735,7 @@ function startKaraokeProgressPolling(operationId) {
     }
     stopKaraokeProgressPolling();
     karaokeProgressOperationId = operationId;
+    setCreateProgressBarOnly(true);
 
     const pollOnce = async () => {
         if (!karaokeProgressOperationId || karaokeProgressOperationId !== operationId) {
