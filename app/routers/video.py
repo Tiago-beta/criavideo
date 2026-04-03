@@ -1055,7 +1055,20 @@ async def generate_audio_endpoint(
                 if req.remove_vocals:
                     from app.services.audio_tools import remove_vocals_track
 
-                    instrumental_path = await remove_vocals_track(custom_main_audio_path, project.id)
+                    levita_auth_token = ""
+                    auth_header = str(request.headers.get("authorization") or "").strip()
+                    if auth_header.lower().startswith("bearer "):
+                        levita_auth_token = auth_header.split(" ", 1)[1].strip()
+                    if not levita_auth_token:
+                        levita_auth_token = str(request.cookies.get("token") or "").strip()
+                    if not levita_auth_token:
+                        levita_auth_token = str(settings.levita_api_token or "").strip()
+
+                    instrumental_path = await remove_vocals_track(
+                        custom_main_audio_path,
+                        project.id,
+                        auth_token=levita_auth_token,
+                    )
                     if not instrumental_path or not os.path.exists(instrumental_path):
                         raise HTTPException(status_code=500, detail="Nao foi possivel remover a voz do audio.")
                     project.audio_path = instrumental_path
