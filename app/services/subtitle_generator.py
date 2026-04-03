@@ -113,6 +113,11 @@ def generate_ass_subtitles(
         start = max(0.0, line_words[0]["start"] - 0.3)  # appear slightly early
         end = line_words[-1]["end"] + 0.5  # buffer after last word
 
+        # Clip end so it doesn't overlap with next line's start (avoids duplicate text)
+        if i + 1 < len(lines) and lines[i + 1]:
+            next_start = max(0.0, lines[i + 1][0]["start"] - 0.3)
+            end = min(end, next_start)
+
         karaoke_text = _build_karaoke_line(line_words)
 
         # Add next line preview if available
@@ -178,7 +183,8 @@ def generate_ass_from_text(
 
     for i, line in enumerate(raw_lines):
         start = i * time_per_line
-        end = start + time_per_line - 0.1
+        # End exactly when next line starts (no overlap)
+        end = (i + 1) * time_per_line if i + 1 < len(raw_lines) else start + time_per_line - 0.1
         # Karaoke-style: whole line highlights word by word
         words = line.upper().split()
         if words:
