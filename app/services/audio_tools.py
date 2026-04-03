@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 import httpx
 
@@ -21,7 +21,8 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
-OLEVITA_JOB_TIMEOUT_SECONDS = 20 * 60
+OLEVITA_SYNC_TIMEOUT_SECONDS = 30 * 60
+OLEVITA_JOB_TIMEOUT_SECONDS = 45 * 60
 OLEVITA_JOB_POLL_SECONDS = 3
 
 
@@ -69,16 +70,110 @@ async def _download_with_optional_auth(url: str, output_path: str, headers: dict
     return output_path
 
 
-async def _try_remove_vocals_with_olevita_demucs(input_path: str, output_path: str, auth_token: str = "") -> str:
+def _normalized_bearer_token(auth_token: str = "") -> str:
+    token = (auth_token or settings.levita_api_token or "").strip()
+    if token.lower().startswith("bearer "):
+        token = token.split(" ", 1)[1].strip()
+    return token
+
+
+def _mix_candidate_urls(base_url: str, track_id: str | int, auth_token: str = "") -> list[str]:
+    urls = [f"{base_url}/api/mix/{track_id}?mode=playback"]
+    token = _normalized_bearer_token(auth_token)
+    if token:
+        urls.append(f"{base_url}/api/mix/{track_id}?mode=playback&token={quote(token)}")
+    return urls
+
+
+async def _extract_olevita_instrumental(
+    payload: dict,
+    base_url: str,
+    headers: dict[str, str],
+    output_path: str,
+    auth_token: str = "",
+) -> str:
+    track_id = payload.get("trackId") or payload.get("track_id")
+    if track_id:
+        for mix_url in _mix_candidate_urls(base_url, track_id, auth_token):
+            try:
+                await _download_with_optional_auth(mix_url, output_path, headers)
+                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                    return output_path
+            except Exception as mix_err:
+                logger.warning(f"Failed to download Olevita playback mix for track {track_id}: {mix_err}")
+
+    stems = payload.get("stems") or {}
+    if isinstance(stems, dict):
+        for key in ("no_vocals", "instrumental"):
+            stem_url = _to_absolute_url(base_url, stems.get(key))
+            if not stem_url:
+                continue
+            try:
+                await _download_with_optional_auth(stem_url, output_path, headers)
+                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                    return output_path
+            except Exception as stem_err:
+                logger.warning(f"Failed to download Olevita stem '{key}': {stem_err}")
+
+    for key in ("instrumental_url", "instrumental", "audio_url", "url"):
+        candidate_url = _to_absolute_url(base_url, payload.get(key))
+        if not candidate_url:
+            continue
+        try:
+            await _download_with_optional_auth(candidate_url, output_path, headers)
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                return output_path
+        except Exception as url_err:
+            logger.warning(f"Failed to download Olevita instrumental URL from key '{key}': {url_err}")
+
+    return ""
+
+
+async def _try_remove_vocals_with_olevita_demucs_sync(input_path: str, output_path: str, auth_token: str = "") -> str:
+    base_url = _levita_base_url()
+    separate_url = f"{base_url}/api/separate"
+    headers = _levita_auth_headers(auth_token)
+
+    if "Authorization" not in headers:
+        logger.warning("Skipping Olevita Demucs sync: no auth token available")
+        return ""
+
+    logger.info(f"Trying Olevita Demucs sync separation: {separate_url}")
+    try:
+        async with httpx.AsyncClient(timeout=OLEVITA_SYNC_TIMEOUT_SECONDS, follow_redirects=True) as client:
+            with open(input_path, "rb") as f:
+                resp = await client.post(
+                    separate_url,
+                    headers=headers,
+                    files={"audio": (Path(input_path).name, f, "application/octet-stream")},
+                )
+
+        if resp.status_code >= 400:
+            logger.warning(f"Olevita sync separation failed ({resp.status_code}): {resp.text[:240]}")
+            return ""
+
+        try:
+            payload = resp.json()
+        except Exception:
+            logger.warning("Olevita sync separation returned non-JSON response")
+            return ""
+
+        return await _extract_olevita_instrumental(payload, base_url, headers, output_path, auth_token=auth_token)
+    except Exception as exc:
+        logger.warning(f"Olevita sync separation unavailable: {exc}")
+        return ""
+
+
+async def _try_remove_vocals_with_olevita_demucs_async(input_path: str, output_path: str, auth_token: str = "") -> str:
     base_url = _levita_base_url()
     start_url = f"{base_url}/api/separate/start"
     headers = _levita_auth_headers(auth_token)
 
     if "Authorization" not in headers:
-        logger.warning("Skipping Olevita Demucs: no auth token available")
+        logger.warning("Skipping Olevita Demucs async: no auth token available")
         return ""
 
-    logger.info(f"Trying Olevita Demucs separation: {start_url}")
+    logger.info(f"Trying Olevita Demucs async separation: {start_url}")
 
     try:
         async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
@@ -99,7 +194,6 @@ async def _try_remove_vocals_with_olevita_demucs(input_path: str, output_path: s
                 logger.warning("Olevita separate/start returned non-JSON response")
                 return ""
 
-            # Some deployments may respond synchronously with final payload.
             job_payload = start_payload
             job_id = str(start_payload.get("jobId") or start_payload.get("job_id") or "").strip()
 
@@ -128,37 +222,25 @@ async def _try_remove_vocals_with_olevita_demucs(input_path: str, output_path: s
 
                     await asyncio.sleep(OLEVITA_JOB_POLL_SECONDS)
                 else:
-                    logger.warning("Olevita Demucs job timed out while waiting for completion")
+                    logger.warning("Olevita Demucs async job timed out while waiting for completion")
                     return ""
 
-            track_id = job_payload.get("trackId") or job_payload.get("track_id")
-            if track_id:
-                mix_url = f"{base_url}/api/mix/{track_id}?mode=playback"
-                try:
-                    await _download_with_optional_auth(mix_url, output_path, headers)
-                    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                        return output_path
-                except Exception as mix_err:
-                    logger.warning(f"Failed to download Olevita playback mix for track {track_id}: {mix_err}")
-
-            stems = job_payload.get("stems") or {}
-            if isinstance(stems, dict):
-                for key in ("no_vocals", "instrumental", "other", "guitar", "piano", "bass", "drums"):
-                    stem_url = _to_absolute_url(base_url, stems.get(key))
-                    if not stem_url:
-                        continue
-                    try:
-                        await _download_with_optional_auth(stem_url, output_path, headers)
-                        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                            return output_path
-                    except Exception as stem_err:
-                        logger.warning(f"Failed to download stem '{key}' from Olevita: {stem_err}")
-
-            logger.warning("Olevita Demucs completed but no usable instrumental output was found")
-            return ""
+            return await _extract_olevita_instrumental(job_payload, base_url, headers, output_path, auth_token=auth_token)
     except Exception as exc:
-        logger.warning(f"Olevita Demucs unavailable: {exc}")
+        logger.warning(f"Olevita Demucs async unavailable: {exc}")
         return ""
+
+
+async def _try_remove_vocals_with_olevita_demucs(input_path: str, output_path: str, auth_token: str = "") -> str:
+    sync_path = await _try_remove_vocals_with_olevita_demucs_sync(input_path, output_path, auth_token=auth_token)
+    if sync_path:
+        return sync_path
+
+    async_path = await _try_remove_vocals_with_olevita_demucs_async(input_path, output_path, auth_token=auth_token)
+    if async_path:
+        return async_path
+
+    return ""
 
 
 async def _try_remove_vocals_with_legacy_endpoint(input_path: str, output_path: str, auth_token: str = "") -> str:
@@ -241,7 +323,12 @@ def _remove_vocals_ffmpeg(input_path: str, output_path: str) -> str:
     return output_path
 
 
-async def remove_vocals_track(input_path: str, project_id: int, auth_token: str = "") -> str:
+async def remove_vocals_track(
+    input_path: str,
+    project_id: int,
+    auth_token: str = "",
+    allow_ffmpeg_fallback: bool = True,
+) -> str:
     """Return an instrumental version of input audio for karaoke flows."""
     out_dir = _ensure_output_dir(project_id)
     output_path = str(out_dir / "instrumental_no_vocals.mp3")
@@ -255,6 +342,9 @@ async def remove_vocals_track(input_path: str, project_id: int, auth_token: str 
     if legacy_path:
         logger.info(f"Vocal removal completed via legacy Levita endpoint: {legacy_path}")
         return legacy_path
+
+    if not allow_ffmpeg_fallback:
+        raise RuntimeError("Olevita vocal removal did not return an instrumental track")
 
     logger.info("Olevita vocal removal unavailable. Using FFmpeg fallback.")
     loop = asyncio.get_event_loop()

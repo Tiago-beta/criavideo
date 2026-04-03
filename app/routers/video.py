@@ -1064,11 +1064,20 @@ async def generate_audio_endpoint(
                     if not levita_auth_token:
                         levita_auth_token = str(settings.levita_api_token or "").strip()
 
-                    instrumental_path = await remove_vocals_track(
-                        custom_main_audio_path,
-                        project.id,
-                        auth_token=levita_auth_token,
-                    )
+                    try:
+                        instrumental_path = await remove_vocals_track(
+                            custom_main_audio_path,
+                            project.id,
+                            auth_token=levita_auth_token,
+                            allow_ffmpeg_fallback=False,
+                        )
+                    except Exception as sep_err:
+                        logger.warning(f"Karaoke vocal removal failed on Olevita for project {project.id}: {sep_err}")
+                        raise HTTPException(
+                            status_code=502,
+                            detail="A separacao de voz no Olevita ainda nao concluiu. Tente novamente em alguns minutos.",
+                        )
+
                     if not instrumental_path or not os.path.exists(instrumental_path):
                         raise HTTPException(status_code=500, detail="Nao foi possivel remover a voz do audio.")
                     project.audio_path = instrumental_path
