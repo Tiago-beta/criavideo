@@ -7,8 +7,10 @@ import httpx
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+_settings = get_settings()
 
 
 async def upload_to_youtube(
@@ -32,6 +34,8 @@ async def upload_to_youtube(
             token=access_token,
             refresh_token=refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
+            client_id=_settings.google_oauth_client_id,
+            client_secret=_settings.google_oauth_client_secret,
         )
 
         youtube = build("youtube", "v3", credentials=credentials)
