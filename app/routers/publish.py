@@ -229,6 +229,7 @@ REGRAS:
 
 class ThumbnailRequest(BaseModel):
     render_id: int
+    custom_title: str = ""  # Optional override for thumbnail text
 
 
 @router.post("/generate-thumbnail")
@@ -249,17 +250,25 @@ async def generate_publish_thumbnail(
     # Build output path
     thumb_dir = os.path.join(settings.media_dir, "thumbnails", str(project.id))
     os.makedirs(thumb_dir, exist_ok=True)
-    output_path = os.path.join(thumb_dir, f"publish_thumb_{render.id}.jpg")
+    import time as _time
+    output_path = os.path.join(thumb_dir, f"publish_thumb_{render.id}_{int(_time.time())}.jpg")
 
-    title = project.track_title or project.title or "Music Video"
+    # Build punchy title for thumbnail
+    raw_title = req.custom_title or project.track_title or project.title or "Music Video"
+    # Remove emojis and keep it short for big text
+    import re
+    clean_title = re.sub(r'[^\w\s\(\)\-\!\?]', '', raw_title, flags=re.UNICODE).strip()
+    if len(clean_title) > 40:
+        clean_title = clean_title[:40].rsplit(' ', 1)[0]
+
     artist = project.track_artist or ""
     mood = ""
     style_hint = project.style_prompt or ""
 
-    # If we have lyrics, extract a mood hint
+    # If we have lyrics, extract a mood hint (just first line)
     if project.lyrics_text:
-        lyrics_preview = project.lyrics_text[:200]
-        mood = lyrics_preview
+        first_line = project.lyrics_text.strip().split('\n')[0][:100]
+        mood = first_line
 
     try:
         import asyncio
@@ -268,7 +277,7 @@ async def generate_publish_thumbnail(
         path = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: generate_thumbnail(
-                title=title,
+                title=clean_title,
                 artist=artist,
                 mood=mood,
                 style_hint=style_hint,
@@ -300,7 +309,7 @@ async def generate_publish_thumbnail(
                     None,
                     lambda: generate_thumbnail_from_frame(
                         video_path=render.file_path,
-                        title=title,
+                        title=clean_title,
                         artist=artist,
                         output_path=output_path,
                     ),

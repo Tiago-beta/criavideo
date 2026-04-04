@@ -24,17 +24,34 @@ def generate_thumbnail(
     output_path: str = "",
 ) -> str:
     """Generate a thumbnail image using Nano Banana with text overlay."""
+    # Build a short, impactful display title (max ~4 words, all caps feel)
+    display_title = title.upper() if len(title) <= 40 else title[:40].upper()
+
     prompt = (
-        f"Create a YouTube music video thumbnail. "
-        f'The title "{title}" by "{artist}" should be prominently displayed in large, bold, stylized text. '
-        f"Design it as a professional, eye-catching thumbnail with vibrant colors. "
-        f"Include dramatic lighting and a cinematic feel. "
+        f'Create a VIRAL YouTube thumbnail image. '
+        f'The thumbnail MUST have HUGE, BOLD, 3D text that says exactly: "{display_title}". '
+        f'The text must be the DOMINANT element — enormous, centered, impossible to miss. '
+        f'Text style: modern 3D extruded letters with strong shadows, neon glow effects, '
+        f'gradient colors (gold, cyan, white, or fire orange). The letters should look like '
+        f'they are popping out of the screen with depth and shine. '
+        f'Background: dramatic, cinematic, dark with colorful light rays, bokeh, or energy effects '
+        f'behind the text. NOT a landscape photo — the focus is 100% on the massive text. '
     )
+    if artist:
+        prompt += f'Include smaller text at the bottom: "{artist}". '
     if mood:
-        prompt += f"The mood/genre is: {mood}. "
+        # Use mood as thematic hint, not full lyrics
+        mood_short = mood.split('\n')[0][:100]
+        prompt += f"Theme/vibe: {mood_short}. "
     if style_hint:
-        prompt += f"Visual style: {style_hint}. "
-    prompt += "Make it look like a professional music video thumbnail that gets clicks on YouTube."
+        prompt += f"Color palette inspiration: {style_hint}. "
+    prompt += (
+        'Style references: top viral YouTube thumbnails with massive 3D text, '
+        'MrBeast-style impact, bright contrasting colors on dark background. '
+        'The text MUST be clearly readable and be the main visual element. '
+        'Resolution: crisp, high quality, 16:9 aspect ratio. '
+        'Do NOT make a landscape or scenery image. The TEXT is the star.'
+    )
 
     response = google_client.models.generate_content(
         model="gemini-2.5-flash-image",

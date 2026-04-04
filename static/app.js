@@ -490,7 +490,8 @@ function bindDashboardEvents() {
     document.getElementById("btn-regenerate-thumb").addEventListener("click", () => {
         const renderId = document.getElementById("pub-render-select").value;
         if (renderId) {
-            generatePublishThumbnail(parseInt(renderId, 10));
+            const currentTitle = document.getElementById("pub-title").value;
+            generatePublishThumbnail(parseInt(renderId, 10), currentTitle);
         }
     });
     document.getElementById("btn-new-schedule").addEventListener("click", async () => {
@@ -2014,28 +2015,27 @@ async function onRenderSelected(renderId) {
     // Show AI loading
     aiLoading.hidden = false;
 
-    // Run AI suggest and thumbnail generation in parallel
-    const suggestPromise = (async () => {
-        try {
-            const data = await api("/publish/ai-suggest", {
-                method: "POST",
-                body: JSON.stringify({ render_id: renderId }),
-            });
-            titleInput.value = data.title || "";
-            descInput.value = data.description || "";
-            hashtagsInput.value = data.hashtags || "";
-        } catch (err) {
-            console.warn("AI suggest failed:", err);
-        }
-    })();
+    // First: get AI suggestions for title/description
+    let aiTitle = "";
+    try {
+        const data = await api("/publish/ai-suggest", {
+            method: "POST",
+            body: JSON.stringify({ render_id: renderId }),
+        });
+        titleInput.value = data.title || "";
+        descInput.value = data.description || "";
+        hashtagsInput.value = data.hashtags || "";
+        aiTitle = data.title || "";
+    } catch (err) {
+        console.warn("AI suggest failed:", err);
+    }
 
-    const thumbPromise = generatePublishThumbnail(renderId);
-
-    await Promise.allSettled([suggestPromise, thumbPromise]);
+    // Then: generate thumbnail using the AI title for impactful text
+    await generatePublishThumbnail(renderId, aiTitle);
     aiLoading.hidden = true;
 }
 
-async function generatePublishThumbnail(renderId) {
+async function generatePublishThumbnail(renderId, customTitle) {
     const thumbArea = document.getElementById("pub-thumbnail-area");
     const thumbLoading = document.getElementById("pub-thumbnail-loading");
     const thumbPreview = document.getElementById("pub-thumbnail-preview");
@@ -2047,9 +2047,11 @@ async function generatePublishThumbnail(renderId) {
     btnRegen.hidden = true;
 
     try {
+        const body = { render_id: renderId };
+        if (customTitle) body.custom_title = customTitle;
         const data = await api("/publish/generate-thumbnail", {
             method: "POST",
-            body: JSON.stringify({ render_id: renderId }),
+            body: JSON.stringify(body),
         });
         if (data.thumbnail_url) {
             thumbPreview.src = data.thumbnail_url + "?t=" + Date.now();

@@ -1,4 +1,4 @@
-const CACHE_NAME = "criavideo-shell-v34";
+const CACHE_NAME = "criavideo-shell-v35";
 const ASSETS = [
   "/video",
   "/video/static/index.html",
