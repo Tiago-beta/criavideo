@@ -1196,6 +1196,76 @@ a {
     color: #d3e1ef;
 }
 
+.publish-form-group {
+    margin-bottom: 1.05rem;
+}
+
+.publish-platforms-icons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.publish-platform-chip {
+    position: relative;
+    width: 54px;
+    height: 46px;
+    border-radius: 12px;
+    border: 1px solid rgba(96, 129, 162, 0.34);
+    background: rgba(9, 35, 63, 0.72);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+
+.publish-platform-chip input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.publish-platform-icon {
+    width: 22px;
+    height: 22px;
+    color: #d3e1ef;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.publish-platform-icon svg {
+    width: 22px;
+    height: 22px;
+    display: block;
+}
+
+.publish-platform-youtube .publish-platform-icon {
+    color: #ff8f8f;
+}
+
+.publish-platform-tiktok .publish-platform-icon {
+    color: #90fcff;
+}
+
+.publish-platform-instagram .publish-platform-icon {
+    color: #ffc698;
+}
+
+.publish-platform-chip:hover {
+    transform: translateY(-1px);
+    border-color: rgba(0, 212, 255, 0.55);
+    box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.2), 0 0 14px rgba(0, 212, 255, 0.15);
+}
+
+.publish-platform-chip:has(input:checked) {
+    border-color: rgba(0, 212, 255, 0.78);
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.16), rgba(123, 97, 255, 0.12));
+    box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.25), 0 0 16px rgba(0, 212, 255, 0.22);
+}
+
 .checkbox-group {
     display: flex;
     flex-wrap: wrap;
@@ -2185,6 +2255,10 @@ svg.spin {
     .checkbox-group,
     .connect-buttons {
         flex-direction: column;
+    }
+
+    .publish-platforms-icons {
+        flex-direction: row;
     }
 
     .social-connect-grid {

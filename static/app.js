@@ -1936,7 +1936,7 @@ async function loadRenders(preselectProjectId = 0) {
         const select = document.getElementById("pub-render-select");
         const wantedProjectId = parseInt(preselectProjectId, 10) || 0;
         let preselectRenderId = "";
-        select.innerHTML = "<option value=''>Selecione...</option>";
+        select.innerHTML = "<option value=''>Selecione aqui...</option>";
         for (const project of projects) {
             if (project.status !== "completed") {
                 continue;
