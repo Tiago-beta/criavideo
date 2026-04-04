@@ -196,7 +196,8 @@ function setAuthMode(mode) {
     document.getElementById("login-form").hidden = !isLogin;
     document.getElementById("register-form").hidden = isLogin;
     document.getElementById("auth-title").textContent = isLogin ? "Entrar" : "Criar conta";
-    document.getElementById("auth-subtitle").textContent = isLogin
+    const subtitle = document.getElementById("auth-subtitle");
+    if (subtitle) subtitle.textContent = isLogin
         ? "Acesse seus projetos e publique em multiplos canais."
         : "Crie sua conta para receber clientes e gerar videos fora do Levita.";
     document.getElementById("auth-switch-copy").textContent = isLogin ? "Nao tem conta?" : "Ja tem conta?";
