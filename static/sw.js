@@ -1,13 +1,13 @@
-const CACHE_NAME = "criavideo-shell-v52";
+const CACHE_NAME = "criavideo-shell-v53";
 const ASSETS = [
   "/video",
   "/video/static/index.html",
-  "/video/static/style.css?v=20260404-18",
-  "/video/static/app.js?v=20260404-18",
-  "/video/static/pwa.js?v=20260404-18",
-  "/video/static/icons/login-logo.png?v=20260404-18",
-  "/video/static/icons/icon-192.png?v=20260404-18",
-  "/video/static/icons/icon-512.png?v=20260404-18",
+  "/video/static/style.css?v=20260404-19",
+  "/video/static/app.js?v=20260404-19",
+  "/video/static/pwa.js?v=20260404-19",
+  "/video/static/icons/login-logo.png?v=20260404-19",
+  "/video/static/icons/icon-192.png?v=20260404-19",
+  "/video/static/icons/icon-512.png?v=20260404-19",
 ];
 
 // HTML pages that should use network-first strategy
