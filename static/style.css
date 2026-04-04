@@ -512,6 +512,10 @@ a {
     gap: 10px;
 }
 
+.sidebar-logo-img {
+    border-radius: 10px;
+}
+
 .logo-text {
     font-family: "Outfit", sans-serif;
     font-size: 22px;
