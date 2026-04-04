@@ -460,19 +460,37 @@ function bindDashboardEvents() {
             return;
         }
         try {
+            const descField = document.getElementById("pub-description");
+            const hashtagsField = document.getElementById("pub-hashtags");
+            let fullDesc = descField.value;
+            if (hashtagsField.value.trim()) {
+                fullDesc += "\n\n" + hashtagsField.value.trim();
+            }
             await api("/publish/", {
                 method: "POST",
                 body: JSON.stringify({
                     render_id: parseInt(renderId, 10),
                     platforms,
                     title: document.getElementById("pub-title").value,
-                    description: document.getElementById("pub-description").value,
+                    description: fullDesc,
                 }),
             });
             alert("Publicacao iniciada.");
             loadPublishJobs();
         } catch (error) {
             alert(`Erro: ${error.message}`);
+        }
+    });
+    document.getElementById("pub-render-select").addEventListener("change", (e) => {
+        const renderId = e.target.value;
+        if (renderId) {
+            onRenderSelected(parseInt(renderId, 10));
+        }
+    });
+    document.getElementById("btn-regenerate-thumb").addEventListener("click", () => {
+        const renderId = document.getElementById("pub-render-select").value;
+        if (renderId) {
+            generatePublishThumbnail(parseInt(renderId, 10));
         }
     });
     document.getElementById("btn-new-schedule").addEventListener("click", async () => {
@@ -590,7 +608,14 @@ function setPublishTab(tabName) {
     if (nextTab === "publish") {
         const preselectProjectId = _pendingPublishProjectId;
         _pendingPublishProjectId = 0;
-        loadRenders(preselectProjectId);
+        loadRenders(preselectProjectId).then((preselected) => {
+            if (preselected) {
+                const renderId = document.getElementById("pub-render-select").value;
+                if (renderId) {
+                    onRenderSelected(parseInt(renderId, 10));
+                }
+            }
+        });
         loadPublishJobs();
     } else if (nextTab === "schedule") {
         loadSchedules();
@@ -1978,6 +2003,64 @@ function openPublishForProject(projectId) {
     }
 
     navigateTo("publish");
+}
+
+async function onRenderSelected(renderId) {
+    const aiLoading = document.getElementById("pub-ai-loading");
+    const titleInput = document.getElementById("pub-title");
+    const descInput = document.getElementById("pub-description");
+    const hashtagsInput = document.getElementById("pub-hashtags");
+
+    // Show AI loading
+    aiLoading.hidden = false;
+
+    // Run AI suggest and thumbnail generation in parallel
+    const suggestPromise = (async () => {
+        try {
+            const data = await api("/publish/ai-suggest", {
+                method: "POST",
+                body: JSON.stringify({ render_id: renderId }),
+            });
+            titleInput.value = data.title || "";
+            descInput.value = data.description || "";
+            hashtagsInput.value = data.hashtags || "";
+        } catch (err) {
+            console.warn("AI suggest failed:", err);
+        }
+    })();
+
+    const thumbPromise = generatePublishThumbnail(renderId);
+
+    await Promise.allSettled([suggestPromise, thumbPromise]);
+    aiLoading.hidden = true;
+}
+
+async function generatePublishThumbnail(renderId) {
+    const thumbArea = document.getElementById("pub-thumbnail-area");
+    const thumbLoading = document.getElementById("pub-thumbnail-loading");
+    const thumbPreview = document.getElementById("pub-thumbnail-preview");
+    const btnRegen = document.getElementById("btn-regenerate-thumb");
+
+    thumbArea.hidden = false;
+    thumbLoading.hidden = false;
+    thumbPreview.hidden = true;
+    btnRegen.hidden = true;
+
+    try {
+        const data = await api("/publish/generate-thumbnail", {
+            method: "POST",
+            body: JSON.stringify({ render_id: renderId }),
+        });
+        if (data.thumbnail_url) {
+            thumbPreview.src = data.thumbnail_url + "?t=" + Date.now();
+            thumbPreview.hidden = false;
+            btnRegen.hidden = false;
+        }
+    } catch (err) {
+        console.warn("Thumbnail generation failed:", err);
+    } finally {
+        thumbLoading.hidden = true;
+    }
 }
 
 async function loadPublishJobs() {
