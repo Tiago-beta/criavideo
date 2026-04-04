@@ -372,6 +372,8 @@ a {
 }
 
 .social-connect-btn {
+    display: inline-flex;
+    align-items: center;
     justify-content: flex-start;
     gap: 0.65rem;
     min-height: 52px;
@@ -391,11 +393,13 @@ a {
 .social-connect-icon svg {
     width: 20px;
     height: 20px;
+    display: block;
 }
 
 .social-connect-label {
     font-weight: 700;
     letter-spacing: 0.01em;
+    line-height: 1.1;
 }
 
 .social-connect-btn-youtube {
@@ -1259,6 +1263,7 @@ th {
 .social-account-icon svg {
     width: 21px;
     height: 21px;
+    display: block;
 }
 
 .social-account-meta {
