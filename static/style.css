@@ -1146,6 +1146,16 @@ a {
     color: var(--accent);
 }
 
+.card-btn-publish {
+    color: var(--tech-neon);
+    border-color: rgba(0, 212, 255, 0.35);
+}
+
+.card-btn-publish:hover {
+    background: rgba(0, 212, 255, 0.16);
+    color: var(--tech-neon);
+}
+
 .card-btn-generate {
     color: var(--primary);
     border-color: rgba(59, 130, 246, 0.3);
@@ -2760,6 +2770,16 @@ svg.spin {
 .card-btn-generate:hover {
     background: rgba(0, 212, 255, 0.16);
     color: var(--tech-neon);
+}
+
+.card-btn-publish {
+    color: #86fbff;
+    border-color: rgba(134, 251, 255, 0.38);
+}
+
+.card-btn-publish:hover {
+    background: rgba(134, 251, 255, 0.16);
+    color: #86fbff;
 }
 
 .table-wrapper.panel {

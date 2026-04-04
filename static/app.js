@@ -588,7 +588,9 @@ function setPublishTab(tabName) {
     });
 
     if (nextTab === "publish") {
-        loadRenders();
+        const preselectProjectId = _pendingPublishProjectId;
+        _pendingPublishProjectId = 0;
+        loadRenders(preselectProjectId);
         loadPublishJobs();
     } else if (nextTab === "schedule") {
         loadSchedules();
@@ -662,6 +664,7 @@ async function populateSongSelector() {
 
 let _projectsCache = [];
 let _copyFormatSourceProjectId = 0;
+let _pendingPublishProjectId = 0;
 
 async function loadProjects() {
     const container = document.getElementById("projects-list");
@@ -692,6 +695,7 @@ async function loadProjects() {
                     <div class="card-footer">
                         <div class="card-actions">
                             ${project.status === "completed" ? `<button class="card-btn card-btn-watch" onclick="watchVideo(${project.id})" type="button" title="Assistir"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
+                            ${project.status === "completed" ? `<button class="card-btn card-btn-publish" onclick="openPublishForProject(${project.id})" type="button" title="Publicar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="8 7 12 3 16 7"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg></button>` : ""}
                             ${(project.status === "pending" || project.status === "failed") ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
                             ${project.status === "completed" ? `<button class="card-btn card-btn-similar" onclick="openCopyChoiceModal(${project.id})" type="button" title="Criar copia"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
                             <button class="card-btn card-btn-delete" onclick="deleteProject(${project.id})" type="button" title="Excluir"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
@@ -1926,10 +1930,12 @@ async function watchVideo(projectId) {
     }
 }
 
-async function loadRenders() {
+async function loadRenders(preselectProjectId = 0) {
     try {
         const projects = await api("/video/projects");
         const select = document.getElementById("pub-render-select");
+        const wantedProjectId = parseInt(preselectProjectId, 10) || 0;
+        let preselectRenderId = "";
         select.innerHTML = "<option value=''>Selecione...</option>";
         for (const project of projects) {
             if (project.status !== "completed") {
@@ -1942,14 +1948,36 @@ async function loadRenders() {
                         ? `${Math.floor(render.duration / 60)}:${String(Math.round(render.duration % 60)).padStart(2, "0")}`
                         : "?";
                     select.innerHTML += `<option value="${render.id}">[${esc(project.title)}] ${render.format} - ${duration}</option>`;
+                    if (wantedProjectId && project.id === wantedProjectId && !preselectRenderId) {
+                        preselectRenderId = String(render.id);
+                    }
                 }
             } catch (_) {
                 // ignore one broken project and continue
             }
         }
+        if (preselectRenderId) {
+            select.value = preselectRenderId;
+            return true;
+        }
+        return false;
     } catch (_) {
         // keep select empty if request fails
+        return false;
     }
+}
+
+function openPublishForProject(projectId) {
+    _pendingPublishProjectId = parseInt(projectId, 10) || 0;
+    const project = _projectsCache.find((p) => p.id === projectId);
+    if (project) {
+        const titleInput = document.getElementById("pub-title");
+        if (titleInput && !titleInput.value.trim()) {
+            titleInput.value = project.title || "";
+        }
+    }
+
+    navigateTo("publish");
 }
 
 async function loadPublishJobs() {
@@ -2232,6 +2260,7 @@ window.createProject = createProjectFromLibrary;
 window.generateVideo = generateVideo;
 window.deleteProject = deleteProject;
 window.watchVideo = watchVideo;
+window.openPublishForProject = openPublishForProject;
 window.createSimilar = createSimilar;
 window.openCopyChoiceModal = openCopyChoiceModal;
 window.chooseCopyScript = chooseCopyScript;
