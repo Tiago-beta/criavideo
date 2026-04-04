@@ -2051,6 +2051,28 @@ async function connectPlatform(platform) {
     }
 }
 
+function socialPlatformName(platform) {
+    const key = String(platform || "").toLowerCase();
+    if (key === "youtube") return "YouTube";
+    if (key === "tiktok") return "TikTok";
+    if (key === "instagram") return "Instagram";
+    return key ? `${key.charAt(0).toUpperCase()}${key.slice(1)}` : "Conta social";
+}
+
+function socialPlatformIcon(platform) {
+    const key = String(platform || "").toLowerCase();
+    if (key === "youtube") {
+        return '<svg viewBox="0 0 24 24" fill="none"><rect x="2.5" y="5.5" width="19" height="13" rx="4" stroke="currentColor" stroke-width="1.9"></rect><path d="M10 9.2L15.8 12L10 14.8V9.2Z" fill="currentColor"></path></svg>';
+    }
+    if (key === "tiktok") {
+        return '<svg viewBox="0 0 24 24" fill="none"><path d="M14.4 5.2C15 6.9 16.4 8.1 18.2 8.4V11.1C16.9 11 15.7 10.6 14.7 10V14.8C14.7 18.1 12.2 20.5 9 20.5C5.8 20.5 3.3 18.1 3.3 14.8C3.3 11.6 5.8 9.1 9 9.1C9.4 9.1 9.9 9.2 10.3 9.3V12.1C9.9 11.9 9.5 11.8 9 11.8C7.3 11.8 6 13.1 6 14.8C6 16.6 7.3 17.8 9 17.8C10.7 17.8 12 16.6 12 14.8V3.5H14.4V5.2Z" fill="currentColor"></path></svg>';
+    }
+    if (key === "instagram") {
+        return '<svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="3.5" width="17" height="17" rx="5.5" stroke="currentColor" stroke-width="1.9"></rect><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.9"></circle><circle cx="17.2" cy="6.8" r="1.2" fill="currentColor"></circle></svg>';
+    }
+    return '<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.9"></circle><path d="M8 12h8M12 8v8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path></svg>';
+}
+
 async function loadAccounts() {
     const container = document.getElementById("accounts-list");
     try {
@@ -2059,15 +2081,26 @@ async function loadAccounts() {
             container.innerHTML = "<p class='loading'>Nenhuma conta conectada.</p>";
             return;
         }
-        container.innerHTML = accounts.map((account) => `
-            <div class="card">
-                <h4>${esc(account.platform)}</h4>
-                <p>${esc(account.platform_username || "Conta conectada")}</p>
-                <div class="card-actions">
+        container.innerHTML = accounts.map((account) => {
+            const platform = String(account.platform || "").toLowerCase();
+            const platformName = socialPlatformName(platform);
+            const platformClass = `social-platform-${platform.replace(/[^a-z0-9_-]/g, "")}`;
+            return `
+            <div class="card social-account-card ${platformClass}">
+                <div class="social-account-head">
+                    <span class="social-account-icon" aria-hidden="true">${socialPlatformIcon(platform)}</span>
+                    <div class="social-account-meta">
+                        <h4 class="social-account-platform">${esc(platformName)}</h4>
+                        <p class="social-account-user">${esc(account.platform_username || "Conta conectada")}</p>
+                    </div>
+                </div>
+                <div class="card-actions social-account-actions">
+                    <span class="social-account-status">Conectada</span>
                     <button class="btn btn-provider btn-sm" onclick="disconnectAccount(${account.id})" type="button">Desconectar</button>
                 </div>
             </div>
-        `).join("");
+            `;
+        }).join("");
     } catch (error) {
         container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
     }
