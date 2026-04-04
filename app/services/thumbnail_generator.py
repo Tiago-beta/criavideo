@@ -66,7 +66,9 @@ def generate_thumbnail(
 
     for part in response.parts:
         if part.inline_data is not None:
-            image = part.as_image()
+            # Convert raw bytes to PIL Image (part.as_image() returns SDK Image, not PIL)
+            import io
+            image = Image.open(io.BytesIO(part.inline_data.data))
             # Resize to standard YouTube thumbnail size
             image = image.resize((1280, 720), Image.LANCZOS)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
