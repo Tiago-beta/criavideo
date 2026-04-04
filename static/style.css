@@ -968,6 +968,51 @@ a {
     margin: 2rem 0 1rem;
 }
 
+.publish-top-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+
+.publish-top-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.62rem 0.92rem;
+    border-radius: 11px;
+    border-color: rgba(0, 212, 255, 0.32);
+    color: var(--text-muted);
+}
+
+.publish-top-tab.active {
+    color: var(--text);
+    border-color: rgba(0, 212, 255, 0.68);
+    box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.22), 0 0 16px rgba(0, 212, 255, 0.14);
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.12), rgba(123, 97, 255, 0.09));
+}
+
+.publish-tab-content {
+    display: none;
+}
+
+.publish-tab-content.active {
+    display: block;
+}
+
+.publish-subheader {
+    margin-bottom: 1rem;
+}
+
+.publish-subheader h3 {
+    margin: 0;
+    font-size: 1.4rem;
+}
+
+.publish-subtitle {
+    margin-top: 0;
+    margin-bottom: 1rem;
+}
+
 .cards-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -2109,6 +2154,14 @@ svg.spin {
 
     .page-header {
         align-items: center;
+    }
+
+    .publish-top-tabs {
+        width: 100%;
+    }
+
+    .publish-top-tab {
+        flex: 1;
     }
 
     .page-header h1 {

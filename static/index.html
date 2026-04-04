@@ -14,7 +14,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260328-2">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260328-2">
     <link rel="apple-touch-icon" href="/video/static/icons/icon-192.png?v=20260328-2">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260403-16">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260403-17">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -121,14 +121,6 @@
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                             <span>Publicar</span>
                         </a>
-                        <a href="#" class="nav-item" data-page="schedule">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                            <span>Agendamento</span>
-                        </a>
-                        <a href="#" class="nav-item" data-page="accounts">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-                            <span>Contas sociais</span>
-                        </a>
                     </nav>
 
                     <div class="sidebar-footer">
@@ -172,83 +164,88 @@
                     <section id="page-publish" class="page">
                         <div class="page-header">
                             <h1>Publicar videos</h1>
-                        </div>
-                        <div class="panel">
-                            <div id="publish-form-area">
-                                <div class="form-group">
-                                    <label>Video renderizado</label>
-                                    <select id="pub-render-select" class="input"></select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Plataformas</label>
-                                    <div class="checkbox-group">
-                                        <label><input type="checkbox" value="youtube"> YouTube</label>
-                                        <label><input type="checkbox" value="tiktok"> TikTok</label>
-                                        <label><input type="checkbox" value="instagram"> Instagram</label>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label>Titulo</label>
-                                    <input id="pub-title" type="text" class="input" placeholder="Titulo do video">
-                                </div>
-                                <div class="form-group">
-                                    <label>Descricao</label>
-                                    <textarea id="pub-description" class="input" rows="3" placeholder="Descricao"></textarea>
-                                </div>
-                                <button id="btn-publish" class="btn btn-primary" type="button">Publicar agora</button>
+                            <div class="publish-top-tabs" role="tablist" aria-label="Opcoes de publicar">
+                                <button class="btn btn-secondary publish-top-tab active" type="button" data-publish-tab="publish">Publicacao</button>
+                                <button class="btn btn-secondary publish-top-tab" type="button" data-publish-tab="schedule">Agendamento</button>
+                                <button class="btn btn-secondary publish-top-tab" type="button" data-publish-tab="accounts">Contas sociais</button>
                             </div>
                         </div>
-                        <h3 class="section-title">Historico de publicacoes</h3>
-                        <div id="publish-jobs-list" class="table-wrapper panel">
-                            <div class="loading">Carregando...</div>
+                        <div id="publish-tab-publish" class="publish-tab-content active">
+                            <div class="panel">
+                                <div id="publish-form-area">
+                                    <div class="form-group">
+                                        <label>Video renderizado</label>
+                                        <select id="pub-render-select" class="input"></select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Plataformas</label>
+                                        <div class="checkbox-group">
+                                            <label><input type="checkbox" value="youtube"> YouTube</label>
+                                            <label><input type="checkbox" value="tiktok"> TikTok</label>
+                                            <label><input type="checkbox" value="instagram"> Instagram</label>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Titulo</label>
+                                        <input id="pub-title" type="text" class="input" placeholder="Titulo do video">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Descricao</label>
+                                        <textarea id="pub-description" class="input" rows="3" placeholder="Descricao"></textarea>
+                                    </div>
+                                    <button id="btn-publish" class="btn btn-primary" type="button">Publicar agora</button>
+                                </div>
+                            </div>
+                            <h3 class="section-title">Historico de publicacoes</h3>
+                            <div id="publish-jobs-list" class="table-wrapper panel">
+                                <div class="loading">Carregando...</div>
+                            </div>
                         </div>
-                    </section>
 
-                    <section id="page-schedule" class="page">
-                        <div class="page-header">
-                            <h1>Agendamento automatico</h1>
-                            <button id="btn-new-schedule" class="btn btn-primary" type="button">Novo agendamento</button>
+                        <div id="publish-tab-schedule" class="publish-tab-content">
+                            <div class="page-header publish-subheader">
+                                <h3>Agendamento automatico</h3>
+                                <button id="btn-new-schedule" class="btn btn-primary" type="button">Novo agendamento</button>
+                            </div>
+                            <div id="schedules-list" class="cards-grid">
+                                <div class="loading">Carregando agendamentos...</div>
+                            </div>
                         </div>
-                        <div id="schedules-list" class="cards-grid">
-                            <div class="loading">Carregando agendamentos...</div>
-                        </div>
-                    </section>
 
-                    <section id="page-accounts" class="page">
-                        <div class="page-header">
-                            <h1>Contas sociais</h1>
-                        </div>
-                        <div class="connect-buttons social-connect-grid">
-                            <button class="btn btn-provider social-connect-btn social-connect-btn-youtube" onclick="connectPlatform('youtube')" type="button">
-                                <span class="social-connect-icon" aria-hidden="true">
-                                    <svg viewBox="0 0 24 24" fill="none">
-                                        <rect x="2.5" y="5.5" width="19" height="13" rx="4" stroke="currentColor" stroke-width="1.9"></rect>
-                                        <path d="M10 9.2L15.8 12L10 14.8V9.2Z" fill="currentColor"></path>
-                                    </svg>
-                                </span>
-                                <span class="social-connect-label">Conectar YouTube</span>
-                            </button>
-                            <button class="btn btn-provider social-connect-btn social-connect-btn-tiktok" onclick="connectPlatform('tiktok')" type="button">
-                                <span class="social-connect-icon" aria-hidden="true">
-                                    <svg viewBox="0 0 24 24" fill="none">
-                                        <path d="M14.4 5.2C15 6.9 16.4 8.1 18.2 8.4V11.1C16.9 11 15.7 10.6 14.7 10V14.8C14.7 18.1 12.2 20.5 9 20.5C5.8 20.5 3.3 18.1 3.3 14.8C3.3 11.6 5.8 9.1 9 9.1C9.4 9.1 9.9 9.2 10.3 9.3V12.1C9.9 11.9 9.5 11.8 9 11.8C7.3 11.8 6 13.1 6 14.8C6 16.6 7.3 17.8 9 17.8C10.7 17.8 12 16.6 12 14.8V3.5H14.4V5.2Z" fill="currentColor"></path>
-                                    </svg>
-                                </span>
-                                <span class="social-connect-label">Conectar TikTok</span>
-                            </button>
-                            <button class="btn btn-provider social-connect-btn social-connect-btn-instagram" onclick="connectPlatform('instagram')" type="button">
-                                <span class="social-connect-icon" aria-hidden="true">
-                                    <svg viewBox="0 0 24 24" fill="none">
-                                        <rect x="3.5" y="3.5" width="17" height="17" rx="5.5" stroke="currentColor" stroke-width="1.9"></rect>
-                                        <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.9"></circle>
-                                        <circle cx="17.2" cy="6.8" r="1.2" fill="currentColor"></circle>
-                                    </svg>
-                                </span>
-                                <span class="social-connect-label">Conectar Instagram</span>
-                            </button>
-                        </div>
-                        <div id="accounts-list" class="cards-grid" style="margin-top: 1.5rem;">
-                            <div class="loading">Carregando contas...</div>
+                        <div id="publish-tab-accounts" class="publish-tab-content">
+                            <h3 class="section-title publish-subtitle">Contas sociais</h3>
+                            <div class="connect-buttons social-connect-grid">
+                                <button class="btn btn-provider social-connect-btn social-connect-btn-youtube" onclick="connectPlatform('youtube')" type="button">
+                                    <span class="social-connect-icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none">
+                                            <rect x="2.5" y="5.5" width="19" height="13" rx="4" stroke="currentColor" stroke-width="1.9"></rect>
+                                            <path d="M10 9.2L15.8 12L10 14.8V9.2Z" fill="currentColor"></path>
+                                        </svg>
+                                    </span>
+                                    <span class="social-connect-label">Conectar YouTube</span>
+                                </button>
+                                <button class="btn btn-provider social-connect-btn social-connect-btn-tiktok" onclick="connectPlatform('tiktok')" type="button">
+                                    <span class="social-connect-icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none">
+                                            <path d="M14.4 5.2C15 6.9 16.4 8.1 18.2 8.4V11.1C16.9 11 15.7 10.6 14.7 10V14.8C14.7 18.1 12.2 20.5 9 20.5C5.8 20.5 3.3 18.1 3.3 14.8C3.3 11.6 5.8 9.1 9 9.1C9.4 9.1 9.9 9.2 10.3 9.3V12.1C9.9 11.9 9.5 11.8 9 11.8C7.3 11.8 6 13.1 6 14.8C6 16.6 7.3 17.8 9 17.8C10.7 17.8 12 16.6 12 14.8V3.5H14.4V5.2Z" fill="currentColor"></path>
+                                        </svg>
+                                    </span>
+                                    <span class="social-connect-label">Conectar TikTok</span>
+                                </button>
+                                <button class="btn btn-provider social-connect-btn social-connect-btn-instagram" onclick="connectPlatform('instagram')" type="button">
+                                    <span class="social-connect-icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none">
+                                            <rect x="3.5" y="3.5" width="17" height="17" rx="5.5" stroke="currentColor" stroke-width="1.9"></rect>
+                                            <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.9"></circle>
+                                            <circle cx="17.2" cy="6.8" r="1.2" fill="currentColor"></circle>
+                                        </svg>
+                                    </span>
+                                    <span class="social-connect-label">Conectar Instagram</span>
+                                </button>
+                            </div>
+                            <div id="accounts-list" class="cards-grid" style="margin-top: 1.5rem;">
+                                <div class="loading">Carregando contas...</div>
+                            </div>
                         </div>
                     </section>
 
@@ -1024,7 +1021,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260403-16"></script>
-    <script src="/video/static/pwa.js?v=20260403-16"></script>
+    <script src="/video/static/app.js?v=20260403-17"></script>
+    <script src="/video/static/pwa.js?v=20260403-17"></script>
 </body>
 </html>

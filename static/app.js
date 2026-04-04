@@ -386,16 +386,17 @@ function bindAuthEvents() {
 }
 
 function navigateTo(pageName) {
+    const normalizedPage = (pageName === "schedule" || pageName === "accounts") ? "publish" : pageName;
     document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
-    const target = document.getElementById("page-" + pageName);
+    const target = document.getElementById("page-" + normalizedPage);
     if (target) target.classList.add("active");
     // Update sidebar active
     document.querySelectorAll(".sidebar-nav .nav-item").forEach((item) => {
-        item.classList.toggle("active", item.dataset.page === pageName);
+        item.classList.toggle("active", item.dataset.page === normalizedPage);
     });
     // Update mobile tabs active
     document.querySelectorAll(".mobile-nav-tab").forEach((tab) => {
-        tab.classList.toggle("active", tab.dataset.mobilePage === pageName);
+        tab.classList.toggle("active", tab.dataset.mobilePage === normalizedPage);
     });
     loadPageData(pageName);
 }
@@ -477,6 +478,11 @@ function bindDashboardEvents() {
     document.getElementById("btn-new-schedule").addEventListener("click", async () => {
         await loadAccountsForSelect();
         openModal("modal-new-schedule");
+    });
+    document.querySelectorAll(".publish-top-tab").forEach((tabBtn) => {
+        tabBtn.addEventListener("click", () => {
+            setPublishTab(tabBtn.dataset.publishTab || "publish");
+        });
     });
     document.addEventListener("change", (event) => {
         if (event.target.id !== "np-song-select") {
@@ -567,12 +573,26 @@ function initDashboard() {
 function loadPageData(page) {
     if (page === "projects") {
         loadProjects();
-    } else if (page === "publish") {
+    } else if (page === "publish" || page === "schedule" || page === "accounts") {
+        setPublishTab(page === "publish" ? "publish" : page);
+    }
+}
+
+function setPublishTab(tabName) {
+    const nextTab = ["publish", "schedule", "accounts"].includes(tabName) ? tabName : "publish";
+    document.querySelectorAll(".publish-top-tab").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.publishTab === nextTab);
+    });
+    document.querySelectorAll(".publish-tab-content").forEach((panel) => {
+        panel.classList.toggle("active", panel.id === `publish-tab-${nextTab}`);
+    });
+
+    if (nextTab === "publish") {
         loadRenders();
         loadPublishJobs();
-    } else if (page === "schedule") {
+    } else if (nextTab === "schedule") {
         loadSchedules();
-    } else if (page === "accounts") {
+    } else if (nextTab === "accounts") {
         loadAccounts();
     }
 }
