@@ -144,7 +144,7 @@ a {
     display: grid;
     place-items: center;
     padding: 2rem;
-    gap: 2rem;
+    gap: 0.8rem;
 }
 
 .auth-brand {
@@ -196,6 +196,10 @@ a {
     border: 1px solid var(--border-strong);
     box-shadow: var(--shadow);
     backdrop-filter: blur(10px);
+}
+
+.auth-card-header {
+    text-align: center;
 }
 
 .auth-card-header p {
