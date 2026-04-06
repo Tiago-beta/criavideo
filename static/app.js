@@ -2206,6 +2206,63 @@ function getPublishDraftStorageKey(renderId) {
     return `${PUBLISH_DRAFT_STORAGE_PREFIX}${renderId}`;
 }
 
+function clearPublishThumbnail() {
+    const thumbArea = document.getElementById("pub-thumbnail-area");
+    const thumbLoading = document.getElementById("pub-thumbnail-loading");
+    const thumbPreview = document.getElementById("pub-thumbnail-preview");
+    const btnRegen = document.getElementById("btn-regenerate-thumb");
+
+    if (thumbArea) thumbArea.hidden = true;
+    if (thumbLoading) thumbLoading.hidden = true;
+    if (thumbPreview) {
+        thumbPreview.hidden = true;
+        thumbPreview.src = "";
+        thumbPreview.removeAttribute("data-raw-url");
+    }
+    if (btnRegen) btnRegen.hidden = true;
+}
+
+function getPublishThumbnailUrlFromForm() {
+    const thumbPreview = document.getElementById("pub-thumbnail-preview");
+    if (!thumbPreview || thumbPreview.hidden) {
+        return "";
+    }
+
+    const raw = String(thumbPreview.dataset.rawUrl || "").trim();
+    if (raw) {
+        return raw;
+    }
+
+    const src = String(thumbPreview.getAttribute("src") || "").trim();
+    if (!src) {
+        return "";
+    }
+
+    return src.replace(/\?t=\d+$/, "");
+}
+
+function applyPublishDraftThumbnail(thumbnailUrl) {
+    const cleanUrl = String(thumbnailUrl || "").trim();
+    if (!cleanUrl) {
+        clearPublishThumbnail();
+        return;
+    }
+
+    const thumbArea = document.getElementById("pub-thumbnail-area");
+    const thumbLoading = document.getElementById("pub-thumbnail-loading");
+    const thumbPreview = document.getElementById("pub-thumbnail-preview");
+    const btnRegen = document.getElementById("btn-regenerate-thumb");
+
+    if (thumbArea) thumbArea.hidden = false;
+    if (thumbLoading) thumbLoading.hidden = true;
+    if (thumbPreview) {
+        thumbPreview.dataset.rawUrl = cleanUrl;
+        thumbPreview.src = `${cleanUrl}?t=${Date.now()}`;
+        thumbPreview.hidden = false;
+    }
+    if (btnRegen) btnRegen.hidden = false;
+}
+
 function getAllPublishDrafts() {
     const drafts = [];
     for (let i = 0; i < localStorage.length; i += 1) {
@@ -2229,6 +2286,7 @@ function getAllPublishDrafts() {
             title: String(draft.title || ""),
             description: String(draft.description || ""),
             hashtags: String(draft.hashtags || ""),
+            thumbnail_url: String(draft.thumbnail_url || ""),
             platforms: Array.isArray(draft.platforms) ? draft.platforms : [],
             account_ids: draft.account_ids && typeof draft.account_ids === "object" ? draft.account_ids : {},
             updated_at: draft.updated_at || "",
@@ -2282,6 +2340,7 @@ function collectPublishDraftFromForm() {
         title: document.getElementById("pub-title")?.value || "",
         description: document.getElementById("pub-description")?.value || "",
         hashtags: document.getElementById("pub-hashtags")?.value || "",
+        thumbnail_url: getPublishThumbnailUrlFromForm(),
         platforms,
         account_ids: accountIds,
         updated_at: new Date().toISOString(),
@@ -2384,6 +2443,8 @@ async function applyPublishDraft(renderId) {
             }
         });
     }
+
+    applyPublishDraftThumbnail(draft.thumbnail_url || "");
 
     return true;
 }
@@ -2559,14 +2620,10 @@ async function onRenderSelected(renderId) {
 
     // Show AI loading
     aiLoading.hidden = false;
+    clearPublishThumbnail();
 
     const draftApplied = await applyPublishDraft(renderId);
     if (draftApplied) {
-        await generatePublishThumbnail(
-            renderId,
-            (titleInput?.value || "").trim(),
-            (descInput?.value || "").trim(),
-        );
         aiLoading.hidden = true;
         return;
     }
@@ -2611,6 +2668,7 @@ async function generatePublishThumbnail(renderId, customTitle, customDescription
             body: JSON.stringify(body),
         });
         if (data.thumbnail_url) {
+            thumbPreview.dataset.rawUrl = data.thumbnail_url;
             thumbPreview.src = data.thumbnail_url + "?t=" + Date.now();
             thumbPreview.hidden = false;
             btnRegen.hidden = false;
