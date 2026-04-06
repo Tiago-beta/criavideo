@@ -461,6 +461,16 @@ function bindDashboardEvents() {
             onRenderSelected(parseInt(renderId, 10));
         }
     });
+    const draftSelect = document.getElementById("pub-draft-select");
+    if (draftSelect) {
+        draftSelect.addEventListener("change", async (event) => {
+            const renderId = parseInt(event.target.value || "", 10);
+            if (!renderId) {
+                return;
+            }
+            await openPublishDraftFromList(renderId);
+        });
+    }
     document.getElementById("btn-regenerate-thumb").addEventListener("click", () => {
         const renderId = document.getElementById("pub-render-select").value;
         if (renderId) {
@@ -2125,8 +2135,10 @@ async function loadRenders(preselectProjectId = 0) {
         renderPublishDraftList();
         if (preselectRenderId) {
             select.value = preselectRenderId;
+            renderPublishDraftPicker();
             return true;
         }
+        renderPublishDraftPicker();
         return false;
     } catch (_) {
         _publishRenderOptions = {};
@@ -2347,13 +2359,43 @@ function collectPublishDraftFromForm() {
     };
 }
 
+function renderPublishDraftPicker(drafts = null) {
+    const picker = document.getElementById("pub-draft-select");
+    if (!picker) {
+        return;
+    }
+
+    const allDrafts = Array.isArray(drafts) ? drafts : getAllPublishDrafts();
+    if (!allDrafts.length) {
+        picker.innerHTML = "<option value=''>Meus rascunhos...</option>";
+        picker.disabled = true;
+        return;
+    }
+
+    const currentRenderId = String(document.getElementById("pub-render-select")?.value || "");
+    const hasCurrentDraft = allDrafts.some((draft) => String(draft.render_id) === currentRenderId);
+
+    picker.disabled = false;
+    picker.innerHTML = [
+        "<option value=''>Escolha um rascunho...</option>",
+        ...allDrafts.map((draft) => {
+            const renderLabel = getPublishRenderLabel(draft.render_id);
+            const compactLabel = renderLabel.length > 58 ? `${renderLabel.slice(0, 58)}...` : renderLabel;
+            return `<option value="${draft.render_id}">${esc(compactLabel)}</option>`;
+        }),
+    ].join("");
+    picker.value = hasCurrentDraft ? currentRenderId : "";
+}
+
 function renderPublishDraftList() {
+    const drafts = getAllPublishDrafts();
+    renderPublishDraftPicker(drafts);
+
     const container = document.getElementById("publish-drafts-list");
     if (!container) {
         return;
     }
 
-    const drafts = getAllPublishDrafts();
     if (!drafts.length) {
         container.innerHTML = "<p class='publish-drafts-empty'>Nenhum rascunho salvo neste navegador.</p>";
         return;
@@ -2485,6 +2527,11 @@ async function openPublishDraftFromList(renderId) {
 
     select.value = String(parsedRenderId);
     await onRenderSelected(parsedRenderId);
+
+    const draftSelect = document.getElementById("pub-draft-select");
+    if (draftSelect) {
+        draftSelect.value = String(parsedRenderId);
+    }
 
     const formArea = document.getElementById("publish-form-area");
     if (formArea) {
@@ -2625,6 +2672,7 @@ async function onRenderSelected(renderId) {
     const draftApplied = await applyPublishDraft(renderId);
     if (draftApplied) {
         aiLoading.hidden = true;
+        renderPublishDraftPicker();
         return;
     }
 
@@ -2646,6 +2694,7 @@ async function onRenderSelected(renderId) {
     // Then: generate thumbnail using the AI title for impactful text
     await generatePublishThumbnail(renderId, aiTitle, descInput.value || "");
     aiLoading.hidden = true;
+    renderPublishDraftPicker();
 }
 
 async function generatePublishThumbnail(renderId, customTitle, customDescription = "") {

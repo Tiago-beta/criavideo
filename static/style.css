@@ -1234,6 +1234,17 @@ a {
     margin-bottom: 1.05rem;
 }
 
+.publish-select-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 0.65rem;
+    align-items: start;
+}
+
+.publish-select-row .publish-form-group {
+    margin-bottom: 0.9rem;
+}
+
 .publish-platforms-icons {
     display: flex;
     flex-wrap: wrap;
@@ -2462,6 +2473,7 @@ svg.spin {
     .publish-tab-content,
     .panel,
     #publish-form-area,
+    .publish-select-row,
     .publish-form-group,
     .publish-account-selectors,
     .publish-account-row,
@@ -2485,6 +2497,17 @@ svg.spin {
         padding: 0.38rem 0.22rem;
         font-size: 0.73rem;
         border-radius: 9px;
+    }
+
+    .publish-select-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+
+    .publish-select-row .input {
+        font-size: 0.84rem;
+        padding-left: 0.72rem;
+        padding-right: 0.72rem;
     }
 
     .publish-draft-head {
