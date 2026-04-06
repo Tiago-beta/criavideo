@@ -227,7 +227,17 @@
                                         <img id="pub-thumbnail-preview" class="pub-thumbnail-preview" alt="Thumbnail preview" hidden>
                                         <button id="btn-regenerate-thumb" class="btn btn-secondary btn-sm" type="button" hidden>Gerar nova thumbnail</button>
                                     </div>
-                                    <button id="btn-publish" class="btn btn-primary" type="button">Publicar agora</button>
+                                    <div class="publish-action-row">
+                                        <button id="btn-publish" class="btn btn-primary publish-action-btn" type="button">
+                                            <span class="publish-action-btn-text">Publicar<br>agora</span>
+                                        </button>
+                                        <button id="btn-save-draft" class="btn btn-secondary publish-action-btn" type="button">
+                                            <span class="publish-action-btn-text">Salvar<br>rascunho</span>
+                                        </button>
+                                        <button id="btn-schedule-publish" class="btn btn-provider publish-action-btn" type="button">
+                                            <span class="publish-action-btn-text">Agendar<br>publicacao</span>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             <h3 class="section-title">Historico de publicacoes</h3>
@@ -993,6 +1003,26 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('modal-edit-account')" type="button">Cancelar</button>
                 <button id="edit-account-save-btn" class="btn btn-primary" onclick="saveSocialAccountLabel()" type="button">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-publish-schedule" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Agendar publicacao</h3>
+                <button class="modal-close" onclick="closeModal('modal-publish-schedule')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="muted">Defina data e horario para publicar automaticamente.</p>
+                <div class="form-group">
+                    <label>Data e horario</label>
+                    <input id="pub-schedule-datetime" type="datetime-local" class="input">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-publish-schedule')" type="button">Cancelar</button>
+                <button id="btn-confirm-schedule-publish" class="btn btn-primary" onclick="confirmSchedulePublish()" type="button">Agendar</button>
             </div>
         </div>
     </div>

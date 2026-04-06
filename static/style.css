@@ -1353,6 +1353,31 @@ a {
     min-width: 0;
 }
 
+.publish-action-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.publish-action-btn {
+    min-height: 44px;
+    padding: 0.45rem 0.35rem;
+    border-radius: 10px;
+    font-size: 0.78rem;
+    line-height: 1.05;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.publish-action-btn-text {
+    display: inline-block;
+    white-space: normal;
+    line-height: 1.08;
+}
+
 .checkbox-group {
     display: flex;
     flex-wrap: wrap;
@@ -2379,6 +2404,17 @@ svg.spin {
 
     .publish-account-label {
         justify-content: flex-start;
+    }
+
+    .publish-action-row {
+        gap: 0.4rem;
+    }
+
+    .publish-action-btn {
+        min-height: 42px;
+        padding: 0.38rem 0.22rem;
+        font-size: 0.73rem;
+        border-radius: 9px;
     }
 }
 

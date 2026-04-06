@@ -450,55 +450,9 @@ function bindDashboardEvents() {
         resetCreateWizard();
         openModal("modal-new-project");
     });
-    document.getElementById("btn-publish").addEventListener("click", async () => {
-        const renderId = document.getElementById("pub-render-select").value;
-        if (!renderId) {
-            alert("Selecione um video");
-            return;
-        }
-        const platforms = [];
-        document.querySelectorAll("#publish-form-area .checkbox-group input:checked").forEach((checkbox) => {
-            platforms.push(checkbox.value);
-        });
-        if (!platforms.length) {
-            alert("Selecione pelo menos uma plataforma");
-            return;
-        }
-
-        const accountIds = {};
-        for (const platform of platforms) {
-            const select = document.getElementById(`pub-account-${platform}`);
-            const selectedAccountId = parseInt(select?.value || "", 10);
-            if (!selectedAccountId) {
-                alert(`Selecione uma conta para ${socialPlatformName(platform)}.`);
-                return;
-            }
-            accountIds[platform] = selectedAccountId;
-        }
-
-        try {
-            const descField = document.getElementById("pub-description");
-            const hashtagsField = document.getElementById("pub-hashtags");
-            let fullDesc = descField.value;
-            if (hashtagsField.value.trim()) {
-                fullDesc += "\n\n" + hashtagsField.value.trim();
-            }
-            await api("/publish/", {
-                method: "POST",
-                body: JSON.stringify({
-                    render_id: parseInt(renderId, 10),
-                    platforms,
-                    account_ids: accountIds,
-                    title: document.getElementById("pub-title").value,
-                    description: fullDesc,
-                }),
-            });
-            alert("Publicacao iniciada.");
-            loadPublishJobs();
-        } catch (error) {
-            alert(`Erro: ${error.message}`);
-        }
-    });
+    document.getElementById("btn-publish").addEventListener("click", submitPublishNow);
+    document.getElementById("btn-save-draft").addEventListener("click", savePublishDraft);
+    document.getElementById("btn-schedule-publish").addEventListener("click", openPublishScheduleModal);
     document.getElementById("pub-render-select").addEventListener("change", (e) => {
         const renderId = e.target.value;
         if (renderId) {
@@ -620,6 +574,15 @@ function initDashboard() {
             }
         });
     }
+    const publishScheduleInput = document.getElementById("pub-schedule-datetime");
+    if (publishScheduleInput) {
+        publishScheduleInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                confirmSchedulePublish();
+            }
+        });
+    }
 
     const hashValue = String(window.location.hash || "").toLowerCase();
     if (hashValue.includes("/social")) {
@@ -716,6 +679,15 @@ function closeModal(id) {
         _editingSocialAccountId = 0;
         const input = document.getElementById("edit-account-label");
         if (input) input.value = "";
+    }
+    if (id === "modal-publish-schedule") {
+        const dtInput = document.getElementById("pub-schedule-datetime");
+        if (dtInput) dtInput.value = "";
+        const btn = document.getElementById("btn-confirm-schedule-publish");
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = "Agendar";
+        }
     }
     if (id === "modal-player") {
         const video = document.getElementById("player-video");
@@ -2163,6 +2135,232 @@ function openPublishForProject(projectId) {
     navigateTo("publish");
 }
 
+function getCheckedPublishPlatforms() {
+    const platforms = [];
+    document.querySelectorAll("#publish-form-area .publish-platforms-icons input:checked").forEach((checkbox) => {
+        platforms.push(checkbox.value);
+    });
+    return platforms;
+}
+
+function buildPublishPayload(scheduledAt = "") {
+    const renderId = document.getElementById("pub-render-select").value;
+    if (!renderId) {
+        alert("Selecione um video");
+        return null;
+    }
+
+    const platforms = getCheckedPublishPlatforms();
+    if (!platforms.length) {
+        alert("Selecione pelo menos uma plataforma");
+        return null;
+    }
+
+    const accountIds = {};
+    for (const platform of platforms) {
+        const select = document.getElementById(`pub-account-${platform}`);
+        const selectedAccountId = parseInt(select?.value || "", 10);
+        if (!selectedAccountId) {
+            alert(`Selecione uma conta para ${socialPlatformName(platform)}.`);
+            return null;
+        }
+        accountIds[platform] = selectedAccountId;
+    }
+
+    const descField = document.getElementById("pub-description");
+    const hashtagsField = document.getElementById("pub-hashtags");
+    const hashtagText = (hashtagsField?.value || "").trim();
+    let fullDesc = (descField?.value || "").trim();
+    if (hashtagText) {
+        fullDesc = fullDesc ? `${fullDesc}\n\n${hashtagText}` : hashtagText;
+    }
+
+    const payload = {
+        render_id: parseInt(renderId, 10),
+        platforms,
+        account_ids: accountIds,
+        title: (document.getElementById("pub-title")?.value || "").trim(),
+        description: fullDesc,
+    };
+    if (scheduledAt) {
+        payload.scheduled_at = scheduledAt;
+    }
+    return payload;
+}
+
+function getPublishDraftStorageKey(renderId) {
+    return `publish_draft_${renderId}`;
+}
+
+function readPublishDraft(renderId) {
+    try {
+        const raw = localStorage.getItem(getPublishDraftStorageKey(renderId));
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        return data && typeof data === "object" ? data : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+async function applyPublishDraft(renderId) {
+    const draft = readPublishDraft(renderId);
+    if (!draft) return false;
+
+    const titleInput = document.getElementById("pub-title");
+    const descInput = document.getElementById("pub-description");
+    const hashtagsInput = document.getElementById("pub-hashtags");
+
+    if (titleInput) titleInput.value = String(draft.title || "");
+    if (descInput) descInput.value = String(draft.description || "");
+    if (hashtagsInput) hashtagsInput.value = String(draft.hashtags || "");
+
+    if (Array.isArray(draft.platforms) && draft.platforms.length) {
+        const selected = new Set(draft.platforms.map((item) => String(item)));
+        document.querySelectorAll("#publish-form-area .publish-platforms-icons input").forEach((checkbox) => {
+            checkbox.checked = selected.has(checkbox.value);
+        });
+    }
+
+    if (draft.account_ids && typeof draft.account_ids === "object") {
+        Object.entries(draft.account_ids).forEach(([platform, accountId]) => {
+            _publishAccountSelection[platform] = String(accountId || "");
+        });
+    }
+
+    await renderPublishAccountSelectors(true);
+
+    if (draft.account_ids && typeof draft.account_ids === "object") {
+        Object.entries(draft.account_ids).forEach(([platform, accountId]) => {
+            const select = document.getElementById(`pub-account-${platform}`);
+            if (!select) return;
+            const target = String(accountId || "");
+            const hasOption = Array.from(select.options).some((option) => option.value === target);
+            if (hasOption) {
+                select.value = target;
+                _publishAccountSelection[platform] = target;
+            }
+        });
+    }
+
+    return true;
+}
+
+function savePublishDraft() {
+    const renderId = parseInt(document.getElementById("pub-render-select")?.value || "", 10);
+    if (!renderId) {
+        alert("Selecione um video para salvar rascunho.");
+        return;
+    }
+
+    const platforms = getCheckedPublishPlatforms();
+    const accountIds = {};
+    for (const platform of platforms) {
+        const selectedAccountId = parseInt(document.getElementById(`pub-account-${platform}`)?.value || "", 10);
+        if (selectedAccountId) {
+            accountIds[platform] = selectedAccountId;
+        }
+    }
+
+    const draft = {
+        title: document.getElementById("pub-title")?.value || "",
+        description: document.getElementById("pub-description")?.value || "",
+        hashtags: document.getElementById("pub-hashtags")?.value || "",
+        platforms,
+        account_ids: accountIds,
+        updated_at: new Date().toISOString(),
+    };
+    localStorage.setItem(getPublishDraftStorageKey(renderId), JSON.stringify(draft));
+    alert("Rascunho salvo.");
+}
+
+async function submitPublishNow() {
+    const payload = buildPublishPayload();
+    if (!payload) return;
+
+    try {
+        await api("/publish/", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+        alert("Publicacao iniciada.");
+        loadPublishJobs();
+    } catch (error) {
+        alert(`Erro: ${error.message}`);
+    }
+}
+
+function _toDatetimeLocalValue(date) {
+    const pad = (value) => String(value).padStart(2, "0");
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function openPublishScheduleModal() {
+    const renderId = document.getElementById("pub-render-select")?.value;
+    if (!renderId) {
+        alert("Selecione um video antes de agendar.");
+        return;
+    }
+
+    const dtInput = document.getElementById("pub-schedule-datetime");
+    if (dtInput && !dtInput.value) {
+        const oneHourAhead = new Date(Date.now() + 60 * 60 * 1000);
+        dtInput.value = _toDatetimeLocalValue(oneHourAhead);
+    }
+    openModal("modal-publish-schedule");
+}
+
+async function confirmSchedulePublish() {
+    const dtInput = document.getElementById("pub-schedule-datetime");
+    const rawValue = (dtInput?.value || "").trim();
+    if (!rawValue) {
+        alert("Escolha data e horario para agendar.");
+        if (dtInput) dtInput.focus();
+        return;
+    }
+
+    const scheduledDate = new Date(rawValue);
+    if (Number.isNaN(scheduledDate.getTime())) {
+        alert("Data/hora invalida.");
+        return;
+    }
+    if (scheduledDate.getTime() <= Date.now() + 30000) {
+        alert("Escolha um horario futuro para o agendamento.");
+        return;
+    }
+
+    const payload = buildPublishPayload(scheduledDate.toISOString());
+    if (!payload) return;
+
+    const confirmBtn = document.getElementById("btn-confirm-schedule-publish");
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = "Agendando...";
+    }
+
+    try {
+        await api("/publish/", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+        closeModal("modal-publish-schedule");
+        alert("Publicacao agendada com sucesso.");
+        loadPublishJobs();
+    } catch (error) {
+        alert(`Erro: ${error.message}`);
+    } finally {
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = "Agendar";
+        }
+    }
+}
+
 async function onRenderSelected(renderId) {
     const aiLoading = document.getElementById("pub-ai-loading");
     const titleInput = document.getElementById("pub-title");
@@ -2171,6 +2369,17 @@ async function onRenderSelected(renderId) {
 
     // Show AI loading
     aiLoading.hidden = false;
+
+    const draftApplied = await applyPublishDraft(renderId);
+    if (draftApplied) {
+        await generatePublishThumbnail(
+            renderId,
+            (titleInput?.value || "").trim(),
+            (descInput?.value || "").trim(),
+        );
+        aiLoading.hidden = true;
+        return;
+    }
 
     // First: get AI suggestions for title/description
     let aiTitle = "";
@@ -2241,7 +2450,7 @@ async function loadPublishJobs() {
                         <td>${esc(job.account_label || "Conta conectada")}</td>
                         <td><span class="badge badge-${badgeClass(job.status)}">${esc(job.status)}</span></td>
                         <td>${job.platform_url ? `<a href="${esc(job.platform_url)}" target="_blank" rel="noreferrer">Ver</a>` : "-"}</td>
-                        <td>${job.published_at ? new Date(job.published_at).toLocaleString("pt-BR") : "-"}</td>
+                        <td>${(job.published_at || job.scheduled_at) ? new Date(job.published_at || job.scheduled_at).toLocaleString("pt-BR") : "-"}</td>
                     </tr>
                 `).join("")}
             </table>
@@ -2765,6 +2974,7 @@ window.toggleSchedule = toggleSchedule;
 window.deleteSchedule = deleteSchedule;
 window.connectPlatform = connectPlatform;
 window.confirmConnectPlatform = confirmConnectPlatform;
+window.confirmSchedulePublish = confirmSchedulePublish;
 window.openEditSocialAccountModal = openEditSocialAccountModal;
 window.saveSocialAccountLabel = saveSocialAccountLabel;
 window.disconnectAccount = disconnectAccount;
