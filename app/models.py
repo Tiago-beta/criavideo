@@ -142,6 +142,7 @@ class SocialAccount(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, nullable=False, index=True)
     platform = Column(Enum(Platform), nullable=False)
+    account_label = Column(String(255))
     platform_user_id = Column(String(255))
     platform_username = Column(String(255))
     access_token = Column(Text, nullable=False)

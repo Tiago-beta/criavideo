@@ -24,6 +24,7 @@ _openai = openai.AsyncOpenAI(api_key=settings.openai_api_key)
 class PublishRequest(BaseModel):
     render_id: int
     platforms: list[str]  # ["youtube", "tiktok", "instagram"]
+    account_ids: dict[str, int] = {}
     title: str = ""
     description: str = ""
     tags: list[str] = []
@@ -54,14 +55,28 @@ async def publish_video(
         except ValueError:
             continue
 
-        # Find connected account for this platform
-        result = await db.execute(
-            select(SocialAccount)
-            .where(SocialAccount.user_id == user["id"])
-            .where(SocialAccount.platform == platform)
-            .limit(1)
-        )
-        account = result.scalar_one_or_none()
+        account = None
+        requested_account_id = None
+        if isinstance(req.account_ids, dict):
+            requested_account_id = req.account_ids.get(platform_name)
+
+        if requested_account_id:
+            account = await db.get(SocialAccount, int(requested_account_id))
+            if not account or account.user_id != user["id"] or account.platform != platform:
+                jobs.append({"platform": platform_name, "error": "Invalid social account"})
+                continue
+        else:
+            # Backward compatibility: if account is not explicitly selected,
+            # use the first connected account for this platform.
+            result = await db.execute(
+                select(SocialAccount)
+                .where(SocialAccount.user_id == user["id"])
+                .where(SocialAccount.platform == platform)
+                .order_by(SocialAccount.connected_at.desc(), SocialAccount.id.desc())
+                .limit(1)
+            )
+            account = result.scalar_one_or_none()
+
         if not account:
             jobs.append({"platform": platform_name, "error": "No connected account"})
             continue
@@ -84,7 +99,13 @@ async def publish_video(
             from app.tasks.publish_tasks import run_publish_job
             background_tasks.add_task(run_publish_job, job.id)
 
-        jobs.append({"platform": platform_name, "job_id": job.id, "status": job.status.value})
+        jobs.append({
+            "platform": platform_name,
+            "job_id": job.id,
+            "status": job.status.value,
+            "social_account_id": account.id,
+            "account_label": account.account_label or account.platform_username or "Conta conectada",
+        })
 
     await db.commit()
     return {"jobs": jobs}
@@ -103,10 +124,29 @@ async def list_publish_jobs(
         .limit(50)
     )
     jobs = result.scalars().all()
+
+    account_ids = {j.social_account_id for j in jobs if j.social_account_id}
+    accounts_by_id: dict[int, SocialAccount] = {}
+    if account_ids:
+        accounts_result = await db.execute(
+            select(SocialAccount)
+            .where(SocialAccount.user_id == user["id"])
+            .where(SocialAccount.id.in_(account_ids))
+        )
+        accounts = accounts_result.scalars().all()
+        accounts_by_id = {a.id: a for a in accounts}
+
+    def _account_name(account: SocialAccount | None) -> str:
+        if not account:
+            return "Conta conectada"
+        return account.account_label or account.platform_username or "Conta conectada"
+
     return [
         {
             "id": j.id,
             "platform": j.platform.value,
+            "social_account_id": j.social_account_id,
+            "account_label": _account_name(accounts_by_id.get(j.social_account_id)),
             "status": j.status.value,
             "title": j.title,
             "scheduled_at": j.scheduled_at.isoformat() if j.scheduled_at else None,

@@ -47,6 +47,7 @@ async def run_migrations():
         await conn.execute(text('ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS image_display_seconds REAL DEFAULT 0'))
         await conn.execute(text('ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS no_background_music BOOLEAN DEFAULT FALSE'))
         await conn.execute(text('ALTER TABLE video_scenes ADD COLUMN IF NOT EXISTS is_user_uploaded BOOLEAN DEFAULT FALSE'))
+        await conn.execute(text('ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS account_label VARCHAR(255)'))
         # Image Bank table
         await conn.execute(text('''
             CREATE TABLE IF NOT EXISTS image_bank (

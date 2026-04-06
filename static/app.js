@@ -13,6 +13,9 @@ let providers = {
 };
 let authMode = "login";
 let levitaSongs = [];
+let _socialAccountsCache = [];
+let _publishAccountSelection = {};
+let _pendingConnectPlatform = "";
 
 function getApiErrorMessage(body, fallback = "Erro inesperado") {
     if (!body) {
@@ -460,6 +463,18 @@ function bindDashboardEvents() {
             alert("Selecione pelo menos uma plataforma");
             return;
         }
+
+        const accountIds = {};
+        for (const platform of platforms) {
+            const select = document.getElementById(`pub-account-${platform}`);
+            const selectedAccountId = parseInt(select?.value || "", 10);
+            if (!selectedAccountId) {
+                alert(`Selecione uma conta para ${socialPlatformName(platform)}.`);
+                return;
+            }
+            accountIds[platform] = selectedAccountId;
+        }
+
         try {
             const descField = document.getElementById("pub-description");
             const hashtagsField = document.getElementById("pub-hashtags");
@@ -472,6 +487,7 @@ function bindDashboardEvents() {
                 body: JSON.stringify({
                     render_id: parseInt(renderId, 10),
                     platforms,
+                    account_ids: accountIds,
                     title: document.getElementById("pub-title").value,
                     description: fullDesc,
                 }),
@@ -504,6 +520,17 @@ function bindDashboardEvents() {
             setPublishTab(tabBtn.dataset.publishTab || "publish");
         });
     });
+    document.querySelectorAll(".publish-platform-chip input").forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+            renderPublishAccountSelectors();
+        });
+    });
+    const schedulePlatformSelect = document.getElementById("ns-platform");
+    if (schedulePlatformSelect) {
+        schedulePlatformSelect.addEventListener("change", () => {
+            refreshScheduleAccountOptions();
+        });
+    }
     document.addEventListener("change", (event) => {
         if (event.target.id !== "np-song-select") {
             return;
@@ -573,6 +600,22 @@ function initDashboard() {
             }
         });
     }
+    const connectLabelInput = document.getElementById("connect-account-label");
+    if (connectLabelInput) {
+        connectLabelInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                confirmConnectPlatform();
+            }
+        });
+    }
+
+    const hashValue = String(window.location.hash || "").toLowerCase();
+    if (hashValue.includes("/social")) {
+        navigateTo("accounts");
+        return;
+    }
+
     const params = new URLSearchParams(window.location.search);
     const audioUrl = params.get("audio_url");
     if (audioUrl) {
@@ -619,6 +662,7 @@ function setPublishTab(tabName) {
     if (nextTab === "publish") {
         const preselectProjectId = _pendingPublishProjectId;
         _pendingPublishProjectId = 0;
+        renderPublishAccountSelectors(true);
         loadRenders(preselectProjectId).then((preselected) => {
             if (preselected) {
                 const renderId = document.getElementById("pub-render-select").value;
@@ -650,6 +694,11 @@ function closeModal(id) {
     if (id === "modal-edit-project") {
         _renameProjectId = 0;
         const input = document.getElementById("edit-project-title");
+        if (input) input.value = "";
+    }
+    if (id === "modal-connect-account") {
+        _pendingConnectPlatform = "";
+        const input = document.getElementById("connect-account-label");
         if (input) input.value = "";
     }
     if (id === "modal-player") {
@@ -2167,11 +2216,12 @@ async function loadPublishJobs() {
         }
         container.innerHTML = `
             <table>
-                <tr><th>ID</th><th>Plataforma</th><th>Status</th><th>URL</th><th>Data</th></tr>
+                <tr><th>ID</th><th>Plataforma</th><th>Conta</th><th>Status</th><th>URL</th><th>Data</th></tr>
                 ${jobs.map((job) => `
                     <tr>
                         <td>${job.id}</td>
                         <td>${esc(job.platform)}</td>
+                        <td>${esc(job.account_label || "Conta conectada")}</td>
                         <td><span class="badge badge-${badgeClass(job.status)}">${esc(job.status)}</span></td>
                         <td>${job.platform_url ? `<a href="${esc(job.platform_url)}" target="_blank" rel="noreferrer">Ver</a>` : "-"}</td>
                         <td>${job.published_at ? new Date(job.published_at).toLocaleString("pt-BR") : "-"}</td>
@@ -2184,19 +2234,115 @@ async function loadPublishJobs() {
     }
 }
 
+function socialAccountDisplayName(account) {
+    if (!account) return "Conta conectada";
+    return account.account_label || account.platform_username || "Conta conectada";
+}
+
+async function renderPublishAccountSelectors(forceReload = false) {
+    const container = document.getElementById("pub-account-selectors");
+    if (!container) return;
+
+    const selectedPlatforms = [];
+    document.querySelectorAll("#publish-form-area .publish-platforms-icons input:checked").forEach((checkbox) => {
+        selectedPlatforms.push(checkbox.value);
+    });
+
+    if (!selectedPlatforms.length) {
+        container.hidden = true;
+        container.innerHTML = "";
+        return;
+    }
+
+    try {
+        if (forceReload || !_socialAccountsCache.length) {
+            _socialAccountsCache = await api("/social/accounts");
+        }
+
+        container.hidden = false;
+        container.innerHTML = selectedPlatforms.map((platform) => {
+            const accounts = _socialAccountsCache.filter((account) => account.platform === platform);
+            const platformName = socialPlatformName(platform);
+
+            let selectedAccountId = _publishAccountSelection[platform] || "";
+            if (!accounts.some((account) => String(account.id) === String(selectedAccountId))) {
+                selectedAccountId = accounts[0] ? String(accounts[0].id) : "";
+            }
+            _publishAccountSelection[platform] = selectedAccountId;
+
+            const options = accounts.length
+                ? accounts.map((account) => {
+                    const label = socialAccountDisplayName(account);
+                    const usernameSuffix = account.platform_username && account.platform_username !== label
+                        ? ` (${account.platform_username})`
+                        : "";
+                    const optionLabel = `${label}${usernameSuffix}`;
+                    const selectedAttr = String(account.id) === String(selectedAccountId) ? "selected" : "";
+                    return `<option value="${account.id}" ${selectedAttr}>${esc(optionLabel)}</option>`;
+                }).join("")
+                : "<option value=''>Conecte uma conta em Contas sociais</option>";
+
+            const helpText = accounts.length
+                ? "Escolha qual conta desta plataforma sera usada na publicacao."
+                : "Nenhuma conta conectada para esta plataforma.";
+
+            return `
+                <div class="publish-account-row">
+                    <div class="publish-account-label">
+                        <strong>${esc(platformName)}</strong>
+                        <span>Conta de destino</span>
+                    </div>
+                    <select id="pub-account-${platform}" data-platform="${platform}" class="input" aria-label="Conta ${esc(platformName)}">
+                        ${options}
+                    </select>
+                    <div class="publish-account-help">${esc(helpText)}</div>
+                </div>
+            `;
+        }).join("");
+
+        container.querySelectorAll("select[data-platform]").forEach((select) => {
+            select.addEventListener("change", () => {
+                const platform = select.dataset.platform;
+                _publishAccountSelection[platform] = select.value;
+            });
+        });
+    } catch (error) {
+        container.hidden = false;
+        container.innerHTML = `<p class="loading">Erro ao carregar contas: ${esc(error.message)}</p>`;
+    }
+}
+
 async function loadAccountsForSelect() {
     try {
-        const data = await api("/social/accounts");
-        const select = document.getElementById("ns-account");
-        if (!data.length) {
-            select.innerHTML = "<option value=''>Conecte uma conta primeiro</option>";
-            return;
-        }
-        select.innerHTML = data.map((account) => (
-            `<option value="${account.id}">${esc(account.platform)} - ${esc(account.platform_username || "Conta conectada")}</option>`
-        )).join("");
+        _socialAccountsCache = await api("/social/accounts");
+        refreshScheduleAccountOptions();
     } catch (_) {
         // ignore modal preload errors
+    }
+}
+
+function refreshScheduleAccountOptions() {
+    const platformSelect = document.getElementById("ns-platform");
+    const accountSelect = document.getElementById("ns-account");
+    if (!platformSelect || !accountSelect) return;
+
+    const platform = platformSelect.value;
+    const previous = accountSelect.value;
+    const filtered = (_socialAccountsCache || []).filter((account) => account.platform === platform);
+
+    if (!filtered.length) {
+        accountSelect.innerHTML = "<option value=''>Conecte uma conta desta plataforma</option>";
+        return;
+    }
+
+    accountSelect.innerHTML = filtered.map((account) => {
+        const label = socialAccountDisplayName(account);
+        const selectedAttr = String(account.id) === String(previous) ? "selected" : "";
+        return `<option value="${account.id}" ${selectedAttr}>${esc(label)}</option>`;
+    }).join("");
+
+    if (!filtered.some((account) => String(account.id) === String(accountSelect.value))) {
+        accountSelect.value = String(filtered[0].id);
     }
 }
 
@@ -2211,6 +2357,7 @@ async function loadSchedules() {
         container.innerHTML = schedules.map((schedule) => `
             <div class="card">
                 <h4>${esc(schedule.platform)} - ${esc(schedule.frequency)}</h4>
+                <p>Conta: ${esc(schedule.account_label || "Conta conectada")}</p>
                 <p>${esc(schedule.time_utc)} UTC</p>
                 <p>Fila: ${schedule.queue_length || 0} videos</p>
                 <p>Status: ${schedule.is_active ? '<span class="badge badge-completed">Ativo</span>' : '<span class="badge badge-failed">Pausado</span>'}</p>
@@ -2226,12 +2373,17 @@ async function loadSchedules() {
 }
 
 async function createSchedule() {
+    const accountId = parseInt(document.getElementById("ns-account").value, 10);
+    if (!accountId) {
+        alert("Selecione uma conta social para o agendamento.");
+        return;
+    }
     try {
         await api("/schedule/", {
             method: "POST",
             body: JSON.stringify({
                 platform: document.getElementById("ns-platform").value,
-                social_account_id: parseInt(document.getElementById("ns-account").value, 10),
+                social_account_id: accountId,
                 frequency: document.getElementById("ns-frequency").value,
                 time_utc: document.getElementById("ns-time").value,
             }),
@@ -2265,14 +2417,69 @@ async function deleteSchedule(id) {
 }
 
 async function connectPlatform(platform) {
+    const normalized = String(platform || "").toLowerCase();
+    if (!["youtube", "tiktok", "instagram"].includes(normalized)) {
+        alert("Plataforma invalida.");
+        return;
+    }
+
+    _pendingConnectPlatform = normalized;
+    const platformEl = document.getElementById("connect-account-platform");
+    if (platformEl) {
+        platformEl.textContent = `Plataforma: ${socialPlatformName(normalized)}`;
+    }
+
+    const input = document.getElementById("connect-account-label");
+    if (input) {
+        input.value = "";
+    }
+
+    const confirmBtn = document.getElementById("connect-account-confirm-btn");
+    if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = "Continuar";
+    }
+
+    openModal("modal-connect-account");
+    if (input) {
+        window.setTimeout(() => input.focus(), 0);
+    }
+}
+
+async function confirmConnectPlatform() {
+    if (!_pendingConnectPlatform) {
+        alert("Selecione uma plataforma para conectar.");
+        return;
+    }
+
+    const input = document.getElementById("connect-account-label");
+    const accountLabel = (input?.value || "").trim();
+    if (!accountLabel) {
+        alert("Informe um nome para identificar esta conta.");
+        if (input) input.focus();
+        return;
+    }
+
+    const confirmBtn = document.getElementById("connect-account-confirm-btn");
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = "Conectando...";
+    }
+
     try {
-        const data = await api(`/social/connect/${platform}`);
+        const query = new URLSearchParams({ account_label: accountLabel });
+        const data = await api(`/social/connect/${_pendingConnectPlatform}?${query.toString()}`);
         if (!data.auth_url) {
             throw new Error("A plataforma nao retornou URL de autorizacao");
         }
         window.location.href = data.auth_url;
     } catch (error) {
         alert(`Erro ao conectar conta: ${error.message}`);
+    } finally {
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = "Continuar";
+        }
     }
 }
 
@@ -2302,21 +2509,28 @@ async function loadAccounts() {
     const container = document.getElementById("accounts-list");
     try {
         const accounts = await api("/social/accounts");
+        _socialAccountsCache = accounts;
         if (!accounts.length) {
             container.innerHTML = "<p class='loading'>Nenhuma conta conectada.</p>";
+            renderPublishAccountSelectors(true);
+            refreshScheduleAccountOptions();
             return;
         }
         container.innerHTML = accounts.map((account) => {
             const platform = String(account.platform || "").toLowerCase();
             const platformName = socialPlatformName(platform);
             const platformClass = `social-platform-${platform.replace(/[^a-z0-9_-]/g, "")}`;
+            const accountLabel = socialAccountDisplayName(account);
+            const usernameSuffix = account.platform_username && account.platform_username !== accountLabel
+                ? ` · ${account.platform_username}`
+                : "";
             return `
             <div class="card social-account-card ${platformClass}">
                 <div class="social-account-head">
                     <span class="social-account-icon" aria-hidden="true">${socialPlatformIcon(platform)}</span>
                     <div class="social-account-meta">
-                        <h4 class="social-account-platform">${esc(platformName)}</h4>
-                        <p class="social-account-user">${esc(account.platform_username || "Conta conectada")}</p>
+                        <h4 class="social-account-platform">${esc(accountLabel)}</h4>
+                        <p class="social-account-user">${esc(platformName)}${esc(usernameSuffix)}</p>
                     </div>
                 </div>
                 <div class="card-actions social-account-actions">
@@ -2326,6 +2540,8 @@ async function loadAccounts() {
             </div>
             `;
         }).join("");
+        renderPublishAccountSelectors(true);
+        refreshScheduleAccountOptions();
     } catch (error) {
         container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
     }
@@ -2450,6 +2666,7 @@ window.createSchedule = createSchedule;
 window.toggleSchedule = toggleSchedule;
 window.deleteSchedule = deleteSchedule;
 window.connectPlatform = connectPlatform;
+window.confirmConnectPlatform = confirmConnectPlatform;
 window.disconnectAccount = disconnectAccount;
 window.loadProjects = loadProjects;
 

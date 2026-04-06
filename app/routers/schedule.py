@@ -43,6 +43,9 @@ async def create_schedule(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid platform")
 
+    if account.platform != platform:
+        raise HTTPException(status_code=400, detail="Selected account does not match the platform")
+
     schedule = PublishSchedule(
         user_id=user["id"],
         platform=platform,
@@ -68,10 +71,29 @@ async def list_schedules(
         select(PublishSchedule).where(PublishSchedule.user_id == user["id"])
     )
     schedules = result.scalars().all()
+
+    account_ids = {s.social_account_id for s in schedules if s.social_account_id}
+    accounts_by_id: dict[int, SocialAccount] = {}
+    if account_ids:
+        accounts_result = await db.execute(
+            select(SocialAccount)
+            .where(SocialAccount.user_id == user["id"])
+            .where(SocialAccount.id.in_(account_ids))
+        )
+        accounts = accounts_result.scalars().all()
+        accounts_by_id = {a.id: a for a in accounts}
+
+    def _account_name(account: SocialAccount | None) -> str:
+        if not account:
+            return "Conta conectada"
+        return account.account_label or account.platform_username or "Conta conectada"
+
     return [
         {
             "id": s.id,
             "platform": s.platform.value,
+            "social_account_id": s.social_account_id,
+            "account_label": _account_name(accounts_by_id.get(s.social_account_id)),
             "frequency": s.frequency,
             "time_utc": s.time_utc,
             "day_of_week": s.day_of_week,

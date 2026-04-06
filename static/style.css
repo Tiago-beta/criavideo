@@ -1300,6 +1300,40 @@ a {
     box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.25), 0 0 16px rgba(0, 212, 255, 0.22);
 }
 
+.publish-account-selectors {
+    margin-top: 0.85rem;
+    display: grid;
+    gap: 0.7rem;
+}
+
+.publish-account-row {
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    border-radius: 12px;
+    background: rgba(12, 33, 53, 0.5);
+    padding: 0.7rem;
+    display: grid;
+    gap: 0.45rem;
+}
+
+.publish-account-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+
+.publish-account-label strong {
+    color: var(--text);
+    font-size: 0.88rem;
+}
+
+.publish-account-help {
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+}
+
 .checkbox-group {
     display: flex;
     flex-wrap: wrap;

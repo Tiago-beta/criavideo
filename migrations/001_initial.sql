@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS social_accounts (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     platform platform_type NOT NULL,
+    account_label VARCHAR(255),
     platform_user_id VARCHAR(255),
     platform_username VARCHAR(255),
     access_token TEXT NOT NULL,
