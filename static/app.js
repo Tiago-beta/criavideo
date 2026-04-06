@@ -447,7 +447,39 @@ function bindNavigation() {
     }
 }
 
+function ensurePublishDraftSelector() {
+    const formArea = document.getElementById("publish-form-area");
+    const renderSelect = document.getElementById("pub-render-select");
+    if (!formArea || !renderSelect) {
+        return;
+    }
+
+    if (document.getElementById("pub-draft-select")) {
+        return;
+    }
+
+    const renderGroup = renderSelect.closest(".form-group");
+    if (!renderGroup || !renderGroup.parentNode) {
+        return;
+    }
+
+    let row = renderGroup.closest(".publish-select-row");
+    if (!row) {
+        row = document.createElement("div");
+        row.className = "publish-select-row";
+        renderGroup.parentNode.insertBefore(row, renderGroup);
+        row.appendChild(renderGroup);
+    }
+
+    const draftGroup = document.createElement("div");
+    draftGroup.className = "form-group publish-form-group";
+    draftGroup.innerHTML = "<select id=\"pub-draft-select\" class=\"input\" aria-label=\"Selecionar rascunho salvo\"><option value=\"\">Meus rascunhos...</option></select>";
+    row.appendChild(draftGroup);
+}
+
 function bindDashboardEvents() {
+    ensurePublishDraftSelector();
+
     document.getElementById("btn-new-project").addEventListener("click", () => {
         resetCreateWizard();
         openModal("modal-new-project");
