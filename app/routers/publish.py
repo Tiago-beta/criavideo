@@ -3,6 +3,7 @@ Publish Router — Endpoints for publishing videos to social platforms.
 """
 import os
 import logging
+import json
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -192,7 +193,7 @@ async def ai_suggest(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate viral title, description, hashtags using AI."""
+    """Generate title/description suggestions using a 2-step AI review flow."""
     render = await db.get(VideoRender, req.render_id)
     if not render:
         raise HTTPException(status_code=404, detail="Render not found")
@@ -200,6 +201,23 @@ async def ai_suggest(
     project = await db.get(VideoProject, render.project_id)
     if not project or project.user_id != user["id"]:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    def _parse_json_response(raw_text: str) -> dict:
+        cleaned = (raw_text or "").strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+
+        try:
+            return json.loads(cleaned)
+        except Exception:
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                return json.loads(cleaned[start : end + 1])
+            raise
 
     # Build context for AI
     context_parts = []
@@ -219,48 +237,206 @@ async def ai_suggest(
 
     context = "\n".join(context_parts) or "Video musical sem detalhes adicionais"
 
-    prompt = f"""Voce e um especialista em marketing digital e viralizacao no YouTube, TikTok e Instagram.
-Com base nas informacoes abaixo sobre um video musical, gere sugestoes OTIMIZADAS para MÁXIMO alcance e viralizacao.
+    tema = project.track_title or project.title or "Video musical"
+    resumo = context[:2200]
+    tags = [str(tag).strip() for tag in (project.tags or []) if str(tag).strip()]
+    publico = "Publico brasileiro do YouTube interessado em musica e conteudo emocional."
+    if tags:
+        publico = f"Publico principal ligado a: {', '.join(tags[:6])}."
+    objetivo = "Maximizar CTR sem clickbait enganoso e melhorar clareza para o algoritmo."
+    tom_desejado = project.style_prompt or "envolvente, premium e humano"
 
-INFORMACOES DO VIDEO:
-{context}
+    stage1_prompt = f"""Voce e um estrategista de crescimento para YouTube, especialista em titulos com alto CTR e descricoes que ajudam o video a ser entendido pelo publico e pelo algoritmo.
 
-Responda EXATAMENTE neste formato JSON (sem markdown, sem ```):
-{{
-  "title": "Um titulo CHAMATIVO, CURTO (max 80 chars), que gere curiosidade e cliques. Use emojis estrategicamente. Deve funcionar no YouTube, TikTok e Instagram.",
-  "description": "Uma descricao ENVOLVENTE de 2-3 paragrafos que: 1) Capte atencao nos primeiros 2 segundos de leitura, 2) Conte uma mini-historia ou gere emocao, 3) Inclua call-to-action (curtir, compartilhar, inscrever). Max 300 palavras. Em portugues BR.",
-  "hashtags": "#hashtag1 #hashtag2 #hashtag3 ... (15-20 hashtags relevantes e populares em portugues e ingles, misturando nicho e alcance amplo)",
-  "tags": ["tag1", "tag2", "tag3", "..."]
-}}
+Sua tarefa e transformar o conteudo de um video em:
+- 3 titulos altamente fortes
+- 1 descricao final otimizada e natural
+
+Antes de escrever, descubra:
+- qual e a promessa principal do video
+- qual dor, desejo, duvida ou curiosidade ele ativa
+- quais sao as 1 ou 2 palavras-chave principais
+- qual o melhor angulo para maximizar clique sem enganar
+- qual linguagem combina com o publico desse video
 
 REGRAS:
-- Titulo deve ser IMPOSSIVEL de ignorar no feed
-- Descricao deve ter tom emocional e pessoal
-- Hashtags devem misturar tags populares (#music #viral #fyp) com tags de nicho
-- Tags para SEO do YouTube (10-15 tags relevantes)
-- Tudo em portugues BR (exceto hashtags universais em ingles)"""
+- titulo curto, forte e claro
+- palavras mais importantes perto do inicio
+- descricao unica, especifica e util
+- usar palavras-chave naturalmente
+- evitar exagero falso
+- evitar descricao generica
+- parecer conteudo premium
+- manter fidelidade total ao video real
+- use capitalizacao estrategica (mistura de letras maiusculas e minusculas) para chamar atencao sem perder legibilidade
+
+Entregue:
+1. palavras-chave principais
+2. angulo central
+3. 3 titulos
+4. melhor titulo escolhido
+5. descricao final pronta para colar no YouTube
+
+DADOS DO VIDEO:
+Tema: {tema}
+Resumo: {resumo}
+Publico: {publico}
+Objetivo: {objetivo}
+Tom desejado: {tom_desejado}
+
+Retorne SOMENTE JSON (sem markdown) neste formato:
+{{
+  "keywords": ["...", "..."],
+  "angle": "...",
+  "titles": ["titulo 1", "titulo 2", "titulo 3"],
+  "selected_title": "...",
+  "description": "..."
+}}"""
 
     try:
-        resp = await _openai.chat.completions.create(
+        # Step 1: ideation model generates 3 title options + first description.
+        stage1_resp = await _openai.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": stage1_prompt}],
             temperature=0.9,
-            max_tokens=1000,
+            max_tokens=1400,
         )
-        import json
-        raw = resp.choices[0].message.content.strip()
-        # Remove markdown fences if present
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
-            if raw.endswith("```"):
-                raw = raw[:-3]
-            raw = raw.strip()
-        data = json.loads(raw)
+
+        stage1_data = _parse_json_response(stage1_resp.choices[0].message.content or "{}")
+
+        raw_keywords = stage1_data.get("keywords", [])
+        if isinstance(raw_keywords, str):
+            keywords = [k.strip() for k in raw_keywords.split(",") if k.strip()]
+        elif isinstance(raw_keywords, list):
+            keywords = [str(k).strip() for k in raw_keywords if str(k).strip()]
+        else:
+            keywords = []
+
+        angle = str(stage1_data.get("angle", "")).strip()
+
+        raw_titles = stage1_data.get("titles", [])
+        if isinstance(raw_titles, str):
+            raw_titles = [raw_titles]
+        title_options = [str(t).strip() for t in raw_titles if str(t).strip()]
+        if not title_options:
+            title_options = [project.title or project.track_title or "Novo video"]
+        while len(title_options) < 3:
+            title_options.append(title_options[-1])
+        title_options = title_options[:3]
+
+        selected_title_stage1 = str(
+            stage1_data.get("selected_title")
+            or stage1_data.get("best_title")
+            or ""
+        ).strip()
+        if selected_title_stage1 and selected_title_stage1 not in title_options:
+            title_options[0] = selected_title_stage1
+
+        draft_description = str(
+            stage1_data.get("description")
+            or stage1_data.get("final_description")
+            or project.description
+            or ""
+        ).strip()
+
+        stage2_prompt = f"""Voce e uma segunda IA de revisao editorial para YouTube.
+
+Sua funcao e revisar e pontuar 3 titulos gerados por uma IA anterior, depois escolher o melhor e refinar a descricao final.
+
+CONTEXTO REAL DO VIDEO:
+{context}
+
+PALAVRAS-CHAVE (IA 1): {', '.join(keywords[:6]) if keywords else 'nao informado'}
+ANGULO CENTRAL (IA 1): {angle or 'nao informado'}
+
+TITULOS CANDIDATOS:
+1) {title_options[0]}
+2) {title_options[1]}
+3) {title_options[2]}
+
+DESCRICAO CANDIDATA:
+{draft_description or 'nao informado'}
+
+CRITERIOS DE REVISAO:
+- clareza da promessa
+- potencial de CTR sem clickbait enganoso
+- leitura em mobile
+- aderencia ao conteudo real
+- uso estrategico de maiusculas/minusculas para destaque natural
+
+Retorne SOMENTE JSON (sem markdown) neste formato:
+{{
+  "title_scores": [
+    {{"title": "...", "score": 0, "why": "..."}},
+    {{"title": "...", "score": 0, "why": "..."}},
+    {{"title": "...", "score": 0, "why": "..."}}
+  ],
+  "chosen_title": "...",
+  "description": "...",
+  "hashtags": "#... #...",
+  "tags": ["...", "...", "..."]
+}}"""
+
+        # Step 2: reviewer model scores and selects the best title/description.
+        stage2_data: dict = {}
+        try:
+            stage2_resp = await _openai.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": stage2_prompt}],
+                temperature=0.6,
+                max_tokens=1200,
+            )
+            stage2_data = _parse_json_response(stage2_resp.choices[0].message.content or "{}")
+        except Exception as review_err:
+            logger.warning(f"AI second-pass review failed, using first-pass result: {review_err}")
+
+        chosen_title = str(
+            stage2_data.get("chosen_title")
+            or stage2_data.get("best_title")
+            or selected_title_stage1
+            or title_options[0]
+        ).strip()
+        if len(chosen_title) > 90:
+            chosen_title = (chosen_title[:90].rsplit(" ", 1)[0] or chosen_title[:90]).strip()
+        if not chosen_title:
+            chosen_title = project.title or project.track_title or "Novo video"
+
+        final_description = str(
+            stage2_data.get("description")
+            or stage2_data.get("final_description")
+            or draft_description
+            or project.description
+            or ""
+        ).strip()
+
+        hashtags = str(stage2_data.get("hashtags") or "").strip()
+        raw_tags = stage2_data.get("tags", [])
+        if isinstance(raw_tags, str):
+            tags = [item.strip() for item in raw_tags.split(",") if item.strip()]
+        elif isinstance(raw_tags, list):
+            tags = [str(item).strip() for item in raw_tags if str(item).strip()]
+        else:
+            tags = []
+
+        if not tags and keywords:
+            tags = keywords[:12]
+
+        if not hashtags and tags:
+            hashtags = " ".join(f"#{tag.replace(' ', '')}" for tag in tags[:15])
+
+        title_reviews = stage2_data.get("title_scores", [])
+        if not isinstance(title_reviews, list):
+            title_reviews = []
+
         return {
-            "title": data.get("title", project.title or ""),
-            "description": data.get("description", ""),
-            "hashtags": data.get("hashtags", ""),
-            "tags": data.get("tags", []),
+            "title": chosen_title,
+            "description": final_description,
+            "hashtags": hashtags,
+            "tags": tags,
+            "title_options": title_options,
+            "title_reviews": title_reviews,
+            "keywords": keywords,
+            "angle": angle,
         }
     except Exception as e:
         logger.error(f"AI suggest failed: {e}", exc_info=True)
