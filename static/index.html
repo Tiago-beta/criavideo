@@ -936,6 +936,26 @@
         </div>
     </div>
 
+    <div id="modal-edit-project" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Editar nome do video</h3>
+                <button class="modal-close" onclick="closeModal('modal-edit-project')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="edit-project-source" class="muted">Projeto selecionado</p>
+                <div class="form-group">
+                    <label>Novo nome</label>
+                    <input id="edit-project-title" type="text" class="input" maxlength="500" placeholder="Digite o novo nome do video">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-edit-project')" type="button">Cancelar</button>
+                <button id="edit-project-save-btn" class="btn btn-primary" onclick="saveProjectTitle()" type="button">Salvar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="modal-new-schedule" class="modal">
         <div class="modal-content">
             <div class="modal-header">

@@ -564,6 +564,15 @@ async function bootstrap() {
 function initDashboard() {
     renderSession();
     updateCreditsDisplay();
+    const renameInput = document.getElementById("edit-project-title");
+    if (renameInput) {
+        renameInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                saveProjectTitle();
+            }
+        });
+    }
     const params = new URLSearchParams(window.location.search);
     const audioUrl = params.get("audio_url");
     if (audioUrl) {
@@ -638,6 +647,11 @@ function closeModal(id) {
     if (id === "modal-new-project") {
         stopKaraokeProgressPolling();
     }
+    if (id === "modal-edit-project") {
+        _renameProjectId = 0;
+        const input = document.getElementById("edit-project-title");
+        if (input) input.value = "";
+    }
     if (id === "modal-player") {
         const video = document.getElementById("player-video");
         if (video) {
@@ -692,6 +706,7 @@ async function populateSongSelector() {
 let _projectsCache = [];
 let _copyFormatSourceProjectId = 0;
 let _pendingPublishProjectId = 0;
+let _renameProjectId = 0;
 
 async function loadProjects() {
     const container = document.getElementById("projects-list");
@@ -725,6 +740,7 @@ async function loadProjects() {
                             ${project.status === "completed" ? `<button class="card-btn card-btn-publish" onclick="openPublishForProject(${project.id})" type="button" title="Publicar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="8 7 12 3 16 7"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg></button>` : ""}
                             ${(project.status === "pending" || project.status === "failed") ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
                             ${project.status === "completed" ? `<button class="card-btn card-btn-similar" onclick="openCopyChoiceModal(${project.id})" type="button" title="Criar copia"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
+                            <button class="card-btn card-btn-edit" onclick="openRenameProjectModal(${project.id})" type="button" title="Editar nome"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>
                             <button class="card-btn card-btn-delete" onclick="deleteProject(${project.id})" type="button" title="Excluir"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
                         </div>
                         <span class="card-date">${dateStr}</span>
@@ -969,6 +985,81 @@ async function createFormatCopy() {
         loadProjects();
     } catch (error) {
         alert(`Erro ao criar copia: ${error.message}`);
+    }
+}
+
+function openRenameProjectModal(projectId) {
+    const project = _projectsCache.find((p) => p.id === projectId);
+    if (!project) {
+        alert("Projeto nao encontrado.");
+        return;
+    }
+
+    _renameProjectId = project.id;
+    const sourceEl = document.getElementById("edit-project-source");
+    if (sourceEl) {
+        sourceEl.textContent = `Projeto atual: ${project.title || "Video"}`;
+    }
+
+    const input = document.getElementById("edit-project-title");
+    if (input) {
+        input.value = project.title || "";
+    }
+
+    const saveBtn = document.getElementById("edit-project-save-btn");
+    if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Salvar";
+    }
+
+    openModal("modal-edit-project");
+
+    if (input) {
+        window.setTimeout(() => {
+            input.focus();
+            input.select();
+        }, 0);
+    }
+}
+
+async function saveProjectTitle() {
+    if (!_renameProjectId) {
+        alert("Nenhum projeto selecionado.");
+        return;
+    }
+
+    const input = document.getElementById("edit-project-title");
+    const newTitle = (input?.value || "").trim();
+    if (!newTitle) {
+        alert("Digite um nome para o video.");
+        if (input) input.focus();
+        return;
+    }
+
+    const saveBtn = document.getElementById("edit-project-save-btn");
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Salvando...";
+    }
+
+    try {
+        const response = await api(`/video/projects/${_renameProjectId}/title`, {
+            method: "PATCH",
+            body: JSON.stringify({ title: newTitle }),
+        });
+        const cacheProject = _projectsCache.find((p) => p.id === _renameProjectId);
+        if (cacheProject) {
+            cacheProject.title = response?.title || newTitle;
+        }
+        closeModal("modal-edit-project");
+        loadProjects();
+    } catch (error) {
+        alert(`Erro ao atualizar nome: ${error.message}`);
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = "Salvar";
+        }
     }
 }
 
@@ -2348,6 +2439,8 @@ window.deleteProject = deleteProject;
 window.watchVideo = watchVideo;
 window.openPublishForProject = openPublishForProject;
 window.createSimilar = createSimilar;
+window.openRenameProjectModal = openRenameProjectModal;
+window.saveProjectTitle = saveProjectTitle;
 window.openCopyChoiceModal = openCopyChoiceModal;
 window.chooseCopyScript = chooseCopyScript;
 window.chooseCopyFormat = chooseCopyFormat;

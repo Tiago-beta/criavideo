@@ -358,6 +358,10 @@ class CopyFormatRequest(BaseModel):
     aspect_ratio: str = "9:16"
 
 
+class RenameProjectRequest(BaseModel):
+    title: str
+
+
 class ProjectResponse(BaseModel):
     id: int
     status: str
@@ -491,6 +495,30 @@ async def get_project(
             for r in renders
         ],
     }
+
+
+@router.patch("/projects/{project_id}/title")
+async def rename_project(
+    project_id: int,
+    req: RenameProjectRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rename a video project title."""
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    new_title = (req.title or "").strip()
+    if not new_title:
+        raise HTTPException(status_code=400, detail="Titulo nao pode ficar vazio")
+    if len(new_title) > 500:
+        raise HTTPException(status_code=400, detail="Titulo muito longo (maximo 500 caracteres)")
+
+    project.title = new_title
+    await db.commit()
+    await db.refresh(project)
+    return {"id": project.id, "title": project.title}
 
 
 @router.post("/projects/{project_id}/generate")

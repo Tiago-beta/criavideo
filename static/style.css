@@ -1200,6 +1200,16 @@ a {
     color: var(--success);
 }
 
+.card-btn-edit {
+    color: #9dc7ff;
+    border-color: rgba(157, 199, 255, 0.3);
+}
+
+.card-btn-edit:hover {
+    background: rgba(157, 199, 255, 0.16);
+    color: #9dc7ff;
+}
+
 .card-btn-delete {
     color: var(--danger);
     border-color: rgba(255, 122, 108, 0.2);
