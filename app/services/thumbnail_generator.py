@@ -18,40 +18,60 @@ google_client = genai.Client(api_key=settings.google_ai_api_key)
 
 def generate_thumbnail(
     title: str,
-    artist: str,
+    artist: str = "",
+    description: str = "",
     mood: str = "",
     style_hint: str = "",
     output_path: str = "",
 ) -> str:
-    """Generate a thumbnail image using Nano Banana with text overlay."""
-    # Build a short, impactful display title (max ~4 words, all caps feel)
-    display_title = title.upper() if len(title) <= 40 else title[:40].upper()
+    """Generate a thumbnail image using Nano Banana and a high-CTR prompt template."""
+    title_text = (title or "").strip() or "Sem titulo"
 
-    prompt = (
-        f'Create a VIRAL YouTube thumbnail image. '
-        f'The thumbnail MUST have HUGE, BOLD, 3D text that says exactly: "{display_title}". '
-        f'The text must be the DOMINANT element — enormous, centered, impossible to miss. '
-        f'Text style: modern 3D extruded letters with strong shadows, neon glow effects, '
-        f'gradient colors (gold, cyan, white, or fire orange). The letters should look like '
-        f'they are popping out of the screen with depth and shine. '
-        f'Background: dramatic, cinematic, dark with colorful light rays, bokeh, or energy effects '
-        f'behind the text. NOT a landscape photo — the focus is 100% on the massive text. '
-    )
+    description_parts: list[str] = []
+    if description and description.strip():
+        description_parts.append(description.strip())
     if artist:
-        prompt += f'Include smaller text at the bottom: "{artist}". '
+        description_parts.append(f"Artista: {artist.strip()}")
     if mood:
-        # Use mood as thematic hint, not full lyrics
-        mood_short = mood.split('\n')[0][:100]
-        prompt += f"Theme/vibe: {mood_short}. "
+        mood_short = mood.split("\n")[0][:180].strip()
+        if mood_short:
+            description_parts.append(f"Contexto emocional: {mood_short}")
     if style_hint:
-        prompt += f"Color palette inspiration: {style_hint}. "
-    prompt += (
-        'Style references: top viral YouTube thumbnails with massive 3D text, '
-        'MrBeast-style impact, bright contrasting colors on dark background. '
-        'The text MUST be clearly readable and be the main visual element. '
-        'Resolution: crisp, high quality, 16:9 aspect ratio. '
-        'Do NOT make a landscape or scenery image. The TEXT is the star.'
-    )
+        description_parts.append(f"Estilo visual sugerido: {style_hint.strip()}")
+
+    description_text = "\n".join(description_parts).strip() or "Sem descricao informada."
+
+    # Keep the prompt structure requested by the user while injecting real title/description values.
+    prompt = f"""Voce e um especialista em design de thumbnails para YouTube com profundo conhecimento em psicologia visual, CTR e engenharia de prompts para IA.
+
+Analise o titulo e descricao do video abaixo e gere DIRETAMENTE uma imagem de thumbnail profissional para YouTube com as seguintes especificacoes:
+
+TITULO DO VIDEO: {title_text}
+DESCRICAO DO VIDEO: {description_text}
+
+REGRAS OBRIGATORIAS para a thumbnail gerada:
+- Formato: 16:9, proporcao widescreen, alta resolucao 4K
+- Ponto focal unico e dominante, sem poluicao visual
+- Alto contraste entre foreground e background para visibilidade mobile
+- Hierarquia visual: elemento principal ocupa 60-70% do frame
+- Iluminacao dramatica com volumetric lighting e profundidade
+- Cores saturadas e vibrantes que se destacam na interface do YouTube
+- Sensacao de urgencia ou curiosidade que forca o clique em 0.3 segundos
+- Legibilidade perfeita em tela de 300px (celular)
+- Estilo fotorrealista ou cinematografico de alto impacto
+
+INSTRUCOES DE COMPOSICAO baseadas no conteudo analisado:
+- Se o tema envolve dinheiro/resultado: inclua numero ou valor especifico em destaque dourado/amarelo
+- Se e tutorial/como fazer: mostre o resultado final ou transformacao
+- Se e entretenimento/viral: rosto humano com expressao exagerada em close-up
+- Se e review/produto: produto centralizado com iluminacao dramatica + expressao de surpresa
+- Se e educacional: elemento visual que representa a pergunta ou curiosidade do tema
+- Se e lifestyle/vlog: atmosfera calorosa, cores quentes, energia positiva
+
+TEXTO NA IMAGEM (se aplicavel):
+Renderize o texto principal com fonte bold, sans-serif, cor altamente contrastante ao fundo, tamanho que ocupe no minimo 25% da largura da imagem, com stroke/sombra leve para legibilidade.
+
+Gere a thumbnail agora. Nao descreva, crie a imagem diretamente."""
 
     response = google_client.models.generate_content(
         model="gemini-2.5-flash-image",

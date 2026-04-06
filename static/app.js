@@ -509,7 +509,8 @@ function bindDashboardEvents() {
         const renderId = document.getElementById("pub-render-select").value;
         if (renderId) {
             const currentTitle = document.getElementById("pub-title").value;
-            generatePublishThumbnail(parseInt(renderId, 10), currentTitle);
+            const currentDescription = document.getElementById("pub-description").value;
+            generatePublishThumbnail(parseInt(renderId, 10), currentTitle, currentDescription);
         }
     });
     document.getElementById("btn-new-schedule").addEventListener("click", async () => {
@@ -2187,11 +2188,11 @@ async function onRenderSelected(renderId) {
     }
 
     // Then: generate thumbnail using the AI title for impactful text
-    await generatePublishThumbnail(renderId, aiTitle);
+    await generatePublishThumbnail(renderId, aiTitle, descInput.value || "");
     aiLoading.hidden = true;
 }
 
-async function generatePublishThumbnail(renderId, customTitle) {
+async function generatePublishThumbnail(renderId, customTitle, customDescription = "") {
     const thumbArea = document.getElementById("pub-thumbnail-area");
     const thumbLoading = document.getElementById("pub-thumbnail-loading");
     const thumbPreview = document.getElementById("pub-thumbnail-preview");
@@ -2205,6 +2206,7 @@ async function generatePublishThumbnail(renderId, customTitle) {
     try {
         const body = { render_id: renderId };
         if (customTitle) body.custom_title = customTitle;
+        if (customDescription) body.custom_description = customDescription;
         const data = await api("/publish/generate-thumbnail", {
             method: "POST",
             body: JSON.stringify(body),

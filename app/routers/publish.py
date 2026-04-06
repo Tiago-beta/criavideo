@@ -270,6 +270,7 @@ REGRAS:
 class ThumbnailRequest(BaseModel):
     render_id: int
     custom_title: str = ""  # Optional override for thumbnail text
+    custom_description: str = ""  # Optional override for description/context
 
 
 @router.post("/generate-thumbnail")
@@ -304,6 +305,8 @@ async def generate_publish_thumbnail(
     artist = project.track_artist or ""
     mood = ""
     style_hint = project.style_prompt or ""
+    raw_description = req.custom_description or project.description or ""
+    clean_description = (raw_description or "").strip()[:1200]
 
     # If we have lyrics, extract a mood hint (just first line)
     if project.lyrics_text:
@@ -318,6 +321,7 @@ async def generate_publish_thumbnail(
             None,
             lambda: generate_thumbnail(
                 title=clean_title,
+                description=clean_description,
                 artist=artist,
                 mood=mood,
                 style_hint=style_hint,
