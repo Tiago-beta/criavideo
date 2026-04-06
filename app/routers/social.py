@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from pydantic import BaseModel
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import SocialAccount, Platform
@@ -66,6 +67,10 @@ INSTAGRAM_OAUTH_CONFIG = {
     "scope": "instagram_basic,instagram_content_publish,pages_read_engagement",
     "redirect_path": "/api/social/callback/instagram",
 }
+
+
+class UpdateAccountLabelRequest(BaseModel):
+    account_label: str
 
 
 @router.get("/accounts")
@@ -242,3 +247,33 @@ async def disconnect_account(
     await db.delete(account)
     await db.commit()
     return {"deleted": True}
+
+
+@router.patch("/accounts/{account_id}")
+async def update_account_label(
+    account_id: int,
+    req: UpdateAccountLabelRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update custom label for a connected social account."""
+    account = await db.get(SocialAccount, account_id)
+    if not account or account.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    label = (req.account_label or "").strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="Nome da conta nao pode ficar vazio")
+    if len(label) > 255:
+        raise HTTPException(status_code=400, detail="Nome da conta muito longo (maximo 255 caracteres)")
+
+    account.account_label = label
+    await db.commit()
+    await db.refresh(account)
+
+    return {
+        "id": account.id,
+        "platform": account.platform.value,
+        "account_label": account.account_label,
+        "platform_username": account.platform_username,
+    }

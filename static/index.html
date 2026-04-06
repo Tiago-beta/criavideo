@@ -977,6 +977,26 @@
         </div>
     </div>
 
+    <div id="modal-edit-account" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Editar nome da conta</h3>
+                <button class="modal-close" onclick="closeModal('modal-edit-account')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="edit-account-platform" class="muted">Plataforma selecionada</p>
+                <div class="form-group">
+                    <label>Novo nome da conta/canal</label>
+                    <input id="edit-account-label" type="text" class="input" maxlength="255" placeholder="Ex: Canal Principal, Canal de Shorts, Perfil Gospel...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-edit-account')" type="button">Cancelar</button>
+                <button id="edit-account-save-btn" class="btn btn-primary" onclick="saveSocialAccountLabel()" type="button">Salvar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="modal-new-schedule" class="modal">
         <div class="modal-content">
             <div class="modal-header">

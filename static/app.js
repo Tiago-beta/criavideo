@@ -16,6 +16,7 @@ let levitaSongs = [];
 let _socialAccountsCache = [];
 let _publishAccountSelection = {};
 let _pendingConnectPlatform = "";
+let _editingSocialAccountId = 0;
 
 function getApiErrorMessage(body, fallback = "Erro inesperado") {
     if (!body) {
@@ -609,6 +610,15 @@ function initDashboard() {
             }
         });
     }
+    const editAccountInput = document.getElementById("edit-account-label");
+    if (editAccountInput) {
+        editAccountInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                saveSocialAccountLabel();
+            }
+        });
+    }
 
     const hashValue = String(window.location.hash || "").toLowerCase();
     if (hashValue.includes("/social")) {
@@ -699,6 +709,11 @@ function closeModal(id) {
     if (id === "modal-connect-account") {
         _pendingConnectPlatform = "";
         const input = document.getElementById("connect-account-label");
+        if (input) input.value = "";
+    }
+    if (id === "modal-edit-account") {
+        _editingSocialAccountId = 0;
+        const input = document.getElementById("edit-account-label");
         if (input) input.value = "";
     }
     if (id === "modal-player") {
@@ -2535,7 +2550,10 @@ async function loadAccounts() {
                 </div>
                 <div class="card-actions social-account-actions">
                     <span class="social-account-status">Conectada</span>
-                    <button class="btn btn-provider btn-sm" onclick="disconnectAccount(${account.id})" type="button">Desconectar</button>
+                    <div class="social-account-buttons">
+                        <button class="btn btn-secondary btn-sm" onclick="openEditSocialAccountModal(${account.id})" type="button">Editar nome</button>
+                        <button class="btn btn-provider btn-sm" onclick="disconnectAccount(${account.id})" type="button">Desconectar</button>
+                    </div>
                 </div>
             </div>
             `;
@@ -2544,6 +2562,84 @@ async function loadAccounts() {
         refreshScheduleAccountOptions();
     } catch (error) {
         container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
+    }
+}
+
+function openEditSocialAccountModal(accountId) {
+    const account = (_socialAccountsCache || []).find((item) => item.id === accountId);
+    if (!account) {
+        alert("Conta nao encontrada.");
+        return;
+    }
+
+    _editingSocialAccountId = account.id;
+    const platformEl = document.getElementById("edit-account-platform");
+    if (platformEl) {
+        platformEl.textContent = `Plataforma: ${socialPlatformName(account.platform || "")}`;
+    }
+
+    const input = document.getElementById("edit-account-label");
+    if (input) {
+        input.value = socialAccountDisplayName(account);
+    }
+
+    const saveBtn = document.getElementById("edit-account-save-btn");
+    if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Salvar";
+    }
+
+    openModal("modal-edit-account");
+    if (input) {
+        window.setTimeout(() => {
+            input.focus();
+            input.select();
+        }, 0);
+    }
+}
+
+async function saveSocialAccountLabel() {
+    if (!_editingSocialAccountId) {
+        alert("Nenhuma conta selecionada.");
+        return;
+    }
+
+    const input = document.getElementById("edit-account-label");
+    const accountLabel = (input?.value || "").trim();
+    if (!accountLabel) {
+        alert("Digite um nome para a conta.");
+        if (input) input.focus();
+        return;
+    }
+
+    const saveBtn = document.getElementById("edit-account-save-btn");
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Salvando...";
+    }
+
+    try {
+        const updated = await api(`/social/accounts/${_editingSocialAccountId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ account_label: accountLabel }),
+        });
+
+        const cached = (_socialAccountsCache || []).find((item) => item.id === _editingSocialAccountId);
+        if (cached) {
+            cached.account_label = updated?.account_label || accountLabel;
+        }
+
+        closeModal("modal-edit-account");
+        await loadAccounts();
+        await renderPublishAccountSelectors(true);
+        refreshScheduleAccountOptions();
+    } catch (error) {
+        alert(`Erro ao editar nome: ${error.message}`);
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = "Salvar";
+        }
     }
 }
 
@@ -2667,6 +2763,8 @@ window.toggleSchedule = toggleSchedule;
 window.deleteSchedule = deleteSchedule;
 window.connectPlatform = connectPlatform;
 window.confirmConnectPlatform = confirmConnectPlatform;
+window.openEditSocialAccountModal = openEditSocialAccountModal;
+window.saveSocialAccountLabel = saveSocialAccountLabel;
 window.disconnectAccount = disconnectAccount;
 window.loadProjects = loadProjects;
 
