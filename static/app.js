@@ -15,8 +15,10 @@ let authMode = "login";
 let levitaSongs = [];
 let _socialAccountsCache = [];
 let _publishAccountSelection = {};
+let _publishRenderOptions = {};
 let _pendingConnectPlatform = "";
 let _editingSocialAccountId = 0;
+const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 
 function getApiErrorMessage(body, fallback = "Erro inesperado") {
     if (!body) {
@@ -636,6 +638,7 @@ function setPublishTab(tabName) {
     if (nextTab === "publish") {
         const preselectProjectId = _pendingPublishProjectId;
         _pendingPublishProjectId = 0;
+        renderPublishDraftList();
         renderPublishAccountSelectors(true);
         loadRenders(preselectProjectId).then((preselected) => {
             if (preselected) {
@@ -2089,8 +2092,13 @@ async function loadRenders(preselectProjectId = 0) {
     try {
         const projects = await api("/video/projects");
         const select = document.getElementById("pub-render-select");
+        if (!select) {
+            _publishRenderOptions = {};
+            return false;
+        }
         const wantedProjectId = parseInt(preselectProjectId, 10) || 0;
         let preselectRenderId = "";
+        const renderOptions = {};
         select.innerHTML = "<option value=''>Selecione aqui...</option>";
         for (const project of projects) {
             if (project.status !== "completed") {
@@ -2102,7 +2110,9 @@ async function loadRenders(preselectProjectId = 0) {
                     const duration = render.duration != null
                         ? `${Math.floor(render.duration / 60)}:${String(Math.round(render.duration % 60)).padStart(2, "0")}`
                         : "?";
-                    select.innerHTML += `<option value="${render.id}">[${esc(project.title)}] ${render.format} - ${duration}</option>`;
+                    const optionLabel = `[${project.title || "Sem titulo"}] ${render.format} - ${duration}`;
+                    select.innerHTML += `<option value="${render.id}">${esc(optionLabel)}</option>`;
+                    renderOptions[String(render.id)] = optionLabel;
                     if (wantedProjectId && project.id === wantedProjectId && !preselectRenderId) {
                         preselectRenderId = String(render.id);
                     }
@@ -2111,12 +2121,16 @@ async function loadRenders(preselectProjectId = 0) {
                 // ignore one broken project and continue
             }
         }
+        _publishRenderOptions = renderOptions;
+        renderPublishDraftList();
         if (preselectRenderId) {
             select.value = preselectRenderId;
             return true;
         }
         return false;
     } catch (_) {
+        _publishRenderOptions = {};
+        renderPublishDraftList();
         // keep select empty if request fails
         return false;
     }
@@ -2189,7 +2203,135 @@ function buildPublishPayload(scheduledAt = "") {
 }
 
 function getPublishDraftStorageKey(renderId) {
-    return `publish_draft_${renderId}`;
+    return `${PUBLISH_DRAFT_STORAGE_PREFIX}${renderId}`;
+}
+
+function getAllPublishDrafts() {
+    const drafts = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (!key || !key.startsWith(PUBLISH_DRAFT_STORAGE_PREFIX)) {
+            continue;
+        }
+
+        const renderId = parseInt(key.slice(PUBLISH_DRAFT_STORAGE_PREFIX.length), 10);
+        if (!Number.isFinite(renderId) || renderId <= 0) {
+            continue;
+        }
+
+        const draft = readPublishDraft(renderId);
+        if (!draft) {
+            continue;
+        }
+
+        drafts.push({
+            render_id: renderId,
+            title: String(draft.title || ""),
+            description: String(draft.description || ""),
+            hashtags: String(draft.hashtags || ""),
+            platforms: Array.isArray(draft.platforms) ? draft.platforms : [],
+            account_ids: draft.account_ids && typeof draft.account_ids === "object" ? draft.account_ids : {},
+            updated_at: draft.updated_at || "",
+        });
+    }
+
+    drafts.sort((a, b) => {
+        const timeA = new Date(a.updated_at || 0).getTime();
+        const timeB = new Date(b.updated_at || 0).getTime();
+        return timeB - timeA;
+    });
+    return drafts;
+}
+
+function getPublishRenderLabel(renderId) {
+    const mappedLabel = _publishRenderOptions[String(renderId)];
+    if (mappedLabel) {
+        return mappedLabel;
+    }
+
+    const select = document.getElementById("pub-render-select");
+    if (select) {
+        const match = Array.from(select.options).find((option) => option.value === String(renderId));
+        if (match && match.textContent) {
+            return match.textContent;
+        }
+    }
+
+    return `Render #${renderId}`;
+}
+
+function formatPublishDraftDate(rawValue) {
+    const date = new Date(rawValue || "");
+    if (Number.isNaN(date.getTime())) {
+        return "-";
+    }
+    return date.toLocaleString("pt-BR");
+}
+
+function collectPublishDraftFromForm() {
+    const platforms = getCheckedPublishPlatforms();
+    const accountIds = {};
+    for (const platform of platforms) {
+        const selectedAccountId = parseInt(document.getElementById(`pub-account-${platform}`)?.value || "", 10);
+        if (selectedAccountId) {
+            accountIds[platform] = selectedAccountId;
+        }
+    }
+
+    return {
+        title: document.getElementById("pub-title")?.value || "",
+        description: document.getElementById("pub-description")?.value || "",
+        hashtags: document.getElementById("pub-hashtags")?.value || "",
+        platforms,
+        account_ids: accountIds,
+        updated_at: new Date().toISOString(),
+    };
+}
+
+function renderPublishDraftList() {
+    const container = document.getElementById("publish-drafts-list");
+    if (!container) {
+        return;
+    }
+
+    const drafts = getAllPublishDrafts();
+    if (!drafts.length) {
+        container.innerHTML = "<p class='publish-drafts-empty'>Nenhum rascunho salvo neste navegador.</p>";
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="publish-drafts-list">
+            ${drafts.map((draft) => {
+                const title = draft.title.trim() || "Sem titulo";
+                const description = draft.description.trim();
+                const descriptionPreview = description
+                    ? (description.length > 140 ? `${description.slice(0, 140).trim()}...` : description)
+                    : "Sem descricao.";
+                const platforms = draft.platforms.length
+                    ? draft.platforms.map((item) => socialPlatformName(item)).join(", ")
+                    : "Sem plataformas selecionadas";
+                const updatedAt = formatPublishDraftDate(draft.updated_at);
+                const renderLabel = getPublishRenderLabel(draft.render_id);
+                return `
+                    <div class="publish-draft-item">
+                        <div class="publish-draft-head">
+                            <h4 class="publish-draft-title">${esc(title)}</h4>
+                            <span class="publish-draft-meta">Atualizado em ${esc(updatedAt)}</span>
+                        </div>
+                        <p class="publish-draft-meta">Video: ${esc(renderLabel)}</p>
+                        <p class="publish-draft-meta">Plataformas: ${esc(platforms)}</p>
+                        <p class="publish-draft-desc">${esc(descriptionPreview)}</p>
+                        <div class="publish-draft-actions">
+                            <button class="btn btn-secondary btn-sm" type="button" onclick="openPublishDraftFromList(${draft.render_id})">Abrir</button>
+                            <button class="btn btn-provider btn-sm" type="button" onclick="overwritePublishDraftFromList(${draft.render_id})">Sobrescrever</button>
+                            <button class="btn btn-secondary btn-sm" type="button" onclick="deletePublishDraftFromList(${draft.render_id})">Excluir</button>
+                        </div>
+                    </div>
+                `;
+            }).join("")}
+        </div>
+    `;
 }
 
 function readPublishDraft(renderId) {
@@ -2253,25 +2395,73 @@ function savePublishDraft() {
         return;
     }
 
-    const platforms = getCheckedPublishPlatforms();
-    const accountIds = {};
-    for (const platform of platforms) {
-        const selectedAccountId = parseInt(document.getElementById(`pub-account-${platform}`)?.value || "", 10);
-        if (selectedAccountId) {
-            accountIds[platform] = selectedAccountId;
-        }
+    const draft = collectPublishDraftFromForm();
+    localStorage.setItem(getPublishDraftStorageKey(renderId), JSON.stringify(draft));
+    renderPublishDraftList();
+    alert("Rascunho salvo.");
+}
+
+async function openPublishDraftFromList(renderId) {
+    const parsedRenderId = parseInt(renderId, 10);
+    if (!Number.isFinite(parsedRenderId) || parsedRenderId <= 0) {
+        alert("Rascunho invalido.");
+        return;
     }
 
-    const draft = {
-        title: document.getElementById("pub-title")?.value || "",
-        description: document.getElementById("pub-description")?.value || "",
-        hashtags: document.getElementById("pub-hashtags")?.value || "",
-        platforms,
-        account_ids: accountIds,
-        updated_at: new Date().toISOString(),
-    };
-    localStorage.setItem(getPublishDraftStorageKey(renderId), JSON.stringify(draft));
-    alert("Rascunho salvo.");
+    const select = document.getElementById("pub-render-select");
+    if (!select) {
+        return;
+    }
+
+    const hasRenderOption = () => Array.from(select.options).some((option) => option.value === String(parsedRenderId));
+    if (!hasRenderOption()) {
+        await loadRenders();
+    }
+    if (!hasRenderOption()) {
+        alert("Este video nao esta mais disponivel para abrir o rascunho.");
+        return;
+    }
+
+    select.value = String(parsedRenderId);
+    await onRenderSelected(parsedRenderId);
+
+    const formArea = document.getElementById("publish-form-area");
+    if (formArea) {
+        formArea.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+}
+
+function overwritePublishDraftFromList(renderId) {
+    const parsedRenderId = parseInt(renderId, 10);
+    if (!Number.isFinite(parsedRenderId) || parsedRenderId <= 0) {
+        alert("Rascunho invalido.");
+        return;
+    }
+
+    if (!window.confirm("Sobrescrever este rascunho com os dados atuais do formulario?")) {
+        return;
+    }
+
+    const draft = collectPublishDraftFromForm();
+    localStorage.setItem(getPublishDraftStorageKey(parsedRenderId), JSON.stringify(draft));
+    renderPublishDraftList();
+    alert("Rascunho sobrescrito.");
+}
+
+function deletePublishDraftFromList(renderId) {
+    const parsedRenderId = parseInt(renderId, 10);
+    if (!Number.isFinite(parsedRenderId) || parsedRenderId <= 0) {
+        alert("Rascunho invalido.");
+        return;
+    }
+
+    if (!window.confirm("Excluir este rascunho?")) {
+        return;
+    }
+
+    localStorage.removeItem(getPublishDraftStorageKey(parsedRenderId));
+    renderPublishDraftList();
+    alert("Rascunho excluido.");
 }
 
 async function submitPublishNow() {
@@ -2978,6 +3168,9 @@ window.confirmSchedulePublish = confirmSchedulePublish;
 window.openEditSocialAccountModal = openEditSocialAccountModal;
 window.saveSocialAccountLabel = saveSocialAccountLabel;
 window.disconnectAccount = disconnectAccount;
+window.openPublishDraftFromList = openPublishDraftFromList;
+window.overwritePublishDraftFromList = overwritePublishDraftFromList;
+window.deletePublishDraftFromList = deletePublishDraftFromList;
 window.loadProjects = loadProjects;
 
 // ── Style Tags System ──

@@ -1378,6 +1378,74 @@ a {
     line-height: 1.08;
 }
 
+.publish-drafts-panel {
+    margin-top: 0.25rem;
+    padding: 0.85rem;
+}
+
+.publish-drafts-empty {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+}
+
+.publish-drafts-list {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.publish-draft-item {
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    border-radius: 12px;
+    background: rgba(12, 33, 53, 0.48);
+    padding: 0.72rem;
+    display: grid;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.publish-draft-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+}
+
+.publish-draft-title {
+    margin: 0;
+    color: var(--text);
+    font-size: 0.92rem;
+    line-height: 1.2;
+}
+
+.publish-draft-meta {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    line-height: 1.24;
+    overflow-wrap: anywhere;
+}
+
+.publish-draft-desc {
+    margin: 0.1rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.publish-draft-actions {
+    margin-top: 0.15rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.publish-draft-actions .btn {
+    min-width: 98px;
+}
+
 .checkbox-group {
     display: flex;
     flex-wrap: wrap;
@@ -2397,6 +2465,8 @@ svg.spin {
     .publish-form-group,
     .publish-account-selectors,
     .publish-account-row,
+    .publish-drafts-panel,
+    .publish-draft-item,
     .table-wrapper {
         min-width: 0;
         max-width: 100%;
@@ -2415,6 +2485,15 @@ svg.spin {
         padding: 0.38rem 0.22rem;
         font-size: 0.73rem;
         border-radius: 9px;
+    }
+
+    .publish-draft-head {
+        align-items: flex-start;
+    }
+
+    .publish-draft-actions .btn {
+        flex: 1 1 calc(50% - 0.45rem);
+        min-width: 0;
     }
 }
 
