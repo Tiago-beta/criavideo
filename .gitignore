@@ -15,3 +15,5 @@ build/
 gen_traefik.py
 criavideo.yaml
 migrate.py
+android-build/
+*.aab
