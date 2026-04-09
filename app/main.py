@@ -115,6 +115,13 @@ async def privacy_page():
     return static_file_response("privacy.html")
 
 
+@app.get("/account-deletion")
+@app.get("/video/account-deletion")
+async def account_deletion_page():
+    """Serve the account deletion instructions page."""
+    return static_file_response("account-deletion.html")
+
+
 @app.get("/terms")
 @app.get("/video/terms")
 async def terms_page():
