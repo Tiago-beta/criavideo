@@ -75,6 +75,7 @@ class VideoProject(Base):
     lyrics_words = Column(JSON)  # word-level timestamps
     audio_path = Column(Text)  # path to audio file
     use_custom_images = Column(Boolean, default=False)  # user uploaded own photos
+    use_custom_video = Column(Boolean, default=False)  # user uploaded own video
     enable_subtitles = Column(Boolean, default=True)  # subtitle toggle
     zoom_images = Column(Boolean, default=True)  # enable zoom effect on still images
     image_display_seconds = Column(Float, default=0)  # custom seconds per image (0=auto)

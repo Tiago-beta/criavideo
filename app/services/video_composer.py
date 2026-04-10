@@ -387,3 +387,102 @@ def _render_static_fallback(
         err_lines = [l for l in result.stderr.split('\n') if l.strip() and 'size=' not in l and 'speed=' not in l]
         err_msg = '\n'.join(err_lines[-20:]) if err_lines else result.stderr[-2000:]
         raise RuntimeError(f"Fallback FFmpeg failed: {err_msg[-500:]}")
+
+
+def compose_overlay_video(
+    project_id: int,
+    video_path: str,
+    subtitle_path: str = "",
+    narration_path: str = "",
+    aspect_ratio: str = "16:9",
+    output_dir: str = "",
+) -> dict:
+    """Overlay subtitles and optional narration on a user-uploaded video.
+
+    Returns: {"file_path": str, "duration": float, "file_size": int}
+    """
+    if not video_path or not os.path.exists(video_path):
+        raise FileNotFoundError(f"Source video not found: {video_path}")
+
+    if not output_dir:
+        output_dir = os.path.join(settings.media_dir, "renders", str(project_id))
+    os.makedirs(output_dir, exist_ok=True)
+
+    if aspect_ratio == "9:16":
+        width, height = 1080, 1920
+    elif aspect_ratio == "1:1":
+        width, height = 1080, 1080
+    else:
+        width, height = 1920, 1080
+
+    output_path = os.path.join(output_dir, f"video_{aspect_ratio.replace(':', 'x')}.mp4")
+    video_duration = max(_get_duration(video_path), 1.0)
+
+    # Build filter_complex
+    input_args = ["-i", video_path]
+    input_idx = 1  # 0 = video
+
+    # Scale and crop to target aspect ratio
+    vf = (
+        f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height},format=yuv420p,setsar=1[scaled]"
+    )
+
+    # Subtitle burn-in
+    if subtitle_path and os.path.exists(subtitle_path):
+        sub_path_escaped = subtitle_path.replace("\\", "/").replace(":", "\\:")
+        vf += f";\n[scaled]ass='{sub_path_escaped}'[vout]"
+        video_output = "[vout]"
+    else:
+        video_output = "[scaled]"
+
+    # Audio handling: mix narration with original video audio
+    if narration_path and os.path.exists(narration_path):
+        input_args.extend(["-i", narration_path])
+        narr_idx = input_idx
+        input_idx += 1
+        # Lower original audio volume and mix with narration
+        fade_start = max(video_duration - 4, 0)
+        vf += (
+            f";\n[0:a]volume=0.15[origaudio];"
+            f"[{narr_idx}:a]volume=1.0[narration];"
+            f"[narration][origaudio]amix=inputs=2:duration=first:dropout_transition=3:normalize=0,"
+            f"afade=t=out:st={fade_start}:d=4[audioout]"
+        )
+        audio_output = "[audioout]"
+    else:
+        # Keep original audio as-is
+        audio_output = "0:a"
+
+    timeout = max(600, min(int(video_duration * 4), 7200))
+
+    cmd = [
+        "ffmpeg", "-y",
+        *input_args,
+        "-filter_complex", vf,
+        "-map", video_output,
+        "-map", audio_output,
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-crf", "22",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
+        "-shortest",
+        output_path,
+    ]
+
+    logger.info(f"Composing overlay video for project {project_id} ({video_duration:.1f}s)...")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+    if result.returncode != 0:
+        err_lines = [l for l in result.stderr.split('\n') if l.strip() and 'size=' not in l and 'speed=' not in l]
+        err_msg = '\n'.join(err_lines[-20:]) if err_lines else result.stderr[-2000:]
+        logger.error(f"Overlay FFmpeg error:\n{err_msg}")
+        raise RuntimeError(f"FFmpeg overlay failed: {err_msg[-500:]}")
+
+    file_size = os.path.getsize(output_path)
+    duration = _get_duration(output_path)
+
+    logger.info(f"Overlay video rendered: {output_path} ({file_size / 1024 / 1024:.1f} MB, {duration:.1f}s)")
+    return {"file_path": output_path, "duration": duration, "file_size": file_size}

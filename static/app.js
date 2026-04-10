@@ -1238,6 +1238,7 @@ function resetCreateWizard() {
         style: "",
         useCustomImages: false,
         useCustomAudio: false,
+        useCustomVideo: false,
         audioIsMusic: false,
         removeVocals: false,
         createNarration: true,
@@ -1305,6 +1306,24 @@ function resetCreateWizard() {
     }
     const audioIsMusicCb = document.getElementById("script-audio-is-music");
     if (audioIsMusicCb) audioIsMusicCb.checked = false;
+
+    // Reset user video upload
+    scriptUserVideoFile = null;
+    const userVideoCb = document.getElementById("script-use-video");
+    if (userVideoCb) userVideoCb.checked = false;
+    const userVideoArea = document.getElementById("script-video-area");
+    if (userVideoArea) userVideoArea.hidden = true;
+    const userVideoInput = document.getElementById("script-video-input");
+    if (userVideoInput) userVideoInput.value = "";
+    const userVideoName = document.getElementById("script-video-name");
+    if (userVideoName) {
+        userVideoName.hidden = true;
+        userVideoName.textContent = "";
+    }
+    const videoNarChoice = document.getElementById("script-video-narration-choice");
+    if (videoNarChoice) videoNarChoice.hidden = true;
+    const videoNarCb = document.getElementById("script-video-create-narration");
+    if (videoNarCb) videoNarCb.checked = true;
 
     // Reset subtitle toggle
     const subCb = document.getElementById("script-enable-subtitles");
@@ -1437,46 +1456,75 @@ function scriptNext() {
         const title = document.getElementById("script-title").value.trim();
         const text = document.getElementById("script-text").value.trim();
         const usePhotos = document.getElementById("script-use-photos").checked;
+        const useVideo = document.getElementById("script-use-video") ? document.getElementById("script-use-video").checked : false;
+        const hasVideo = useVideo && !!scriptUserVideoFile;
         const useUserAudioToggle = document.getElementById("script-use-user-audio")
             ? document.getElementById("script-use-user-audio").checked
             : false;
         const hasUserAudio = useUserAudioToggle && !!scriptUserAudioFile;
         const createNarration = !usePhotos || document.getElementById("script-create-narration").checked;
+        const videoCreateNarration = hasVideo ? !!document.getElementById("script-video-create-narration")?.checked : false;
         if (!title) { alert("Digite o titulo do projeto."); return; }
-        if (useUserAudioToggle && !hasUserAudio) {
-            alert("Envie um audio para usar no video.");
-            return;
-        }
-        if (createNarration && !hasUserAudio && (!text || text.length < 20)) {
-            alert("Escreva um roteiro com pelo menos 20 caracteres.");
-            return;
-        }
-        if (!createNarration && scriptPhotos.length === 0 && !hasUserAudio) {
-            alert("Envie fotos para criar o video sem narracao.");
-            return;
-        }
-        scriptData.title = title;
-        scriptData.useCustomImages = usePhotos && scriptPhotos.length > 0;
-        scriptData.useCustomAudio = hasUserAudio;
-        scriptData.audioIsMusic = hasUserAudio ? !!document.getElementById("script-audio-is-music")?.checked : false;
-        scriptData.removeVocals = hasUserAudio && scriptData.audioIsMusic;
-        scriptData.createNarration = hasUserAudio ? false : createNarration;
-        scriptData.text = hasUserAudio ? text : (createNarration ? text : "");
 
-        // If karaoke is detected in step 1, keep background music off by default in step 4.
-        const bgmToggle = document.getElementById("script-enable-bgm");
-        const bgmUploadArea = document.getElementById("script-bgm-upload-area");
-        const bgmInput = document.getElementById("script-bgm-file");
-        if (bgmToggle && scriptData.useCustomAudio && scriptData.audioIsMusic) {
-            bgmToggle.checked = false;
-            if (bgmUploadArea) bgmUploadArea.hidden = true;
-            if (bgmInput) bgmInput.value = "";
-        }
+        if (hasVideo) {
+            // Video mode: narration is optional, subtitles always on
+            scriptData.title = title;
+            scriptData.useCustomVideo = true;
+            scriptData.useCustomImages = false;
+            scriptData.useCustomAudio = false;
+            scriptData.audioIsMusic = false;
+            scriptData.removeVocals = false;
+            scriptData.createNarration = videoCreateNarration;
+            scriptData.enableSubtitles = true;
+            scriptData.text = videoCreateNarration ? text : "";
+            if (videoCreateNarration && (!text || text.length < 20)) {
+                alert("Escreva um roteiro com pelo menos 20 caracteres para a narracao.");
+                return;
+            }
+            if (!videoCreateNarration) {
+                // No narration: skip to step 4
+                scriptStep = 4;
+                updateWizardUI("create-panel-script", scriptStep, 5, "script");
+                return;
+            }
+        } else {
+            // Original photo/audio logic
+            if (useUserAudioToggle && !hasUserAudio) {
+                alert("Envie um audio para usar no video.");
+                return;
+            }
+            if (createNarration && !hasUserAudio && (!text || text.length < 20)) {
+                alert("Escreva um roteiro com pelo menos 20 caracteres.");
+                return;
+            }
+            if (!createNarration && scriptPhotos.length === 0 && !hasUserAudio) {
+                alert("Envie fotos para criar o video sem narracao.");
+                return;
+            }
+            scriptData.title = title;
+            scriptData.useCustomVideo = false;
+            scriptData.useCustomImages = usePhotos && scriptPhotos.length > 0;
+            scriptData.useCustomAudio = hasUserAudio;
+            scriptData.audioIsMusic = hasUserAudio ? !!document.getElementById("script-audio-is-music")?.checked : false;
+            scriptData.removeVocals = hasUserAudio && scriptData.audioIsMusic;
+            scriptData.createNarration = hasUserAudio ? false : createNarration;
+            scriptData.text = hasUserAudio ? text : (createNarration ? text : "");
 
-        if (!scriptData.createNarration || hasUserAudio) {
-            scriptStep = 4;
-            updateWizardUI("create-panel-script", scriptStep, 5, "script");
-            return;
+            // If karaoke is detected in step 1, keep background music off by default in step 4.
+            const bgmToggle = document.getElementById("script-enable-bgm");
+            const bgmUploadArea = document.getElementById("script-bgm-upload-area");
+            const bgmInput = document.getElementById("script-bgm-file");
+            if (bgmToggle && scriptData.useCustomAudio && scriptData.audioIsMusic) {
+                bgmToggle.checked = false;
+                if (bgmUploadArea) bgmUploadArea.hidden = true;
+                if (bgmInput) bgmInput.value = "";
+            }
+
+            if (!scriptData.createNarration || hasUserAudio) {
+                scriptStep = 4;
+                updateWizardUI("create-panel-script", scriptStep, 5, "script");
+                return;
+            }
         }
     }
     if (scriptStep === 2) {
@@ -1526,6 +1574,7 @@ async function handleScriptCreate() {
     scriptData.style = getSelectedStyles("script-style-tags");
     scriptData.pauseLevel = getSelectedPause("script-pause-options");
     const usePhotosSelected = document.getElementById("script-use-photos").checked;
+    const useVideoSelected = document.getElementById("script-use-video") ? document.getElementById("script-use-video").checked : false;
     const useAudioSelected = document.getElementById("script-use-user-audio")
         ? document.getElementById("script-use-user-audio").checked
         : false;
@@ -1533,19 +1582,28 @@ async function handleScriptCreate() {
     scriptData.imageDisplaySeconds = usePhotosSelected
         ? (parseFloat(document.getElementById("script-image-seconds").value || "0") || 0)
         : 0;
-    scriptData.useCustomImages = usePhotosSelected && scriptPhotos.length > 0;
-    scriptData.useCustomAudio = useAudioSelected && !!scriptUserAudioFile;
+    scriptData.useCustomVideo = useVideoSelected && !!scriptUserVideoFile;
+    scriptData.useCustomImages = !scriptData.useCustomVideo && usePhotosSelected && scriptPhotos.length > 0;
+    scriptData.useCustomAudio = !scriptData.useCustomVideo && useAudioSelected && !!scriptUserAudioFile;
     scriptData.audioIsMusic = scriptData.useCustomAudio ? !!document.getElementById("script-audio-is-music")?.checked : false;
     scriptData.removeVocals = scriptData.useCustomAudio && scriptData.audioIsMusic;
-    scriptData.createNarration = scriptData.useCustomAudio
-        ? false
-        : (!scriptData.useCustomImages || document.getElementById("script-create-narration").checked);
-    if (!scriptData.createNarration && !scriptData.useCustomAudio) {
+
+    if (scriptData.useCustomVideo) {
+        const videoNarCb = document.getElementById("script-video-create-narration");
+        scriptData.createNarration = videoNarCb ? videoNarCb.checked : false;
+        scriptData.enableSubtitles = true;
+    } else {
+        scriptData.createNarration = scriptData.useCustomAudio
+            ? false
+            : (!scriptData.useCustomImages || document.getElementById("script-create-narration").checked);
+        scriptData.enableSubtitles = usePhotosSelected ? document.getElementById("script-enable-subtitles").checked : true;
+    }
+
+    if (!scriptData.createNarration && !scriptData.useCustomAudio && !scriptData.useCustomVideo) {
         scriptData.text = "";
         scriptData.voice = "";
         scriptData.voiceProfileId = 0;
     }
-    scriptData.enableSubtitles = usePhotosSelected ? document.getElementById("script-enable-subtitles").checked : true;
     if (scriptData.useCustomAudio && scriptData.audioIsMusic) {
         scriptData.enableSubtitles = true;
     }
@@ -1553,13 +1611,18 @@ async function handleScriptCreate() {
     const bgmFileInput = document.getElementById("script-bgm-file");
     const bgmFile = bgmEnabled && bgmFileInput && bgmFileInput.files ? bgmFileInput.files[0] : null;
 
-    if (useAudioSelected && !scriptData.useCustomAudio) {
+    if (useAudioSelected && !scriptData.useCustomAudio && !scriptData.useCustomVideo) {
         alert("Selecione um arquivo de audio para usar no video.");
         return;
     }
 
-    if (!scriptData.text && !scriptData.useCustomImages && !scriptData.useCustomAudio) {
-        alert("Sem narracao, envie fotos ou audio para criar um video personalizado.");
+    if (useVideoSelected && !scriptData.useCustomVideo) {
+        alert("Selecione um video para enviar.");
+        return;
+    }
+
+    if (!scriptData.text && !scriptData.useCustomImages && !scriptData.useCustomAudio && !scriptData.useCustomVideo) {
+        alert("Sem narracao, envie fotos, video ou audio para criar um video personalizado.");
         return;
     }
 
@@ -1572,7 +1635,9 @@ async function handleScriptCreate() {
         return;
     }
 
-    const startMessage = scriptData.useCustomAudio
+    const startMessage = scriptData.useCustomVideo
+        ? "Preparando video com legendas..."
+        : scriptData.useCustomAudio
         ? "Preparando video a partir do seu audio..."
         : (scriptData.text ? "Gerando narracao com voz IA..." : "Preparando video com fotos (musica automatica se nao enviar)...");
     const startStage = scriptData.removeVocals ? "Removendo voz..." : "Processando...";
@@ -1582,7 +1647,14 @@ async function handleScriptCreate() {
         const uploadedImageIds = [];
         let uploadedMusicId = "";
         let uploadedMainAudioId = "";
+        let uploadedVideoId = "";
         let karaokeOperationId = "";
+
+        if (scriptData.useCustomVideo && scriptUserVideoFile) {
+            showCreateProgress("Enviando video...", { progress: 15, stage: "Enviando arquivos..." });
+            const uploadedVideo = await uploadTempFileWithRetry(scriptUserVideoFile, "video", "video");
+            uploadedVideoId = uploadedVideo.upload_id || "";
+        }
 
         if (scriptData.useCustomImages) {
             for (let i = 0; i < scriptPhotos.length; i++) {
@@ -1641,6 +1713,9 @@ async function handleScriptCreate() {
         if (uploadedMainAudioId) {
             formData.append("custom_audio_id", uploadedMainAudioId);
         }
+        if (uploadedVideoId) {
+            formData.append("custom_video_id", uploadedVideoId);
+        }
         if (uploadedMusicId && !scriptData.useCustomAudio) {
             formData.append("background_music_id", uploadedMusicId);
         }
@@ -1671,7 +1746,7 @@ async function handleScriptCreate() {
 
 async function uploadTempFileWithRetry(file, kind, label) {
     // Try simple direct upload first (most reliable)
-    const endpoint = kind === "audio" ? "/video/upload-temp-audio" : "/video/upload-temp-image";
+    const endpoint = kind === "audio" ? "/video/upload-temp-audio" : kind === "video" ? "/video/upload-temp-video" : "/video/upload-temp-image";
     const maxRetries = 5;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -1697,14 +1772,24 @@ async function uploadTempFileWithRetry(file, kind, label) {
 // ── Photo Upload (Meu Roteiro) ──
 let scriptPhotos = []; // array of File objects
 let scriptUserAudioFile = null;
+let scriptUserVideoFile = null; // single File object for custom video
 const MAX_PHOTOS = 20;
 const MAX_AI_SCRIPT_PHOTO_ANALYSIS = 8;
 const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_AUDIO_SIZE = 80 * 1024 * 1024; // 80MB
+const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB
 
 function togglePhotoUpload() {
     const checked = document.getElementById("script-use-photos").checked;
     document.getElementById("script-photo-area").hidden = !checked;
+    // Photos and video are mutually exclusive
+    if (checked) {
+        const videoCb = document.getElementById("script-use-video");
+        if (videoCb && videoCb.checked) {
+            videoCb.checked = false;
+            toggleVideoUpload();
+        }
+    }
     toggleScriptPhotoDependentFields();
     if (!checked) {
         scriptData.createNarration = true;
@@ -1712,6 +1797,60 @@ function togglePhotoUpload() {
         if (narCb) narCb.checked = true;
     }
     updateNarrationChoiceVisibility();
+}
+
+function toggleVideoUpload() {
+    const checked = document.getElementById("script-use-video").checked;
+    const area = document.getElementById("script-video-area");
+    if (area) area.hidden = !checked;
+    // Video and photos are mutually exclusive
+    if (checked) {
+        const photoCb = document.getElementById("script-use-photos");
+        if (photoCb && photoCb.checked) {
+            photoCb.checked = false;
+            document.getElementById("script-photo-area").hidden = true;
+        }
+    }
+    if (!checked) {
+        scriptUserVideoFile = null;
+        const input = document.getElementById("script-video-input");
+        if (input) input.value = "";
+        const nameEl = document.getElementById("script-video-name");
+        if (nameEl) { nameEl.hidden = true; nameEl.textContent = ""; }
+        const narChoice = document.getElementById("script-video-narration-choice");
+        if (narChoice) narChoice.hidden = true;
+    }
+    toggleScriptPhotoDependentFields();
+}
+
+function handleUserVideoSelect(event) {
+    const file = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+    if (!file) return;
+
+    const validTypes = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/webm", "video/x-matroska"];
+    if (!file.type.startsWith("video/") && !validTypes.includes(file.type)) {
+        alert("Formato nao suportado. Envie um video MP4, MOV, AVI ou WEBM.");
+        event.target.value = "";
+        return;
+    }
+    if (file.size > MAX_VIDEO_SIZE) {
+        alert("Video excede 500MB. Reduza o tamanho e tente novamente.");
+        event.target.value = "";
+        return;
+    }
+
+    scriptUserVideoFile = file;
+    const nameEl = document.getElementById("script-video-name");
+    if (nameEl) {
+        nameEl.hidden = false;
+        nameEl.textContent = "Video selecionado: " + file.name + " (" + (file.size / 1024 / 1024).toFixed(1) + "MB)";
+    }
+    const narChoice = document.getElementById("script-video-narration-choice");
+    if (narChoice) narChoice.hidden = false;
+}
+
+function toggleScriptVideoNarration() {
+    // Narration toggle for custom video mode — controls whether to add AI narration over the video
 }
 
 function toggleUserAudioUpload() {
@@ -1767,13 +1906,14 @@ function handleUserAudioSelect(event) {
 
 function toggleScriptPhotoDependentFields() {
     const usePhotos = document.getElementById("script-use-photos").checked;
+    const useVideo = document.getElementById("script-use-video") ? document.getElementById("script-use-video").checked : false;
     const useUserAudio = document.getElementById("script-use-user-audio")
         ? document.getElementById("script-use-user-audio").checked
         : false;
     const imageSecondsGroup = document.getElementById("script-photo-seconds-group");
     const subtitlesGroup = document.getElementById("script-subtitles-group");
-    if (imageSecondsGroup) imageSecondsGroup.hidden = !usePhotos;
-    if (subtitlesGroup) subtitlesGroup.hidden = !(usePhotos || useUserAudio);
+    if (imageSecondsGroup) imageSecondsGroup.hidden = !usePhotos || useVideo;
+    if (subtitlesGroup) subtitlesGroup.hidden = useVideo || !(usePhotos || useUserAudio);
 }
 
 function toggleScriptNarration() {
@@ -1889,6 +2029,21 @@ document.addEventListener("DOMContentLoaded", () => {
             const input = document.getElementById("script-user-audio-input");
             if (input) input.value = "";
             handleUserAudioSelect({ target: { files: [file] } });
+        });
+    }
+
+    const vdz = document.getElementById("script-video-dropzone");
+    if (vdz) {
+        vdz.addEventListener("dragover", (e) => { e.preventDefault(); vdz.classList.add("dragover"); });
+        vdz.addEventListener("dragleave", () => vdz.classList.remove("dragover"));
+        vdz.addEventListener("drop", (e) => {
+            e.preventDefault();
+            vdz.classList.remove("dragover");
+            const file = Array.from(e.dataTransfer.files).find(f => f.type.startsWith("video/"));
+            if (!file) return;
+            const input = document.getElementById("script-video-input");
+            if (input) input.value = "";
+            handleUserVideoSelect({ target: { files: [file] } });
         });
     }
 });

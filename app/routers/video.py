@@ -45,6 +45,7 @@ os.makedirs(VOICE_DEMO_DIR, exist_ok=True)
 TEMP_UPLOAD_DIR = Path(settings.media_dir) / "temp_uploads"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus", ".webm"}
+VIDEO_EXTS = {".mp4", ".mov", ".avi", ".webm", ".mkv"}
 KARAOKE_PROGRESS_TTL_MINUTES = 120
 _karaoke_progress_store: dict[str, dict] = {}
 
@@ -167,6 +168,28 @@ async def upload_temp_audio(
     content = await file.read()
     if len(content) > 80 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Audio excede 80MB")
+
+    upload_id = f"{uuid.uuid4().hex}{ext}"
+    target = _temp_user_dir(user["id"]) / upload_id
+    with open(target, "wb") as f:
+        f.write(content)
+    return {"upload_id": upload_id, "size": len(content)}
+
+
+@router.post("/upload-temp-video")
+async def upload_temp_video(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Arquivo de video invalido")
+    ext = Path(file.filename).suffix.lower()
+    if ext not in VIDEO_EXTS:
+        raise HTTPException(status_code=400, detail="Formato de video nao suportado. Use MP4, MOV, AVI ou WEBM.")
+
+    content = await file.read()
+    if len(content) > 500 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Video excede 500MB")
 
     upload_id = f"{uuid.uuid4().hex}{ext}"
     target = _temp_user_dir(user["id"]) / upload_id
@@ -888,6 +911,7 @@ async def generate_audio_endpoint(
     custom_image_ids: list[str] = []
     background_music_id: str = ""
     custom_audio_id: str = ""
+    custom_video_id: str = ""
     karaoke_operation_id: str = ""
     if "multipart/form-data" in content_type:
         form = await request.form()
@@ -943,6 +967,7 @@ async def generate_audio_endpoint(
             custom_image_ids = []
         background_music_id = str(form.get("background_music_id", "")).strip()
         custom_audio_id = str(form.get("custom_audio_id", "")).strip()
+        custom_video_id = str(form.get("custom_video_id", "")).strip()
         karaoke_operation_id = str(form.get("karaoke_operation_id", "")).strip()
     else:
         payload = await request.json()
@@ -1023,6 +1048,7 @@ async def generate_audio_endpoint(
     # Create project first to get an ID for the audio path
     has_custom_images = len(custom_image_uploads) > 0 or len(custom_image_ids) > 0
     has_custom_audio = req.use_custom_audio and has_custom_audio
+    has_custom_video = bool(custom_video_id)
     image_display_seconds = req.image_display_seconds if req.image_display_seconds and req.image_display_seconds > 0 else 0
     project = VideoProject(
         user_id=user["id"],
@@ -1032,17 +1058,18 @@ async def generate_audio_endpoint(
         tags=[],
         style_prompt=req.style_prompt or "cinematic, vibrant colors, dynamic lighting",
         aspect_ratio=req.aspect_ratio,
-        track_title=req.title or ("Audio enviado" if has_custom_audio else "Narração IA"),
-        track_artist="Usuario" if has_custom_audio else "CriaVideo AI",
+        track_title=req.title or ("Video enviado" if has_custom_video else "Audio enviado" if has_custom_audio else "Narração IA"),
+        track_artist="Usuario" if (has_custom_audio or has_custom_video) else "CriaVideo AI",
         track_duration=0,
         lyrics_text=req.script,
         lyrics_words=[],
         audio_path="",
-        use_custom_images=has_custom_images,
+        use_custom_images=has_custom_images and not has_custom_video,
+        use_custom_video=has_custom_video,
         enable_subtitles=req.enable_subtitles,
         zoom_images=req.zoom_images,
         image_display_seconds=image_display_seconds,
-        no_background_music=(req.no_background_music or has_custom_audio),
+        no_background_music=(req.no_background_music or has_custom_audio or has_custom_video),
         is_karaoke=(req.use_custom_audio and req.audio_is_music and req.remove_vocals),
     )
     db.add(project)
@@ -1085,6 +1112,31 @@ async def generate_audio_endpoint(
                 idx += 1
             except Exception as e:
                 logger.warning(f"Failed to save custom image {idx} for project {project.id}: {e}")
+
+    # Save custom video uploaded by user
+    custom_video_path = ""
+    if has_custom_video and custom_video_id:
+        try:
+            src = _resolve_temp_file(user["id"], custom_video_id, VIDEO_EXTS)
+            if not src:
+                raise HTTPException(status_code=400, detail="Video enviado nao foi encontrado.")
+            vid_dir = Path(settings.media_dir) / "videos" / str(project.id)
+            vid_dir.mkdir(parents=True, exist_ok=True)
+            ext = src.suffix.lower() if src.suffix else ".mp4"
+            target = vid_dir / f"user_video{ext}"
+            shutil.copy2(src, target)
+            custom_video_path = str(target)
+
+            from app.services.video_composer import _get_duration as get_video_duration
+            vid_dur = get_video_duration(custom_video_path)
+            if vid_dur > 0:
+                project.track_duration = round(vid_dur)
+            logger.info(f"Custom video saved for project {project.id}: {custom_video_path} ({vid_dur:.1f}s)")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Failed to save custom video for project {project.id}: {e}")
+            raise HTTPException(status_code=400, detail=f"Falha ao processar video enviado: {e}")
 
     # Save optional custom background music. The pipeline will prioritize this file over Suno.
     custom_bgm_path = ""
@@ -1290,7 +1342,8 @@ async def generate_audio_endpoint(
                 # No narration + no uploaded music: pipeline will generate instrumental music automatically.
                 project.audio_path = ""
                 project.track_duration = 0
-            project.enable_subtitles = False
+            if not has_custom_video:
+                project.enable_subtitles = False
 
         project.status = VideoStatus.GENERATING_SCENES
         project.progress = 0
