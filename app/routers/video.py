@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 import openai
 from app.auth import get_current_user
@@ -782,6 +782,7 @@ class GenerateScriptRequest(BaseModel):
     topic: str
     tone: str = "informativo"
     duration_seconds: int = 60
+    custom_image_ids: list[str] = Field(default_factory=list)
 
 
 class GenerateTTSRequest(BaseModel):
@@ -847,11 +848,24 @@ async def generate_script_endpoint(
 ):
     """Generate a video narration script using AI."""
     from app.services.script_audio import generate_script
+
+    image_paths: list[str] = []
+    for upload_id in (req.custom_image_ids or [])[:8]:
+        resolved = _resolve_temp_file(user["id"], str(upload_id).strip(), IMAGE_EXTS)
+        if resolved:
+            image_paths.append(str(resolved))
+
     result = await generate_script(
         topic=req.topic,
         tone=req.tone,
         duration_seconds=req.duration_seconds,
+        image_paths=image_paths,
     )
+
+    if image_paths:
+        result["image_context_used"] = True
+        result["image_count_used"] = len(image_paths)
+
     return result
 
 

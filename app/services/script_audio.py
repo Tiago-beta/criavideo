@@ -2,6 +2,8 @@
 Script & Audio Generator — Creates video scripts with AI and generates TTS narration via OpenAI.
 """
 import os
+import io
+import json
 import logging
 import re
 import subprocess
@@ -9,21 +11,171 @@ import tempfile
 from pathlib import Path
 
 import openai
+from PIL import Image
 
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 _openai = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+SCRIPT_TEXT_MODEL = "gpt-4o"
+SCRIPT_VISION_MODEL = "gpt-4.1"
+MAX_SCRIPT_REFERENCE_IMAGES = 8
+
+
+def _image_to_data_url(image_path: str) -> str | None:
+    """Resize/compress image and return as base64 data URL for multimodal analysis."""
+    try:
+        with Image.open(image_path) as image:
+            image = image.convert("RGB")
+            image.thumbnail((1280, 1280))
+
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=82, optimize=True)
+            encoded = buffer.getvalue()
+            if not encoded:
+                return None
+            import base64
+
+            b64 = base64.b64encode(encoded).decode("ascii")
+            return f"data:image/jpeg;base64,{b64}"
+    except Exception as e:
+        logger.warning("Failed to prepare image for script analysis (%s): %s", image_path, e)
+        return None
+
+
+def _format_visual_context(analysis: dict) -> str:
+    """Convert image analysis JSON into a concise textual context for script generation."""
+    if not isinstance(analysis, dict):
+        return ""
+
+    theme = str(analysis.get("theme", "")).strip()
+    mood = str(analysis.get("mood", "")).strip()
+    objects = analysis.get("key_objects", [])
+    locations = analysis.get("locations", [])
+    story = str(analysis.get("story_angle", "")).strip()
+    audience = str(analysis.get("audience_hook", "")).strip()
+
+    objects_txt = ", ".join([str(item).strip() for item in objects if str(item).strip()])
+    locations_txt = ", ".join([str(item).strip() for item in locations if str(item).strip()])
+
+    lines = []
+    if theme:
+        lines.append(f"- Tema visual observado: {theme}")
+    if mood:
+        lines.append(f"- Clima/emocao predominante: {mood}")
+    if objects_txt:
+        lines.append(f"- Elementos principais nas fotos: {objects_txt}")
+    if locations_txt:
+        lines.append(f"- Ambientes/locais percebidos: {locations_txt}")
+    if story:
+        lines.append(f"- Angulo narrativo sugerido: {story}")
+    if audience:
+        lines.append(f"- Gancho sugerido para o publico: {audience}")
+
+    return "\n".join(lines)
+
+
+async def _analyze_images_for_script(
+    image_paths: list[str],
+    topic: str,
+    tone: str,
+    duration_seconds: int,
+) -> str:
+    """Analyze user photos with a vision model and return prompt-ready context."""
+    if not image_paths:
+        return ""
+
+    valid_paths = [path for path in image_paths if path and os.path.exists(path)]
+    if not valid_paths:
+        return ""
+
+    limited_paths = valid_paths[:MAX_SCRIPT_REFERENCE_IMAGES]
+    content = [
+        {
+            "type": "text",
+            "text": (
+                "Analise as fotos enviadas por um usuario e gere um resumo visual estruturado para apoiar"
+                " a escrita de um roteiro de video curto.\n"
+                f"Tema informado: {topic or 'Nao informado'}\n"
+                f"Tom desejado: {tone}\n"
+                f"Duracao alvo: {duration_seconds} segundos\n"
+                "Responda SOMENTE em JSON com as chaves:\n"
+                "theme (string), mood (string), key_objects (array), locations (array),"
+                " story_angle (string), audience_hook (string)."
+            ),
+        }
+    ]
+
+    prepared_images = 0
+    for image_path in limited_paths:
+        data_url = _image_to_data_url(image_path)
+        if not data_url:
+            continue
+        prepared_images += 1
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": data_url,
+                    "detail": "low",
+                },
+            }
+        )
+
+    if prepared_images == 0:
+        return ""
+
+    last_error = None
+    for model_name in (SCRIPT_VISION_MODEL, "gpt-4o"):
+        try:
+            resp = await _openai.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Voce e um diretor criativo especialista em storytelling visual. "
+                            "Observe cuidadosamente as imagens e extraia apenas o que e plausivel."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": content,
+                    },
+                ],
+                temperature=0.25,
+                max_tokens=900,
+                response_format={"type": "json_object"},
+            )
+            raw = (resp.choices[0].message.content or "{}").strip()
+            analysis = json.loads(raw)
+            logger.info("Script image analysis succeeded with model=%s and %s images", model_name, prepared_images)
+            return _format_visual_context(analysis)
+        except Exception as e:
+            last_error = e
+            logger.warning("Script image analysis failed with model=%s: %s", model_name, e)
+
+    if last_error:
+        logger.warning("All script image-analysis models failed, falling back to text-only script: %s", last_error)
+    return ""
 
 
 async def generate_script(
     topic: str,
     tone: str = "informativo",
     duration_seconds: int = 60,
+    image_paths: list[str] | None = None,
 ) -> dict:
     """Use GPT-4o to generate a viral video narration script."""
+    topic = (topic or "").strip() or "Conteudo enviado pelo usuario"
     word_target = int(duration_seconds * 2.5)
+    visual_context = ""
+    if image_paths:
+        try:
+            visual_context = await _analyze_images_for_script(image_paths, topic, tone, duration_seconds)
+        except Exception as e:
+            logger.warning("Image-aware script context failed, continuing with text-only prompt: %s", e)
 
     # For long videos (>5 min), adapt the prompt for long-form content
     is_long = duration_seconds > 300
@@ -44,12 +196,26 @@ IMPORTANTE: O texto PRECISA ter aproximadamente {word_target} palavras para pree
 3. CLÍMAX: O momento de revelação ou insight principal — a informação mais valiosa ou emocionante.
 4. FECHAMENTO: Chamada para ação poderosa ou frase de reflexão que fica na mente."""
 
+    photos_section = ""
+    if visual_context:
+        photos_section = f"""
+REFERENCIAS VISUAIS DAS FOTOS DO USUARIO (OBRIGATORIO LEVAR EM CONTA):
+{visual_context}
+
+REGRAS EXTRAS PARA ESTE CASO:
+- Baseie o roteiro no que aparece nessas fotos, conectando as imagens a narrativa.
+- Nao invente fatos especificos, nomes de marcas ou detalhes que nao podem ser inferidos pelas imagens.
+- Se algo estiver ambiguo, use formulacoes seguras (ex.: "parece", "lembra", "transmite").
+"""
+
     prompt = f"""Você é um roteirista VIRAL{"" if is_long else " de vídeos curtos"} que acumula milhões de views no YouTube{" Shorts, TikTok e Instagram Reels" if not is_long else ""}.
 Seu estilo combina storytelling emocional, ganchos psicológicos e linguagem que prende desde o primeiro segundo.
 
 TEMA: {topic}
 TOM: {tone}
 DURAÇÃO: ~{duration_seconds} segundos (~{word_target} palavras)
+
+{photos_section}
 
 {structure}
 
@@ -69,7 +235,7 @@ Responda SOMENTE com o texto do roteiro. Sem títulos, sem formatação."""
 
     try:
         resp = await _openai.chat.completions.create(
-            model="gpt-4o",
+            model=SCRIPT_TEXT_MODEL,
             messages=[
                 {"role": "system", "content": "Você é o melhor roteirista de vídeos virais do Brasil. Seus textos são magnéticos — quem ouve não consegue parar."},
                 {"role": "user", "content": prompt},

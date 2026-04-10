@@ -1698,6 +1698,7 @@ async function uploadTempFileWithRetry(file, kind, label) {
 let scriptPhotos = []; // array of File objects
 let scriptUserAudioFile = null;
 const MAX_PHOTOS = 20;
+const MAX_AI_SCRIPT_PHOTO_ANALYSIS = 8;
 const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_AUDIO_SIZE = 80 * 1024 * 1024; // 80MB
 
@@ -1906,15 +1907,41 @@ async function generateAiScript() {
     const topic = document.getElementById("ai-suggest-topic").value.trim();
     if (!topic) { alert("Digite o tema do video."); return; }
 
-    showCreateProgress("Gerando roteiro com IA...");
+    const usePhotos = document.getElementById("script-use-photos")?.checked && scriptPhotos.length > 0;
+    showCreateProgress(usePhotos ? "Preparando analise das fotos..." : "Gerando roteiro com IA...", {
+        progress: 12,
+        stage: usePhotos ? "Enviando fotos..." : "Criando roteiro...",
+    });
 
     try {
+        const uploadedImageIds = [];
+        if (usePhotos) {
+            const photosToAnalyze = scriptPhotos.slice(0, MAX_AI_SCRIPT_PHOTO_ANALYSIS);
+            for (let i = 0; i < photosToAnalyze.length; i++) {
+                const uploadProgress = Math.round(12 + ((i + 1) / photosToAnalyze.length) * 33);
+                showCreateProgress(`Enviando foto ${i + 1}/${photosToAnalyze.length} para analise...`, {
+                    progress: uploadProgress,
+                    stage: "Enviando fotos...",
+                });
+                const uploaded = await uploadTempFileWithRetry(photosToAnalyze[i], "image", `foto ${i + 1}`);
+                if (uploaded?.upload_id) {
+                    uploadedImageIds.push(uploaded.upload_id);
+                }
+            }
+        }
+
+        showCreateProgress(uploadedImageIds.length > 0 ? "Analisando fotos e criando roteiro..." : "Gerando roteiro com IA...", {
+            progress: 50,
+            stage: "Criando roteiro...",
+        });
+
         const result = await api("/video/generate-script", {
             method: "POST",
             body: JSON.stringify({
                 topic,
                 tone: document.getElementById("ai-suggest-tone").value,
                 duration_seconds: parseInt(document.getElementById("ai-suggest-duration").value),
+                custom_image_ids: uploadedImageIds,
             }),
         });
 
