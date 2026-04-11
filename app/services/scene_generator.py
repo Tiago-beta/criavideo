@@ -37,6 +37,9 @@ async def analyze_lyrics_for_scenes(lyrics_text: str, lyrics_words: list, durati
 split the song into {scene_min}-{scene_max} visual scenes for a music video. Each scene should last between 8-15 seconds.
 {"NOTE: The video is very long. Focus on creating diverse, visually distinct scenes. They will be cycled/repeated throughout the video, so variety is key." if duration > 300 else ""}
 
+IMPORTANT GENRE RULES:
+- If the lyrics are gospel, worship, christian, or spiritual in theme: use ONLY uplifting imagery. Prefer beautiful nature scenes (mountains, rivers, sunsets, starry skies, green fields, oceans, waterfalls, forests with sunlight), well-known Biblical scenes (shepherd with sheep, peaceful gardens, parting of waters, dove of peace, bread and wine, olive trees), and joyful people (diverse people with hands raised in worship, families, communities together, people praying peacefully). NEVER use dark, horror, scary, or violent imagery for gospel/worship songs. Keep the mood warm, radiant, hopeful, and divine.
+
 For each scene, provide:
 - scene_index: sequential number starting from 0
 - start_time: approximate start in seconds
@@ -68,10 +71,25 @@ Respond ONLY with a JSON array. No markdown, no explanation."""
 
 def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: str = "") -> str:
     """Generate a single scene image using Nano Banana. Synchronous (runs in thread)."""
-    style_prefix = (
-        "Cinematic, high quality, moody lighting, music video aesthetic. "
-        "No text or words in the image. "
-    )
+    # Detect gospel/worship theme to adjust style
+    prompt_lower = prompt.lower()
+    is_gospel = any(w in prompt_lower for w in [
+        "worship", "gospel", "spiritual", "biblical", "divine", "prayer",
+        "church", "faith", "god", "jesus", "holy", "praise", "shepherd",
+        "psalm", "hymn", "adoração", "louvor", "evangel",
+    ])
+    if is_gospel:
+        style_prefix = (
+            "Beautiful, warm, radiant, uplifting, photorealistic. "
+            "Golden hour lighting, soft divine glow, peaceful and hopeful atmosphere. "
+            "Nature-inspired or Biblical scene. No dark or horror elements. "
+            "No text or words in the image. "
+        )
+    else:
+        style_prefix = (
+            "Cinematic, high quality, moody lighting, music video aesthetic. "
+            "No text or words in the image. "
+        )
     full_prompt = style_prefix + prompt
 
     response = google_client.models.generate_content(
