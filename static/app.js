@@ -588,9 +588,9 @@ async function bootstrap() {
     initDashboard();
 }
 
-function initDashboard() {
+async function initDashboard() {
     renderSession();
-    updateCreditsDisplay();
+    await updateCreditsDisplay();
     const renameInput = document.getElementById("edit-project-title");
     if (renameInput) {
         renameInput.addEventListener("keydown", (event) => {
