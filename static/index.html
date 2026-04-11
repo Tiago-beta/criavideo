@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260410-03">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260410-04">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -714,6 +714,14 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="form-group" style="margin-top:18px">
+                            <label>Pausas</label>
+                            <div class="pause-options" id="script-pause-options">
+                                <button class="pause-option selected" data-value="normal" type="button">Normal</button>
+                                <button class="pause-option" data-value="relaxed" type="button">Suaves</button>
+                                <button class="pause-option" data-value="deep" type="button">Profundas</button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Step 4: Format + Audio -->
@@ -728,20 +736,12 @@
                                     <option value="1:1">1:1 (Instagram)</option>
                                 </select>
                             </div>
-                            <div class="form-group">
-                                <label>Pausas</label>
-                                <div class="pause-options" id="script-pause-options">
-                                    <button class="pause-option selected" data-value="normal" type="button">Normal</button>
-                                    <button class="pause-option" data-value="relaxed" type="button">Suaves</button>
-                                    <button class="pause-option" data-value="deep" type="button">Profundas</button>
-                                </div>
-                            </div>
                             <div class="form-group" id="script-photo-seconds-group" hidden>
                                 <label>Tempo por imagem (segundos)</label>
                                 <input id="script-image-seconds" type="number" class="input" min="1" max="30" step="1" placeholder="Automatico (duracao total)">
                                 <small class="field-hint">Defina quantos segundos cada foto fica na tela antes de trocar.</small>
                             </div>
-                            <div class="form-group" id="script-subtitles-group" hidden>
+                            <div class="form-group" id="script-subtitles-group">
                                 <label>Legendas</label>
                                 <div class="subtitle-toggle-row">
                                     <label class="toggle-switch">
@@ -1231,7 +1231,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260410-03"></script>
-    <script src="/video/static/pwa.js?v=20260410-03"></script>
+    <script src="/video/static/app.js?v=20260410-04"></script>
+    <script src="/video/static/pwa.js?v=20260410-04"></script>
 </body>
 </html>

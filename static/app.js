@@ -1571,7 +1571,7 @@ function scriptNext() {
         if (!title) { alert("Digite o titulo do projeto."); return; }
 
         if (hasVideo) {
-            // Video mode: narration is optional, subtitles always on
+            // Video mode: narration is optional
             scriptData.title = title;
             scriptData.useCustomVideo = true;
             scriptData.useCustomImages = false;
@@ -1579,7 +1579,6 @@ function scriptNext() {
             scriptData.audioIsMusic = false;
             scriptData.removeVocals = false;
             scriptData.createNarration = videoCreateNarration;
-            scriptData.enableSubtitles = true;
             scriptData.text = videoCreateNarration ? text : "";
             if (videoCreateNarration && (!text || text.length < 20)) {
                 alert("Escreva um roteiro com pelo menos 20 caracteres para a narracao.");
@@ -1695,12 +1694,12 @@ async function handleScriptCreate() {
     if (scriptData.useCustomVideo) {
         const videoNarCb = document.getElementById("script-video-create-narration");
         scriptData.createNarration = videoNarCb ? videoNarCb.checked : false;
-        scriptData.enableSubtitles = true;
+        scriptData.enableSubtitles = document.getElementById("script-enable-subtitles").checked;
     } else {
         scriptData.createNarration = scriptData.useCustomAudio
             ? false
             : (!scriptData.useCustomImages || document.getElementById("script-create-narration").checked);
-        scriptData.enableSubtitles = usePhotosSelected ? document.getElementById("script-enable-subtitles").checked : true;
+        scriptData.enableSubtitles = document.getElementById("script-enable-subtitles").checked;
     }
 
     if (!scriptData.createNarration && !scriptData.useCustomAudio && !scriptData.useCustomVideo) {
@@ -2063,7 +2062,7 @@ function toggleScriptPhotoDependentFields() {
     const imageSecondsGroup = document.getElementById("script-photo-seconds-group");
     const subtitlesGroup = document.getElementById("script-subtitles-group");
     if (imageSecondsGroup) imageSecondsGroup.hidden = !usePhotos || useVideo;
-    if (subtitlesGroup) subtitlesGroup.hidden = useVideo || !(usePhotos || useUserAudio);
+    // Subtitles group is always visible so user can toggle subtitles for any mode
 }
 
 function toggleScriptNarration() {
