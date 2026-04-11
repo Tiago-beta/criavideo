@@ -596,7 +596,7 @@ function initDashboard() {
         renameInput.addEventListener("keydown", (event) => {
             if (event.key === "Enter") {
                 event.preventDefault();
-                saveProjectTitle();
+                saveProjectEdit();
             }
         });
     }
@@ -3624,7 +3624,7 @@ window.watchVideo = watchVideo;
 window.openPublishForProject = openPublishForProject;
 window.createSimilar = createSimilar;
 window.openRenameProjectModal = openRenameProjectModal;
-window.saveProjectTitle = saveProjectTitle;
+window.saveProjectTitle = saveProjectEdit;
 window.openCopyChoiceModal = openCopyChoiceModal;
 window.chooseCopyScript = chooseCopyScript;
 window.chooseCopyFormat = chooseCopyFormat;
