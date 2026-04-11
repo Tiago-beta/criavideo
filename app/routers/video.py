@@ -544,6 +544,49 @@ async def rename_project(
     return {"id": project.id, "title": project.title}
 
 
+@router.post("/projects/{project_id}/thumbnail")
+async def update_project_thumbnail(
+    project_id: int,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload/replace thumbnail for a completed project."""
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Validate image type
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    if file.content_type not in allowed:
+        raise HTTPException(status_code=400, detail="Formato invalido. Envie JPG, PNG ou WebP.")
+    if file.size and file.size > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Imagem muito grande (maximo 10MB)")
+
+    ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(file.content_type, ".jpg")
+    thumb_dir = Path("thumbnails") / str(project_id)
+    thumb_dir.mkdir(parents=True, exist_ok=True)
+    thumb_path = thumb_dir / f"thumbnail{ext}"
+
+    # Remove old thumbnails with different extensions
+    for old in thumb_dir.glob("thumbnail.*"):
+        old.unlink(missing_ok=True)
+
+    data = await file.read()
+    thumb_path.write_bytes(data)
+
+    # Update render record
+    result = await db.execute(
+        select(VideoRender).where(VideoRender.project_id == project_id)
+    )
+    render = result.scalars().first()
+    if render:
+        render.thumbnail_path = str(thumb_path)
+        await db.commit()
+
+    return {"thumbnail_path": str(thumb_path)}
+
+
 @router.post("/projects/{project_id}/generate")
 async def generate_video(
     project_id: int,
@@ -912,6 +955,7 @@ async def generate_audio_endpoint(
     background_music_id: str = ""
     custom_audio_id: str = ""
     custom_video_id: str = ""
+    custom_thumbnail_id: str = ""
     karaoke_operation_id: str = ""
     if "multipart/form-data" in content_type:
         form = await request.form()
@@ -968,6 +1012,7 @@ async def generate_audio_endpoint(
         background_music_id = str(form.get("background_music_id", "")).strip()
         custom_audio_id = str(form.get("custom_audio_id", "")).strip()
         custom_video_id = str(form.get("custom_video_id", "")).strip()
+        custom_thumbnail_id = str(form.get("custom_thumbnail_id", "")).strip()
         karaoke_operation_id = str(form.get("karaoke_operation_id", "")).strip()
     else:
         payload = await request.json()
@@ -1137,6 +1182,20 @@ async def generate_audio_endpoint(
         except Exception as e:
             logger.warning(f"Failed to save custom video for project {project.id}: {e}")
             raise HTTPException(status_code=400, detail=f"Falha ao processar video enviado: {e}")
+
+    # Save custom thumbnail uploaded by user
+    if custom_thumbnail_id:
+        try:
+            src = _resolve_temp_file(user["id"], custom_thumbnail_id, IMAGE_EXTS)
+            if src:
+                thumb_dir = Path(settings.media_dir) / "thumbnails" / str(project.id)
+                thumb_dir.mkdir(parents=True, exist_ok=True)
+                ext = src.suffix.lower() if src.suffix else ".jpg"
+                target = thumb_dir / f"custom_thumbnail{ext}"
+                shutil.copy2(src, target)
+                logger.info(f"Custom thumbnail saved for project {project.id}: {target}")
+        except Exception as e:
+            logger.warning(f"Failed to save custom thumbnail for project {project.id}: {e}")
 
     # Save optional custom background music. The pipeline will prioritize this file over Suno.
     custom_bgm_path = ""

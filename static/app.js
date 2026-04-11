@@ -1070,7 +1070,9 @@ async function createFormatCopy() {
     }
 }
 
-function openRenameProjectModal(projectId) {
+let _editThumbFile = null; // File object for new thumbnail in edit modal
+
+async function openRenameProjectModal(projectId) {
     const project = _projectsCache.find((p) => p.id === projectId);
     if (!project) {
         alert("Projeto nao encontrado.");
@@ -1078,6 +1080,7 @@ function openRenameProjectModal(projectId) {
     }
 
     _renameProjectId = project.id;
+    _editThumbFile = null;
     const sourceEl = document.getElementById("edit-project-source");
     if (sourceEl) {
         sourceEl.textContent = `Projeto atual: ${project.title || "Video"}`;
@@ -1094,6 +1097,51 @@ function openRenameProjectModal(projectId) {
         saveBtn.textContent = "Salvar";
     }
 
+    // Reset thumbnail upload
+    const thumbInput = document.getElementById("edit-thumb-input");
+    if (thumbInput) thumbInput.value = "";
+    const thumbPreview = document.getElementById("edit-thumb-preview");
+    if (thumbPreview) { thumbPreview.hidden = true; thumbPreview.src = ""; }
+    const thumbRemoveBtn = document.getElementById("edit-thumb-remove");
+    if (thumbRemoveBtn) thumbRemoveBtn.hidden = true;
+
+    // Downloads section — only show for completed projects
+    const downloadsEl = document.getElementById("edit-project-downloads");
+    if (downloadsEl) {
+        if (project.status === "completed") {
+            downloadsEl.hidden = false;
+            try {
+                const detail = await api(`/video/projects/${project.id}`);
+                const render = detail.renders && detail.renders[0];
+                const videoLink = document.getElementById("edit-download-video");
+                const thumbLink = document.getElementById("edit-download-thumb");
+                if (render && videoLink) {
+                    videoLink.href = render.video_url;
+                    videoLink.download = `${project.title || "video"}.mp4`;
+                    videoLink.style.display = "";
+                } else if (videoLink) {
+                    videoLink.style.display = "none";
+                }
+                if (render && render.thumbnail_url && thumbLink) {
+                    thumbLink.href = render.thumbnail_url;
+                    thumbLink.download = `${project.title || "thumbnail"}.jpg`;
+                    thumbLink.style.display = "";
+                    // Show current thumbnail preview
+                    if (thumbPreview) {
+                        thumbPreview.src = render.thumbnail_url;
+                        thumbPreview.hidden = false;
+                    }
+                } else if (thumbLink) {
+                    thumbLink.style.display = "none";
+                }
+            } catch (e) {
+                // Silently fail — downloads won't show
+            }
+        } else {
+            downloadsEl.hidden = true;
+        }
+    }
+
     openModal("modal-edit-project");
 
     if (input) {
@@ -1104,7 +1152,40 @@ function openRenameProjectModal(projectId) {
     }
 }
 
-async function saveProjectTitle() {
+function handleEditThumbSelect(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+        alert("Use JPG, PNG ou WebP.");
+        event.target.value = "";
+        return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        alert("Imagem excede 10MB.");
+        event.target.value = "";
+        return;
+    }
+    _editThumbFile = file;
+    const preview = document.getElementById("edit-thumb-preview");
+    if (preview) {
+        preview.src = URL.createObjectURL(file);
+        preview.hidden = false;
+    }
+    const removeBtn = document.getElementById("edit-thumb-remove");
+    if (removeBtn) removeBtn.hidden = false;
+}
+
+function removeEditThumb() {
+    _editThumbFile = null;
+    const input = document.getElementById("edit-thumb-input");
+    if (input) input.value = "";
+    const preview = document.getElementById("edit-thumb-preview");
+    if (preview) { preview.hidden = true; preview.src = ""; }
+    const removeBtn = document.getElementById("edit-thumb-remove");
+    if (removeBtn) removeBtn.hidden = true;
+}
+
+async function saveProjectEdit() {
     if (!_renameProjectId) {
         alert("Nenhum projeto selecionado.");
         return;
@@ -1125,6 +1206,7 @@ async function saveProjectTitle() {
     }
 
     try {
+        // Update title
         const response = await api(`/video/projects/${_renameProjectId}/title`, {
             method: "PATCH",
             body: JSON.stringify({ title: newTitle }),
@@ -1133,10 +1215,23 @@ async function saveProjectTitle() {
         if (cacheProject) {
             cacheProject.title = response?.title || newTitle;
         }
+
+        // Upload new thumbnail if selected
+        if (_editThumbFile) {
+            try {
+                const fd = new FormData();
+                fd.append("file", _editThumbFile);
+                await apiForm(`/video/projects/${_renameProjectId}/thumbnail`, fd);
+            } catch (thumbErr) {
+                alert(`Nome atualizado, mas erro ao enviar thumbnail: ${thumbErr.message}`);
+            }
+            _editThumbFile = null;
+        }
+
         closeModal("modal-edit-project");
         loadProjects();
     } catch (error) {
-        alert(`Erro ao atualizar nome: ${error.message}`);
+        alert(`Erro ao atualizar: ${error.message}`);
     } finally {
         if (saveBtn) {
             saveBtn.disabled = false;
@@ -1324,6 +1419,15 @@ function resetCreateWizard() {
     if (videoNarChoice) videoNarChoice.hidden = true;
     const videoNarCb = document.getElementById("script-video-create-narration");
     if (videoNarCb) videoNarCb.checked = true;
+
+    // Reset thumbnail upload
+    scriptThumbFile = null;
+    const thumbFileInput = document.getElementById("script-thumb-file");
+    if (thumbFileInput) thumbFileInput.value = "";
+    const thumbPreview = document.getElementById("script-thumb-preview");
+    if (thumbPreview) { thumbPreview.hidden = true; thumbPreview.src = ""; }
+    const thumbRemoveBtn = document.getElementById("script-thumb-remove");
+    if (thumbRemoveBtn) thumbRemoveBtn.hidden = true;
 
     // Reset subtitle toggle
     const subCb = document.getElementById("script-enable-subtitles");
@@ -1648,6 +1752,7 @@ async function handleScriptCreate() {
         let uploadedMusicId = "";
         let uploadedMainAudioId = "";
         let uploadedVideoId = "";
+        let uploadedThumbId = "";
         let karaokeOperationId = "";
 
         if (scriptData.useCustomVideo && scriptUserVideoFile) {
@@ -1688,6 +1793,12 @@ async function handleScriptCreate() {
             showCreateProgress(startMessage, { progress: 52, stage: "Processando..." });
         }
 
+        if (scriptThumbFile) {
+            showCreateProgress("Enviando thumbnail...", { progress: 54, stage: "Enviando arquivos..." });
+            const uploadedThumb = await uploadTempFileWithRetry(scriptThumbFile, "image", "thumbnail");
+            uploadedThumbId = uploadedThumb.upload_id || "";
+        }
+
         const formData = new FormData();
         formData.append("script", scriptData.text);
         formData.append("voice", scriptData.voice || "");
@@ -1715,6 +1826,9 @@ async function handleScriptCreate() {
         }
         if (uploadedVideoId) {
             formData.append("custom_video_id", uploadedVideoId);
+        }
+        if (uploadedThumbId) {
+            formData.append("custom_thumbnail_id", uploadedThumbId);
         }
         if (uploadedMusicId && !scriptData.useCustomAudio) {
             formData.append("background_music_id", uploadedMusicId);
@@ -1851,6 +1965,42 @@ function handleUserVideoSelect(event) {
 
 function toggleScriptVideoNarration() {
     // Narration toggle for custom video mode — controls whether to add AI narration over the video
+}
+
+// ── Thumbnail upload for new project ──
+let scriptThumbFile = null;
+
+function handleScriptThumbSelect(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+        alert("Use JPG, PNG ou WebP.");
+        event.target.value = "";
+        return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        alert("Imagem excede 10MB.");
+        event.target.value = "";
+        return;
+    }
+    scriptThumbFile = file;
+    const preview = document.getElementById("script-thumb-preview");
+    if (preview) {
+        preview.src = URL.createObjectURL(file);
+        preview.hidden = false;
+    }
+    const removeBtn = document.getElementById("script-thumb-remove");
+    if (removeBtn) removeBtn.hidden = false;
+}
+
+function removeScriptThumb() {
+    scriptThumbFile = null;
+    const input = document.getElementById("script-thumb-file");
+    if (input) input.value = "";
+    const preview = document.getElementById("script-thumb-preview");
+    if (preview) { preview.hidden = true; preview.src = ""; }
+    const removeBtn = document.getElementById("script-thumb-remove");
+    if (removeBtn) removeBtn.hidden = true;
 }
 
 function toggleUserAudioUpload() {

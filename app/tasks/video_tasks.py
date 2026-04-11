@@ -4,6 +4,7 @@ Video Tasks — Async background tasks for the full video generation pipeline.
 import os
 import asyncio
 import logging
+import shutil
 import httpx
 from pathlib import Path
 from app.config import get_settings
@@ -160,23 +161,27 @@ async def _run_custom_video_pipeline(db, project, project_id: int):
     project.progress = 90
     await db.commit()
 
-    # Step 5: Generate thumbnail
-    from app.services.thumbnail_generator import generate_thumbnail_from_frame
-
+    # Step 5: Generate thumbnail (skip if user uploaded custom thumbnail)
     thumb_dir = Path(settings.media_dir) / "thumbnails" / str(project_id)
     thumb_dir.mkdir(parents=True, exist_ok=True)
     thumb_path = str(thumb_dir / "thumbnail.jpg")
 
-    try:
-        generate_thumbnail_from_frame(
-            video_path=render_result["file_path"],
-            title=project.track_title or project.title,
-            artist=project.track_artist or "",
-            output_path=thumb_path,
-        )
-    except Exception as e:
-        logger.warning(f"Custom video thumbnail failed: {e}")
-        thumb_path = ""
+    custom_thumb = next(thumb_dir.glob("custom_thumbnail.*"), None)
+    if custom_thumb:
+        shutil.copy2(str(custom_thumb), thumb_path)
+        logger.info(f"Using custom thumbnail for project {project_id}")
+    else:
+        from app.services.thumbnail_generator import generate_thumbnail_from_frame
+        try:
+            generate_thumbnail_from_frame(
+                video_path=render_result["file_path"],
+                title=project.track_title or project.title,
+                artist=project.track_artist or "",
+                output_path=thumb_path,
+            )
+        except Exception as e:
+            logger.warning(f"Custom video thumbnail failed: {e}")
+            thumb_path = ""
 
     # Save render
     render = VideoRender(
@@ -667,28 +672,32 @@ async def run_video_pipeline(project_id: int):
             project.progress = 90
             await db.commit()
 
-            # ── Step 5: Generate thumbnail ──
-            from app.services.thumbnail_generator import generate_thumbnail
-
+            # ── Step 5: Generate thumbnail (skip if user uploaded custom) ──
             thumb_dir = Path(settings.media_dir) / "thumbnails" / str(project_id)
             thumb_dir.mkdir(parents=True, exist_ok=True)
             thumb_path = str(thumb_dir / "thumbnail.jpg")
 
-            try:
-                generate_thumbnail(
-                    title=project.track_title or project.title,
-                    artist=project.track_artist or "",
-                    output_path=thumb_path,
-                )
-            except Exception as e:
-                logger.warning(f"Thumbnail generation failed, using frame fallback: {e}")
-                from app.services.thumbnail_generator import generate_thumbnail_from_frame
-                generate_thumbnail_from_frame(
-                    video_path=render_result["file_path"],
-                    title=project.track_title or project.title,
-                    artist=project.track_artist or "",
-                    output_path=thumb_path,
-                )
+            custom_thumb = next(thumb_dir.glob("custom_thumbnail.*"), None)
+            if custom_thumb:
+                shutil.copy2(str(custom_thumb), thumb_path)
+                logger.info(f"Using custom thumbnail for project {project_id}")
+            else:
+                from app.services.thumbnail_generator import generate_thumbnail
+                try:
+                    generate_thumbnail(
+                        title=project.track_title or project.title,
+                        artist=project.track_artist or "",
+                        output_path=thumb_path,
+                    )
+                except Exception as e:
+                    logger.warning(f"Thumbnail generation failed, using frame fallback: {e}")
+                    from app.services.thumbnail_generator import generate_thumbnail_from_frame
+                    generate_thumbnail_from_frame(
+                        video_path=render_result["file_path"],
+                        title=project.track_title or project.title,
+                        artist=project.track_artist or "",
+                        output_path=thumb_path,
+                    )
 
             # ── Save render to DB ──
             render = VideoRender(

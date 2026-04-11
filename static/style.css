@@ -3421,3 +3421,52 @@ th,
     font-size: 0.82rem;
     color: var(--primary);
 }
+
+/* Edit project modal */
+.edit-downloads {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+.edit-downloads > label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: block;
+    color: rgba(255,255,255,0.7);
+}
+.edit-download-btns {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.edit-download-btns .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+}
+.edit-thumb-upload > label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: block;
+    color: rgba(255,255,255,0.7);
+}
+.edit-thumb-preview-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+.edit-thumb-img {
+    width: 120px;
+    max-height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.edit-thumb-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}

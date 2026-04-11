@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260410-02">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260410-03">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -765,6 +765,21 @@
                                     <input id="script-bgm-file" type="file" class="input" accept="audio/*">
                                 </div>
                             </div>
+                            <div class="form-group">
+                                <label>Thumbnail personalizada</label>
+                                <small class="field-hint" style="margin-bottom:6px;display:block">Envie uma imagem para usar como capa do video. Se vazio, sera gerada automaticamente.</small>
+                                <div class="edit-thumb-preview-row">
+                                    <img id="script-thumb-preview" class="edit-thumb-img" src="" alt="" hidden>
+                                    <div class="edit-thumb-actions">
+                                        <input id="script-thumb-file" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="handleScriptThumbSelect(event)">
+                                        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('script-thumb-file').click()" type="button">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                            Enviar imagem
+                                        </button>
+                                        <button id="script-thumb-remove" class="btn btn-secondary btn-sm" onclick="removeScriptThumb()" type="button" hidden>Remover</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -994,19 +1009,46 @@
     <div id="modal-edit-project" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Editar nome do video</h3>
+                <h3>Editar projeto</h3>
                 <button class="modal-close" onclick="closeModal('modal-edit-project')" type="button">&times;</button>
             </div>
             <div class="modal-body">
                 <p id="edit-project-source" class="muted">Projeto selecionado</p>
                 <div class="form-group">
-                    <label>Novo nome</label>
+                    <label>Nome do video</label>
                     <input id="edit-project-title" type="text" class="input" maxlength="500" placeholder="Digite o novo nome do video">
+                </div>
+                <div id="edit-project-downloads" class="edit-downloads" hidden>
+                    <label>Downloads</label>
+                    <div class="edit-download-btns">
+                        <a id="edit-download-video" class="btn btn-secondary btn-sm" download>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            Baixar video
+                        </a>
+                        <a id="edit-download-thumb" class="btn btn-secondary btn-sm" download>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                            Baixar thumbnail
+                        </a>
+                    </div>
+                    <div class="edit-thumb-upload" style="margin-top:12px">
+                        <label>Trocar thumbnail</label>
+                        <div class="edit-thumb-preview-row">
+                            <img id="edit-thumb-preview" class="edit-thumb-img" src="" alt="" hidden>
+                            <div class="edit-thumb-actions">
+                                <input id="edit-thumb-input" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="handleEditThumbSelect(event)">
+                                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('edit-thumb-input').click()" type="button">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                    Enviar imagem
+                                </button>
+                                <button id="edit-thumb-remove" class="btn btn-secondary btn-sm" onclick="removeEditThumb()" type="button" hidden>Remover</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('modal-edit-project')" type="button">Cancelar</button>
-                <button id="edit-project-save-btn" class="btn btn-primary" onclick="saveProjectTitle()" type="button">Salvar</button>
+                <button id="edit-project-save-btn" class="btn btn-primary" onclick="saveProjectEdit()" type="button">Salvar</button>
             </div>
         </div>
     </div>
@@ -1189,7 +1231,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260410-02"></script>
-    <script src="/video/static/pwa.js?v=20260410-02"></script>
+    <script src="/video/static/app.js?v=20260410-03"></script>
+    <script src="/video/static/pwa.js?v=20260410-03"></script>
 </body>
 </html>
