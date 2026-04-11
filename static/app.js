@@ -3530,7 +3530,9 @@ async function quickCreate(songData) {
     // Credit check
     const estMinutes = Math.max(1, Math.ceil((songData.duration || 60) / 60));
     const creditsNeeded = estMinutes * _creditsPerMinute;
+    console.log('[quickCreate] _userCredits:', _userCredits, 'creditsNeeded:', creditsNeeded, 'estMinutes:', estMinutes, 'duration:', songData.duration);
     if (_userCredits < creditsNeeded) {
+        console.warn('[quickCreate] CREDIT CHECK FAILED — showing modal. _userCredits=', _userCredits, 'creditsNeeded=', creditsNeeded);
         showCreditsPurchaseModal();
         return;
     }
@@ -4141,7 +4143,10 @@ async function updateCreditsDisplay() {
         _creditsPerMinute = data.creditsPerMinute || 5;
         _creditPackages = data.packages || [];
         if (countEl) countEl.textContent = _userCredits;
-    } catch {}
+        console.log('[updateCreditsDisplay] credits loaded:', _userCredits, 'perMinute:', _creditsPerMinute);
+    } catch (err) {
+        console.error('[updateCreditsDisplay] FAILED:', err);
+    }
 }
 
 function showCreditsPurchaseModal() {
