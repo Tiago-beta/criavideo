@@ -3769,7 +3769,9 @@ function showAutoStep(step) {
 
 function autoStepNext() {
     if (_autoWizardStep === 3 && _autoWizardThemes.length === 0) {
-        alert("Adicione pelo menos um tema.");
+        alert("Digite o tema e aperte no botão + para adicionar.");
+        const addBtn = document.getElementById("auto-add-theme-btn");
+        if (addBtn) { addBtn.classList.add("btn-error-pulse"); setTimeout(() => addBtn.classList.remove("btn-error-pulse"), 2000); }
         return;
     }
     if (_autoWizardStep < 4) showAutoStep(_autoWizardStep + 1);
@@ -3881,8 +3883,10 @@ async function createAutoSchedule() {
         return;
     }
     if (_autoWizardThemes.length === 0) {
-        alert("Adicione pelo menos um tema.");
+        alert("Digite o tema e aperte no botão + para adicionar.");
         showAutoStep(3);
+        const addBtn = document.getElementById("auto-add-theme-btn");
+        if (addBtn) { addBtn.classList.add("btn-error-pulse"); setTimeout(() => addBtn.classList.remove("btn-error-pulse"), 2000); }
         return;
     }
     const accountId = parseInt(document.getElementById("auto-account")?.value || "0", 10);
