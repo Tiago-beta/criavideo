@@ -226,6 +226,17 @@
                                     <div class="form-group publish-form-group">
                                         <textarea id="pub-hashtags" class="input" rows="2" placeholder="Hashtags serao geradas automaticamente pela IA" aria-label="Hashtags"></textarea>
                                     </div>
+                                    <div class="form-group publish-form-group pub-links-section">
+                                        <div class="pub-links-header" id="pub-links-toggle">
+                                            <span class="pub-links-title">Links para descricao</span>
+                                            <span class="pub-links-arrow" id="pub-links-arrow">&#9660;</span>
+                                        </div>
+                                        <div id="pub-links-body" class="pub-links-body" hidden>
+                                            <p class="pub-links-hint">Adicione links de redes sociais ou outros links importantes. Eles serao anexados automaticamente na descricao do video.</p>
+                                            <textarea id="pub-links" class="input" rows="4" placeholder="Ex:&#10;Instagram: https://instagram.com/seuuser&#10;TikTok: https://tiktok.com/@seuuser&#10;Site: https://seusite.com" aria-label="Links para descricao"></textarea>
+                                            <button id="btn-save-links" class="btn btn-secondary btn-sm" type="button">Salvar links</button>
+                                        </div>
+                                    </div>
                                     <div id="pub-thumbnail-area" class="pub-thumbnail-area" hidden>
                                         <div id="pub-thumbnail-loading" class="pub-thumbnail-loading" hidden>
                                             <div class="spinner-small"></div>
@@ -1231,7 +1242,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260411-02"></script>
+    <script src="/video/static/app.js?v=20260410-04"></script>
     <script src="/video/static/pwa.js?v=20260410-04"></script>
 </body>
 </html>

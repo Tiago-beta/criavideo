@@ -13,7 +13,7 @@ from typing import Optional
 import openai
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import PublishJob, PublishStatus, VideoProject, VideoRender, SocialAccount, Platform
+from app.models import AppUser, PublishJob, PublishStatus, VideoProject, VideoRender, SocialAccount, Platform
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -547,3 +547,36 @@ async def generate_publish_thumbnail(
                 logger.error(f"Fallback thumbnail also failed: {e2}", exc_info=True)
 
         raise HTTPException(status_code=500, detail=f"Erro ao gerar thumbnail: {e}")
+
+
+# ---- Publish Links (user social/important links for descriptions) ----
+
+class PublishLinksRequest(BaseModel):
+    links: str = ""
+
+
+@router.get("/links")
+async def get_publish_links(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get saved publish links for the current user."""
+    app_user = await db.get(AppUser, user["id"])
+    if not app_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"links": app_user.publish_links or ""}
+
+
+@router.put("/links")
+async def save_publish_links(
+    req: PublishLinksRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save publish links for the current user."""
+    app_user = await db.get(AppUser, user["id"])
+    if not app_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    app_user.publish_links = req.links
+    await db.commit()
+    return {"ok": True}

@@ -3422,6 +3422,56 @@ th,
     color: var(--primary);
 }
 
+/* Publish links section */
+.pub-links-section {
+    border: 1px solid rgba(96, 129, 162, 0.25);
+    border-radius: 10px;
+    padding: 0;
+    overflow: hidden;
+}
+.pub-links-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+}
+.pub-links-header:hover {
+    background: rgba(96, 129, 162, 0.1);
+}
+.pub-links-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+}
+.pub-links-arrow {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+}
+.pub-links-arrow.open {
+    transform: rotate(180deg);
+}
+.pub-links-body {
+    padding: 0 14px 14px;
+}
+.pub-links-hint {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+    line-height: 1.35;
+}
+#pub-links {
+    font-size: 0.82rem;
+    color: var(--primary);
+    margin-bottom: 8px;
+}
+#btn-save-links {
+    margin-top: 2px;
+}
+
 /* Edit project modal */
 .edit-downloads {
     margin-top: 16px;

@@ -487,6 +487,9 @@ function bindDashboardEvents() {
     document.getElementById("btn-publish").addEventListener("click", submitPublishNow);
     document.getElementById("btn-save-draft").addEventListener("click", savePublishDraft);
     document.getElementById("btn-schedule-publish").addEventListener("click", openPublishScheduleModal);
+    document.getElementById("pub-links-toggle").addEventListener("click", togglePublishLinks);
+    document.getElementById("btn-save-links").addEventListener("click", savePublishLinks);
+    loadPublishLinks();
     document.getElementById("pub-render-select").addEventListener("change", (e) => {
         const renderId = e.target.value;
         if (renderId) {
@@ -588,9 +591,9 @@ async function bootstrap() {
     initDashboard();
 }
 
-async function initDashboard() {
+function initDashboard() {
     renderSession();
-    await updateCreditsDisplay();
+    updateCreditsDisplay();
     const renameInput = document.getElementById("edit-project-title");
     if (renameInput) {
         renameInput.addEventListener("keydown", (event) => {
@@ -2564,6 +2567,12 @@ function buildPublishPayload(scheduledAt = "") {
         fullDesc = fullDesc ? `${fullDesc}\n\n${hashtagText}` : hashtagText;
     }
 
+    const linksField = document.getElementById("pub-links");
+    const linksText = (linksField?.value || "").trim();
+    if (linksText) {
+        fullDesc = fullDesc ? `${fullDesc}\n\n${linksText}` : linksText;
+    }
+
     const payload = {
         render_id: parseInt(renderId, 10),
         platforms,
@@ -2575,6 +2584,52 @@ function buildPublishPayload(scheduledAt = "") {
         payload.scheduled_at = scheduledAt;
     }
     return payload;
+}
+
+// ---- Publish Links (social / important links for video descriptions) ----
+
+function togglePublishLinks() {
+    const body = document.getElementById("pub-links-body");
+    const arrow = document.getElementById("pub-links-arrow");
+    if (body.hidden) {
+        body.hidden = false;
+        arrow.classList.add("open");
+    } else {
+        body.hidden = true;
+        arrow.classList.remove("open");
+    }
+}
+
+async function loadPublishLinks() {
+    try {
+        const resp = await authFetch("/api/publish/links");
+        if (resp.ok) {
+            const data = await resp.json();
+            const field = document.getElementById("pub-links");
+            if (field) field.value = data.links || "";
+        }
+    } catch (e) {
+        console.warn("Could not load publish links:", e);
+    }
+}
+
+async function savePublishLinks() {
+    const field = document.getElementById("pub-links");
+    const links = (field?.value || "").trim();
+    try {
+        const resp = await authFetch("/api/publish/links", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ links }),
+        });
+        if (resp.ok) {
+            showToast("Links salvos com sucesso!", "success");
+        } else {
+            showToast("Erro ao salvar links", "error");
+        }
+    } catch (e) {
+        showToast("Erro ao salvar links", "error");
+    }
 }
 
 function getPublishDraftStorageKey(renderId) {
@@ -3530,9 +3585,7 @@ async function quickCreate(songData) {
     // Credit check
     const estMinutes = Math.max(1, Math.ceil((songData.duration || 60) / 60));
     const creditsNeeded = estMinutes * _creditsPerMinute;
-    console.log('[quickCreate] _userCredits:', _userCredits, 'creditsNeeded:', creditsNeeded, 'estMinutes:', estMinutes, 'duration:', songData.duration);
     if (_userCredits < creditsNeeded) {
-        console.warn('[quickCreate] CREDIT CHECK FAILED — showing modal. _userCredits=', _userCredits, 'creditsNeeded=', creditsNeeded);
         showCreditsPurchaseModal();
         return;
     }
@@ -4143,10 +4196,7 @@ async function updateCreditsDisplay() {
         _creditsPerMinute = data.creditsPerMinute || 5;
         _creditPackages = data.packages || [];
         if (countEl) countEl.textContent = _userCredits;
-        console.log('[updateCreditsDisplay] credits loaded:', _userCredits, 'perMinute:', _creditsPerMinute);
-    } catch (err) {
-        console.error('[updateCreditsDisplay] FAILED:', err);
-    }
+    } catch {}
 }
 
 function showCreditsPurchaseModal() {

@@ -755,22 +755,6 @@ async def quick_create(
     db: AsyncSession = Depends(get_db),
 ):
     """One-click video creation: AI generates title/description/style, creates project, starts pipeline."""
-    # Detect gospel/worship genre from lyrics and title
-    _text_lower = f"{req.song_title or ''} {req.song_artist or ''} {(req.lyrics or '')[:500]}".lower()
-    _is_gospel = any(w in _text_lower for w in [
-        "gospel", "worship", "louvor", "adoração", "adoracao", "deus", "senhor",
-        "jesus", "cristo", "espírito", "espirito", "santo", "glória", "gloria",
-        "redenção", "redencao", "fé", "oração", "oracao", "salvação", "salvacao",
-        "graça", "graca", "igreja", "aleluia", "hallelujah", "amém", "amen",
-    ])
-
-    _gospel_style_instruction = """
-IMPORTANT: This is a GOSPEL/WORSHIP song. The style_prompt MUST reflect spiritual, uplifting imagery:
-- Use nature landscapes: mountains, valleys, rivers, sunrise, sunset, golden light, green pastures, calm waters, starry sky, fields of wheat, olive trees, gentle rain, waterfalls, meadows, oceans
-- Use warm, golden, celestial lighting — NOT dark, horror, or scary imagery
-- Do NOT mention birds, doves, or animals in the style_prompt — focus on landscapes and light
-- NEVER use dark/horror/scary/gothic themes for gospel music""" if _is_gospel else ""
-
     # Ask AI to generate creative metadata from song info
     ai_prompt = f"""Você é um produtor criativo de vídeos musicais.
 Com base nos dados desta música, gere metadados criativos para um videoclipe.
@@ -780,7 +764,6 @@ Artista: {req.song_artist or 'Desconhecido'}
 Duração: {req.duration:.0f} segundos
 Trecho da letra:
 {(req.lyrics or 'Sem letra disponível')[:800]}
-{_gospel_style_instruction}
 
 Responda SOMENTE um JSON com:
 - "title": título curto e criativo para o projeto de vídeo (máx 60 chars, em português)
