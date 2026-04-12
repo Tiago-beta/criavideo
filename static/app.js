@@ -3800,10 +3800,17 @@ async function loadAutoAccountOptions() {
     const select = document.getElementById("auto-account");
     if (!select) return;
     try {
-        const accounts = await api("/social-accounts/");
-        select.innerHTML = accounts.map(a =>
-            `<option value="${a.id}">${esc(a.label || a.platform)}</option>`
-        ).join("");
+        const accounts = await api("/social/accounts");
+        const platform = document.getElementById("auto-platform")?.value || "youtube";
+        const filtered = accounts.filter(a => a.platform === platform);
+        if (!filtered.length) {
+            select.innerHTML = "<option value=''>Conecte uma conta desta plataforma</option>";
+            return;
+        }
+        select.innerHTML = filtered.map(a => {
+            const label = a.label || a.channel_title || a.platform;
+            return `<option value="${a.id}">${esc(label)}</option>`;
+        }).join("");
     } catch {
         select.innerHTML = "<option value=''>Nenhuma conta</option>";
     }
