@@ -345,12 +345,27 @@ def _to_media_url(path: str | None) -> str | None:
     """Convert absolute file path to web-accessible URL."""
     if not path:
         return None
+
     media_prefix = settings.media_dir.rstrip("/")
-    if path.startswith(media_prefix):
-        # Avoid returning URLs for files that no longer exist on disk.
-        if not os.path.exists(path):
+    normalized_path = str(path)
+
+    # Primary path mode: current media_dir prefix.
+    if normalized_path.startswith(media_prefix):
+        if os.path.exists(normalized_path):
+            return "/video/media" + normalized_path[len(media_prefix):]
+        return None
+
+    # Legacy path mode: map old media roots to current media_dir.
+    legacy_prefixes = ["/data/levita-video/media", "/opt/levita-video/media"]
+    for legacy_prefix in legacy_prefixes:
+        legacy_root = legacy_prefix.rstrip("/")
+        if normalized_path.startswith(legacy_root):
+            relative_part = normalized_path[len(legacy_root):]
+            candidate = os.path.join(media_prefix, relative_part.lstrip("/"))
+            if os.path.exists(candidate):
+                return "/video/media/" + relative_part.lstrip("/")
             return None
-        return "/video/media" + path[len(media_prefix):]
+
     return None
 
 
@@ -494,7 +509,9 @@ async def get_project(
     scenes = result_scenes.scalars().all()
 
     result_renders = await db.execute(
-        select(VideoRender).where(VideoRender.project_id == project_id)
+        select(VideoRender)
+        .where(VideoRender.project_id == project_id)
+        .order_by(VideoRender.created_at.desc(), VideoRender.id.desc())
     )
     renders = result_renders.scalars().all()
 

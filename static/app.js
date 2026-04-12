@@ -1132,10 +1132,11 @@ async function openRenameProjectModal(projectId) {
             downloadsEl.hidden = false;
             try {
                 const detail = await api(`/video/projects/${project.id}`);
-                const render = detail.renders && detail.renders[0];
+                const renders = Array.isArray(detail.renders) ? detail.renders : [];
+                const render = renders.find((item) => item && item.video_url) || renders[0] || null;
                 const videoLink = document.getElementById("edit-download-video");
                 const thumbLink = document.getElementById("edit-download-thumb");
-                if (render && videoLink) {
+                if (render && render.video_url && videoLink) {
                     videoLink.href = render.video_url;
                     videoLink.download = `${project.title || "video"}.mp4`;
                     videoLink.style.display = "";
@@ -2463,7 +2464,11 @@ async function watchVideo(projectId) {
             alert("Nenhum video renderizado encontrado.");
             return;
         }
-        const render = project.renders[0];
+        const render = project.renders.find((item) => item && item.video_url);
+        if (!render) {
+            alert("Este video nao esta mais disponivel para reproducao.");
+            return;
+        }
         document.getElementById("player-title").textContent = project.title || "Video";
         const video = document.getElementById("player-video");
         video.src = render.video_url;
@@ -2500,6 +2505,9 @@ async function loadRenders(preselectProjectId = 0) {
             try {
                 const detail = await api(`/video/projects/${project.id}`);
                 for (const render of detail.renders || []) {
+                    if (!render.video_url) {
+                        continue;
+                    }
                     const duration = render.duration != null
                         ? `${Math.floor(render.duration / 60)}:${String(Math.round(render.duration % 60)).padStart(2, "0")}`
                         : "?";
