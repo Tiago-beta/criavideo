@@ -74,6 +74,7 @@ async def upload_to_youtube(
 
         video_id = response["id"]
         logger.info(f"YouTube upload complete: {video_id}")
+        thumbnail_warning = None
 
         # Upload thumbnail if available
         if thumbnail_path and os.path.exists(thumbnail_path):
@@ -84,11 +85,16 @@ async def upload_to_youtube(
                 ).execute()
                 logger.info(f"YouTube thumbnail set for {video_id}")
             except Exception as e:
+                thumbnail_warning = str(e)
                 logger.warning(f"Failed to set YouTube thumbnail: {e}")
+        elif thumbnail_path:
+            thumbnail_warning = "Thumbnail file not found on server"
+            logger.warning("Failed to set YouTube thumbnail: file not found on server")
 
         return {
             "video_id": video_id,
             "url": f"https://www.youtube.com/watch?v={video_id}",
+            "warning_message": thumbnail_warning,
         }
 
     loop = asyncio.get_event_loop()

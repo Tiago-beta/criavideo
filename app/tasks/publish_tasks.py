@@ -68,6 +68,9 @@ async def run_publish_job(job_id: int):
                 )
                 job.platform_post_id = result.get("media_id")
 
+            warning_message = result.get("warning_message") if isinstance(result, dict) else None
+            job.error_message = warning_message[:1000] if warning_message else None
+
             job.status = PublishStatus.PUBLISHED
             job.published_at = datetime.utcnow()
             await db.commit()

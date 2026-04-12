@@ -3197,6 +3197,9 @@ function friendlyPublishError(raw) {
     if (lower.includes("invalid_grant") || lower.includes("token has been expired") || lower.includes("token has been revoked")) {
         return "Sua conexao com a plataforma expirou.\n\nPasso a passo:\n1. Va na aba 'Contas' na pagina de publicacao\n2. Desconecte a conta afetada\n3. Conecte novamente\n4. Tente publicar de novo.";
     }
+    if (lower.includes("custom video thumbnails") || lower.includes("thumbnails/set")) {
+        return "O video foi publicado, mas o YouTube bloqueou a thumbnail personalizada desta conta/canal.\n\nComo resolver:\n1. No YouTube Studio, confirme se o canal esta verificado (telefone)\n2. Ative recursos avancados/intermediarios da conta\n3. Aguarde alguns minutos apos a verificacao\n4. Publique novamente para aplicar a thumbnail";
+    }
     if (lower.includes("quota") || lower.includes("rate limit") || lower.includes("too many requests")) {
         return "Limite de uso da API atingido. Aguarde algumas horas e tente novamente, ou verifique sua cota no painel do Google Cloud.";
     }
@@ -3236,7 +3239,7 @@ async function loadPublishJobs() {
                         <td>${esc(job.account_label || "Conta conectada")}</td>
                         <td>
                             <span class="badge badge-${badgeClass(job.status)}">${esc(job.status)}</span>
-                            ${job.status === "failed" && job.error_message ? `<button class="btn-see-error" onclick="showPublishError(${job.id})" title="Ver motivo da falha">Ver motivo</button>` : ""}
+                            ${job.error_message ? `<button class="btn-see-error" onclick="showPublishError(${job.id})" title="${job.status === "failed" ? "Ver motivo da falha" : "Ver detalhes do aviso"}">${job.status === "failed" ? "Ver motivo" : "Ver aviso"}</button>` : ""}
                         </td>
                         <td>${job.platform_url ? `<a href="${esc(job.platform_url)}" target="_blank" rel="noreferrer">Ver</a>` : "-"}</td>
                         <td>${(job.published_at || job.scheduled_at) ? new Date(job.published_at || job.scheduled_at).toLocaleString("pt-BR") : "-"}</td>
@@ -3255,8 +3258,12 @@ function showPublishError(jobId) {
     const jobs = container._publishJobs || [];
     const job = jobs.find((j) => j.id === jobId);
     if (!job) return;
-    const friendly = friendlyPublishError(job.error_message);
+    const friendly = friendlyPublishError(job.error_message || "");
     openModal("modal-publish-error");
+    const title = document.getElementById("publish-error-title");
+    if (title) {
+        title.textContent = job.status === "failed" ? "Motivo da falha" : "Aviso da publicacao";
+    }
     const body = document.getElementById("publish-error-body");
     if (body) body.textContent = friendly;
 }
