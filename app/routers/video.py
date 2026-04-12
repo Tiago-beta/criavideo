@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -345,58 +345,10 @@ def _to_media_url(path: str | None) -> str | None:
     """Convert absolute file path to web-accessible URL."""
     if not path:
         return None
-
     media_prefix = settings.media_dir.rstrip("/")
-    normalized_path = str(path)
-
-    # Primary path mode: current media_dir prefix.
-    if normalized_path.startswith(media_prefix):
-        if os.path.exists(normalized_path):
-            return "/video/media" + normalized_path[len(media_prefix):]
-        return None
-
-    # Legacy path mode: map old media roots to current media_dir.
-    legacy_prefixes = ["/data/levita-video/media", "/opt/levita-video/media"]
-    for legacy_prefix in legacy_prefixes:
-        legacy_root = legacy_prefix.rstrip("/")
-        if normalized_path.startswith(legacy_root):
-            relative_part = normalized_path[len(legacy_root):]
-            candidate = os.path.join(media_prefix, relative_part.lstrip("/"))
-            if os.path.exists(candidate):
-                return "/video/media/" + relative_part.lstrip("/")
-            return None
-
+    if path.startswith(media_prefix):
+        return "/video/media" + path[len(media_prefix):]
     return None
-
-
-def _best_project_thumbnail_url(project: VideoProject) -> str | None:
-    """Return the newest thumbnail URL that still exists on disk."""
-    if not project.renders:
-        return None
-
-    ordered_renders = sorted(
-        project.renders,
-        key=lambda r: ((r.created_at or datetime.min), (r.id or 0)),
-        reverse=True,
-    )
-    for render in ordered_renders:
-        media_url = _to_media_url(render.thumbnail_path)
-        if media_url:
-            return media_url
-    return None
-
-
-def _newest_render_created_at(project: VideoProject) -> str | None:
-    """Return the created_at of the newest render (for expiry countdown)."""
-    if not project.renders:
-        return None
-    ordered = sorted(
-        project.renders,
-        key=lambda r: ((r.created_at or datetime.min), (r.id or 0)),
-        reverse=True,
-    )
-    newest = ordered[0]
-    return newest.created_at.isoformat() if newest.created_at else None
 
 
 class CreateProjectRequest(BaseModel):
@@ -497,10 +449,9 @@ async def list_projects(
             "aspect_ratio": p.aspect_ratio,
             "error_message": p.error_message,
             "created_at": p.created_at.isoformat() if p.created_at else None,
-            "render_created_at": _newest_render_created_at(p),
             "lyrics_text": p.lyrics_text or "",
             "style_prompt": p.style_prompt or "",
-            "thumbnail_url": _best_project_thumbnail_url(p),
+            "thumbnail_url": _to_media_url(p.renders[0].thumbnail_path) if p.renders else None,
         }
         for p in projects
     ]
@@ -523,9 +474,7 @@ async def get_project(
     scenes = result_scenes.scalars().all()
 
     result_renders = await db.execute(
-        select(VideoRender)
-        .where(VideoRender.project_id == project_id)
-        .order_by(VideoRender.created_at.desc(), VideoRender.id.desc())
+        select(VideoRender).where(VideoRender.project_id == project_id)
     )
     renders = result_renders.scalars().all()
 
@@ -565,7 +514,6 @@ async def get_project(
                 "duration": r.duration,
                 "video_url": _to_media_url(r.file_path),
                 "thumbnail_url": _to_media_url(r.thumbnail_path),
-                "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in renders
         ],
@@ -786,26 +734,10 @@ async def delete_project(
     if not project or project.user_id != user["id"]:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Delete publish jobs and schedules that reference this project's renders
-    from app.models import PublishJob, PublishSchedule
-    render_result = await db.execute(
-        select(VideoRender).where(VideoRender.project_id == project_id)
-    )
-    render_ids = [r.id for r in render_result.scalars().all()]
-    if render_ids:
-        await db.execute(
-            delete(PublishJob).where(PublishJob.render_id.in_(render_ids))
-        )
-        # Clean schedule queues referencing these renders
-        sched_result = await db.execute(select(PublishSchedule).where(PublishSchedule.user_id == user["id"]))
-        for sched in sched_result.scalars().all():
-            if sched.queue:
-                sched.queue = [rid for rid in sched.queue if rid not in render_ids]
-
     # Clean up files
     import shutil
     from pathlib import Path
-    for dir_name in ["images", "clips", "renders", "subtitles", "audio", "thumbnails"]:
+    for dir_name in ["images", "clips", "renders", "subtitles"]:
         dir_path = Path(settings.media_dir) / dir_name / str(project_id)
         if dir_path.exists():
             shutil.rmtree(dir_path, ignore_errors=True)
@@ -823,6 +755,22 @@ async def quick_create(
     db: AsyncSession = Depends(get_db),
 ):
     """One-click video creation: AI generates title/description/style, creates project, starts pipeline."""
+    # Detect gospel/worship genre from lyrics and title
+    _text_lower = f"{req.song_title or ''} {req.song_artist or ''} {(req.lyrics or '')[:500]}".lower()
+    _is_gospel = any(w in _text_lower for w in [
+        "gospel", "worship", "louvor", "adoração", "adoracao", "deus", "senhor",
+        "jesus", "cristo", "espírito", "espirito", "santo", "glória", "gloria",
+        "redenção", "redencao", "fé", "oração", "oracao", "salvação", "salvacao",
+        "graça", "graca", "igreja", "aleluia", "hallelujah", "amém", "amen",
+    ])
+
+    _gospel_style_instruction = """
+IMPORTANT: This is a GOSPEL/WORSHIP song. The style_prompt MUST reflect spiritual, uplifting imagery:
+- Use nature landscapes: mountains, valleys, rivers, sunrise, sunset, golden light, green pastures, calm waters, starry sky, fields of wheat, olive trees, gentle rain, waterfalls, meadows, oceans
+- Use warm, golden, celestial lighting — NOT dark, horror, or scary imagery
+- Do NOT mention birds, doves, or animals in the style_prompt — focus on landscapes and light
+- NEVER use dark/horror/scary/gothic themes for gospel music""" if _is_gospel else ""
+
     # Ask AI to generate creative metadata from song info
     ai_prompt = f"""Você é um produtor criativo de vídeos musicais.
 Com base nos dados desta música, gere metadados criativos para um videoclipe.
@@ -832,6 +780,7 @@ Artista: {req.song_artist or 'Desconhecido'}
 Duração: {req.duration:.0f} segundos
 Trecho da letra:
 {(req.lyrics or 'Sem letra disponível')[:800]}
+{_gospel_style_instruction}
 
 Responda SOMENTE um JSON com:
 - "title": título curto e criativo para o projeto de vídeo (máx 60 chars, em português)

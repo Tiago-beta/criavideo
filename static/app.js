@@ -393,7 +393,7 @@ function bindAuthEvents() {
 }
 
 function navigateTo(pageName) {
-    const normalizedPage = (pageName === "accounts") ? "publish" : pageName;
+    const normalizedPage = (pageName === "schedule" || pageName === "accounts") ? "publish" : pageName;
     document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
     const target = document.getElementById("page-" + normalizedPage);
     if (target) target.classList.add("active");
@@ -445,13 +445,6 @@ function bindNavigation() {
             showAuth("Sessao encerrada.");
         });
     }
-    // Mobile profile avatar
-    const mobileProfileBtn = document.getElementById("mobile-profile-btn");
-    if (mobileProfileBtn) {
-        mobileProfileBtn.addEventListener("click", () => {
-            navigateTo("profile");
-        });
-    }
 }
 
 function ensurePublishDraftSelector() {
@@ -494,8 +487,6 @@ function bindDashboardEvents() {
     document.getElementById("btn-publish").addEventListener("click", submitPublishNow);
     document.getElementById("btn-save-draft").addEventListener("click", savePublishDraft);
     document.getElementById("btn-schedule-publish").addEventListener("click", openPublishScheduleModal);
-    document.getElementById("pub-links-toggle").addEventListener("click", togglePublishLinks);
-    document.getElementById("btn-save-links").addEventListener("click", savePublishLinksForAccount);
     document.getElementById("pub-render-select").addEventListener("change", (e) => {
         const renderId = e.target.value;
         if (renderId) {
@@ -523,9 +514,6 @@ function bindDashboardEvents() {
     document.getElementById("btn-new-schedule").addEventListener("click", async () => {
         await loadAccountsForSelect();
         openModal("modal-new-schedule");
-    });
-    document.getElementById("btn-new-automation").addEventListener("click", () => {
-        openNewAutomationModal();
     });
     document.querySelectorAll(".publish-top-tab").forEach((tabBtn) => {
         tabBtn.addEventListener("click", () => {
@@ -600,9 +588,9 @@ async function bootstrap() {
     initDashboard();
 }
 
-function initDashboard() {
+async function initDashboard() {
     renderSession();
-    updateCreditsDisplay();
+    await updateCreditsDisplay();
     const renameInput = document.getElementById("edit-project-title");
     if (renameInput) {
         renameInput.addEventListener("keydown", (event) => {
@@ -675,15 +663,13 @@ function initDashboard() {
 function loadPageData(page) {
     if (page === "projects") {
         loadProjects();
-    } else if (page === "publish" || page === "accounts") {
+    } else if (page === "publish" || page === "schedule" || page === "accounts") {
         setPublishTab(page === "publish" ? "publish" : page);
-    } else if (page === "automate") {
-        loadAutoSchedules();
     }
 }
 
 function setPublishTab(tabName) {
-    const nextTab = ["publish", "accounts"].includes(tabName) ? tabName : "publish";
+    const nextTab = ["publish", "schedule", "accounts"].includes(tabName) ? tabName : "publish";
     document.querySelectorAll(".publish-top-tab").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.publishTab === nextTab);
     });
@@ -705,6 +691,7 @@ function setPublishTab(tabName) {
             }
         });
         loadPublishJobs();
+    } else if (nextTab === "schedule") {
         loadSchedules();
     } else if (nextTab === "accounts") {
         loadAccounts();
@@ -732,12 +719,6 @@ function closeModal(id) {
         _pendingConnectPlatform = "";
         const input = document.getElementById("connect-account-label");
         if (input) input.value = "";
-        const keyInput = document.getElementById("connect-tiktok-client-key");
-        const secretInput = document.getElementById("connect-tiktok-client-secret");
-        if (keyInput) keyInput.value = "";
-        if (secretInput) secretInput.value = "";
-        const tiktokKeys = document.getElementById("connect-tiktok-keys");
-        if (tiktokKeys) tiktokKeys.hidden = true;
     }
     if (id === "modal-edit-account") {
         _editingSocialAccountId = 0;
@@ -819,12 +800,12 @@ async function loadProjects() {
             return;
         }
         container.innerHTML = data.map((project) => {
-            const dateStr = _renderExpiryOrDate(project);
+            const dt = project.created_at ? new Date(project.created_at) : null;
+            const dateStr = dt ? `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")} · ${dt.toLocaleDateString("pt-BR")}` : "-";
             const statusPt = _statusPt(project.status);
             const thumbClick = project.status === "completed" ? `onclick="watchVideo(${project.id})" style="cursor:pointer"` : "";
-            const canWatch = project.status === "completed";
             const thumb = project.thumbnail_url
-                ? `<img class="card-thumb" src="${project.thumbnail_url}" alt="" loading="lazy" onerror="handleProjectThumbError(this, ${project.id}, ${canWatch})" ${thumbClick}>`
+                ? `<img class="card-thumb" src="${project.thumbnail_url}" alt="" loading="lazy" ${thumbClick}>`
                 : `<div class="card-thumb card-thumb-placeholder" ${thumbClick}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
             return `
                 <div class="card">
@@ -851,21 +832,9 @@ async function loadProjects() {
         }).join("");
         // Start polling for in-progress projects
         _pollInProgress(data);
-        _startCountdownRefresh();
     } catch (error) {
         container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
     }
-}
-
-function handleProjectThumbError(imgElement, projectId, canWatch) {
-    const placeholder = document.createElement("div");
-    placeholder.className = "card-thumb card-thumb-placeholder";
-    if (canWatch) {
-        placeholder.style.cursor = "pointer";
-        placeholder.addEventListener("click", () => watchVideo(projectId));
-    }
-    placeholder.innerHTML = '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
-    imgElement.replaceWith(placeholder);
 }
 
 function _statusPt(status) {
@@ -881,62 +850,13 @@ function _statusPt(status) {
     return map[status] || status;
 }
 
-const RENDER_EXPIRY_HOURS = 48;
-
-function _renderExpiryOrDate(project) {
-    // For completed projects with a render, show countdown to expiry
-    if (project.status === "completed" && project.render_created_at) {
-        const renderDate = new Date(project.render_created_at);
-        const expiresAt = new Date(renderDate.getTime() + RENDER_EXPIRY_HOURS * 3600000);
-        const now = new Date();
-        const remaining = expiresAt - now;
-        if (remaining <= 0) {
-            return '<span class="expiry-expired">Expirado</span>';
-        }
-        const hours = Math.floor(remaining / 3600000);
-        const mins = Math.floor((remaining % 3600000) / 60000);
-        if (hours < 6) {
-            return `<span class="expiry-urgent">⏳ ${hours}h ${String(mins).padStart(2,"0")}m</span>`;
-        }
-        return `<span class="expiry-countdown">⏳ ${hours}h ${String(mins).padStart(2,"0")}m</span>`;
-    }
-    // For non-completed projects, show creation date
-    const dt = project.created_at ? new Date(project.created_at) : null;
-    return dt ? `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")} · ${dt.toLocaleDateString("pt-BR")}` : "-";
-}
-
-// Auto-refresh countdown timers every minute
-let _countdownTimer = null;
-function _startCountdownRefresh() {
-    if (_countdownTimer) clearInterval(_countdownTimer);
-    _countdownTimer = setInterval(() => {
-        const container = document.getElementById("projects-list");
-        if (!container) return;
-        for (const project of _projectsCache) {
-            if (project.status !== "completed" || !project.render_created_at) continue;
-            const cards = container.querySelectorAll(".card");
-            for (const card of cards) {
-                const btn = card.querySelector("[onclick*='watchVideo(" + project.id + ")']") ||
-                            card.querySelector("[onclick*='deleteProject(" + project.id + ")']");
-                if (btn) {
-                    const dateSpan = card.querySelector(".card-date");
-                    if (dateSpan) dateSpan.innerHTML = _renderExpiryOrDate(project);
-                    break;
-                }
-            }
-        }
-    }, 60000);
-}
-
 let _pollTimer = null;
-let _prevActiveIds = new Set();
 function _pollInProgress(projects) {
     if (_pollTimer) clearInterval(_pollTimer);
     const active = projects.filter(p =>
         p.status !== "completed" && p.status !== "failed" && p.status !== "pending"
     );
     if (!active.length) return;
-    _prevActiveIds = new Set(active.map(p => p.id));
     _pollTimer = setInterval(async () => {
         try {
             const data = await api("/video/projects");
@@ -944,11 +864,6 @@ function _pollInProgress(projects) {
             const stillActive = data.filter(p =>
                 p.status !== "completed" && p.status !== "failed" && p.status !== "pending"
             );
-            // Detect newly completed projects
-            const newlyCompleted = data.filter(p =>
-                p.status === "completed" && _prevActiveIds.has(p.id)
-            );
-            _prevActiveIds = new Set(stillActive.map(p => p.id));
             // Update cards in-place instead of full re-render
             for (const p of data) {
                 _updateCardInPlace(p);
@@ -957,23 +872,12 @@ function _pollInProgress(projects) {
                 clearInterval(_pollTimer);
                 _pollTimer = null;
                 loadProjects(); // Full refresh to get thumbnails
-                // Show expiry warning for newly completed videos
-                if (newlyCompleted.length) {
-                    _showExpiryWarning();
-                }
             }
         } catch (_) {
             clearInterval(_pollTimer);
             _pollTimer = null;
         }
     }, 3000);
-}
-
-function _showExpiryWarning() {
-    const modal = document.getElementById("modal-expiry-warning");
-    if (modal) {
-        openModal("modal-expiry-warning");
-    }
 }
 
 function _updateCardInPlace(project) {
@@ -1208,11 +1112,10 @@ async function openRenameProjectModal(projectId) {
             downloadsEl.hidden = false;
             try {
                 const detail = await api(`/video/projects/${project.id}`);
-                const renders = Array.isArray(detail.renders) ? detail.renders : [];
-                const render = renders.find((item) => item && item.video_url) || renders[0] || null;
+                const render = detail.renders && detail.renders[0];
                 const videoLink = document.getElementById("edit-download-video");
                 const thumbLink = document.getElementById("edit-download-thumb");
-                if (render && render.video_url && videoLink) {
+                if (render && videoLink) {
                     videoLink.href = render.video_url;
                     videoLink.download = `${project.title || "video"}.mp4`;
                     videoLink.style.display = "";
@@ -2540,11 +2443,7 @@ async function watchVideo(projectId) {
             alert("Nenhum video renderizado encontrado.");
             return;
         }
-        const render = project.renders.find((item) => item && item.video_url);
-        if (!render) {
-            alert("Este video nao esta mais disponivel para reproducao.");
-            return;
-        }
+        const render = project.renders[0];
         document.getElementById("player-title").textContent = project.title || "Video";
         const video = document.getElementById("player-video");
         video.src = render.video_url;
@@ -2552,19 +2451,7 @@ async function watchVideo(projectId) {
         video.play().catch(() => {});
         const sizeMb = render.file_size ? `${(render.file_size / 1048576).toFixed(1)} MB` : "";
         const duration = render.duration ? `${Math.floor(render.duration / 60)}:${String(Math.floor(render.duration % 60)).padStart(2, "0")}` : "";
-        // Show expiry countdown in player
-        let expiryInfo = "";
-        if (render.created_at) {
-            const renderDate = new Date(render.created_at);
-            const expiresAt = new Date(renderDate.getTime() + RENDER_EXPIRY_HOURS * 3600000);
-            const remaining = expiresAt - new Date();
-            if (remaining > 0) {
-                const h = Math.floor(remaining / 3600000);
-                const m = Math.floor((remaining % 3600000) / 60000);
-                expiryInfo = `⏳ Expira em ${h}h ${String(m).padStart(2,"0")}m`;
-            }
-        }
-        document.getElementById("player-info").textContent = [render.format, duration, sizeMb, expiryInfo].filter(Boolean).join(" · ");
+        document.getElementById("player-info").textContent = [render.format, duration, sizeMb].filter(Boolean).join(" · ");
         const download = document.getElementById("player-download");
         download.href = render.video_url;
         download.download = `${project.title || "video"}.mp4`;
@@ -2593,9 +2480,6 @@ async function loadRenders(preselectProjectId = 0) {
             try {
                 const detail = await api(`/video/projects/${project.id}`);
                 for (const render of detail.renders || []) {
-                    if (!render.video_url) {
-                        continue;
-                    }
                     const duration = render.duration != null
                         ? `${Math.floor(render.duration / 60)}:${String(Math.round(render.duration % 60)).padStart(2, "0")}`
                         : "?";
@@ -2641,7 +2525,11 @@ function openPublishForProject(projectId) {
 }
 
 function getCheckedPublishPlatforms() {
-    return ["youtube"];
+    const platforms = [];
+    document.querySelectorAll("#publish-form-area .publish-platforms-icons input:checked").forEach((checkbox) => {
+        platforms.push(checkbox.value);
+    });
+    return platforms;
 }
 
 function buildPublishPayload(scheduledAt = "") {
@@ -2676,11 +2564,6 @@ function buildPublishPayload(scheduledAt = "") {
         fullDesc = fullDesc ? `${fullDesc}\n\n${hashtagText}` : hashtagText;
     }
 
-    const linksText = getPublishLinksForPayload();
-    if (linksText) {
-        fullDesc = fullDesc ? `${fullDesc}\n\n${linksText}` : linksText;
-    }
-
     const payload = {
         render_id: parseInt(renderId, 10),
         platforms,
@@ -2692,86 +2575,6 @@ function buildPublishPayload(scheduledAt = "") {
         payload.scheduled_at = scheduledAt;
     }
     return payload;
-}
-
-// ---- Publish Links (per-account social / important links for video descriptions) ----
-
-function togglePublishLinks() {
-    const body = document.getElementById("pub-links-body");
-    const arrow = document.getElementById("pub-links-arrow");
-    if (body.hidden) {
-        body.hidden = false;
-        arrow.classList.add("open");
-    } else {
-        body.hidden = true;
-        arrow.classList.remove("open");
-    }
-}
-
-function getSelectedPublishAccountId() {
-    const platforms = getCheckedPublishPlatforms();
-    if (!platforms.length) return null;
-    const sel = document.getElementById(`pub-account-${platforms[0]}`);
-    return sel ? parseInt(sel.value || "", 10) || null : null;
-}
-
-function getSelectedPublishAccount() {
-    const accountId = getSelectedPublishAccountId();
-    if (!accountId || !_socialAccountsCache.length) return null;
-    return _socialAccountsCache.find(a => a.id === accountId) || null;
-}
-
-function loadPublishLinksForCurrentAccount() {
-    const account = getSelectedPublishAccount();
-    const field = document.getElementById("pub-links");
-    const label = document.getElementById("pub-links-account-label");
-    if (!field) return;
-    if (account) {
-        field.value = account.publish_links || "";
-        if (label) label.textContent = socialAccountDisplayName(account);
-    } else {
-        field.value = "";
-        if (label) label.textContent = "";
-    }
-}
-
-async function savePublishLinksForAccount() {
-    const accountId = getSelectedPublishAccountId();
-    if (!accountId) {
-        alert("Selecione uma plataforma e conta primeiro.");
-        return;
-    }
-    const field = document.getElementById("pub-links");
-    const links = (field?.value || "").trim();
-    try {
-        await api(`/publish/links/${accountId}`, {
-            method: "PUT",
-            body: JSON.stringify({ links }),
-        });
-        // Update cache
-        const cached = _socialAccountsCache.find(a => a.id === accountId);
-        if (cached) cached.publish_links = links;
-        alert("Links salvos com sucesso!");
-    } catch (e) {
-        alert("Erro ao salvar links: " + (e.message || e));
-    }
-}
-
-function getPublishLinksForPayload() {
-    const platforms = getCheckedPublishPlatforms();
-    const seen = new Set();
-    const allLinks = [];
-    for (const platform of platforms) {
-        const sel = document.getElementById(`pub-account-${platform}`);
-        const accountId = parseInt(sel?.value || "", 10);
-        if (!accountId || seen.has(accountId)) continue;
-        seen.add(accountId);
-        const account = _socialAccountsCache.find(a => a.id === accountId);
-        if (account && (account.publish_links || "").trim()) {
-            allLinks.push(account.publish_links.trim());
-        }
-    }
-    return allLinks.join("\n\n");
 }
 
 function getPublishDraftStorageKey(renderId) {
@@ -3017,6 +2820,13 @@ async function applyPublishDraft(renderId) {
     if (titleInput) titleInput.value = String(draft.title || "");
     if (descInput) descInput.value = String(draft.description || "");
     if (hashtagsInput) hashtagsInput.value = String(draft.hashtags || "");
+
+    if (Array.isArray(draft.platforms) && draft.platforms.length) {
+        const selected = new Set(draft.platforms.map((item) => String(item)));
+        document.querySelectorAll("#publish-form-area .publish-platforms-icons input").forEach((checkbox) => {
+            checkbox.checked = selected.has(checkbox.value);
+        });
+    }
 
     if (draft.account_ids && typeof draft.account_ids === "object") {
         Object.entries(draft.account_ids).forEach(([platform, accountId]) => {
@@ -3282,42 +3092,6 @@ async function generatePublishThumbnail(renderId, customTitle, customDescription
     }
 }
 
-function friendlyPublishError(raw) {
-    if (!raw) return "Erro desconhecido. Tente novamente mais tarde.";
-    const lower = raw.toLowerCase();
-    if (lower.includes("youtube data api") && lower.includes("not been used")) {
-        return "A API do YouTube nao esta ativada no projeto Google Cloud.\n\nPasso a passo:\n1. Acesse console.cloud.google.com\n2. Selecione o projeto do CriaVideo\n3. Va em APIs e Servicos > Biblioteca\n4. Busque 'YouTube Data API v3' e clique em Ativar\n5. Aguarde alguns minutos e tente publicar novamente.";
-    }
-    if (lower.includes("accessnotconfigured") || lower.includes("api has not been enabled")) {
-        return "Uma API necessaria nao esta ativada no Google Cloud. Acesse console.cloud.google.com, ative a API indicada e tente novamente.";
-    }
-    if (lower.includes("invalid_grant") || lower.includes("token has been expired") || lower.includes("token has been revoked")) {
-        return "Sua conexao com a plataforma expirou.\n\nPasso a passo:\n1. Va na aba 'Contas' na pagina de publicacao\n2. Desconecte a conta afetada\n3. Conecte novamente\n4. Tente publicar de novo.";
-    }
-    if (lower.includes("custom video thumbnails") || lower.includes("thumbnails/set")) {
-        return "O video foi publicado, mas o YouTube bloqueou a thumbnail personalizada desta conta/canal.\n\nComo resolver:\n1. No YouTube Studio, confirme se o canal esta verificado (telefone)\n2. Ative recursos avancados/intermediarios da conta\n3. Aguarde alguns minutos apos a verificacao\n4. Publique novamente para aplicar a thumbnail";
-    }
-    if (lower.includes("quota") || lower.includes("rate limit") || lower.includes("too many requests")) {
-        return "Limite de uso da API atingido. Aguarde algumas horas e tente novamente, ou verifique sua cota no painel do Google Cloud.";
-    }
-    if (lower.includes("forbidden") || lower.includes("403")) {
-        return "Acesso negado pela plataforma. Verifique se a conta conectada tem permissao para publicar videos e se todas as APIs necessarias estao ativadas.";
-    }
-    if (lower.includes("unauthorized") || lower.includes("401")) {
-        return "Autenticacao falhou.\n\nPasso a passo:\n1. Va na aba 'Contas'\n2. Desconecte e reconecte a conta\n3. Tente publicar novamente.";
-    }
-    if (lower.includes("not found") || lower.includes("file not found") || lower.includes("render file")) {
-        return "O arquivo de video nao foi encontrado no servidor. Tente renderizar o video novamente antes de publicar.";
-    }
-    if (lower.includes("social account not found")) {
-        return "A conta social nao foi encontrada. Reconecte sua conta na aba 'Contas' e tente novamente.";
-    }
-    if (lower.includes("network") || lower.includes("timeout") || lower.includes("connection")) {
-        return "Erro de conexao com a plataforma. Verifique sua internet e tente novamente em alguns minutos.";
-    }
-    return "Erro ao publicar: " + raw + "\n\nSe o problema persistir, entre em contato com o suporte.";
-}
-
 async function loadPublishJobs() {
     const container = document.getElementById("publish-jobs-list");
     try {
@@ -3334,37 +3108,17 @@ async function loadPublishJobs() {
                         <td>${job.id}</td>
                         <td>${esc(job.platform)}</td>
                         <td>${esc(job.account_label || "Conta conectada")}</td>
-                        <td>
-                            <span class="badge badge-${badgeClass(job.status)}">${esc(job.status)}</span>
-                            ${job.error_message ? `<button class="btn-see-error" onclick="showPublishError(${job.id})" title="${job.status === "failed" ? "Ver motivo da falha" : "Ver detalhes do aviso"}">${job.status === "failed" ? "Ver motivo" : "Ver aviso"}</button>` : ""}
-                        </td>
+                        <td><span class="badge badge-${badgeClass(job.status)}">${esc(job.status)}</span></td>
                         <td>${job.platform_url ? `<a href="${esc(job.platform_url)}" target="_blank" rel="noreferrer">Ver</a>` : "-"}</td>
                         <td>${(job.published_at || job.scheduled_at) ? new Date(job.published_at || job.scheduled_at).toLocaleString("pt-BR") : "-"}</td>
                     </tr>
                 `).join("")}
             </table>
         `;
-        container._publishJobs = jobs;
     } catch (error) {
         container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
     }
 }
-
-function showPublishError(jobId) {
-    const container = document.getElementById("publish-jobs-list");
-    const jobs = container._publishJobs || [];
-    const job = jobs.find((j) => j.id === jobId);
-    if (!job) return;
-    const friendly = friendlyPublishError(job.error_message || "");
-    openModal("modal-publish-error");
-    const title = document.getElementById("publish-error-title");
-    if (title) {
-        title.textContent = job.status === "failed" ? "Motivo da falha" : "Aviso da publicacao";
-    }
-    const body = document.getElementById("publish-error-body");
-    if (body) body.textContent = friendly;
-}
-window.showPublishError = showPublishError;
 
 function socialAccountDisplayName(account) {
     if (!account) return "Conta conectada";
@@ -3375,7 +3129,10 @@ async function renderPublishAccountSelectors(forceReload = false) {
     const container = document.getElementById("pub-account-selectors");
     if (!container) return;
 
-    const selectedPlatforms = getCheckedPublishPlatforms();
+    const selectedPlatforms = [];
+    document.querySelectorAll("#publish-form-area .publish-platforms-icons input:checked").forEach((checkbox) => {
+        selectedPlatforms.push(checkbox.value);
+    });
 
     if (!selectedPlatforms.length) {
         container.hidden = true;
@@ -3433,10 +3190,8 @@ async function renderPublishAccountSelectors(forceReload = false) {
             select.addEventListener("change", () => {
                 const platform = select.dataset.platform;
                 _publishAccountSelection[platform] = select.value;
-                loadPublishLinksForCurrentAccount();
             });
         });
-        loadPublishLinksForCurrentAccount();
     } catch (error) {
         container.hidden = false;
         container.innerHTML = `<p class="loading">Erro ao carregar contas: ${esc(error.message)}</p>`;
@@ -3547,338 +3302,6 @@ async function deleteSchedule(id) {
     }
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Automation (auto-schedules) — CRUD + wizard
-   ═══════════════════════════════════════════════════════════ */
-
-let _autoWizardStep = 1;
-let _autoWizardThemes = []; // temporary list while creating
-
-async function loadAutoSchedules() {
-    const container = document.getElementById("auto-schedules-list");
-    if (!container) return;
-    try {
-        const data = await api("/automation/schedules");
-        if (!data.length) {
-            container.innerHTML = "<p class='loading'>Nenhuma automacao criada.</p>";
-            return;
-        }
-        container.innerHTML = data.map(renderAutoCard).join("");
-    } catch (error) {
-        container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
-    }
-}
-
-function renderAutoCard(s) {
-    const typeBadge = s.video_type === "music"
-        ? '<span class="badge badge-processing">Musical</span>'
-        : '<span class="badge badge-completed">Narrado</span>';
-    const modeBadge = s.creation_mode === "manual"
-        ? '<span class="badge">Manual</span>'
-        : '<span class="badge badge-queued">Auto</span>';
-    const statusBadge = s.is_active
-        ? '<span class="badge badge-completed">Ativo</span>'
-        : '<span class="badge badge-failed">Pausado</span>';
-
-    const themes = (s.themes || []);
-    const pendingCount = themes.filter(t => t.status === "pending").length;
-    const doneCount = themes.filter(t => t.status === "done").length;
-
-    const themeListHtml = themes.map(t => {
-        const icon = t.status === "done" ? "✅" : t.status === "processing" ? "⏳" : t.status === "error" ? "❌" : "⏸";
-        return `<li class="auto-theme-item">
-            <span class="theme-status">${icon}</span>
-            <span class="theme-text">${esc(t.theme)}</span>
-            <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
-        </li>`;
-    }).join("");
-
-    const freq = s.frequency === "weekly"
-        ? `Semanal (${["Seg","Ter","Qua","Qui","Sex","Sab","Dom"][s.day_of_week || 0]})`
-        : "Diario";
-
-    return `<div class="auto-card" id="auto-card-${s.id}">
-        <div class="auto-card-header">
-            <h4>${esc(s.name || "Automacao")}</h4>
-            ${statusBadge}
-        </div>
-        <div class="auto-card-badges">${typeBadge} ${modeBadge}</div>
-        <div class="auto-card-meta">
-            <span>${freq} as ${esc(s.time_utc)} UTC</span>
-            <span>${pendingCount} pendentes / ${doneCount} feitos</span>
-        </div>
-        <div class="auto-card-detail">
-            <strong>Temas:</strong>
-            <ul class="auto-theme-list">${themeListHtml || "<li class='loading'>Sem temas</li>"}</ul>
-            <div class="auto-theme-add" style="margin-top:0.5rem">
-                <input type="text" class="input" placeholder="Novo tema..." id="add-theme-input-${s.id}" maxlength="200">
-                <button class="btn btn-primary btn-sm" type="button" onclick="addAutoThemeToSchedule(${s.id})">+</button>
-            </div>
-        </div>
-        <div class="auto-card-actions">
-            <button class="btn btn-secondary btn-sm" onclick="toggleAutoSchedule(${s.id},${s.is_active?'false':'true'})" type="button">${s.is_active ? "Pausar" : "Ativar"}</button>
-            <button class="btn btn-provider btn-sm" onclick="deleteAutoSchedule(${s.id})" type="button">Excluir</button>
-        </div>
-    </div>`;
-}
-
-async function toggleAutoSchedule(id, newState) {
-    try {
-        await api(`/automation/schedules/${id}`, {
-            method: "PATCH",
-            body: JSON.stringify({ is_active: newState }),
-        });
-        loadAutoSchedules();
-    } catch (error) {
-        alert(`Erro: ${error.message}`);
-    }
-}
-
-async function deleteAutoSchedule(id) {
-    if (!window.confirm("Excluir esta automacao e todos os temas?")) return;
-    try {
-        await api(`/automation/schedules/${id}`, { method: "DELETE" });
-        loadAutoSchedules();
-    } catch (error) {
-        alert(`Erro: ${error.message}`);
-    }
-}
-
-async function deleteAutoTheme(themeId, scheduleId) {
-    try {
-        await api(`/automation/themes/${themeId}`, { method: "DELETE" });
-        loadAutoSchedules();
-    } catch (error) {
-        alert(`Erro: ${error.message}`);
-    }
-}
-
-async function addAutoThemeToSchedule(scheduleId) {
-    const input = document.getElementById(`add-theme-input-${scheduleId}`);
-    if (!input) return;
-    const theme = input.value.trim();
-    if (!theme) return;
-    try {
-        await api(`/automation/schedules/${scheduleId}/themes`, {
-            method: "POST",
-            body: JSON.stringify({ themes: [theme] }),
-        });
-        input.value = "";
-        loadAutoSchedules();
-    } catch (error) {
-        alert(`Erro: ${error.message}`);
-    }
-}
-
-/* ── Automation Wizard (modal-new-automation) ── */
-
-function openNewAutomationModal() {
-    _autoWizardStep = 1;
-    _autoWizardThemes = [];
-
-    // reset selections
-    document.querySelectorAll("#modal-new-automation .auto-type-card").forEach(c => c.classList.remove("active"));
-    const narrationBtn = document.querySelector('#modal-new-automation [data-video-type="narration"]');
-    if (narrationBtn) narrationBtn.classList.add("active");
-    const autoBtn = document.querySelector('#modal-new-automation [data-creation-mode="auto"]');
-    if (autoBtn) autoBtn.classList.add("active");
-
-    const manual = document.getElementById("auto-manual-settings");
-    if (manual) manual.hidden = true;
-
-    document.getElementById("auto-theme-list").innerHTML = "";
-    const themeInput = document.getElementById("auto-theme-input");
-    if (themeInput) themeInput.value = "";
-
-    // load social accounts for step 4
-    loadAutoAccountOptions();
-
-    // reset name/time
-    const nameEl = document.getElementById("auto-name");
-    if (nameEl) nameEl.value = "";
-    const timeEl = document.getElementById("auto-time");
-    if (timeEl) timeEl.value = "14:00";
-    const freqEl = document.getElementById("auto-frequency");
-    if (freqEl) freqEl.value = "daily";
-    const dowGroup = document.getElementById("auto-dow-group");
-    if (dowGroup) dowGroup.hidden = true;
-
-    showAutoStep(1);
-    openModal("modal-new-automation");
-}
-
-function showAutoStep(step) {
-    _autoWizardStep = step;
-    document.querySelectorAll("#modal-new-automation .auto-step").forEach(el => {
-        el.classList.toggle("active", parseInt(el.dataset.autoStep) === step);
-    });
-    document.querySelectorAll("#modal-new-automation .auto-dot").forEach(el => {
-        el.classList.toggle("active", parseInt(el.dataset.autoStep) <= step);
-    });
-    const btnBack = document.getElementById("auto-btn-back");
-    const btnNext = document.getElementById("auto-btn-next");
-    const btnCreate = document.getElementById("auto-btn-create");
-    if (btnBack) btnBack.hidden = step === 1;
-    if (btnNext) btnNext.hidden = step === 4;
-    if (btnCreate) btnCreate.hidden = step !== 4;
-}
-
-function autoStepNext() {
-    if (_autoWizardStep === 3 && _autoWizardThemes.length === 0) {
-        alert("Adicione pelo menos um tema.");
-        return;
-    }
-    if (_autoWizardStep < 4) showAutoStep(_autoWizardStep + 1);
-}
-
-function autoStepBack() {
-    if (_autoWizardStep > 1) showAutoStep(_autoWizardStep - 1);
-}
-
-function selectAutoVideoType(type) {
-    document.querySelectorAll('#modal-new-automation [data-auto-step="1"] .auto-type-card').forEach(c => {
-        c.classList.toggle("active", c.dataset.videoType === type);
-    });
-    // hide manual settings if music (no tone/voice for music)
-    if (type === "music") {
-        const manual = document.getElementById("auto-manual-settings");
-        if (manual) manual.hidden = true;
-        // force auto mode for music
-        selectAutoCreationMode("auto");
-    }
-}
-
-function selectAutoCreationMode(mode) {
-    document.querySelectorAll('#modal-new-automation [data-auto-step="2"] .auto-type-card').forEach(c => {
-        c.classList.toggle("active", c.dataset.creationMode === mode);
-    });
-    const manual = document.getElementById("auto-manual-settings");
-    if (manual) {
-        const videoType = getSelectedAutoVideoType();
-        manual.hidden = mode !== "manual" || videoType === "music";
-    }
-}
-
-function getSelectedAutoVideoType() {
-    const activeCard = document.querySelector('#modal-new-automation [data-auto-step="1"] .auto-type-card.active');
-    return activeCard ? activeCard.dataset.videoType : "narration";
-}
-
-function getSelectedAutoCreationMode() {
-    const activeCard = document.querySelector('#modal-new-automation [data-auto-step="2"] .auto-type-card.active');
-    return activeCard ? activeCard.dataset.creationMode : "auto";
-}
-
-function addAutoTheme() {
-    const input = document.getElementById("auto-theme-input");
-    const text = (input?.value || "").trim();
-    if (!text) return;
-    _autoWizardThemes.push(text);
-    input.value = "";
-    renderAutoWizardThemes();
-    input.focus();
-}
-
-function removeAutoWizardTheme(index) {
-    _autoWizardThemes.splice(index, 1);
-    renderAutoWizardThemes();
-}
-
-function renderAutoWizardThemes() {
-    const ul = document.getElementById("auto-theme-list");
-    if (!ul) return;
-    ul.innerHTML = _autoWizardThemes.map((t, i) => `
-        <li class="auto-theme-item">
-            <span class="theme-status">${i + 1}.</span>
-            <span class="theme-text">${esc(t)}</span>
-            <button class="theme-remove" onclick="removeAutoWizardTheme(${i})" type="button">&times;</button>
-        </li>
-    `).join("");
-}
-
-async function loadAutoAccountOptions() {
-    const select = document.getElementById("auto-account");
-    if (!select) return;
-    try {
-        const accounts = await api("/social/accounts");
-        const platform = document.getElementById("auto-platform")?.value || "youtube";
-        const filtered = accounts.filter(a => a.platform === platform);
-        if (!filtered.length) {
-            select.innerHTML = "<option value=''>Conecte uma conta desta plataforma</option>";
-            return;
-        }
-        select.innerHTML = filtered.map(a => {
-            const label = a.label || a.channel_title || a.platform;
-            return `<option value="${a.id}">${esc(label)}</option>`;
-        }).join("");
-    } catch {
-        select.innerHTML = "<option value=''>Nenhuma conta</option>";
-    }
-}
-
-async function createAutoSchedule() {
-    const name = (document.getElementById("auto-name")?.value || "").trim();
-    if (!name) {
-        alert("Informe um nome para a automacao.");
-        return;
-    }
-    if (_autoWizardThemes.length === 0) {
-        alert("Adicione pelo menos um tema.");
-        showAutoStep(3);
-        return;
-    }
-    const accountId = parseInt(document.getElementById("auto-account")?.value || "0", 10);
-    if (!accountId) {
-        alert("Selecione uma conta social.");
-        return;
-    }
-
-    const videoType = getSelectedAutoVideoType();
-    const creationMode = getSelectedAutoCreationMode();
-    const platform = document.getElementById("auto-platform")?.value || "youtube";
-    const frequency = document.getElementById("auto-frequency")?.value || "daily";
-    const timeUtc = document.getElementById("auto-time")?.value || "14:00";
-    const dayOfWeek = frequency === "weekly" ? parseInt(document.getElementById("auto-dow")?.value || "0", 10) : null;
-
-    let defaultSettings = null;
-    if (creationMode === "manual" && videoType !== "music") {
-        defaultSettings = {
-            tone: document.getElementById("auto-tone")?.value || "informativo",
-            voice: document.getElementById("auto-voice")?.value || "onyx",
-            style: document.getElementById("auto-style")?.value || "cinematic, vibrant colors, dynamic lighting",
-            duration: parseInt(document.getElementById("auto-duration")?.value || "120", 10),
-            aspect_ratio: document.getElementById("auto-aspect")?.value || "16:9",
-        };
-    }
-
-    const btn = document.getElementById("auto-btn-create");
-    if (btn) { btn.disabled = true; btn.textContent = "Criando..."; }
-
-    try {
-        await api("/automation/schedules", {
-            method: "POST",
-            body: JSON.stringify({
-                name,
-                video_type: videoType,
-                creation_mode: creationMode,
-                platform,
-                social_account_id: accountId,
-                frequency,
-                time_utc: timeUtc,
-                day_of_week: dayOfWeek,
-                default_settings: defaultSettings,
-                themes: _autoWizardThemes,
-            }),
-        });
-        closeModal("modal-new-automation");
-        loadAutoSchedules();
-    } catch (error) {
-        alert(`Erro: ${error.message}`);
-    } finally {
-        if (btn) { btn.disabled = false; btn.textContent = "Ativar Automacao"; }
-    }
-}
-
 async function connectPlatform(platform) {
     const normalized = String(platform || "").toLowerCase();
     if (!["youtube", "tiktok", "instagram"].includes(normalized)) {
@@ -3896,16 +3319,6 @@ async function connectPlatform(platform) {
     if (input) {
         input.value = "";
     }
-
-    // Show/hide TikTok credentials fields
-    const tiktokKeys = document.getElementById("connect-tiktok-keys");
-    if (tiktokKeys) {
-        tiktokKeys.hidden = normalized !== "tiktok";
-    }
-    const keyInput = document.getElementById("connect-tiktok-client-key");
-    const secretInput = document.getElementById("connect-tiktok-client-secret");
-    if (keyInput) keyInput.value = "";
-    if (secretInput) secretInput.value = "";
 
     const confirmBtn = document.getElementById("connect-account-confirm-btn");
     if (confirmBtn) {
@@ -3933,18 +3346,6 @@ async function confirmConnectPlatform() {
         return;
     }
 
-    // For TikTok, require client_key and client_secret
-    let tiktokClientKey = "";
-    let tiktokClientSecret = "";
-    if (_pendingConnectPlatform === "tiktok") {
-        tiktokClientKey = (document.getElementById("connect-tiktok-client-key")?.value || "").trim();
-        tiktokClientSecret = (document.getElementById("connect-tiktok-client-secret")?.value || "").trim();
-        if (!tiktokClientKey || !tiktokClientSecret) {
-            alert("Informe o Client Key e Client Secret do TikTok.");
-            return;
-        }
-    }
-
     const confirmBtn = document.getElementById("connect-account-confirm-btn");
     if (confirmBtn) {
         confirmBtn.disabled = true;
@@ -3953,39 +3354,19 @@ async function confirmConnectPlatform() {
 
     try {
         const query = new URLSearchParams({ account_label: accountLabel });
-        if (tiktokClientKey) query.set("client_key", tiktokClientKey);
-        if (tiktokClientSecret) query.set("client_secret", tiktokClientSecret);
         const data = await api(`/social/connect/${_pendingConnectPlatform}?${query.toString()}`);
         if (!data.auth_url) {
             throw new Error("A plataforma nao retornou URL de autorizacao");
         }
         window.location.href = data.auth_url;
     } catch (error) {
-        alert(formatSocialConnectError(error.message, _pendingConnectPlatform));
+        alert(`Erro ao conectar conta: ${error.message}`);
     } finally {
         if (confirmBtn) {
             confirmBtn.disabled = false;
             confirmBtn.textContent = "Continuar";
         }
     }
-}
-
-function formatSocialConnectError(rawMessage, platform) {
-    const message = String(rawMessage || "Erro desconhecido");
-    const lower = message.toLowerCase();
-    if (platform === "instagram" && (lower.includes("facebook_app_id") || lower.includes("facebook app_id") || lower.includes("instagram oauth nao configurado"))) {
-        return [
-            "Erro ao conectar Instagram: faltam configuracoes no servidor.",
-            "",
-            "Como resolver:",
-            "1. Criar/abrir um app no Meta for Developers",
-            "2. Habilitar Facebook Login e permissoes do Instagram",
-            "3. Definir Redirect URI: https://criavideo.pro/api/social/callback/instagram",
-            "4. Configurar no servidor (.env): FACEBOOK_APP_ID e FACEBOOK_APP_SECRET",
-            "5. Executar deploy e tentar conectar novamente",
-        ].join("\n");
-    }
-    return `Erro ao conectar conta: ${message}`;
 }
 
 function socialPlatformName(platform) {
@@ -4149,7 +3530,9 @@ async function quickCreate(songData) {
     // Credit check
     const estMinutes = Math.max(1, Math.ceil((songData.duration || 60) / 60));
     const creditsNeeded = estMinutes * _creditsPerMinute;
+    console.log('[quickCreate] _userCredits:', _userCredits, 'creditsNeeded:', creditsNeeded, 'estMinutes:', estMinutes, 'duration:', songData.duration);
     if (_userCredits < creditsNeeded) {
+        console.warn('[quickCreate] CREDIT CHECK FAILED — showing modal. _userCredits=', _userCredits, 'creditsNeeded=', creditsNeeded);
         showCreditsPurchaseModal();
         return;
     }
@@ -4233,14 +3616,6 @@ function badgeClass(status) {
     if (status === "failed") return "failed";
     return "pending";
 }
-
-function toggleCollapsible(btn) {
-    const expanded = btn.getAttribute("aria-expanded") === "true";
-    btn.setAttribute("aria-expanded", String(!expanded));
-    const body = btn.nextElementSibling;
-    if (body) body.hidden = expanded;
-}
-window.toggleCollapsible = toggleCollapsible;
 
 window.closeModal = closeModal;
 window.createProject = createProjectFromLibrary;
@@ -4768,7 +4143,10 @@ async function updateCreditsDisplay() {
         _creditsPerMinute = data.creditsPerMinute || 5;
         _creditPackages = data.packages || [];
         if (countEl) countEl.textContent = _userCredits;
-    } catch {}
+        console.log('[updateCreditsDisplay] credits loaded:', _userCredits, 'perMinute:', _creditsPerMinute);
+    } catch (err) {
+        console.error('[updateCreditsDisplay] FAILED:', err);
+    }
 }
 
 function showCreditsPurchaseModal() {
