@@ -3610,10 +3610,12 @@ function renderAutoCard(s) {
     const doneCount = themes.filter(t => t.status === "done").length;
 
     const themeListHtml = themes.map(t => {
-        const icon = t.status === "done" ? "✅" : t.status === "processing" ? "⏳" : t.status === "error" ? "❌" : "⏸";
+        const icon = t.status === "done" ? "✅" : t.status === "processing" ? "⏳" : t.status === "error" ? "❌" : "📅";
+        const dateLabel = t.scheduled_date ? `<span class="theme-date">${esc(t.scheduled_date)}</span>` : "";
         return `<li class="auto-theme-item">
             <span class="theme-status">${icon}</span>
             <span class="theme-text">${esc(t.theme)}</span>
+            ${dateLabel}
             <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
         </li>`;
     }).join("");

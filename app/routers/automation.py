@@ -87,14 +87,55 @@ def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
         account_label = s.social_account.account_label or s.social_account.platform_username or ""
     next_theme = ""
     pending_count = 0
+    themes_with_dates = []
     if s.themes:
-        pending = sorted(
-            [t for t in s.themes if t.status == "pending"],
-            key=lambda t: t.position,
-        )
+        all_sorted = sorted(s.themes, key=lambda t: t.position)
+        pending = [t for t in all_sorted if t.status == "pending"]
         pending_count = len(pending)
         if pending:
             next_theme = pending[0].theme
+
+        # Calculate scheduled dates for pending themes
+        tz_name = s.timezone or "UTC"
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = ZoneInfo("UTC")
+
+        now_local = datetime.now(tz)
+        h, mn = 14, 0
+        try:
+            h, mn = map(int, (s.time_utc or "14:00").split(":"))
+        except Exception:
+            pass
+        # Convert to local time for display
+        from datetime import timezone as dt_tz
+        utc_ref = datetime.now(ZoneInfo("UTC")).replace(hour=h, minute=mn, second=0, microsecond=0)
+        local_ref = utc_ref.astimezone(tz)
+        local_h, local_m = local_ref.hour, local_ref.minute
+
+        # Find next run date in local time
+        next_run = now_local.replace(hour=local_h, minute=local_m, second=0, microsecond=0)
+        if next_run <= now_local:
+            if s.frequency == "weekly":
+                next_run += timedelta(days=7)
+            else:
+                next_run += timedelta(days=1)
+        if s.frequency == "weekly" and s.day_of_week is not None:
+            while next_run.weekday() != s.day_of_week:
+                next_run += timedelta(days=1)
+
+        pending_idx = 0
+        for t in all_sorted:
+            td = _theme_to_dict(t)
+            if t.status == "pending":
+                delta = timedelta(weeks=pending_idx) if s.frequency == "weekly" else timedelta(days=pending_idx)
+                scheduled = next_run + delta
+                td["scheduled_date"] = scheduled.strftime("%d/%m/%Y")
+                pending_idx += 1
+            else:
+                td["scheduled_date"] = None
+            themes_with_dates.append(td)
     return {
         "id": s.id,
         "name": s.name,
@@ -110,6 +151,7 @@ def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
         "day_of_week": s.day_of_week,
         "default_settings": s.default_settings or {},
         "is_active": s.is_active,
+        "themes": themes_with_dates,
         "theme_count": theme_count or len(s.themes) if s.themes else 0,
         "pending_count": pending_count,
         "next_theme": next_theme,

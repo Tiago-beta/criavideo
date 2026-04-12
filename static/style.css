@@ -1040,6 +1040,15 @@ a {
     font-size: 1rem;
     padding: 0 4px;
     line-height: 1;
+    flex-shrink: 0;
+}
+
+.auto-theme-item .theme-date {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    color: var(--accent);
+    opacity: 0.9;
+    white-space: nowrap;
 }
 
 .auto-theme-item .theme-remove:hover {
