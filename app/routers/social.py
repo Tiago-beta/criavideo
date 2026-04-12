@@ -27,22 +27,26 @@ def _encode_oauth_state(user_id: int, account_label: str = "") -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def _decode_oauth_state(state: str) -> tuple[int, str]:
+def _decode_oauth_state(state: str) -> dict:
+    """Decode state parameter. Returns dict with u(user_id), n(label), tk(tiktok_key), ts(tiktok_secret)."""
     if not state:
-        return 0, ""
+        return {"u": 0, "n": ""}
     if state.isdigit():
-        return int(state), ""
+        return {"u": int(state), "n": ""}
 
     padded = state + ("=" * (-len(state) % 4))
     try:
         decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
         payload = json.loads(decoded)
     except Exception:
-        return 0, ""
+        return {"u": 0, "n": ""}
 
-    user_id = int(payload.get("u", 0) or 0)
-    account_label = str(payload.get("n", "") or "").strip()[:255]
-    return user_id, account_label
+    return {
+        "u": int(payload.get("u", 0) or 0),
+        "n": str(payload.get("n", "") or "").strip()[:255],
+        "tk": str(payload.get("tk", "") or ""),
+        "ts": str(payload.get("ts", "") or ""),
+    }
 
 
 # ─── OAuth configuration (user must register apps on each platform) ───
@@ -102,6 +106,8 @@ async def list_accounts(
 async def connect_platform(
     platform: str,
     account_label: str = "",
+    client_key: str = "",
+    client_secret: str = "",
     user: dict = Depends(get_current_user),
 ):
     """Initiate OAuth flow for a platform. Returns the authorization URL."""
@@ -109,7 +115,20 @@ async def connect_platform(
         raise HTTPException(status_code=400, detail="Invalid platform")
 
     redirect_uri = f"{settings.site_url}/api/social/callback/{platform}"
-    state_payload = _encode_oauth_state(user["id"], account_label)
+
+    # For TikTok, allow user-provided keys
+    tiktok_key = settings.tiktok_client_key
+    tiktok_secret = settings.tiktok_client_secret
+    if platform == "tiktok" and client_key and client_secret:
+        tiktok_key = client_key.strip()
+        tiktok_secret = client_secret.strip()
+
+    state_data = {"u": user["id"], "n": (account_label or "").strip()[:255]}
+    if platform == "tiktok" and tiktok_key != settings.tiktok_client_key:
+        state_data["tk"] = tiktok_key
+        state_data["ts"] = tiktok_secret
+    raw = json.dumps(state_data, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    state_payload = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
     if platform == "youtube":
         if not settings.google_oauth_client_id:
@@ -126,12 +145,12 @@ async def connect_platform(
             f"&state={state_payload}"
         )
     elif platform == "tiktok":
-        if not settings.tiktok_client_key:
-            raise HTTPException(status_code=500, detail="TikTok client_key não configurado no servidor")
+        if not tiktok_key:
+            raise HTTPException(status_code=500, detail="Informe o Client Key e Client Secret do TikTok")
         config = TIKTOK_OAUTH_CONFIG
         auth_url = (
             f"{config['auth_uri']}?"
-            f"client_key={settings.tiktok_client_key}"
+            f"client_key={tiktok_key}"
             f"&redirect_uri={redirect_uri}"
             f"&response_type=code"
             f"&scope={config['scope']}"
@@ -164,9 +183,15 @@ async def oauth_callback(
     if not code:
         raise HTTPException(status_code=400, detail="Missing authorization code")
 
-    user_id, requested_label = _decode_oauth_state(state)
+    state_data = _decode_oauth_state(state)
+    user_id = state_data["u"]
+    requested_label = state_data["n"]
     if not user_id:
         raise HTTPException(status_code=400, detail="Invalid state parameter")
+
+    # For TikTok, use user-provided keys from state if available
+    tiktok_key = state_data.get("tk") or settings.tiktok_client_key
+    tiktok_secret = state_data.get("ts") or settings.tiktok_client_secret
 
     redirect_uri = f"{settings.site_url}/api/social/callback/{platform}"
 
@@ -182,8 +207,8 @@ async def oauth_callback(
             })
         elif platform == "tiktok":
             resp = await client.post(TIKTOK_OAUTH_CONFIG["token_uri"], json={
-                "client_key": settings.tiktok_client_key,
-                "client_secret": settings.tiktok_client_secret,
+                "client_key": tiktok_key,
+                "client_secret": tiktok_secret,
                 "code": code,
                 "grant_type": "authorization_code",
                 "redirect_uri": redirect_uri,
@@ -217,6 +242,12 @@ async def oauth_callback(
     if not account_label:
         account_label = f"{platform.capitalize()} {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
 
+    # Store user-provided TikTok keys in extra_data for future token refresh
+    extra = dict(token_data)
+    if platform == "tiktok" and tiktok_key and tiktok_key != settings.tiktok_client_key:
+        extra["user_client_key"] = tiktok_key
+        extra["user_client_secret"] = tiktok_secret
+
     account = SocialAccount(
         user_id=user_id,
         platform=platform_enum,
@@ -225,7 +256,7 @@ async def oauth_callback(
         refresh_token=token_data.get("refresh_token", ""),
         platform_user_id=token_data.get("open_id", ""),
         platform_username=platform_username,
-        extra_data=token_data,
+        extra_data=extra,
     )
     db.add(account)
     await db.commit()

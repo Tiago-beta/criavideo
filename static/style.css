@@ -3472,6 +3472,18 @@ th,
 .pub-links-account-label:empty {
     display: none;
 }
+
+/* Connect API keys fields */
+.connect-api-keys {
+    margin-top: 8px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(96, 129, 162, 0.2);
+}
+.connect-api-hint {
+    font-size: 0.8rem;
+    margin-bottom: 10px;
+    line-height: 1.4;
+}
 #pub-links {
     font-size: 0.82rem;
     color: var(--primary);

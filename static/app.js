@@ -721,6 +721,12 @@ function closeModal(id) {
         _pendingConnectPlatform = "";
         const input = document.getElementById("connect-account-label");
         if (input) input.value = "";
+        const keyInput = document.getElementById("connect-tiktok-client-key");
+        const secretInput = document.getElementById("connect-tiktok-client-secret");
+        if (keyInput) keyInput.value = "";
+        if (secretInput) secretInput.value = "";
+        const tiktokKeys = document.getElementById("connect-tiktok-keys");
+        if (tiktokKeys) tiktokKeys.hidden = true;
     }
     if (id === "modal-edit-account") {
         _editingSocialAccountId = 0;
@@ -3409,6 +3415,16 @@ async function connectPlatform(platform) {
         input.value = "";
     }
 
+    // Show/hide TikTok credentials fields
+    const tiktokKeys = document.getElementById("connect-tiktok-keys");
+    if (tiktokKeys) {
+        tiktokKeys.hidden = normalized !== "tiktok";
+    }
+    const keyInput = document.getElementById("connect-tiktok-client-key");
+    const secretInput = document.getElementById("connect-tiktok-client-secret");
+    if (keyInput) keyInput.value = "";
+    if (secretInput) secretInput.value = "";
+
     const confirmBtn = document.getElementById("connect-account-confirm-btn");
     if (confirmBtn) {
         confirmBtn.disabled = false;
@@ -3435,6 +3451,18 @@ async function confirmConnectPlatform() {
         return;
     }
 
+    // For TikTok, require client_key and client_secret
+    let tiktokClientKey = "";
+    let tiktokClientSecret = "";
+    if (_pendingConnectPlatform === "tiktok") {
+        tiktokClientKey = (document.getElementById("connect-tiktok-client-key")?.value || "").trim();
+        tiktokClientSecret = (document.getElementById("connect-tiktok-client-secret")?.value || "").trim();
+        if (!tiktokClientKey || !tiktokClientSecret) {
+            alert("Informe o Client Key e Client Secret do TikTok.");
+            return;
+        }
+    }
+
     const confirmBtn = document.getElementById("connect-account-confirm-btn");
     if (confirmBtn) {
         confirmBtn.disabled = true;
@@ -3443,6 +3471,8 @@ async function confirmConnectPlatform() {
 
     try {
         const query = new URLSearchParams({ account_label: accountLabel });
+        if (tiktokClientKey) query.set("client_key", tiktokClientKey);
+        if (tiktokClientSecret) query.set("client_secret", tiktokClientSecret);
         const data = await api(`/social/connect/${_pendingConnectPlatform}?${query.toString()}`);
         if (!data.auth_url) {
             throw new Error("A plataforma nao retornou URL de autorizacao");
