@@ -347,7 +347,27 @@ def _to_media_url(path: str | None) -> str | None:
         return None
     media_prefix = settings.media_dir.rstrip("/")
     if path.startswith(media_prefix):
+        # Avoid returning URLs for files that no longer exist on disk.
+        if not os.path.exists(path):
+            return None
         return "/video/media" + path[len(media_prefix):]
+    return None
+
+
+def _best_project_thumbnail_url(project: VideoProject) -> str | None:
+    """Return the newest thumbnail URL that still exists on disk."""
+    if not project.renders:
+        return None
+
+    ordered_renders = sorted(
+        project.renders,
+        key=lambda r: ((r.created_at or datetime.min), (r.id or 0)),
+        reverse=True,
+    )
+    for render in ordered_renders:
+        media_url = _to_media_url(render.thumbnail_path)
+        if media_url:
+            return media_url
     return None
 
 
@@ -451,7 +471,7 @@ async def list_projects(
             "created_at": p.created_at.isoformat() if p.created_at else None,
             "lyrics_text": p.lyrics_text or "",
             "style_prompt": p.style_prompt or "",
-            "thumbnail_url": _to_media_url(p.renders[0].thumbnail_path) if p.renders else None,
+            "thumbnail_url": _best_project_thumbnail_url(p),
         }
         for p in projects
     ]
