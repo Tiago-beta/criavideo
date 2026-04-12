@@ -83,8 +83,8 @@ async def generate_music_from_theme(
         from jose import jwt as jose_jwt
         import time
         payload = {
-            "id": 1,
-            "email": "auto@criavideo.pro",
+            "id": settings.tevoxi_jwt_user_id,
+            "email": settings.tevoxi_jwt_email,
             "role": "admin",
             "iat": int(time.time()),
             "exp": int(time.time()) + 3600,

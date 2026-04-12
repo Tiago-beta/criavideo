@@ -3623,7 +3623,7 @@ function renderAutoCard(s) {
         const dateLabel = t.scheduled_date ? `<span class="theme-date">${esc(t.scheduled_date)}</span>` : "";
         const statusBadge = statusLabel ? `<span class="theme-badge ${statusClass}">${statusLabel}</span>` : "";
         const errorBtn = (t.status === "error" || t.status === "failed") && t.error_message
-            ? `<button class="theme-error-btn" onclick="alert('${esc(t.error_message).replace(/'/g, "\\'")}')" type="button" title="Ver motivo">Ver motivo</button>`
+            ? `<button class="theme-error-btn" data-error="${esc(t.error_message).replace(/"/g, '&quot;')}" onclick="showThemeError(this)" type="button" title="Ver motivo">Ver motivo</button>`
             : "";
         return `<li class="auto-theme-item ${statusClass}">
             <span class="theme-status">${icon}</span>
@@ -3684,6 +3684,11 @@ async function deleteAutoSchedule(id) {
     } catch (error) {
         alert(`Erro: ${error.message}`);
     }
+}
+
+function showThemeError(btn) {
+    const msg = btn.getAttribute("data-error") || "Erro desconhecido";
+    alert(msg);
 }
 
 async function deleteAutoTheme(themeId, scheduleId) {

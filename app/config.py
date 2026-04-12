@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     tevoxi_api_url: str = "https://levita.pro"
     tevoxi_api_token: str = ""
     tevoxi_jwt_secret: str = ""
+    tevoxi_jwt_user_id: int = 5
+    tevoxi_jwt_email: str = "tgsantos66@hotmail.com"
 
     class Config:
         env_file = ".env"
