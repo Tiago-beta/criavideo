@@ -157,8 +157,20 @@ async def connect_platform(
             f"&state={state_payload}"
         )
     elif platform == "instagram":
+        missing_keys = []
         if not settings.facebook_app_id:
-            raise HTTPException(status_code=500, detail="Facebook app_id não configurado no servidor")
+            missing_keys.append("FACEBOOK_APP_ID")
+        if not settings.facebook_app_secret:
+            missing_keys.append("FACEBOOK_APP_SECRET")
+        if missing_keys:
+            missing_text = ", ".join(missing_keys)
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Instagram OAuth nao configurado no servidor ({missing_text}). "
+                    "Configure essas variaveis no .env e execute o deploy."
+                ),
+            )
         config = INSTAGRAM_OAUTH_CONFIG
         auth_url = (
             f"{config['auth_uri']}?"
@@ -214,6 +226,11 @@ async def oauth_callback(
                 "redirect_uri": redirect_uri,
             })
         elif platform == "instagram":
+            if not settings.facebook_app_id or not settings.facebook_app_secret:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Instagram OAuth nao configurado no servidor (FACEBOOK_APP_ID/FACEBOOK_APP_SECRET)",
+                )
             resp = await client.get(INSTAGRAM_OAUTH_CONFIG["token_uri"], params={
                 "client_id": settings.facebook_app_id,
                 "client_secret": settings.facebook_app_secret,

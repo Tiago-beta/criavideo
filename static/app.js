@@ -3535,13 +3535,31 @@ async function confirmConnectPlatform() {
         }
         window.location.href = data.auth_url;
     } catch (error) {
-        alert(`Erro ao conectar conta: ${error.message}`);
+        alert(formatSocialConnectError(error.message, _pendingConnectPlatform));
     } finally {
         if (confirmBtn) {
             confirmBtn.disabled = false;
             confirmBtn.textContent = "Continuar";
         }
     }
+}
+
+function formatSocialConnectError(rawMessage, platform) {
+    const message = String(rawMessage || "Erro desconhecido");
+    const lower = message.toLowerCase();
+    if (platform === "instagram" && (lower.includes("facebook_app_id") || lower.includes("facebook app_id") || lower.includes("instagram oauth nao configurado"))) {
+        return [
+            "Erro ao conectar Instagram: faltam configuracoes no servidor.",
+            "",
+            "Como resolver:",
+            "1. Criar/abrir um app no Meta for Developers",
+            "2. Habilitar Facebook Login e permissoes do Instagram",
+            "3. Definir Redirect URI: https://criavideo.pro/api/social/callback/instagram",
+            "4. Configurar no servidor (.env): FACEBOOK_APP_ID e FACEBOOK_APP_SECRET",
+            "5. Executar deploy e tentar conectar novamente",
+        ].join("\n");
+    }
+    return `Erro ao conectar conta: ${message}`;
 }
 
 function socialPlatformName(platform) {
