@@ -415,17 +415,32 @@ async def _auto_publish(
             logger.warning("No render found for auto-publish: project=%d", project_id)
             return
 
-        # Try to generate AI title/description
+        project = await db.get(VideoProject, project_id)
         title = "Video automatico"
         description = ""
         tags = []
-        try:
-            project = await db.get(VideoProject, project_id)
-            if project:
-                title = project.title or title
+
+        if project:
+            title = project.title or title
+            # Generate AI title/description/hashtags
+            try:
+                ai_result = await _generate_publish_metadata(project)
+                title = ai_result.get("title") or title
+                description = ai_result.get("description") or ""
+                hashtags = ai_result.get("hashtags") or ""
+                tags = ai_result.get("tags") or []
+
+                # Append lyrics to description if available
+                lyrics = (project.lyrics_text or "").strip()
+                if lyrics:
+                    description += "\n\n🎵 Letra da Música:\n\n" + lyrics
+
+                # Append hashtags at the end
+                if hashtags:
+                    description += "\n\n" + hashtags
+            except Exception as e:
+                logger.warning("AI metadata generation failed for auto-publish: %s", e)
                 description = project.description or ""
-        except Exception as e:
-            logger.warning("Failed to get project info for auto-publish: %s", e)
 
         job = PublishJob(
             user_id=user_id,
@@ -447,3 +462,80 @@ async def _auto_publish(
         logger.info("Auto-publish completed: project=%d, job=%d", project_id, job_id)
     except Exception as e:
         logger.error("Auto-publish failed: project=%d, error=%s", project_id, e)
+
+
+async def _generate_publish_metadata(project: VideoProject) -> dict:
+    """Generate title, description, hashtags via AI for auto-publish."""
+    import json
+    import openai
+
+    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+
+    # Build context
+    context_parts = []
+    if project.title:
+        context_parts.append(f"Titulo do projeto: {project.title}")
+    if project.track_title:
+        context_parts.append(f"Musica: {project.track_title}")
+    if project.track_artist:
+        context_parts.append(f"Artista: {project.track_artist}")
+    if project.style_prompt:
+        context_parts.append(f"Estilo visual: {project.style_prompt}")
+    if project.lyrics_text:
+        context_parts.append(f"Letra da musica:\n{project.lyrics_text[:500]}")
+    if project.description:
+        context_parts.append(f"Descricao do projeto: {project.description}")
+
+    context = "\n".join(context_parts) or "Video musical sem detalhes adicionais"
+    tema = project.track_title or project.title or "Video musical"
+
+    prompt = f"""Voce e um especialista em YouTube. Gere metadados otimizados para publicar este video.
+
+DADOS DO VIDEO:
+Tema: {tema}
+Contexto: {context[:2000]}
+
+Gere:
+1. Um titulo forte, curto, com alto potencial de CTR (max 80 chars)
+2. Uma descricao envolvente e natural para YouTube (3-5 linhas), que convide o espectador a assistir, curtir e se inscrever
+3. Hashtags relevantes (5-8 hashtags)
+4. Tags para SEO (5-10 palavras-chave)
+
+REGRAS:
+- Titulo curto, forte e claro
+- Descricao especifica ao conteudo real, nao generica
+- Hashtags comecam com #
+- Em portugues brasileiro
+- Tom envolvente e premium
+
+Retorne SOMENTE JSON:
+{{
+  "title": "...",
+  "description": "...",
+  "hashtags": "#tag1 #tag2 ...",
+  "tags": ["tag1", "tag2", ...]
+}}"""
+
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.8,
+            max_tokens=800,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(resp.choices[0].message.content or "{}")
+        return {
+            "title": str(data.get("title", "")).strip()[:90],
+            "description": str(data.get("description", "")).strip(),
+            "hashtags": str(data.get("hashtags", "")).strip(),
+            "tags": [str(t).strip() for t in (data.get("tags") or []) if str(t).strip()],
+        }
+    except Exception as e:
+        logger.warning("AI publish metadata generation failed: %s", e)
+        return {
+            "title": project.title or "Video automatico",
+            "description": project.description or "",
+            "hashtags": "",
+            "tags": [],
+        }
