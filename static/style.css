@@ -1259,10 +1259,11 @@ a {
 .collapsible-toggle .section-title {
     margin: 0;
     font-size: 1.15rem;
+    color: #fff;
 }
 .collapsible-arrow {
     font-size: 0.85rem;
-    color: var(--muted);
+    color: #fff;
     transition: transform 0.25s ease;
 }
 .collapsible-toggle[aria-expanded="true"] .collapsible-arrow {
