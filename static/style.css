@@ -1520,6 +1520,38 @@ th {
     color: var(--danger);
 }
 
+.btn-see-error {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 8px;
+    font-size: 0.72rem;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    background: transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: background 0.2s, color 0.2s;
+}
+.btn-see-error:hover {
+    background: var(--danger);
+    color: #fff;
+}
+
+.publish-error-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: rgba(255, 122, 108, 0.08);
+    border: 1px solid rgba(255, 122, 108, 0.25);
+    border-radius: 8px;
+    padding: 1rem;
+    font-size: 0.92rem;
+    line-height: 1.6;
+    color: var(--text);
+    margin: 0;
+    font-family: inherit;
+}
+
 .progress-bar {
     width: 100%;
     height: 8px;

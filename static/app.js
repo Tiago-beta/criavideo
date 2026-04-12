@@ -3185,6 +3185,39 @@ async function generatePublishThumbnail(renderId, customTitle, customDescription
     }
 }
 
+function friendlyPublishError(raw) {
+    if (!raw) return "Erro desconhecido. Tente novamente mais tarde.";
+    const lower = raw.toLowerCase();
+    if (lower.includes("youtube data api") && lower.includes("not been used")) {
+        return "A API do YouTube nao esta ativada no projeto Google Cloud.\n\nPasso a passo:\n1. Acesse console.cloud.google.com\n2. Selecione o projeto do CriaVideo\n3. Va em APIs e Servicos > Biblioteca\n4. Busque 'YouTube Data API v3' e clique em Ativar\n5. Aguarde alguns minutos e tente publicar novamente.";
+    }
+    if (lower.includes("accessnotconfigured") || lower.includes("api has not been enabled")) {
+        return "Uma API necessaria nao esta ativada no Google Cloud. Acesse console.cloud.google.com, ative a API indicada e tente novamente.";
+    }
+    if (lower.includes("invalid_grant") || lower.includes("token has been expired") || lower.includes("token has been revoked")) {
+        return "Sua conexao com a plataforma expirou.\n\nPasso a passo:\n1. Va na aba 'Contas' na pagina de publicacao\n2. Desconecte a conta afetada\n3. Conecte novamente\n4. Tente publicar de novo.";
+    }
+    if (lower.includes("quota") || lower.includes("rate limit") || lower.includes("too many requests")) {
+        return "Limite de uso da API atingido. Aguarde algumas horas e tente novamente, ou verifique sua cota no painel do Google Cloud.";
+    }
+    if (lower.includes("forbidden") || lower.includes("403")) {
+        return "Acesso negado pela plataforma. Verifique se a conta conectada tem permissao para publicar videos e se todas as APIs necessarias estao ativadas.";
+    }
+    if (lower.includes("unauthorized") || lower.includes("401")) {
+        return "Autenticacao falhou.\n\nPasso a passo:\n1. Va na aba 'Contas'\n2. Desconecte e reconecte a conta\n3. Tente publicar novamente.";
+    }
+    if (lower.includes("not found") || lower.includes("file not found") || lower.includes("render file")) {
+        return "O arquivo de video nao foi encontrado no servidor. Tente renderizar o video novamente antes de publicar.";
+    }
+    if (lower.includes("social account not found")) {
+        return "A conta social nao foi encontrada. Reconecte sua conta na aba 'Contas' e tente novamente.";
+    }
+    if (lower.includes("network") || lower.includes("timeout") || lower.includes("connection")) {
+        return "Erro de conexao com a plataforma. Verifique sua internet e tente novamente em alguns minutos.";
+    }
+    return "Erro ao publicar: " + raw + "\n\nSe o problema persistir, entre em contato com o suporte.";
+}
+
 async function loadPublishJobs() {
     const container = document.getElementById("publish-jobs-list");
     try {
@@ -3201,17 +3234,33 @@ async function loadPublishJobs() {
                         <td>${job.id}</td>
                         <td>${esc(job.platform)}</td>
                         <td>${esc(job.account_label || "Conta conectada")}</td>
-                        <td><span class="badge badge-${badgeClass(job.status)}">${esc(job.status)}</span></td>
+                        <td>
+                            <span class="badge badge-${badgeClass(job.status)}">${esc(job.status)}</span>
+                            ${job.status === "failed" && job.error_message ? `<button class="btn-see-error" onclick="showPublishError(${job.id})" title="Ver motivo da falha">Ver motivo</button>` : ""}
+                        </td>
                         <td>${job.platform_url ? `<a href="${esc(job.platform_url)}" target="_blank" rel="noreferrer">Ver</a>` : "-"}</td>
                         <td>${(job.published_at || job.scheduled_at) ? new Date(job.published_at || job.scheduled_at).toLocaleString("pt-BR") : "-"}</td>
                     </tr>
                 `).join("")}
             </table>
         `;
+        container._publishJobs = jobs;
     } catch (error) {
         container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
     }
 }
+
+function showPublishError(jobId) {
+    const container = document.getElementById("publish-jobs-list");
+    const jobs = container._publishJobs || [];
+    const job = jobs.find((j) => j.id === jobId);
+    if (!job) return;
+    const friendly = friendlyPublishError(job.error_message);
+    openModal("modal-publish-error");
+    const body = document.getElementById("publish-error-body");
+    if (body) body.textContent = friendly;
+}
+window.showPublishError = showPublishError;
 
 function socialAccountDisplayName(account) {
     if (!account) return "Conta conectada";
