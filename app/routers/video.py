@@ -766,9 +766,9 @@ async def quick_create(
 
     _gospel_style_instruction = """
 IMPORTANT: This is a GOSPEL/WORSHIP song. The style_prompt MUST reflect spiritual, uplifting imagery:
-- Use nature scenes: mountains, valleys, rivers, sunrise, sunset, golden light, green pastures, calm waters, starry sky, fields of wheat, olive trees, gentle rain
+- Use nature landscapes: mountains, valleys, rivers, sunrise, sunset, golden light, green pastures, calm waters, starry sky, fields of wheat, olive trees, gentle rain, waterfalls, meadows, oceans
 - Use warm, golden, celestial lighting — NOT dark, horror, or scary imagery
-- Biblical/spiritual settings: gardens, deserts with oasis, peaceful landscapes, doves, sheep/lambs, open sky, light breaking through clouds
+- Do NOT mention birds, doves, or animals in the style_prompt — focus on landscapes and light
 - NEVER use dark/horror/scary/gothic themes for gospel music""" if _is_gospel else ""
 
     # Ask AI to generate creative metadata from song info

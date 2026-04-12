@@ -38,12 +38,14 @@ split the song into {scene_min}-{scene_max} visual scenes for a music video. Eac
 {"NOTE: The video is very long. Focus on creating diverse, visually distinct scenes. They will be cycled/repeated throughout the video, so variety is key." if duration > 300 else ""}
 {f"STYLE DIRECTION: {style_hint}. All visual_prompt descriptions MUST follow this style." if style_hint else ""}
 
+CRITICAL: Each scene MUST have a UNIQUE visual setting. Do NOT repeat the same elements across scenes (e.g. do not put doves/birds in every scene). Vary the landscapes, lighting, time of day, and focal objects. Each scene should feel visually distinct.
+
 For each scene, provide:
 - scene_index: sequential number starting from 0
 - start_time: approximate start in seconds
 - end_time: approximate end in seconds
 - lyrics_segment: the lyrics for this section
-- visual_prompt: a detailed description for generating a background image (describe mood, colors, setting, objects — NO text/words in the image, NO people faces)
+- visual_prompt: a detailed description for generating a background image (describe mood, colors, setting, objects — NO text/words in the image, NO people faces, NO repeated elements from other scenes)
 - tags: an array of 5-8 English keywords describing the image content. Include diverse categories: setting (forest, city, ocean), time (night, dawn, sunset), mood (melancholic, joyful, dramatic), colors (golden, blue, red), objects (candle, rain, mountains), style (abstract, realistic, aerial). Example: ["sunset", "ocean", "warm", "golden", "beach", "peaceful", "waves"]
 - is_chorus: whether this is a chorus/highlight moment
 
