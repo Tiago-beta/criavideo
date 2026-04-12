@@ -678,7 +678,6 @@ function loadPageData(page) {
     } else if (page === "publish" || page === "accounts") {
         setPublishTab(page === "publish" ? "publish" : page);
     } else if (page === "automate") {
-        loadSchedules();
         loadAutoSchedules();
     }
 }
@@ -706,6 +705,7 @@ function setPublishTab(tabName) {
             }
         });
         loadPublishJobs();
+        loadSchedules();
     } else if (nextTab === "accounts") {
         loadAccounts();
     }

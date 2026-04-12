@@ -258,6 +258,21 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="collapsible-section">
+                                <button class="collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
+                                    <h3 class="section-title">Agendamentos de publicacao</h3>
+                                    <span class="collapsible-arrow">&#9660;</span>
+                                </button>
+                                <div class="collapsible-body" hidden>
+                                    <div class="panel">
+                                        <p class="section-subtitle" style="margin-bottom:0.75rem">Agende a publicacao automatica de videos ja renderizados.</p>
+                                        <button id="btn-new-schedule" class="btn btn-secondary btn-sm" type="button">+ Novo agendamento</button>
+                                        <div id="schedules-list" class="cards-grid" style="margin-top:1rem">
+                                            <div class="loading">Carregando agendamentos...</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div id="publish-tab-accounts" class="publish-tab-content">
@@ -289,14 +304,6 @@
                         </div>
                         <div class="automate-sections">
                             <div class="automate-section">
-                                <h3 class="section-title">Agendamento de publicacao</h3>
-                                <p class="section-subtitle">Agende a publicacao automatica de videos ja renderizados.</p>
-                                <button id="btn-new-schedule" class="btn btn-secondary btn-sm" type="button">+ Novo agendamento</button>
-                                <div id="schedules-list" class="cards-grid" style="margin-top:1rem">
-                                    <div class="loading">Carregando agendamentos...</div>
-                                </div>
-                            </div>
-                            <div class="automate-section" style="margin-top:2rem">
                                 <h3 class="section-title">Criacao automatica</h3>
                                 <p class="section-subtitle">Crie e publique videos automaticamente com IA. Defina temas, frequencia e deixe o sistema trabalhar.</p>
                                 <div id="auto-schedules-list" class="cards-grid">
@@ -1438,7 +1445,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260412-04"></script>
+    <script src="/video/static/app.js?v=20260412-05"></script>
     <script src="/video/static/pwa.js?v=20260412-01"></script>
 </body>
 </html>
