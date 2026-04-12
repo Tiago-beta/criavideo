@@ -13,7 +13,7 @@ from typing import Optional
 import openai
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import AppUser, PublishJob, PublishStatus, VideoProject, VideoRender, SocialAccount, Platform
+from app.models import PublishJob, PublishStatus, VideoProject, VideoRender, SocialAccount, Platform
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -555,28 +555,17 @@ class PublishLinksRequest(BaseModel):
     links: str = ""
 
 
-@router.get("/links")
-async def get_publish_links(
-    user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Get saved publish links for the current user."""
-    app_user = await db.get(AppUser, user["id"])
-    if not app_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"links": app_user.publish_links or ""}
-
-
-@router.put("/links")
+@router.put("/links/{account_id}")
 async def save_publish_links(
+    account_id: int,
     req: PublishLinksRequest,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Save publish links for the current user."""
-    app_user = await db.get(AppUser, user["id"])
-    if not app_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    app_user.publish_links = req.links
+    """Save publish links for a specific social account."""
+    account = await db.get(SocialAccount, account_id)
+    if not account or account.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Account not found")
+    account.publish_links = req.links
     await db.commit()
     return {"ok": True}

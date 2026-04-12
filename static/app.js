@@ -488,8 +488,7 @@ function bindDashboardEvents() {
     document.getElementById("btn-save-draft").addEventListener("click", savePublishDraft);
     document.getElementById("btn-schedule-publish").addEventListener("click", openPublishScheduleModal);
     document.getElementById("pub-links-toggle").addEventListener("click", togglePublishLinks);
-    document.getElementById("btn-save-links").addEventListener("click", savePublishLinks);
-    loadPublishLinks();
+    document.getElementById("btn-save-links").addEventListener("click", savePublishLinksForAccount);
     document.getElementById("pub-render-select").addEventListener("change", (e) => {
         const renderId = e.target.value;
         if (renderId) {
@@ -2567,8 +2566,7 @@ function buildPublishPayload(scheduledAt = "") {
         fullDesc = fullDesc ? `${fullDesc}\n\n${hashtagText}` : hashtagText;
     }
 
-    const linksField = document.getElementById("pub-links");
-    const linksText = (linksField?.value || "").trim();
+    const linksText = getPublishLinksForPayload();
     if (linksText) {
         fullDesc = fullDesc ? `${fullDesc}\n\n${linksText}` : linksText;
     }
@@ -2586,7 +2584,7 @@ function buildPublishPayload(scheduledAt = "") {
     return payload;
 }
 
-// ---- Publish Links (social / important links for video descriptions) ----
+// ---- Publish Links (per-account social / important links for video descriptions) ----
 
 function togglePublishLinks() {
     const body = document.getElementById("pub-links-body");
@@ -2600,36 +2598,70 @@ function togglePublishLinks() {
     }
 }
 
-async function loadPublishLinks() {
-    try {
-        const resp = await authFetch("/api/publish/links");
-        if (resp.ok) {
-            const data = await resp.json();
-            const field = document.getElementById("pub-links");
-            if (field) field.value = data.links || "";
-        }
-    } catch (e) {
-        console.warn("Could not load publish links:", e);
+function getSelectedPublishAccountId() {
+    const platforms = getCheckedPublishPlatforms();
+    if (!platforms.length) return null;
+    const sel = document.getElementById(`pub-account-${platforms[0]}`);
+    return sel ? parseInt(sel.value || "", 10) || null : null;
+}
+
+function getSelectedPublishAccount() {
+    const accountId = getSelectedPublishAccountId();
+    if (!accountId || !_socialAccountsCache.length) return null;
+    return _socialAccountsCache.find(a => a.id === accountId) || null;
+}
+
+function loadPublishLinksForCurrentAccount() {
+    const account = getSelectedPublishAccount();
+    const field = document.getElementById("pub-links");
+    const label = document.getElementById("pub-links-account-label");
+    if (!field) return;
+    if (account) {
+        field.value = account.publish_links || "";
+        if (label) label.textContent = socialAccountDisplayName(account);
+    } else {
+        field.value = "";
+        if (label) label.textContent = "";
     }
 }
 
-async function savePublishLinks() {
+async function savePublishLinksForAccount() {
+    const accountId = getSelectedPublishAccountId();
+    if (!accountId) {
+        alert("Selecione uma plataforma e conta primeiro.");
+        return;
+    }
     const field = document.getElementById("pub-links");
     const links = (field?.value || "").trim();
     try {
-        const resp = await authFetch("/api/publish/links", {
+        await api(`/publish/links/${accountId}`, {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ links }),
         });
-        if (resp.ok) {
-            showToast("Links salvos com sucesso!", "success");
-        } else {
-            showToast("Erro ao salvar links", "error");
-        }
+        // Update cache
+        const cached = _socialAccountsCache.find(a => a.id === accountId);
+        if (cached) cached.publish_links = links;
+        alert("Links salvos com sucesso!");
     } catch (e) {
-        showToast("Erro ao salvar links", "error");
+        alert("Erro ao salvar links: " + (e.message || e));
     }
+}
+
+function getPublishLinksForPayload() {
+    const platforms = getCheckedPublishPlatforms();
+    const seen = new Set();
+    const allLinks = [];
+    for (const platform of platforms) {
+        const sel = document.getElementById(`pub-account-${platform}`);
+        const accountId = parseInt(sel?.value || "", 10);
+        if (!accountId || seen.has(accountId)) continue;
+        seen.add(accountId);
+        const account = _socialAccountsCache.find(a => a.id === accountId);
+        if (account && (account.publish_links || "").trim()) {
+            allLinks.push(account.publish_links.trim());
+        }
+    }
+    return allLinks.join("\n\n");
 }
 
 function getPublishDraftStorageKey(renderId) {
@@ -3245,8 +3277,10 @@ async function renderPublishAccountSelectors(forceReload = false) {
             select.addEventListener("change", () => {
                 const platform = select.dataset.platform;
                 _publishAccountSelection[platform] = select.value;
+                loadPublishLinksForCurrentAccount();
             });
         });
+        loadPublishLinksForCurrentAccount();
     } catch (error) {
         container.hidden = false;
         container.innerHTML = `<p class="loading">Erro ao carregar contas: ${esc(error.message)}</p>`;

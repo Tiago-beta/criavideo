@@ -91,6 +91,7 @@ async def list_accounts(
             "platform": a.platform.value,
             "account_label": a.account_label,
             "platform_username": a.platform_username,
+            "publish_links": a.publish_links or "",
             "connected_at": a.connected_at.isoformat() if a.connected_at else None,
         }
         for a in accounts

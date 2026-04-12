@@ -47,7 +47,6 @@ class AppUser(Base):
     role = Column(String(50), nullable=False, default="user")
     is_active = Column(Boolean, nullable=False, default=True)
     email_verified = Column(Boolean, nullable=False, default=False)
-    publish_links = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_login_at = Column(DateTime)
@@ -151,6 +150,7 @@ class SocialAccount(Base):
     refresh_token = Column(Text)
     token_expires_at = Column(DateTime)
     extra_data = Column(JSON, default=dict)  # channel_id for youtube, etc.
+    publish_links = Column(Text, default="")
     connected_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

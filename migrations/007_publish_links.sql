@@ -1,3 +1,3 @@
--- Add publish_links column to store user's social/important links for video descriptions
-ALTER TABLE auth_users
+-- Add publish_links column to social_accounts for per-account social/important links
+ALTER TABLE social_accounts
 ADD COLUMN IF NOT EXISTS publish_links TEXT DEFAULT '';

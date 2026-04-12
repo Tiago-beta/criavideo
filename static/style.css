@@ -3463,6 +3463,15 @@ th,
     margin: 0 0 8px;
     line-height: 1.35;
 }
+.pub-links-account-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--primary);
+    margin: 0 0 6px;
+}
+.pub-links-account-label:empty {
+    display: none;
+}
 #pub-links {
     font-size: 0.82rem;
     color: var(--primary);
