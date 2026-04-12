@@ -3824,7 +3824,7 @@ async function loadAutoAccountOptions() {
             return;
         }
         select.innerHTML = filtered.map(a => {
-            const label = a.label || a.channel_title || a.platform;
+            const label = socialAccountDisplayName(a);
             return `<option value="${a.id}">${esc(label)}</option>`;
         }).join("");
     } catch {
