@@ -196,24 +196,6 @@
                                                     </svg>
                                                 </span>
                                             </label>
-                                            <label class="publish-platform-chip publish-platform-tiktok" title="TikTok">
-                                                <input type="checkbox" value="tiktok" aria-label="TikTok">
-                                                <span class="publish-platform-icon" aria-hidden="true">
-                                                    <svg viewBox="0 0 24 24" fill="none">
-                                                        <path d="M14.4 5.2C15 6.9 16.4 8.1 18.2 8.4V11.1C16.9 11 15.7 10.6 14.7 10V14.8C14.7 18.1 12.2 20.5 9 20.5C5.8 20.5 3.3 18.1 3.3 14.8C3.3 11.6 5.8 9.1 9 9.1C9.4 9.1 9.9 9.2 10.3 9.3V12.1C9.9 11.9 9.5 11.8 9 11.8C7.3 11.8 6 13.1 6 14.8C6 16.6 7.3 17.8 9 17.8C10.7 17.8 12 16.6 12 14.8V3.5H14.4V5.2Z" fill="currentColor"></path>
-                                                    </svg>
-                                                </span>
-                                            </label>
-                                            <label class="publish-platform-chip publish-platform-instagram" title="Instagram">
-                                                <input type="checkbox" value="instagram" aria-label="Instagram">
-                                                <span class="publish-platform-icon" aria-hidden="true">
-                                                    <svg viewBox="0 0 24 24" fill="none">
-                                                        <rect x="3.5" y="3.5" width="17" height="17" rx="5.5" stroke="currentColor" stroke-width="1.9"></rect>
-                                                        <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.9"></circle>
-                                                        <circle cx="17.2" cy="6.8" r="1.2" fill="currentColor"></circle>
-                                                    </svg>
-                                                </span>
-                                            </label>
                                         </div>
                                         <div id="pub-account-selectors" class="publish-account-selectors" hidden></div>
                                     </div>
@@ -291,24 +273,7 @@
                                     </span>
                                     <span class="social-connect-label">Conectar YouTube</span>
                                 </button>
-                                <button class="btn btn-provider social-connect-btn social-connect-btn-tiktok" onclick="connectPlatform('tiktok')" type="button">
-                                    <span class="social-connect-icon" aria-hidden="true">
-                                        <svg viewBox="0 0 24 24" fill="none">
-                                            <path d="M14.4 5.2C15 6.9 16.4 8.1 18.2 8.4V11.1C16.9 11 15.7 10.6 14.7 10V14.8C14.7 18.1 12.2 20.5 9 20.5C5.8 20.5 3.3 18.1 3.3 14.8C3.3 11.6 5.8 9.1 9 9.1C9.4 9.1 9.9 9.2 10.3 9.3V12.1C9.9 11.9 9.5 11.8 9 11.8C7.3 11.8 6 13.1 6 14.8C6 16.6 7.3 17.8 9 17.8C10.7 17.8 12 16.6 12 14.8V3.5H14.4V5.2Z" fill="currentColor"></path>
-                                        </svg>
-                                    </span>
-                                    <span class="social-connect-label">Conectar TikTok</span>
-                                </button>
-                                <button class="btn btn-provider social-connect-btn social-connect-btn-instagram" onclick="connectPlatform('instagram')" type="button">
-                                    <span class="social-connect-icon" aria-hidden="true">
-                                        <svg viewBox="0 0 24 24" fill="none">
-                                            <rect x="3.5" y="3.5" width="17" height="17" rx="5.5" stroke="currentColor" stroke-width="1.9"></rect>
-                                            <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.9"></circle>
-                                            <circle cx="17.2" cy="6.8" r="1.2" fill="currentColor"></circle>
-                                        </svg>
-                                    </span>
-                                    <span class="social-connect-label">Conectar Instagram</span>
-                                </button>
+
                             </div>
                             <div id="accounts-list" class="cards-grid" style="margin-top: 1.5rem;">
                                 <div class="loading">Carregando contas...</div>
@@ -1077,17 +1042,7 @@
                     <label>Nome desta conta/canal</label>
                     <input id="connect-account-label" type="text" class="input" maxlength="255" placeholder="Ex: Canal Principal, Canal de Shorts, Perfil Gospel...">
                 </div>
-                <div id="connect-tiktok-keys" class="connect-api-keys" hidden>
-                    <p class="muted connect-api-hint">Para conectar o TikTok, informe as credenciais do seu app TikTok Developer.</p>
-                    <div class="form-group">
-                        <label>Client Key</label>
-                        <input id="connect-tiktok-client-key" type="text" class="input" placeholder="Cole o Client Key aqui">
-                    </div>
-                    <div class="form-group">
-                        <label>Client Secret</label>
-                        <input id="connect-tiktok-client-secret" type="password" class="input" placeholder="Cole o Client Secret aqui">
-                    </div>
-                </div>
+
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('modal-connect-account')" type="button">Cancelar</button>
@@ -1162,8 +1117,6 @@
                     <label>Plataforma</label>
                     <select id="ns-platform" class="input">
                         <option value="youtube">YouTube</option>
-                        <option value="tiktok">TikTok</option>
-                        <option value="instagram">Instagram</option>
                     </select>
                 </div>
                 <div class="form-group">
