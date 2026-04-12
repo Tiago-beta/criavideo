@@ -241,13 +241,27 @@
                                     </div>
                                 </div>
                             </div>
-                            <h3 class="section-title">Meus rascunhos</h3>
-                            <div id="publish-drafts-list" class="panel publish-drafts-panel">
-                                <p class="loading">Nenhum rascunho salvo.</p>
+                            <div class="collapsible-section">
+                                <button class="collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
+                                    <h3 class="section-title">Meus rascunhos</h3>
+                                    <span class="collapsible-arrow">&#9660;</span>
+                                </button>
+                                <div class="collapsible-body" hidden>
+                                    <div id="publish-drafts-list" class="panel publish-drafts-panel">
+                                        <p class="loading">Nenhum rascunho salvo.</p>
+                                    </div>
+                                </div>
                             </div>
-                            <h3 class="section-title">Historico de publicacoes</h3>
-                            <div id="publish-jobs-list" class="table-wrapper panel">
-                                <div class="loading">Carregando...</div>
+                            <div class="collapsible-section">
+                                <button class="collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
+                                    <h3 class="section-title">Historico de publicacoes</h3>
+                                    <span class="collapsible-arrow">&#9660;</span>
+                                </button>
+                                <div class="collapsible-body" hidden>
+                                    <div id="publish-jobs-list" class="table-wrapper panel">
+                                        <div class="loading">Carregando...</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 

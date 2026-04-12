@@ -992,6 +992,40 @@ a {
     margin: 2rem 0 1rem;
 }
 
+.collapsible-section {
+    margin-top: 1.2rem;
+}
+.collapsible-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: rgba(96, 129, 162, 0.08);
+    border: 1px solid rgba(96, 129, 162, 0.18);
+    border-radius: 10px;
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.collapsible-toggle:hover {
+    background: rgba(96, 129, 162, 0.16);
+}
+.collapsible-toggle .section-title {
+    margin: 0;
+    font-size: 1.15rem;
+}
+.collapsible-arrow {
+    font-size: 0.85rem;
+    color: var(--muted);
+    transition: transform 0.25s ease;
+}
+.collapsible-toggle[aria-expanded="true"] .collapsible-arrow {
+    transform: rotate(180deg);
+}
+.collapsible-body {
+    padding-top: 0.6rem;
+}
+
 .publish-top-tabs {
     display: flex;
     flex-wrap: wrap;

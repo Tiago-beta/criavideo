@@ -3808,6 +3808,14 @@ function badgeClass(status) {
     return "pending";
 }
 
+function toggleCollapsible(btn) {
+    const expanded = btn.getAttribute("aria-expanded") === "true";
+    btn.setAttribute("aria-expanded", String(!expanded));
+    const body = btn.nextElementSibling;
+    if (body) body.hidden = expanded;
+}
+window.toggleCollapsible = toggleCollapsible;
+
 window.closeModal = closeModal;
 window.createProject = createProjectFromLibrary;
 window.generateVideo = generateVideo;
