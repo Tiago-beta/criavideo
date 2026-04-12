@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -786,10 +786,26 @@ async def delete_project(
     if not project or project.user_id != user["id"]:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # Delete publish jobs and schedules that reference this project's renders
+    from app.models import PublishJob, PublishSchedule
+    render_result = await db.execute(
+        select(VideoRender).where(VideoRender.project_id == project_id)
+    )
+    render_ids = [r.id for r in render_result.scalars().all()]
+    if render_ids:
+        await db.execute(
+            delete(PublishJob).where(PublishJob.render_id.in_(render_ids))
+        )
+        # Clean schedule queues referencing these renders
+        sched_result = await db.execute(select(PublishSchedule).where(PublishSchedule.user_id == user["id"]))
+        for sched in sched_result.scalars().all():
+            if sched.queue:
+                sched.queue = [rid for rid in sched.queue if rid not in render_ids]
+
     # Clean up files
     import shutil
     from pathlib import Path
-    for dir_name in ["images", "clips", "renders", "subtitles"]:
+    for dir_name in ["images", "clips", "renders", "subtitles", "audio", "thumbnails"]:
         dir_path = Path(settings.media_dir) / dir_name / str(project_id)
         if dir_path.exists():
             shutil.rmtree(dir_path, ignore_errors=True)
