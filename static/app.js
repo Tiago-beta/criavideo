@@ -600,6 +600,28 @@ async function bootstrap() {
     initDashboard();
 }
 
+function handleSocialCallbackResult() {
+    const params = new URLSearchParams(window.location.search);
+    const connected = String(params.get("social_connected") || "").toLowerCase();
+    const socialError = String(params.get("social_error") || "").toLowerCase();
+    const socialReason = (params.get("social_reason") || "").trim();
+    if (!connected && !socialError) return;
+
+    const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
+    window.history.replaceState({}, "", cleanUrl);
+
+    if (connected) {
+        alert(`${socialPlatformName(connected)} conectada com sucesso.`);
+        navigateTo("accounts");
+        return;
+    }
+
+    const platformName = socialPlatformName(socialError || "social");
+    const reasonText = socialReason ? `\n\nDetalhes: ${socialReason}` : "";
+    alert(`Nao foi possivel conectar ${platformName}.${reasonText}`);
+    navigateTo("accounts");
+}
+
 function initDashboard() {
     renderSession();
     updateCreditsDisplay();
@@ -639,6 +661,8 @@ function initDashboard() {
             }
         });
     }
+
+    handleSocialCallbackResult();
 
     const hashValue = String(window.location.hash || "").toLowerCase();
     if (hashValue.includes("/social")) {
