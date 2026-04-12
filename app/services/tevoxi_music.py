@@ -69,6 +69,7 @@ async def generate_music_from_theme(
     project_id: int,
     duration: int = 120,
     language: str = "pt-BR",
+    manual_settings: dict | None = None,
 ) -> dict:
     """Generate music via Tevoxi API and download the audio file.
 
@@ -80,23 +81,43 @@ async def generate_music_from_theme(
     if not api_token:
         raise RuntimeError("TEVOXI_API_TOKEN nao configurado.")
 
-    # Expand theme into music parameters
-    params = await expand_theme_to_music_prompt(theme)
-
     headers = {
         "Authorization": f"Bearer {api_token}",
         "Content-Type": "application/json",
     }
 
-    payload = {
-        "prompt": params["prompt"],
-        "mode": params["mode"],
-        "genres": params["genres"],
-        "vocalist": params["vocalist"],
-        "language": language,
-        "mood": params["mood"],
-        "duration": min(max(duration, 30), 240),
-    }
+    if manual_settings:
+        # Use manual music settings from the user
+        music_mode = manual_settings.get("music_mode", "generate")
+        vocalist = manual_settings.get("music_vocalist", "female")
+        if music_mode == "instrumental":
+            vocalist = ""
+            music_mode = "instrumental"
+
+        payload = {
+            "prompt": theme,
+            "mode": music_mode,
+            "genres": [manual_settings.get("music_genre", "pop")],
+            "vocalist": vocalist,
+            "language": manual_settings.get("music_language", language),
+            "mood": manual_settings.get("music_mood", ""),
+            "duration": manual_settings.get("music_duration") or min(max(duration, 30), 240),
+        }
+        custom_lyrics = manual_settings.get("music_lyrics", "")
+        if music_mode == "lyrics" and custom_lyrics:
+            payload["customLyrics"] = custom_lyrics
+    else:
+        # Auto mode: use AI to expand theme into music parameters
+        params = await expand_theme_to_music_prompt(theme)
+        payload = {
+            "prompt": params["prompt"],
+            "mode": params["mode"],
+            "genres": params["genres"],
+            "vocalist": params["vocalist"],
+            "language": language,
+            "mood": params["mood"],
+            "duration": min(max(duration, 30), 240),
+        }
 
     async with httpx.AsyncClient(timeout=30) as client:
         # 1. Start generation

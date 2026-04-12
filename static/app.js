@@ -3685,6 +3685,8 @@ function openNewAutomationModal() {
 
     const manual = document.getElementById("auto-manual-settings");
     if (manual) manual.hidden = true;
+    const musicPanel = document.getElementById("auto-music-settings");
+    if (musicPanel) musicPanel.hidden = true;
 
     document.getElementById("auto-theme-list").innerHTML = "";
     const themeInput = document.getElementById("auto-theme-input");
@@ -3739,24 +3741,38 @@ function selectAutoVideoType(type) {
     document.querySelectorAll('#modal-new-automation [data-auto-step="1"] .auto-type-card').forEach(c => {
         c.classList.toggle("active", c.dataset.videoType === type);
     });
-    // hide manual settings if music (no tone/voice for music)
-    if (type === "music") {
-        const manual = document.getElementById("auto-manual-settings");
-        if (manual) manual.hidden = true;
-        // force auto mode for music
-        selectAutoCreationMode("auto");
-    }
+    // update manual settings visibility based on current mode
+    updateAutoManualPanels();
 }
 
 function selectAutoCreationMode(mode) {
     document.querySelectorAll('#modal-new-automation [data-auto-step="2"] .auto-type-card').forEach(c => {
         c.classList.toggle("active", c.dataset.creationMode === mode);
     });
-    const manual = document.getElementById("auto-manual-settings");
-    if (manual) {
-        const videoType = getSelectedAutoVideoType();
-        manual.hidden = mode !== "manual" || videoType === "music";
+    updateAutoManualPanels();
+}
+
+function updateAutoManualPanels() {
+    const videoType = getSelectedAutoVideoType();
+    const mode = getSelectedAutoCreationMode();
+    const narrationPanel = document.getElementById("auto-manual-settings");
+    const musicPanel = document.getElementById("auto-music-settings");
+    if (narrationPanel) narrationPanel.hidden = !(mode === "manual" && videoType === "narration");
+    if (musicPanel) musicPanel.hidden = !(mode === "manual" && videoType === "music");
+    // hide vocalist when instrumental
+    const vocalistGroup = document.getElementById("auto-music-vocalist-group");
+    if (vocalistGroup) {
+        const musicMode = document.getElementById("auto-music-mode")?.value;
+        vocalistGroup.hidden = musicMode === "instrumental";
     }
+}
+
+function toggleAutoMusicLyrics() {
+    const mode = document.getElementById("auto-music-mode")?.value;
+    const lyricsGroup = document.getElementById("auto-music-lyrics-group");
+    const vocalistGroup = document.getElementById("auto-music-vocalist-group");
+    if (lyricsGroup) lyricsGroup.hidden = mode !== "lyrics";
+    if (vocalistGroup) vocalistGroup.hidden = mode === "instrumental";
 }
 
 function getSelectedAutoVideoType() {
@@ -3841,13 +3857,26 @@ async function createAutoSchedule() {
     const dayOfWeek = frequency === "weekly" ? parseInt(document.getElementById("auto-dow")?.value || "0", 10) : null;
 
     let defaultSettings = null;
-    if (creationMode === "manual" && videoType !== "music") {
+    if (creationMode === "manual" && videoType === "narration") {
         defaultSettings = {
             tone: document.getElementById("auto-tone")?.value || "informativo",
             voice: document.getElementById("auto-voice")?.value || "onyx",
             style: document.getElementById("auto-style")?.value || "cinematic, vibrant colors, dynamic lighting",
             duration: parseInt(document.getElementById("auto-duration")?.value || "120", 10),
             aspect_ratio: document.getElementById("auto-aspect")?.value || "16:9",
+        };
+    } else if (creationMode === "manual" && videoType === "music") {
+        const musicMode = document.getElementById("auto-music-mode")?.value || "generate";
+        defaultSettings = {
+            music_mode: musicMode,
+            music_mood: document.getElementById("auto-music-mood")?.value || "alegre",
+            music_genre: document.getElementById("auto-music-genre")?.value || "gospel",
+            music_vocalist: musicMode === "instrumental" ? "" : (document.getElementById("auto-music-vocalist")?.value || "female"),
+            music_duration: parseInt(document.getElementById("auto-music-duration")?.value || "0", 10) || null,
+            music_language: document.getElementById("auto-music-language")?.value || "pt-BR",
+            music_lyrics: musicMode === "lyrics" ? (document.getElementById("auto-music-lyrics")?.value || "") : "",
+            style: document.getElementById("auto-music-style")?.value || "cinematic, vibrant colors, dynamic lighting",
+            aspect_ratio: document.getElementById("auto-music-aspect")?.value || "16:9",
         };
     }
 

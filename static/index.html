@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260412-06">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260412-07">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -1222,7 +1222,7 @@
                             <span class="muted">Voce define cada variavel</span>
                         </button>
                     </div>
-                    <!-- Manual settings -->
+                    <!-- Manual settings: Narração -->
                     <div id="auto-manual-settings" class="auto-manual-settings" hidden>
                         <div class="form-group">
                             <label>Tom da narracao</label>
@@ -1274,6 +1274,99 @@
                         <div class="form-group">
                             <label>Formato</label>
                             <select id="auto-aspect" class="input">
+                                <option value="16:9">16:9 (YouTube)</option>
+                                <option value="9:16">9:16 (Shorts/TikTok)</option>
+                                <option value="1:1">1:1 (Instagram)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- Manual settings: Música (Tevoxi) -->
+                    <div id="auto-music-settings" class="auto-manual-settings" hidden>
+                        <div class="form-group">
+                            <label>Modo da musica</label>
+                            <select id="auto-music-mode" class="input" onchange="toggleAutoMusicLyrics()">
+                                <option value="generate">Assistente (IA cria a letra)</option>
+                                <option value="lyrics">Minha letra (voce escreve)</option>
+                                <option value="instrumental">Instrumental (sem voz)</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="auto-music-lyrics-group" hidden>
+                            <label>Letra da musica</label>
+                            <textarea id="auto-music-lyrics" class="input" rows="5" maxlength="3000" placeholder="Cole ou escreva a letra aqui..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Sentimento</label>
+                            <select id="auto-music-mood" class="input">
+                                <option value="alegre">Alegre</option>
+                                <option value="inspirador">Inspirador</option>
+                                <option value="calmo">Calmo</option>
+                                <option value="emocionante">Emocionante</option>
+                                <option value="poderoso">Poderoso</option>
+                                <option value="reflexivo">Reflexivo</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Estilo musical</label>
+                            <select id="auto-music-genre" class="input">
+                                <option value="gospel">Gospel</option>
+                                <option value="worship">Worship</option>
+                                <option value="pop">Pop</option>
+                                <option value="rock">Rock</option>
+                                <option value="mpb">MPB</option>
+                                <option value="acustico">Acustico</option>
+                                <option value="sertanejo">Sertanejo</option>
+                                <option value="samba">Samba</option>
+                                <option value="eletronica">Eletronica</option>
+                                <option value="hip-hop">Hip-Hop</option>
+                                <option value="r&b">R&B</option>
+                                <option value="jazz">Jazz</option>
+                                <option value="country">Country</option>
+                                <option value="reggae">Reggae</option>
+                                <option value="classical">Classica</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="auto-music-vocalist-group">
+                            <label>Tipo de voz</label>
+                            <select id="auto-music-vocalist" class="input">
+                                <option value="female">Feminina</option>
+                                <option value="male">Masculina</option>
+                                <option value="duet">Dueto</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Duracao da musica</label>
+                            <select id="auto-music-duration" class="input">
+                                <option value="">Automatica</option>
+                                <option value="60">~1 min</option>
+                                <option value="120">~2 min</option>
+                                <option value="180">~3 min</option>
+                                <option value="240">~4 min</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Idioma</label>
+                            <select id="auto-music-language" class="input">
+                                <option value="pt-BR">Portugues</option>
+                                <option value="en">Ingles</option>
+                                <option value="es">Espanhol</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Estilo visual do video</label>
+                            <select id="auto-music-style" class="input">
+                                <option value="cinematic, vibrant colors, dynamic lighting">Cinematico</option>
+                                <option value="minimalist, clean, modern">Minimalista</option>
+                                <option value="colorful, playful, energetic">Colorido</option>
+                                <option value="dark, moody, dramatic">Dark</option>
+                                <option value="neon, futuristic, glowing">Neon</option>
+                                <option value="vintage, retro, warm tones">Vintage</option>
+                                <option value="nature, organic, earthy">Natureza</option>
+                                <option value="anime, manga, japanese animation">Anime</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Formato do video</label>
+                            <select id="auto-music-aspect" class="input">
                                 <option value="16:9">16:9 (YouTube)</option>
                                 <option value="9:16">9:16 (Shorts/TikTok)</option>
                                 <option value="1:1">1:1 (Instagram)</option>
@@ -1445,7 +1538,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260412-06"></script>
-    <script src="/video/static/pwa.js?v=20260412-06"></script>
+    <script src="/video/static/app.js?v=20260412-07"></script>
+    <script src="/video/static/pwa.js?v=20260412-07"></script>
 </body>
 </html>

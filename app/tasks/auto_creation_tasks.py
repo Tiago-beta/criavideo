@@ -279,10 +279,24 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
         await deduct_credits(db, user_id, credits_needed)
 
     # 1. Generate music via Tevoxi
+    manual_music = None
+    if cfg.get("music_mode"):
+        # Manual music settings from user
+        manual_music = {
+            "music_mode": cfg.get("music_mode", "generate"),
+            "music_mood": cfg.get("music_mood", ""),
+            "music_genre": cfg.get("music_genre", "pop"),
+            "music_vocalist": cfg.get("music_vocalist", "female"),
+            "music_duration": cfg.get("music_duration"),
+            "music_language": cfg.get("music_language", "pt-BR"),
+            "music_lyrics": cfg.get("music_lyrics", ""),
+        }
+
     music_result = await generate_music_from_theme(
         theme=theme_text,
-        project_id=0,  # temp, will move file after project creation
+        project_id=0,
         duration=cfg.get("duration_seconds", 120),
+        manual_settings=manual_music,
     )
 
     audio_path = music_result["audio_path"]
