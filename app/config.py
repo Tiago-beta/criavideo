@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     levita_stems_dir: str = "/opt/olevita/backend/stems"
     levita_uploads_dir: str = "/opt/olevita/backend/uploads"
     media_dir: str = "/opt/levita-video/media"
+    tevoxi_api_url: str = "https://levita.pro"
+    tevoxi_api_token: str = ""
 
     class Config:
         env_file = ".env"

@@ -70,6 +70,7 @@ from app.routers.publish import router as publish_router
 from app.routers.schedule import router as schedule_router
 from app.routers.voice import router as voice_router
 from app.routers.credits import router as credits_router
+from app.routers.automation import router as automation_router
 
 app.include_router(auth_router)
 app.include_router(video_router)
@@ -78,6 +79,7 @@ app.include_router(publish_router)
 app.include_router(schedule_router)
 app.include_router(voice_router)
 app.include_router(credits_router)
+app.include_router(automation_router)
 
 # ── Serve rendered media files ──
 media_path = Path(settings.media_dir)

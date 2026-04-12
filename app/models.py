@@ -215,3 +215,41 @@ class VoiceProfile(Base):
     is_default = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AutoSchedule(Base):
+    __tablename__ = "auto_schedules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    name = Column(Text, nullable=False)
+    video_type = Column(String(20), default="narration")  # "narration" | "music"
+    creation_mode = Column(String(20), default="auto")  # "auto" | "manual"
+    platform = Column(String(20), default="youtube")
+    social_account_id = Column(Integer, ForeignKey("social_accounts.id"))
+    frequency = Column(String(20), default="daily")
+    time_utc = Column(String(5), default="14:00")
+    day_of_week = Column(Integer, default=0)
+    default_settings = Column(JSON, default=dict)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    themes = relationship("AutoScheduleTheme", back_populates="schedule", cascade="all, delete-orphan")
+    social_account = relationship("SocialAccount")
+
+
+class AutoScheduleTheme(Base):
+    __tablename__ = "auto_schedule_themes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    auto_schedule_id = Column(Integer, ForeignKey("auto_schedules.id", ondelete="CASCADE"), nullable=False)
+    theme = Column(Text, nullable=False)
+    custom_settings = Column(JSON)
+    status = Column(String(20), default="pending")  # "pending" | "processing" | "completed" | "failed"
+    video_project_id = Column(Integer, ForeignKey("video_projects.id"))
+    error_message = Column(Text)
+    position = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    schedule = relationship("AutoSchedule", back_populates="themes")

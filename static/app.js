@@ -393,7 +393,7 @@ function bindAuthEvents() {
 }
 
 function navigateTo(pageName) {
-    const normalizedPage = (pageName === "schedule" || pageName === "accounts") ? "publish" : pageName;
+    const normalizedPage = (pageName === "accounts") ? "publish" : pageName;
     document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
     const target = document.getElementById("page-" + normalizedPage);
     if (target) target.classList.add("active");
@@ -443,6 +443,13 @@ function bindNavigation() {
             clearSession();
             clearLevitaSession();
             showAuth("Sessao encerrada.");
+        });
+    }
+    // Mobile profile avatar
+    const mobileProfileBtn = document.getElementById("mobile-profile-btn");
+    if (mobileProfileBtn) {
+        mobileProfileBtn.addEventListener("click", () => {
+            navigateTo("profile");
         });
     }
 }
@@ -516,6 +523,9 @@ function bindDashboardEvents() {
     document.getElementById("btn-new-schedule").addEventListener("click", async () => {
         await loadAccountsForSelect();
         openModal("modal-new-schedule");
+    });
+    document.getElementById("btn-new-automation").addEventListener("click", () => {
+        openNewAutomationModal();
     });
     document.querySelectorAll(".publish-top-tab").forEach((tabBtn) => {
         tabBtn.addEventListener("click", () => {
@@ -665,13 +675,16 @@ function initDashboard() {
 function loadPageData(page) {
     if (page === "projects") {
         loadProjects();
-    } else if (page === "publish" || page === "schedule" || page === "accounts") {
+    } else if (page === "publish" || page === "accounts") {
         setPublishTab(page === "publish" ? "publish" : page);
+    } else if (page === "automate") {
+        loadSchedules();
+        loadAutoSchedules();
     }
 }
 
 function setPublishTab(tabName) {
-    const nextTab = ["publish", "schedule", "accounts"].includes(tabName) ? tabName : "publish";
+    const nextTab = ["publish", "accounts"].includes(tabName) ? tabName : "publish";
     document.querySelectorAll(".publish-top-tab").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.publishTab === nextTab);
     });
@@ -693,8 +706,6 @@ function setPublishTab(tabName) {
             }
         });
         loadPublishJobs();
-    } else if (nextTab === "schedule") {
-        loadSchedules();
     } else if (nextTab === "accounts") {
         loadAccounts();
     }
@@ -3533,6 +3544,331 @@ async function deleteSchedule(id) {
         loadSchedules();
     } catch (error) {
         alert(`Erro: ${error.message}`);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Automation (auto-schedules) — CRUD + wizard
+   ═══════════════════════════════════════════════════════════ */
+
+let _autoWizardStep = 1;
+let _autoWizardThemes = []; // temporary list while creating
+
+async function loadAutoSchedules() {
+    const container = document.getElementById("auto-schedules-list");
+    if (!container) return;
+    try {
+        const data = await api("/automation/schedules");
+        if (!data.length) {
+            container.innerHTML = "<p class='loading'>Nenhuma automacao criada.</p>";
+            return;
+        }
+        container.innerHTML = data.map(renderAutoCard).join("");
+    } catch (error) {
+        container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
+    }
+}
+
+function renderAutoCard(s) {
+    const typeBadge = s.video_type === "music"
+        ? '<span class="badge badge-processing">Musical</span>'
+        : '<span class="badge badge-completed">Narrado</span>';
+    const modeBadge = s.creation_mode === "manual"
+        ? '<span class="badge">Manual</span>'
+        : '<span class="badge badge-queued">Auto</span>';
+    const statusBadge = s.is_active
+        ? '<span class="badge badge-completed">Ativo</span>'
+        : '<span class="badge badge-failed">Pausado</span>';
+
+    const themes = (s.themes || []);
+    const pendingCount = themes.filter(t => t.status === "pending").length;
+    const doneCount = themes.filter(t => t.status === "done").length;
+
+    const themeListHtml = themes.map(t => {
+        const icon = t.status === "done" ? "✅" : t.status === "processing" ? "⏳" : t.status === "error" ? "❌" : "⏸";
+        return `<li class="auto-theme-item">
+            <span class="theme-status">${icon}</span>
+            <span class="theme-text">${esc(t.theme)}</span>
+            <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
+        </li>`;
+    }).join("");
+
+    const freq = s.frequency === "weekly"
+        ? `Semanal (${["Seg","Ter","Qua","Qui","Sex","Sab","Dom"][s.day_of_week || 0]})`
+        : "Diario";
+
+    return `<div class="auto-card" id="auto-card-${s.id}">
+        <div class="auto-card-header">
+            <h4>${esc(s.name || "Automacao")}</h4>
+            ${statusBadge}
+        </div>
+        <div class="auto-card-badges">${typeBadge} ${modeBadge}</div>
+        <div class="auto-card-meta">
+            <span>${freq} as ${esc(s.time_utc)} UTC</span>
+            <span>${pendingCount} pendentes / ${doneCount} feitos</span>
+        </div>
+        <div class="auto-card-detail">
+            <strong>Temas:</strong>
+            <ul class="auto-theme-list">${themeListHtml || "<li class='loading'>Sem temas</li>"}</ul>
+            <div class="auto-theme-add" style="margin-top:0.5rem">
+                <input type="text" class="input" placeholder="Novo tema..." id="add-theme-input-${s.id}" maxlength="200">
+                <button class="btn btn-primary btn-sm" type="button" onclick="addAutoThemeToSchedule(${s.id})">+</button>
+            </div>
+        </div>
+        <div class="auto-card-actions">
+            <button class="btn btn-secondary btn-sm" onclick="toggleAutoSchedule(${s.id},${s.is_active?'false':'true'})" type="button">${s.is_active ? "Pausar" : "Ativar"}</button>
+            <button class="btn btn-provider btn-sm" onclick="deleteAutoSchedule(${s.id})" type="button">Excluir</button>
+        </div>
+    </div>`;
+}
+
+async function toggleAutoSchedule(id, newState) {
+    try {
+        await api(`/automation/schedules/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ is_active: newState }),
+        });
+        loadAutoSchedules();
+    } catch (error) {
+        alert(`Erro: ${error.message}`);
+    }
+}
+
+async function deleteAutoSchedule(id) {
+    if (!window.confirm("Excluir esta automacao e todos os temas?")) return;
+    try {
+        await api(`/automation/schedules/${id}`, { method: "DELETE" });
+        loadAutoSchedules();
+    } catch (error) {
+        alert(`Erro: ${error.message}`);
+    }
+}
+
+async function deleteAutoTheme(themeId, scheduleId) {
+    try {
+        await api(`/automation/themes/${themeId}`, { method: "DELETE" });
+        loadAutoSchedules();
+    } catch (error) {
+        alert(`Erro: ${error.message}`);
+    }
+}
+
+async function addAutoThemeToSchedule(scheduleId) {
+    const input = document.getElementById(`add-theme-input-${scheduleId}`);
+    if (!input) return;
+    const theme = input.value.trim();
+    if (!theme) return;
+    try {
+        await api(`/automation/schedules/${scheduleId}/themes`, {
+            method: "POST",
+            body: JSON.stringify({ themes: [theme] }),
+        });
+        input.value = "";
+        loadAutoSchedules();
+    } catch (error) {
+        alert(`Erro: ${error.message}`);
+    }
+}
+
+/* ── Automation Wizard (modal-new-automation) ── */
+
+function openNewAutomationModal() {
+    _autoWizardStep = 1;
+    _autoWizardThemes = [];
+
+    // reset selections
+    document.querySelectorAll("#modal-new-automation .auto-type-card").forEach(c => c.classList.remove("active"));
+    const narrationBtn = document.querySelector('#modal-new-automation [data-video-type="narration"]');
+    if (narrationBtn) narrationBtn.classList.add("active");
+    const autoBtn = document.querySelector('#modal-new-automation [data-creation-mode="auto"]');
+    if (autoBtn) autoBtn.classList.add("active");
+
+    const manual = document.getElementById("auto-manual-settings");
+    if (manual) manual.hidden = true;
+
+    document.getElementById("auto-theme-list").innerHTML = "";
+    const themeInput = document.getElementById("auto-theme-input");
+    if (themeInput) themeInput.value = "";
+
+    // load social accounts for step 4
+    loadAutoAccountOptions();
+
+    // reset name/time
+    const nameEl = document.getElementById("auto-name");
+    if (nameEl) nameEl.value = "";
+    const timeEl = document.getElementById("auto-time");
+    if (timeEl) timeEl.value = "14:00";
+    const freqEl = document.getElementById("auto-frequency");
+    if (freqEl) freqEl.value = "daily";
+    const dowGroup = document.getElementById("auto-dow-group");
+    if (dowGroup) dowGroup.hidden = true;
+
+    showAutoStep(1);
+    openModal("modal-new-automation");
+}
+
+function showAutoStep(step) {
+    _autoWizardStep = step;
+    document.querySelectorAll("#modal-new-automation .auto-step").forEach(el => {
+        el.classList.toggle("active", parseInt(el.dataset.autoStep) === step);
+    });
+    document.querySelectorAll("#modal-new-automation .auto-dot").forEach(el => {
+        el.classList.toggle("active", parseInt(el.dataset.autoStep) <= step);
+    });
+    const btnBack = document.getElementById("auto-btn-back");
+    const btnNext = document.getElementById("auto-btn-next");
+    const btnCreate = document.getElementById("auto-btn-create");
+    if (btnBack) btnBack.hidden = step === 1;
+    if (btnNext) btnNext.hidden = step === 4;
+    if (btnCreate) btnCreate.hidden = step !== 4;
+}
+
+function autoStepNext() {
+    if (_autoWizardStep === 3 && _autoWizardThemes.length === 0) {
+        alert("Adicione pelo menos um tema.");
+        return;
+    }
+    if (_autoWizardStep < 4) showAutoStep(_autoWizardStep + 1);
+}
+
+function autoStepBack() {
+    if (_autoWizardStep > 1) showAutoStep(_autoWizardStep - 1);
+}
+
+function selectAutoVideoType(type) {
+    document.querySelectorAll('#modal-new-automation [data-auto-step="1"] .auto-type-card').forEach(c => {
+        c.classList.toggle("active", c.dataset.videoType === type);
+    });
+    // hide manual settings if music (no tone/voice for music)
+    if (type === "music") {
+        const manual = document.getElementById("auto-manual-settings");
+        if (manual) manual.hidden = true;
+        // force auto mode for music
+        selectAutoCreationMode("auto");
+    }
+}
+
+function selectAutoCreationMode(mode) {
+    document.querySelectorAll('#modal-new-automation [data-auto-step="2"] .auto-type-card').forEach(c => {
+        c.classList.toggle("active", c.dataset.creationMode === mode);
+    });
+    const manual = document.getElementById("auto-manual-settings");
+    if (manual) {
+        const videoType = getSelectedAutoVideoType();
+        manual.hidden = mode !== "manual" || videoType === "music";
+    }
+}
+
+function getSelectedAutoVideoType() {
+    const activeCard = document.querySelector('#modal-new-automation [data-auto-step="1"] .auto-type-card.active');
+    return activeCard ? activeCard.dataset.videoType : "narration";
+}
+
+function getSelectedAutoCreationMode() {
+    const activeCard = document.querySelector('#modal-new-automation [data-auto-step="2"] .auto-type-card.active');
+    return activeCard ? activeCard.dataset.creationMode : "auto";
+}
+
+function addAutoTheme() {
+    const input = document.getElementById("auto-theme-input");
+    const text = (input?.value || "").trim();
+    if (!text) return;
+    _autoWizardThemes.push(text);
+    input.value = "";
+    renderAutoWizardThemes();
+    input.focus();
+}
+
+function removeAutoWizardTheme(index) {
+    _autoWizardThemes.splice(index, 1);
+    renderAutoWizardThemes();
+}
+
+function renderAutoWizardThemes() {
+    const ul = document.getElementById("auto-theme-list");
+    if (!ul) return;
+    ul.innerHTML = _autoWizardThemes.map((t, i) => `
+        <li class="auto-theme-item">
+            <span class="theme-status">${i + 1}.</span>
+            <span class="theme-text">${esc(t)}</span>
+            <button class="theme-remove" onclick="removeAutoWizardTheme(${i})" type="button">&times;</button>
+        </li>
+    `).join("");
+}
+
+async function loadAutoAccountOptions() {
+    const select = document.getElementById("auto-account");
+    if (!select) return;
+    try {
+        const accounts = await api("/social-accounts/");
+        select.innerHTML = accounts.map(a =>
+            `<option value="${a.id}">${esc(a.label || a.platform)}</option>`
+        ).join("");
+    } catch {
+        select.innerHTML = "<option value=''>Nenhuma conta</option>";
+    }
+}
+
+async function createAutoSchedule() {
+    const name = (document.getElementById("auto-name")?.value || "").trim();
+    if (!name) {
+        alert("Informe um nome para a automacao.");
+        return;
+    }
+    if (_autoWizardThemes.length === 0) {
+        alert("Adicione pelo menos um tema.");
+        showAutoStep(3);
+        return;
+    }
+    const accountId = parseInt(document.getElementById("auto-account")?.value || "0", 10);
+    if (!accountId) {
+        alert("Selecione uma conta social.");
+        return;
+    }
+
+    const videoType = getSelectedAutoVideoType();
+    const creationMode = getSelectedAutoCreationMode();
+    const platform = document.getElementById("auto-platform")?.value || "youtube";
+    const frequency = document.getElementById("auto-frequency")?.value || "daily";
+    const timeUtc = document.getElementById("auto-time")?.value || "14:00";
+    const dayOfWeek = frequency === "weekly" ? parseInt(document.getElementById("auto-dow")?.value || "0", 10) : null;
+
+    let defaultSettings = null;
+    if (creationMode === "manual" && videoType !== "music") {
+        defaultSettings = {
+            tone: document.getElementById("auto-tone")?.value || "informativo",
+            voice: document.getElementById("auto-voice")?.value || "onyx",
+            style: document.getElementById("auto-style")?.value || "cinematic, vibrant colors, dynamic lighting",
+            duration: parseInt(document.getElementById("auto-duration")?.value || "120", 10),
+            aspect_ratio: document.getElementById("auto-aspect")?.value || "16:9",
+        };
+    }
+
+    const btn = document.getElementById("auto-btn-create");
+    if (btn) { btn.disabled = true; btn.textContent = "Criando..."; }
+
+    try {
+        await api("/automation/schedules", {
+            method: "POST",
+            body: JSON.stringify({
+                name,
+                video_type: videoType,
+                creation_mode: creationMode,
+                platform,
+                social_account_id: accountId,
+                frequency,
+                time_utc: timeUtc,
+                day_of_week: dayOfWeek,
+                default_settings: defaultSettings,
+                themes: _autoWizardThemes,
+            }),
+        });
+        closeModal("modal-new-automation");
+        loadAutoSchedules();
+    } catch (error) {
+        alert(`Erro: ${error.message}`);
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "Ativar Automacao"; }
     }
 }
 

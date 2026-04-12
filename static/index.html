@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260412-01">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260412-03">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -117,6 +117,10 @@
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                             <span>Publicar</span>
                         </a>
+                        <a href="#" class="nav-item" data-page="automate">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                            <span>Automatizar</span>
+                        </a>
                     </nav>
 
                     <div class="sidebar-footer">
@@ -144,6 +148,9 @@
                     <section id="page-projects" class="page active">
                         <div class="page-header">
                             <div class="page-header-left">
+                                <button class="mobile-profile-btn" id="mobile-profile-btn" type="button" title="Perfil">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                </button>
                                 <h1>Projetos de video</h1>
                                 <button id="btn-new-project" class="btn btn-primary btn-add-project" type="button" title="Adicionar novo projeto" aria-label="Adicionar novo projeto">+</button>
                             </div>
@@ -162,7 +169,6 @@
                             <h1>Publicar videos You Tube</h1>
                             <div class="publish-top-tabs" role="tablist" aria-label="Opcoes de publicar">
                                 <button class="btn btn-secondary publish-top-tab active" type="button" data-publish-tab="publish">Publicacao</button>
-                                <button class="btn btn-secondary publish-top-tab" type="button" data-publish-tab="schedule">Agendamento</button>
                                 <button class="btn btn-secondary publish-top-tab" type="button" data-publish-tab="accounts">Contas</button>
                             </div>
                         </div>
@@ -254,16 +260,6 @@
                             </div>
                         </div>
 
-                        <div id="publish-tab-schedule" class="publish-tab-content">
-                            <div class="page-header publish-subheader">
-                                <h3>Agendamento automatico</h3>
-                                <button id="btn-new-schedule" class="btn btn-primary" type="button">Novo agendamento</button>
-                            </div>
-                            <div id="schedules-list" class="cards-grid">
-                                <div class="loading">Carregando agendamentos...</div>
-                            </div>
-                        </div>
-
                         <div id="publish-tab-accounts" class="publish-tab-content">
                             <h3 class="section-title publish-subtitle">Contas sociais</h3>
                             <div class="connect-buttons social-connect-grid">
@@ -280,6 +276,32 @@
                             </div>
                             <div id="accounts-list" class="cards-grid" style="margin-top: 1.5rem;">
                                 <div class="loading">Carregando contas...</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section id="page-automate" class="page">
+                        <div class="page-header">
+                            <div class="page-header-left">
+                                <h1>Automatizar</h1>
+                                <button id="btn-new-automation" class="btn btn-primary btn-add-project" type="button" title="Nova automacao" aria-label="Nova automacao">+</button>
+                            </div>
+                        </div>
+                        <div class="automate-sections">
+                            <div class="automate-section">
+                                <h3 class="section-title">Agendamento de publicacao</h3>
+                                <p class="section-subtitle">Agende a publicacao automatica de videos ja renderizados.</p>
+                                <button id="btn-new-schedule" class="btn btn-secondary btn-sm" type="button">+ Novo agendamento</button>
+                                <div id="schedules-list" class="cards-grid" style="margin-top:1rem">
+                                    <div class="loading">Carregando agendamentos...</div>
+                                </div>
+                            </div>
+                            <div class="automate-section" style="margin-top:2rem">
+                                <h3 class="section-title">Criacao automatica</h3>
+                                <p class="section-subtitle">Crie e publique videos automaticamente com IA. Defina temas, frequencia e deixe o sistema trabalhar.</p>
+                                <div id="auto-schedules-list" class="cards-grid">
+                                    <div class="loading">Carregando automacoes...</div>
+                                </div>
                             </div>
                         </div>
                     </section>
@@ -313,9 +335,9 @@
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                         <span>Publicar</span>
                     </button>
-                    <button class="mobile-nav-tab" data-mobile-page="profile">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                        <span>Perfil</span>
+                    <button class="mobile-nav-tab" data-mobile-page="automate">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                        <span>Automatizar</span>
                     </button>
                 </nav>
             </div>
@@ -1145,6 +1167,176 @@
         </div>
     </div>
 
+    <!-- ═══ MODAL: Nova Automação ═══ -->
+    <div id="modal-new-automation" class="modal">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h3>Nova automacao</h3>
+                <button class="modal-close" onclick="closeModal('modal-new-automation')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Step indicators -->
+                <div class="automation-steps-dots">
+                    <span class="auto-dot active" data-auto-step="1"></span>
+                    <span class="auto-dot" data-auto-step="2"></span>
+                    <span class="auto-dot" data-auto-step="3"></span>
+                    <span class="auto-dot" data-auto-step="4"></span>
+                </div>
+
+                <!-- Step 1: Tipo de Video -->
+                <div class="auto-step active" data-auto-step="1">
+                    <h4 class="auto-step-title">Tipo de video</h4>
+                    <div class="auto-type-cards">
+                        <button class="auto-type-card active" data-video-type="narration" type="button" onclick="selectAutoVideoType('narration')">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                            <strong>Video Narrado</strong>
+                            <span class="muted">IA cria roteiro e narra</span>
+                        </button>
+                        <button class="auto-type-card" data-video-type="music" type="button" onclick="selectAutoVideoType('music')">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                            <strong>Video Musical</strong>
+                            <span class="muted">Tevoxi cria a musica</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Modo de Criação -->
+                <div class="auto-step" data-auto-step="2">
+                    <h4 class="auto-step-title">Modo de criacao</h4>
+                    <div class="auto-type-cards">
+                        <button class="auto-type-card active" data-creation-mode="auto" type="button" onclick="selectAutoCreationMode('auto')">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                            <strong>Automatico</strong>
+                            <span class="muted">IA decide tom, voz e estilo</span>
+                        </button>
+                        <button class="auto-type-card" data-creation-mode="manual" type="button" onclick="selectAutoCreationMode('manual')">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            <strong>Manual</strong>
+                            <span class="muted">Voce define cada variavel</span>
+                        </button>
+                    </div>
+                    <!-- Manual settings -->
+                    <div id="auto-manual-settings" class="auto-manual-settings" hidden>
+                        <div class="form-group">
+                            <label>Tom da narracao</label>
+                            <select id="auto-tone" class="input">
+                                <option value="informativo">Informativo</option>
+                                <option value="inspirador">Inspirador</option>
+                                <option value="descontraido">Descontraido</option>
+                                <option value="profundo">Profundo</option>
+                                <option value="dramatico">Dramatico</option>
+                                <option value="motivacional">Motivacional</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Voz</label>
+                            <select id="auto-voice" class="input">
+                                <option value="onyx">Lucas (Masculina Grave)</option>
+                                <option value="echo">Rafael (Masculina Suave)</option>
+                                <option value="ash">Pedro (Masculina Natural)</option>
+                                <option value="nova">Clara (Feminina Clara)</option>
+                                <option value="shimmer">Sofia (Feminina Suave)</option>
+                                <option value="coral">Beatriz (Feminina Natural)</option>
+                                <option value="alloy">Alex (Neutra)</option>
+                                <option value="fable">Mateus (Narrativa)</option>
+                                <option value="sage">Luna (Calma e Clara)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Estilo visual</label>
+                            <select id="auto-style" class="input">
+                                <option value="cinematic, vibrant colors, dynamic lighting">Cinematico</option>
+                                <option value="minimalist, clean, modern">Minimalista</option>
+                                <option value="colorful, playful, energetic">Colorido</option>
+                                <option value="dark, moody, dramatic">Dark</option>
+                                <option value="neon, futuristic, glowing">Neon</option>
+                                <option value="vintage, retro, warm tones">Vintage</option>
+                                <option value="nature, organic, earthy">Natureza</option>
+                                <option value="anime, manga, japanese animation">Anime</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Duracao</label>
+                            <select id="auto-duration" class="input">
+                                <option value="60">~1 min</option>
+                                <option value="120">~2 min</option>
+                                <option value="180">~3 min</option>
+                                <option value="300">~5 min</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Formato</label>
+                            <select id="auto-aspect" class="input">
+                                <option value="16:9">16:9 (YouTube)</option>
+                                <option value="9:16">9:16 (Shorts/TikTok)</option>
+                                <option value="1:1">1:1 (Instagram)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Temas (Playlist) -->
+                <div class="auto-step" data-auto-step="3">
+                    <h4 class="auto-step-title">Temas da playlist</h4>
+                    <p class="muted" style="margin-bottom:0.75rem">Adicione os temas dos videos. O sistema criara um video por agendamento na ordem da lista.</p>
+                    <div class="auto-theme-add">
+                        <input id="auto-theme-input" type="text" class="input" placeholder="Ex: 5 dicas de produtividade" maxlength="200">
+                        <button class="btn btn-primary btn-sm" type="button" onclick="addAutoTheme()">+</button>
+                    </div>
+                    <ul id="auto-theme-list" class="auto-theme-list" style="margin-top:0.75rem"></ul>
+                </div>
+
+                <!-- Step 4: Agendamento -->
+                <div class="auto-step" data-auto-step="4">
+                    <h4 class="auto-step-title">Agendamento</h4>
+                    <div class="form-group">
+                        <label>Plataforma de publicacao</label>
+                        <select id="auto-platform" class="input">
+                            <option value="youtube">YouTube</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Conta social</label>
+                        <select id="auto-account" class="input"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Frequencia</label>
+                        <select id="auto-frequency" class="input" onchange="document.getElementById('auto-dow-group').hidden = this.value !== 'weekly'">
+                            <option value="daily">Diario</option>
+                            <option value="weekly">Semanal</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="auto-dow-group" hidden>
+                        <label>Dia da semana</label>
+                        <select id="auto-dow" class="input">
+                            <option value="0">Segunda</option>
+                            <option value="1">Terca</option>
+                            <option value="2">Quarta</option>
+                            <option value="3">Quinta</option>
+                            <option value="4">Sexta</option>
+                            <option value="5">Sabado</option>
+                            <option value="6">Domingo</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Horario (UTC)</label>
+                        <input id="auto-time" type="time" class="input" value="14:00">
+                    </div>
+                    <div class="form-group">
+                        <label>Nome da automacao</label>
+                        <input id="auto-name" type="text" class="input" placeholder="Ex: Videos diarios de produtividade" maxlength="100">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer modal-footer-space">
+                <button id="auto-btn-back" class="btn btn-secondary" type="button" onclick="autoStepBack()" hidden>Voltar</button>
+                <div style="flex:1"></div>
+                <button id="auto-btn-next" class="btn btn-primary" type="button" onclick="autoStepNext()">Proximo</button>
+                <button id="auto-btn-create" class="btn btn-accent" type="button" onclick="createAutoSchedule()" hidden>Ativar Automacao</button>
+            </div>
+        </div>
+    </div>
+
     <div id="modal-player" class="modal">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
@@ -1246,7 +1438,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260412-01"></script>
+    <script src="/video/static/app.js?v=20260412-03"></script>
     <script src="/video/static/pwa.js?v=20260412-01"></script>
 </body>
 </html>

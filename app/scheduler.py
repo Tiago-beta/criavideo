@@ -10,7 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import select
 from app.database import async_session
-from app.models import PublishSchedule, PublishJob, PublishStatus, VideoRender, VideoProject, Platform
+from app.models import PublishSchedule, PublishJob, PublishStatus, VideoRender, VideoProject, Platform, AutoSchedule, AutoScheduleTheme
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -97,6 +97,53 @@ async def check_pending_publish_jobs():
 
 
 RENDER_EXPIRY_HOURS = 48
+
+
+async def check_auto_schedules():
+    """Runs every minute. Checks for auto-schedules that are due and triggers video creation."""
+    now = datetime.utcnow()
+    current_time = now.strftime("%H:%M")
+    current_dow = now.weekday()
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(AutoSchedule).where(AutoSchedule.is_active == True)
+        )
+        schedules = result.scalars().all()
+
+        for schedule in schedules:
+            if schedule.time_utc != current_time:
+                continue
+
+            if schedule.frequency == "weekly" and schedule.day_of_week != current_dow:
+                continue
+
+            # Check if there are pending themes
+            theme_result = await db.execute(
+                select(AutoScheduleTheme)
+                .where(
+                    AutoScheduleTheme.auto_schedule_id == schedule.id,
+                    AutoScheduleTheme.status.in_(["pending", "processing"]),
+                )
+            )
+            themes = theme_result.scalars().all()
+            processing = [t for t in themes if t.status == "processing"]
+            pending = [t for t in themes if t.status == "pending"]
+
+            if processing:
+                logger.info(f"Auto-schedule {schedule.id}: already processing, skipping")
+                continue
+
+            if not pending:
+                logger.info(f"Auto-schedule {schedule.id}: no pending themes")
+                continue
+
+            logger.info(f"Auto-schedule {schedule.id} triggered at {current_time}")
+
+            # Fire and forget — run in background
+            import asyncio
+            from app.tasks.auto_creation_tasks import run_auto_creation
+            asyncio.create_task(run_auto_creation(schedule.id))
 
 
 async def cleanup_expired_renders():
@@ -186,6 +233,12 @@ def start_scheduler():
         cleanup_expired_renders,
         trigger=IntervalTrigger(hours=1),
         id="cleanup_expired_renders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        check_auto_schedules,
+        trigger=IntervalTrigger(minutes=1),
+        id="check_auto_schedules",
         replace_existing=True,
     )
     scheduler.start()
