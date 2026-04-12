@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     media_dir: str = "/opt/levita-video/media"
     tevoxi_api_url: str = "https://levita.pro"
     tevoxi_api_token: str = ""
+    tevoxi_jwt_secret: str = ""
 
     class Config:
         env_file = ".env"

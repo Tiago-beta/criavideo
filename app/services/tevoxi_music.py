@@ -78,8 +78,21 @@ async def generate_music_from_theme(
     api_url = settings.tevoxi_api_url.rstrip("/")
     api_token = settings.tevoxi_api_token
 
+    # Generate JWT on-the-fly if jwt_secret is configured
+    if not api_token and settings.tevoxi_jwt_secret:
+        from jose import jwt as jose_jwt
+        import time
+        payload = {
+            "id": 1,
+            "email": "auto@criavideo.pro",
+            "role": "admin",
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 3600,
+        }
+        api_token = jose_jwt.encode(payload, settings.tevoxi_jwt_secret, algorithm="HS256")
+
     if not api_token:
-        raise RuntimeError("TEVOXI_API_TOKEN nao configurado.")
+        raise RuntimeError("TEVOXI_API_TOKEN ou TEVOXI_JWT_SECRET nao configurado.")
 
     headers = {
         "Authorization": f"Bearer {api_token}",
