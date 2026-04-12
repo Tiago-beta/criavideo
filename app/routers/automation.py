@@ -28,8 +28,8 @@ class CreateAutoScheduleRequest(BaseModel):
     social_account_id: Optional[int] = None
     frequency: str = "daily"
     time_utc: str = "14:00"
-    day_of_week: int = 0
-    default_settings: dict = Field(default_factory=dict)
+    day_of_week: Optional[int] = None
+    default_settings: Optional[dict] = Field(default=None)
     themes: list[str] = Field(default_factory=list)
 
 
