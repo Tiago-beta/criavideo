@@ -52,6 +52,20 @@ class AppUser(Base):
     last_login_at = Column(DateTime)
 
 
+class SecurityEventReceipt(Base):
+    __tablename__ = "security_event_receipts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    provider = Column(String(50), nullable=False, default="google_risc", index=True)
+    event_jti = Column(String(255), nullable=False, unique=True, index=True)
+    event_type = Column(String(255), nullable=False, default="unknown")
+    audience = Column(String(320), default="")
+    issuer = Column(String(255), default="")
+    subject = Column(String(255), default="")
+    payload = Column(JSON, default=dict)
+    received_at = Column(DateTime, default=datetime.utcnow)
+
+
 class VideoProject(Base):
     __tablename__ = "video_projects"
 

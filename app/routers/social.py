@@ -181,27 +181,29 @@ async def connect_platform(
         if not settings.google_oauth_client_id:
             raise HTTPException(status_code=500, detail="Google OAuth client_id não configurado no servidor")
         config = YOUTUBE_OAUTH_CONFIG
-        auth_url = f"{config['auth_uri']}?{urlencode({
-            'client_id': settings.google_oauth_client_id,
-            'redirect_uri': redirect_uri,
-            'response_type': 'code',
-            'scope': config['scope'],
-            'access_type': 'offline',
-            'include_granted_scopes': 'true',
-            'prompt': 'consent',
-            'state': state_payload,
-        })}"
+        query_params = {
+            "client_id": settings.google_oauth_client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": config["scope"],
+            "access_type": "offline",
+            "include_granted_scopes": "true",
+            "prompt": "consent",
+            "state": state_payload,
+        }
+        auth_url = f"{config['auth_uri']}?{urlencode(query_params)}"
     elif platform == "tiktok":
         if not tiktok_key:
             raise HTTPException(status_code=500, detail="Informe o Client Key e Client Secret do TikTok")
         config = TIKTOK_OAUTH_CONFIG
-        auth_url = f"{config['auth_uri']}?{urlencode({
-            'client_key': tiktok_key,
-            'redirect_uri': redirect_uri,
-            'response_type': 'code',
-            'scope': config['scope'],
-            'state': state_payload,
-        })}"
+        query_params = {
+            "client_key": tiktok_key,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": config["scope"],
+            "state": state_payload,
+        }
+        auth_url = f"{config['auth_uri']}?{urlencode(query_params)}"
     elif platform == "instagram":
         missing_keys = []
         if not settings.facebook_app_id:
@@ -218,13 +220,14 @@ async def connect_platform(
                 ),
             )
         config = INSTAGRAM_OAUTH_CONFIG
-        auth_url = f"{config['auth_uri']}?{urlencode({
-            'client_id': settings.facebook_app_id,
-            'redirect_uri': redirect_uri,
-            'response_type': 'code',
-            'scope': config['scope'],
-            'state': state_payload,
-        })}"
+        query_params = {
+            "client_id": settings.facebook_app_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": config["scope"],
+            "state": state_payload,
+        }
+        auth_url = f"{config['auth_uri']}?{urlencode(query_params)}"
 
     return {"auth_url": auth_url}
 

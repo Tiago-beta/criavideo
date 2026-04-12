@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     google_ai_api_key: str = ""
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
+    risc_allowed_audiences: str = ""
+    risc_endpoint_path: str = "/api/security/risc/events"
     tiktok_client_key: str = ""
     tiktok_client_secret: str = ""
     facebook_app_id: str = ""
