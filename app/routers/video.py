@@ -755,6 +755,22 @@ async def quick_create(
     db: AsyncSession = Depends(get_db),
 ):
     """One-click video creation: AI generates title/description/style, creates project, starts pipeline."""
+    # Detect gospel/worship genre from lyrics and title
+    _text_lower = f"{req.song_title or ''} {req.song_artist or ''} {(req.lyrics or '')[:500]}".lower()
+    _is_gospel = any(w in _text_lower for w in [
+        "gospel", "worship", "louvor", "adoração", "adoracao", "deus", "senhor",
+        "jesus", "cristo", "espírito", "espirito", "santo", "glória", "gloria",
+        "redenção", "redencao", "fé", "oração", "oracao", "salvação", "salvacao",
+        "graça", "graca", "igreja", "aleluia", "hallelujah", "amém", "amen",
+    ])
+
+    _gospel_style_instruction = """
+IMPORTANT: This is a GOSPEL/WORSHIP song. The style_prompt MUST reflect spiritual, uplifting imagery:
+- Use nature scenes: mountains, valleys, rivers, sunrise, sunset, golden light, green pastures, calm waters, starry sky, fields of wheat, olive trees, gentle rain
+- Use warm, golden, celestial lighting — NOT dark, horror, or scary imagery
+- Biblical/spiritual settings: gardens, deserts with oasis, peaceful landscapes, doves, sheep/lambs, open sky, light breaking through clouds
+- NEVER use dark/horror/scary/gothic themes for gospel music""" if _is_gospel else ""
+
     # Ask AI to generate creative metadata from song info
     ai_prompt = f"""Você é um produtor criativo de vídeos musicais.
 Com base nos dados desta música, gere metadados criativos para um videoclipe.
@@ -764,15 +780,12 @@ Artista: {req.song_artist or 'Desconhecido'}
 Duração: {req.duration:.0f} segundos
 Trecho da letra:
 {(req.lyrics or 'Sem letra disponível')[:800]}
-
-REGRAS IMPORTANTES DE GÊNERO:
-- Se a música for gospel, worship, cristã ou espiritual: o style_prompt DEVE usar palavras como "gospel, worship, warm divine light, golden rays, beautiful nature, Biblical scenes, sunrise, peaceful, hopeful, spiritual, radiant". NUNCA use estilos dark, horror, sombrio ou assustador para músicas gospel/worship.
-- Para outros gêneros, use estilos que combinem com a temática da música.
+{_gospel_style_instruction}
 
 Responda SOMENTE um JSON com:
 - "title": título curto e criativo para o projeto de vídeo (máx 60 chars, em português)
 - "description": descrição envolvente para redes sociais (máx 200 chars, em português)
-- "style_prompt": prompt em INGLÊS descrevendo o estilo visual ideal (cores, cenário, mood, iluminação — máx 120 chars). Para gospel/worship, SEMPRE inclua "gospel" ou "worship" como primeira palavra.
+- "style_prompt": prompt em INGLÊS descrevendo o estilo visual ideal (cores, cenário, mood, iluminação — máx 120 chars)
 - "tags": lista de 3-5 tags relevantes em português
 
 JSON apenas, sem markdown."""

@@ -398,9 +398,6 @@ async def run_video_pipeline(project_id: int):
                 "editorial": "editorial, fashion, high contrast, stylish composition, magazine quality",
                 "anime": "anime style, Japanese animation, vibrant cel-shaded, detailed illustration",
                 "aquarela": "watercolor painting, soft brushstrokes, artistic, pastel colors, dreamy",
-                "gospel": "warm divine light, golden rays, peaceful nature, Biblical scenes, sheep in green pastures, mountains at sunrise, hopeful spiritual atmosphere, worship, radiant sky",
-                "worship": "spiritual, uplifting, golden hour sunlight, beautiful nature landscape, divine atmosphere, people worshipping with hands raised, peaceful and hopeful, radiant warm tones",
-                "adoracao": "worship, sacred atmosphere, golden divine light, ethereal glow, peaceful nature, sunrise over mountains, spiritual communion, reverent and hopeful",
             }
 
             def _expand_style_prompt(raw: str) -> str:
