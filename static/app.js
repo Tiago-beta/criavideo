@@ -3610,12 +3610,27 @@ function renderAutoCard(s) {
     const doneCount = themes.filter(t => t.status === "done").length;
 
     const themeListHtml = themes.map(t => {
-        const icon = t.status === "done" ? "✅" : t.status === "processing" ? "⏳" : t.status === "error" ? "❌" : "📅";
+        let icon, statusClass, statusLabel;
+        if (t.status === "done" || t.status === "completed") {
+            icon = "✅"; statusClass = "theme-done"; statusLabel = "Publicado";
+        } else if (t.status === "processing") {
+            icon = "⏳"; statusClass = "theme-processing"; statusLabel = "Criando...";
+        } else if (t.status === "error" || t.status === "failed") {
+            icon = "❌"; statusClass = "theme-failed"; statusLabel = "Falhou";
+        } else {
+            icon = "📅"; statusClass = "theme-pending"; statusLabel = "";
+        }
         const dateLabel = t.scheduled_date ? `<span class="theme-date">${esc(t.scheduled_date)}</span>` : "";
-        return `<li class="auto-theme-item">
+        const statusBadge = statusLabel ? `<span class="theme-badge ${statusClass}">${statusLabel}</span>` : "";
+        const errorBtn = (t.status === "error" || t.status === "failed") && t.error_message
+            ? `<button class="theme-error-btn" onclick="alert('${esc(t.error_message).replace(/'/g, "\\'")}')" type="button" title="Ver motivo">Ver motivo</button>`
+            : "";
+        return `<li class="auto-theme-item ${statusClass}">
             <span class="theme-status">${icon}</span>
             <span class="theme-text">${esc(t.theme)}</span>
             ${dateLabel}
+            ${statusBadge}
+            ${errorBtn}
             <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
         </li>`;
     }).join("");

@@ -1051,6 +1051,34 @@ a {
     white-space: nowrap;
 }
 
+.auto-theme-item .theme-badge {
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.theme-badge.theme-done { background: #2ecc7122; color: #2ecc71; border: 1px solid #2ecc7144; }
+.theme-badge.theme-processing { background: #f39c1222; color: #f39c12; border: 1px solid #f39c1244; }
+.theme-badge.theme-failed { background: #e74c3c22; color: #e74c3c; border: 1px solid #e74c3c44; }
+
+.auto-theme-item .theme-error-btn {
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid #e74c3c66;
+    background: none;
+    color: #e74c3c;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.auto-theme-item .theme-error-btn:hover { background: #e74c3c22; }
+
+.auto-theme-item.theme-done { opacity: 0.7; }
+.auto-theme-item.theme-failed { border-left: 2px solid #e74c3c; }
+
 .auto-theme-item .theme-remove:hover {
     color: var(--danger, #e74c3c);
 }
