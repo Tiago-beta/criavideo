@@ -203,6 +203,7 @@ class PublishSchedule(Base):
     frequency = Column(String(20), default="daily")  # "daily", "weekly"
     time_utc = Column(String(5), default="14:00")  # HH:MM
     day_of_week = Column(Integer)  # 0=Mon for weekly, null for daily
+    timezone = Column(String(50), default="UTC")
     is_active = Column(Boolean, default=True)
     queue = Column(JSON, default=list)  # list of render_ids to publish
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -244,6 +245,7 @@ class AutoSchedule(Base):
     frequency = Column(String(20), default="daily")
     time_utc = Column(String(5), default="14:00")
     day_of_week = Column(Integer, default=0)
+    timezone = Column(String(50), default="UTC")
     default_settings = Column(JSON, default=dict)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)

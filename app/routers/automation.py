@@ -2,8 +2,9 @@
 Automation Router — CRUD for auto-schedules (automated video creation + publishing).
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -18,6 +19,30 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/automation", tags=["automation"])
 
 
+def _local_to_utc(time_local: str, tz_name: str) -> str:
+    """Convert HH:MM from user timezone to UTC."""
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        return time_local  # fallback: treat as UTC
+    h, m = map(int, time_local.split(":"))
+    today = datetime.now(tz).replace(hour=h, minute=m, second=0, microsecond=0)
+    utc_time = today.astimezone(ZoneInfo("UTC"))
+    return utc_time.strftime("%H:%M")
+
+
+def _utc_to_local(time_utc: str, tz_name: str) -> str:
+    """Convert HH:MM from UTC to user timezone."""
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        return time_utc
+    h, m = map(int, time_utc.split(":"))
+    today = datetime.now(ZoneInfo("UTC")).replace(hour=h, minute=m, second=0, microsecond=0)
+    local_time = today.astimezone(tz)
+    return local_time.strftime("%H:%M")
+
+
 # ── Request / Response schemas ──
 
 class CreateAutoScheduleRequest(BaseModel):
@@ -27,7 +52,8 @@ class CreateAutoScheduleRequest(BaseModel):
     platform: str = "youtube"
     social_account_id: Optional[int] = None
     frequency: str = "daily"
-    time_utc: str = "14:00"
+    time_local: str = "14:00"
+    timezone: str = "UTC"
     day_of_week: Optional[int] = None
     default_settings: Optional[dict] = Field(default=None)
     themes: list[str] = Field(default_factory=list)
@@ -37,7 +63,8 @@ class UpdateAutoScheduleRequest(BaseModel):
     name: Optional[str] = None
     is_active: Optional[bool] = None
     frequency: Optional[str] = None
-    time_utc: Optional[str] = None
+    time_local: Optional[str] = None
+    timezone: Optional[str] = None
     day_of_week: Optional[int] = None
     platform: Optional[str] = None
     social_account_id: Optional[int] = None
@@ -78,6 +105,8 @@ def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
         "account_label": account_label,
         "frequency": s.frequency,
         "time_utc": s.time_utc,
+        "time_local": _utc_to_local(s.time_utc, s.timezone or "UTC"),
+        "timezone": s.timezone or "UTC",
         "day_of_week": s.day_of_week,
         "default_settings": s.default_settings or {},
         "is_active": s.is_active,
@@ -132,7 +161,8 @@ async def create_auto_schedule(
         platform=req.platform,
         social_account_id=req.social_account_id,
         frequency=req.frequency,
-        time_utc=req.time_utc,
+        time_utc=_local_to_utc(req.time_local, req.timezone),
+        timezone=req.timezone,
         day_of_week=req.day_of_week,
         default_settings=req.default_settings,
         is_active=True,
@@ -214,8 +244,16 @@ async def update_auto_schedule(
         schedule.is_active = req.is_active
     if req.frequency is not None:
         schedule.frequency = req.frequency
-    if req.time_utc is not None:
-        schedule.time_utc = req.time_utc
+    if req.time_local is not None:
+        tz = req.timezone or schedule.timezone or "UTC"
+        schedule.time_utc = _local_to_utc(req.time_local, tz)
+    if req.timezone is not None:
+        schedule.timezone = req.timezone
+        # Recalculate UTC if time_local was also sent
+        if req.time_local is None:
+            # Re-convert existing local time with new timezone
+            local_time = _utc_to_local(schedule.time_utc, schedule.timezone)
+            schedule.time_utc = _local_to_utc(local_time, req.timezone)
     if req.day_of_week is not None:
         schedule.day_of_week = req.day_of_week
     if req.platform is not None:

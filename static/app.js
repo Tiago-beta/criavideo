@@ -3513,7 +3513,7 @@ async function loadSchedules() {
             <div class="card">
                 <h4>${esc(schedule.platform)} - ${esc(schedule.frequency)}</h4>
                 <p>Conta: ${esc(schedule.account_label || "Conta conectada")}</p>
-                <p>${esc(schedule.time_utc)} UTC</p>
+                <p>${esc(schedule.time_local || schedule.time_utc)}</p>
                 <p>Fila: ${schedule.queue_length || 0} videos</p>
                 <p>Status: ${schedule.is_active ? '<span class="badge badge-completed">Ativo</span>' : '<span class="badge badge-failed">Pausado</span>'}</p>
                 <div class="card-actions">
@@ -3540,7 +3540,8 @@ async function createSchedule() {
                 platform: document.getElementById("ns-platform").value,
                 social_account_id: accountId,
                 frequency: document.getElementById("ns-frequency").value,
-                time_utc: document.getElementById("ns-time").value,
+                time_local: document.getElementById("ns-time").value,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             }),
         });
         closeModal("modal-new-schedule");
@@ -3628,7 +3629,7 @@ function renderAutoCard(s) {
         </div>
         <div class="auto-card-badges">${typeBadge} ${modeBadge}</div>
         <div class="auto-card-meta">
-            <span>${freq} as ${esc(s.time_utc)} UTC</span>
+            <span>${freq} as ${esc(s.time_local || s.time_utc)}</span>
             <span>${pendingCount} pendentes / ${doneCount} feitos</span>
         </div>
         <div class="auto-card-detail">
@@ -3878,6 +3879,7 @@ async function createAutoSchedule() {
     const platform = document.getElementById("auto-platform")?.value || "youtube";
     const frequency = document.getElementById("auto-frequency")?.value || "daily";
     const timeUtc = document.getElementById("auto-time")?.value || "14:00";
+    const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const dayOfWeek = frequency === "weekly" ? parseInt(document.getElementById("auto-dow")?.value || "0", 10) : null;
 
     let defaultSettings = null;
@@ -3917,7 +3919,8 @@ async function createAutoSchedule() {
                 platform,
                 social_account_id: accountId,
                 frequency,
-                time_utc: timeUtc,
+                time_local: timeUtc,
+                timezone: userTimezone,
                 day_of_week: dayOfWeek,
                 default_settings: defaultSettings,
                 themes: _autoWizardThemes,

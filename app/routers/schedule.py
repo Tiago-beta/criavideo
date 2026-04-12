@@ -1,11 +1,13 @@
 """
 Schedule Router — Endpoints for managing automated posting schedules.
 """
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import PublishSchedule, SocialAccount, Platform
@@ -14,11 +16,32 @@ from app.config import get_settings
 router = APIRouter(prefix="/api/schedule", tags=["schedule"])
 
 
+def _local_to_utc(time_local: str, tz_name: str) -> str:
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        return time_local
+    h, m = map(int, time_local.split(":"))
+    today = datetime.now(tz).replace(hour=h, minute=m, second=0, microsecond=0)
+    return today.astimezone(ZoneInfo("UTC")).strftime("%H:%M")
+
+
+def _utc_to_local(time_utc: str, tz_name: str) -> str:
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        return time_utc
+    h, m = map(int, time_utc.split(":"))
+    today = datetime.now(ZoneInfo("UTC")).replace(hour=h, minute=m, second=0, microsecond=0)
+    return today.astimezone(tz).strftime("%H:%M")
+
+
 class CreateScheduleRequest(BaseModel):
     platform: str  # "youtube", "tiktok", "instagram"
     social_account_id: int
     frequency: str = "daily"  # "daily" or "weekly"
-    time_utc: str = "14:00"  # HH:MM
+    time_local: str = "14:00"  # HH:MM
+    timezone: str = "UTC"
     day_of_week: Optional[int] = None  # 0=Mon, only for weekly
 
 
@@ -51,7 +74,8 @@ async def create_schedule(
         platform=platform,
         social_account_id=req.social_account_id,
         frequency=req.frequency,
-        time_utc=req.time_utc,
+        time_utc=_local_to_utc(req.time_local, req.timezone),
+        timezone=req.timezone,
         day_of_week=req.day_of_week,
         queue=[],
     )
@@ -96,6 +120,8 @@ async def list_schedules(
             "account_label": _account_name(accounts_by_id.get(s.social_account_id)),
             "frequency": s.frequency,
             "time_utc": s.time_utc,
+            "time_local": _utc_to_local(s.time_utc, s.timezone or "UTC"),
+            "timezone": s.timezone or "UTC",
             "day_of_week": s.day_of_week,
             "is_active": s.is_active,
             "queue_length": len(s.queue) if s.queue else 0,
