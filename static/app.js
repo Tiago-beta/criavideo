@@ -808,8 +808,7 @@ async function loadProjects() {
             return;
         }
         container.innerHTML = data.map((project) => {
-            const dt = project.created_at ? new Date(project.created_at) : null;
-            const dateStr = dt ? `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")} · ${dt.toLocaleDateString("pt-BR")}` : "-";
+            const dateStr = _renderExpiryOrDate(project);
             const statusPt = _statusPt(project.status);
             const thumbClick = project.status === "completed" ? `onclick="watchVideo(${project.id})" style="cursor:pointer"` : "";
             const canWatch = project.status === "completed";
@@ -841,6 +840,7 @@ async function loadProjects() {
         }).join("");
         // Start polling for in-progress projects
         _pollInProgress(data);
+        _startCountdownRefresh();
     } catch (error) {
         container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
     }
@@ -870,13 +870,62 @@ function _statusPt(status) {
     return map[status] || status;
 }
 
+const RENDER_EXPIRY_HOURS = 48;
+
+function _renderExpiryOrDate(project) {
+    // For completed projects with a render, show countdown to expiry
+    if (project.status === "completed" && project.render_created_at) {
+        const renderDate = new Date(project.render_created_at);
+        const expiresAt = new Date(renderDate.getTime() + RENDER_EXPIRY_HOURS * 3600000);
+        const now = new Date();
+        const remaining = expiresAt - now;
+        if (remaining <= 0) {
+            return '<span class="expiry-expired">Expirado</span>';
+        }
+        const hours = Math.floor(remaining / 3600000);
+        const mins = Math.floor((remaining % 3600000) / 60000);
+        if (hours < 6) {
+            return `<span class="expiry-urgent">⏳ ${hours}h ${String(mins).padStart(2,"0")}m</span>`;
+        }
+        return `<span class="expiry-countdown">⏳ ${hours}h ${String(mins).padStart(2,"0")}m</span>`;
+    }
+    // For non-completed projects, show creation date
+    const dt = project.created_at ? new Date(project.created_at) : null;
+    return dt ? `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")} · ${dt.toLocaleDateString("pt-BR")}` : "-";
+}
+
+// Auto-refresh countdown timers every minute
+let _countdownTimer = null;
+function _startCountdownRefresh() {
+    if (_countdownTimer) clearInterval(_countdownTimer);
+    _countdownTimer = setInterval(() => {
+        const container = document.getElementById("projects-list");
+        if (!container) return;
+        for (const project of _projectsCache) {
+            if (project.status !== "completed" || !project.render_created_at) continue;
+            const cards = container.querySelectorAll(".card");
+            for (const card of cards) {
+                const btn = card.querySelector("[onclick*='watchVideo(" + project.id + ")']") ||
+                            card.querySelector("[onclick*='deleteProject(" + project.id + ")']");
+                if (btn) {
+                    const dateSpan = card.querySelector(".card-date");
+                    if (dateSpan) dateSpan.innerHTML = _renderExpiryOrDate(project);
+                    break;
+                }
+            }
+        }
+    }, 60000);
+}
+
 let _pollTimer = null;
+let _prevActiveIds = new Set();
 function _pollInProgress(projects) {
     if (_pollTimer) clearInterval(_pollTimer);
     const active = projects.filter(p =>
         p.status !== "completed" && p.status !== "failed" && p.status !== "pending"
     );
     if (!active.length) return;
+    _prevActiveIds = new Set(active.map(p => p.id));
     _pollTimer = setInterval(async () => {
         try {
             const data = await api("/video/projects");
@@ -884,6 +933,11 @@ function _pollInProgress(projects) {
             const stillActive = data.filter(p =>
                 p.status !== "completed" && p.status !== "failed" && p.status !== "pending"
             );
+            // Detect newly completed projects
+            const newlyCompleted = data.filter(p =>
+                p.status === "completed" && _prevActiveIds.has(p.id)
+            );
+            _prevActiveIds = new Set(stillActive.map(p => p.id));
             // Update cards in-place instead of full re-render
             for (const p of data) {
                 _updateCardInPlace(p);
@@ -892,12 +946,23 @@ function _pollInProgress(projects) {
                 clearInterval(_pollTimer);
                 _pollTimer = null;
                 loadProjects(); // Full refresh to get thumbnails
+                // Show expiry warning for newly completed videos
+                if (newlyCompleted.length) {
+                    _showExpiryWarning();
+                }
             }
         } catch (_) {
             clearInterval(_pollTimer);
             _pollTimer = null;
         }
     }, 3000);
+}
+
+function _showExpiryWarning() {
+    const modal = document.getElementById("modal-expiry-warning");
+    if (modal) {
+        openModal("modal-expiry-warning");
+    }
 }
 
 function _updateCardInPlace(project) {
@@ -2476,7 +2541,19 @@ async function watchVideo(projectId) {
         video.play().catch(() => {});
         const sizeMb = render.file_size ? `${(render.file_size / 1048576).toFixed(1)} MB` : "";
         const duration = render.duration ? `${Math.floor(render.duration / 60)}:${String(Math.floor(render.duration % 60)).padStart(2, "0")}` : "";
-        document.getElementById("player-info").textContent = [render.format, duration, sizeMb].filter(Boolean).join(" · ");
+        // Show expiry countdown in player
+        let expiryInfo = "";
+        if (render.created_at) {
+            const renderDate = new Date(render.created_at);
+            const expiresAt = new Date(renderDate.getTime() + RENDER_EXPIRY_HOURS * 3600000);
+            const remaining = expiresAt - new Date();
+            if (remaining > 0) {
+                const h = Math.floor(remaining / 3600000);
+                const m = Math.floor((remaining % 3600000) / 60000);
+                expiryInfo = `⏳ Expira em ${h}h ${String(m).padStart(2,"0")}m`;
+            }
+        }
+        document.getElementById("player-info").textContent = [render.format, duration, sizeMb, expiryInfo].filter(Boolean).join(" · ");
         const download = document.getElementById("player-download");
         download.href = render.video_url;
         download.download = `${project.title || "video"}.mp4`;

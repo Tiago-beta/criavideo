@@ -386,6 +386,19 @@ def _best_project_thumbnail_url(project: VideoProject) -> str | None:
     return None
 
 
+def _newest_render_created_at(project: VideoProject) -> str | None:
+    """Return the created_at of the newest render (for expiry countdown)."""
+    if not project.renders:
+        return None
+    ordered = sorted(
+        project.renders,
+        key=lambda r: ((r.created_at or datetime.min), (r.id or 0)),
+        reverse=True,
+    )
+    newest = ordered[0]
+    return newest.created_at.isoformat() if newest.created_at else None
+
+
 class CreateProjectRequest(BaseModel):
     track_id: int = 0
     title: str = ""
@@ -484,6 +497,7 @@ async def list_projects(
             "aspect_ratio": p.aspect_ratio,
             "error_message": p.error_message,
             "created_at": p.created_at.isoformat() if p.created_at else None,
+            "render_created_at": _newest_render_created_at(p),
             "lyrics_text": p.lyrics_text or "",
             "style_prompt": p.style_prompt or "",
             "thumbnail_url": _best_project_thumbnail_url(p),
@@ -551,6 +565,7 @@ async def get_project(
                 "duration": r.duration,
                 "video_url": _to_media_url(r.file_path),
                 "thumbnail_url": _to_media_url(r.thumbnail_path),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in renders
         ],

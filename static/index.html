@@ -1161,6 +1161,27 @@
         </div>
     </div>
 
+    <!-- ═══ Expiry Warning Modal ═══ -->
+    <div id="modal-expiry-warning" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>⚠️ Aviso Importante</h3>
+                <button class="modal-close" onclick="closeModal('modal-expiry-warning')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="expiry-warning-content">
+                    <p><strong>Seu vídeo foi gerado com sucesso!</strong></p>
+                    <p>Por questões de privacidade e armazenamento, os vídeos permanecem no servidor por apenas <strong>48 horas</strong>.</p>
+                    <p>Após esse período, o vídeo será <strong>excluído automaticamente</strong> do servidor.</p>
+                    <p class="expiry-warning-highlight">📥 Recomendamos que você <strong>baixe o vídeo agora</strong> para não perdê-lo!</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeModal('modal-expiry-warning')" type="button">Entendi</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ═══ Voice Manager Modal ═══ -->
     <div id="modal-voice-manager" class="modal">
         <div class="modal-content modal-content-wide">

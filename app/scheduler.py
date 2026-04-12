@@ -2,12 +2,15 @@
 Scheduler — APScheduler-based periodic task runner for automated posting.
 """
 import logging
-from datetime import datetime
+import os
+import shutil
+from datetime import datetime, timedelta
+from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import select
 from app.database import async_session
-from app.models import PublishSchedule, PublishJob, PublishStatus, VideoRender, Platform
+from app.models import PublishSchedule, PublishJob, PublishStatus, VideoRender, VideoProject, Platform
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -93,6 +96,78 @@ async def check_pending_publish_jobs():
                 logger.error(f"Pending job {job.id} failed: {e}")
 
 
+RENDER_EXPIRY_HOURS = 48
+
+
+async def cleanup_expired_renders():
+    """Delete render files older than 48 hours to free server storage."""
+    cutoff = datetime.utcnow() - timedelta(hours=RENDER_EXPIRY_HOURS)
+    media_dir = settings.media_dir
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(VideoRender).where(
+                VideoRender.created_at < cutoff,
+                VideoRender.file_path.isnot(None),
+            )
+        )
+        expired_renders = result.scalars().all()
+
+        deleted_count = 0
+        for render in expired_renders:
+            # Delete video file
+            if render.file_path and os.path.exists(render.file_path):
+                try:
+                    os.remove(render.file_path)
+                except OSError:
+                    pass
+
+            # Delete thumbnail file
+            if render.thumbnail_path and os.path.exists(render.thumbnail_path):
+                try:
+                    os.remove(render.thumbnail_path)
+                except OSError:
+                    pass
+
+            # Clean up empty render directory
+            if render.file_path:
+                render_dir = Path(render.file_path).parent
+                if render_dir.exists() and not any(render_dir.iterdir()):
+                    shutil.rmtree(render_dir, ignore_errors=True)
+
+            # Clear paths in DB but keep the record
+            render.file_path = None
+            render.thumbnail_path = None
+            deleted_count += 1
+
+        if deleted_count:
+            await db.commit()
+            logger.info(f"Cleanup: removed files for {deleted_count} expired render(s)")
+
+        # Also clean up source assets (images, clips, subtitles, audio) for projects
+        # where ALL renders have expired (file_path is None)
+        result2 = await db.execute(
+            select(VideoProject).where(VideoProject.status == "completed")
+        )
+        projects = result2.scalars().all()
+        for project in projects:
+            # Check if project has any render with files still on disk
+            r_result = await db.execute(
+                select(VideoRender).where(
+                    VideoRender.project_id == project.id,
+                    VideoRender.file_path.isnot(None),
+                )
+            )
+            if r_result.scalars().first():
+                continue  # Still has active renders
+
+            # All renders expired — clean up source directories
+            for dir_name in ["images", "clips", "subtitles"]:
+                dir_path = Path(media_dir) / dir_name / str(project.id)
+                if dir_path.exists():
+                    shutil.rmtree(dir_path, ignore_errors=True)
+
+
 def start_scheduler():
     """Start the APScheduler with periodic tasks."""
     scheduler.add_job(
@@ -105,6 +180,12 @@ def start_scheduler():
         check_pending_publish_jobs,
         trigger=IntervalTrigger(minutes=5),
         id="check_pending_publish_jobs",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        cleanup_expired_renders,
+        trigger=IntervalTrigger(hours=1),
+        id="cleanup_expired_renders",
         replace_existing=True,
     )
     scheduler.start()
