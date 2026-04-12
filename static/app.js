@@ -2533,11 +2533,7 @@ function openPublishForProject(projectId) {
 }
 
 function getCheckedPublishPlatforms() {
-    const platforms = [];
-    document.querySelectorAll("#publish-form-area .publish-platforms-icons input:checked").forEach((checkbox) => {
-        platforms.push(checkbox.value);
-    });
-    return platforms;
+    return ["youtube"];
 }
 
 function buildPublishPayload(scheduledAt = "") {
@@ -2914,13 +2910,6 @@ async function applyPublishDraft(renderId) {
     if (descInput) descInput.value = String(draft.description || "");
     if (hashtagsInput) hashtagsInput.value = String(draft.hashtags || "");
 
-    if (Array.isArray(draft.platforms) && draft.platforms.length) {
-        const selected = new Set(draft.platforms.map((item) => String(item)));
-        document.querySelectorAll("#publish-form-area .publish-platforms-icons input").forEach((checkbox) => {
-            checkbox.checked = selected.has(checkbox.value);
-        });
-    }
-
     if (draft.account_ids && typeof draft.account_ids === "object") {
         Object.entries(draft.account_ids).forEach(([platform, accountId]) => {
             _publishAccountSelection[platform] = String(accountId || "");
@@ -3278,10 +3267,7 @@ async function renderPublishAccountSelectors(forceReload = false) {
     const container = document.getElementById("pub-account-selectors");
     if (!container) return;
 
-    const selectedPlatforms = [];
-    document.querySelectorAll("#publish-form-area .publish-platforms-icons input:checked").forEach((checkbox) => {
-        selectedPlatforms.push(checkbox.value);
-    });
+    const selectedPlatforms = getCheckedPublishPlatforms();
 
     if (!selectedPlatforms.length) {
         container.hidden = true;
