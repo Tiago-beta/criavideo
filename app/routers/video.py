@@ -1444,3 +1444,74 @@ async def generate_audio_endpoint(
         project.error_message = str(e)
         await db.commit()
         raise HTTPException(status_code=500, detail=f"Erro ao gerar audio: {e}")
+
+
+# ── Realistic Video (Seedance 2.0) ──────────────────────────────
+
+
+class GenerateRealisticRequest(BaseModel):
+    prompt: str
+    duration: int = 7
+    aspect_ratio: str = "16:9"
+    generate_audio: bool = True
+
+
+@router.post("/generate-realistic")
+async def generate_realistic_endpoint(
+    req: GenerateRealisticRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a realistic AI video using Seedance 2.0 via Replicate."""
+    prompt = (req.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Descreva a cena que voce quer ver no video.")
+    if len(prompt) > 5000:
+        raise HTTPException(status_code=400, detail="Descricao muito longa (maximo 5000 caracteres).")
+
+    duration = max(1, min(req.duration, 10))
+
+    if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
+        raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1.")
+
+    # Credit check
+    from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
+    credits_needed = CREDITS_PER_MINUTE  # 1 credit unit per realistic video
+    await deduct_credits(db, user["id"], credits_needed)
+
+    project = VideoProject(
+        user_id=user["id"],
+        track_id=0,
+        title=prompt[:100] if len(prompt) > 100 else prompt,
+        description="Video realista gerado com Seedance 2.0",
+        tags=["realista", "seedance"],
+        style_prompt=prompt,
+        aspect_ratio=req.aspect_ratio,
+        track_title=prompt[:100] if len(prompt) > 100 else prompt,
+        track_artist="Seedance 2.0",
+        track_duration=float(duration),
+        lyrics_text=prompt,
+        lyrics_words=[],
+        audio_path="",
+        is_realistic=True,
+        no_background_music=not req.generate_audio,
+        enable_subtitles=False,
+    )
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+
+    project.status = VideoStatus.GENERATING_SCENES
+    project.progress = 0
+    await db.commit()
+
+    from app.tasks.video_tasks import run_realistic_video_pipeline
+    background_tasks.add_task(run_realistic_video_pipeline, project.id)
+
+    return {
+        "id": project.id,
+        "title": project.title,
+        "status": "generating_scenes",
+        "duration": duration,
+    }

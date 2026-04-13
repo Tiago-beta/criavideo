@@ -1062,6 +1062,16 @@ let scriptData = {
     zoomImages: true,
     imageDisplaySeconds: 0,
 };
+let realisticStep = 1;
+let realisticData = { prompt: "", duration: 7, aspect: "16:9", generateAudio: true };
+const REALISTIC_INSPIRATIONS = {
+    cinematic: "Uma cena cinematografica epica: um deserto vasto ao por do sol, com um convoy de veiculos cruzando entre dunas gigantes. Poeira dourada no ar, camera lenta dramatica, iluminacao de hora dourada com sombras longas.",
+    commercial: "Um produto premium girando lentamente sobre uma superficie reflexiva escura. Iluminacao de estudio sofisticada com reflexos suaves. Particulas de luz flutuando ao redor. Visual limpo e elegante de comercial de luxo.",
+    meme: "Um gato laranja gigante do tamanho de um predio preso entre dois arranha-ceus de uma cidade movimentada. O gato tenta se soltar com expressao fofa. Pessoas na rua olham surpresas. Estilo meme viral hiper-realista.",
+    anime: "Uma batalha epica estilo anime entre dois guerreiros em um campo de flores de cerejeira. Efeitos de particulas brilhantes, movimentos rapidos com rastros de luz. Explosao de energia com cores vibrantes. Estilo cel-shaded japones.",
+    drama: "Uma mulher de sobretudo em uma cabine telefonica vermelha sob chuva forte a noite. Ela segura o telefone com expressao melancolica. Luzes de neon da cidade refletem na agua. Atmosfera nostalgica estilo cinema asiatico dos anos 90.",
+    vfx: "Uma maozinha gigante descendo do ceu e abrindo um ziper no horizonte, revelando um universo estrelado brilhante por tras. A realidade se dobra como tecido. Efeito surrealista e hipnotico com escala monumental.",
+};
 const CREATE_PROGRESS_BASE = 8;
 let karaokeProgressTimer = null;
 let karaokeProgressOperationId = "";
@@ -1401,6 +1411,36 @@ function initCreateWizard() {
         });
     }
 
+    // Realistic video nav
+    const realisticNext = document.getElementById("realistic-next");
+    const realisticBack = document.getElementById("realistic-back");
+    const realisticCreateBtn = document.getElementById("realistic-create-btn");
+    if (realisticNext) realisticNext.addEventListener("click", realisticNextStep);
+    if (realisticBack) realisticBack.addEventListener("click", realisticBackStep);
+    if (realisticCreateBtn) realisticCreateBtn.addEventListener("click", handleRealisticCreate);
+
+    // Realistic prompt char count
+    const realisticPrompt = document.getElementById("realistic-prompt");
+    if (realisticPrompt) {
+        realisticPrompt.addEventListener("input", () => {
+            const el = document.getElementById("realistic-char-count");
+            if (el) el.textContent = realisticPrompt.value.length.toLocaleString("pt-BR");
+        });
+    }
+
+    // Realistic inspiration buttons
+    document.querySelectorAll("[data-realistic-inspiration]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const key = btn.dataset.realisticInspiration;
+            const text = REALISTIC_INSPIRATIONS[key] || "";
+            const prompt = document.getElementById("realistic-prompt");
+            if (prompt && text) {
+                prompt.value = text;
+                prompt.dispatchEvent(new Event("input"));
+            }
+        });
+    });
+
     // Wizard option clicks (event delegation)
     document.getElementById("modal-new-project").addEventListener("click", (e) => {
         const opt = e.target.closest(".wizard-option");
@@ -1438,6 +1478,162 @@ function switchCreateMode(mode) {
     }
 }
 
+// ── Realistic Video (Seedance 2.0) Navigation ──
+
+function updateRealisticUI() {
+    const panel = document.getElementById("create-panel-realistic");
+    if (!panel) return;
+    panel.querySelectorAll(".realistic-step").forEach(s => {
+        s.hidden = parseInt(s.dataset.rstep) !== realisticStep;
+    });
+    panel.querySelectorAll(".wizard-dot").forEach((dot) => {
+        dot.classList.toggle("active", parseInt(dot.dataset.dot) <= realisticStep);
+    });
+    const backBtn = document.getElementById("realistic-back");
+    const nextBtn = document.getElementById("realistic-next");
+    const createBtn = document.getElementById("realistic-create-btn");
+    if (backBtn) backBtn.style.visibility = realisticStep <= 1 ? "hidden" : "visible";
+    if (nextBtn) nextBtn.hidden = realisticStep >= 2;
+    if (createBtn) createBtn.hidden = realisticStep < 2;
+}
+
+function realisticNextStep() {
+    if (realisticStep === 1) {
+        const prompt = (document.getElementById("realistic-prompt").value || "").trim();
+        if (!prompt) {
+            alert("Descreva a cena que voce quer ver no video.");
+            return;
+        }
+        if (prompt.length < 10) {
+            alert("Descreva a cena com mais detalhes (minimo 10 caracteres).");
+            return;
+        }
+        realisticData.prompt = prompt;
+    }
+    if (realisticStep < 2) {
+        realisticStep++;
+        updateRealisticUI();
+    }
+}
+
+function realisticBackStep() {
+    if (realisticStep > 1) {
+        realisticStep--;
+        updateRealisticUI();
+    }
+}
+
+async function handleRealisticCreate() {
+    const prompt = realisticData.prompt || (document.getElementById("realistic-prompt").value || "").trim();
+    if (!prompt) {
+        alert("Descreva a cena que voce quer ver no video.");
+        realisticStep = 1;
+        updateRealisticUI();
+        return;
+    }
+
+    // Gather settings
+    const durBtn = document.querySelector("#realistic-duration-options .duration-option.selected");
+    const duration = durBtn ? parseInt(durBtn.dataset.value) : 7;
+    const aspect = document.getElementById("realistic-aspect").value || "16:9";
+    const generateAudio = document.getElementById("realistic-audio").checked;
+
+    // Show progress
+    const progressEl = document.getElementById("create-progress");
+    if (progressEl) progressEl.hidden = false;
+    setCreateProgress(CREATE_PROGRESS_BASE, "Gerando video realista...", "Otimizando prompt com IA...");
+    _smoothProgressTarget = 15;
+    _startSmoothProgress();
+
+    // Disable create button
+    const createBtn = document.getElementById("realistic-create-btn");
+    if (createBtn) createBtn.disabled = true;
+
+    try {
+        const resp = await fetch("/api/video/generate-realistic", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+            body: JSON.stringify({
+                prompt,
+                duration,
+                aspect_ratio: aspect,
+                generate_audio: generateAudio,
+            }),
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || `Erro ${resp.status}`);
+        }
+
+        const data = await resp.json();
+        const projectId = data.id;
+
+        // Poll for project completion
+        _smoothProgressTarget = 25;
+        setCreateProgress(25, "Gerando video realista...", "Seedance 2.0 esta criando seu video...");
+
+        await pollRealisticProgress(projectId);
+
+        _stopSmoothProgress();
+        setCreateProgress(100, "Concluido!", "Video realista gerado com sucesso!");
+
+        setTimeout(() => {
+            closeModal("modal-new-project");
+            resetCreateWizard();
+            loadProjects();
+        }, 1200);
+
+    } catch (e) {
+        _stopSmoothProgress();
+        setCreateProgress(0, "Erro", e.message || "Falha ao gerar video realista.");
+        alert(e.message || "Erro ao gerar video realista.");
+    } finally {
+        if (createBtn) createBtn.disabled = false;
+    }
+}
+
+async function pollRealisticProgress(projectId) {
+    const maxWait = 12 * 60 * 1000; // 12 minutes
+    const pollInterval = 4000;
+    const start = Date.now();
+
+    while (Date.now() - start < maxWait) {
+        await new Promise(r => setTimeout(r, pollInterval));
+
+        try {
+            const resp = await fetch(`/api/video/projects/${projectId}`, {
+                headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+            });
+            if (!resp.ok) continue;
+            const data = await resp.json();
+
+            const progress = data.progress || 0;
+            const status = data.status || "";
+
+            _smoothProgressTarget = Math.max(_smoothProgressTarget, progress);
+            setCreateProgress(progress, "Gerando video realista...",
+                progress < 15 ? "Otimizando prompt com IA..." :
+                progress < 80 ? "Seedance 2.0 esta criando seu video..." :
+                progress < 90 ? "Baixando video gerado..." :
+                progress < 95 ? "Gerando thumbnail..." :
+                "Finalizando..."
+            );
+
+            if (status === "completed") return;
+            if (status === "failed") {
+                throw new Error(data.error_message || "Falha na geracao do video realista.");
+            }
+        } catch (e) {
+            if (e.message && !e.message.includes("fetch")) throw e;
+        }
+    }
+    throw new Error("Tempo limite excedido. O video pode ainda estar sendo gerado — verifique seus projetos.");
+}
+
 function resetCreateWizard() {
     stopKaraokeProgressPolling();
     createMode = "wizard";
@@ -1462,6 +1658,8 @@ function resetCreateWizard() {
         zoomImages: true,
         imageDisplaySeconds: 0,
     };
+    realisticStep = 1;
+    realisticData = { prompt: "", duration: 7, aspect: "16:9", generateAudio: true };
 
     // Reset tabs
     document.querySelectorAll(".create-tab").forEach((t) => {
@@ -1574,6 +1772,19 @@ function resetCreateWizard() {
     initStyleTags();
     // Initialize pause option buttons
     initPauseOptions();
+    // Reset realistic panel
+    const realisticPromptEl = document.getElementById("realistic-prompt");
+    if (realisticPromptEl) realisticPromptEl.value = "";
+    const realisticCharCount = document.getElementById("realistic-char-count");
+    if (realisticCharCount) realisticCharCount.textContent = "0";
+    const realisticAudioCb = document.getElementById("realistic-audio");
+    if (realisticAudioCb) realisticAudioCb.checked = true;
+    const realisticAspect = document.getElementById("realistic-aspect");
+    if (realisticAspect) realisticAspect.value = "16:9";
+    document.querySelectorAll("#realistic-duration-options .duration-option").forEach(d => {
+        d.classList.toggle("selected", d.dataset.value === "7");
+    });
+    updateRealisticUI();
 }
 
 function updateWizardUI(panelId, step, totalSteps, prefix) {

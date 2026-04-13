@@ -84,6 +84,8 @@ async def run_migrations():
         await conn.execute(text('CREATE INDEX IF NOT EXISTS idx_credit_purchases_user ON credit_purchases (user_id)'))
         await conn.execute(text('CREATE INDEX IF NOT EXISTS idx_credit_purchases_ref ON credit_purchases (reference)'))
         await conn.execute(text('ALTER TABLE credit_purchases DROP CONSTRAINT IF EXISTS credit_purchases_user_id_fkey'))
+        # Realistic video (Seedance 2.0)
+        await conn.execute(text('ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS is_realistic BOOLEAN DEFAULT FALSE'))
     print('SQL migrations applied successfully')
 
 asyncio.run(run_migrations())

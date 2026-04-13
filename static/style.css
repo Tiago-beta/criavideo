@@ -3934,3 +3934,100 @@ th,
     flex-direction: column;
     gap: 6px;
 }
+
+/* ═══ Realistic Video Panel (Seedance 2.0) ═══ */
+
+.tab-badge-beta {
+    font-size: 0.6rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #ff6b35, #f7931e);
+    color: #fff;
+    padding: 1px 5px;
+    border-radius: 6px;
+    margin-left: 4px;
+    vertical-align: top;
+    letter-spacing: 0.5px;
+}
+
+.realistic-info-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 212, 255, 0.08);
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.realistic-info-banner svg {
+    flex-shrink: 0;
+    color: var(--tech-neon);
+}
+
+.realistic-prompt-area {
+    min-height: 120px;
+    resize: vertical;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.realistic-char-count {
+    text-align: right;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.realistic-inspiration {
+    margin-top: 16px;
+}
+
+.realistic-inspiration-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    display: block;
+}
+
+.realistic-inspiration-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.realistic-inspiration-tags .style-tag {
+    font-size: 0.8rem;
+    padding: 6px 12px;
+}
+
+.realistic-audio-toggle {
+    margin-top: 8px;
+}
+
+.realistic-audio-toggle .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text);
+}
+
+.realistic-audio-toggle .toggle-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+}
+
+.realistic-step {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}

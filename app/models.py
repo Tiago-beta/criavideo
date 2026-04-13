@@ -95,6 +95,7 @@ class VideoProject(Base):
     image_display_seconds = Column(Float, default=0)  # custom seconds per image (0=auto)
     no_background_music = Column(Boolean, default=False)  # disable background music entirely
     is_karaoke = Column(Boolean, default=False)  # karaoke mode: single background image
+    is_realistic = Column(Boolean, default=False)  # realistic video via Seedance 2.0
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
