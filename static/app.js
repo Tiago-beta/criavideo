@@ -4604,6 +4604,7 @@ function initStyleTags() {
     document.querySelectorAll(".style-tag").forEach((tag) => {
         tag.addEventListener("click", () => {
             const container = tag.closest(".style-tags");
+            if (!container) return;
             container.querySelectorAll(".style-tag").forEach(t => t.classList.remove("selected"));
             tag.classList.add("selected");
         });
