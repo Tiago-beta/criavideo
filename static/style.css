@@ -1527,6 +1527,16 @@ a {
     color: var(--accent);
 }
 
+.card-btn-download {
+    color: var(--accent);
+    border-color: rgba(246, 210, 124, 0.3);
+}
+
+.card-btn-download:hover {
+    background: rgba(246, 210, 124, 0.18);
+    color: var(--accent);
+}
+
 .card-btn-publish {
     color: var(--tech-neon);
     border-color: rgba(0, 212, 255, 0.35);
