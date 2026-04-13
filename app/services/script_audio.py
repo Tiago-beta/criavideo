@@ -161,6 +161,66 @@ async def _analyze_images_for_script(
     return ""
 
 
+async def expand_narration_for_duration(
+    narration_text: str,
+    duration_seconds: int,
+) -> str:
+    """Expand a short narration text using AI so it fills the target video duration.
+
+    If the narration already has enough words for the duration, returns it unchanged.
+    Uses ~2.5 words/second as the speech rate estimate.
+    """
+    word_count = len(narration_text.split())
+    target_words = int(duration_seconds * 2.5)
+
+    # If narration already has enough words (within 30%), keep it as is
+    if word_count >= target_words * 0.7:
+        return narration_text
+
+    try:
+        resp = await _openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Voce e um roteirista de videos curtos. O usuario forneceu um texto de narracao "
+                        "muito curto para a duracao do video. Sua tarefa e EXPANDIR o texto para que preencha "
+                        f"aproximadamente {duration_seconds} segundos de narracao (~{target_words} palavras). "
+                        "REGRAS:\n"
+                        "- Mantenha a essencia e o tom do texto original\n"
+                        "- Desenvolva a ideia, adicionando contexto, detalhes ou continuacao natural\n"
+                        "- O texto deve fluir como uma narracao falada natural\n"
+                        "- NAO adicione instrucoes, marcacoes ou metadados\n"
+                        "- Retorne SOMENTE o texto expandido, sem aspas ou explicacoes\n"
+                        "- Escreva no mesmo idioma do texto original"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Texto original: \"{narration_text}\"\n"
+                        f"Duracao alvo: {duration_seconds} segundos (~{target_words} palavras)\n"
+                        f"Expanda este texto para preencher a duracao do video."
+                    ),
+                },
+            ],
+            max_tokens=500,
+            temperature=0.7,
+        )
+        expanded = resp.choices[0].message.content.strip()
+        if expanded and len(expanded.split()) > word_count:
+            logger.info(
+                "Narration expanded from %d to %d words for %ds video",
+                word_count, len(expanded.split()), duration_seconds,
+            )
+            return expanded
+    except Exception as e:
+        logger.warning("Failed to expand narration text: %s", e)
+
+    return narration_text
+
+
 async def generate_script(
     topic: str,
     tone: str = "informativo",

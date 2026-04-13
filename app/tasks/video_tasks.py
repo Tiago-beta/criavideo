@@ -804,22 +804,31 @@ async def _combine_realistic_audio(
     output_path: str,
     video_duration: float,
 ):
-    """Combine narration and/or background music with a silent video using FFmpeg."""
+    """Combine narration and/or background music with a silent video using FFmpeg.
+    Narration is padded with silence to match video_duration so it never cuts the video short.
+    """
     import subprocess
 
     inputs = ["-i", video_path]
     filter_parts = []
     audio_index = 1
 
-    if narration_path and os.path.exists(narration_path):
+    has_narr = narration_path and os.path.exists(narration_path)
+    has_music = music_path and os.path.exists(music_path)
+
+    if has_narr:
         inputs.extend(["-i", narration_path])
-        filter_parts.append(f"[{audio_index}:a]aresample=44100,volume=1.0[narr]")
+        # Pad narration with silence to match the full video duration
+        filter_parts.append(
+            f"[{audio_index}:a]aresample=44100,volume=1.0,"
+            f"apad=whole_dur={video_duration}[narr]"
+        )
         audio_index += 1
 
-    if music_path and os.path.exists(music_path):
+    if has_music:
         inputs.extend(["-stream_loop", "-1", "-i", music_path])
         # Music volume: lower if narration is present
-        music_vol = "0.15" if narration_path and os.path.exists(narration_path) else "0.5"
+        music_vol = "0.15" if has_narr else "0.5"
         fade_start = max(0, video_duration - 3)
         filter_parts.append(
             f"[{audio_index}:a]aresample=44100,volume={music_vol},"
@@ -831,11 +840,8 @@ async def _combine_realistic_audio(
         return  # Nothing to combine
 
     # Build the amix filter
-    has_narr = narration_path and os.path.exists(narration_path)
-    has_music = music_path and os.path.exists(music_path)
-
     if has_narr and has_music:
-        filter_complex = ";".join(filter_parts) + ";[narr][music]amix=inputs=2:duration=first:normalize=0[aout]"
+        filter_complex = ";".join(filter_parts) + ";[narr][music]amix=inputs=2:duration=longest:normalize=0[aout]"
     elif has_narr:
         filter_complex = filter_parts[0].replace("[narr]", "[aout]")
     else:
@@ -850,7 +856,6 @@ async def _combine_realistic_audio(
         "-c:v", "copy",
         "-c:a", "aac", "-b:a", "192k",
         "-t", str(video_duration),
-        "-shortest",
         output_path,
     ]
 
@@ -921,7 +926,10 @@ async def run_realistic_video_pipeline(project_id: int):
             output_path = str(render_dir / "realistic_video.mp4")
 
             aspect_ratio = project.aspect_ratio or "16:9"
-            generate_audio = not getattr(project, "no_background_music", False)
+            # Disable Seedance built-in audio if we'll add narration/music separately
+            tags_check = project.tags if isinstance(project.tags, dict) else {}
+            will_add_custom_audio = tags_check.get("add_narration", False) or tags_check.get("add_music", False)
+            generate_audio = not getattr(project, "no_background_music", False) and not will_add_custom_audio
 
             async def _on_progress(pct, msg):
                 nonlocal project
@@ -985,7 +993,7 @@ async def run_realistic_video_pipeline(project_id: int):
             project.progress = 80
             await db.commit()
 
-            # ── Step 3: Generate audio (narration + music) for MiniMax ──
+            # ── Step 3: Generate audio (narration + music) ──
             tags = project.tags if isinstance(project.tags, dict) else {}
             add_music = tags.get("add_music", False)
             add_narration = tags.get("add_narration", False)
@@ -995,7 +1003,7 @@ async def run_realistic_video_pipeline(project_id: int):
             final_video_path = output_path
             has_audio = False
 
-            if engine == "minimax" and (add_narration or add_music):
+            if add_narration or add_music:
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
                 audio_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1006,6 +1014,18 @@ async def run_realistic_video_pipeline(project_id: int):
                 if add_narration and narration_text:
                     project.progress = 82
                     await db.commit()
+
+                    # Expand short narration text with AI to fill video duration
+                    try:
+                        from app.services.script_audio import expand_narration_for_duration
+                        narration_text = await expand_narration_for_duration(
+                            narration_text=narration_text,
+                            duration_seconds=duration,
+                        )
+                        logger.info(f"Narration text for TTS ({len(narration_text.split())} words): {narration_text[:100]}...")
+                    except Exception as e:
+                        logger.warning(f"Narration expansion failed, using original text: {e}")
+
                     logger.info(f"Generating narration for realistic video {project_id}: voice={narration_voice}")
                     try:
                         from app.services.script_audio import generate_tts_audio
