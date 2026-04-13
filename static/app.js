@@ -1569,8 +1569,12 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
 
     } catch (e) {
         _stopSmoothProgress();
-        setCreateProgress(0, "Erro", e.message || "Falha ao gerar video realista.");
-        alert(e.message || "Erro ao gerar video realista.");
+        let msg = e.message || "Erro ao gerar video realista.";
+        if (msg.includes("flagged as sensitive") || msg.includes("E005")) {
+            msg = "O conteudo do prompt foi considerado sensivel pelo modelo de IA. Tente reformular seu texto evitando temas violentos, sexuais ou controversos.";
+        }
+        setCreateProgress(0, "Erro", msg);
+        alert(msg);
     }
 }
 
