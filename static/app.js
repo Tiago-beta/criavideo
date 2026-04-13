@@ -1579,7 +1579,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         _smoothProgressTarget = 25;
         setCreateProgress(25, "Gerando video realista...", `${engineLabel} esta criando seu video...`);
 
-        await pollRealisticProgress(projectId);
+        await pollRealisticProgress(projectId, engineLabel);
 
         _stopSmoothProgress();
         setCreateProgress(100, "Concluido!", "Video realista gerado com sucesso!");
@@ -1601,10 +1601,11 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     }
 }
 
-async function pollRealisticProgress(projectId) {
+async function pollRealisticProgress(projectId, engineLabel) {
     const maxWait = 12 * 60 * 1000; // 12 minutes
     const pollInterval = 4000;
     const start = Date.now();
+    const label = engineLabel || "IA";
 
     while (Date.now() - start < maxWait) {
         await new Promise(r => setTimeout(r, pollInterval));
@@ -1622,7 +1623,7 @@ async function pollRealisticProgress(projectId) {
             _smoothProgressTarget = Math.max(_smoothProgressTarget, progress);
             setCreateProgress(progress, "Gerando video realista...",
                 progress < 15 ? "Otimizando prompt com IA..." :
-                progress < 80 ? "Seedance 2.0 esta criando seu video..." :
+                progress < 80 ? `${label} esta criando seu video...` :
                 progress < 90 ? "Baixando video gerado..." :
                 progress < 95 ? "Gerando thumbnail..." :
                 "Finalizando..."
