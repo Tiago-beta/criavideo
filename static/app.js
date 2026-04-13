@@ -1520,7 +1520,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
 
 // ── Shared Realistic Create Logic ──
 
-async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, audioCheckboxId) {
+async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, audioCheckboxId, title) {
     if (!prompt) {
         alert("Descreva a cena que voce quer ver no video.");
         return;
@@ -1536,11 +1536,23 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     // Show progress
     const progressEl = document.getElementById("create-progress");
     if (progressEl) progressEl.hidden = false;
-    setCreateProgress(CREATE_PROGRESS_BASE, "Gerando video realista...", "Otimizando prompt com IA...");
-    _smoothProgressTarget = 15;
+    setCreateProgress(CREATE_PROGRESS_BASE, "Gerando video realista...", "Preparando...");
+    _smoothProgressTarget = 10;
     _startSmoothProgress();
 
     try {
+        // Upload reference image if available
+        let imageUploadId = "";
+        if (scriptPhotos.length > 0) {
+            setCreateProgress(5, "Gerando video realista...", "Enviando imagem de referencia...");
+            const uploaded = await uploadTempFileWithRetry(scriptPhotos[0], "image", "imagem de referencia");
+            imageUploadId = uploaded.upload_id;
+            _smoothProgressTarget = 15;
+        }
+
+        setCreateProgress(10, "Gerando video realista...", "Otimizando prompt com IA...");
+        _smoothProgressTarget = 15;
+
         const resp = await api("/video/generate-realistic", {
             method: "POST",
             body: JSON.stringify({
@@ -1548,6 +1560,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 duration,
                 aspect_ratio: aspect,
                 generate_audio: generateAudio,
+                title: title || "",
+                image_upload_id: imageUploadId,
             }),
         });
 
@@ -1851,7 +1865,8 @@ async function handleWizardCreate() {
             wizardData.topic,
             "wizard-realistic-duration",
             "wizard-realistic-aspect",
-            "wizard-realistic-audio"
+            "wizard-realistic-audio",
+            wizardData.topic
         );
         return;
     }
@@ -2053,11 +2068,13 @@ async function handleScriptCreate() {
     if (scriptData.videoType === "realista") {
         const scriptText = document.getElementById("script-text").value.trim();
         const prompt = scriptText || scriptData.title || "";
+        const realisticTitle = (document.getElementById("script-title").value || "").trim() || scriptData.title || "";
         await handleRealisticVideoCreate(
             prompt,
             "script-realistic-duration",
             "script-realistic-aspect",
-            "script-realistic-audio"
+            "script-realistic-audio",
+            realisticTitle
         );
         return;
     }

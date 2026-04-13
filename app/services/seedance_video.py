@@ -167,6 +167,7 @@ async def generate_realistic_video(
     seed: int | None = None,
     resolution: str = "720p",
     generate_audio: bool = True,
+    image_path: str | None = None,
     timeout_seconds: int = 600,
     on_progress=None,
 ) -> str:
@@ -195,6 +196,16 @@ async def generate_realistic_video(
     }
     if seed is not None:
         input_data["seed"] = seed
+
+    # Image-to-video: encode image as data URI for Replicate
+    if image_path and os.path.exists(image_path):
+        import base64
+        import mimetypes
+        mime_type = mimetypes.guess_type(image_path)[0] or "image/jpeg"
+        with open(image_path, "rb") as img_f:
+            img_data = base64.b64encode(img_f.read()).decode("utf-8")
+        input_data["image"] = f"data:{mime_type};base64,{img_data}"
+        logger.info(f"Seedance image-to-video mode: {image_path} ({mime_type})")
 
     payload = {
         "version": SEEDANCE_MODEL_VERSION,
