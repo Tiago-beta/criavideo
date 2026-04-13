@@ -2453,6 +2453,14 @@ function toggleScriptPhotoDependentFields() {
 }
 
 function toggleScriptNarration() {
+    // In realistic mode, narration controls don't apply
+    if (scriptData.videoType === "realista") {
+        const textarea = document.getElementById("script-text");
+        const aiBtn = document.getElementById("btn-ai-suggest-script");
+        if (textarea) { textarea.disabled = false; textarea.placeholder = "Cole ou escreva seu prompt aqui..."; }
+        if (aiBtn) aiBtn.disabled = false;
+        return;
+    }
     const usePhotos = document.getElementById("script-use-photos").checked;
     const createNarration = document.getElementById("script-create-narration").checked;
     const textarea = document.getElementById("script-text");
@@ -2472,6 +2480,12 @@ function updateNarrationChoiceVisibility() {
     const usePhotos = document.getElementById("script-use-photos").checked;
     const narChoice = document.getElementById("script-narration-choice");
     const narCb = document.getElementById("script-create-narration");
+    // In realistic mode, never show narration choice
+    if (scriptData.videoType === "realista") {
+        if (narChoice) narChoice.hidden = true;
+        toggleScriptNarration();
+        return;
+    }
     const wasHidden = narChoice ? narChoice.hidden : true;
     const shouldShow = usePhotos && scriptPhotos.length > 0;
     if (narChoice) narChoice.hidden = !shouldShow;
