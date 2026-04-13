@@ -157,7 +157,7 @@ async def generate_realistic_video(
     }
 
     # Step 1: Create prediction
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
             "https://api.replicate.com/v1/models/bytedance/seedance-2.0/predictions",
             headers=headers,
@@ -179,7 +179,7 @@ async def generate_realistic_video(
 
     start_time = time.time()
     last_progress = 20
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=60) as client:
         while (time.time() - start_time) < timeout_seconds:
             resp = await client.get(poll_url, headers=poll_headers)
             resp.raise_for_status()
