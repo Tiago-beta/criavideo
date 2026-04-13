@@ -807,7 +807,7 @@ async def run_realistic_video_pipeline(project_id: int):
             if not project:
                 return
 
-            from app.services.seedance_video import optimize_prompt_for_seedance, generate_realistic_video
+            from app.services.seedance_video import optimize_prompt_for_seedance, generate_realistic_video, sanitize_prompt_for_retry
             from app.services.video_composer import _get_duration as get_duration
 
             # ── Step 1: Optimize prompt via GPT ──
@@ -831,7 +831,7 @@ async def run_realistic_video_pipeline(project_id: int):
             project.progress = 10
             await db.commit()
 
-            # ── Step 2: Generate video via Seedance 2.0 ──
+            # ── Step 2: Generate video via Seedance 2.0 (with auto-retry on content filter) ──
             project.status = VideoStatus.RENDERING
             project.progress = 15
             await db.commit()
@@ -851,14 +851,31 @@ async def run_realistic_video_pipeline(project_id: int):
                 except Exception:
                     pass
 
-            await generate_realistic_video(
-                prompt=optimized_prompt,
-                duration=duration,
-                aspect_ratio=aspect_ratio,
-                output_path=output_path,
-                generate_audio=generate_audio,
-                on_progress=_on_progress,
-            )
+            final_prompt = optimized_prompt
+            max_retries = 2
+            for attempt in range(max_retries + 1):
+                try:
+                    await generate_realistic_video(
+                        prompt=final_prompt,
+                        duration=duration,
+                        aspect_ratio=aspect_ratio,
+                        output_path=output_path,
+                        generate_audio=generate_audio,
+                        on_progress=_on_progress,
+                    )
+                    break  # Success
+                except RuntimeError as e:
+                    error_msg = str(e)
+                    if ("flagged as sensitive" in error_msg or "E005" in error_msg) and attempt < max_retries:
+                        logger.warning(f"Seedance content filter triggered (attempt {attempt+1}/{max_retries+1}), sanitizing prompt...")
+                        project.progress = 10
+                        await db.commit()
+                        final_prompt = await sanitize_prompt_for_retry(final_prompt)
+                        logger.info(f"Retrying with sanitized prompt: {final_prompt[:200]}...")
+                        project.progress = 15
+                        await db.commit()
+                    else:
+                        raise
 
             await db.rollback()
             project = await db.get(VideoProject, project_id)

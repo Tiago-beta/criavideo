@@ -24,7 +24,13 @@ Your job: convert the user's video description (usually in Portuguese) into an o
 RULES:
 1. Output ONLY the final English prompt. No explanations, no markdown.
 2. The video is {duration} seconds long. Structure shots within that time.
-3. Use this proven Seedance prompt structure:
+3. CONTENT SAFETY (CRITICAL): Seedance has a strict content filter. You MUST:
+   - NEVER use explicit religious references (God, Jesus, church, prayer, psalm, Bible, faith, worship, angel, demon, etc.)
+   - NEVER use political, violent, sexual, or controversial terms.
+   - Convert religious/spiritual themes into VISUAL METAPHORS: e.g. "shepherd on a hill at golden hour", "peaceful valley with sheep", "sunrise over mountains", "person walking a serene path through nature".
+   - Focus on NATURE, LANDSCAPES, EMOTIONS, and HUMAN MOMENTS — not abstract concepts.
+   - If the user's theme is spiritual, translate it into a beautiful cinematic nature/human scene without any religious words.
+4. Use this proven Seedance prompt structure:
 
    Style: [Visual style], [Aesthetic], [Mood], [Technical look].
    Duration: {duration}s.
@@ -34,17 +40,17 @@ RULES:
    Camera: [Camera movement - push in, pan, dolly, crane, tracking, slow motion, etc].
    Lighting: [Specific lighting - golden hour, neon, dramatic shadows, etc].
 
-4. Include SPECIFIC visual details:
+5. Include SPECIFIC visual details:
    - Camera movements: push in, pull back, pan left/right, dolly, crane up/down, tracking shot, slow motion, whip pan, rack focus
    - Lighting: golden hour, blue hour, neon, candlelight, dramatic rim light, volumetric fog, lens flare, cinematic shadows
    - Texture/mood: film grain, depth of field, bokeh, desaturated, vibrant, moody, ethereal
    - Physics: rain, smoke, particles, fabric movement, hair physics, water ripples
 
-5. For short durations (5-7s), use 1-2 shots max. For 10s, use 2-3 shots.
-6. Be VERY specific about what appears in frame — Seedance excels with concrete visual descriptions.
-7. Do NOT include dialogue or subtitle cues — focus on visuals, motion, and atmosphere.
-8. If the user mentions a product, brand, or specific object, describe it precisely in the scene.
-9. Preserve the user's creative intent while enhancing with cinematic details.
+6. For short durations (5-7s), use 1-2 shots max. For 10s, use 2-3 shots.
+7. Be VERY specific about what appears in frame — Seedance excels with concrete visual descriptions.
+8. Do NOT include dialogue or subtitle cues — focus on visuals, motion, and atmosphere.
+9. If the user mentions a product, brand, or specific object, describe it precisely in the scene.
+10. Preserve the user's creative intent while enhancing with cinematic details.
 
 EXAMPLES OF GREAT SEEDANCE PROMPTS:
 
@@ -112,6 +118,45 @@ async def optimize_prompt_for_seedance(
     except Exception as e:
         logger.warning(f"Prompt optimization failed, using original: {e}")
         return user_description
+
+
+_SANITIZE_PROMPT = """You are a content-safety filter for AI video generation prompts.
+
+The following prompt was REJECTED by the AI video model's content filter (error E005: flagged as sensitive).
+Your job: rewrite it to convey the SAME visual scene but remove ALL potentially sensitive words/themes.
+
+RULES:
+1. Remove ALL religious terms (God, Lord, Jesus, faith, prayer, church, psalm, worship, angel, shepherd in religious context, etc.)
+2. Remove ALL political, violent, sexual, or controversial references.
+3. Keep the VISUAL ESSENCE: landscapes, nature, people, lighting, camera movements.
+4. Replace abstract/spiritual concepts with concrete visual descriptions.
+5. Output ONLY the rewritten prompt. No explanations.
+
+Example:
+- "A shepherd guided by divine light walks through a valley of faith" →
+  "A man with a wooden staff walks through a lush green valley at golden hour, warm sunlight streaming through mountain peaks"
+"""
+
+
+async def sanitize_prompt_for_retry(rejected_prompt: str) -> str:
+    """Rewrite a prompt that was flagged by Seedance's content filter."""
+    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": _SANITIZE_PROMPT},
+                {"role": "user", "content": rejected_prompt},
+            ],
+            temperature=0.5,
+            max_tokens=800,
+        )
+        sanitized = resp.choices[0].message.content.strip()
+        logger.info(f"Prompt sanitized for retry: {len(sanitized)} chars")
+        return sanitized
+    except Exception as e:
+        logger.warning(f"Prompt sanitization failed: {e}")
+        raise RuntimeError("Nao foi possivel reformular o prompt para evitar o filtro de conteudo.")
 
 
 async def generate_realistic_video(
