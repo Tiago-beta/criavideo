@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260412-18">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260412-19">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -646,7 +646,7 @@
                         </div>
 
                         <!-- Upload de video proprio -->
-                        <div class="photo-upload-section">
+                        <div class="photo-upload-section" id="script-video-upload-section">
                             <div class="photo-upload-header">
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="script-use-video" onchange="toggleVideoUpload()">
@@ -1042,13 +1042,13 @@
 
                 <!-- ═══ AI Suggestion Modal (inline) ═══ -->
                 <div id="ai-suggest-panel" class="ai-suggest-panel" hidden>
-                    <h3 class="wizard-question">Gerar roteiro com IA</h3>
-                    <p class="wizard-hint">Descreva o tema e a IA criara um roteiro completo</p>
+                    <h3 class="wizard-question" id="ai-suggest-title">Gerar roteiro com IA</h3>
+                    <p class="wizard-hint" id="ai-suggest-hint">Descreva o tema e a IA criara um roteiro completo</p>
                     <div class="form-group">
                         <label>Tema do video</label>
                         <input id="ai-suggest-topic" type="text" class="input" placeholder="Ex: beneficios da meditacao, como fazer pao caseiro...">
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" id="ai-suggest-tone-group">
                         <label>Tom da narracao</label>
                         <select id="ai-suggest-tone" class="input">
                             <option value="informativo">Informativo</option>
@@ -1059,7 +1059,21 @@
                             <option value="motivacional">Motivacional</option>
                         </select>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" id="ai-suggest-style-group" hidden>
+                        <label>Estilo do video</label>
+                        <select id="ai-suggest-style" class="input">
+                            <option value="cinematic">Cinematico</option>
+                            <option value="commercial">Comercial</option>
+                            <option value="meme">Meme Viral</option>
+                            <option value="ugc">UGC / Caseiro</option>
+                            <option value="anime">Anime</option>
+                            <option value="drama">Drama / Novela</option>
+                            <option value="vfx">Efeitos Visuais</option>
+                            <option value="product">Produto / Publicidade</option>
+                            <option value="nature">Natureza / Paisagem</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="ai-suggest-duration-group">
                         <label>Duracao aproximada</label>
                         <select id="ai-suggest-duration" class="input">
                             <option value="60" selected>~1 minuto</option>
@@ -1077,7 +1091,7 @@
                         <div></div>
                         <button class="btn btn-primary btn-sm" id="ai-suggest-generate" type="button">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                            Gerar Roteiro
+                            <span id="ai-suggest-generate-text">Gerar Roteiro</span>
                         </button>
                     </div>
                 </div>
@@ -1674,7 +1688,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260412-18"></script>
-    <script src="/video/static/pwa.js?v=20260412-18"></script>
+    <script src="/video/static/app.js?v=20260412-19"></script>
+    <script src="/video/static/pwa.js?v=20260412-19"></script>
 </body>
 </html>

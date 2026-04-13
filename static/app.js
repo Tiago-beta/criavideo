@@ -1767,6 +1767,8 @@ function resetCreateWizard() {
         const el = document.getElementById(id);
         if (el) el.checked = true;
     });
+    // Reset script step adaptations back to normal mode
+    adaptScriptStepForVideoType("imagens_ia");
     // Update UI for both wizards
     updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
     updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
@@ -1907,11 +1909,27 @@ function scriptNext() {
         const selectedCard = document.querySelector("#script-video-type-grid .video-type-card.selected");
         if (!selectedCard) { alert("Escolha o tipo de video."); return; }
         scriptData.videoType = selectedCard.dataset.type;
+        // Adapt next step UI for video type
+        adaptScriptStepForVideoType(scriptData.videoType);
     }
 
     if (currentDataStep === 1) {
         const title = document.getElementById("script-title").value.trim();
         const text = document.getElementById("script-text").value.trim();
+
+        // Realistic mode: only need prompt text, optionally photos/audio
+        if (scriptData.videoType === "realista") {
+            if (!title && !text) { alert("Escreva um titulo ou um prompt para o video."); return; }
+            scriptData.title = title || text.substring(0, 100);
+            scriptData.text = text;
+            const usePhotos = document.getElementById("script-use-photos").checked;
+            scriptData.useCustomImages = usePhotos && scriptPhotos.length > 0;
+            const useUserAudioToggle = document.getElementById("script-use-user-audio")?.checked;
+            const hasUserAudio = useUserAudioToggle && !!scriptUserAudioFile;
+            scriptData.useCustomAudio = hasUserAudio;
+            // Realistic flow: advance normally to step 7 (realistic settings)
+        } else {
+
         const usePhotos = document.getElementById("script-use-photos").checked;
         const useVideo = document.getElementById("script-use-video") ? document.getElementById("script-use-video").checked : false;
         const hasVideo = useVideo && !!scriptUserVideoFile;
@@ -1967,6 +1985,7 @@ function scriptNext() {
                 if (bgmInput) bgmInput.value = "";
             }
         }
+        } // end else (not realistic)
 
         // Narration skip (only for normal flow, not realistic)
         if (scriptData.videoType !== "realista") {
@@ -2565,7 +2584,40 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 });
 
+function adaptScriptStepForVideoType(videoType) {
+    const isRealistic = videoType === "realista";
+    const videoSection = document.getElementById("script-video-upload-section");
+    const textarea = document.getElementById("script-text");
+    if (videoSection) videoSection.hidden = isRealistic;
+    if (textarea) {
+        textarea.placeholder = isRealistic
+            ? "Cole ou escreva seu prompt aqui..."
+            : "Cole ou escreva o roteiro completo da narracao aqui...";
+    }
+    // Reset video toggle if switching to realistic
+    if (isRealistic) {
+        const videoCb = document.getElementById("script-use-video");
+        if (videoCb && videoCb.checked) {
+            videoCb.checked = false;
+            toggleVideoUpload();
+        }
+    }
+}
+
 function showAiSuggestPanel() {
+    const isRealistic = scriptData.videoType === "realista";
+    // Adapt AI suggest panel for mode
+    document.getElementById("ai-suggest-title").textContent = isRealistic ? "Gerar prompt com IA" : "Gerar roteiro com IA";
+    document.getElementById("ai-suggest-hint").textContent = isRealistic
+        ? "Descreva a cena e a IA Seedance criara um prompt cinematografico profissional"
+        : "Descreva o tema e a IA criara um roteiro completo";
+    document.getElementById("ai-suggest-topic").placeholder = isRealistic
+        ? "Ex: uma cachorra adotou um gatinho, produto girando..."
+        : "Ex: beneficios da meditacao, como fazer pao caseiro...";
+    document.getElementById("ai-suggest-tone-group").hidden = isRealistic;
+    document.getElementById("ai-suggest-style-group").hidden = !isRealistic;
+    document.getElementById("ai-suggest-duration-group").hidden = isRealistic;
+    document.getElementById("ai-suggest-generate-text").textContent = isRealistic ? "Gerar Prompt" : "Gerar Roteiro";
     document.getElementById("create-panel-script").hidden = true;
     document.getElementById("ai-suggest-panel").hidden = false;
 }
@@ -2578,7 +2630,32 @@ function hideAiSuggestPanel() {
 async function generateAiScript() {
     const topic = document.getElementById("ai-suggest-topic").value.trim();
     if (!topic) { alert("Digite o tema do video."); return; }
+    const isRealistic = scriptData.videoType === "realista";
 
+    if (isRealistic) {
+        // Generate optimized Seedance prompt
+        const style = document.getElementById("ai-suggest-style").value;
+        showCreateProgress("Gerando prompt cinematografico com IA...", {
+            progress: 30,
+            stage: "Otimizando prompt Seedance...",
+        });
+        try {
+            const result = await api("/video/generate-realistic-prompt", {
+                method: "POST",
+                body: JSON.stringify({ topic, style }),
+            });
+            hideCreateProgress();
+            document.getElementById("script-text").value = result.prompt;
+            document.getElementById("script-char-count").textContent = result.prompt.length.toLocaleString("pt-BR");
+            hideAiSuggestPanel();
+        } catch (error) {
+            hideCreateProgress();
+            alert(`Erro ao gerar prompt: ${error.message}`);
+        }
+        return;
+    }
+
+    // Normal script generation
     const usePhotos = document.getElementById("script-use-photos")?.checked && scriptPhotos.length > 0;
     showCreateProgress(usePhotos ? "Preparando analise das fotos..." : "Gerando roteiro com IA...", {
         progress: 12,

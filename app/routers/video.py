@@ -1449,6 +1449,32 @@ async def generate_audio_endpoint(
 # ── Realistic Video (Seedance 2.0) ──────────────────────────────
 
 
+class GenerateRealisticPromptRequest(BaseModel):
+    topic: str
+    style: str = "cinematic"
+
+
+@router.post("/generate-realistic-prompt")
+async def generate_realistic_prompt_endpoint(
+    req: GenerateRealisticPromptRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Generate an optimized Seedance 2.0 prompt from a simple topic/theme."""
+    topic = (req.topic or "").strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="Descreva o tema do video.")
+    if len(topic) > 2000:
+        raise HTTPException(status_code=400, detail="Tema muito longo (maximo 2000 caracteres).")
+
+    from app.services.seedance_video import optimize_prompt_for_seedance
+    optimized = await optimize_prompt_for_seedance(
+        user_description=topic,
+        duration=7,
+        tone=req.style,
+    )
+    return {"prompt": optimized}
+
+
 class GenerateRealisticRequest(BaseModel):
     prompt: str
     duration: int = 7
