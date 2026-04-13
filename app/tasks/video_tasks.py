@@ -797,6 +797,73 @@ async def run_video_format_copy_pipeline(project_id: int, source_video_path: str
                 await db.commit()
 
 
+async def _combine_realistic_audio(
+    video_path: str,
+    narration_path: str,
+    music_path: str,
+    output_path: str,
+    video_duration: float,
+):
+    """Combine narration and/or background music with a silent video using FFmpeg."""
+    import subprocess
+
+    inputs = ["-i", video_path]
+    filter_parts = []
+    audio_index = 1
+
+    if narration_path and os.path.exists(narration_path):
+        inputs.extend(["-i", narration_path])
+        filter_parts.append(f"[{audio_index}:a]aresample=44100,volume=1.0[narr]")
+        audio_index += 1
+
+    if music_path and os.path.exists(music_path):
+        inputs.extend(["-stream_loop", "-1", "-i", music_path])
+        # Music volume: lower if narration is present
+        music_vol = "0.15" if narration_path and os.path.exists(narration_path) else "0.5"
+        fade_start = max(0, video_duration - 3)
+        filter_parts.append(
+            f"[{audio_index}:a]aresample=44100,volume={music_vol},"
+            f"afade=t=out:st={fade_start}:d=3[music]"
+        )
+        audio_index += 1
+
+    if not filter_parts:
+        return  # Nothing to combine
+
+    # Build the amix filter
+    has_narr = narration_path and os.path.exists(narration_path)
+    has_music = music_path and os.path.exists(music_path)
+
+    if has_narr and has_music:
+        filter_complex = ";".join(filter_parts) + ";[narr][music]amix=inputs=2:duration=first:normalize=0[aout]"
+    elif has_narr:
+        filter_complex = filter_parts[0].replace("[narr]", "[aout]")
+    else:
+        filter_complex = filter_parts[0].replace("[music]", "[aout]")
+
+    cmd = [
+        "ffmpeg", "-y",
+        *inputs,
+        "-filter_complex", filter_complex,
+        "-map", "0:v",
+        "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "192k",
+        "-t", str(video_duration),
+        "-shortest",
+        output_path,
+    ]
+
+    logger.info(f"Combining audio with video: {' '.join(cmd[:10])}...")
+    proc = await asyncio.get_event_loop().run_in_executor(
+        None,
+        lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=120),
+    )
+    if proc.returncode != 0:
+        logger.error(f"FFmpeg combine failed: {proc.stderr[:500]}")
+        raise RuntimeError(f"FFmpeg audio merge failed: {proc.stderr[:200]}")
+
+
 async def run_realistic_video_pipeline(project_id: int):
     """Pipeline for realistic video generation via Seedance 2.0 or MiniMax Hailuo.
     Much simpler than the standard pipeline: optimize prompt → generate → thumbnail → done.
@@ -915,10 +982,103 @@ async def run_realistic_video_pipeline(project_id: int):
             if video_duration <= 0:
                 video_duration = float(duration)
 
-            project.progress = 85
+            project.progress = 80
             await db.commit()
 
-            # ── Step 3: Generate thumbnail from video frame ──
+            # ── Step 3: Generate audio (narration + music) for MiniMax ──
+            tags = project.tags if isinstance(project.tags, dict) else {}
+            add_music = tags.get("add_music", False)
+            add_narration = tags.get("add_narration", False)
+            narration_voice = tags.get("narration_voice", "onyx")
+            narration_text = (project.description or "").strip() if add_narration else ""
+
+            final_video_path = output_path
+            has_audio = False
+
+            if engine == "minimax" and (add_narration or add_music):
+                audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
+                audio_dir.mkdir(parents=True, exist_ok=True)
+
+                narration_path = ""
+                music_path = ""
+
+                # Generate narration via TTS
+                if add_narration and narration_text:
+                    project.progress = 82
+                    await db.commit()
+                    logger.info(f"Generating narration for realistic video {project_id}: voice={narration_voice}")
+                    try:
+                        from app.services.script_audio import generate_tts_audio
+                        narration_path = await generate_tts_audio(
+                            text=narration_text,
+                            voice=narration_voice,
+                            project_id=project_id,
+                            voice_type="builtin",
+                            pause_level="normal",
+                            tone="informativo",
+                        )
+                        logger.info(f"Narration generated: {narration_path}")
+                    except Exception as e:
+                        logger.warning(f"Narration generation failed: {e}")
+                        narration_path = ""
+
+                # Generate background music via Tevoxi
+                if add_music:
+                    project.progress = 85
+                    await db.commit()
+                    logger.info(f"Generating background music for realistic video {project_id}")
+                    try:
+                        from app.services.tevoxi_music import generate_music_from_theme
+                        music_theme = user_prompt[:200]
+                        music_result = await generate_music_from_theme(
+                            theme=music_theme,
+                            project_id=project_id,
+                            duration=max(int(video_duration) + 5, 30),
+                            manual_settings={
+                                "music_mode": "instrumental",
+                                "music_duration": max(int(video_duration) + 5, 30),
+                            },
+                        )
+                        music_path = music_result.get("audio_path", "")
+                        logger.info(f"Background music generated: {music_path}")
+                    except Exception as e:
+                        logger.warning(f"Music generation failed, trying FFmpeg fallback: {e}")
+                        try:
+                            from app.services.script_audio import generate_background_music
+                            music_path = str(audio_dir / "bgm_fallback.mp3")
+                            generate_background_music(music_path, video_duration + 2)
+                        except Exception as e2:
+                            logger.warning(f"FFmpeg music fallback also failed: {e2}")
+                            music_path = ""
+
+                # Combine audio tracks with video using FFmpeg
+                project.progress = 88
+                await db.commit()
+
+                if narration_path or music_path:
+                    combined_path = str(render_dir / "realistic_video_final.mp4")
+                    try:
+                        await _combine_realistic_audio(
+                            video_path=output_path,
+                            narration_path=narration_path,
+                            music_path=music_path,
+                            output_path=combined_path,
+                            video_duration=video_duration,
+                        )
+                        if os.path.exists(combined_path) and os.path.getsize(combined_path) > 0:
+                            final_video_path = combined_path
+                            file_size = os.path.getsize(combined_path)
+                            has_audio = True
+                            logger.info(f"Audio combined into video: {combined_path}")
+                        else:
+                            logger.warning("Combined video is empty, using original")
+                    except Exception as e:
+                        logger.warning(f"Audio combination failed, using video without audio: {e}")
+
+            project.progress = 90
+            await db.commit()
+
+            # ── Step 4: Generate thumbnail from video frame ──
             thumb_dir = Path(settings.media_dir) / "thumbnails" / str(project_id)
             thumb_dir.mkdir(parents=True, exist_ok=True)
             thumb_path = str(thumb_dir / "thumbnail.jpg")
@@ -926,7 +1086,7 @@ async def run_realistic_video_pipeline(project_id: int):
             from app.services.thumbnail_generator import generate_thumbnail_from_frame
             try:
                 generate_thumbnail_from_frame(
-                    video_path=output_path,
+                    video_path=final_video_path,
                     title=project.title or "Video Realista",
                     artist=engine_label,
                     output_path=thumb_path,
@@ -935,14 +1095,14 @@ async def run_realistic_video_pipeline(project_id: int):
                 logger.warning(f"Realistic video thumbnail failed: {e}")
                 thumb_path = ""
 
-            project.progress = 90
+            project.progress = 95
             await db.commit()
 
-            # ── Step 4: Save render to DB ──
+            # ── Step 5: Save render to DB ──
             render = VideoRender(
                 project_id=project_id,
                 format=aspect_ratio,
-                file_path=output_path,
+                file_path=final_video_path,
                 file_size=file_size,
                 thumbnail_path=thumb_path,
                 duration=video_duration,

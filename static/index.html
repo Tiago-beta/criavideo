@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260413-04">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260413-05">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -582,9 +582,32 @@
 
                         <div class="form-group realistic-audio-toggle">
                             <label class="toggle-label">
-                                <input type="checkbox" id="wizard-realistic-audio" checked>
-                                <span>Gerar audio sincronizado (efeitos sonoros e musica ambiente)</span>
+                                <input type="checkbox" id="wizard-realistic-music" checked>
+                                <span>Adicionar musica de fundo</span>
                             </label>
+                        </div>
+
+                        <div class="form-group realistic-audio-toggle">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="wizard-realistic-narration">
+                                <span>Adicionar narracao</span>
+                            </label>
+                        </div>
+
+                        <div id="wizard-realistic-narration-options" class="realistic-narration-options" hidden>
+                            <div class="form-group">
+                                <label>Texto da narracao</label>
+                                <textarea id="wizard-realistic-narration-text" class="input" rows="3" placeholder="Ex: Uma cachorra adotou um gatinho abandonado e o amamentou como seu proprio filhote..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Voz</label>
+                                <div class="realistic-voice-grid" id="wizard-realistic-voices">
+                                    <button class="voice-btn selected" data-value="onyx" data-voice-type="builtin" type="button">Lucas <small>Masc. Grave</small></button>
+                                    <button class="voice-btn" data-value="echo" data-voice-type="builtin" type="button">Rafael <small>Masc. Suave</small></button>
+                                    <button class="voice-btn" data-value="nova" data-voice-type="builtin" type="button">Clara <small>Fem. Clara</small></button>
+                                    <button class="voice-btn" data-value="shimmer" data-voice-type="builtin" type="button">Sofia <small>Fem. Suave</small></button>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="realistic-inspiration">
@@ -974,9 +997,32 @@
 
                         <div class="form-group realistic-audio-toggle">
                             <label class="toggle-label">
-                                <input type="checkbox" id="script-realistic-audio" checked>
-                                <span>Gerar audio sincronizado (efeitos sonoros e musica ambiente)</span>
+                                <input type="checkbox" id="script-realistic-music" checked>
+                                <span>Adicionar musica de fundo</span>
                             </label>
+                        </div>
+
+                        <div class="form-group realistic-audio-toggle">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="script-realistic-narration">
+                                <span>Adicionar narracao</span>
+                            </label>
+                        </div>
+
+                        <div id="script-realistic-narration-options" class="realistic-narration-options" hidden>
+                            <div class="form-group">
+                                <label>Texto da narracao</label>
+                                <textarea id="script-realistic-narration-text" class="input" rows="3" placeholder="Ex: Uma cachorra adotou um gatinho abandonado e o amamentou como seu proprio filhote..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Voz</label>
+                                <div class="realistic-voice-grid" id="script-realistic-voices">
+                                    <button class="voice-btn selected" data-value="onyx" data-voice-type="builtin" type="button">Lucas <small>Masc. Grave</small></button>
+                                    <button class="voice-btn" data-value="echo" data-voice-type="builtin" type="button">Rafael <small>Masc. Suave</small></button>
+                                    <button class="voice-btn" data-value="nova" data-voice-type="builtin" type="button">Clara <small>Fem. Clara</small></button>
+                                    <button class="voice-btn" data-value="shimmer" data-voice-type="builtin" type="button">Sofia <small>Fem. Suave</small></button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -1716,7 +1762,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260413-04"></script>
-    <script src="/video/static/pwa.js?v=20260413-04"></script>
+    <script src="/video/static/app.js?v=20260413-05"></script>
+    <script src="/video/static/pwa.js?v=20260413-05"></script>
 </body>
 </html>

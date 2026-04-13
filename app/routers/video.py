@@ -1480,6 +1480,10 @@ class GenerateRealisticRequest(BaseModel):
     duration: int = 7
     aspect_ratio: str = "16:9"
     generate_audio: bool = True
+    add_music: bool = True
+    add_narration: bool = False
+    narration_text: str = ""
+    narration_voice: str = "onyx"
     title: str = ""
     image_upload_id: str = ""
     engine: str = "seedance"  # "seedance" or "minimax"
@@ -1524,12 +1528,23 @@ async def generate_realistic_endpoint(
 
     engine_label = "MiniMax Hailuo" if engine == "minimax" else "Seedance 2.0"
 
+    # Narration config stored in tags JSON
+    narration_text = (req.narration_text or "").strip() if req.add_narration else ""
+    narration_voice = req.narration_voice or "onyx"
+    tags_data = {
+        "type": "realista",
+        "engine": engine,
+        "add_music": req.add_music,
+        "add_narration": req.add_narration and bool(narration_text),
+        "narration_voice": narration_voice,
+    }
+
     project = VideoProject(
         user_id=user["id"],
         track_id=0,
         title=project_title,
-        description=f"Video realista gerado com {engine_label}",
-        tags=["realista", engine],
+        description=narration_text,
+        tags=tags_data,
         style_prompt=image_path_str,
         aspect_ratio=req.aspect_ratio,
         track_title=project_title,
@@ -1539,7 +1554,7 @@ async def generate_realistic_endpoint(
         lyrics_words=[],
         audio_path=engine,
         is_realistic=True,
-        no_background_music=not req.generate_audio,
+        no_background_music=not req.add_music,
         enable_subtitles=False,
     )
     db.add(project)

@@ -1475,6 +1475,20 @@ function initCreateWizard() {
             eng.closest(".engine-options").querySelectorAll(".engine-option").forEach((d) => d.classList.remove("selected"));
             eng.classList.add("selected");
         }
+        const vbtn = e.target.closest(".voice-btn");
+        if (vbtn) {
+            vbtn.closest(".realistic-voice-grid").querySelectorAll(".voice-btn").forEach((d) => d.classList.remove("selected"));
+            vbtn.classList.add("selected");
+        }
+    });
+
+    // Narration checkbox toggles
+    document.querySelectorAll("[id$='-realistic-narration']").forEach(cb => {
+        cb.addEventListener("change", () => {
+            const prefix = cb.id.replace("-realistic-narration", "");
+            const opts = document.getElementById(`${prefix}-realistic-narration-options`);
+            if (opts) opts.hidden = !cb.checked;
+        });
     });
 }
 
@@ -1525,7 +1539,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
 
 // ── Shared Realistic Create Logic ──
 
-async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, audioCheckboxId, title, engineSelectorId) {
+async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, musicCheckboxId, title, engineSelectorId, prefix) {
     if (!prompt) {
         alert("Descreva a cena que voce quer ver no video.");
         return;
@@ -1535,11 +1549,19 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const duration = durBtn ? parseInt(durBtn.dataset.value) : 7;
     const aspectEl = document.getElementById(aspectSelectorId);
     const aspect = aspectEl ? aspectEl.value : "16:9";
-    const audioEl = document.getElementById(audioCheckboxId);
-    const generateAudio = audioEl ? audioEl.checked : true;
+    const musicEl = document.getElementById(musicCheckboxId);
+    const addMusic = musicEl ? musicEl.checked : true;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
-    const engine = engineBtn ? engineBtn.dataset.value : "seedance";
+    const engine = engineBtn ? engineBtn.dataset.value : "minimax";
     const engineLabel = engine === "minimax" ? "MiniMax Hailuo" : "Seedance 2.0";
+
+    // Narration fields
+    const narrationEl = document.getElementById(`${prefix}-realistic-narration`);
+    const addNarration = narrationEl ? narrationEl.checked : false;
+    const narrationTextEl = document.getElementById(`${prefix}-realistic-narration-text`);
+    const narrationText = addNarration ? (narrationTextEl ? narrationTextEl.value.trim() : "") : "";
+    const voiceBtn = document.querySelector(`#${prefix}-realistic-voices .voice-btn.selected`);
+    const narrationVoice = voiceBtn ? voiceBtn.dataset.value : "onyx";
 
     // Show progress
     const progressEl = document.getElementById("create-progress");
@@ -1567,7 +1589,11 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 prompt,
                 duration,
                 aspect_ratio: aspect,
-                generate_audio: generateAudio,
+                generate_audio: addMusic || addNarration,
+                add_music: addMusic,
+                add_narration: addNarration,
+                narration_text: narrationText,
+                narration_voice: narrationVoice,
                 title: title || "",
                 image_upload_id: imageUploadId,
                 engine: engine,
@@ -1624,7 +1650,8 @@ async function pollRealisticProgress(projectId, engineLabel) {
             setCreateProgress(progress, "Gerando video realista...",
                 progress < 15 ? "Otimizando prompt com IA..." :
                 progress < 80 ? `${label} esta criando seu video...` :
-                progress < 90 ? "Baixando video gerado..." :
+                progress < 85 ? "Gerando audio e narracao..." :
+                progress < 90 ? "Combinando audio com video..." :
                 progress < 95 ? "Gerando thumbnail..." :
                 "Finalizando..."
             );
@@ -1875,9 +1902,10 @@ async function handleWizardCreate() {
             wizardData.topic,
             "wizard-realistic-duration",
             "wizard-realistic-aspect",
-            "wizard-realistic-audio",
+            "wizard-realistic-music",
             wizardData.topic,
-            "wizard-realistic-engine"
+            "wizard-realistic-engine",
+            "wizard"
         );
         return;
     }
@@ -2084,9 +2112,10 @@ async function handleScriptCreate() {
             prompt,
             "script-realistic-duration",
             "script-realistic-aspect",
-            "script-realistic-audio",
+            "script-realistic-music",
             realisticTitle,
-            "script-realistic-engine"
+            "script-realistic-engine",
+            "script"
         );
         return;
     }
