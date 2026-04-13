@@ -449,6 +449,7 @@ async def list_projects(
             "aspect_ratio": p.aspect_ratio,
             "error_message": p.error_message,
             "created_at": p.created_at.isoformat() if p.created_at else None,
+            "render_created_at": p.renders[0].created_at.isoformat() if p.renders and p.renders[0].created_at else None,
             "lyrics_text": p.lyrics_text or "",
             "style_prompt": p.style_prompt or "",
             "thumbnail_url": _to_media_url(p.renders[0].thumbnail_path) if p.renders else None,
