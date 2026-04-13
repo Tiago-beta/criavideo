@@ -116,6 +116,7 @@ async def generate_music_from_theme(
             "mood": manual_settings.get("music_mood", ""),
             "duration": manual_settings.get("music_duration") or min(max(duration, 30), 240),
         }
+        title_suggestion = theme
         custom_lyrics = manual_settings.get("music_lyrics", "")
         if music_mode == "lyrics" and custom_lyrics:
             payload["customLyrics"] = custom_lyrics
@@ -131,6 +132,7 @@ async def generate_music_from_theme(
             "mood": params["mood"],
             "duration": min(max(duration, 30), 240),
         }
+        title_suggestion = params.get("title_suggestion", theme)
 
     async with httpx.AsyncClient(timeout=30) as client:
         # 1. Start generation
@@ -159,7 +161,7 @@ async def generate_music_from_theme(
             status = status_data.get("status", "")
 
             if status == "completed":
-                title = status_data.get("title", params.get("title_suggestion", theme))
+                title = status_data.get("title", title_suggestion)
                 lyrics = status_data.get("lyrics", "")
                 music_duration = status_data.get("duration", duration)
 
