@@ -1470,6 +1470,11 @@ function initCreateWizard() {
             dur.closest(".duration-options").querySelectorAll(".duration-option").forEach((d) => d.classList.remove("selected"));
             dur.classList.add("selected");
         }
+        const eng = e.target.closest(".engine-option");
+        if (eng) {
+            eng.closest(".engine-options").querySelectorAll(".engine-option").forEach((d) => d.classList.remove("selected"));
+            eng.classList.add("selected");
+        }
     });
 }
 
@@ -1520,7 +1525,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
 
 // ── Shared Realistic Create Logic ──
 
-async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, audioCheckboxId, title) {
+async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, audioCheckboxId, title, engineSelectorId) {
     if (!prompt) {
         alert("Descreva a cena que voce quer ver no video.");
         return;
@@ -1532,6 +1537,9 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const aspect = aspectEl ? aspectEl.value : "16:9";
     const audioEl = document.getElementById(audioCheckboxId);
     const generateAudio = audioEl ? audioEl.checked : true;
+    const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
+    const engine = engineBtn ? engineBtn.dataset.value : "seedance";
+    const engineLabel = engine === "minimax" ? "MiniMax Hailuo" : "Seedance 2.0";
 
     // Show progress
     const progressEl = document.getElementById("create-progress");
@@ -1562,13 +1570,14 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 generate_audio: generateAudio,
                 title: title || "",
                 image_upload_id: imageUploadId,
+                engine: engine,
             }),
         });
 
         const projectId = resp.id;
 
         _smoothProgressTarget = 25;
-        setCreateProgress(25, "Gerando video realista...", "Seedance 2.0 esta criando seu video...");
+        setCreateProgress(25, "Gerando video realista...", `${engineLabel} esta criando seu video...`);
 
         await pollRealisticProgress(projectId);
 
@@ -1866,7 +1875,8 @@ async function handleWizardCreate() {
             "wizard-realistic-duration",
             "wizard-realistic-aspect",
             "wizard-realistic-audio",
-            wizardData.topic
+            wizardData.topic,
+            "wizard-realistic-engine"
         );
         return;
     }
@@ -2074,7 +2084,8 @@ async function handleScriptCreate() {
             "script-realistic-duration",
             "script-realistic-aspect",
             "script-realistic-audio",
-            realisticTitle
+            realisticTitle,
+            "script-realistic-engine"
         );
         return;
     }

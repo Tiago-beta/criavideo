@@ -1444,3 +1444,118 @@ async def generate_audio_endpoint(
         project.error_message = str(e)
         await db.commit()
         raise HTTPException(status_code=500, detail=f"Erro ao gerar audio: {e}")
+
+
+# ── Realistic Video (Seedance 2.0) ──────────────────────────────
+
+
+class GenerateRealisticPromptRequest(BaseModel):
+    topic: str
+    style: str = "cinematic"
+
+
+@router.post("/generate-realistic-prompt")
+async def generate_realistic_prompt_endpoint(
+    req: GenerateRealisticPromptRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Generate an optimized Seedance 2.0 prompt from a simple topic/theme."""
+    topic = (req.topic or "").strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="Descreva o tema do video.")
+    if len(topic) > 2000:
+        raise HTTPException(status_code=400, detail="Tema muito longo (maximo 2000 caracteres).")
+
+    from app.services.seedance_video import optimize_prompt_for_seedance
+    optimized = await optimize_prompt_for_seedance(
+        user_description=topic,
+        duration=7,
+        tone=req.style,
+    )
+    return {"prompt": optimized}
+
+
+class GenerateRealisticRequest(BaseModel):
+    prompt: str
+    duration: int = 7
+    aspect_ratio: str = "16:9"
+    generate_audio: bool = True
+    title: str = ""
+    image_upload_id: str = ""
+    engine: str = "seedance"  # "seedance" or "minimax"
+
+
+@router.post("/generate-realistic")
+async def generate_realistic_endpoint(
+    req: GenerateRealisticRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a realistic AI video using Seedance 2.0 or MiniMax Hailuo."""
+    prompt = (req.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Descreva a cena que voce quer ver no video.")
+    if len(prompt) > 5000:
+        raise HTTPException(status_code=400, detail="Descricao muito longa (maximo 5000 caracteres).")
+
+    duration = max(1, min(req.duration, 10))
+    engine = req.engine if req.engine in ("seedance", "minimax") else "seedance"
+
+    if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
+        raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1.")
+
+    # Resolve reference image if provided
+    image_path_str = ""
+    if req.image_upload_id:
+        resolved = _resolve_temp_file(user["id"], req.image_upload_id, IMAGE_EXTS)
+        if resolved:
+            image_path_str = str(resolved)
+
+    # Credit check
+    from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
+    credits_needed = CREDITS_PER_MINUTE  # 1 credit unit per realistic video
+    await deduct_credits(db, user["id"], credits_needed)
+
+    # Use custom title if provided
+    project_title = (req.title or "").strip()
+    if not project_title:
+        project_title = prompt[:100]
+
+    engine_label = "MiniMax Hailuo" if engine == "minimax" else "Seedance 2.0"
+
+    project = VideoProject(
+        user_id=user["id"],
+        track_id=0,
+        title=project_title,
+        description=f"Video realista gerado com {engine_label}",
+        tags=["realista", engine],
+        style_prompt=image_path_str,
+        aspect_ratio=req.aspect_ratio,
+        track_title=project_title,
+        track_artist=engine_label,
+        track_duration=float(duration),
+        lyrics_text=prompt,
+        lyrics_words=[],
+        audio_path=engine,
+        is_realistic=True,
+        no_background_music=not req.generate_audio,
+        enable_subtitles=False,
+    )
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+
+    project.status = VideoStatus.GENERATING_SCENES
+    project.progress = 0
+    await db.commit()
+
+    from app.tasks.video_tasks import run_realistic_video_pipeline
+    background_tasks.add_task(run_realistic_video_pipeline, project.id)
+
+    return {
+        "id": project.id,
+        "title": project.title,
+        "status": "generating_scenes",
+        "duration": duration,
+    }

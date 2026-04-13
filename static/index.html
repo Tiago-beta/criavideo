@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260413-02">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260413-03">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -549,6 +549,20 @@
                         </div>
 
                         <div class="form-group">
+                            <label>Motor de IA</label>
+                            <div class="engine-options" id="wizard-realistic-engine">
+                                <button class="engine-option selected" data-value="seedance" type="button">
+                                    <strong>Seedance 2.0</strong>
+                                    <small>ByteDance • Qualidade alta</small>
+                                </button>
+                                <button class="engine-option" data-value="minimax" type="button">
+                                    <strong>MiniMax Hailuo</strong>
+                                    <small>MiniMax • Mais rapido</small>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
                             <label>Duracao</label>
                             <div class="duration-options" id="wizard-realistic-duration">
                                 <button class="duration-option" data-value="5" type="button">5s</button>
@@ -924,6 +938,20 @@
                         <div class="realistic-info-banner">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                             <span>A IA vai otimizar seu roteiro em um prompt cinematografico profissional para gerar o melhor video possivel</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Motor de IA</label>
+                            <div class="engine-options" id="script-realistic-engine">
+                                <button class="engine-option selected" data-value="seedance" type="button">
+                                    <strong>Seedance 2.0</strong>
+                                    <small>ByteDance • Qualidade alta</small>
+                                </button>
+                                <button class="engine-option" data-value="minimax" type="button">
+                                    <strong>MiniMax Hailuo</strong>
+                                    <small>MiniMax • Mais rapido</small>
+                                </button>
+                            </div>
                         </div>
 
                         <div class="form-group">
@@ -1688,7 +1716,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260413-02"></script>
-    <script src="/video/static/pwa.js?v=20260413-02"></script>
+    <script src="/video/static/app.js?v=20260413-03"></script>
+    <script src="/video/static/pwa.js?v=20260413-03"></script>
 </body>
 </html>

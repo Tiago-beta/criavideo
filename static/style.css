@@ -2385,6 +2385,46 @@ th {
     color: var(--accent);
 }
 
+/* Engine options (Seedance vs MiniMax) */
+.engine-options {
+    display: flex;
+    gap: 10px;
+}
+
+.engine-option {
+    flex: 1;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.engine-option strong {
+    font-size: 0.9rem;
+}
+
+.engine-option small {
+    font-size: 0.72rem;
+    opacity: 0.6;
+}
+
+.engine-option:hover {
+    border-color: rgba(246, 165, 47, 0.4);
+}
+
+.engine-option.selected {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
 /* Pause options */
 .pause-options {
     display: flex;
