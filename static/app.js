@@ -1044,10 +1044,11 @@ function _updateCardInPlace(project) {
 // ═══ Creation Wizard State ═══
 let createMode = "wizard"; // "wizard" | "script" | "library"
 let wizardStep = 1;
-let wizardData = { topic: "", tone: "", voice: "", duration: 60, aspect: "16:9", style: "" };
+let wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", duration: 60, aspect: "16:9", style: "" };
 let scriptStep = 1;
 let scriptData = {
     text: "",
+    videoType: "imagens_ia",
     tone: "",
     voice: "",
     title: "",
@@ -1062,8 +1063,6 @@ let scriptData = {
     zoomImages: true,
     imageDisplaySeconds: 0,
 };
-let realisticStep = 1;
-let realisticData = { prompt: "", duration: 7, aspect: "16:9", generateAudio: true };
 const REALISTIC_INSPIRATIONS = {
     cinematic: "Uma cena cinematografica epica: um deserto vasto ao por do sol, com um convoy de veiculos cruzando entre dunas gigantes. Poeira dourada no ar, camera lenta dramatica, iluminacao de hora dourada com sombras longas.",
     commercial: "Um produto premium girando lentamente sobre uma superficie reflexiva escura. Iluminacao de estudio sofisticada com reflexos suaves. Particulas de luz flutuando ao redor. Visual limpo e elegante de comercial de luxo.",
@@ -1072,6 +1071,18 @@ const REALISTIC_INSPIRATIONS = {
     drama: "Uma mulher de sobretudo em uma cabine telefonica vermelha sob chuva forte a noite. Ela segura o telefone com expressao melancolica. Luzes de neon da cidade refletem na agua. Atmosfera nostalgica estilo cinema asiatico dos anos 90.",
     vfx: "Uma maozinha gigante descendo do ceu e abrindo um ziper no horizonte, revelando um universo estrelado brilhante por tras. A realidade se dobra como tecido. Efeito surrealista e hipnotico com escala monumental.",
 };
+// Step flow arrays for each video type
+const WIZARD_FLOW_NORMAL = [1, 2, 3, 4, 5, 6]; // topic, type, tone, voice, style, details
+const WIZARD_FLOW_REALISTIC = [1, 2, 7]; // topic, type, realistic settings
+const SCRIPT_FLOW_NORMAL = [1, 2, 3, 4, 5, 6]; // script, type, tone, voice, details, style
+const SCRIPT_FLOW_REALISTIC = [1, 2, 7]; // script, type, realistic settings
+
+function getWizardFlow() {
+    return wizardData.videoType === "realista" ? WIZARD_FLOW_REALISTIC : WIZARD_FLOW_NORMAL;
+}
+function getScriptFlow() {
+    return scriptData.videoType === "realista" ? SCRIPT_FLOW_REALISTIC : SCRIPT_FLOW_NORMAL;
+}
 const CREATE_PROGRESS_BASE = 8;
 let karaokeProgressTimer = null;
 let karaokeProgressOperationId = "";
@@ -1411,32 +1422,32 @@ function initCreateWizard() {
         });
     }
 
-    // Realistic video nav
-    const realisticNext = document.getElementById("realistic-next");
-    const realisticBack = document.getElementById("realistic-back");
-    const realisticCreateBtn = document.getElementById("realistic-create-btn");
-    if (realisticNext) realisticNext.addEventListener("click", realisticNextStep);
-    if (realisticBack) realisticBack.addEventListener("click", realisticBackStep);
-    if (realisticCreateBtn) realisticCreateBtn.addEventListener("click", handleRealisticCreate);
-
-    // Realistic prompt char count
-    const realisticPrompt = document.getElementById("realistic-prompt");
-    if (realisticPrompt) {
-        realisticPrompt.addEventListener("input", () => {
-            const el = document.getElementById("realistic-char-count");
-            if (el) el.textContent = realisticPrompt.value.length.toLocaleString("pt-BR");
+    // Video type card click handlers (event delegation)
+    document.querySelectorAll(".video-type-grid").forEach((grid) => {
+        grid.addEventListener("click", (e) => {
+            const card = e.target.closest(".video-type-card");
+            if (!card) return;
+            grid.querySelectorAll(".video-type-card").forEach((c) => c.classList.remove("selected"));
+            card.classList.add("selected");
         });
-    }
+    });
 
-    // Realistic inspiration buttons
+    // Realistic inspiration buttons (in wizard and script panels)
     document.querySelectorAll("[data-realistic-inspiration]").forEach((btn) => {
         btn.addEventListener("click", () => {
             const key = btn.dataset.realisticInspiration;
             const text = REALISTIC_INSPIRATIONS[key] || "";
-            const prompt = document.getElementById("realistic-prompt");
-            if (prompt && text) {
-                prompt.value = text;
-                prompt.dispatchEvent(new Event("input"));
+            if (!text) return;
+            // Determine which panel we're in
+            const panel = btn.closest(".create-panel");
+            if (!panel) return;
+            if (panel.id === "create-panel-wizard") {
+                // In wizard mode, append inspiration to topic
+                const topicEl = document.getElementById("wizard-topic");
+                if (topicEl) {
+                    const current = topicEl.value.trim();
+                    topicEl.value = current ? current + " — " + text : text;
+                }
             }
         });
     });
@@ -1478,65 +1489,49 @@ function switchCreateMode(mode) {
     }
 }
 
-// ── Realistic Video (Seedance 2.0) Navigation ──
+// ── Flow-based Wizard UI Update ──
 
-function updateRealisticUI() {
-    const panel = document.getElementById("create-panel-realistic");
+function updateFlowUI(panelId, stepIndex, flow, prefix) {
+    const panel = document.getElementById(panelId);
     if (!panel) return;
-    panel.querySelectorAll(".realistic-step").forEach(s => {
-        s.hidden = parseInt(s.dataset.rstep) !== realisticStep;
+    const currentDataStep = flow[stepIndex - 1];
+
+    // Show/hide steps
+    panel.querySelectorAll(".wizard-step").forEach((s) => {
+        s.hidden = parseInt(s.dataset.step) !== currentDataStep;
     });
-    panel.querySelectorAll(".wizard-dot").forEach((dot) => {
-        dot.classList.toggle("active", parseInt(dot.dataset.dot) <= realisticStep);
-    });
-    const backBtn = document.getElementById("realistic-back");
-    const nextBtn = document.getElementById("realistic-next");
-    const createBtn = document.getElementById("realistic-create-btn");
-    if (backBtn) backBtn.style.visibility = realisticStep <= 1 ? "hidden" : "visible";
-    if (nextBtn) nextBtn.hidden = realisticStep >= 2;
-    if (createBtn) createBtn.hidden = realisticStep < 2;
+
+    // Update dots dynamically
+    const dotsContainer = document.getElementById(`${prefix}-dots-container`);
+    if (dotsContainer) {
+        dotsContainer.innerHTML = flow.map((_, i) =>
+            `<span class="wizard-dot${i < stepIndex ? ' active' : ''}"></span>`
+        ).join('');
+    }
+
+    // Update buttons
+    const backBtn = document.getElementById(`${prefix}-back`);
+    const nextBtn = document.getElementById(`${prefix}-next`);
+    const createBtn = document.getElementById(`${prefix}-create-btn`);
+    if (backBtn) backBtn.hidden = stepIndex <= 1;
+    if (nextBtn) nextBtn.hidden = stepIndex >= flow.length;
+    if (createBtn) createBtn.hidden = stepIndex < flow.length;
 }
 
-function realisticNextStep() {
-    if (realisticStep === 1) {
-        const prompt = (document.getElementById("realistic-prompt").value || "").trim();
-        if (!prompt) {
-            alert("Descreva a cena que voce quer ver no video.");
-            return;
-        }
-        if (prompt.length < 10) {
-            alert("Descreva a cena com mais detalhes (minimo 10 caracteres).");
-            return;
-        }
-        realisticData.prompt = prompt;
-    }
-    if (realisticStep < 2) {
-        realisticStep++;
-        updateRealisticUI();
-    }
-}
+// ── Shared Realistic Create Logic ──
 
-function realisticBackStep() {
-    if (realisticStep > 1) {
-        realisticStep--;
-        updateRealisticUI();
-    }
-}
-
-async function handleRealisticCreate() {
-    const prompt = realisticData.prompt || (document.getElementById("realistic-prompt").value || "").trim();
+async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, audioCheckboxId) {
     if (!prompt) {
         alert("Descreva a cena que voce quer ver no video.");
-        realisticStep = 1;
-        updateRealisticUI();
         return;
     }
 
-    // Gather settings
-    const durBtn = document.querySelector("#realistic-duration-options .duration-option.selected");
+    const durBtn = document.querySelector(`#${durationSelectorId} .duration-option.selected`);
     const duration = durBtn ? parseInt(durBtn.dataset.value) : 7;
-    const aspect = document.getElementById("realistic-aspect").value || "16:9";
-    const generateAudio = document.getElementById("realistic-audio").checked;
+    const aspectEl = document.getElementById(aspectSelectorId);
+    const aspect = aspectEl ? aspectEl.value : "16:9";
+    const audioEl = document.getElementById(audioCheckboxId);
+    const generateAudio = audioEl ? audioEl.checked : true;
 
     // Show progress
     const progressEl = document.getElementById("create-progress");
@@ -1545,17 +1540,9 @@ async function handleRealisticCreate() {
     _smoothProgressTarget = 15;
     _startSmoothProgress();
 
-    // Disable create button
-    const createBtn = document.getElementById("realistic-create-btn");
-    if (createBtn) createBtn.disabled = true;
-
     try {
-        const resp = await fetch("/api/video/generate-realistic", {
+        const resp = await api("/video/generate-realistic", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
             body: JSON.stringify({
                 prompt,
                 duration,
@@ -1564,15 +1551,8 @@ async function handleRealisticCreate() {
             }),
         });
 
-        if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.detail || `Erro ${resp.status}`);
-        }
+        const projectId = resp.id;
 
-        const data = await resp.json();
-        const projectId = data.id;
-
-        // Poll for project completion
         _smoothProgressTarget = 25;
         setCreateProgress(25, "Gerando video realista...", "Seedance 2.0 esta criando seu video...");
 
@@ -1591,8 +1571,6 @@ async function handleRealisticCreate() {
         _stopSmoothProgress();
         setCreateProgress(0, "Erro", e.message || "Falha ao gerar video realista.");
         alert(e.message || "Erro ao gerar video realista.");
-    } finally {
-        if (createBtn) createBtn.disabled = false;
     }
 }
 
@@ -1605,8 +1583,8 @@ async function pollRealisticProgress(projectId) {
         await new Promise(r => setTimeout(r, pollInterval));
 
         try {
-            const resp = await fetch(`/api/video/projects/${projectId}`, {
-                headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+            const resp = await fetch(`${API}/video/projects/${projectId}`, {
+                headers: getHeaders(),
             });
             if (!resp.ok) continue;
             const data = await resp.json();
@@ -1638,10 +1616,11 @@ function resetCreateWizard() {
     stopKaraokeProgressPolling();
     createMode = "wizard";
     wizardStep = 1;
-    wizardData = { topic: "", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "" };
+    wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "" };
     scriptStep = 1;
     scriptData = {
         text: "",
+        videoType: "imagens_ia",
         tone: "",
         voice: "",
         voiceProfileId: 0,
@@ -1658,8 +1637,6 @@ function resetCreateWizard() {
         zoomImages: true,
         imageDisplaySeconds: 0,
     };
-    realisticStep = 1;
-    realisticData = { prompt: "", duration: 7, aspect: "16:9", generateAudio: true };
 
     // Reset tabs
     document.querySelectorAll(".create-tab").forEach((t) => {
@@ -1677,8 +1654,8 @@ function resetCreateWizard() {
     setCreateProgress(CREATE_PROGRESS_BASE, "Processando...", "Gerando roteiro com IA...");
 
     // Reset wizard steps
-    updateWizardUI("create-panel-wizard", wizardStep, 5, "wizard");
-    updateWizardUI("create-panel-script", scriptStep, 5, "script");
+    updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
+    updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
     document.getElementById("wizard-topic").value = "";
     document.getElementById("script-text").value = "";
     document.getElementById("script-char-count").textContent = "0";
@@ -1772,53 +1749,64 @@ function resetCreateWizard() {
     initStyleTags();
     // Initialize pause option buttons
     initPauseOptions();
-    // Reset realistic panel
-    const realisticPromptEl = document.getElementById("realistic-prompt");
-    if (realisticPromptEl) realisticPromptEl.value = "";
-    const realisticCharCount = document.getElementById("realistic-char-count");
-    if (realisticCharCount) realisticCharCount.textContent = "0";
-    const realisticAudioCb = document.getElementById("realistic-audio");
-    if (realisticAudioCb) realisticAudioCb.checked = true;
-    const realisticAspect = document.getElementById("realistic-aspect");
-    if (realisticAspect) realisticAspect.value = "16:9";
-    document.querySelectorAll("#realistic-duration-options .duration-option").forEach(d => {
-        d.classList.toggle("selected", d.dataset.value === "7");
+    // Reset video type cards
+    document.querySelectorAll(".video-type-card").forEach(c => {
+        c.classList.toggle("selected", c.dataset.type === "imagens_ia");
     });
-    updateRealisticUI();
-}
-
-function updateWizardUI(panelId, step, totalSteps, prefix) {
-    const panel = document.getElementById(panelId);
-    panel.querySelectorAll(".wizard-step").forEach((s) => {
-        s.hidden = parseInt(s.dataset.step) !== step;
+    // Reset realistic settings in both panels
+    ["wizard-realistic-duration", "script-realistic-duration"].forEach(id => {
+        document.querySelectorAll(`#${id} .duration-option`).forEach(d => {
+            d.classList.toggle("selected", d.dataset.value === "7");
+        });
     });
-    panel.querySelectorAll(".wizard-dot").forEach((dot, i) => {
-        dot.classList.toggle("active", i < step);
+    ["wizard-realistic-aspect", "script-realistic-aspect"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = "16:9";
     });
-    const backBtn = document.getElementById(`${prefix}-back`);
-    const nextBtn = document.getElementById(`${prefix}-next`);
-    const createBtn = document.getElementById(`${prefix}-create-btn`);
-    if (backBtn) backBtn.hidden = step <= 1;
-    if (nextBtn) nextBtn.hidden = step >= totalSteps;
-    if (createBtn) createBtn.hidden = step < totalSteps;
+    ["wizard-realistic-audio", "script-realistic-audio"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = true;
+    });
+    // Update UI for both wizards
+    updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
+    updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
 }
 
 // ── Wizard (Assistente) Navigation ──
 
 function wizardNext() {
-    if (wizardStep === 1) {
+    const flow = getWizardFlow();
+    const currentDataStep = flow[wizardStep - 1];
+
+    if (currentDataStep === 1) {
         const topic = document.getElementById("wizard-topic").value.trim();
         if (!topic) { alert("Digite o tema do video."); return; }
         wizardData.topic = topic;
     }
-    if (wizardStep === 2) {
-        const sel = document.querySelector("#create-panel-wizard .wizard-step[data-step='2'] .wizard-option.selected");
+    if (currentDataStep === 2) {
+        // Capture video type selection
+        const sel = document.querySelector("#wizard-video-type-grid .video-type-card.selected");
+        wizardData.videoType = sel ? sel.dataset.type : "imagens_ia";
+        if (wizardData.videoType === "imagens_proprias") {
+            // Switch to Meu Roteiro with topic pre-filled and photos enabled
+            switchCreateMode("script");
+            document.getElementById("script-title").value = wizardData.topic;
+            const photoCb = document.getElementById("script-use-photos");
+            if (photoCb && !photoCb.checked) {
+                photoCb.checked = true;
+                togglePhotoUpload();
+            }
+            return;
+        }
+    }
+    if (currentDataStep === 3) {
+        const sel = document.querySelector("#create-panel-wizard .wizard-step[data-step='3'] .wizard-option.selected");
         if (!sel) { alert("Escolha o tom da narracao."); return; }
         wizardData.tone = sel.dataset.value;
     }
-    if (wizardStep === 3) {
+    if (currentDataStep === 4) {
         const personaSel = document.querySelector("#wizard-persona-list .persona-item.selected");
-        const builtinSel = document.querySelector("#create-panel-wizard .wizard-step[data-step='3'] .wizard-option.selected");
+        const builtinSel = document.querySelector("#create-panel-wizard .wizard-step[data-step='4'] .wizard-option.selected");
         if (personaSel) {
             wizardData.voice = personaSel.dataset.value;
             wizardData.voiceProfileId = parseInt(personaSel.dataset.profileId || "0");
@@ -1829,17 +1817,32 @@ function wizardNext() {
             alert("Escolha a voz."); return;
         }
     }
-    wizardStep = Math.min(wizardStep + 1, 5);
-    updateWizardUI("create-panel-wizard", wizardStep, 5, "wizard");
+    wizardStep = Math.min(wizardStep + 1, flow.length);
+    updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
 }
 
 function wizardBack() {
     wizardStep = Math.max(wizardStep - 1, 1);
-    updateWizardUI("create-panel-wizard", wizardStep, 5, "wizard");
+    // When going back to video type step, reset to normal flow so dots update
+    if (getWizardFlow()[wizardStep - 1] === 2) {
+        wizardData.videoType = wizardData.videoType; // keep current type
+    }
+    updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
 }
 
 async function handleWizardCreate() {
-    // Collect step 4 (style) + step 5 (duration/format) data
+    // Check if this is a realistic video
+    if (wizardData.videoType === "realista") {
+        await handleRealisticVideoCreate(
+            wizardData.topic,
+            "wizard-realistic-duration",
+            "wizard-realistic-aspect",
+            "wizard-realistic-audio"
+        );
+        return;
+    }
+
+    // Collect step 5 (style) + step 6 (duration/format) data
     const durBtn = document.querySelector("#create-panel-wizard .duration-option.selected");
     wizardData.duration = durBtn ? parseInt(durBtn.dataset.value) : 60;
     wizardData.aspect = document.getElementById("wizard-aspect").value;
@@ -1888,7 +1891,10 @@ async function handleWizardCreate() {
 // ── Script (Meu Roteiro) Navigation ──
 
 function scriptNext() {
-    if (scriptStep === 1) {
+    const flow = getScriptFlow();
+    const currentDataStep = flow[scriptStep - 1];
+
+    if (currentDataStep === 1) {
         const title = document.getElementById("script-title").value.trim();
         const text = document.getElementById("script-text").value.trim();
         const usePhotos = document.getElementById("script-use-photos").checked;
@@ -1903,7 +1909,6 @@ function scriptNext() {
         if (!title) { alert("Digite o titulo do projeto."); return; }
 
         if (hasVideo) {
-            // Video mode: narration is optional
             scriptData.title = title;
             scriptData.useCustomVideo = true;
             scriptData.useCustomImages = false;
@@ -1916,14 +1921,7 @@ function scriptNext() {
                 alert("Escreva um roteiro com pelo menos 20 caracteres para a narracao.");
                 return;
             }
-            if (!videoCreateNarration) {
-                // No narration: skip to step 4
-                scriptStep = 4;
-                updateWizardUI("create-panel-script", scriptStep, 5, "script");
-                return;
-            }
         } else {
-            // Original photo/audio logic
             if (useUserAudioToggle && !hasUserAudio) {
                 alert("Envie um audio para usar no video.");
                 return;
@@ -1945,7 +1943,6 @@ function scriptNext() {
             scriptData.createNarration = hasUserAudio ? false : createNarration;
             scriptData.text = hasUserAudio ? text : (createNarration ? text : "");
 
-            // If karaoke is detected in step 1, keep background music off by default in step 4.
             const bgmToggle = document.getElementById("script-enable-bgm");
             const bgmUploadArea = document.getElementById("script-bgm-upload-area");
             const bgmInput = document.getElementById("script-bgm-file");
@@ -1954,55 +1951,90 @@ function scriptNext() {
                 if (bgmUploadArea) bgmUploadArea.hidden = true;
                 if (bgmInput) bgmInput.value = "";
             }
+        }
+        // Always advance to step 2 (video type) — skip logic handled there
+    }
 
-            if (!scriptData.createNarration || hasUserAudio) {
-                scriptStep = 4;
-                updateWizardUI("create-panel-script", scriptStep, 5, "script");
-                return;
-            }
+    if (currentDataStep === 2) {
+        const selectedCard = document.querySelector("#script-video-type-grid .video-type-card.selected");
+        if (!selectedCard) { alert("Escolha o tipo de video."); return; }
+        scriptData.videoType = selectedCard.dataset.type;
+
+        if (scriptData.videoType === "realista") {
+            scriptStep = 3;
+            updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+            return;
+        }
+
+        // Normal flow: if narration was skipped, jump to details (data-step 5, flow index 5)
+        const needsNarration = scriptData.createNarration && !scriptData.useCustomAudio;
+        if (!needsNarration) {
+            scriptStep = 5;
+            updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+            return;
         }
     }
-    if (scriptStep === 2) {
+
+    if (currentDataStep === 3) {
         if (!scriptData.text) {
             scriptData.tone = "informativo";
         } else {
-        const sel = document.querySelector("#create-panel-script .wizard-step[data-step='2'] .wizard-option.selected");
-        if (!sel) { alert("Escolha o tom da narracao."); return; }
-        scriptData.tone = sel.dataset.value;
+            const sel = document.querySelector("#create-panel-script .wizard-step[data-step='3'] .wizard-option.selected");
+            if (!sel) { alert("Escolha o tom da narracao."); return; }
+            scriptData.tone = sel.dataset.value;
         }
     }
-    if (scriptStep === 3) {
+
+    if (currentDataStep === 4) {
         if (!scriptData.text) {
             scriptData.voice = "onyx";
             scriptData.voiceProfileId = 0;
         } else {
-        const personaSel = document.querySelector("#script-persona-list .persona-item.selected");
-        const builtinSel = document.querySelector("#create-panel-script .wizard-step[data-step='3'] .wizard-option.selected");
-        if (personaSel) {
-            scriptData.voice = personaSel.dataset.value;
-            scriptData.voiceProfileId = parseInt(personaSel.dataset.profileId || "0");
-        } else if (builtinSel) {
-            scriptData.voice = builtinSel.dataset.value;
-            scriptData.voiceProfileId = 0;
-        } else {
-            alert("Escolha a voz."); return;
-        }
+            const personaSel = document.querySelector("#script-persona-list .persona-item.selected");
+            const builtinSel = document.querySelector("#create-panel-script .wizard-step[data-step='4'] .wizard-option.selected");
+            if (personaSel) {
+                scriptData.voice = personaSel.dataset.value;
+                scriptData.voiceProfileId = parseInt(personaSel.dataset.profileId || "0");
+            } else if (builtinSel) {
+                scriptData.voice = builtinSel.dataset.value;
+                scriptData.voiceProfileId = 0;
+            } else {
+                alert("Escolha a voz."); return;
+            }
         }
     }
-    scriptStep = Math.min(scriptStep + 1, 5);
-    updateWizardUI("create-panel-script", scriptStep, 5, "script");
+
+    scriptStep = Math.min(scriptStep + 1, flow.length);
+    updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
 }
 
 function scriptBack() {
-    if (scriptStep === 4 && (scriptData.useCustomImages || scriptData.useCustomAudio) && !scriptData.createNarration) {
-        scriptStep = 1;
+    const flow = getScriptFlow();
+    const currentDataStep = flow[scriptStep - 1];
+
+    // If at details step (data-step 5) and narration was skipped, go back to video type (index 2)
+    if (currentDataStep === 5 && !scriptData.createNarration) {
+        scriptStep = 2;
     } else {
         scriptStep = Math.max(scriptStep - 1, 1);
     }
-    updateWizardUI("create-panel-script", scriptStep, 5, "script");
+    updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
 }
 
 async function handleScriptCreate() {
+    // Check if this is a realistic video
+    if (scriptData.videoType === "realista") {
+        const scriptText = document.getElementById("script-text").value.trim();
+        const prompt = scriptText || scriptData.title || "";
+        await handleRealisticVideoCreate(
+            prompt,
+            "script-realistic-duration",
+            "script-realistic-aspect",
+            "script-realistic-audio"
+        );
+        return;
+    }
+
     scriptData.title = document.getElementById("script-title").value.trim();
     scriptData.text = document.getElementById("script-text").value.trim();
     scriptData.aspect = document.getElementById("script-aspect").value;

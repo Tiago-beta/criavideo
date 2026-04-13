@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260412-15">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260412-16">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -373,11 +373,6 @@
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
                         Biblioteca
                     </button>
-                    <button class="create-tab" data-create-mode="realistic" type="button">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                        Video Realista
-                        <span class="tab-badge-beta">BETA</span>
-                    </button>
                 </div>
 
                 <!-- ═══ PANEL: Assistente (Wizard) ═══ -->
@@ -391,8 +386,36 @@
                         </div>
                     </div>
 
-                    <!-- Step 2: Tone -->
+                    <!-- Step 2: Video Type (NEW) -->
                     <div class="wizard-step" data-step="2" hidden>
+                        <h3 class="wizard-question">Qual o tipo de video?</h3>
+                        <div class="video-type-grid" id="wizard-video-type-grid">
+                            <div class="video-type-card selected" data-type="imagens_ia" tabindex="0">
+                                <div class="video-type-icon">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                </div>
+                                <strong>Imagens IA</strong>
+                                <small>Imagens geradas por inteligencia artificial com narracao</small>
+                            </div>
+                            <div class="video-type-card" data-type="imagens_proprias" tabindex="0">
+                                <div class="video-type-icon">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                </div>
+                                <strong>Imagens Proprias</strong>
+                                <small>Envie suas fotos e a IA cria o video com narracao</small>
+                            </div>
+                            <div class="video-type-card" data-type="realista" tabindex="0">
+                                <div class="video-type-icon">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                                </div>
+                                <strong>Realista <span class="tab-badge-beta">BETA</span></strong>
+                                <small>Video realista ate 10s com IA Seedance 2.0</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Tone -->
+                    <div class="wizard-step" data-step="3" hidden>
                         <h3 class="wizard-question">Qual o tom da narracao?</h3>
                         <div class="wizard-grid">
                             <button class="wizard-option" data-value="informativo" type="button">Informativo</button>
@@ -404,8 +427,8 @@
                         </div>
                     </div>
 
-                    <!-- Step 3: Voice -->
-                    <div class="wizard-step" data-step="3" hidden>
+                    <!-- Step 4: Voice -->
+                    <div class="wizard-step" data-step="4" hidden>
                         <h3 class="wizard-question">Escolha a voz da narracao</h3>
                         <div id="wizard-voice-selector" class="voice-selector">
                             <!-- Minha Voz button -->
@@ -460,8 +483,8 @@
                         </div>
                     </div>
 
-                    <!-- Step 4: Estilo Visual -->
-                    <div class="wizard-step" data-step="4" hidden>
+                    <!-- Step 5: Estilo Visual -->
+                    <div class="wizard-step" data-step="5" hidden>
                         <h3 class="wizard-question style-step-title">Estilo visual</h3>
                         <div class="style-tags" id="wizard-style-tags">
                             <button class="style-tag selected" data-value="ia_escolhe" type="button">IA Escolhe</button>
@@ -481,8 +504,8 @@
                         </div>
                     </div>
 
-                    <!-- Step 5: Duration + Format -->
-                    <div class="wizard-step" data-step="5" hidden>
+                    <!-- Step 6: Duration + Format -->
+                    <div class="wizard-step" data-step="6" hidden>
                         <h3 class="wizard-question">Detalhes finais</h3>
                         <div class="wizard-details-grid">
                             <div class="form-group">
@@ -518,11 +541,57 @@
                         </div>
                     </div>
 
+                    <!-- Step 7: Realistic Settings (only for Realista type) -->
+                    <div class="wizard-step" data-step="7" hidden>
+                        <div class="realistic-info-banner">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                            <span>A IA vai otimizar seu tema em um prompt cinematografico profissional para gerar o melhor video possivel</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Duracao</label>
+                            <div class="duration-options" id="wizard-realistic-duration">
+                                <button class="duration-option" data-value="5" type="button">5s</button>
+                                <button class="duration-option selected" data-value="7" type="button">7s</button>
+                                <button class="duration-option" data-value="10" type="button">10s</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Formato</label>
+                            <select id="wizard-realistic-aspect" class="input">
+                                <option value="16:9">16:9 (YouTube / Paisagem)</option>
+                                <option value="9:16">9:16 (TikTok / Reels)</option>
+                                <option value="1:1">1:1 (Instagram)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group realistic-audio-toggle">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="wizard-realistic-audio" checked>
+                                <span>Gerar audio sincronizado (efeitos sonoros e musica ambiente)</span>
+                            </label>
+                        </div>
+
+                        <div class="realistic-inspiration">
+                            <span class="realistic-inspiration-label">Inspiracao de estilo:</span>
+                            <div class="realistic-inspiration-tags" id="wizard-realistic-inspirations">
+                                <button class="style-tag" type="button" data-realistic-inspiration="cinematic">Cinematico</button>
+                                <button class="style-tag" type="button" data-realistic-inspiration="commercial">Comercial</button>
+                                <button class="style-tag" type="button" data-realistic-inspiration="meme">Meme Viral</button>
+                                <button class="style-tag" type="button" data-realistic-inspiration="anime">Anime</button>
+                                <button class="style-tag" type="button" data-realistic-inspiration="drama">Drama</button>
+                                <button class="style-tag" type="button" data-realistic-inspiration="vfx">Efeitos Visuais</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Wizard Navigation -->
                     <div class="wizard-nav">
                         <button class="btn btn-secondary btn-sm wizard-back-btn" id="wizard-back" type="button" hidden>Voltar</button>
-                        <div class="wizard-dots">
+                        <div class="wizard-dots" id="wizard-dots-container">
                             <span class="wizard-dot active"></span>
+                            <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
@@ -661,8 +730,36 @@
                         </div>
                     </div>
 
-                    <!-- Step 2: Tone -->
+                    <!-- Step 2: Video Type (NEW) -->
                     <div class="wizard-step" data-step="2" hidden>
+                        <h3 class="wizard-question">Qual o tipo de video?</h3>
+                        <div class="video-type-grid" id="script-video-type-grid">
+                            <div class="video-type-card selected" data-type="imagens_ia" tabindex="0">
+                                <div class="video-type-icon">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                </div>
+                                <strong>Imagens IA</strong>
+                                <small>Imagens geradas por inteligencia artificial com narracao</small>
+                            </div>
+                            <div class="video-type-card" data-type="imagens_proprias" tabindex="0">
+                                <div class="video-type-icon">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                </div>
+                                <strong>Imagens Proprias</strong>
+                                <small>Envie suas fotos e a IA cria o video com narracao</small>
+                            </div>
+                            <div class="video-type-card" data-type="realista" tabindex="0">
+                                <div class="video-type-icon">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                                </div>
+                                <strong>Realista <span class="tab-badge-beta">BETA</span></strong>
+                                <small>Video realista ate 10s com IA Seedance 2.0</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Tone -->
+                    <div class="wizard-step" data-step="3" hidden>
                         <h3 class="wizard-question">Qual o tom da narracao?</h3>
                         <div class="wizard-grid">
                             <button class="wizard-option" data-value="informativo" type="button">Informativo</button>
@@ -674,8 +771,8 @@
                         </div>
                     </div>
 
-                    <!-- Step 3: Voice -->
-                    <div class="wizard-step" data-step="3" hidden>
+                    <!-- Step 4: Voice -->
+                    <div class="wizard-step" data-step="4" hidden>
                         <h3 class="wizard-question">Escolha a voz da narracao</h3>
                         <div id="script-voice-selector" class="voice-selector">
                             <!-- Minha Voz button -->
@@ -738,8 +835,8 @@
                         </div>
                     </div>
 
-                    <!-- Step 4: Format + Audio -->
-                    <div class="wizard-step" data-step="4" hidden>
+                    <!-- Step 5: Format + Audio -->
+                    <div class="wizard-step" data-step="5" hidden>
                         <h3 class="wizard-question">Outros Detalhes</h3>
                         <div class="wizard-details-grid">
                             <div class="form-group">
@@ -797,8 +894,8 @@
                         </div>
                     </div>
 
-                    <!-- Step 5: Style -->
-                    <div class="wizard-step" data-step="5" hidden>
+                    <!-- Step 6: Style -->
+                    <div class="wizard-step" data-step="6" hidden>
                         <h3 class="wizard-question style-step-title">Estilo visual</h3>
                         <div class="wizard-details-grid">
                             <div class="form-group">
@@ -822,11 +919,45 @@
                         </div>
                     </div>
 
+                    <!-- Step 7: Realistic Settings (only for Realista type) -->
+                    <div class="wizard-step" data-step="7" hidden>
+                        <div class="realistic-info-banner">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                            <span>A IA vai otimizar seu roteiro em um prompt cinematografico profissional para gerar o melhor video possivel</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Duracao</label>
+                            <div class="duration-options" id="script-realistic-duration">
+                                <button class="duration-option" data-value="5" type="button">5s</button>
+                                <button class="duration-option selected" data-value="7" type="button">7s</button>
+                                <button class="duration-option" data-value="10" type="button">10s</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Formato</label>
+                            <select id="script-realistic-aspect" class="input">
+                                <option value="16:9">16:9 (YouTube / Paisagem)</option>
+                                <option value="9:16">9:16 (TikTok / Reels)</option>
+                                <option value="1:1">1:1 (Instagram)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group realistic-audio-toggle">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="script-realistic-audio" checked>
+                                <span>Gerar audio sincronizado (efeitos sonoros e musica ambiente)</span>
+                            </label>
+                        </div>
+                    </div>
+
                     <!-- Script Wizard Navigation -->
                     <div class="wizard-nav">
                         <button class="btn btn-secondary btn-sm wizard-back-btn" id="script-back" type="button" hidden>Voltar</button>
-                        <div class="wizard-dots">
+                        <div class="wizard-dots" id="script-dots-container">
                             <span class="wizard-dot active"></span>
+                            <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
@@ -906,78 +1037,6 @@
                         <div></div>
                         <div></div>
                         <button class="btn btn-primary" onclick="createProjectFromLibrary()" type="button">Criar projeto</button>
-                    </div>
-                </div>
-
-                <!-- ═══ PANEL: Video Realista (Seedance 2.0) ═══ -->
-                <div id="create-panel-realistic" class="create-panel" hidden>
-                    <div class="realistic-info-banner">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                        <span>Gere videos realistas de ate 10 segundos com qualidade cinematografica usando IA Seedance 2.0</span>
-                    </div>
-
-                    <!-- Step 1: Scene Description -->
-                    <div class="realistic-step" data-rstep="1">
-                        <h3 class="wizard-question">Descreva a cena que voce quer ver</h3>
-                        <p class="wizard-hint">Descreva em portugues — a IA otimiza automaticamente o prompt para gerar o melhor resultado</p>
-                        <textarea id="realistic-prompt" class="input realistic-prompt-area" rows="5" maxlength="5000"
-                                  placeholder="Ex: Uma cabana aconchegante em uma floresta nevada a noite, com luz quente saindo das janelas e neve caindo suavemente..."></textarea>
-                        <div class="realistic-char-count"><span id="realistic-char-count">0</span> / 5.000</div>
-
-                        <div class="realistic-inspiration">
-                            <span class="realistic-inspiration-label">Inspiracao:</span>
-                            <div class="realistic-inspiration-tags">
-                                <button class="style-tag" type="button" data-realistic-inspiration="cinematic">Cinematico</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="commercial">Comercial</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="meme">Meme Viral</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="anime">Anime</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="drama">Drama</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="vfx">Efeitos Visuais</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Step 2: Settings -->
-                    <div class="realistic-step" data-rstep="2" hidden>
-                        <h3 class="wizard-question">Configuracoes do video</h3>
-
-                        <div class="form-group">
-                            <label>Duracao</label>
-                            <div class="duration-options" id="realistic-duration-options">
-                                <button class="duration-option" data-value="5" type="button">5s</button>
-                                <button class="duration-option selected" data-value="7" type="button">7s</button>
-                                <button class="duration-option" data-value="10" type="button">10s</button>
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label>Formato</label>
-                            <select id="realistic-aspect" class="input">
-                                <option value="16:9">16:9 (YouTube / Paisagem)</option>
-                                <option value="9:16">9:16 (TikTok / Reels)</option>
-                                <option value="1:1">1:1 (Instagram)</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group realistic-audio-toggle">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="realistic-audio" checked>
-                                <span>Gerar audio sincronizado (efeitos sonoros e musica ambiente)</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="wizard-nav" id="realistic-nav">
-                        <button class="btn btn-secondary" id="realistic-back" type="button" style="visibility:hidden">Voltar</button>
-                        <div class="wizard-dots">
-                            <span class="wizard-dot active" data-dot="1"></span>
-                            <span class="wizard-dot" data-dot="2"></span>
-                        </div>
-                        <button class="btn btn-primary" id="realistic-next" type="button">Proximo</button>
-                        <button class="btn btn-primary" id="realistic-create-btn" type="button" hidden>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                            Gerar Video Realista
-                        </button>
                     </div>
                 </div>
 
@@ -1615,7 +1674,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260412-15"></script>
-    <script src="/video/static/pwa.js?v=20260412-14"></script>
+    <script src="/video/static/app.js?v=20260412-16"></script>
+    <script src="/video/static/pwa.js?v=20260412-16"></script>
 </body>
 </html>
