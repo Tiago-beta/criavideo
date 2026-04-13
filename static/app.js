@@ -1072,10 +1072,10 @@ const REALISTIC_INSPIRATIONS = {
     vfx: "Uma maozinha gigante descendo do ceu e abrindo um ziper no horizonte, revelando um universo estrelado brilhante por tras. A realidade se dobra como tecido. Efeito surrealista e hipnotico com escala monumental.",
 };
 // Step flow arrays for each video type
-const WIZARD_FLOW_NORMAL = [1, 2, 3, 4, 5, 6]; // topic, type, tone, voice, style, details
-const WIZARD_FLOW_REALISTIC = [1, 2, 7]; // topic, type, realistic settings
-const SCRIPT_FLOW_NORMAL = [1, 2, 3, 4, 5, 6]; // script, type, tone, voice, details, style
-const SCRIPT_FLOW_REALISTIC = [1, 2, 7]; // script, type, realistic settings
+const WIZARD_FLOW_NORMAL = [2, 1, 3, 4, 5, 6]; // type, topic, tone, voice, style, details
+const WIZARD_FLOW_REALISTIC = [2, 1, 7]; // type, topic, realistic settings
+const SCRIPT_FLOW_NORMAL = [2, 1, 3, 4, 5, 6]; // type, script, tone, voice, details, style
+const SCRIPT_FLOW_REALISTIC = [2, 1, 7]; // type, script, realistic settings
 
 function getWizardFlow() {
     return wizardData.videoType === "realista" ? WIZARD_FLOW_REALISTIC : WIZARD_FLOW_NORMAL;
@@ -1778,19 +1778,22 @@ function wizardNext() {
     const flow = getWizardFlow();
     const currentDataStep = flow[wizardStep - 1];
 
-    if (currentDataStep === 1) {
-        const topic = document.getElementById("wizard-topic").value.trim();
-        if (!topic) { alert("Digite o tema do video."); return; }
-        wizardData.topic = topic;
-    }
     if (currentDataStep === 2) {
-        // Capture video type selection
+        // Capture video type selection (first step)
         const sel = document.querySelector("#wizard-video-type-grid .video-type-card.selected");
         wizardData.videoType = sel ? sel.dataset.type : "imagens_ia";
         if (wizardData.videoType === "imagens_proprias") {
-            // Switch to Meu Roteiro with topic pre-filled and photos enabled
+            // Switch to Meu Roteiro with photos enabled
             switchCreateMode("script");
-            document.getElementById("script-title").value = wizardData.topic;
+            // Auto-select imagens_ia in script and advance past video type
+            const iaCard = document.querySelector("#script-video-type-grid .video-type-card[data-type='imagens_ia']");
+            if (iaCard) {
+                document.querySelectorAll("#script-video-type-grid .video-type-card").forEach(c => c.classList.remove("selected"));
+                iaCard.classList.add("selected");
+            }
+            scriptData.videoType = "imagens_ia";
+            scriptStep = 2;
+            updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
             const photoCb = document.getElementById("script-use-photos");
             if (photoCb && !photoCb.checked) {
                 photoCb.checked = true;
@@ -1798,6 +1801,11 @@ function wizardNext() {
             }
             return;
         }
+    }
+    if (currentDataStep === 1) {
+        const topic = document.getElementById("wizard-topic").value.trim();
+        if (!topic) { alert("Digite o tema do video."); return; }
+        wizardData.topic = topic;
     }
     if (currentDataStep === 3) {
         const sel = document.querySelector("#create-panel-wizard .wizard-step[data-step='3'] .wizard-option.selected");
@@ -1894,6 +1902,13 @@ function scriptNext() {
     const flow = getScriptFlow();
     const currentDataStep = flow[scriptStep - 1];
 
+    if (currentDataStep === 2) {
+        // Capture video type selection (first step)
+        const selectedCard = document.querySelector("#script-video-type-grid .video-type-card.selected");
+        if (!selectedCard) { alert("Escolha o tipo de video."); return; }
+        scriptData.videoType = selectedCard.dataset.type;
+    }
+
     if (currentDataStep === 1) {
         const title = document.getElementById("script-title").value.trim();
         const text = document.getElementById("script-text").value.trim();
@@ -1952,26 +1967,15 @@ function scriptNext() {
                 if (bgmInput) bgmInput.value = "";
             }
         }
-        // Always advance to step 2 (video type) — skip logic handled there
-    }
 
-    if (currentDataStep === 2) {
-        const selectedCard = document.querySelector("#script-video-type-grid .video-type-card.selected");
-        if (!selectedCard) { alert("Escolha o tipo de video."); return; }
-        scriptData.videoType = selectedCard.dataset.type;
-
-        if (scriptData.videoType === "realista") {
-            scriptStep = 3;
-            updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
-            return;
-        }
-
-        // Normal flow: if narration was skipped, jump to details (data-step 5, flow index 5)
-        const needsNarration = scriptData.createNarration && !scriptData.useCustomAudio;
-        if (!needsNarration) {
-            scriptStep = 5;
-            updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
-            return;
+        // Narration skip (only for normal flow, not realistic)
+        if (scriptData.videoType !== "realista") {
+            const needsNarration = scriptData.createNarration && !scriptData.useCustomAudio;
+            if (!needsNarration) {
+                scriptStep = 5;
+                updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+                return;
+            }
         }
     }
 
@@ -2012,7 +2016,7 @@ function scriptBack() {
     const flow = getScriptFlow();
     const currentDataStep = flow[scriptStep - 1];
 
-    // If at details step (data-step 5) and narration was skipped, go back to video type (index 2)
+    // If at details step (data-step 5) and narration was skipped, go back to script step (position 2)
     if (currentDataStep === 5 && !scriptData.createNarration) {
         scriptStep = 2;
     } else {
