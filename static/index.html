@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260414-07">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260414-08">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -401,15 +401,8 @@
                     <!-- Step 2: Video Type (NEW) -->
                     <div class="wizard-step" data-step="2" hidden>
                         <h3 class="wizard-question">Qual o tipo de video?</h3>
-                            <div class="video-type-card" data-type="imagens_proprias" tabindex="0">
-                                <div class="video-type-icon">
-                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                </div>
-                                <strong>Imagens Proprias</strong>
-                                <small>Envie suas fotos e a IA cria o video com narracao</small>
-                                <span class="credit-badge credit-regular">Creditos: Regular</span>
-                            </div>
-                            <div class="video-type-card selected" data-type="imagens_ia" tabindex="0">
+                        <div class="video-type-grid" id="wizard-video-type-grid">
+                            <div class="video-type-card" data-type="imagens_ia" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                                 </div>
@@ -790,14 +783,6 @@
                     <div class="wizard-step" data-step="2" hidden>
                         <h3 class="wizard-question">Qual o tipo de video?</h3>
                         <div class="video-type-grid" id="script-video-type-grid">
-                            <div class="video-type-card selected" data-type="imagens_ia" tabindex="0">
-                                <div class="video-type-icon">
-                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                                </div>
-                                <strong>Imagens IA</strong>
-                                <small>Imagens geradas por inteligencia artificial com narracao</small>
-                                <span class="credit-badge credit-moderate">Creditos: Moderado</span>
-                            </div>
                             <div class="video-type-card" data-type="imagens_proprias" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -806,12 +791,20 @@
                                 <small>Envie suas fotos e a IA cria o video com narracao</small>
                                 <span class="credit-badge credit-regular">Creditos: Regular</span>
                             </div>
+                            <div class="video-type-card" data-type="imagens_ia" tabindex="0">
+                                <div class="video-type-icon">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                </div>
+                                <strong>Imagens IA</strong>
+                                <small>Imagens geradas por inteligencia artificial com narracao</small>
+                                <span class="credit-badge credit-moderate">Creditos: Moderado</span>
+                            </div>
                             <div class="video-type-card" data-type="realista" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
-                                <strong>Realista <span class="tab-badge-beta">BETA</span></strong>
-                                <small>Video realista ate 10s com IA Seedance 2.0</small>
+                                <strong>Realista</strong>
+                                <small>Video realista ate 10s com as melhores tecnologias</small>
                                 <span class="credit-badge credit-high">Creditos: Alto</span>
                             </div>
                         </div>
@@ -1803,7 +1796,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260414-07"></script>
+    <script src="/video/static/app.js?v=20260414-08"></script>
     <script src="/video/static/pwa.js?v=20260413-04"></script>
 </body>
 </html>

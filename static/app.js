@@ -1876,28 +1876,10 @@ function wizardNext() {
     const currentDataStep = flow[wizardStep - 1];
 
     if (currentDataStep === 2) {
-        // Capture video type selection (first step)
+        // Capture video type selection
         const sel = document.querySelector("#wizard-video-type-grid .video-type-card.selected");
-        wizardData.videoType = sel ? sel.dataset.type : "imagens_ia";
-        if (wizardData.videoType === "imagens_proprias") {
-            // Switch to Meu Roteiro with photos enabled
-            switchCreateMode("script");
-            // Auto-select imagens_ia in script and advance past video type
-            const iaCard = document.querySelector("#script-video-type-grid .video-type-card[data-type='imagens_ia']");
-            if (iaCard) {
-                document.querySelectorAll("#script-video-type-grid .video-type-card").forEach(c => c.classList.remove("selected"));
-                iaCard.classList.add("selected");
-            }
-            scriptData.videoType = "imagens_ia";
-            scriptStep = 2;
-            updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
-            const photoCb = document.getElementById("script-use-photos");
-            if (photoCb && !photoCb.checked) {
-                photoCb.checked = true;
-                togglePhotoUpload();
-            }
-            return;
-        }
+        if (!sel) { alert("Escolha o tipo de video."); return; }
+        wizardData.videoType = sel.dataset.type;
     }
     if (currentDataStep === 1) {
         const topic = document.getElementById("wizard-topic").value.trim();
