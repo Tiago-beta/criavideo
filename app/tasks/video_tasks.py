@@ -880,9 +880,10 @@ async def run_realistic_video_pipeline(project_id: int):
 
             # Determine engine from audio_path field (used to store engine choice)
             engine = (project.audio_path or "").strip()
-            if engine not in ("seedance", "minimax"):
+            if engine not in ("seedance", "minimax", "wan2"):
                 engine = "seedance"
-            engine_label = "MiniMax Hailuo" if engine == "minimax" else "Seedance 2.0"
+            engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.2", "seedance": "Seedance 2.0"}
+            engine_label = engine_labels.get(engine, "Seedance 2.0")
             logger.info(f"Realistic video pipeline for project {project_id} using engine: {engine}")
 
             # ── Step 1: Optimize prompt via GPT ──
@@ -943,6 +944,17 @@ async def run_realistic_video_pipeline(project_id: int):
                     image_path=image_path,
                     on_progress=_on_progress,
                 )
+            elif engine == "wan2":
+                # ── Wan 2.2 via RunPod ──
+                from app.services.runpod_video import generate_wan_video
+                await generate_wan_video(
+                    prompt=optimized_prompt,
+                    duration=duration,
+                    aspect_ratio=aspect_ratio,
+                    output_path=output_path,
+                    image_path=image_path,
+                    on_progress=_on_progress,
+                )
             else:
                 # ── Seedance 2.0 (with auto-retry on content filter) ──
                 final_prompt = optimized_prompt
@@ -996,7 +1008,7 @@ async def run_realistic_video_pipeline(project_id: int):
             final_video_path = output_path
             has_audio = False
 
-            if engine == "minimax" and (add_narration or add_music):
+            if engine in ("minimax", "wan2") and (add_narration or add_music):
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
                 audio_dir.mkdir(parents=True, exist_ok=True)
 

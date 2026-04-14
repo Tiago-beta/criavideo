@@ -1580,7 +1580,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const addMusic = musicEl ? musicEl.checked : true;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
     const engine = engineBtn ? engineBtn.dataset.value : "minimax";
-    const engineLabel = engine === "minimax" ? "MiniMax Hailuo" : "Seedance 2.0";
+    const engineLabel = engine === "minimax" ? "MiniMax Hailuo" : engine === "wan2" ? "Wan 2.2" : "Seedance 2.0";
 
     // Narration fields
     const narrationEl = document.getElementById(`${prefix}-realistic-narration`);

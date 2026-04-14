@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     fish_audio_api_key: str = ""
     replicate_api_token: str = ""
     minimax_api_key: str = ""
+    runpod_api_key: str = ""
     mp_access_token: str = ""
     host: str = "0.0.0.0"
     port: int = 8000

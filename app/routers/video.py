@@ -1500,7 +1500,7 @@ async def generate_realistic_endpoint(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate a realistic AI video using Seedance 2.0 or MiniMax Hailuo."""
+    """Generate a realistic AI video using Seedance 2.0, MiniMax Hailuo, or Wan 2.2."""
     prompt = (req.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Descreva a cena que voce quer ver no video.")
@@ -1508,7 +1508,7 @@ async def generate_realistic_endpoint(
         raise HTTPException(status_code=400, detail="Descricao muito longa (maximo 5000 caracteres).")
 
     duration = max(1, min(req.duration, 10))
-    engine = req.engine if req.engine in ("seedance", "minimax") else "seedance"
+    engine = req.engine if req.engine in ("seedance", "minimax", "wan2") else "seedance"
 
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
         raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1.")
@@ -1530,7 +1530,8 @@ async def generate_realistic_endpoint(
     if not project_title:
         project_title = prompt[:100]
 
-    engine_label = "MiniMax Hailuo" if engine == "minimax" else "Seedance 2.0"
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.2", "seedance": "Seedance 2.0"}
+    engine_label = engine_labels.get(engine, "Seedance 2.0")
 
     # Narration config stored in tags JSON
     narration_text = (req.narration_text or "").strip() if req.add_narration else ""
