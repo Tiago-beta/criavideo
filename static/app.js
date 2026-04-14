@@ -838,11 +838,13 @@ async function loadProjects() {
     try {
         const data = await api("/video/projects");
         _projectsCache = data;
-        if (!data.length) {
+        // Filter out expired videos — no need to show them
+        const visibleData = data.filter(p => !(p.status === "completed" && p.video_expired));
+        if (!visibleData.length) {
             container.innerHTML = "<p class='loading'>Nenhum projeto ainda. Crie o primeiro.</p>";
             return;
         }
-        container.innerHTML = data.map((project) => {
+        container.innerHTML = visibleData.map((project) => {
             const dateStr = _renderExpiryOrDate(project);
             const statusPt = _statusPt(project.status);
             const isExpired = project.video_expired || false;
