@@ -1439,15 +1439,30 @@ function initCreateWizard() {
             const key = btn.dataset.realisticInspiration;
             const text = REALISTIC_INSPIRATIONS[key] || "";
             if (!text) return;
+
+            // Toggle selected state within the same container
+            const container = btn.closest(".realistic-inspiration-tags");
+            if (container) {
+                container.querySelectorAll(".style-tag").forEach((t) => t.classList.remove("selected"));
+                btn.classList.add("selected");
+            }
+
             // Determine which panel we're in
             const panel = btn.closest(".create-panel");
             if (!panel) return;
             if (panel.id === "create-panel-wizard") {
-                // In wizard mode, append inspiration to topic
                 const topicEl = document.getElementById("wizard-topic");
                 if (topicEl) {
                     const current = topicEl.value.trim();
                     topicEl.value = current ? current + " — " + text : text;
+                }
+            } else if (panel.id === "create-panel-script") {
+                const scriptEl = document.getElementById("script-text");
+                if (scriptEl) {
+                    const current = scriptEl.value.trim();
+                    scriptEl.value = current ? current + "\n\n" + text : text;
+                    const countEl = document.getElementById("script-char-count");
+                    if (countEl) countEl.textContent = scriptEl.value.length.toLocaleString("pt-BR");
                 }
             }
         });
