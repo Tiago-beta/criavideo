@@ -987,9 +987,10 @@ function _pollInProgress(projects) {
                 clearInterval(_pollTimer);
                 _pollTimer = null;
                 loadProjects(); // Full refresh to get thumbnails
-                // Show expiry warning for newly completed videos
+                // Show expiry warning and auto-download newly completed videos
                 if (newlyCompleted.length) {
                     _showExpiryWarning();
+                    _autoDownloadCompleted(newlyCompleted);
                 }
             }
         } catch (_) {
@@ -1003,6 +1004,23 @@ function _showExpiryWarning() {
     const modal = document.getElementById("modal-expiry-warning");
     if (modal) {
         openModal("modal-expiry-warning");
+    }
+}
+
+async function _autoDownloadCompleted(projects) {
+    for (const p of projects) {
+        try {
+            const detail = await api(`/video/projects/${p.id}`);
+            const render = (detail.renders || []).find(r => r.video_url);
+            if (!render) continue;
+            const a = document.createElement("a");
+            a.href = render.video_url;
+            a.download = `${p.title || "video"}.mp4`;
+            a.style.display = "none";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } catch (_) {}
     }
 }
 
@@ -3025,21 +3043,6 @@ async function watchVideo(projectId) {
         download.href = render.video_url;
         download.download = `${project.title || "video"}.mp4`;
         openModal("modal-player");
-
-        // Auto-download only the first time this render is viewed
-        const dlKey = `dl_${render.id}`;
-        if (!sessionStorage.getItem(dlKey)) {
-            sessionStorage.setItem(dlKey, "1");
-            setTimeout(() => {
-                const a = document.createElement("a");
-                a.href = render.video_url;
-                a.download = `${project.title || "video"}.mp4`;
-                a.style.display = "none";
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-            }, 500);
-        }
     } catch (error) {
         alert(`Erro ao carregar video: ${error.message}`);
     }
