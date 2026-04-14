@@ -1450,6 +1450,15 @@ function initCreateWizard() {
             // Determine which panel we're in
             const panel = btn.closest(".create-panel");
             if (!panel) return;
+
+            // Hide engine/duration when Desenho is selected (uses standard image pipeline)
+            const isDesenho = key === "desenho";
+            const prefix = panel.id === "create-panel-wizard" ? "wizard" : "script";
+            const engineGroup = document.getElementById(`${prefix}-realistic-engine-group`);
+            const durationGroup = document.getElementById(`${prefix}-realistic-duration-group`);
+            if (engineGroup) engineGroup.hidden = isDesenho;
+            if (durationGroup) durationGroup.hidden = isDesenho;
+
             if (panel.id === "create-panel-wizard") {
                 const topicEl = document.getElementById("wizard-topic");
                 if (topicEl) {
