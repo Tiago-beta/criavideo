@@ -1592,9 +1592,13 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const voiceBtn = document.querySelector(`#${prefix}-realistic-voices .voice-btn.selected`);
     const narrationVoice = voiceBtn ? voiceBtn.dataset.value : "onyx";
 
-    // Show progress
+    // Show progress, hide create buttons
     const progressEl = document.getElementById("create-progress");
     if (progressEl) progressEl.hidden = false;
+    const wizCreateBtn = document.getElementById("wizard-create-btn");
+    const scrCreateBtn = document.getElementById("script-create-btn");
+    if (wizCreateBtn) wizCreateBtn.hidden = true;
+    if (scrCreateBtn) scrCreateBtn.hidden = true;
     setCreateProgress(CREATE_PROGRESS_BASE, "Gerando video realista...", "Preparando...");
     _smoothProgressTarget = 10;
     _startSmoothProgress();
