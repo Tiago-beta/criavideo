@@ -1070,6 +1070,7 @@ const REALISTIC_INSPIRATIONS = {
     anime: "Uma batalha epica estilo anime entre dois guerreiros em um campo de flores de cerejeira. Efeitos de particulas brilhantes, movimentos rapidos com rastros de luz. Explosao de energia com cores vibrantes. Estilo cel-shaded japones.",
     drama: "Uma mulher de sobretudo em uma cabine telefonica vermelha sob chuva forte a noite. Ela segura o telefone com expressao melancolica. Luzes de neon da cidade refletem na agua. Atmosfera nostalgica estilo cinema asiatico dos anos 90.",
     vfx: "Uma maozinha gigante descendo do ceu e abrindo um ziper no horizonte, revelando um universo estrelado brilhante por tras. A realidade se dobra como tecido. Efeito surrealista e hipnotico com escala monumental.",
+    desenho: "Uma ilustracao em preto e branco no estilo desenho a nanquim. Tracos finos e detalhados de caneta, sombreamento com hachura cruzada, fundo de papel branco. Uma cena emotiva e artistica como uma graphic novel feita a mao.",
 };
 // Step flow arrays for each video type
 const WIZARD_FLOW_NORMAL = [2, 1, 3, 4, 5, 6]; // type, topic, tone, voice, style, details
