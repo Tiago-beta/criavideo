@@ -398,7 +398,7 @@ async def run_video_pipeline(project_id: int):
                 "editorial": "editorial, fashion, high contrast, stylish composition, magazine quality",
                 "anime": "anime style, Japanese animation, vibrant cel-shaded, detailed illustration",
                 "aquarela": "watercolor painting, soft brushstrokes, artistic, pastel colors, dreamy",
-                "desenho": "black and white ink sketch, detailed pencil drawing, hand-drawn illustration, fine linework, crosshatching shading, white paper background, no color, pen and ink art, monochrome sketch",
+                "desenho": "colorful hand-drawn illustration, vibrant sketch art, detailed pencil and watercolor drawing, rich saturated colors, artistic brushstrokes, illustrated storybook style, cartoon illustration with vivid palette",
             }
 
             def _expand_style_prompt(raw: str) -> str:

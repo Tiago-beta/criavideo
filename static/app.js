@@ -1076,7 +1076,6 @@ const REALISTIC_INSPIRATIONS = {
     anime: "Uma batalha epica estilo anime entre dois guerreiros em um campo de flores de cerejeira. Efeitos de particulas brilhantes, movimentos rapidos com rastros de luz. Explosao de energia com cores vibrantes. Estilo cel-shaded japones.",
     drama: "Uma mulher de sobretudo em uma cabine telefonica vermelha sob chuva forte a noite. Ela segura o telefone com expressao melancolica. Luzes de neon da cidade refletem na agua. Atmosfera nostalgica estilo cinema asiatico dos anos 90.",
     vfx: "Uma maozinha gigante descendo do ceu e abrindo um ziper no horizonte, revelando um universo estrelado brilhante por tras. A realidade se dobra como tecido. Efeito surrealista e hipnotico com escala monumental.",
-    desenho: "Uma ilustracao em preto e branco no estilo desenho a nanquim. Tracos finos e detalhados de caneta, sombreamento com hachura cruzada, fundo de papel branco. Uma cena emotiva e artistica como uma graphic novel feita a mao.",
 };
 // Step flow arrays for each video type
 const WIZARD_FLOW_NORMAL = [2, 1, 3, 4, 5, 6]; // type, topic, tone, voice, style, details
@@ -1456,21 +1455,6 @@ function initCreateWizard() {
             // Determine which panel we're in
             const panel = btn.closest(".create-panel");
             if (!panel) return;
-
-            // Hide engine/duration when Desenho is selected (uses standard image pipeline)
-            const isDesenho = key === "desenho";
-            const prefix = panel.id === "create-panel-wizard" ? "wizard" : "script";
-            const engineGroup = document.getElementById(`${prefix}-realistic-engine-group`);
-            const durationGroup = document.getElementById(`${prefix}-realistic-duration-group`);
-            if (engineGroup) engineGroup.hidden = isDesenho;
-            if (durationGroup) durationGroup.hidden = isDesenho;
-
-            // Switch video type so Desenho uses standard pipeline
-            if (panel.id === "create-panel-wizard") {
-                wizardData.videoType = isDesenho ? "desenho" : "realista";
-            } else {
-                scriptData.videoType = isDesenho ? "desenho" : "realista";
-            }
 
             if (panel.id === "create-panel-wizard") {
                 const topicEl = document.getElementById("wizard-topic");
@@ -1955,58 +1939,6 @@ async function handleWizardCreate() {
         return;
     }
 
-    // Desenho style: uses standard pipeline with narration from realistic panel
-    if (wizardData.videoType === "desenho") {
-        const aspectEl = document.getElementById("wizard-realistic-aspect");
-        const aspect = aspectEl ? aspectEl.value : "16:9";
-        const narrationEl = document.getElementById("wizard-realistic-narration");
-        const addNarration = narrationEl ? narrationEl.checked : false;
-        const narrationTextEl = document.getElementById("wizard-realistic-narration-text");
-        const narrationText = addNarration ? (narrationTextEl ? narrationTextEl.value.trim() : "") : "";
-        const voiceBtn = document.querySelector("#wizard-realistic-voices .voice-btn.selected");
-        const voice = voiceBtn ? voiceBtn.dataset.value : "onyx";
-
-        showCreateProgress("Gerando roteiro com IA...");
-        try {
-            // Use narration text as script, or generate from topic
-            let script = narrationText;
-            if (!script) {
-                const scriptResult = await api("/video/generate-script", {
-                    method: "POST",
-                    body: JSON.stringify({
-                        topic: wizardData.topic,
-                        tone: wizardData.tone || "",
-                        duration_seconds: 60,
-                    }),
-                });
-                script = scriptResult.script;
-            }
-
-            showCreateProgress("Gerando narracao com voz IA...");
-            const result = await api("/video/generate-audio", {
-                method: "POST",
-                body: JSON.stringify({
-                    script: script,
-                    voice: voice,
-                    voice_profile_id: 0,
-                    title: wizardData.topic,
-                    aspect_ratio: aspect,
-                    style_prompt: "desenho",
-                    pause_level: "",
-                    tone: wizardData.tone || "",
-                }),
-            });
-
-            closeModal("modal-new-project");
-            pollProject(result.id);
-            loadProjects();
-        } catch (error) {
-            hideCreateProgress();
-            alert(`Erro: ${error.message}`);
-        }
-        return;
-    }
-
     // Collect step 5 (style) + step 6 (duration/format) data
     const durBtn = document.querySelector("#create-panel-wizard .duration-option.selected");
     wizardData.duration = durBtn ? parseInt(durBtn.dataset.value) : 60;
@@ -2213,60 +2145,6 @@ async function handleScriptCreate() {
             realisticTitle,
             "script-realistic-engine"
         );
-        return;
-    }
-
-    // Desenho style: uses standard pipeline with narration from realistic panel
-    if (scriptData.videoType === "desenho") {
-        const aspectEl = document.getElementById("script-realistic-aspect");
-        const aspect = aspectEl ? aspectEl.value : "16:9";
-        const narrationEl = document.getElementById("script-realistic-narration");
-        const addNarration = narrationEl ? narrationEl.checked : false;
-        const narrationTextEl = document.getElementById("script-realistic-narration-text");
-        const narrationText = addNarration ? (narrationTextEl ? narrationTextEl.value.trim() : "") : "";
-        const voiceBtn = document.querySelector("#script-realistic-voices .voice-btn.selected");
-        const voice = voiceBtn ? voiceBtn.dataset.value : "onyx";
-        const scriptText = document.getElementById("script-text").value.trim();
-        const titleText = (document.getElementById("script-title").value || "").trim() || scriptData.title || "";
-        const topic = scriptText || titleText;
-
-        showCreateProgress("Gerando roteiro com IA...");
-        try {
-            let script = narrationText || scriptText;
-            if (!script) {
-                const scriptResult = await api("/video/generate-script", {
-                    method: "POST",
-                    body: JSON.stringify({
-                        topic: topic,
-                        tone: scriptData.tone || "",
-                        duration_seconds: 60,
-                    }),
-                });
-                script = scriptResult.script;
-            }
-
-            showCreateProgress("Gerando narracao com voz IA...");
-            const result = await api("/video/generate-audio", {
-                method: "POST",
-                body: JSON.stringify({
-                    script: script,
-                    voice: voice,
-                    voice_profile_id: 0,
-                    title: titleText || topic,
-                    aspect_ratio: aspect,
-                    style_prompt: "desenho",
-                    pause_level: "",
-                    tone: scriptData.tone || "",
-                }),
-            });
-
-            closeModal("modal-new-project");
-            pollProject(result.id);
-            loadProjects();
-        } catch (error) {
-            hideCreateProgress();
-            alert(`Erro: ${error.message}`);
-        }
         return;
     }
 
