@@ -3026,16 +3026,20 @@ async function watchVideo(projectId) {
         download.download = `${project.title || "video"}.mp4`;
         openModal("modal-player");
 
-        // Auto-download the video
-        setTimeout(() => {
-            const a = document.createElement("a");
-            a.href = render.video_url;
-            a.download = `${project.title || "video"}.mp4`;
-            a.style.display = "none";
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-        }, 500);
+        // Auto-download only the first time this render is viewed
+        const dlKey = `dl_${render.id}`;
+        if (!sessionStorage.getItem(dlKey)) {
+            sessionStorage.setItem(dlKey, "1");
+            setTimeout(() => {
+                const a = document.createElement("a");
+                a.href = render.video_url;
+                a.download = `${project.title || "video"}.mp4`;
+                a.style.display = "none";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }, 500);
+        }
     } catch (error) {
         alert(`Erro ao carregar video: ${error.message}`);
     }
