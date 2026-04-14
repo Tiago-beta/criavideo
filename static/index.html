@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260413-05">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260414-06">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -359,24 +359,36 @@
             </div>
             <div class="modal-body">
 
-                <!-- Tab selector -->
-                <div class="create-tabs-row">
-                    <button class="create-tab active" data-create-mode="wizard" type="button">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                        Assistente
-                    </button>
-                    <button class="create-tab" data-create-mode="script" type="button">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                        Meu Roteiro
-                    </button>
-                    <button class="create-tab" data-create-mode="library" type="button" style="display:none">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                        Biblioteca
-                    </button>
+                <!-- Mode Selection (Step 0) -->
+                <div id="create-mode-selection" class="create-mode-selection">
+                    <h3 class="wizard-question">Como voce quer criar seu video?</h3>
+                    <div class="mode-selection-grid">
+                        <div class="mode-selection-card" data-create-mode="wizard" tabindex="0">
+                            <div class="mode-selection-icon">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                            </div>
+                            <strong>Assistente</strong>
+                            <small>A IA cria o roteiro, imagens e narracao automaticamente. Basta informar o tema.</small>
+                        </div>
+                        <div class="mode-selection-card" data-create-mode="script" tabindex="0">
+                            <div class="mode-selection-icon">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                            </div>
+                            <strong>Meu Roteiro</strong>
+                            <small>Escreva ou cole seu proprio roteiro e envie fotos, audios ou videos.</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hidden tab selector (kept for JS compatibility) -->
+                <div class="create-tabs-row" style="display:none">
+                    <button class="create-tab active" data-create-mode="wizard" type="button">Assistente</button>
+                    <button class="create-tab" data-create-mode="script" type="button">Meu Roteiro</button>
+                    <button class="create-tab" data-create-mode="library" type="button" style="display:none">Biblioteca</button>
                 </div>
 
                 <!-- ═══ PANEL: Assistente (Wizard) ═══ -->
-                <div id="create-panel-wizard" class="create-panel">
+                <div id="create-panel-wizard" class="create-panel" hidden>
                     <!-- Step 1: Topic -->
                     <div class="wizard-step" data-step="1">
                         <h3 class="wizard-question">Sobre o que e o video?</h3>
@@ -389,14 +401,6 @@
                     <!-- Step 2: Video Type (NEW) -->
                     <div class="wizard-step" data-step="2" hidden>
                         <h3 class="wizard-question">Qual o tipo de video?</h3>
-                        <div class="video-type-grid" id="wizard-video-type-grid">
-                            <div class="video-type-card selected" data-type="imagens_ia" tabindex="0">
-                                <div class="video-type-icon">
-                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                                </div>
-                                <strong>Imagens IA</strong>
-                                <small>Imagens geradas por inteligencia artificial com narracao</small>
-                            </div>
                             <div class="video-type-card" data-type="imagens_proprias" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -404,12 +408,19 @@
                                 <strong>Imagens Proprias</strong>
                                 <small>Envie suas fotos e a IA cria o video com narracao</small>
                             </div>
+                            <div class="video-type-card selected" data-type="imagens_ia" tabindex="0">
+                                <div class="video-type-icon">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                </div>
+                                <strong>Imagens IA</strong>
+                                <small>Imagens geradas por inteligencia artificial com narracao</small>
+                            </div>
                             <div class="video-type-card" data-type="realista" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
-                                <strong>Realista <span class="tab-badge-beta">BETA</span></strong>
-                                <small>Video realista ate 10s com IA Seedance 2.0</small>
+                                <strong>Realista</strong>
+                                <small>Video realista ate 10s com as melhores tecnologias</small>
                             </div>
                         </div>
                     </div>
@@ -1786,7 +1797,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260414-05"></script>
+    <script src="/video/static/app.js?v=20260414-06"></script>
     <script src="/video/static/pwa.js?v=20260413-04"></script>
 </body>
 </html>

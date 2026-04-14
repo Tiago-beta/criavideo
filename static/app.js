@@ -1389,7 +1389,16 @@ async function saveProjectEdit() {
 }
 
 function initCreateWizard() {
-    // Tab switching
+    // Mode selection cards
+    document.querySelectorAll(".mode-selection-card").forEach((card) => {
+        card.addEventListener("click", () => {
+            const mode = card.dataset.createMode;
+            document.getElementById("create-mode-selection").hidden = true;
+            switchCreateMode(mode);
+        });
+    });
+
+    // Tab switching (kept for programmatic use)
     document.querySelectorAll(".create-tab").forEach((tab) => {
         tab.addEventListener("click", () => switchCreateMode(tab.dataset.createMode));
     });
@@ -1519,6 +1528,7 @@ function switchCreateMode(mode) {
     document.querySelectorAll(".create-tab").forEach((t) => {
         t.classList.toggle("active", t.dataset.createMode === mode);
     });
+    document.getElementById("create-mode-selection").hidden = true;
     document.querySelectorAll(".create-panel").forEach((p) => (p.hidden = true));
     const panel = document.getElementById(`create-panel-${mode}`);
     if (panel) panel.hidden = false;
@@ -1554,7 +1564,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
     const backBtn = document.getElementById(`${prefix}-back`);
     const nextBtn = document.getElementById(`${prefix}-next`);
     const createBtn = document.getElementById(`${prefix}-create-btn`);
-    if (backBtn) backBtn.hidden = stepIndex <= 1;
+    if (backBtn) backBtn.hidden = false; // Always show — step 1 goes back to mode selection
     if (nextBtn) nextBtn.hidden = stepIndex >= flow.length;
     if (createBtn) createBtn.hidden = stepIndex < flow.length;
 }
@@ -1728,9 +1738,9 @@ function resetCreateWizard() {
         t.classList.toggle("active", t.dataset.createMode === "wizard");
     });
 
-    // Reset panels
+    // Show mode selection, hide panels
+    document.getElementById("create-mode-selection").hidden = false;
     document.querySelectorAll(".create-panel").forEach((p) => (p.hidden = true));
-    document.getElementById("create-panel-wizard").hidden = false;
     document.getElementById("ai-suggest-panel").hidden = true;
     document.getElementById("create-progress").hidden = true;
     _stopSmoothProgress();
@@ -1917,6 +1927,12 @@ function wizardNext() {
 }
 
 function wizardBack() {
+    if (wizardStep <= 1) {
+        // Go back to mode selection
+        document.getElementById("create-panel-wizard").hidden = true;
+        document.getElementById("create-mode-selection").hidden = false;
+        return;
+    }
     wizardStep = Math.max(wizardStep - 1, 1);
     // When going back to video type step, reset to normal flow so dots update
     if (getWizardFlow()[wizardStep - 1] === 2) {
@@ -2119,6 +2135,12 @@ function scriptNext() {
 }
 
 function scriptBack() {
+    if (scriptStep <= 1) {
+        // Go back to mode selection
+        document.getElementById("create-panel-script").hidden = true;
+        document.getElementById("create-mode-selection").hidden = false;
+        return;
+    }
     const flow = getScriptFlow();
     const currentDataStep = flow[scriptStep - 1];
 
