@@ -253,7 +253,7 @@ async def run_video_pipeline(project_id: int):
                 # Photo-only mode without uploaded music: generate instrumental soundtrack automatically.
                 img_dir = Path(settings.media_dir) / "images" / str(project_id)
                 user_images_count = len([p for p in img_dir.glob("user_*") if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}])
-                base_seconds = image_display_seconds if image_display_seconds > 0 else 8.0
+                base_seconds = image_display_seconds if image_display_seconds > 0 else 12.0
                 target_dur = max(30.0, min(240.0, float(max(user_images_count, 1) * base_seconds)))
 
                 text_hint = f"{project.style_prompt or ''} {project.title or ''}".lower()

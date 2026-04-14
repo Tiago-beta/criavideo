@@ -25,16 +25,16 @@ openai_client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
 
 async def analyze_lyrics_for_scenes(lyrics_text: str, lyrics_words: list, duration: float, style_hint: str = "") -> list[dict]:
     """Use GPT-4o-mini to split lyrics into scenes with visual descriptions."""
-    # Scale scene count based on duration — cap at 40 unique scenes to limit API cost
+    # Scale scene count based on duration — cap at 25 unique scenes to limit API cost
     if duration <= 300:
-        scene_min, scene_max = 15, 20
+        scene_min, scene_max = 10, 14
     elif duration <= 900:
-        scene_min, scene_max = 20, 30
+        scene_min, scene_max = 14, 20
     else:
-        scene_min, scene_max = 30, 40
+        scene_min, scene_max = 20, 25
 
     prompt = f"""You are a music video director. Given these song lyrics and total duration ({duration:.1f} seconds),
-split the song into {scene_min}-{scene_max} visual scenes for a music video. Each scene should last between 8-15 seconds.
+split the song into {scene_min}-{scene_max} visual scenes for a music video. Each scene should last between 12-22 seconds.
 {"NOTE: The video is very long. Focus on creating diverse, visually distinct scenes. They will be cycled/repeated throughout the video, so variety is key." if duration > 300 else ""}
 {f"STYLE DIRECTION: {style_hint}. All visual_prompt descriptions MUST follow this style." if style_hint else ""}
 
@@ -105,7 +105,8 @@ async def search_image_bank(user_id: int, tags: list[str], aspect_ratio: str,
                             style: str, exclude_ids: set[int] | None = None) -> dict | None:
     """Search the image bank for a reusable image matching the given tags.
     Requires at least 3 tags in common. Prefers same style, then most tags matched.
-    exclude_ids prevents reusing the same bank image twice in one video."""
+    exclude_ids prevents reusing the same bank image twice in one video.
+    Searches across ALL users for maximum reuse."""
     if not tags or len(tags) < 3:
         return None
 
@@ -115,7 +116,6 @@ async def search_image_bank(user_id: int, tags: list[str], aspect_ratio: str,
         # Build exclusion clause
         exclude_clause = ""
         params = {
-            "uid": user_id,
             "ar": aspect_ratio,
             "tag_arr": tag_array,
             "style": style or "",
@@ -131,8 +131,7 @@ async def search_image_bank(user_id: int, tags: list[str], aspect_ratio: str,
                        1
                    ) AS match_count
             FROM image_bank
-            WHERE user_id = :uid
-              AND aspect_ratio = :ar
+            WHERE aspect_ratio = :ar
               AND tags && :tag_arr::text[]
               {exclude_clause}
             ORDER BY
@@ -140,12 +139,7 @@ async def search_image_bank(user_id: int, tags: list[str], aspect_ratio: str,
                 match_count DESC
             LIMIT 1
         """)
-        result = await db.execute(query, {
-            "uid": user_id,
-            "ar": aspect_ratio,
-            "tag_arr": tag_array,
-            "style": style or "",
-        })
+        result = await db.execute(query, params)
         row = result.fetchone()
 
         if row and row.match_count and row.match_count >= 3:
