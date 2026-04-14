@@ -1463,6 +1463,13 @@ function initCreateWizard() {
             if (engineGroup) engineGroup.hidden = isDesenho;
             if (durationGroup) durationGroup.hidden = isDesenho;
 
+            // Switch video type so Desenho uses standard pipeline
+            if (panel.id === "create-panel-wizard") {
+                wizardData.videoType = isDesenho ? "desenho" : "realista";
+            } else {
+                scriptData.videoType = isDesenho ? "desenho" : "realista";
+            }
+
             if (panel.id === "create-panel-wizard") {
                 const topicEl = document.getElementById("wizard-topic");
                 if (topicEl) {
@@ -1569,6 +1576,11 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
 // ── Shared Realistic Create Logic ──
 
 async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, musicCheckboxId, title, engineSelectorId, prefix) {
+    // Derive prefix from selector IDs if not provided
+    if (!prefix) {
+        prefix = durationSelectorId.startsWith("wizard") ? "wizard" : "script";
+    }
+
     if (!prompt) {
         alert("Descreva a cena que voce quer ver no video.");
         return;
@@ -1941,6 +1953,58 @@ async function handleWizardCreate() {
         return;
     }
 
+    // Desenho style: uses standard pipeline with narration from realistic panel
+    if (wizardData.videoType === "desenho") {
+        const aspectEl = document.getElementById("wizard-realistic-aspect");
+        const aspect = aspectEl ? aspectEl.value : "16:9";
+        const narrationEl = document.getElementById("wizard-realistic-narration");
+        const addNarration = narrationEl ? narrationEl.checked : false;
+        const narrationTextEl = document.getElementById("wizard-realistic-narration-text");
+        const narrationText = addNarration ? (narrationTextEl ? narrationTextEl.value.trim() : "") : "";
+        const voiceBtn = document.querySelector("#wizard-realistic-voices .voice-btn.selected");
+        const voice = voiceBtn ? voiceBtn.dataset.value : "onyx";
+
+        showCreateProgress("Gerando roteiro com IA...");
+        try {
+            // Use narration text as script, or generate from topic
+            let script = narrationText;
+            if (!script) {
+                const scriptResult = await api("/video/generate-script", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        topic: wizardData.topic,
+                        tone: wizardData.tone || "",
+                        duration_seconds: 60,
+                    }),
+                });
+                script = scriptResult.script;
+            }
+
+            showCreateProgress("Gerando narracao com voz IA...");
+            const result = await api("/video/generate-audio", {
+                method: "POST",
+                body: JSON.stringify({
+                    script: script,
+                    voice: voice,
+                    voice_profile_id: 0,
+                    title: wizardData.topic,
+                    aspect_ratio: aspect,
+                    style_prompt: "desenho",
+                    pause_level: "",
+                    tone: wizardData.tone || "",
+                }),
+            });
+
+            closeModal("modal-new-project");
+            pollProject(result.id);
+            loadProjects();
+        } catch (error) {
+            hideCreateProgress();
+            alert(`Erro: ${error.message}`);
+        }
+        return;
+    }
+
     // Collect step 5 (style) + step 6 (duration/format) data
     const durBtn = document.querySelector("#create-panel-wizard .duration-option.selected");
     wizardData.duration = durBtn ? parseInt(durBtn.dataset.value) : 60;
@@ -2147,6 +2211,60 @@ async function handleScriptCreate() {
             realisticTitle,
             "script-realistic-engine"
         );
+        return;
+    }
+
+    // Desenho style: uses standard pipeline with narration from realistic panel
+    if (scriptData.videoType === "desenho") {
+        const aspectEl = document.getElementById("script-realistic-aspect");
+        const aspect = aspectEl ? aspectEl.value : "16:9";
+        const narrationEl = document.getElementById("script-realistic-narration");
+        const addNarration = narrationEl ? narrationEl.checked : false;
+        const narrationTextEl = document.getElementById("script-realistic-narration-text");
+        const narrationText = addNarration ? (narrationTextEl ? narrationTextEl.value.trim() : "") : "";
+        const voiceBtn = document.querySelector("#script-realistic-voices .voice-btn.selected");
+        const voice = voiceBtn ? voiceBtn.dataset.value : "onyx";
+        const scriptText = document.getElementById("script-text").value.trim();
+        const titleText = (document.getElementById("script-title").value || "").trim() || scriptData.title || "";
+        const topic = scriptText || titleText;
+
+        showCreateProgress("Gerando roteiro com IA...");
+        try {
+            let script = narrationText || scriptText;
+            if (!script) {
+                const scriptResult = await api("/video/generate-script", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        topic: topic,
+                        tone: scriptData.tone || "",
+                        duration_seconds: 60,
+                    }),
+                });
+                script = scriptResult.script;
+            }
+
+            showCreateProgress("Gerando narracao com voz IA...");
+            const result = await api("/video/generate-audio", {
+                method: "POST",
+                body: JSON.stringify({
+                    script: script,
+                    voice: voice,
+                    voice_profile_id: 0,
+                    title: titleText || topic,
+                    aspect_ratio: aspect,
+                    style_prompt: "desenho",
+                    pause_level: "",
+                    tone: scriptData.tone || "",
+                }),
+            });
+
+            closeModal("modal-new-project");
+            pollProject(result.id);
+            loadProjects();
+        } catch (error) {
+            hideCreateProgress();
+            alert(`Erro: ${error.message}`);
+        }
         return;
     }
 
