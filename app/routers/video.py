@@ -811,11 +811,13 @@ JSON apenas, sem markdown."""
         logger.warning("AI metadata generation failed, using defaults: %s", e)
 
     # ── Credit check: deduct based on song duration ──
-    from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
-    import math
-    est_minutes = max(1, math.ceil((req.duration or 60) / 60))
-    credits_needed = est_minutes * CREDITS_PER_MINUTE
-    await deduct_credits(db, user["id"], credits_needed)
+    # Skip for Levita users (credits handled by Levita backend)
+    if user.get("source") != "levita":
+        from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
+        import math
+        est_minutes = max(1, math.ceil((req.duration or 60) / 60))
+        credits_needed = est_minutes * CREDITS_PER_MINUTE
+        await deduct_credits(db, user["id"], credits_needed)
 
     project = VideoProject(
         user_id=user["id"],
