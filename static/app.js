@@ -3025,6 +3025,17 @@ async function watchVideo(projectId) {
         download.href = render.video_url;
         download.download = `${project.title || "video"}.mp4`;
         openModal("modal-player");
+
+        // Auto-download the video
+        setTimeout(() => {
+            const a = document.createElement("a");
+            a.href = render.video_url;
+            a.download = `${project.title || "video"}.mp4`;
+            a.style.display = "none";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }, 500);
     } catch (error) {
         alert(`Erro ao carregar video: ${error.message}`);
     }
