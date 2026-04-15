@@ -1068,7 +1068,7 @@ function _updateCardInPlace(project) {
 // ═══ Creation Wizard State ═══
 let createMode = "wizard"; // "wizard" | "script" | "library"
 let wizardStep = 1;
-let wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", duration: 60, aspect: "16:9", style: "" };
+let wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
 let scriptStep = 1;
 let scriptData = {
     text: "",
@@ -1087,14 +1087,6 @@ let scriptData = {
     zoomImages: true,
     imageDisplaySeconds: 0,
     promptOptimized: false,
-};
-const REALISTIC_INSPIRATIONS = {
-    cinematic: "Uma cena cinematografica epica: um deserto vasto ao por do sol, com um convoy de veiculos cruzando entre dunas gigantes. Poeira dourada no ar, camera lenta dramatica, iluminacao de hora dourada com sombras longas.",
-    commercial: "Um produto premium girando lentamente sobre uma superficie reflexiva escura. Iluminacao de estudio sofisticada com reflexos suaves. Particulas de luz flutuando ao redor. Visual limpo e elegante de comercial de luxo.",
-    meme: "Um gato laranja gigante do tamanho de um predio preso entre dois arranha-ceus de uma cidade movimentada. O gato tenta se soltar com expressao fofa. Pessoas na rua olham surpresas. Estilo meme viral hiper-realista.",
-    anime: "Uma batalha epica estilo anime entre dois guerreiros em um campo de flores de cerejeira. Efeitos de particulas brilhantes, movimentos rapidos com rastros de luz. Explosao de energia com cores vibrantes. Estilo cel-shaded japones.",
-    drama: "Uma mulher de sobretudo em uma cabine telefonica vermelha sob chuva forte a noite. Ela segura o telefone com expressao melancolica. Luzes de neon da cidade refletem na agua. Atmosfera nostalgica estilo cinema asiatico dos anos 90.",
-    vfx: "Uma maozinha gigante descendo do ceu e abrindo um ziper no horizonte, revelando um universo estrelado brilhante por tras. A realidade se dobra como tecido. Efeito surrealista e hipnotico com escala monumental.",
 };
 // Step flow arrays for each video type
 const WIZARD_FLOW_NORMAL = [2, 1, 3, 4, 5, 6]; // type, topic, tone, voice, style, details
@@ -1461,39 +1453,12 @@ function initCreateWizard() {
         });
     });
 
-    // Realistic inspiration buttons (in wizard and script panels)
-    document.querySelectorAll("[data-realistic-inspiration]").forEach((btn) => {
+    // Wizard topic style buttons (shown only for realistic mode)
+    document.querySelectorAll("#wizard-topic-style-tags .style-tag").forEach((btn) => {
         btn.addEventListener("click", () => {
-            const key = btn.dataset.realisticInspiration;
-            const text = REALISTIC_INSPIRATIONS[key] || "";
-            if (!text) return;
-
-            // Toggle selected state within the same container
-            const container = btn.closest(".realistic-inspiration-tags");
-            if (container) {
-                container.querySelectorAll(".style-tag").forEach((t) => t.classList.remove("selected"));
-                btn.classList.add("selected");
-            }
-
-            // Determine which panel we're in
-            const panel = btn.closest(".create-panel");
-            if (!panel) return;
-
-            if (panel.id === "create-panel-wizard") {
-                const topicEl = document.getElementById("wizard-topic");
-                if (topicEl) {
-                    const current = topicEl.value.trim();
-                    topicEl.value = current ? current + " — " + text : text;
-                }
-            } else if (panel.id === "create-panel-script") {
-                const scriptEl = document.getElementById("script-text");
-                if (scriptEl) {
-                    const current = scriptEl.value.trim();
-                    scriptEl.value = current ? current + "\n\n" + text : text;
-                    const countEl = document.getElementById("script-char-count");
-                    if (countEl) countEl.textContent = scriptEl.value.length.toLocaleString("pt-BR");
-                }
-            }
+            document.querySelectorAll("#wizard-topic-style-tags .style-tag").forEach((t) => t.classList.remove("selected"));
+            btn.classList.add("selected");
+            wizardData.realisticStyle = btn.dataset.style || "";
         });
     });
 
@@ -1606,7 +1571,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
 
 // ── Shared Realistic Create Logic ──
 
-async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, musicCheckboxId, title, engineSelectorId, prefix) {
+async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, musicCheckboxId, title, engineSelectorId, prefix, realisticStyle) {
     // Derive prefix from selector IDs if not provided
     if (!prefix) {
         prefix = durationSelectorId.startsWith("wizard") ? "wizard" : "script";
@@ -1674,6 +1639,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 image_upload_id: imageUploadId,
                 engine: engine,
                 prompt_optimized: scriptData.promptOptimized || false,
+                realistic_style: realisticStyle || "",
             }),
         });
 
@@ -1747,7 +1713,7 @@ function resetCreateWizard() {
     stopKaraokeProgressPolling();
     createMode = "wizard";
     wizardStep = 1;
-    wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "" };
+    wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
     scriptStep = 1;
     scriptData = {
         text: "",
@@ -1789,6 +1755,9 @@ function resetCreateWizard() {
     updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
     updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
     document.getElementById("wizard-topic").value = "";
+    const topicInspirationEl = document.getElementById("wizard-topic-inspiration");
+    if (topicInspirationEl) topicInspirationEl.hidden = true;
+    document.querySelectorAll("#wizard-topic-style-tags .style-tag").forEach((t) => t.classList.remove("selected"));
     document.getElementById("script-text").value = "";
     document.getElementById("script-char-count").textContent = "0";
     document.getElementById("script-title").value = "";
@@ -1917,6 +1886,9 @@ function wizardNext() {
         const sel = document.querySelector("#wizard-video-type-grid .video-type-card.selected");
         if (!sel) { alert("Escolha o tipo de video."); return; }
         wizardData.videoType = sel.dataset.type;
+        // Show/hide style buttons on topic step for realistic mode
+        const topicInspirationEl = document.getElementById("wizard-topic-inspiration");
+        if (topicInspirationEl) topicInspirationEl.hidden = wizardData.videoType !== "realista";
     }
     if (currentDataStep === 1) {
         const topic = document.getElementById("wizard-topic").value.trim();
@@ -1969,7 +1941,9 @@ async function handleWizardCreate() {
             "wizard-realistic-aspect",
             "wizard-realistic-music",
             wizardData.topic,
-            "wizard-realistic-engine"
+            "wizard-realistic-engine",
+            "wizard",
+            wizardData.realisticStyle || ""
         );
         return;
     }

@@ -1502,6 +1502,7 @@ class GenerateRealisticRequest(BaseModel):
     image_upload_id: str = ""
     engine: str = "seedance"  # "seedance", "minimax", "wan2" or "grok"
     prompt_optimized: bool = False  # True when prompt was already optimized via AI
+    realistic_style: str = ""  # Style hint from wizard (cinematic, commercial, meme, etc)
 
 
 @router.post("/generate-realistic")
@@ -1556,6 +1557,7 @@ async def generate_realistic_endpoint(
         "add_narration": req.add_narration and bool(narration_text),
         "narration_voice": narration_voice,
         "prompt_optimized": req.prompt_optimized,
+        "realistic_style": req.realistic_style or "",
     }
 
     project = VideoProject(

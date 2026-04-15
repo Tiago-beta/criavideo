@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260414-16">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260415-01">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -396,6 +396,17 @@
                             <input type="text" class="wizard-input" id="wizard-topic"
                                    placeholder="Ex: 5 dicas de produtividade, historia do cafe, receita de bolo...">
                         </div>
+                        <div class="realistic-inspiration" id="wizard-topic-inspiration" hidden>
+                            <span class="realistic-inspiration-label">Estilo do video:</span>
+                            <div class="realistic-inspiration-tags" id="wizard-topic-style-tags">
+                                <button class="style-tag" type="button" data-style="cinematic">Cinematico</button>
+                                <button class="style-tag" type="button" data-style="commercial">Comercial</button>
+                                <button class="style-tag" type="button" data-style="meme">Meme Viral</button>
+                                <button class="style-tag" type="button" data-style="anime">Anime</button>
+                                <button class="style-tag" type="button" data-style="drama">Drama</button>
+                                <button class="style-tag" type="button" data-style="vfx">Efeitos Visuais</button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Step 2: Video Type (NEW) -->
@@ -624,17 +635,6 @@
                             </div>
                         </div>
 
-                        <div class="realistic-inspiration">
-                            <span class="realistic-inspiration-label">Inspiracao de estilo:</span>
-                            <div class="realistic-inspiration-tags" id="wizard-realistic-inspirations">
-                                <button class="style-tag" type="button" data-realistic-inspiration="cinematic">Cinematico</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="commercial">Comercial</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="meme">Meme Viral</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="anime">Anime</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="drama">Drama</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="vfx">Efeitos Visuais</button>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- Wizard Navigation -->
@@ -1049,17 +1049,6 @@
                             </div>
                         </div>
 
-                        <div class="realistic-inspiration">
-                            <span class="realistic-inspiration-label">Inspiracao de estilo:</span>
-                            <div class="realistic-inspiration-tags" id="script-realistic-inspirations">
-                                <button class="style-tag" type="button" data-realistic-inspiration="cinematic">Cinematico</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="commercial">Comercial</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="meme">Meme Viral</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="anime">Anime</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="drama">Drama</button>
-                                <button class="style-tag" type="button" data-realistic-inspiration="vfx">Efeitos Visuais</button>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- Script Wizard Navigation -->
@@ -1800,7 +1789,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260414-16"></script>
-    <script src="/video/static/pwa.js?v=20260414-16"></script>
+    <script src="/video/static/app.js?v=20260415-01"></script>
+    <script src="/video/static/pwa.js?v=20260415-01"></script>
 </body>
 </html>

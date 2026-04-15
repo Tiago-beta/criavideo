@@ -908,6 +908,20 @@ async def run_realistic_video_pipeline(project_id: int):
             # Only optimize prompt if it wasn't already optimized by the AI suggest
             tags_data = project.tags if isinstance(project.tags, dict) else {}
             prompt_optimized = tags_data.get("prompt_optimized", False)
+            realistic_style = tags_data.get("realistic_style", "")
+
+            # If user selected a style, prepend it as context for the optimizer
+            if realistic_style and not prompt_optimized:
+                style_labels = {
+                    "cinematic": "estilo cinematografico epico",
+                    "commercial": "estilo comercial/produto premium",
+                    "meme": "estilo meme viral engracado",
+                    "anime": "estilo anime japones",
+                    "drama": "estilo drama emotivo",
+                    "vfx": "estilo efeitos visuais/surrealista",
+                }
+                style_hint = style_labels.get(realistic_style, realistic_style)
+                user_prompt = f"{user_prompt}. Estilo: {style_hint}"
 
             if prompt_optimized:
                 optimized_prompt = user_prompt
