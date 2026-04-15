@@ -846,7 +846,7 @@ async def _combine_realistic_audio(
         "ffmpeg", "-y",
         *inputs,
         "-filter_complex", filter_complex,
-        "-map", "0:v",
+        "-map", "0:v:0",
         "-map", "[aout]",
         "-c:v", "copy",
         "-c:a", "aac", "-b:a", "192k",
