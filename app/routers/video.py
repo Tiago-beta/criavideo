@@ -1530,6 +1530,10 @@ class GenerateRealisticRequest(BaseModel):
     title: str = ""
     image_upload_id: str = ""
     engine: str = "seedance"  # "seedance" or "minimax"
+    audio_url: str = ""       # External audio URL (e.g. from Tevoxi)
+    lyrics: str = ""          # Lyrics/transcription for the audio clip
+    clip_start: float = 0     # Start time in seconds for audio clip
+    clip_duration: float = 0  # Duration of the audio clip (0 = full)
 
 
 @router.post("/generate-realistic")
@@ -1576,13 +1580,21 @@ async def generate_realistic_endpoint(
     # Narration config stored in tags JSON
     narration_text = (req.narration_text or "").strip() if req.add_narration else ""
     narration_voice = req.narration_voice or "onyx"
+    external_audio_url = (req.audio_url or "").strip()
+    external_lyrics = (req.lyrics or "").strip()
     tags_data = {
         "type": "realista",
         "engine": engine,
-        "add_music": req.add_music,
+        "add_music": req.add_music or bool(external_audio_url),
         "add_narration": req.add_narration and bool(narration_text),
         "narration_voice": narration_voice,
     }
+    if external_audio_url:
+        tags_data["audio_url"] = external_audio_url
+        tags_data["clip_start"] = req.clip_start
+        tags_data["clip_duration"] = req.clip_duration
+    if external_lyrics:
+        tags_data["lyrics"] = external_lyrics
 
     project = VideoProject(
         user_id=user["id"],
