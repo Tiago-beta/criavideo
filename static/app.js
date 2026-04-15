@@ -1086,6 +1086,7 @@ let scriptData = {
     enableSubtitles: true,
     zoomImages: true,
     imageDisplaySeconds: 0,
+    promptOptimized: false,
 };
 const REALISTIC_INSPIRATIONS = {
     cinematic: "Uma cena cinematografica epica: um deserto vasto ao por do sol, com um convoy de veiculos cruzando entre dunas gigantes. Poeira dourada no ar, camera lenta dramatica, iluminacao de hora dourada com sombras longas.",
@@ -1672,6 +1673,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 title: title || "",
                 image_upload_id: imageUploadId,
                 engine: engine,
+                prompt_optimized: scriptData.promptOptimized || false,
             }),
         });
 
@@ -1765,6 +1767,7 @@ function resetCreateWizard() {
         enableSubtitles: true,
         zoomImages: true,
         imageDisplaySeconds: 0,
+        promptOptimized: false,
     };
 
     // Reset tabs
@@ -2792,6 +2795,7 @@ async function generateAiScript() {
             hideCreateProgress();
             document.getElementById("script-text").value = result.prompt;
             document.getElementById("script-char-count").textContent = result.prompt.length.toLocaleString("pt-BR");
+            scriptData.promptOptimized = true;
             hideAiSuggestPanel();
         } catch (error) {
             hideCreateProgress();

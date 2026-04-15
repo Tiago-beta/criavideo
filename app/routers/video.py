@@ -1501,6 +1501,7 @@ class GenerateRealisticRequest(BaseModel):
     title: str = ""
     image_upload_id: str = ""
     engine: str = "seedance"  # "seedance", "minimax", "wan2" or "grok"
+    prompt_optimized: bool = False  # True when prompt was already optimized via AI
 
 
 @router.post("/generate-realistic")
@@ -1554,6 +1555,7 @@ async def generate_realistic_endpoint(
         "add_music": req.add_music,
         "add_narration": req.add_narration and bool(narration_text),
         "narration_voice": narration_voice,
+        "prompt_optimized": req.prompt_optimized,
     }
 
     project = VideoProject(

@@ -905,9 +905,26 @@ async def run_realistic_video_pipeline(project_id: int):
             max_dur = 15 if engine == "grok" else 10
             duration = max(1, min(duration, max_dur))
 
-            # Use prompt as-is (already optimized by the wizard/script AI suggest)
-            optimized_prompt = user_prompt
-            logger.info(f"Realistic video prompt for project {project_id}: {optimized_prompt[:200]}...")
+            # Only optimize prompt if it wasn't already optimized by the AI suggest
+            tags_data = project.tags if isinstance(project.tags, dict) else {}
+            prompt_optimized = tags_data.get("prompt_optimized", False)
+
+            if prompt_optimized:
+                optimized_prompt = user_prompt
+                logger.info(f"Realistic prompt already optimized, using as-is: {optimized_prompt[:200]}...")
+            elif engine == "grok":
+                from app.services.grok_video import optimize_prompt_for_grok
+                optimized_prompt = await optimize_prompt_for_grok(
+                    user_description=user_prompt,
+                    duration=duration,
+                )
+                logger.info(f"Grok prompt optimized: {optimized_prompt[:200]}...")
+            else:
+                optimized_prompt = await optimize_prompt_for_seedance(
+                    user_description=user_prompt,
+                    duration=duration,
+                )
+                logger.info(f"Seedance prompt optimized: {optimized_prompt[:200]}...")
 
             project.progress = 10
             await db.commit()
