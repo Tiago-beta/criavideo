@@ -1469,10 +1469,17 @@ function initCreateWizard() {
             const grid = opt.closest(".wizard-grid");
             grid.querySelectorAll(".wizard-option").forEach((o) => o.classList.remove("selected"));
             opt.classList.add("selected");
-            // When selecting a builtin voice, deselect any persona selection
+            // When selecting a voice, deselect any persona selection AND cross-deselect between builtin/suno grids
             const voiceSelector = opt.closest(".voice-selector");
             if (voiceSelector) {
                 voiceSelector.querySelectorAll(".persona-item.selected").forEach(o => o.classList.remove("selected"));
+                // Cross-deselect: if selecting suno voice, deselect builtin; and vice-versa
+                const voiceType = opt.dataset.voiceType;
+                if (voiceType === "suno") {
+                    voiceSelector.querySelectorAll('.wizard-option[data-voice-type="builtin"].selected').forEach(o => o.classList.remove("selected"));
+                } else if (voiceType === "builtin") {
+                    voiceSelector.querySelectorAll('.wizard-option[data-voice-type="suno"].selected').forEach(o => o.classList.remove("selected"));
+                }
             }
         }
         const dur = e.target.closest(".duration-option");
@@ -1902,13 +1909,20 @@ function wizardNext() {
     }
     if (currentDataStep === 4) {
         const personaSel = document.querySelector("#wizard-persona-list .persona-item.selected");
-        const builtinSel = document.querySelector("#create-panel-wizard .wizard-step[data-step='4'] .wizard-option.selected");
+        const builtinSel = document.querySelector("#create-panel-wizard .wizard-step[data-step='4'] .wizard-option[data-voice-type='builtin'].selected");
+        const sunoSel = document.querySelector("#create-panel-wizard .wizard-step[data-step='4'] .wizard-option[data-voice-type='suno'].selected");
         if (personaSel) {
             wizardData.voice = personaSel.dataset.value;
             wizardData.voiceProfileId = parseInt(personaSel.dataset.profileId || "0");
+            wizardData.voiceType = "custom";
+        } else if (sunoSel) {
+            wizardData.voice = sunoSel.dataset.value;
+            wizardData.voiceProfileId = 0;
+            wizardData.voiceType = "suno";
         } else if (builtinSel) {
             wizardData.voice = builtinSel.dataset.value;
             wizardData.voiceProfileId = 0;
+            wizardData.voiceType = "builtin";
         } else {
             alert("Escolha a voz."); return;
         }
@@ -1977,6 +1991,7 @@ async function handleWizardCreate() {
                 script: scriptResult.script,
                 voice: wizardData.voice,
                 voice_profile_id: wizardData.voiceProfileId,
+                voice_type: wizardData.voiceType || "",
                 title: wizardData.topic,
                 aspect_ratio: wizardData.aspect,
                 style_prompt: wizardData.style,
@@ -2108,15 +2123,23 @@ function scriptNext() {
         if (!scriptData.text) {
             scriptData.voice = "onyx";
             scriptData.voiceProfileId = 0;
+            scriptData.voiceType = "builtin";
         } else {
             const personaSel = document.querySelector("#script-persona-list .persona-item.selected");
-            const builtinSel = document.querySelector("#create-panel-script .wizard-step[data-step='4'] .wizard-option.selected");
+            const builtinSel = document.querySelector("#create-panel-script .wizard-step[data-step='4'] .wizard-option[data-voice-type='builtin'].selected");
+            const sunoSel = document.querySelector("#create-panel-script .wizard-step[data-step='4'] .wizard-option[data-voice-type='suno'].selected");
             if (personaSel) {
                 scriptData.voice = personaSel.dataset.value;
                 scriptData.voiceProfileId = parseInt(personaSel.dataset.profileId || "0");
+                scriptData.voiceType = "custom";
+            } else if (sunoSel) {
+                scriptData.voice = sunoSel.dataset.value;
+                scriptData.voiceProfileId = 0;
+                scriptData.voiceType = "suno";
             } else if (builtinSel) {
                 scriptData.voice = builtinSel.dataset.value;
                 scriptData.voiceProfileId = 0;
+                scriptData.voiceType = "builtin";
             } else {
                 alert("Escolha a voz."); return;
             }
@@ -2198,6 +2221,7 @@ async function handleScriptCreate() {
         scriptData.text = "";
         scriptData.voice = "";
         scriptData.voiceProfileId = 0;
+        scriptData.voiceType = "";
     }
     if (scriptData.useCustomAudio && scriptData.audioIsMusic) {
         scriptData.enableSubtitles = true;
@@ -2294,6 +2318,7 @@ async function handleScriptCreate() {
         formData.append("script", scriptData.text);
         formData.append("voice", scriptData.voice || "");
         formData.append("voice_profile_id", String(scriptData.voiceProfileId || 0));
+        formData.append("voice_type", scriptData.voiceType || "");
         formData.append("title", scriptData.title || "Video com roteiro");
         formData.append("aspect_ratio", scriptData.aspect);
         formData.append("style_prompt", scriptData.style);

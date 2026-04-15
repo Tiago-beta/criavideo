@@ -896,6 +896,7 @@ class GenerateTTSRequest(BaseModel):
     script: str
     voice: str = ""
     voice_profile_id: int = 0
+    voice_type: str = ""  # "suno" for Suno AI narration, empty for auto-detect
     title: str = ""
     aspect_ratio: str = "16:9"
     style_prompt: str = ""
@@ -1011,6 +1012,7 @@ async def generate_audio_endpoint(
             script=str(form.get("script", "")),
             voice=str(form.get("voice", "")),
             voice_profile_id=int(form.get("voice_profile_id", 0) or 0),
+            voice_type=str(form.get("voice_type", "")),
             title=str(form.get("title", "")),
             aspect_ratio=str(form.get("aspect_ratio", "16:9")),
             style_prompt=str(form.get("style_prompt", "")),
@@ -1102,9 +1104,12 @@ async def generate_audio_endpoint(
     # Resolve voice from profile or direct parameter
     voice = req.voice or "onyx"
     tts_instructions = ""
-    voice_type = "builtin"
-
-    if req.voice_profile_id:
+    voice_type = req.voice_type or "builtin"
+    is_suno_narration = voice_type == "suno" or (req.voice or "").startswith("suno_narrator_")
+    if is_suno_narration:
+        voice_type = "suno"
+        voice = req.voice  # e.g. "suno_narrator_male_deep"
+    elif req.voice_profile_id:
         profile = await db.get(VoiceProfile, req.voice_profile_id)
         if profile and profile.user_id == user["id"]:
             if profile.openai_voice_id:
@@ -1417,16 +1422,30 @@ async def generate_audio_endpoint(
                 custom_duration = get_audio_duration(project.audio_path)
                 project.track_duration = round(custom_duration) if custom_duration > 0 else 60
         elif script_text:
-            audio_path = await generate_tts_audio(
-                text=req.script,
-                voice=voice,
-                project_id=project.id,
-                tts_instructions=tts_instructions,
-                voice_type=voice_type,
-                pause_level=req.pause_level,
-                tone=req.tone,
-            )
-            project.audio_path = audio_path
+            if is_suno_narration:
+                from app.services.suno_narration import generate_suno_narration
+                audio_path = await generate_suno_narration(
+                    text=req.script,
+                    voice_preset=voice,
+                    project_id=project.id,
+                    tone=req.tone,
+                )
+                if not audio_path:
+                    raise Exception("Falha ao gerar narracao Suno AI. Tente novamente.")
+                project.audio_path = audio_path
+                # Suno narration includes background music — skip separate BGM
+                project.no_background_music = True
+            else:
+                audio_path = await generate_tts_audio(
+                    text=req.script,
+                    voice=voice,
+                    project_id=project.id,
+                    tts_instructions=tts_instructions,
+                    voice_type=voice_type,
+                    pause_level=req.pause_level,
+                    tone=req.tone,
+                )
+                project.audio_path = audio_path
 
             # Estimate duration from word count (~2.5 words/sec for TTS)
             word_count = len(req.script.split())
@@ -1527,8 +1546,9 @@ async def generate_realistic_endpoint(
     if len(prompt) > 5000:
         raise HTTPException(status_code=400, detail="Descricao muito longa (maximo 5000 caracteres).")
 
-    duration = max(1, min(req.duration, 10))
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2") else "seedance"
+    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "seedance"
+    max_dur = 15 if engine == "grok" else 10
+    duration = max(1, min(req.duration, max_dur))
 
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
         raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1.")
@@ -1550,7 +1570,7 @@ async def generate_realistic_endpoint(
     if not project_title:
         project_title = prompt[:100]
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.2", "seedance": "Seedance 2.0"}
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.2", "seedance": "Seedance 2.0", "grok": "Grok"}
     engine_label = engine_labels.get(engine, "Seedance 2.0")
 
     # Narration config stored in tags JSON

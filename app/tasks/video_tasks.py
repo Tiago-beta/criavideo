@@ -339,11 +339,12 @@ async def run_video_pipeline(project_id: int):
             bgm_mood = "inspiracional"
             no_bgm = getattr(project, 'no_background_music', False) or False
             custom_bgm_path = "" if no_bgm else _find_custom_background_music(project_id)
-            if no_bgm:
-                logger.info(f"Background music DISABLED for project {project_id}")
+            is_suno_narration = audio_path and "suno_narration" in os.path.basename(audio_path)
+            if no_bgm or is_suno_narration:
+                logger.info(f"Background music DISABLED for project {project_id}" + (" (Suno narration includes BGM)" if is_suno_narration else ""))
             elif custom_bgm_path:
                 logger.info(f"Using custom uploaded background music for project {project_id}: {custom_bgm_path}")
-            if not no_bgm and not custom_bgm_path and audio_path and os.path.basename(audio_path) == "narration.mp3":
+            if not no_bgm and not is_suno_narration and not custom_bgm_path and audio_path and os.path.basename(audio_path) == "narration.mp3":
                 try:
                     from app.services.suno_music import generate_suno_music
                     from app.services.video_composer import _get_duration as get_audio_duration
@@ -618,7 +619,11 @@ async def run_video_pipeline(project_id: int):
 
             # ── Step 3: Get background music (Suno task started earlier) ──
             background_music_path = "" if is_music_only_mode else (custom_bgm_path or "")
-            if suno_music_task is not None:
+            if is_suno_narration:
+                # Suno narration already includes background music — skip all BGM
+                background_music_path = ""
+                logger.info(f"Suno narration detected — skipping separate BGM for project {project_id}")
+            elif suno_music_task is not None:
                 try:
                     background_music_path = await suno_music_task
                     logger.info(f"Suno background music result: {background_music_path}")

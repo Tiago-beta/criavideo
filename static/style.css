@@ -3379,6 +3379,14 @@ svg.spin {
     margin-bottom: 8px;
 }
 
+.suno-voice-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 6px 0 0;
+    text-align: center;
+    opacity: 0.8;
+}
+
 /* Voice card with preview button */
 .voice-card {
     display: flex;
