@@ -905,10 +905,17 @@ async def run_realistic_video_pipeline(project_id: int):
             max_dur = 15 if engine == "grok" else 10
             duration = max(1, min(duration, max_dur))
 
-            optimized_prompt = await optimize_prompt_for_seedance(
-                user_description=user_prompt,
-                duration=duration,
-            )
+            if engine == "grok":
+                from app.services.grok_video import optimize_prompt_for_grok
+                optimized_prompt = await optimize_prompt_for_grok(
+                    user_description=user_prompt,
+                    duration=duration,
+                )
+            else:
+                optimized_prompt = await optimize_prompt_for_seedance(
+                    user_description=user_prompt,
+                    duration=duration,
+                )
             logger.info(f"Realistic video prompt optimized for project {project_id}: {optimized_prompt[:200]}...")
 
             project.progress = 10

@@ -6,12 +6,56 @@ import os
 import time
 import logging
 import httpx
+import openai
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
 XAI_BASE_URL = "https://api.x.ai/v1"
+
+_GROK_SYSTEM_PROMPT = """You are an expert prompt engineer for xAI's grok-imagine-video model.
+
+Your job: convert the user's video description (usually in Brazilian Portuguese) into an optimized prompt for Grok video generation.
+
+RULES:
+1. Output ONLY the final prompt. No explanations, no markdown.
+2. The video is {duration} seconds long.
+3. Describe the visual scene in vivid, cinematic detail: camera movements, lighting, mood, specific actions.
+4. CRITICAL — LANGUAGE: If the scene involves people speaking, narration, dialogue, or any audio with words, ALL speech MUST be in Brazilian Portuguese (pt-BR). Write the dialogue in Portuguese using double quotes.
+   Example: A mulher olha para a camera e diz: "Que dia lindo para passear!"
+5. For sound effects and ambient audio, describe them naturally (birds singing, city noise, rain, etc).
+6. Focus on concrete visual details: colors, textures, motion, physics.
+7. Include camera direction: slow push in, pan, dolly, tracking shot, crane, etc.
+8. Keep the prompt concise but detailed — under 500 words.
+9. Preserve the user's creative intent while enhancing with cinematic quality.
+10. CONTENT SAFETY: Avoid violent, sexual, or controversial content."""
+
+
+async def optimize_prompt_for_grok(
+    user_description: str,
+    duration: int = 7,
+) -> str:
+    """Convert user's description into an optimized Grok video prompt with PT-BR audio."""
+    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+    system = _GROK_SYSTEM_PROMPT.replace("{duration}", str(duration))
+
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_description},
+            ],
+            temperature=0.7,
+            max_tokens=800,
+        )
+        optimized = resp.choices[0].message.content.strip()
+        logger.info(f"Grok prompt optimized: {len(optimized)} chars")
+        return optimized
+    except Exception as e:
+        logger.warning(f"Grok prompt optimization failed, using original: {e}")
+        return user_description
 
 
 async def generate_video_clip(
