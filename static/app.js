@@ -1518,8 +1518,9 @@ function initCreateWizard() {
         if (eng) {
             eng.closest(".engine-options").querySelectorAll(".engine-option").forEach((d) => d.classList.remove("selected"));
             eng.classList.add("selected");
+            const engineVal = eng.dataset.value;
             // Show/hide Grok-only duration buttons (12s, 15s)
-            const isGrok = eng.dataset.value === "grok";
+            const isGrok = engineVal === "grok";
             const container = eng.closest(".form-group")?.parentElement;
             if (container) {
                 container.querySelectorAll(".grok-only").forEach((btn) => {
@@ -1533,6 +1534,10 @@ function initCreateWizard() {
                         if (def7) def7.classList.add("selected");
                     });
                 }
+                // Auto-toggle music checkbox: engines with native audio → uncheck
+                const hasNativeAudio = (engineVal === "grok" || engineVal === "seedance");
+                const musicCb = container.querySelector("[id$='-realistic-music']");
+                if (musicCb) musicCb.checked = !hasNativeAudio;
             }
         }
         const vbtn = e.target.closest(".voice-btn");
@@ -1959,7 +1964,7 @@ async function handleWizardCreate() {
             wizardData.topic,
             "wizard-realistic-duration",
             "wizard-realistic-aspect",
-            "wizard-realistic-audio",
+            "wizard-realistic-music",
             wizardData.topic,
             "wizard-realistic-engine"
         );
@@ -2174,7 +2179,7 @@ async function handleScriptCreate() {
             prompt,
             "script-realistic-duration",
             "script-realistic-aspect",
-            "script-realistic-audio",
+            "script-realistic-music",
             realisticTitle,
             "script-realistic-engine"
         );
