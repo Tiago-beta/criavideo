@@ -1518,6 +1518,22 @@ function initCreateWizard() {
         if (eng) {
             eng.closest(".engine-options").querySelectorAll(".engine-option").forEach((d) => d.classList.remove("selected"));
             eng.classList.add("selected");
+            // Show/hide Grok-only duration buttons (12s, 15s)
+            const isGrok = eng.dataset.value === "grok";
+            const container = eng.closest(".form-group")?.parentElement;
+            if (container) {
+                container.querySelectorAll(".grok-only").forEach((btn) => {
+                    btn.hidden = !isGrok;
+                });
+                // If a hidden button was selected, reset to 7s
+                if (!isGrok) {
+                    container.querySelectorAll(".duration-option.grok-only.selected").forEach((btn) => {
+                        btn.classList.remove("selected");
+                        const def7 = btn.closest(".duration-options")?.querySelector('[data-value="7"]');
+                        if (def7) def7.classList.add("selected");
+                    });
+                }
+            }
         }
         const vbtn = e.target.closest(".voice-btn");
         if (vbtn) {
@@ -1603,7 +1619,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const addMusic = musicEl ? musicEl.checked : true;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
     const engine = engineBtn ? engineBtn.dataset.value : "minimax";
-    const engineLabel = engine === "minimax" ? "MiniMax Hailuo" : engine === "wan2" ? "Wan 2.2" : "Seedance 2.0";
+    const engineLabel = engine === "minimax" ? "MiniMax Hailuo" : engine === "wan2" ? "Wan 2.2" : engine === "grok" ? "Grok" : "Seedance 2.0";
 
     // Narration fields
     const narrationEl = document.getElementById(`${prefix}-realistic-narration`);

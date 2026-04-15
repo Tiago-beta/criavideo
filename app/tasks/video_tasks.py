@@ -880,9 +880,9 @@ async def run_realistic_video_pipeline(project_id: int):
 
             # Determine engine from audio_path field (used to store engine choice)
             engine = (project.audio_path or "").strip()
-            if engine not in ("seedance", "minimax", "wan2"):
+            if engine not in ("seedance", "minimax", "wan2", "grok"):
                 engine = "seedance"
-            engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.2", "seedance": "Seedance 2.0"}
+            engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.2", "seedance": "Seedance 2.0", "grok": "Grok"}
             engine_label = engine_labels.get(engine, "Seedance 2.0")
             logger.info(f"Realistic video pipeline for project {project_id} using engine: {engine}")
 
@@ -902,7 +902,8 @@ async def run_realistic_video_pipeline(project_id: int):
                 logger.info(f"Realistic video with reference image: {image_path}")
 
             duration = int(project.track_duration or 7)
-            duration = max(1, min(duration, 10))
+            max_dur = 15 if engine == "grok" else 10
+            duration = max(1, min(duration, max_dur))
 
             optimized_prompt = await optimize_prompt_for_seedance(
                 user_description=user_prompt,
@@ -933,7 +934,36 @@ async def run_realistic_video_pipeline(project_id: int):
                 except Exception:
                     pass
 
-            if engine == "minimax":
+            if engine == "grok":
+                # ── Grok (image-to-video): generate image first, then video ──
+                from app.services.grok_video import generate_video_clip
+                from app.services.scene_generator import generate_scene_image
+
+                await _on_progress(16, "Gerando imagem de referencia...")
+                grok_image_path = image_path
+                if not grok_image_path:
+                    # Generate reference image via Nano Banana
+                    img_dir = render_dir / "grok_ref"
+                    img_dir.mkdir(parents=True, exist_ok=True)
+                    grok_image_path = str(img_dir / "reference.png")
+                    # Use a concise visual prompt for image generation
+                    img_prompt = optimized_prompt[:500]
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        None, generate_scene_image, img_prompt, aspect_ratio, grok_image_path
+                    )
+                    logger.info(f"Grok reference image generated: {grok_image_path}")
+
+                await _on_progress(18, "Iniciando geracao de video Grok...")
+                await generate_video_clip(
+                    image_path=grok_image_path,
+                    prompt=optimized_prompt,
+                    output_path=output_path,
+                    duration=duration,
+                    aspect_ratio=aspect_ratio,
+                    on_progress=_on_progress,
+                )
+            elif engine == "minimax":
                 # ── MiniMax Hailuo ──
                 from app.services.minimax_video import generate_minimax_video
                 await generate_minimax_video(
@@ -998,7 +1028,7 @@ async def run_realistic_video_pipeline(project_id: int):
             project.progress = 80
             await db.commit()
 
-            # ── Step 3: Generate audio (narration + music) for MiniMax ──
+            # ── Step 3: Generate audio (narration + music) for engines without native audio ──
             tags = project.tags if isinstance(project.tags, dict) else {}
             add_music = tags.get("add_music", False)
             add_narration = tags.get("add_narration", False)
@@ -1008,7 +1038,7 @@ async def run_realistic_video_pipeline(project_id: int):
             final_video_path = output_path
             has_audio = False
 
-            if engine in ("minimax", "wan2") and (add_narration or add_music):
+            if engine in ("minimax", "wan2", "grok") and (add_narration or add_music):
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
                 audio_dir.mkdir(parents=True, exist_ok=True)
 
