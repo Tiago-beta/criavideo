@@ -375,6 +375,8 @@ class QuickCreateRequest(BaseModel):
     lyrics: str = ""
     duration: float = 0
     aspect_ratio: str = "16:9"
+    style_prompt: str = ""     # optional: user-chosen style override
+    description: str = ""      # optional: user-provided description/topic
 
 
 class CopyFormatRequest(BaseModel):
@@ -793,24 +795,42 @@ Responda SOMENTE um JSON com:
 JSON apenas, sem markdown."""
 
     title = req.song_title or "Meu Vídeo"
-    description = ""
-    style_prompt = "cinematic, vibrant colors, dynamic lighting"
+    description = req.description or ""
+    style_prompt = req.style_prompt or "cinematic, vibrant colors, dynamic lighting"
     tags = []
 
-    try:
-        resp = await _openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": ai_prompt}],
-            temperature=0.8,
-            max_tokens=300,
-        )
-        data = json.loads(resp.choices[0].message.content)
-        title = data.get("title", title)
-        description = data.get("description", description)
-        style_prompt = data.get("style_prompt", style_prompt)
-        tags = data.get("tags", tags)
-    except Exception as e:
-        logger.warning("AI metadata generation failed, using defaults: %s", e)
+    # If user provided style_prompt, skip AI generation for style
+    if req.style_prompt:
+        # Still generate title/description/tags via AI if description not provided
+        if not req.description:
+            try:
+                resp = await _openai.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": ai_prompt}],
+                    temperature=0.8,
+                    max_tokens=300,
+                )
+                data = json.loads(resp.choices[0].message.content)
+                title = data.get("title", title)
+                description = data.get("description", description)
+                tags = data.get("tags", tags)
+            except Exception as e:
+                logger.warning("AI metadata generation failed, using defaults: %s", e)
+    else:
+        try:
+            resp = await _openai.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": ai_prompt}],
+                temperature=0.8,
+                max_tokens=300,
+            )
+            data = json.loads(resp.choices[0].message.content)
+            title = data.get("title", title)
+            description = data.get("description", description)
+            style_prompt = data.get("style_prompt", style_prompt)
+            tags = data.get("tags", tags)
+        except Exception as e:
+            logger.warning("AI metadata generation failed, using defaults: %s", e)
 
     # ── Credit check: deduct based on song duration ──
     # Skip for Levita users (credits handled by Levita backend)
@@ -1456,7 +1476,6 @@ async def generate_audio_endpoint(
 class GenerateRealisticPromptRequest(BaseModel):
     topic: str
     style: str = "cinematic"
-    engine: str = "seedance"
 
 
 @router.post("/generate-realistic-prompt")
@@ -1464,28 +1483,19 @@ async def generate_realistic_prompt_endpoint(
     req: GenerateRealisticPromptRequest,
     user: dict = Depends(get_current_user),
 ):
-    """Generate an optimized prompt from a simple topic/theme, using the engine-specific optimizer."""
+    """Generate an optimized Seedance 2.0 prompt from a simple topic/theme."""
     topic = (req.topic or "").strip()
     if not topic:
         raise HTTPException(status_code=400, detail="Descreva o tema do video.")
     if len(topic) > 2000:
         raise HTTPException(status_code=400, detail="Tema muito longo (maximo 2000 caracteres).")
 
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "seedance"
-
-    if engine == "grok":
-        from app.services.grok_video import optimize_prompt_for_grok
-        optimized = await optimize_prompt_for_grok(
-            user_description=topic,
-            duration=7,
-        )
-    else:
-        from app.services.seedance_video import optimize_prompt_for_seedance
-        optimized = await optimize_prompt_for_seedance(
-            user_description=topic,
-            duration=7,
-            tone=req.style,
-        )
+    from app.services.seedance_video import optimize_prompt_for_seedance
+    optimized = await optimize_prompt_for_seedance(
+        user_description=topic,
+        duration=7,
+        tone=req.style,
+    )
     return {"prompt": optimized}
 
 
@@ -1500,9 +1510,7 @@ class GenerateRealisticRequest(BaseModel):
     narration_voice: str = "onyx"
     title: str = ""
     image_upload_id: str = ""
-    engine: str = "seedance"  # "seedance", "minimax", "wan2" or "grok"
-    prompt_optimized: bool = False  # True when prompt was already optimized via AI
-    realistic_style: str = ""  # Style hint from wizard (cinematic, commercial, meme, etc)
+    engine: str = "seedance"  # "seedance" or "minimax"
 
 
 @router.post("/generate-realistic")
@@ -1512,7 +1520,7 @@ async def generate_realistic_endpoint(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate a realistic AI video using Seedance 2.0, MiniMax Hailuo, Wan 2.2 or Grok."""
+    """Generate a realistic AI video using Seedance 2.0, MiniMax Hailuo, or Wan 2.2."""
     prompt = (req.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Descreva a cena que voce quer ver no video.")
@@ -1520,9 +1528,7 @@ async def generate_realistic_endpoint(
         raise HTTPException(status_code=400, detail="Descricao muito longa (maximo 5000 caracteres).")
 
     duration = max(1, min(req.duration, 10))
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "seedance"
-    if engine == "grok":
-        duration = max(1, min(req.duration, 15))
+    engine = req.engine if req.engine in ("seedance", "minimax", "wan2") else "seedance"
 
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
         raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1.")
@@ -1544,7 +1550,7 @@ async def generate_realistic_endpoint(
     if not project_title:
         project_title = prompt[:100]
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.2", "seedance": "Seedance 2.0", "grok": "Grok"}
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.2", "seedance": "Seedance 2.0"}
     engine_label = engine_labels.get(engine, "Seedance 2.0")
 
     # Narration config stored in tags JSON
@@ -1556,8 +1562,6 @@ async def generate_realistic_endpoint(
         "add_music": req.add_music,
         "add_narration": req.add_narration and bool(narration_text),
         "narration_voice": narration_voice,
-        "prompt_optimized": req.prompt_optimized,
-        "realistic_style": req.realistic_style or "",
     }
 
     project = VideoProject(
