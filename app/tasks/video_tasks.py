@@ -1099,42 +1099,8 @@ async def run_realistic_video_pipeline(project_id: int):
                         logger.warning(f"Narration generation failed: {e}")
                         narration_path = ""
 
-                # Use external audio URL (from Tevoxi) or generate background music
-                external_audio_url = tags.get("audio_url", "")
-                if add_music and external_audio_url:
-                    project.progress = 85
-                    await db.commit()
-                    logger.info(f"Downloading external audio for realistic video {project_id}: {external_audio_url[:100]}")
-                    try:
-                        ext_audio_path = await download_audio_if_url(external_audio_url, project_id)
-                        if ext_audio_path and os.path.exists(ext_audio_path):
-                            # Trim to clip section if specified
-                            clip_start = float(tags.get("clip_start", 0))
-                            clip_dur = float(tags.get("clip_duration", 0))
-                            if clip_start > 0 or clip_dur > 0:
-                                trimmed_path = str(audio_dir / "external_clip.mp3")
-                                trim_args = ["ffmpeg", "-y", "-i", ext_audio_path]
-                                if clip_start > 0:
-                                    trim_args += ["-ss", str(clip_start)]
-                                if clip_dur > 0:
-                                    trim_args += ["-t", str(clip_dur)]
-                                trim_args += ["-c:a", "libmp3lame", "-q:a", "2", trimmed_path]
-                                proc = await asyncio.create_subprocess_exec(
-                                    *trim_args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
-                                )
-                                await proc.wait()
-                                if os.path.exists(trimmed_path) and os.path.getsize(trimmed_path) > 0:
-                                    ext_audio_path = trimmed_path
-                                    logger.info(f"Audio trimmed: start={clip_start}s, dur={clip_dur}s")
-                            music_path = ext_audio_path
-                            logger.info(f"External audio downloaded: {music_path}")
-                        else:
-                            logger.warning("External audio download returned empty, falling back to generation")
-                    except Exception as e:
-                        logger.warning(f"External audio download failed: {e}")
-
-                # Fallback: generate background music via Tevoxi if no external audio
-                if add_music and not music_path:
+                # Generate background music via Tevoxi
+                if add_music:
                     project.progress = 85
                     await db.commit()
                     logger.info(f"Generating background music for realistic video {project_id}")
