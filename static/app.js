@@ -2751,7 +2751,7 @@ function showAiSuggestPanel() {
     // Adapt AI suggest panel for mode
     document.getElementById("ai-suggest-title").textContent = isRealistic ? "Gerar prompt com IA" : "Gerar roteiro com IA";
     document.getElementById("ai-suggest-hint").textContent = isRealistic
-        ? "Descreva a cena e a IA Seedance criara um prompt cinematografico profissional"
+        ? "Descreva a cena e a IA criara um prompt cinematografico profissional"
         : "Descreva o tema e a IA criara um roteiro completo";
     document.getElementById("ai-suggest-topic").placeholder = isRealistic
         ? "Ex: uma cachorra adotou um gatinho, produto girando..."
@@ -2775,16 +2775,19 @@ async function generateAiScript() {
     const isRealistic = scriptData.videoType === "realista";
 
     if (isRealistic) {
-        // Generate optimized Seedance prompt
+        // Generate optimized prompt for the selected engine
         const style = document.getElementById("ai-suggest-style").value;
+        const engineBtn = document.querySelector("#wizard-realistic-engine .engine-option.selected") || document.querySelector("#script-realistic-engine .engine-option.selected");
+        const engine = engineBtn ? engineBtn.dataset.value : "minimax";
+        const engineLabel = engine === "grok" ? "Grok" : engine === "minimax" ? "MiniMax" : engine === "wan2" ? "Wan 2.2" : "Seedance";
         showCreateProgress("Gerando prompt cinematografico com IA...", {
             progress: 30,
-            stage: "Otimizando prompt Seedance...",
+            stage: `Otimizando prompt ${engineLabel}...`,
         });
         try {
             const result = await api("/video/generate-realistic-prompt", {
                 method: "POST",
-                body: JSON.stringify({ topic, style }),
+                body: JSON.stringify({ topic, style, engine }),
             });
             hideCreateProgress();
             document.getElementById("script-text").value = result.prompt;
