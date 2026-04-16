@@ -910,6 +910,46 @@ async def run_realistic_video_pipeline(project_id: int):
             if not user_prompt:
                 raise ValueError("Nenhuma descricao fornecida para o video realista.")
 
+            # ── Step 0.5: Transcribe audio clip for context-aware prompt ──
+            tags_data_early = project.tags if isinstance(project.tags, dict) else {}
+            external_audio_url_early = (tags_data_early.get("audio_url") or "").strip()
+            clip_start_early = float(tags_data_early.get("clip_start", 0))
+            clip_dur_early = float(tags_data_early.get("clip_duration", 0))
+            if external_audio_url_early:
+                try:
+                    audio_dir_early = Path(settings.media_dir) / "audio" / str(project_id)
+                    audio_dir_early.mkdir(parents=True, exist_ok=True)
+                    ext_audio = await download_audio_if_url(external_audio_url_early, project_id)
+                    if ext_audio and os.path.exists(ext_audio):
+                        # Extract the clip segment for transcription
+                        clip_path = str(audio_dir_early / "clip_for_transcription.mp3")
+                        trim_args = ["ffmpeg", "-y", "-i", ext_audio]
+                        if clip_start_early > 0:
+                            trim_args += ["-ss", str(clip_start_early)]
+                        if clip_dur_early > 0:
+                            trim_args += ["-t", str(clip_dur_early)]
+                        trim_args += ["-c:a", "libmp3lame", "-q:a", "2", clip_path]
+                        proc = await asyncio.create_subprocess_exec(
+                            *trim_args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+                        )
+                        await proc.wait()
+                        if os.path.exists(clip_path) and os.path.getsize(clip_path) > 0:
+                            from app.services.transcriber import transcribe_audio
+                            lyrics_hint = tags_data_early.get("lyrics", "")
+                            result = await asyncio.get_event_loop().run_in_executor(
+                                None, lambda: transcribe_audio(clip_path, prompt=lyrics_hint)
+                            )
+                            transcribed_text = (result.get("text", "") or "").strip()
+                            if transcribed_text:
+                                user_prompt = f"A musica diz neste trecho: \"{transcribed_text}\". Crie um video que represente visualmente o que esta sendo cantado."
+                                logger.info(f"Realistic video: transcribed clip text ({len(transcribed_text)} chars): {transcribed_text[:200]}")
+                            else:
+                                logger.info("Realistic video: transcription returned empty, using original prompt")
+                        else:
+                            logger.warning("Realistic video: clip extraction failed, using original prompt")
+                except Exception as e:
+                    logger.warning(f"Realistic video: clip transcription failed: {e}, using original prompt")
+
             # Check for reference image (stored in style_prompt as file path)
             image_path = None
             if project.style_prompt and os.path.exists(project.style_prompt):
