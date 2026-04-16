@@ -46,9 +46,11 @@ async def ai_select_video_settings(theme: str) -> dict:
                     "role": "system",
                     "content": (
                         "Voce e um diretor de conteudo. Dado um tema de video, escolha as melhores configuracoes. "
+                        "REGRA IMPORTANTE: Se o tema for gospel, religioso, cristao, louvor, adoracao ou espiritual, "
+                        "o style_prompt DEVE ser 'natureza' para usar paisagens naturais. "
                         "Responda APENAS um JSON valido com: "
                         '{"tone": "informativo|inspirador|descontraido|profundo|dramatico|motivacional", '
-                        '"style_prompt": "descricao visual em ingles (ex: cinematic warm tones, minimalist clean)", '
+                        '"style_prompt": "descricao visual em ingles (ex: cinematic warm tones, minimalist clean) — para gospel/religioso use: natureza", '
                         '"duration_seconds": 60 a 300, '
                         '"suggested_title": "titulo atraente em portugues"}'
                     ),
@@ -303,6 +305,20 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
     title = theme_text  # Always use the user's theme as title (in Portuguese)
     lyrics = music_result.get("lyrics", "")
     music_duration = music_result.get("duration", 120)
+
+    # Detect gospel/religious themes and force nature style
+    _gospel_keywords = ["deus", "senhor", "jesus", "cristo", "louvor", "adoração",
+                        "adoracao", "gospel", "fé", "fe", "oração", "oracao", "céu",
+                        "ceu", "espírito", "espirito", "santo", "igreja", "worship",
+                        "god", "lord", "faith", "pray", "heaven", "divine", "holy",
+                        "ungido", "bíblia", "biblia", "salvação", "salvacao", "graça",
+                        "graca", "milagre", "profecia", "glória", "gloria", "aleluia",
+                        "hosana", "cordeiro", "redenção", "redencao"]
+    _theme_lower = theme_text.lower()
+    _lyrics_lower = lyrics.lower() if lyrics else ""
+    if any(kw in _theme_lower or kw in _lyrics_lower for kw in _gospel_keywords):
+        cfg["style_prompt"] = "natureza"
+        logger.info("Gospel theme detected for '%s', using natureza style", theme_text)
 
     # 2. Create project
     async with async_session() as db:

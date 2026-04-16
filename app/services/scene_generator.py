@@ -40,6 +40,10 @@ split the song into {scene_min}-{scene_max} visual scenes for a music video. Eac
 
 CRITICAL: Each scene MUST have a UNIQUE visual setting. Do NOT repeat the same elements across scenes (e.g. do not put doves/birds in every scene). Vary the landscapes, lighting, time of day, and focal objects. Each scene should feel visually distinct.
 
+THEME-AWARE VISUAL RULES:
+- If the lyrics are gospel, religious, spiritual, Christian, worship, or faith-related: ALL scenes MUST use NATURE imagery (mountains, forests, rivers, waterfalls, oceans, sunrises, sunsets, starry skies, fields of flowers, rain, clouds with light rays, valleys, paths through woods, calm lakes). NEVER use random urban, sci-fi, abstract, or unrelated imagery for gospel content. The visuals must evoke peace, hope, divine presence, and spiritual connection through the beauty of nature.
+- Match the visual theme to the actual content and emotion of the lyrics. If the lyrics talk about storms, show dramatic skies/ocean. If about peace, show serene landscapes. If about strength, show majestic mountains.
+
 For each scene, provide:
 - scene_index: sequential number starting from 0
 - start_time: approximate start in seconds
@@ -75,6 +79,18 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
         "Cinematic, high quality, professional lighting, music video aesthetic. "
         "No text or words in the image. No human faces. "
     )
+    # Detect gospel/religious content and enforce nature imagery
+    _gospel_kw = ["god", "lord", "faith", "pray", "worship", "church", "gospel",
+                  "heaven", "divine", "spirit", "holy", "jesus", "christ", "deus",
+                  "senhor", "louvor", "adoracao", "gospel", "fe", "oracao", "ceu"]
+    prompt_lower = prompt.lower()
+    if any(kw in prompt_lower for kw in _gospel_kw):
+        style_prefix = (
+            "Beautiful nature landscape, cinematic, high quality, professional lighting. "
+            "Majestic scenery: mountains, forests, rivers, sunlight through clouds, serene lakes, golden hour. "
+            "Spiritual and peaceful atmosphere through nature. "
+            "No text or words in the image. No human faces. No religious symbols or objects. "
+        )
     full_prompt = style_prefix + prompt
 
     response = google_client.models.generate_content(
