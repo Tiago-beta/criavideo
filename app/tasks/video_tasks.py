@@ -15,6 +15,40 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def _aspect_to_resolution(aspect_ratio: str) -> tuple[int, int]:
+    if aspect_ratio == "9:16":
+        return 1080, 1920
+    if aspect_ratio == "1:1":
+        return 1080, 1080
+    return 1920, 1080
+
+
+async def _normalize_video_aspect(input_path: str, aspect_ratio: str, output_path: str) -> str:
+    """Force output video to requested aspect ratio using scale+crop."""
+    tw, th = _aspect_to_resolution(aspect_ratio)
+    vf = f"scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th},setsar=1"
+
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-vf", vf,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "20",
+        "-pix_fmt", "yuv420p",
+        "-map", "0:v:0",
+        "-map", "0:a?",
+        "-c:a", "copy",
+        output_path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+    if proc.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+        raise RuntimeError(f"Aspect normalization failed for {input_path}")
+    return output_path
+
+
 def _find_custom_background_music(project_id: int) -> str:
     """Return custom uploaded background music path if present."""
     audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
@@ -1103,6 +1137,14 @@ async def run_realistic_video_pipeline(project_id: int):
 
             if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
                 raise RuntimeError(f"{engine_label} nao gerou o video ou o arquivo esta vazio.")
+
+            # Force final frame geometry to the requested ratio (some providers may ignore aspect settings)
+            try:
+                normalized_path = str(render_dir / "realistic_video_aspect.mp4")
+                output_path = await _normalize_video_aspect(output_path, aspect_ratio, normalized_path)
+                logger.info(f"Realistic video aspect normalized to {aspect_ratio}: {output_path}")
+            except Exception as e:
+                logger.warning(f"Aspect normalization skipped, using provider output: {e}")
 
             file_size = os.path.getsize(output_path)
             video_duration = get_duration(output_path) if os.path.exists(output_path) else float(duration)
