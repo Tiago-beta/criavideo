@@ -79,10 +79,14 @@ def generate_ass_subtitles(
     lyrics_words: list[dict],
     aspect_ratio: str = "16:9",
     output_path: str = "karaoke.ass",
+    narration_mode: bool = False,
 ) -> str:
     """Generate a complete ASS subtitle file with karaoke highlighting.
     Always shows 2 lines: the current line with karaoke effect
     and the next line in dim color so the user can read ahead.
+
+    If narration_mode=True, shows only the current line (no next-line preview)
+    and displays the full line at once instead of word-by-word karaoke.
 
     lyrics_words: list of {"word": str, "start": float, "end": float}
     """
@@ -118,10 +122,15 @@ def generate_ass_subtitles(
             next_start = max(0.0, lines[i + 1][0]["start"] - 0.3)
             end = min(end, next_start)
 
-        karaoke_text = _build_karaoke_line(line_words)
+        if narration_mode:
+            # Narration: show full line at once, yellow highlighted, no word-by-word karaoke
+            line_text = " ".join(w["word"].strip().upper() for w in line_words if w.get("word", "").strip())
+            karaoke_text = line_text
+        else:
+            karaoke_text = _build_karaoke_line(line_words)
 
-        # Add next line preview if available
-        if i + 1 < len(lines):
+        # Add next line preview if available (only for karaoke/music mode)
+        if not narration_mode and i + 1 < len(lines):
             next_words = lines[i + 1]
             next_text = " ".join(w["word"].strip().upper() for w in next_words if w.get("word", "").strip())
             if next_text:
@@ -147,10 +156,12 @@ def generate_ass_from_text(
     duration: float,
     aspect_ratio: str = "16:9",
     output_path: str = "karaoke.ass",
+    narration_mode: bool = False,
 ) -> str:
     """Generate ASS subtitles from plain text lyrics (no word timestamps).
     Distributes lines evenly across the song duration with highlight effect.
     Always shows 2 lines: current highlighted + next line preview.
+    If narration_mode=True, shows only the current spoken line.
     """
     if aspect_ratio == "9:16":
         play_res_y = 1920
@@ -185,16 +196,21 @@ def generate_ass_from_text(
         start = i * time_per_line
         # End exactly when next line starts (no overlap)
         end = (i + 1) * time_per_line if i + 1 < len(raw_lines) else start + time_per_line - 0.1
-        # Karaoke-style: whole line highlights word by word
-        words = line.upper().split()
-        if words:
-            word_dur_cs = max(1, int((time_per_line / len(words)) * 100))
-            karaoke_parts = " ".join(f"{{\\k{word_dur_cs}}}{w}" for w in words)
-        else:
-            karaoke_parts = line.upper()
 
-        # Add next line preview if available
-        if i + 1 < len(raw_lines):
+        if narration_mode:
+            # Narration: show full line at once, no word-by-word karaoke
+            karaoke_parts = line.upper()
+        else:
+            # Karaoke-style: whole line highlights word by word
+            words = line.upper().split()
+            if words:
+                word_dur_cs = max(1, int((time_per_line / len(words)) * 100))
+                karaoke_parts = " ".join(f"{{\\k{word_dur_cs}}}{w}" for w in words)
+            else:
+                karaoke_parts = line.upper()
+
+        # Add next line preview if available (only for karaoke/music mode)
+        if not narration_mode and i + 1 < len(raw_lines):
             next_text = raw_lines[i + 1].upper()
             if next_text:
                 karaoke_parts += r"\N" + next_line_color + next_text

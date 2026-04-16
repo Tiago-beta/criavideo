@@ -122,11 +122,15 @@ async def _run_custom_video_pipeline(db, project, project_id: int):
         subtitle_dir.mkdir(parents=True, exist_ok=True)
         subtitle_path = str(subtitle_dir / "karaoke.ass")
 
+        is_karaoke_project = getattr(project, "is_karaoke", False) or False
+        narration_mode = not is_karaoke_project
+
         if transcribed_words:
             generate_ass_subtitles(
                 lyrics_words=transcribed_words,
                 aspect_ratio=project.aspect_ratio,
                 output_path=subtitle_path,
+                narration_mode=narration_mode,
             )
         elif has_script:
             duration = get_duration(narration_path) if narration_path else video_duration
@@ -135,6 +139,7 @@ async def _run_custom_video_pipeline(db, project, project_id: int):
                 duration=duration,
                 aspect_ratio=project.aspect_ratio,
                 output_path=subtitle_path,
+                narration_mode=narration_mode,
             )
         logger.info(f"Custom video: subtitles generated at {subtitle_path}")
 
@@ -582,6 +587,8 @@ async def run_video_pipeline(project_id: int):
             enable_subtitles = getattr(project, "enable_subtitles", True)
             if enable_subtitles is None:
                 enable_subtitles = True
+            # Narration mode: non-karaoke, non-music projects show only current spoken line
+            is_narration_subtitle = not is_karaoke and not is_music_only_mode
             if not is_black_screen and enable_subtitles:
                 from app.services.subtitle_generator import generate_ass_subtitles, generate_ass_from_text
 
@@ -595,12 +602,14 @@ async def run_video_pipeline(project_id: int):
                         lyrics_words=transcribed_words,
                         aspect_ratio=project.aspect_ratio,
                         output_path=subtitle_path,
+                        narration_mode=is_narration_subtitle,
                     )
                 elif project.lyrics_words:
                     generate_ass_subtitles(
                         lyrics_words=project.lyrics_words,
                         aspect_ratio=project.aspect_ratio,
                         output_path=subtitle_path,
+                        narration_mode=is_narration_subtitle,
                     )
                 elif project.lyrics_text:
                     generate_ass_from_text(
@@ -608,6 +617,7 @@ async def run_video_pipeline(project_id: int):
                         duration=project.track_duration or 180,
                         aspect_ratio=project.aspect_ratio,
                         output_path=subtitle_path,
+                        narration_mode=is_narration_subtitle,
                     )
                 else:
                     subtitle_path = ""
@@ -1099,8 +1109,42 @@ async def run_realistic_video_pipeline(project_id: int):
                         logger.warning(f"Narration generation failed: {e}")
                         narration_path = ""
 
-                # Generate background music via Tevoxi
-                if add_music:
+                # Use external audio URL (from Tevoxi) or generate background music
+                external_audio_url = tags.get("audio_url", "")
+                if add_music and external_audio_url:
+                    project.progress = 85
+                    await db.commit()
+                    logger.info(f"Downloading external audio for realistic video {project_id}: {external_audio_url[:100]}")
+                    try:
+                        ext_audio_path = await download_audio_if_url(external_audio_url, project_id)
+                        if ext_audio_path and os.path.exists(ext_audio_path):
+                            # Trim to clip section if specified
+                            clip_start = float(tags.get("clip_start", 0))
+                            clip_dur = float(tags.get("clip_duration", 0))
+                            if clip_start > 0 or clip_dur > 0:
+                                trimmed_path = str(audio_dir / "external_clip.mp3")
+                                trim_args = ["ffmpeg", "-y", "-i", ext_audio_path]
+                                if clip_start > 0:
+                                    trim_args += ["-ss", str(clip_start)]
+                                if clip_dur > 0:
+                                    trim_args += ["-t", str(clip_dur)]
+                                trim_args += ["-c:a", "libmp3lame", "-q:a", "2", trimmed_path]
+                                proc = await asyncio.create_subprocess_exec(
+                                    *trim_args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+                                )
+                                await proc.wait()
+                                if os.path.exists(trimmed_path) and os.path.getsize(trimmed_path) > 0:
+                                    ext_audio_path = trimmed_path
+                                    logger.info(f"Audio trimmed: start={clip_start}s, dur={clip_dur}s")
+                            music_path = ext_audio_path
+                            logger.info(f"External audio downloaded: {music_path}")
+                        else:
+                            logger.warning("External audio download returned empty, falling back to generation")
+                    except Exception as e:
+                        logger.warning(f"External audio download failed: {e}")
+
+                # Fallback: generate background music via Tevoxi if no external audio
+                if add_music and not music_path:
                     project.progress = 85
                     await db.commit()
                     logger.info(f"Generating background music for realistic video {project_id}")

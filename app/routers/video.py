@@ -342,11 +342,11 @@ async def get_voice_demo(voice_id: str):
 
 
 def _to_media_url(path: str | None) -> str | None:
-    """Convert absolute file path to web-accessible URL (only if file exists)."""
+    """Convert absolute file path to web-accessible URL."""
     if not path:
         return None
     media_prefix = settings.media_dir.rstrip("/")
-    if path.startswith(media_prefix) and os.path.isfile(path):
+    if path.startswith(media_prefix):
         return "/video/media" + path[len(media_prefix):]
     return None
 
@@ -452,7 +452,7 @@ async def list_projects(
             "error_message": p.error_message,
             "created_at": p.created_at.isoformat() if p.created_at else None,
             "render_created_at": p.renders[0].created_at.isoformat() if p.renders and p.renders[0].created_at else None,
-            "video_expired": (p.renders[0].file_path is None or not os.path.isfile(p.renders[0].file_path or "")) if p.renders else False,
+            "video_expired": p.renders[0].file_path is None if p.renders else False,
             "lyrics_text": p.lyrics_text or "",
             "style_prompt": p.style_prompt or "",
             "thumbnail_url": _to_media_url(p.renders[0].thumbnail_path) if p.renders else None,
@@ -1530,6 +1530,10 @@ class GenerateRealisticRequest(BaseModel):
     title: str = ""
     image_upload_id: str = ""
     engine: str = "seedance"  # "seedance" or "minimax"
+    audio_url: str = ""       # External audio URL (e.g. from Tevoxi)
+    lyrics: str = ""          # Lyrics/transcription for the audio clip
+    clip_start: float = 0     # Start time in seconds for audio clip
+    clip_duration: float = 0  # Duration of the audio clip (0 = full)
 
 
 @router.post("/generate-realistic")
@@ -1576,13 +1580,21 @@ async def generate_realistic_endpoint(
     # Narration config stored in tags JSON
     narration_text = (req.narration_text or "").strip() if req.add_narration else ""
     narration_voice = req.narration_voice or "onyx"
+    external_audio_url = (req.audio_url or "").strip()
+    external_lyrics = (req.lyrics or "").strip()
     tags_data = {
         "type": "realista",
         "engine": engine,
-        "add_music": req.add_music,
+        "add_music": req.add_music or bool(external_audio_url),
         "add_narration": req.add_narration and bool(narration_text),
         "narration_voice": narration_voice,
     }
+    if external_audio_url:
+        tags_data["audio_url"] = external_audio_url
+        tags_data["clip_start"] = req.clip_start
+        tags_data["clip_duration"] = req.clip_duration
+    if external_lyrics:
+        tags_data["lyrics"] = external_lyrics
 
     project = VideoProject(
         user_id=user["id"],
