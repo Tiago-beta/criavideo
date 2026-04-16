@@ -161,7 +161,7 @@ async def generate_music_from_theme(
             status = status_data.get("status", "")
 
             if status == "completed":
-                title = status_data.get("title", title_suggestion)
+                title = title_suggestion or status_data.get("title", theme)
                 lyrics = status_data.get("lyrics", "")
                 music_duration = status_data.get("duration", duration)
 

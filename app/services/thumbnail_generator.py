@@ -50,6 +50,7 @@ TITULO DO VIDEO: {title_text}
 DESCRICAO DO VIDEO: {description_text}
 
 REGRAS OBRIGATORIAS para a thumbnail gerada:
+- TODO texto na imagem DEVE ser em PORTUGUES BRASILEIRO — NUNCA use ingles
 - Formato: 16:9, proporcao widescreen, alta resolucao 4K
 - Ponto focal unico e dominante, sem poluicao visual
 - Alto contraste entre foreground e background para visibilidade mobile
@@ -59,6 +60,7 @@ REGRAS OBRIGATORIAS para a thumbnail gerada:
 - Sensacao de urgencia ou curiosidade que forca o clique em 0.3 segundos
 - Legibilidade perfeita em tela de 300px (celular)
 - Estilo fotorrealista ou cinematografico de alto impacto
+- NUNCA coloque nomes de marcas, IA ou plataformas na imagem
 
 INSTRUCOES DE COMPOSICAO baseadas no conteudo analisado:
 - Se o tema envolve dinheiro/resultado: inclua numero ou valor especifico em destaque dourado/amarelo
@@ -67,9 +69,10 @@ INSTRUCOES DE COMPOSICAO baseadas no conteudo analisado:
 - Se e review/produto: produto centralizado com iluminacao dramatica + expressao de surpresa
 - Se e educacional: elemento visual que representa a pergunta ou curiosidade do tema
 - Se e lifestyle/vlog: atmosfera calorosa, cores quentes, energia positiva
+- Se e musica/inspiracional: imagem emocional e impactante que transmita o sentimento do tema
 
 TEXTO NA IMAGEM (se aplicavel):
-Renderize o texto principal com fonte bold, sans-serif, cor altamente contrastante ao fundo, tamanho que ocupe no minimo 25% da largura da imagem, com stroke/sombra leve para legibilidade.
+Renderize o texto principal EM PORTUGUES com fonte bold, sans-serif, cor altamente contrastante ao fundo, tamanho que ocupe no minimo 25% da largura da imagem, com stroke/sombra leve para legibilidade. O texto deve ser chamativo e despertar curiosidade.
 
 Gere a thumbnail agora. Nao descreva, crie a imagem diretamente."""
 

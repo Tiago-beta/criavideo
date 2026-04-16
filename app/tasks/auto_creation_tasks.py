@@ -227,7 +227,7 @@ async def _create_video_for_theme(
             style_prompt=cfg["style_prompt"],
             aspect_ratio=cfg.get("aspect_ratio", "16:9"),
             track_title=title,
-            track_artist="CriaVideo AI",
+            track_artist="",
             track_duration=0,
             lyrics_text=script_text,
             lyrics_words=[],
@@ -300,7 +300,7 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
     )
 
     audio_path = music_result["audio_path"]
-    title = music_result.get("title", theme_text)
+    title = theme_text  # Always use the user's theme as title (in Portuguese)
     lyrics = music_result.get("lyrics", "")
     music_duration = music_result.get("duration", 120)
 
@@ -315,7 +315,7 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
             style_prompt=cfg.get("style_prompt", "cinematic, vibrant colors, dynamic lighting"),
             aspect_ratio=cfg.get("aspect_ratio", "16:9"),
             track_title=title,
-            track_artist="Tevoxi AI",
+            track_artist="",
             track_duration=music_duration,
             lyrics_text=lyrics,
             lyrics_words=[],
@@ -474,17 +474,9 @@ async def _generate_publish_metadata(project: VideoProject) -> dict:
     # Build context
     context_parts = []
     if project.title:
-        context_parts.append(f"Titulo do projeto: {project.title}")
-    if project.track_title:
-        context_parts.append(f"Musica: {project.track_title}")
-    if project.track_artist:
-        context_parts.append(f"Artista: {project.track_artist}")
-    if project.style_prompt:
-        context_parts.append(f"Estilo visual: {project.style_prompt}")
+        context_parts.append(f"Tema do video: {project.title}")
     if project.lyrics_text:
         context_parts.append(f"Letra da musica:\n{project.lyrics_text[:500]}")
-    if project.description:
-        context_parts.append(f"Descricao do projeto: {project.description}")
 
     context = "\n".join(context_parts) or "Video musical sem detalhes adicionais"
     tema = project.track_title or project.title or "Video musical"
@@ -501,12 +493,16 @@ Gere:
 3. Hashtags relevantes (5-8 hashtags)
 4. Tags para SEO (5-10 palavras-chave)
 
-REGRAS:
-- Titulo curto, forte e claro
-- Descricao especifica ao conteudo real, nao generica
+REGRAS OBRIGATORIAS:
+- TUDO em portugues brasileiro, sem nenhuma palavra em ingles
+- O titulo deve ser baseado no TEMA fornecido, de forma natural e chamativa
+- NUNCA mencione nomes de IA, ferramentas, plataformas ou marcas (nada de Tevoxi, CriaVideo, OpenAI, etc)
+- NUNCA use termos tecnicos como "cinematografico", "experiencia visual", "experiencia cinematografica"
+- Escreva como um ser humano real escreveria, de forma natural e emocional
+- Descricao deve falar sobre o sentimento e mensagem da musica/video, nao sobre como foi feito
+- Titulo curto, forte e direto ao ponto
 - Hashtags comecam com #
-- Em portugues brasileiro
-- Tom envolvente e premium
+- Tom envolvente, emocional e autentico
 
 Retorne SOMENTE JSON:
 {{
