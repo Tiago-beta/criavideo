@@ -631,13 +631,32 @@ async def run_video_pipeline(project_id: int):
                 subtitle_path = str(subtitle_dir / "karaoke.ass")
 
                 if transcribed_words:
-                    # Best: Whisper word-level timestamps → accurate karaoke
-                    generate_ass_subtitles(
-                        lyrics_words=transcribed_words,
-                        aspect_ratio=project.aspect_ratio,
-                        output_path=subtitle_path,
-                        narration_mode=is_narration_subtitle,
-                    )
+                    # Check if Whisper timestamps start too late (common with music intros)
+                    first_word_start = transcribed_words[0].get("start", 0) if transcribed_words else 0
+                    whisper_too_late = first_word_start > 15 and project.lyrics_text
+
+                    if whisper_too_late:
+                        # Whisper missed the beginning (instrumental intro confuses it)
+                        # Fall back to text-based even distribution
+                        logger.warning(
+                            f"Whisper first word at {first_word_start:.1f}s — too late, "
+                            f"falling back to text-based subtitles for project {project_id}"
+                        )
+                        generate_ass_from_text(
+                            lyrics_text=project.lyrics_text,
+                            duration=project.track_duration or 180,
+                            aspect_ratio=project.aspect_ratio,
+                            output_path=subtitle_path,
+                            narration_mode=is_narration_subtitle,
+                        )
+                    else:
+                        # Best: Whisper word-level timestamps → accurate karaoke
+                        generate_ass_subtitles(
+                            lyrics_words=transcribed_words,
+                            aspect_ratio=project.aspect_ratio,
+                            output_path=subtitle_path,
+                            narration_mode=is_narration_subtitle,
+                        )
                 elif project.lyrics_words:
                     generate_ass_subtitles(
                         lyrics_words=project.lyrics_words,
