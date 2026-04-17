@@ -1180,7 +1180,12 @@ function openCopyChoiceModal(projectId) {
         alert("Somente videos concluidos podem ser copiados.");
         return;
     }
-    createSimilar(projectId);
+    _copyFormatSourceProjectId = projectId;
+    const sourceEl = document.getElementById("copy-choice-source");
+    if (sourceEl) {
+        sourceEl.textContent = `Origem: ${project.title || "Video"} (${project.aspect_ratio || "16:9"})`;
+    }
+    openModal("modal-copy-choice");
 }
 
 function chooseCopyScript() {
