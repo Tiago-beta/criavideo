@@ -740,12 +740,12 @@ function openModal(id) {
     if (!modal) {
         return;
     }
-    modal.classList.add("open");
-    // Inline fallback for environments where modal CSS class changes are delayed.
-    modal.style.display = "flex";
-    if (id === "modal-player") {
-        document.getElementById("app").classList.add("sidebar-collapsed");
+    // Move player modal to body so it escapes any ancestor containment/flex issues.
+    if (id === "modal-player" && modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
     }
+    modal.classList.add("open");
+    modal.style.display = "flex";
 }
 
 function closeModal(id) {
@@ -794,7 +794,6 @@ function closeModal(id) {
             video.pause();
             video.src = "";
         }
-        document.getElementById("app").classList.remove("sidebar-collapsed");
     }
 }
 
