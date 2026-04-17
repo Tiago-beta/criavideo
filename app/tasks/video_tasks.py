@@ -753,9 +753,15 @@ async def run_video_pipeline(project_id: int):
             else:
                 from app.services.thumbnail_generator import generate_thumbnail
                 try:
+                    mood_hint = ""
+                    if project.lyrics_text:
+                        mood_hint = project.lyrics_text.strip().split("\n")[0][:120]
                     generate_thumbnail(
                         title=project.track_title or project.title,
                         artist=project.track_artist or "",
+                        description=(project.description or "")[:400],
+                        mood=mood_hint,
+                        style_hint=project.style_prompt or "",
                         output_path=thumb_path,
                     )
                 except Exception as e:

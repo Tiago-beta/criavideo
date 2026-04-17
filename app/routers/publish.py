@@ -219,6 +219,33 @@ async def ai_suggest(
                 return json.loads(cleaned[start : end + 1])
             raise
 
+    def _strip_lyrics_blocks(text: str) -> str:
+        cleaned = (text or "").strip()
+        if not cleaned:
+            return ""
+
+        markers = [
+            "🎵 letra da musica",
+            "letra da musica",
+            "letra da música",
+            "[verso",
+            "[refr",
+            "[ponte",
+            "[bridge",
+            "[chorus",
+        ]
+        lower = cleaned.lower()
+        cut_idx = None
+        for marker in markers:
+            idx = lower.find(marker)
+            if idx != -1:
+                cut_idx = idx if cut_idx is None else min(cut_idx, idx)
+        if cut_idx is not None:
+            cleaned = cleaned[:cut_idx].strip()
+
+        lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+        return "\n".join(lines[:5]).strip()
+
     # Build context for AI
     context_parts = []
     if project.title:
@@ -246,29 +273,34 @@ async def ai_suggest(
     objetivo = "Maximizar CTR sem clickbait enganoso e melhorar clareza para o algoritmo."
     tom_desejado = project.style_prompt or "envolvente, premium e humano"
 
-    stage1_prompt = f"""Voce e um estrategista de crescimento para YouTube, especialista em titulos com alto CTR e descricoes que ajudam o video a ser entendido pelo publico e pelo algoritmo.
+    stage1_prompt = f"""Voce e um estrategista de crescimento para canais pequenos de musica no YouTube.
 
 Sua tarefa e transformar o conteudo de um video em:
-- 3 titulos altamente fortes
-- 1 descricao final otimizada e natural
+- 3 titulos fortes com potencial de CTR e clareza de busca
+- 1 descricao final enxuta para descoberta
 
 Antes de escrever, descubra:
-- qual e a promessa principal do video
-- qual dor, desejo, duvida ou curiosidade ele ativa
-- quais sao as 1 ou 2 palavras-chave principais
-- qual o melhor angulo para maximizar clique sem enganar
-- qual linguagem combina com o publico desse video
+- promessa principal da musica
+- emocao principal (forca, cura, esperanca, fe, etc)
+- palavras-chave de busca mais naturais para esse tema
+- melhor angulo para gerar clique sem enganar
 
-REGRAS:
-- titulo curto, forte e claro
-- palavras mais importantes perto do inicio
-- descricao unica, especifica e util
-- usar palavras-chave naturalmente
-- evitar exagero falso
-- evitar descricao generica
-- parecer conteudo premium
-- manter fidelidade total ao video real
-- use capitalizacao estrategica (mistura de letras maiusculas e minusculas) para chamar atencao sem perder legibilidade
+REGRAS DE TITULO:
+- sempre em portugues brasileiro
+- formato preferencial: "<identidade da musica> | <frase de busca clara>"
+- combinar nome/identidade da musica com intencao de busca
+- maximo 80 caracteres
+- sem nomes de IA/plataforma/marca
+- sem clickbait enganoso
+
+REGRAS DE DESCRICAO:
+- 3 a 5 linhas curtas
+- linha 1: gancho emocional forte
+- linha 2: reforco com 2 ou 3 palavras-chave naturais
+- linha 3: CTA simples (ouca completa, curta, compartilhe, inscreva-se)
+- nao incluir letra completa da musica
+- nao iniciar com bloco de letra
+- nao usar texto tecnico sobre producao
 
 Entregue:
 1. palavras-chave principais
@@ -338,6 +370,7 @@ Retorne SOMENTE JSON (sem markdown) neste formato:
             or project.description
             or ""
         ).strip()
+        draft_description = _strip_lyrics_blocks(draft_description)
 
         stage2_prompt = f"""Voce e uma segunda IA de revisao editorial para YouTube.
 
@@ -362,7 +395,16 @@ CRITERIOS DE REVISAO:
 - potencial de CTR sem clickbait enganoso
 - leitura em mobile
 - aderencia ao conteudo real
+- combinacao entre identidade da musica e intencao de busca
 - uso estrategico de maiusculas/minusculas para destaque natural
+- descricao curta, objetiva e sem letra completa
+
+REGRAS OBRIGATORIAS DE SAIDA:
+- tudo em portugues brasileiro
+- titulo final com no maximo 80 caracteres
+- priorize formato "identidade da musica | frase de busca"
+- nao incluir letra completa da musica na descricao
+- sem nomes de IA/plataforma/marca
 
 Retorne SOMENTE JSON (sem markdown) neste formato:
 {{
@@ -408,6 +450,7 @@ Retorne SOMENTE JSON (sem markdown) neste formato:
             or project.description
             or ""
         ).strip()
+        final_description = _strip_lyrics_blocks(final_description)
 
         hashtags = str(stage2_data.get("hashtags") or "").strip()
         raw_tags = stage2_data.get("tags", [])

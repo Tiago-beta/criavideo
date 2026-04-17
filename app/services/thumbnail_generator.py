@@ -16,6 +16,27 @@ settings = get_settings()
 google_client = genai.Client(api_key=settings.google_ai_api_key)
 
 
+def _build_thumbnail_hook(title: str, mood: str = "") -> str:
+    """Create a short, high-impact thumbnail text (2-4 words)."""
+    import re
+
+    source = f"{title or ''} {mood or ''}".strip()
+    cleaned = re.sub(r"[^\w\s]", " ", source, flags=re.UNICODE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        return "FE PARA VENCER"
+
+    stopwords = {
+        "de", "da", "do", "das", "dos", "e", "em", "na", "no", "nas", "nos",
+        "com", "por", "para", "um", "uma", "o", "a", "os", "as", "que",
+    }
+    words = [w for w in cleaned.split() if len(w) > 1]
+    filtered = [w for w in words if w.lower() not in stopwords]
+    base = filtered if filtered else words
+    hook = " ".join(base[:4]).upper().strip()
+    return hook[:32].strip() or "FE PARA VENCER"
+
+
 def generate_thumbnail(
     title: str,
     artist: str = "",
@@ -26,6 +47,7 @@ def generate_thumbnail(
 ) -> str:
     """Generate a thumbnail image using Nano Banana and a high-CTR prompt template."""
     title_text = (title or "").strip() or "Sem titulo"
+    hook_text = _build_thumbnail_hook(title_text, mood)
 
     description_parts: list[str] = []
     if description and description.strip():
@@ -48,9 +70,13 @@ Analise o titulo e descricao do video abaixo e gere DIRETAMENTE uma imagem de th
 
 TITULO DO VIDEO: {title_text}
 DESCRICAO DO VIDEO: {description_text}
+TEXTO CURTO SUGERIDO PARA A CAPA: {hook_text}
 
 REGRAS OBRIGATORIAS para a thumbnail gerada:
 - TODO texto na imagem DEVE ser em PORTUGUES BRASILEIRO — NUNCA use ingles
+- A thumbnail deve funcionar como um outdoor de 1 segundo
+- Texto principal curto e memoravel: 2 a 4 palavras (maximo 32 caracteres), em CAIXA ALTA
+- NUNCA usar frase longa no texto da imagem
 - Formato: 16:9, proporcao widescreen, alta resolucao 4K
 - Ponto focal unico e dominante, sem poluicao visual
 - Alto contraste entre foreground e background para visibilidade mobile
@@ -70,9 +96,11 @@ INSTRUCOES DE COMPOSICAO baseadas no conteudo analisado:
 - Se e educacional: elemento visual que representa a pergunta ou curiosidade do tema
 - Se e lifestyle/vlog: atmosfera calorosa, cores quentes, energia positiva
 - Se e musica/inspiracional: imagem emocional e impactante que transmita o sentimento do tema
+- Se e gospel/religioso: natureza grandiosa + luz dramatica + atmosfera de fe, esperanca e superacao
 
 TEXTO NA IMAGEM (se aplicavel):
 Renderize o texto principal EM PORTUGUES com fonte bold, sans-serif, cor altamente contrastante ao fundo, tamanho que ocupe no minimo 25% da largura da imagem, com stroke/sombra leve para legibilidade. O texto deve ser chamativo e despertar curiosidade.
+Use o TEXTO CURTO SUGERIDO como base e, se ajustar, altere no maximo 1 palavra para aumentar impacto.
 
 Gere a thumbnail agora. Nao descreva, crie a imagem diretamente."""
 
@@ -145,8 +173,10 @@ def generate_thumbnail_from_frame(
         font_title = ImageFont.load_default()
         font_artist = ImageFont.load_default()
 
-    draw.text((60, 600), title, fill="white", font=font_title, stroke_width=3, stroke_fill="black")
-    draw.text((60, 665), artist, fill=(200, 200, 200), font=font_artist, stroke_width=2, stroke_fill="black")
+    hook_text = _build_thumbnail_hook(title)
+    draw.text((60, 600), hook_text, fill="white", font=font_title, stroke_width=3, stroke_fill="black")
+    if artist:
+        draw.text((60, 665), artist, fill=(200, 200, 200), font=font_artist, stroke_width=2, stroke_fill="black")
 
     img.save(output_path, "JPEG", quality=95)
     os.remove(frame_path)

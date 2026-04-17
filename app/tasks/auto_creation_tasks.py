@@ -31,6 +31,35 @@ _AUTO_DEFAULTS = {
 }
 
 
+def _strip_lyrics_from_description(text: str) -> str:
+    """Remove lyrics-like blocks from publish descriptions and keep it concise."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+
+    markers = [
+        "🎵 letra da musica",
+        "letra da musica",
+        "letra da música",
+        "[verso",
+        "[refr",
+        "[ponte",
+        "[bridge",
+        "[chorus",
+    ]
+    lower = cleaned.lower()
+    cut_idx = None
+    for marker in markers:
+        idx = lower.find(marker)
+        if idx != -1:
+            cut_idx = idx if cut_idx is None else min(cut_idx, idx)
+    if cut_idx is not None:
+        cleaned = cleaned[:cut_idx].strip()
+
+    lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+    return "\n".join(lines[:5]).strip()
+
+
 async def ai_select_video_settings(theme: str) -> dict:
     """Use GPT-4o-mini to select video settings based on theme."""
     import openai
@@ -442,18 +471,12 @@ async def _auto_publish(
             try:
                 ai_result = await _generate_publish_metadata(project)
                 title = ai_result.get("title") or title
-                description = ai_result.get("description") or ""
+                description = _strip_lyrics_from_description(ai_result.get("description") or "")
                 hashtags = ai_result.get("hashtags") or ""
                 tags = ai_result.get("tags") or []
-
-                # Append lyrics to description if available
-                lyrics = (project.lyrics_text or "").strip()
-                if lyrics:
-                    description += "\n\n🎵 Letra da Música:\n\n" + lyrics
-
                 # Append hashtags at the end
                 if hashtags:
-                    description += "\n\n" + hashtags
+                    description = (description + "\n\n" + hashtags).strip() if description else hashtags
             except Exception as e:
                 logger.warning("AI metadata generation failed for auto-publish: %s", e)
                 description = project.description or ""
@@ -491,32 +514,43 @@ async def _generate_publish_metadata(project: VideoProject) -> dict:
     context_parts = []
     if project.title:
         context_parts.append(f"Tema do video: {project.title}")
+    if project.style_prompt:
+        context_parts.append(f"Linha editorial/estilo: {project.style_prompt}")
     if project.lyrics_text:
         context_parts.append(f"Letra da musica:\n{project.lyrics_text[:500]}")
 
     context = "\n".join(context_parts) or "Video musical sem detalhes adicionais"
     tema = project.track_title or project.title or "Video musical"
 
-    prompt = f"""Voce e um especialista em YouTube. Gere metadados otimizados para publicar este video.
+    prompt = f"""Voce e um estrategista de crescimento para canais novos de musica no YouTube. Gere metadados otimizados para descoberta, clique e retenção.
 
 DADOS DO VIDEO:
 Tema: {tema}
 Contexto: {context[:2000]}
 
 Gere:
-1. Um titulo forte, curto, com alto potencial de CTR (max 80 chars)
-2. Uma descricao envolvente e natural para YouTube (3-5 linhas), que convide o espectador a assistir, curtir e se inscrever
+1. Um titulo forte, curto, com alto potencial de CTR e clareza de busca (max 80 chars)
+2. Uma descricao natural para YouTube (3-5 linhas), estruturada para canal pequeno crescer
 3. Hashtags relevantes (5-8 hashtags)
 4. Tags para SEO (5-10 palavras-chave)
 
 REGRAS OBRIGATORIAS:
-- TUDO em portugues brasileiro, sem nenhuma palavra em ingles
-- O titulo deve ser baseado no TEMA fornecido, de forma natural e chamativa
+- TUDO em portugues brasileiro, natural e humano
+- O titulo deve combinar IDENTIDADE DA MUSICA + INTENCAO DE BUSCA
+- Formato preferencial de titulo: "<identidade da musica> | <frase de busca clara>"
+- Exemplo de estrutura: "Tudo Posso em Cristo | Louvor de Forca e Superacao"
+- Use palavras-chave naturais do nicho quando fizer sentido: louvor, fe, forca, superacao, oracao, adoracao, esperanca
 - NUNCA mencione nomes de IA, ferramentas, plataformas ou marcas (nada de Tevoxi, CriaVideo, OpenAI, etc)
 - NUNCA use termos tecnicos como "cinematografico", "experiencia visual", "experiencia cinematografica"
-- Escreva como um ser humano real escreveria, de forma natural e emocional
-- Descricao deve falar sobre o sentimento e mensagem da musica/video, nao sobre como foi feito
+- Nao use clickbait enganoso
 - Titulo curto, forte e direto ao ponto
+- Descricao deve seguir esta ordem:
+  1) Gancho emocional curto na primeira linha
+  2) Reforco com 2 ou 3 palavras-chave naturais do tema
+  3) CTA simples (ouca completa, curta, compartilhe, inscreva-se)
+- NUNCA incluir letra completa da musica na descricao
+- NUNCA comecar a descricao com bloco de letra
+- Nao falar como a musica foi produzida; focar na mensagem e no beneficio para quem escuta
 - Hashtags comecam com #
 - Tom envolvente, emocional e autentico
 
@@ -539,7 +573,7 @@ Retorne SOMENTE JSON:
         data = json.loads(resp.choices[0].message.content or "{}")
         return {
             "title": str(data.get("title", "")).strip()[:90],
-            "description": str(data.get("description", "")).strip(),
+            "description": _strip_lyrics_from_description(str(data.get("description", "")).strip()),
             "hashtags": str(data.get("hashtags", "")).strip(),
             "tags": [str(t).strip() for t in (data.get("tags") or []) if str(t).strip()],
         }
