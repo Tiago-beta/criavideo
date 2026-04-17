@@ -1148,58 +1148,49 @@ async function createSimilar(projectId) {
         alert("Roteiro nao disponivel para este projeto.");
         return;
     }
+
+    // 1. Reset wizard state
     resetCreateWizard();
-    if (project.video_type) {
-        scriptData.videoType = project.video_type;
+
+    // 2. Prepare content BEFORE opening modal
+    // Hide mode selection
+    const modeSelection = document.getElementById("create-mode-selection");
+    if (modeSelection) modeSelection.hidden = true;
+
+    // Hide all panels, then show script panel
+    document.querySelectorAll(".create-panel").forEach(p => { p.hidden = true; });
+    const scriptPanel = document.getElementById("create-panel-script");
+    if (scriptPanel) {
+        scriptPanel.hidden = false;
+        // Show only step 1 (script text), hide all others
+        scriptPanel.querySelectorAll(".wizard-step").forEach(s => {
+            s.hidden = (parseInt(s.dataset.step) !== 1);
+        });
     }
+
+    // Update nav: show Back button, hide Create button
+    const backBtn = document.getElementById("script-back");
+    if (backBtn) backBtn.hidden = false;
+    const createBtn = document.getElementById("script-create-btn");
+    if (createBtn) createBtn.hidden = true;
+
+    // Fill form fields with source project data
+    const textEl = document.getElementById("script-text");
+    if (textEl) textEl.value = project.lyrics_text;
+    const countEl = document.getElementById("script-char-count");
+    if (countEl) countEl.textContent = project.lyrics_text.length.toLocaleString("pt-BR");
+    const titleEl = document.getElementById("script-title");
+    if (titleEl) titleEl.value = project.title || "";
+    if (project.style_prompt) {
+        setSelectedStyles("script-style-tags", project.style_prompt);
+    }
+    const aspectEl = document.getElementById("script-aspect");
+    if (aspectEl && project.aspect_ratio) aspectEl.value = project.aspect_ratio;
+    if (project.video_type) scriptData.videoType = project.video_type;
+    scriptStep = 2;
+
+    // 3. Open modal — content is already set
     openModal("modal-new-project");
-
-    // Use rAF to ensure the modal is painted before manipulating inner panels
-    requestAnimationFrame(() => {
-        // Hide mode selection, show script panel directly
-        const modeSelection = document.getElementById("create-mode-selection");
-        if (modeSelection) modeSelection.hidden = true;
-
-        document.querySelectorAll(".create-panel").forEach(p => { p.hidden = true; });
-
-        const scriptPanel = document.getElementById("create-panel-script");
-        if (scriptPanel) {
-            scriptPanel.hidden = false;
-            // Show the script-text step (data-step="1"), hide all others
-            scriptPanel.querySelectorAll(".wizard-step").forEach(s => {
-                s.hidden = (parseInt(s.dataset.step) !== 1);
-            });
-        }
-
-        // Update wizard nav state (step 2 of 6 in the flow)
-        scriptStep = 2;
-        const dotsContainer = document.getElementById("script-dots-container");
-        if (dotsContainer) {
-            const flow = getScriptFlow();
-            dotsContainer.innerHTML = flow.map((_, i) =>
-                `<span class="wizard-dot${i < scriptStep ? " active" : ""}"></span>`
-            ).join("");
-        }
-        const backBtn = document.getElementById("script-back");
-        if (backBtn) backBtn.hidden = false;
-        const nextBtn = document.getElementById("script-next");
-        if (nextBtn) nextBtn.hidden = false;
-        const createBtn = document.getElementById("script-create-btn");
-        if (createBtn) createBtn.hidden = true;
-
-        // Fill form fields with source project data
-        const textEl = document.getElementById("script-text");
-        if (textEl) textEl.value = project.lyrics_text;
-        const countEl = document.getElementById("script-char-count");
-        if (countEl) countEl.textContent = project.lyrics_text.length.toLocaleString("pt-BR");
-        const titleEl = document.getElementById("script-title");
-        if (titleEl) titleEl.value = project.title || "";
-        if (project.style_prompt) {
-            setSelectedStyles("script-style-tags", project.style_prompt);
-        }
-        const aspectEl = document.getElementById("script-aspect");
-        if (aspectEl && project.aspect_ratio) aspectEl.value = project.aspect_ratio;
-    });
 }
 
 function openCopyFormatModal(projectId) {
