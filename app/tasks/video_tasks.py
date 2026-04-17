@@ -631,32 +631,13 @@ async def run_video_pipeline(project_id: int):
                 subtitle_path = str(subtitle_dir / "karaoke.ass")
 
                 if transcribed_words:
-                    # Check if Whisper timestamps start too late (common with music intros)
-                    first_word_start = transcribed_words[0].get("start", 0) if transcribed_words else 0
-                    whisper_too_late = first_word_start > 15 and project.lyrics_text
-
-                    if whisper_too_late:
-                        # Whisper missed the beginning (instrumental intro confuses it)
-                        # Fall back to text-based even distribution
-                        logger.warning(
-                            f"Whisper first word at {first_word_start:.1f}s — too late, "
-                            f"falling back to text-based subtitles for project {project_id}"
-                        )
-                        generate_ass_from_text(
-                            lyrics_text=project.lyrics_text,
-                            duration=project.track_duration or 180,
-                            aspect_ratio=project.aspect_ratio,
-                            output_path=subtitle_path,
-                            narration_mode=is_narration_subtitle,
-                        )
-                    else:
-                        # Best: Whisper word-level timestamps → accurate karaoke
-                        generate_ass_subtitles(
-                            lyrics_words=transcribed_words,
-                            aspect_ratio=project.aspect_ratio,
-                            output_path=subtitle_path,
-                            narration_mode=is_narration_subtitle,
-                        )
+                    # Best: Whisper word-level timestamps → accurate karaoke
+                    generate_ass_subtitles(
+                        lyrics_words=transcribed_words,
+                        aspect_ratio=project.aspect_ratio,
+                        output_path=subtitle_path,
+                        narration_mode=is_narration_subtitle,
+                    )
                 elif project.lyrics_words:
                     generate_ass_subtitles(
                         lyrics_words=project.lyrics_words,
@@ -753,15 +734,9 @@ async def run_video_pipeline(project_id: int):
             else:
                 from app.services.thumbnail_generator import generate_thumbnail
                 try:
-                    mood_hint = ""
-                    if project.lyrics_text:
-                        mood_hint = project.lyrics_text.strip().split("\n")[0][:120]
                     generate_thumbnail(
                         title=project.track_title or project.title,
                         artist=project.track_artist or "",
-                        description=(project.description or "")[:400],
-                        mood=mood_hint,
-                        style_hint=project.style_prompt or "",
                         output_path=thumb_path,
                     )
                 except Exception as e:
@@ -1016,7 +991,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 logger.info(f"Realistic video with reference image: {image_path}")
 
             duration = int(project.track_duration or 7)
-            max_dur = 15 if engine == "grok" else 10
+            max_dur = 60 if engine == "grok" else 10
             duration = max(1, min(duration, max_dur))
 
             # Only optimize prompt if it wasn't already optimized by the AI suggest
@@ -1041,71 +1016,48 @@ async def run_realistic_video_pipeline(project_id: int):
                 optimized_prompt = user_prompt
                 logger.info(f"Realistic prompt already optimized, using as-is: {optimized_prompt[:200]}...")
             elif engine == "grok":
-                from app.services.grok_video import optimize_prompt_for_grok
-                optimized_prompt = await optimize_prompt_for_grok(
-                    user_description=user_prompt,
-                    duration=duration,
-                )
-                logger.info(f"Grok prompt optimized: {optimized_prompt[:200]}...")
-            else:
-                optimized_prompt = await optimize_prompt_for_seedance(
-                    user_description=user_prompt,
-                    duration=duration,
-                )
-                logger.info(f"Seedance prompt optimized: {optimized_prompt[:200]}...")
-
-            project.progress = 10
-            await db.commit()
-
-            # ── Step 2: Generate video ──
-            project.status = VideoStatus.RENDERING
-            project.progress = 15
-            await db.commit()
-
-            render_dir = Path(settings.media_dir) / "renders" / str(project_id)
-            render_dir.mkdir(parents=True, exist_ok=True)
-            output_path = str(render_dir / "realistic_video.mp4")
-
-            aspect_ratio = project.aspect_ratio or "16:9"
-            generate_audio = not getattr(project, "no_background_music", False)
-
-            async def _on_progress(pct, msg):
-                nonlocal project
-                try:
-                    project.progress = pct
-                    await db.commit()
-                except Exception:
-                    pass
-
-            if engine == "grok":
-                # ── Grok (image-to-video): generate image first, then video ──
-                from app.services.grok_video import generate_video_clip
-                from app.services.scene_generator import generate_scene_image
-
-                await _on_progress(16, "Gerando imagem de referencia...")
-                grok_image_path = image_path
-                if not grok_image_path:
-                    # Generate reference image via Nano Banana
-                    img_dir = render_dir / "grok_ref"
-                    img_dir.mkdir(parents=True, exist_ok=True)
-                    grok_image_path = str(img_dir / "reference.png")
-                    # Use a concise visual prompt for image generation
-                    img_prompt = optimized_prompt[:500]
-                    loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(
-                        None, generate_scene_image, img_prompt, aspect_ratio, grok_image_path
+                if duration > 15:
+                    # — Grok multi-clip: chain multiple 15s clips for longer videos —
+                    from app.services.multi_clip import generate_multi_clip_video
+                    logger.info(f"Grok multi-clip mode: {duration}s total")
+                    output_path = str(render_dir / "realistic_video.mp4")
+                    await generate_multi_clip_video(
+                        project_id=project_id,
+                        optimized_prompt=optimized_prompt,
+                        total_duration=duration,
+                        aspect_ratio=aspect_ratio,
+                        image_path=image_path,
+                        render_dir=render_dir,
+                        on_progress=_on_progress,
                     )
-                    logger.info(f"Grok reference image generated: {grok_image_path}")
+                else:
+                    # — Grok single clip (<=15s): generate image first, then video —
+                    from app.services.grok_video import generate_video_clip
+                    from app.services.scene_generator import generate_scene_image
 
-                await _on_progress(18, "Iniciando geracao de video Grok...")
-                await generate_video_clip(
-                    image_path=grok_image_path,
-                    prompt=optimized_prompt,
-                    output_path=output_path,
-                    duration=duration,
-                    aspect_ratio=aspect_ratio,
-                    on_progress=_on_progress,
-                )
+                    await _on_progress(16, "Gerando imagem de referencia...")
+                    grok_image_path = image_path
+                    if not grok_image_path:
+                        img_dir = render_dir / "grok_ref"
+                        img_dir.mkdir(parents=True, exist_ok=True)
+                        grok_image_path = str(img_dir / "reference.png")
+                        img_prompt = optimized_prompt[:500]
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(
+                            None, generate_scene_image, img_prompt, aspect_ratio, grok_image_path
+                        )
+                        logger.info(f"Grok reference image generated: {grok_image_path}")
+
+                    await _on_progress(18, "Iniciando geracao de video Grok...")
+                    await generate_video_clip(
+                        image_path=grok_image_path,
+                        prompt=optimized_prompt,
+                        output_path=output_path,
+                        duration=duration,
+                        aspect_ratio=aspect_ratio,
+                        on_progress=_on_progress,
+                    )
+
             elif engine == "minimax":
                 # ── MiniMax Hailuo ──
                 from app.services.minimax_video import generate_minimax_video

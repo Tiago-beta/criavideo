@@ -1,0 +1,342 @@
+﻿"""
+Multi-clip video generation for Grok.
+Generates videos longer than 15s by chaining multiple Grok clips (max 15s each).
+Extracts the last frame of each clip as reference for the next, maintaining visual continuity.
+"""
+import os
+import json
+import asyncio
+import logging
+import subprocess
+from pathlib import Path
+
+import openai
+from app.config import get_settings
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
+
+_SCENE_SPLIT_SYSTEM = """You are a video scene planner for a music video.
+
+Given a video description and the number of segments needed, split it into sequential scene descriptions.
+Each scene must:
+1. Be visually distinct but maintain narrative/visual continuity with the previous scene
+2. Include specific camera movements, lighting, and actions
+3. Reference the SAME characters/setting when appropriate for continuity
+4. Be written in English (optimized for AI video generation)
+5. Include a note like "Continue from previous scene..." for scenes 2+
+6. Be concise but vivid (under 200 words each)
+
+CRITICAL: The scenes form a continuous story. Scene 2 should feel like a natural continuation of scene 1, etc.
+
+Output ONLY a JSON array of strings, one per scene. No markdown, no explanation.
+Example for 3 scenes: ["scene 1 description", "scene 2 description", "scene 3 description"]"""
+
+
+async def generate_scene_prompts(
+    base_prompt: str,
+    num_segments: int,
+    duration_per_segment: int = 15,
+) -> list[str]:
+    """Split a video prompt into N sequential scene prompts using GPT-4o."""
+    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+
+    user_msg = (
+        f"Total video: {num_segments * duration_per_segment}s split into {num_segments} segments "
+        f"of {duration_per_segment}s each.\n\n"
+        f"Base description:\n{base_prompt}\n\n"
+        f"Generate {num_segments} scene descriptions as a JSON array."
+    )
+
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": _SCENE_SPLIT_SYSTEM},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.7,
+            max_tokens=2000,
+        )
+        raw = resp.choices[0].message.content.strip()
+        # Strip markdown fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            if raw.endswith("```"):
+                raw = raw[:-3]
+            raw = raw.strip()
+
+        scenes = json.loads(raw)
+        if not isinstance(scenes, list) or len(scenes) != num_segments:
+            logger.warning(f"Scene split returned {len(scenes) if isinstance(scenes, list) else 'non-list'}, expected {num_segments}. Using fallback.")
+            return [base_prompt] * num_segments
+        logger.info(f"Scene prompts generated: {num_segments} segments")
+        return scenes
+    except Exception as e:
+        logger.warning(f"Scene prompt split failed: {e}. Using base prompt for all segments.")
+        return [base_prompt] * num_segments
+
+
+async def extract_last_frame(video_path: str, output_path: str) -> str:
+    """Extract the last frame of a video as PNG using FFmpeg."""
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    # Get duration first
+    probe_cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        video_path,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *probe_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, _ = await proc.communicate()
+    try:
+        dur = float(stdout.decode().strip())
+    except (ValueError, AttributeError):
+        dur = 10.0
+
+    # Seek to near the end and grab one frame
+    seek_time = max(0, dur - 0.1)
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(seek_time),
+        "-i", video_path,
+        "-frames:v", "1",
+        "-q:v", "2",
+        output_path,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0 or not os.path.exists(output_path):
+        raise RuntimeError(f"Failed to extract last frame: {stderr.decode()[:300]}")
+
+    logger.info(f"Extracted last frame from {video_path} -> {output_path}")
+    return output_path
+
+
+async def concatenate_clips(clip_paths: list[str], output_path: str) -> str:
+    """Concatenate video clips using FFmpeg concat demuxer with crossfade transitions."""
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    if len(clip_paths) == 1:
+        import shutil
+        shutil.copy2(clip_paths[0], output_path)
+        return output_path
+
+    # Use concat filter with crossfade for smooth transitions
+    # First, check if all clips have same codec/resolution for fast concat
+    # Use re-encode approach for safety (handles different codecs/resolutions)
+    filter_parts = []
+    inputs = []
+    for i, path in enumerate(clip_paths):
+        inputs.extend(["-i", path])
+
+    # Build crossfade chain: 0.5s crossfade between each pair
+    crossfade_dur = 0.5
+    n = len(clip_paths)
+
+    if n == 2:
+        filter_complex = (
+            f"[0:v][1:v]xfade=transition=fade:duration={crossfade_dur}:offset=OFFSET0[outv]"
+        )
+        # Get duration of first clip to compute offset
+        dur0 = await _get_clip_duration(clip_paths[0])
+        offset0 = max(0, dur0 - crossfade_dur)
+        filter_complex = filter_complex.replace("OFFSET0", f"{offset0:.2f}")
+    elif n <= 5:
+        # Chain xfade for 3-5 clips
+        offsets = []
+        cumulative = 0.0
+        for i in range(n - 1):
+            dur_i = await _get_clip_duration(clip_paths[i])
+            cumulative += dur_i - (crossfade_dur if i > 0 else 0)
+            offsets.append(cumulative - crossfade_dur)
+
+        parts = []
+        prev = "[0:v]"
+        for i in range(1, n):
+            next_label = "[outv]" if i == n - 1 else f"[v{i}]"
+            parts.append(
+                f"{prev}[{i}:v]xfade=transition=fade:duration={crossfade_dur}:offset={offsets[i-1]:.2f}{next_label}"
+            )
+            prev = next_label if i < n - 1 else ""
+        filter_complex = ";".join(parts)
+    else:
+        # Fallback: simple concat without crossfade for many clips
+        concat_file = output_path + ".txt"
+        with open(concat_file, "w") as f:
+            for path in clip_paths:
+                f.write(f"file '{path}'\n")
+        cmd = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            "-i", concat_file, "-c", "copy", output_path,
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await proc.communicate()
+        os.remove(concat_file)
+        if proc.returncode != 0:
+            raise RuntimeError(f"FFmpeg concat failed: {stderr.decode()[:300]}")
+        return output_path
+
+    cmd = [
+        "ffmpeg", "-y",
+        *inputs,
+        "-filter_complex", filter_complex,
+        "-map", "[outv]",
+        "-c:v", "libx264", "-crf", "22", "-preset", "fast",
+        "-pix_fmt", "yuv420p",
+        output_path,
+    ]
+
+    logger.info(f"Concatenating {n} clips with crossfade...")
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(f"FFmpeg crossfade concat failed: {stderr.decode()[:300]}")
+
+    logger.info(f"Clips concatenated: {output_path}")
+    return output_path
+
+
+async def _get_clip_duration(path: str) -> float:
+    """Get video duration in seconds via ffprobe."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        path,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, _ = await proc.communicate()
+    try:
+        return float(stdout.decode().strip())
+    except (ValueError, AttributeError):
+        return 15.0
+
+
+async def generate_multi_clip_video(
+    project_id: int,
+    optimized_prompt: str,
+    total_duration: int,
+    aspect_ratio: str,
+    image_path: str | None,
+    render_dir,
+    on_progress=None,
+) -> str:
+    """Generate a long Grok video by chaining multiple 15s clips.
+
+    1. Split prompt into N scene prompts
+    2. Generate reference image for clip 1
+    3. For each clip: generate video, extract last frame for next
+    4. Concatenate all clips with crossfade
+    5. Return final video path
+    """
+    from app.services.grok_video import generate_video_clip, optimize_prompt_for_grok
+    from app.services.scene_generator import generate_scene_image
+
+    render_dir = Path(render_dir)
+    clips_dir = render_dir / "clips"
+    clips_dir.mkdir(parents=True, exist_ok=True)
+
+    # Calculate segments
+    max_per_clip = 15
+    num_segments = -(-total_duration // max_per_clip)  # ceil division
+    last_clip_dur = total_duration - (num_segments - 1) * max_per_clip
+    if last_clip_dur < 3:
+        num_segments -= 1
+        last_clip_dur += max_per_clip
+
+    logger.info(f"Multi-clip: {total_duration}s -> {num_segments} segments (last={last_clip_dur}s)")
+
+    if on_progress:
+        await on_progress(16, f"Planejando {num_segments} cenas...")
+
+    # Step 1: Generate scene prompts
+    scene_prompts = await generate_scene_prompts(
+        base_prompt=optimized_prompt,
+        num_segments=num_segments,
+        duration_per_segment=max_per_clip,
+    )
+
+    # Optimize each scene prompt for Grok
+    optimized_scenes = []
+    for i, sp in enumerate(scene_prompts):
+        dur = last_clip_dur if i == num_segments - 1 else max_per_clip
+        opt = await optimize_prompt_for_grok(user_description=sp, duration=dur)
+        optimized_scenes.append(opt)
+        logger.info(f"Scene {i+1}/{num_segments} prompt optimized ({len(opt)} chars)")
+
+    if on_progress:
+        await on_progress(20, "Gerando imagem de referencia...")
+
+    # Step 2: Generate initial reference image
+    ref_image_path = image_path
+    if not ref_image_path:
+        img_dir = clips_dir / "ref_images"
+        img_dir.mkdir(parents=True, exist_ok=True)
+        ref_image_path = str(img_dir / "reference_0.png")
+        img_prompt = optimized_scenes[0][:500]
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, generate_scene_image, img_prompt, aspect_ratio, ref_image_path
+        )
+        logger.info(f"Initial reference image generated: {ref_image_path}")
+
+    # Step 3: Generate clips sequentially
+    clip_paths = []
+    current_ref = ref_image_path
+
+    for i in range(num_segments):
+        clip_dur = last_clip_dur if i == num_segments - 1 else max_per_clip
+        clip_path = str(clips_dir / f"clip_{i:02d}.mp4")
+
+        pct_base = 20 + int(60 * i / num_segments)
+        pct_end = 20 + int(60 * (i + 1) / num_segments)
+
+        if on_progress:
+            await on_progress(pct_base, f"Gerando clip {i+1}/{num_segments} ({clip_dur}s)...")
+
+        async def _clip_progress(pct, msg):
+            # Map clip's 0-100 to our segment range
+            mapped = pct_base + int((pct_end - pct_base) * pct / 100)
+            if on_progress:
+                await on_progress(mapped, f"Clip {i+1}/{num_segments}: {msg}")
+
+        await generate_video_clip(
+            image_path=current_ref,
+            prompt=optimized_scenes[i],
+            output_path=clip_path,
+            duration=clip_dur,
+            aspect_ratio=aspect_ratio,
+            on_progress=_clip_progress,
+        )
+
+        clip_paths.append(clip_path)
+        logger.info(f"Clip {i+1}/{num_segments} generated: {clip_path}")
+
+        # Extract last frame for next clip's reference
+        if i < num_segments - 1:
+            next_ref = str(clips_dir / f"ref_images" / f"reference_{i+1}.png")
+            os.makedirs(os.path.dirname(next_ref), exist_ok=True)
+            await extract_last_frame(clip_path, next_ref)
+            current_ref = next_ref
+
+    # Step 4: Concatenate clips
+    if on_progress:
+        await on_progress(82, "Juntando clips...")
+
+    output_path = str(render_dir / "realistic_video.mp4")
+    await concatenate_clips(clip_paths, output_path)
+
+    logger.info(f"Multi-clip video complete: {output_path} ({total_duration}s, {num_segments} clips)")
+    return output_path
