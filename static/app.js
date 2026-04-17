@@ -736,14 +736,25 @@ function setPublishTab(tabName) {
 }
 
 function openModal(id) {
-    document.getElementById(id).classList.add("open");
+    const modal = document.getElementById(id);
+    if (!modal) {
+        return;
+    }
+    modal.classList.add("open");
+    // Inline fallback for environments where modal CSS class changes are delayed.
+    modal.style.display = "flex";
     if (id === "modal-player") {
         document.getElementById("app").classList.add("sidebar-collapsed");
     }
 }
 
 function closeModal(id) {
-    document.getElementById(id).classList.remove("open");
+    const modal = document.getElementById(id);
+    if (!modal) {
+        return;
+    }
+    modal.classList.remove("open");
+    modal.style.display = "";
     if (id === "modal-new-project") {
         stopKaraokeProgressPolling();
     }
@@ -3046,11 +3057,33 @@ async function watchVideo(projectId) {
             alert("Este video nao esta mais disponivel para reproducao.");
             return;
         }
-        document.getElementById("player-title").textContent = project.title || "Video";
+        const playerModal = document.getElementById("modal-player");
         const video = document.getElementById("player-video");
+        if (!playerModal || !video) {
+            window.open(render.video_url, "_blank");
+            return;
+        }
+        document.getElementById("player-title").textContent = project.title || "Video";
+        // Open modal first so mobile browsers render video track correctly.
+        openModal("modal-player");
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        video.setAttribute("playsinline", "");
+        video.setAttribute("webkit-playsinline", "");
         video.src = render.video_url;
         video.load();
-        video.play().catch(() => {});
+        const tryPlay = () => {
+            const playPromise = video.play();
+            if (playPromise && typeof playPromise.catch === "function") {
+                playPromise.catch(() => {});
+            }
+        };
+        if (video.readyState >= 2) {
+            tryPlay();
+        } else {
+            video.addEventListener("loadeddata", tryPlay, { once: true });
+        }
         const sizeMb = render.file_size ? `${(render.file_size / 1048576).toFixed(1)} MB` : "";
         const duration = render.duration ? `${Math.floor(render.duration / 60)}:${String(Math.floor(render.duration % 60)).padStart(2, "0")}` : "";
         // Show expiry countdown in player
@@ -3069,7 +3102,6 @@ async function watchVideo(projectId) {
         const download = document.getElementById("player-download");
         download.href = render.video_url;
         download.download = `${project.title || "video"}.mp4`;
-        openModal("modal-player");
     } catch (error) {
         alert(`Erro ao carregar video: ${error.message}`);
     }

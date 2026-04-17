@@ -2053,7 +2053,7 @@ th {
     padding: 1.5rem 1rem;
     background: rgba(1, 8, 17, 0.92);
     backdrop-filter: blur(18px);
-    z-index: 200;
+    z-index: 3000;
 }
 
 .modal.open {
