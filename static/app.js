@@ -1150,8 +1150,15 @@ async function createSimilar(projectId) {
         return;
     }
     resetCreateWizard();
+    // Pre-select video type from original project
+    if (project.video_type) {
+        scriptData.videoType = project.video_type;
+    }
     openModal("modal-new-project");
     switchCreateMode("script");
+    // Advance past video-type step directly to the script text step
+    scriptStep = 2;
+    updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
     document.getElementById("script-text").value = project.lyrics_text;
     document.getElementById("script-char-count").textContent = project.lyrics_text.length.toLocaleString("pt-BR");
     document.getElementById("script-title").value = project.title || "";
