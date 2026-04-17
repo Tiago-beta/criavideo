@@ -1019,6 +1019,35 @@ async def run_realistic_video_pipeline(project_id: int):
                 from app.services.grok_video import optimize_prompt_for_grok
                 optimized_prompt = await optimize_prompt_for_grok(user_description=user_prompt, duration=duration)
                 logger.info(f"Grok prompt optimized: {optimized_prompt[:200]}...")
+            else:
+                optimized_prompt = await optimize_prompt_for_seedance(
+                    user_description=user_prompt,
+                    duration=duration,
+                )
+                logger.info(f"Seedance prompt optimized: {optimized_prompt[:200]}...")
+
+            project.progress = 10
+            await db.commit()
+
+            # ── Step 2: Generate video ──
+            project.status = VideoStatus.RENDERING
+            project.progress = 15
+            await db.commit()
+
+            render_dir = Path(settings.media_dir) / "renders" / str(project_id)
+            render_dir.mkdir(parents=True, exist_ok=True)
+            output_path = str(render_dir / "realistic_video.mp4")
+
+            aspect_ratio = project.aspect_ratio or "16:9"
+            generate_audio = not getattr(project, "no_background_music", False)
+
+            async def _on_progress(pct, msg):
+                nonlocal project
+                try:
+                    project.progress = pct
+                    await db.commit()
+                except Exception:
+                    pass
 
             if engine == "grok":
                 if duration > 15:
