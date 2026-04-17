@@ -738,10 +738,11 @@ function setPublishTab(tabName) {
 function openModal(id) {
     const modal = document.getElementById(id);
     if (!modal) {
+        console.warn("openModal: element not found:", id);
         return;
     }
-    // Move player modal to body so it escapes any ancestor containment/flex issues.
-    if (id === "modal-player" && modal.parentElement !== document.body) {
+    // Move modal to body so it escapes any ancestor containment/flex issues.
+    if (modal.parentElement !== document.body) {
         document.body.appendChild(modal);
     }
     modal.classList.add("open");
