@@ -738,14 +738,14 @@ function setPublishTab(tabName) {
 function openModal(id) {
     const modal = document.getElementById(id);
     if (!modal) {
-        console.warn("openModal: element not found:", id);
         return;
+    }
+    // Move modal to <body> so it escapes any ancestor stacking context or flex container.
+    if (modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
     }
     modal.classList.add("open");
     modal.style.display = "flex";
-    modal.style.position = "fixed";
-    modal.style.inset = "0";
-    modal.style.zIndex = "9999";
 }
 
 function closeModal(id) {
@@ -755,9 +755,6 @@ function closeModal(id) {
     }
     modal.classList.remove("open");
     modal.style.display = "";
-    modal.style.position = "";
-    modal.style.inset = "";
-    modal.style.zIndex = "";
     if (id === "modal-new-project") {
         stopKaraokeProgressPolling();
     }
