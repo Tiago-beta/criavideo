@@ -1143,7 +1143,9 @@ function _stopSmoothProgress() {
 }
 
 async function createSimilar(projectId) {
+    console.log("[createSimilar] start, projectId=", projectId);
     const project = _projectsCache.find(p => p.id === projectId);
+    console.log("[createSimilar] project=", project ? {id: project.id, title: project.title, has_lyrics: !!project.lyrics_text} : null);
     if (!project || !project.lyrics_text) {
         alert("Roteiro nao disponivel para este projeto.");
         return;
@@ -1151,46 +1153,51 @@ async function createSimilar(projectId) {
 
     // 1. Reset wizard state
     resetCreateWizard();
+    console.log("[createSimilar] after resetCreateWizard");
 
     // 2. Prepare content BEFORE opening modal
-    // Hide mode selection
     const modeSelection = document.getElementById("create-mode-selection");
+    console.log("[createSimilar] modeSelection=", modeSelection, "hidden=", modeSelection && modeSelection.hidden);
     if (modeSelection) modeSelection.hidden = true;
 
-    // Hide all panels, then show script panel
     document.querySelectorAll(".create-panel").forEach(p => { p.hidden = true; });
+
     const scriptPanel = document.getElementById("create-panel-script");
+    console.log("[createSimilar] scriptPanel=", scriptPanel, "hidden=", scriptPanel && scriptPanel.hidden);
     if (scriptPanel) {
         scriptPanel.hidden = false;
-        // Show only step 1 (script text), hide all others
-        scriptPanel.querySelectorAll(".wizard-step").forEach(s => {
-            s.hidden = (parseInt(s.dataset.step) !== 1);
+        const steps = scriptPanel.querySelectorAll(".wizard-step");
+        console.log("[createSimilar] wizard-steps count=", steps.length);
+        steps.forEach(s => {
+            const stepNum = parseInt(s.dataset.step);
+            s.hidden = (stepNum !== 1);
+            console.log("[createSimilar] step", stepNum, "hidden=", s.hidden);
         });
+        console.log("[createSimilar] scriptPanel.hidden after=", scriptPanel.hidden);
     }
 
-    // Update nav: show Back button, hide Create button
     const backBtn = document.getElementById("script-back");
     if (backBtn) backBtn.hidden = false;
     const createBtn = document.getElementById("script-create-btn");
     if (createBtn) createBtn.hidden = true;
 
-    // Fill form fields with source project data
     const textEl = document.getElementById("script-text");
+    console.log("[createSimilar] script-text el=", textEl);
     if (textEl) textEl.value = project.lyrics_text;
     const countEl = document.getElementById("script-char-count");
     if (countEl) countEl.textContent = project.lyrics_text.length.toLocaleString("pt-BR");
     const titleEl = document.getElementById("script-title");
     if (titleEl) titleEl.value = project.title || "";
-    if (project.style_prompt) {
-        setSelectedStyles("script-style-tags", project.style_prompt);
-    }
+    if (project.style_prompt) setSelectedStyles("script-style-tags", project.style_prompt);
     const aspectEl = document.getElementById("script-aspect");
     if (aspectEl && project.aspect_ratio) aspectEl.value = project.aspect_ratio;
     if (project.video_type) scriptData.videoType = project.video_type;
     scriptStep = 2;
 
     // 3. Open modal — content is already set
+    console.log("[createSimilar] calling openModal. scriptPanel.hidden=", scriptPanel && scriptPanel.hidden, "modeSelection.hidden=", modeSelection && modeSelection.hidden);
     openModal("modal-new-project");
+    console.log("[createSimilar] after openModal. scriptPanel.hidden=", scriptPanel && scriptPanel.hidden);
 }
 
 function openCopyFormatModal(projectId) {
