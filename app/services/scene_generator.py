@@ -73,12 +73,19 @@ Respond ONLY with a JSON array. No markdown, no explanation."""
     return scenes
 
 
-def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: str = "") -> str:
-    """Generate a single scene image using Nano Banana. Synchronous (runs in thread)."""
-    style_prefix = (
-        "Cinematic, high quality, professional lighting, music video aesthetic. "
-        "No text or words in the image. No human faces. "
-    )
+def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: str = "", allow_faces: bool = False) -> str:
+    """Generate a single scene image using Nano Banana. Synchronous (runs in thread).
+    Set allow_faces=True for realistic/multi-clip videos that need character consistency."""
+    if allow_faces:
+        style_prefix = (
+            "Cinematic, high quality, professional lighting, photorealistic. "
+            "No text or words in the image. "
+        )
+    else:
+        style_prefix = (
+            "Cinematic, high quality, professional lighting, music video aesthetic. "
+            "No text or words in the image. No human faces. "
+        )
     # Detect gospel/religious content and enforce nature imagery
     _gospel_kw = ["god", "lord", "faith", "pray", "worship", "church", "gospel",
                   "heaven", "divine", "spirit", "holy", "jesus", "christ", "deus",

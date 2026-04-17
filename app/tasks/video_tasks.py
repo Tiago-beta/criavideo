@@ -1078,7 +1078,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         img_prompt = optimized_prompt[:500]
                         loop = asyncio.get_event_loop()
                         await loop.run_in_executor(
-                            None, generate_scene_image, img_prompt, aspect_ratio, grok_image_path
+                            None, generate_scene_image, img_prompt, aspect_ratio, grok_image_path, True
                         )
                         logger.info(f"Grok reference image generated: {grok_image_path}")
 

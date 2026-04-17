@@ -1551,7 +1551,7 @@ async def generate_realistic_endpoint(
         raise HTTPException(status_code=400, detail="Descricao muito longa (maximo 5000 caracteres).")
 
     engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "seedance"
-    max_dur = 15 if engine == "grok" else 10
+    max_dur = 60 if engine == "grok" else 10
     duration = max(1, min(req.duration, max_dur))
 
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
@@ -1564,9 +1564,10 @@ async def generate_realistic_endpoint(
         if resolved:
             image_path_str = str(resolved)
 
-    # Credit check
+    # Credit check — multi-clip costs more (1 credit per 15s segment)
     from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
-    credits_needed = CREDITS_PER_MINUTE  # 1 credit unit per realistic video
+    num_clips = -(-duration // 15) if engine == "grok" and duration > 15 else 1
+    credits_needed = CREDITS_PER_MINUTE * num_clips
     await deduct_credits(db, user["id"], credits_needed)
 
     # Use custom title if provided

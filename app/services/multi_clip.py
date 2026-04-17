@@ -16,18 +16,19 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-_SCENE_SPLIT_SYSTEM = """You are a video scene planner for a music video.
+_SCENE_SPLIT_SYSTEM = """You are a video scene planner for a cinematic video.
 
 Given a video description and the number of segments needed, split it into sequential scene descriptions.
 Each scene must:
 1. Be visually distinct but maintain narrative/visual continuity with the previous scene
 2. Include specific camera movements, lighting, and actions
-3. Reference the SAME characters/setting when appropriate for continuity
-4. Be written in English (optimized for AI video generation)
-5. Include a note like "Continue from previous scene..." for scenes 2+
-6. Be concise but vivid (under 200 words each)
+3. ALWAYS describe the SAME characters with IDENTICAL physical features (hair color, clothing, body type, age, gender) in EVERY scene — copy the character description verbatim across scenes
+4. Reference the SAME setting/location details when appropriate for continuity
+5. Be written in English (optimized for AI video generation)
+6. Include a note like "Continue from previous scene..." for scenes 2+
+7. Be concise but vivid (under 200 words each)
 
-CRITICAL: The scenes form a continuous story. Scene 2 should feel like a natural continuation of scene 1, etc.
+CRITICAL: The scenes form a continuous story. Every scene MUST repeat the full character description so each scene can be generated independently while looking consistent. Scene 2 should feel like a natural continuation of scene 1, etc.
 
 Output ONLY a JSON array of strings, one per scene. No markdown, no explanation.
 Example for 3 scenes: ["scene 1 description", "scene 2 description", "scene 3 description"]"""
@@ -235,9 +236,9 @@ async def generate_multi_clip_video(
 ) -> str:
     """Generate a long Grok video by chaining multiple 15s clips.
 
-    1. Split prompt into N scene prompts
-    2. Generate reference image for clip 1
-    3. For each clip: generate video, extract last frame for next
+    1. Split prompt into N scene prompts (with character consistency)
+    2. Generate reference images for ALL scenes upfront
+    3. For each clip: generate video using its pre-generated reference image
     4. Concatenate all clips with crossfade
     5. Return final video path
     """
@@ -277,31 +278,41 @@ async def generate_multi_clip_video(
         logger.info(f"Scene {i+1}/{num_segments} prompt optimized ({len(opt)} chars)")
 
     if on_progress:
-        await on_progress(20, "Gerando imagem de referencia...")
+        await on_progress(20, "Gerando imagens de referencia para todas as cenas...")
 
-    # Step 2: Generate initial reference image
-    ref_image_path = image_path
-    if not ref_image_path:
-        img_dir = clips_dir / "ref_images"
-        img_dir.mkdir(parents=True, exist_ok=True)
-        ref_image_path = str(img_dir / "reference_0.png")
-        img_prompt = optimized_scenes[0][:500]
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None, generate_scene_image, img_prompt, aspect_ratio, ref_image_path
-        )
-        logger.info(f"Initial reference image generated: {ref_image_path}")
+    # Step 2: Generate reference images for ALL scenes upfront
+    # This ensures character/setting consistency across the entire video
+    img_dir = clips_dir / "ref_images"
+    img_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 3: Generate clips sequentially
+    ref_images = []
+    for i in range(num_segments):
+        if i == 0 and image_path:
+            # User provided a reference image for the first scene
+            ref_images.append(image_path)
+        else:
+            ref_path = str(img_dir / f"reference_{i}.png")
+            img_prompt = optimized_scenes[i][:500]
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None, generate_scene_image, img_prompt, aspect_ratio, ref_path, True
+            )
+            ref_images.append(ref_path)
+            logger.info(f"Reference image {i+1}/{num_segments} generated: {ref_path}")
+
+            if on_progress:
+                pct = 20 + int(10 * (i + 1) / num_segments)
+                await on_progress(pct, f"Imagem de referencia {i+1}/{num_segments} gerada...")
+
+    # Step 3: Generate clips sequentially using pre-generated reference images
     clip_paths = []
-    current_ref = ref_image_path
 
     for i in range(num_segments):
         clip_dur = last_clip_dur if i == num_segments - 1 else max_per_clip
         clip_path = str(clips_dir / f"clip_{i:02d}.mp4")
 
-        pct_base = 20 + int(60 * i / num_segments)
-        pct_end = 20 + int(60 * (i + 1) / num_segments)
+        pct_base = 30 + int(50 * i / num_segments)
+        pct_end = 30 + int(50 * (i + 1) / num_segments)
 
         if on_progress:
             await on_progress(pct_base, f"Gerando clip {i+1}/{num_segments} ({clip_dur}s)...")
@@ -313,7 +324,7 @@ async def generate_multi_clip_video(
                 await on_progress(mapped, f"Clip {i+1}/{num_segments}: {msg}")
 
         await generate_video_clip(
-            image_path=current_ref,
+            image_path=ref_images[i],
             prompt=optimized_scenes[i],
             output_path=clip_path,
             duration=clip_dur,
@@ -323,13 +334,6 @@ async def generate_multi_clip_video(
 
         clip_paths.append(clip_path)
         logger.info(f"Clip {i+1}/{num_segments} generated: {clip_path}")
-
-        # Extract last frame for next clip's reference
-        if i < num_segments - 1:
-            next_ref = str(clips_dir / f"ref_images" / f"reference_{i+1}.png")
-            os.makedirs(os.path.dirname(next_ref), exist_ok=True)
-            await extract_last_frame(clip_path, next_ref)
-            current_ref = next_ref
 
     # Step 4: Concatenate clips
     if on_progress:
