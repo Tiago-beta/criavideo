@@ -1016,6 +1016,11 @@ async def run_realistic_video_pipeline(project_id: int):
                 optimized_prompt = user_prompt
                 logger.info(f"Realistic prompt already optimized, using as-is: {optimized_prompt[:200]}...")
             elif engine == "grok":
+                from app.services.grok_video import optimize_prompt_for_grok
+                optimized_prompt = await optimize_prompt_for_grok(user_description=user_prompt, duration=duration)
+                logger.info(f"Grok prompt optimized: {optimized_prompt[:200]}...")
+
+            if engine == "grok":
                 if duration > 15:
                     # — Grok multi-clip: chain multiple 15s clips for longer videos —
                     from app.services.multi_clip import generate_multi_clip_video
