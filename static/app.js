@@ -1198,6 +1198,30 @@ async function createSimilar(projectId) {
     console.log("[createSimilar] calling openModal. scriptPanel.hidden=", scriptPanel && scriptPanel.hidden, "modeSelection.hidden=", modeSelection && modeSelection.hidden);
     openModal("modal-new-project");
     console.log("[createSimilar] after openModal. scriptPanel.hidden=", scriptPanel && scriptPanel.hidden);
+
+    // Debug computed styles after paint
+    setTimeout(() => {
+        const sp = document.getElementById("create-panel-script");
+        if (sp) {
+            const cs = getComputedStyle(sp);
+            console.log("[debug panel] display:", cs.display, "vis:", cs.visibility, "opacity:", cs.opacity, "height:", cs.height, "hidden:", sp.hidden);
+        }
+        const s1 = document.querySelector('#create-panel-script .wizard-step[data-step="1"]');
+        if (s1) {
+            const cs = getComputedStyle(s1);
+            console.log("[debug step1] display:", cs.display, "vis:", cs.visibility, "opacity:", cs.opacity, "height:", cs.height, "hidden:", s1.hidden);
+        }
+        const mb = document.querySelector('#modal-new-project .modal-body');
+        if (mb) {
+            const cs = getComputedStyle(mb);
+            console.log("[debug modal-body] height:", cs.height, "overflow:", cs.overflow);
+        }
+        const mc = document.querySelector('#modal-new-project .modal-content');
+        if (mc) {
+            const cs = getComputedStyle(mc);
+            console.log("[debug modal-content] height:", cs.height, "maxHeight:", cs.maxHeight, "overflow:", cs.overflow);
+        }
+    }, 350);
 }
 
 function openCopyFormatModal(projectId) {
