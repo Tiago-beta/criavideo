@@ -4712,7 +4712,7 @@ th,
     position: relative;
     max-width: 100%;
     max-height: calc(100% - 48px);
-    aspect-ratio: 9 / 16;
+    aspect-ratio: var(--editor-aspect-ratio, 9 / 16);
     background: #000;
     border-radius: 10px;
     overflow: hidden;
@@ -5022,6 +5022,70 @@ th,
     text-align: right;
 }
 
+/* ── Quick actions row ── */
+.editor-quick-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    background: rgba(5, 20, 36, 0.7);
+}
+
+.editor-quick-icon-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.05);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.editor-quick-icon-btn:hover:not(:disabled) {
+    border-color: rgba(0, 212, 255, 0.35);
+    color: var(--accent);
+    background: rgba(0, 212, 255, 0.1);
+}
+
+.editor-quick-icon-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.editor-aspect-selector {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.editor-aspect-selector label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.editor-aspect-selector select {
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.06);
+    color: var(--text);
+    padding: 0 8px;
+    font-size: 12px;
+}
+
+.editor-aspect-selector select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
 /* ── Timeline ── */
 .editor-timeline {
     flex-shrink: 0;
@@ -5108,6 +5172,12 @@ th,
     transition: opacity 0.2s;
 }
 .editor-track-clip:hover { opacity: 0.85; }
+
+.editor-track-clip.selected {
+    outline: 2px solid rgba(0, 212, 255, 0.8);
+    outline-offset: -1px;
+    box-shadow: 0 0 0 1px rgba(3, 10, 17, 0.5);
+}
 
 .editor-track-clip.clip-video {
     background: linear-gradient(135deg, #1a6b3a, #0e4a28);
@@ -5213,6 +5283,30 @@ th,
 }
 .card:hover .editor-video-card-overlay { opacity: 1; }
 
+.editor-upload-card {
+    grid-column: 1 / -1;
+    padding: 12px;
+    border: 1px dashed rgba(0, 212, 255, 0.32);
+    border-radius: 12px;
+    background: rgba(0, 212, 255, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.editor-upload-card h4 {
+    font-size: 13px;
+    color: var(--text);
+    margin: 0;
+}
+
+.editor-upload-card p {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 3px 0 0;
+}
+
 .editor-video-card-overlay svg {
     color: var(--accent);
     filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5));
@@ -5257,6 +5351,23 @@ th,
         flex: 1;
         padding: 6px;
         min-height: 0;
+    }
+
+    .editor-quick-actions {
+        flex-wrap: wrap;
+        row-gap: 6px;
+        padding: 6px 8px;
+    }
+
+    .editor-aspect-selector {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .editor-upload-card {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
     }
 
     .editor-canvas-wrapper {

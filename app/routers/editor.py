@@ -61,6 +61,61 @@ def _fallback_project_video_path(project_id: int) -> str | None:
     return None
 
 
+def _normalize_aspect_ratio(value: str | None) -> str:
+    val = (value or "").strip()
+    return val if val in {"16:9", "9:16", "1:1"} else ""
+
+
+def _build_aspect_pad_filter(aspect_ratio: str | None) -> str | None:
+    ar = _normalize_aspect_ratio(aspect_ratio)
+    if not ar:
+        return None
+    if ar == "9:16":
+        return "pad=w='ceil(max(iw,ih*9/16)/2)*2':h='ceil(max(ih,iw*16/9)/2)*2':x='(ow-iw)/2':y='(oh-ih)/2':color=black"
+    if ar == "16:9":
+        return "pad=w='ceil(max(iw,ih*16/9)/2)*2':h='ceil(max(ih,iw*9/16)/2)*2':x='(ow-iw)/2':y='(oh-ih)/2':color=black"
+    return "pad=w='ceil(max(iw,ih)/2)*2':h='ceil(max(iw,ih)/2)*2':x='(ow-iw)/2':y='(oh-ih)/2':color=black"
+
+
+def _probe_video_metadata(video_path: str) -> tuple[float, str]:
+    duration = 0.0
+    aspect_ratio = "16:9"
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height:format=duration",
+                "-of", "json",
+                video_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if proc.returncode != 0:
+            return duration, aspect_ratio
+
+        payload = json.loads(proc.stdout or "{}")
+        stream = (payload.get("streams") or [{}])[0]
+        width = int(stream.get("width") or 0)
+        height = int(stream.get("height") or 0)
+        if width > 0 and height > 0:
+            ratio = width / height
+            if abs(ratio - 1.0) <= 0.12:
+                aspect_ratio = "1:1"
+            elif ratio < 1:
+                aspect_ratio = "9:16"
+            else:
+                aspect_ratio = "16:9"
+
+        duration = float((payload.get("format") or {}).get("duration") or 0)
+    except Exception as exc:
+        logger.warning("[editor] Failed to probe metadata for %s: %s", video_path, exc)
+
+    return duration, aspect_ratio
+
+
 # ── Models ──────────────────────────────────────────────
 class TextOverlay(BaseModel):
     content: str
@@ -100,6 +155,7 @@ class StickerEntry(BaseModel):
 
 class ExportRequest(BaseModel):
     project_id: int
+    aspect_ratio: str = ""
     trim_start: float = 0
     trim_end: float = 0
     filter: str = "none"
@@ -131,6 +187,81 @@ async def upload_music(
             raise HTTPException(400, "Arquivo muito grande (max 50MB)")
         f.write(content)
     return {"path": str(dest)}
+
+
+@router.post("/upload-video")
+async def upload_video(
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not file.content_type or not file.content_type.startswith("video"):
+        raise HTTPException(400, "Arquivo deve ser de video")
+
+    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "videos"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = Path(file.filename or "video.mp4").suffix.lower() or ".mp4"
+    filename = f"video_{uuid.uuid4().hex[:10]}{ext}"
+    dest = upload_dir / filename
+
+    max_size = 500 * 1024 * 1024  # 500MB
+    written = 0
+    with open(dest, "wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > max_size:
+                out.close()
+                if dest.exists():
+                    dest.unlink(missing_ok=True)
+                raise HTTPException(400, "Arquivo muito grande (max 500MB)")
+            out.write(chunk)
+
+    if written <= 0:
+        if dest.exists():
+            dest.unlink(missing_ok=True)
+        raise HTTPException(400, "Arquivo vazio")
+
+    duration, detected_aspect = _probe_video_metadata(str(dest))
+    title = (Path(file.filename or "Video enviado").stem or "Video enviado").strip()[:500]
+    if not title:
+        title = "Video enviado"
+
+    project = VideoProject(
+        user_id=user["id"],
+        track_id=0,
+        title=title,
+        description="Video enviado para edicao",
+        aspect_ratio=detected_aspect or "16:9",
+        status=VideoStatus.COMPLETED,
+        progress=100,
+        use_custom_video=True,
+        track_duration=duration if duration > 0 else None,
+    )
+    db.add(project)
+    await db.flush()
+
+    render = VideoRender(
+        project_id=project.id,
+        format=project.aspect_ratio,
+        file_path=str(dest),
+        file_size=written,
+        duration=duration if duration > 0 else None,
+    )
+    db.add(render)
+    await db.commit()
+
+    media_prefix = settings.media_dir.rstrip("/")
+    video_url = "/video/media" + str(dest)[len(media_prefix):] if str(dest).startswith(media_prefix) else None
+    return {
+        "project_id": project.id,
+        "video_url": video_url,
+        "duration": duration,
+        "aspect_ratio": project.aspect_ratio,
+    }
 
 
 # ── Transcribe audio for subtitles ───────────────────
@@ -286,6 +417,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
 
         # Build video filter chain
         vfilters = []
+        selected_aspect = _normalize_aspect_ratio(req.aspect_ratio) or _normalize_aspect_ratio(render.format) or "16:9"
 
         # CSS-like filter mapping for FFmpeg
         filter_map = {
@@ -303,6 +435,11 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         }
         if req.filter != "none" and req.filter in filter_map:
             vfilters.append(filter_map[req.filter])
+
+        # Apply output canvas aspect ratio before overlays so positions match preview
+        aspect_filter = _build_aspect_pad_filter(selected_aspect)
+        if aspect_filter:
+            vfilters.append(aspect_filter)
 
         # Text overlays using drawtext
         for txt in req.texts:
@@ -433,7 +570,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
             async with async_session() as db:
                 new_render = VideoRender(
                     project_id=project.id,
-                    format=render.format,
+                    format=selected_aspect,
                     file_path=out_file,
                     file_size=os.path.getsize(out_file) if os.path.exists(out_file) else None,
                     thumbnail_path=render.thumbnail_path,

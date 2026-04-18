@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 128;
+        var REQUIRED_VER = 130;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -278,6 +278,29 @@
                                     <div class="editor-props-content" id="editor-props-content">
                                         <p class="editor-props-hint">Selecione uma ferramenta para comecar.</p>
                                     </div>
+                                </div>
+                            </div>
+                            <div class="editor-quick-actions" id="editor-quick-actions">
+                                <button class="editor-quick-icon-btn" id="editor-quick-add-text" type="button" title="Adicionar texto">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="8" y1="20" x2="16" y2="20"/></svg>
+                                </button>
+                                <button class="editor-quick-icon-btn" id="editor-quick-add-subtitle" type="button" title="Adicionar legenda">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 12h4"/><path d="M13 12h4"/><path d="M7 16h10"/></svg>
+                                </button>
+                                <button class="editor-quick-icon-btn" id="editor-quick-duplicate" type="button" title="Duplicar selecao" disabled>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                </button>
+                                <button class="editor-quick-icon-btn" id="editor-quick-delete" type="button" title="Excluir selecao (Delete)" disabled>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                                </button>
+                                <div class="editor-aspect-selector">
+                                    <label for="editor-aspect-select">Proporcao</label>
+                                    <select id="editor-aspect-select">
+                                        <option value="source">Original</option>
+                                        <option value="9:16">9:16</option>
+                                        <option value="16:9">16:9</option>
+                                        <option value="1:1">1:1</option>
+                                    </select>
                                 </div>
                             </div>
                             <!-- Timeline -->
@@ -2005,7 +2028,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260418-09"></script>
-    <script src="/video/static/pwa.js?v=20260418-09"></script>
+    <script src="/video/static/app.js?v=20260418-10"></script>
+    <script src="/video/static/pwa.js?v=20260418-10"></script>
 </body>
 </html>
