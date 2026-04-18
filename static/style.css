@@ -2215,7 +2215,11 @@ th {
 }
 
 .wizard-step {
-    animation: wizardFadeIn 0.25s ease-out;
+    /* animation applied via .wizard-step-enter class only */
+}
+
+.wizard-step-enter {
+    animation: wizardFadeIn 0.25s ease-out forwards;
 }
 
 @keyframes wizardFadeIn {

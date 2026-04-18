@@ -1165,22 +1165,17 @@ async function createSimilar(projectId) {
     if (project.video_type) scriptData.videoType = project.video_type;
     scriptStep = 2;
 
-    // 3. Open modal (same as clicking the new-project button — modal opens with mode selection)
+    // 3. Open modal (same as clicking the new-project button)
     openModal("modal-new-project");
 
-    // 4. Switch to script mode AFTER modal is in DOM/visible (same as user clicking "Meu Roteiro")
+    // 4. Switch to script mode AFTER modal is visible (same as user clicking "Meu Roteiro")
     switchCreateMode("script");
 
-    // 5. Show step 1 (the script text step) — override the default step 2 that updateFlowUI sets
+    // 5. Show step 1 (the script text step)
     const scriptPanel = document.getElementById("create-panel-script");
     if (scriptPanel) {
         scriptPanel.querySelectorAll(".wizard-step").forEach(s => {
-            const n = parseInt(s.dataset.step);
-            s.hidden = n !== 1;
-            if (n === 1) {
-                s.style.animation = "none";
-                s.style.opacity = "1";
-            }
+            s.hidden = parseInt(s.dataset.step) !== 1;
         });
     }
 
@@ -1599,7 +1594,13 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
 
     // Show/hide steps
     panel.querySelectorAll(".wizard-step").forEach((s) => {
-        s.hidden = parseInt(s.dataset.step) !== currentDataStep;
+        const show = parseInt(s.dataset.step) === currentDataStep;
+        s.hidden = !show;
+        s.classList.remove("wizard-step-enter");
+        if (show) {
+            // trigger fade-in animation on next frame
+            requestAnimationFrame(() => s.classList.add("wizard-step-enter"));
+        }
     });
 
     // Update dots dynamically
