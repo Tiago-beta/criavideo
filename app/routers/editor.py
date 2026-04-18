@@ -116,6 +116,113 @@ def _probe_video_metadata(video_path: str) -> tuple[float, str]:
     return duration, aspect_ratio
 
 
+def _probe_has_audio_stream(video_path: str) -> bool:
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-select_streams", "a:0",
+                "-show_entries", "stream=index",
+                "-of", "csv=p=0",
+                video_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        return proc.returncode == 0 and bool((proc.stdout or "").strip())
+    except Exception:
+        return False
+
+
+def _normalize_trim_segments(
+    raw_segments: list,
+    trim_start: float,
+    trim_end: float,
+    src_duration: float,
+) -> list[tuple[float, float]]:
+    segments: list[tuple[float, float]] = []
+    max_duration = max(0.0, float(src_duration or 0.0))
+
+    for seg in raw_segments or []:
+        if isinstance(seg, dict):
+            st = float(seg.get("start") or 0)
+            et = float(seg.get("end") or 0)
+        else:
+            st = float(getattr(seg, "start", 0) or 0)
+            et = float(getattr(seg, "end", 0) or 0)
+
+        st = max(0.0, st)
+        et = max(st, et)
+        if max_duration > 0:
+            st = min(st, max_duration)
+            et = min(et, max_duration)
+        if et - st >= 0.05:
+            segments.append((st, et))
+
+    if not segments and trim_end > trim_start:
+        st = max(0.0, float(trim_start or 0))
+        et = max(st, float(trim_end or 0))
+        if max_duration > 0:
+            st = min(st, max_duration)
+            et = min(et, max_duration)
+        if et - st >= 0.05:
+            segments.append((st, et))
+
+    if not segments and trim_start > 0 and max_duration > trim_start:
+        segments.append((float(trim_start), max_duration))
+
+    if not segments:
+        if max_duration > 0:
+            segments.append((0.0, max_duration))
+        else:
+            segments.append((0.0, 1e9))
+
+    segments.sort(key=lambda item: item[0])
+
+    # Merge overlapping or adjacent ranges to avoid duplicated frames.
+    merged: list[list[float]] = []
+    for st, et in segments:
+        if not merged:
+            merged.append([st, et])
+            continue
+        prev = merged[-1]
+        if st <= prev[1] + 0.01:
+            prev[1] = max(prev[1], et)
+        else:
+            merged.append([st, et])
+
+    return [(item[0], item[1]) for item in merged if item[1] - item[0] >= 0.05]
+
+
+def _build_segment_select_expr(segments: list[tuple[float, float]]) -> str:
+    parts = [f"between(t\\,{st:.6f}\\,{et:.6f})" for st, et in segments]
+    return "+".join(parts)
+
+
+def _map_source_interval_to_output(
+    start_time: float,
+    end_time: float,
+    segments: list[tuple[float, float]],
+) -> list[tuple[float, float]]:
+    start = max(0.0, float(start_time or 0.0))
+    end = max(start, float(end_time or 0.0))
+    if end - start < 0.001:
+        return []
+
+    mapped: list[tuple[float, float]] = []
+    offset = 0.0
+    for seg_start, seg_end in segments:
+        overlap_start = max(start, seg_start)
+        overlap_end = min(end, seg_end)
+        if overlap_end - overlap_start >= 0.02:
+            out_start = offset + (overlap_start - seg_start)
+            out_end = out_start + (overlap_end - overlap_start)
+            mapped.append((out_start, out_end))
+        offset += seg_end - seg_start
+    return mapped
+
+
 # ── Models ──────────────────────────────────────────────
 class TextOverlay(BaseModel):
     content: str
@@ -153,11 +260,17 @@ class StickerEntry(BaseModel):
     size: int = 48
 
 
+class TrimSegment(BaseModel):
+    start: float
+    end: float
+
+
 class ExportRequest(BaseModel):
     project_id: int
     aspect_ratio: str = ""
     trim_start: float = 0
     trim_end: float = 0
+    trim_segments: list[TrimSegment] = []
     filter: str = "none"
     quality: str = "original"
     original_volume: int = 100
@@ -399,16 +512,25 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         job["progress"] = 10
         job["message"] = "Construindo filtros FFmpeg..."
 
+        src_duration, _ = _probe_video_metadata(src_video)
+        source_has_audio = _probe_has_audio_stream(src_video)
+        segments = _normalize_trim_segments(
+            req.trim_segments,
+            req.trim_start,
+            req.trim_end,
+            src_duration,
+        )
+        use_segment_filter = not (
+            len(segments) == 1
+            and segments[0][0] <= 0.01
+            and (src_duration <= 0 or segments[0][1] >= max(0.0, src_duration - 0.01))
+        )
+        select_expr = _build_segment_select_expr(segments)
+        logger.info("[editor] Export segments=%s use_segment_filter=%s", segments, use_segment_filter)
+
         # Build FFmpeg command
         cmd = ["ffmpeg", "-y"]
-
-        # Input: source video with trim
-        if req.trim_start > 0:
-            cmd += ["-ss", str(req.trim_start)]
         cmd += ["-i", src_video]
-        if req.trim_end > req.trim_start:
-            duration = req.trim_end - req.trim_start
-            cmd += ["-t", str(duration)]
 
         # Music input
         has_music = bool(req.music_path) and os.path.exists(req.music_path)
@@ -418,6 +540,9 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         # Build video filter chain
         vfilters = []
         selected_aspect = _normalize_aspect_ratio(req.aspect_ratio) or _normalize_aspect_ratio(render.format) or "16:9"
+
+        if use_segment_filter:
+            vfilters.append(f"select='{select_expr}',setpts=N/FRAME_RATE/TB")
 
         # CSS-like filter mapping for FFmpeg
         filter_map = {
@@ -443,58 +568,55 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
 
         # Text overlays using drawtext
         for txt in req.texts:
-            st = max(0, txt.start_time - req.trim_start)
-            et = txt.end_time - req.trim_start
-            fontsize = txt.font_size
-            color = txt.color.lstrip("#")
-            x_expr = f"(w*{txt.x/100})"
-            y_expr = f"(h*{txt.y/100})"
-            style = ""
-            if txt.bold:
-                style = ":fontsize_expr="  # will use fontsize
-            escaped_text = txt.content.replace("'", "'\\\\\\''").replace(":", "\\:")
-            dt = f"drawtext=text='{escaped_text}':fontsize={fontsize}:fontcolor=0x{color}:x={x_expr}-tw/2:y={y_expr}-th/2:enable='between(t,{st},{et})':shadowcolor=black:shadowx=2:shadowy=2"
-            vfilters.append(dt)
+            mapped_ranges = _map_source_interval_to_output(txt.start_time, txt.end_time, segments)
+            for st, et in mapped_ranges:
+                fontsize = txt.font_size
+                color = txt.color.lstrip("#")
+                x_expr = f"(w*{txt.x/100})"
+                y_expr = f"(h*{txt.y/100})"
+                escaped_text = txt.content.replace("'", "'\\\\\\''").replace(":", "\\:")
+                dt = f"drawtext=text='{escaped_text}':fontsize={fontsize}:fontcolor=0x{color}:x={x_expr}-tw/2:y={y_expr}-th/2:enable='between(t,{st},{et})':shadowcolor=black:shadowx=2:shadowy=2"
+                vfilters.append(dt)
 
         # Subtitle overlays
         for sub in req.subtitles:
-            st = max(0, sub.start_time - req.trim_start)
-            et = sub.end_time - req.trim_start
-            color = sub.font_color.lstrip("#") if sub.font_color else "FFFFFF"
-            fsize = sub.font_size or 28
-            x_expr = f"(w*{sub.x/100})-tw/2" if sub.x else "(w-tw)/2"
-            y_expr = f"(h*{sub.y/100})-th/2" if sub.y else "h-80"
-            escaped_text = sub.text.replace("'", "'\\\\\\\\''").replace(":", "\\:")
-            font_family = (sub.font_family or "Arial").split(",")[0].strip()
-            dt_parts = [
-                f"drawtext=text='{escaped_text}'",
-                f"fontsize={fsize}",
-                f"fontcolor=0x{color}",
-                f"x={x_expr}",
-                f"y={y_expr}",
-                f"enable='between(t,{st},{et})'",
-                "shadowcolor=black",
-                "shadowx=2",
-                "shadowy=2",
-            ]
-            if sub.bg_color:
-                bg = sub.bg_color.lstrip("#")[:6] if sub.bg_color.startswith("#") else "000000"
-                dt_parts.append(f"box=1:boxcolor=0x{bg}@0.6:boxborderw=8")
-            if sub.outline_color:
-                border_c = sub.outline_color.lstrip("#")[:6]
-                dt_parts.append(f"borderw=2:bordercolor=0x{border_c}")
-            dt = ":".join(dt_parts)
-            vfilters.append(dt)
+            mapped_ranges = _map_source_interval_to_output(sub.start_time, sub.end_time, segments)
+            for st, et in mapped_ranges:
+                color = sub.font_color.lstrip("#") if sub.font_color else "FFFFFF"
+                fsize = sub.font_size or 28
+                x_expr = f"(w*{sub.x/100})-tw/2" if sub.x else "(w-tw)/2"
+                y_expr = f"(h*{sub.y/100})-th/2" if sub.y else "h-80"
+                escaped_text = sub.text.replace("'", "'\\\\\\\\''").replace(":", "\\:")
+                font_family = (sub.font_family or "Arial").split(",")[0].strip()
+                dt_parts = [
+                    f"drawtext=text='{escaped_text}'",
+                    f"fontsize={fsize}",
+                    f"fontcolor=0x{color}",
+                    f"x={x_expr}",
+                    f"y={y_expr}",
+                    f"enable='between(t,{st},{et})'",
+                    "shadowcolor=black",
+                    "shadowx=2",
+                    "shadowy=2",
+                ]
+                if sub.bg_color:
+                    bg = sub.bg_color.lstrip("#")[:6] if sub.bg_color.startswith("#") else "000000"
+                    dt_parts.append(f"box=1:boxcolor=0x{bg}@0.6:boxborderw=8")
+                if sub.outline_color:
+                    border_c = sub.outline_color.lstrip("#")[:6]
+                    dt_parts.append(f"borderw=2:bordercolor=0x{border_c}")
+                dt = ":".join(dt_parts)
+                vfilters.append(dt)
 
         # Sticker/emoji overlays (drawtext with emoji font)
         for stk in req.stickers:
-            st = max(0, stk.start_time - req.trim_start)
-            et = stk.end_time - req.trim_start
-            x_expr = f"(w*{stk.x/100})"
-            y_expr = f"(h*{stk.y/100})"
-            escaped = stk.emoji.replace("'", "'\\\\\\''").replace(":", "\\:")
-            dt = f"drawtext=text='{escaped}':fontsize={stk.size}:x={x_expr}-tw/2:y={y_expr}-th/2:enable='between(t,{st},{et})'"
-            vfilters.append(dt)
+            mapped_ranges = _map_source_interval_to_output(stk.start_time, stk.end_time, segments)
+            for st, et in mapped_ranges:
+                x_expr = f"(w*{stk.x/100})"
+                y_expr = f"(h*{stk.y/100})"
+                escaped = stk.emoji.replace("'", "'\\\\\\''").replace(":", "\\:")
+                dt = f"drawtext=text='{escaped}':fontsize={stk.size}:x={x_expr}-tw/2:y={y_expr}-th/2:enable='between(t,{st},{et})'"
+                vfilters.append(dt)
 
         # Quality scaling
         if req.quality == "hd":
@@ -515,15 +637,40 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         if has_music:
             orig_vol = req.original_volume / 100
             music_vol = req.music_volume / 100
-            cmd += ["-filter_complex",
-                    f"[0:a]volume={orig_vol}[a0];[1:a]volume={music_vol}[a1];[a0][a1]amix=inputs=2:duration=shortest[aout]",
-                    "-map", "0:v", "-map", "[aout]"]
+            if source_has_audio:
+                base_audio_label = "[0:a]"
+                audio_chain: list[str] = []
+                if use_segment_filter:
+                    audio_chain.append(f"[0:a]aselect='{select_expr}',asetpts=N/SR/TB[a_src]")
+                    base_audio_label = "[a_src]"
+                audio_chain.append(f"{base_audio_label}volume={orig_vol}[a0]")
+                audio_chain.append(f"[1:a]volume={music_vol}[a1]")
+                audio_chain.append("[a0][a1]amix=inputs=2:duration=shortest[aout]")
+                cmd += [
+                    "-filter_complex", ";".join(audio_chain),
+                    "-map", "0:v",
+                    "-map", "[aout]",
+                ]
+            else:
+                cmd += [
+                    "-filter_complex", f"[1:a]volume={music_vol}[aout]",
+                    "-map", "0:v",
+                    "-map", "[aout]",
+                ]
         else:
             orig_vol = req.original_volume / 100
-            if orig_vol != 1.0:
-                cmd += ["-af", f"volume={orig_vol}"]
+            afilters: list[str] = []
+            if source_has_audio and use_segment_filter:
+                afilters.append(f"aselect='{select_expr}',asetpts=N/SR/TB")
+            if source_has_audio and orig_vol != 1.0:
+                afilters.append(f"volume={orig_vol}")
+            if afilters:
+                cmd += ["-af", ",".join(afilters)]
 
         # Output settings
+        if has_music:
+            cmd += ["-shortest"]
+
         cmd += [
             "-c:v", "libx264",
             "-preset", "medium",

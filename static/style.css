@@ -5169,16 +5169,23 @@ th,
 .editor-aspect-selector select {
     height: 32px;
     border-radius: 8px;
-    border: 1px solid var(--border);
-    background: rgba(255,255,255,0.06);
-    color: var(--text);
+    border: 1px solid rgba(0, 212, 255, 0.28);
+    background: linear-gradient(180deg, rgba(8, 35, 58, 0.98), rgba(7, 26, 45, 0.98));
+    color: #e6f7ff;
     padding: 0 8px;
     font-size: 12px;
+    font-weight: 600;
 }
 
 .editor-aspect-selector select:focus {
     outline: none;
     border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.16);
+}
+
+.editor-aspect-selector select option {
+    background: #0a2136;
+    color: #e6f7ff;
 }
 
 /* ── Timeline ── */

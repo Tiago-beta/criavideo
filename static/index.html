@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260418-11">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260418-12">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 130;
+        var REQUIRED_VER = 131;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -195,8 +195,10 @@
                             <div class="page-header">
                                 <div class="page-header-left">
                                     <h1>Editar video</h1>
+                                    <button id="editor-upload-btn" class="btn btn-primary btn-add-project" type="button" title="Enviar video para editar" aria-label="Enviar video para editar">+</button>
                                 </div>
                             </div>
+                            <input id="editor-video-upload-input" type="file" accept="video/*" hidden onchange="_editorUploadVideo(this)">
                             <p class="section-subtitle">Selecione um video finalizado para editar.</p>
                             <div id="editor-videos-list" class="cards-grid">
                                 <div class="loading">Carregando videos...</div>
@@ -286,6 +288,9 @@
                                 </button>
                                 <button class="editor-quick-icon-btn" id="editor-quick-add-subtitle" type="button" title="Adicionar legenda">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 12h4"/><path d="M13 12h4"/><path d="M7 16h10"/></svg>
+                                </button>
+                                <button class="editor-quick-icon-btn" id="editor-quick-cut" type="button" title="Cortar no ponto atual">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
                                 </button>
                                 <button class="editor-quick-icon-btn" id="editor-quick-duplicate" type="button" title="Duplicar selecao" disabled>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -2035,7 +2040,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260418-11"></script>
-    <script src="/video/static/pwa.js?v=20260418-11"></script>
+    <script src="/video/static/app.js?v=20260418-12"></script>
+    <script src="/video/static/pwa.js?v=20260418-12"></script>
 </body>
 </html>
