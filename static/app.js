@@ -1143,9 +1143,7 @@ function _stopSmoothProgress() {
 }
 
 async function createSimilar(projectId) {
-    console.log("[createSimilar] start, projectId=", projectId);
     const project = _projectsCache.find(p => p.id === projectId);
-    console.log("[createSimilar] project=", project ? {id: project.id, title: project.title, has_lyrics: !!project.lyrics_text} : null);
     if (!project || !project.lyrics_text) {
         alert("Roteiro nao disponivel para este projeto.");
         return;
@@ -1153,27 +1151,28 @@ async function createSimilar(projectId) {
 
     // 1. Reset wizard state
     resetCreateWizard();
-    console.log("[createSimilar] after resetCreateWizard");
 
     // 2. Prepare content BEFORE opening modal
     const modeSelection = document.getElementById("create-mode-selection");
-    console.log("[createSimilar] modeSelection=", modeSelection, "hidden=", modeSelection && modeSelection.hidden);
     if (modeSelection) modeSelection.hidden = true;
 
     document.querySelectorAll(".create-panel").forEach(p => { p.hidden = true; });
 
     const scriptPanel = document.getElementById("create-panel-script");
-    console.log("[createSimilar] scriptPanel=", scriptPanel, "hidden=", scriptPanel && scriptPanel.hidden);
     if (scriptPanel) {
         scriptPanel.hidden = false;
+        scriptPanel.style.display = "block";
         const steps = scriptPanel.querySelectorAll(".wizard-step");
-        console.log("[createSimilar] wizard-steps count=", steps.length);
         steps.forEach(s => {
             const stepNum = parseInt(s.dataset.step);
-            s.hidden = (stepNum !== 1);
-            console.log("[createSimilar] step", stepNum, "hidden=", s.hidden);
+            if (stepNum === 1) {
+                s.hidden = false;
+                s.style.animation = "none";
+                s.style.opacity = "1";
+            } else {
+                s.hidden = true;
+            }
         });
-        console.log("[createSimilar] scriptPanel.hidden after=", scriptPanel.hidden);
     }
 
     const backBtn = document.getElementById("script-back");
@@ -1182,7 +1181,6 @@ async function createSimilar(projectId) {
     if (createBtn) createBtn.hidden = true;
 
     const textEl = document.getElementById("script-text");
-    console.log("[createSimilar] script-text el=", textEl);
     if (textEl) textEl.value = project.lyrics_text;
     const countEl = document.getElementById("script-char-count");
     if (countEl) countEl.textContent = project.lyrics_text.length.toLocaleString("pt-BR");
@@ -1194,34 +1192,8 @@ async function createSimilar(projectId) {
     if (project.video_type) scriptData.videoType = project.video_type;
     scriptStep = 2;
 
-    // 3. Open modal — content is already set
-    console.log("[createSimilar] calling openModal. scriptPanel.hidden=", scriptPanel && scriptPanel.hidden, "modeSelection.hidden=", modeSelection && modeSelection.hidden);
+    // 3. Open modal
     openModal("modal-new-project");
-    console.log("[createSimilar] after openModal. scriptPanel.hidden=", scriptPanel && scriptPanel.hidden);
-
-    // Debug computed styles after paint
-    setTimeout(() => {
-        const sp = document.getElementById("create-panel-script");
-        if (sp) {
-            const cs = getComputedStyle(sp);
-            console.log("[debug panel] display:", cs.display, "vis:", cs.visibility, "opacity:", cs.opacity, "height:", cs.height, "hidden:", sp.hidden);
-        }
-        const s1 = document.querySelector('#create-panel-script .wizard-step[data-step="1"]');
-        if (s1) {
-            const cs = getComputedStyle(s1);
-            console.log("[debug step1] display:", cs.display, "vis:", cs.visibility, "opacity:", cs.opacity, "height:", cs.height, "hidden:", s1.hidden);
-        }
-        const mb = document.querySelector('#modal-new-project .modal-body');
-        if (mb) {
-            const cs = getComputedStyle(mb);
-            console.log("[debug modal-body] height:", cs.height, "overflow:", cs.overflow);
-        }
-        const mc = document.querySelector('#modal-new-project .modal-content');
-        if (mc) {
-            const cs = getComputedStyle(mc);
-            console.log("[debug modal-content] height:", cs.height, "maxHeight:", cs.maxHeight, "overflow:", cs.overflow);
-        }
-    }, 350);
 }
 
 function openCopyFormatModal(projectId) {
