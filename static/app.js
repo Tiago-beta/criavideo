@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v131 loaded");
+console.log("[CriaVideo] app.js v132 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4587,17 +4587,95 @@ function _setClipPlayButton(isPlaying) {
     }
 }
 
-function _stopClipPreview() {
-    if (_clipPreviewSource) {
-        try { _clipPreviewSource.stop(); } catch (_) {}
-        _clipPreviewSource = null;
+function _getClipSegmentBounds() {
+    const audio = document.getElementById("clip-audio");
+    let total = Number(_clipSongDuration || 0);
+    if ((!Number.isFinite(total) || total <= 0) && audio && Number.isFinite(audio.duration) && audio.duration > 0) {
+        total = Number(audio.duration);
     }
+    if (!Number.isFinite(total) || total <= 0) {
+        total = 1;
+    }
+
+    const start = Math.max(0, Math.min(Number(_clipStart || 0), total));
+    let duration = Number(_clipDuration || 0);
+    if (!Number.isFinite(duration) || duration <= 0) {
+        duration = total - start;
+    }
+    duration = Math.max(0.05, Math.min(duration, Math.max(0.05, total - start)));
+    const end = Math.min(total, start + duration);
+    return { start, end, duration, total };
+}
+
+function _ensureClipPlaybackInSelection(forceRestart = false) {
+    if (!_clipPlaying) return;
+    const audio = document.getElementById("clip-audio");
+    if (!audio) return;
+
+    const seg = _getClipSegmentBounds();
+    const now = Number(audio.currentTime || 0);
+    const shouldRestart = forceRestart || now < seg.start || now >= seg.end;
+
+    if (shouldRestart) {
+        try {
+            audio.currentTime = seg.start;
+        } catch (_) {
+            // Ignore seek failures; next tick retries.
+        }
+    }
+
+    if (audio.paused && _clipPlaying) {
+        const p = audio.play();
+        if (p && typeof p.then === "function") {
+            p.catch(() => _stopClipPreview());
+        }
+    }
+
+    _updateClipPlayhead(Number(audio.currentTime || seg.start));
+}
+
+function _tickClipPreviewLoop() {
+    if (!_clipPlaying) return;
+
+    const audio = document.getElementById("clip-audio");
+    if (!audio) {
+        _stopClipPreview();
+        return;
+    }
+
+    const seg = _getClipSegmentBounds();
+    let t = Number(audio.currentTime || seg.start);
+
+    // Keep playback looping strictly inside the selected segment.
+    if (t < seg.start || t >= seg.end) {
+        try {
+            audio.currentTime = seg.start;
+            t = seg.start;
+        } catch (_) {
+            // Ignore and keep current value until next frame.
+        }
+        if (audio.paused && _clipPlaying) {
+            const p = audio.play();
+            if (p && typeof p.then === "function") {
+                p.catch(() => _stopClipPreview());
+            }
+        }
+    }
+
+    _updateClipPlayhead(t);
+    _clipPreviewRaf = requestAnimationFrame(_tickClipPreviewLoop);
+}
+
+function _stopClipPreview() {
     if (_clipPreviewRaf) {
         cancelAnimationFrame(_clipPreviewRaf);
         _clipPreviewRaf = null;
     }
     const audio = document.getElementById("clip-audio");
-    if (audio) audio.pause();
+    if (audio) {
+        audio.pause();
+        audio.onended = null;
+    }
     _clipPlaying = false;
     _setClipPlayButton(false);
     const playhead = document.getElementById("clip-waveform-playhead");
@@ -4922,7 +5000,7 @@ function _updateClipDragHint() {
     hint.style.display = "flex";
 }
 
-function _updateClipSelection() {
+function _updateClipSelection(restartPlayback = true) {
     const canvas = document.getElementById("clip-waveform-canvas");
     const container = document.getElementById("clip-waveform-container");
     const selection = document.getElementById("clip-waveform-selection");
@@ -4940,6 +5018,9 @@ function _updateClipSelection() {
         if (label) label.textContent = `0:00 - ${_formatDuration(_clipSongDuration)}`;
         _drawClipWaveform();
         _updateClipDragHint();
+        if (_clipPlaying && restartPlayback) {
+            _ensureClipPlaybackInSelection(true);
+        }
         return;
     }
 
@@ -4959,6 +5040,10 @@ function _updateClipSelection() {
 
     _drawClipWaveformWithSelection();
     _updateClipDragHint();
+
+    if (_clipPlaying && restartPlayback) {
+        _ensureClipPlaybackInSelection(true);
+    }
 }
 
 function _updateClipPlayhead(currentTime) {
@@ -5084,89 +5169,43 @@ function toggleClipPreview() {
         return;
     }
 
-    const startTime = Math.max(0, _clipStart || 0);
-    const maxDur = Math.max(0.1, _clipSongDuration - startTime);
-    const duration = _clipDuration > 0 ? Math.min(_clipDuration, maxDur) : maxDur;
-    if (duration <= 0) return;
-
-    if (_clipAudioBuffer) {
-        if (!_clipPreviewCtx) {
-            _clipPreviewCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        const ctx = _clipPreviewCtx;
-        if (ctx.state === "suspended") ctx.resume();
-
-        const source = ctx.createBufferSource();
-        source.buffer = _clipAudioBuffer;
-        source.connect(ctx.destination);
-
-        _clipPreviewSource = source;
-        _clipPlaying = true;
-        _setClipPlayButton(true);
-        _updateClipPlayhead(startTime);
-
-        const playStartCtxTime = ctx.currentTime;
-        function tickBufferPreview() {
-            if (!_clipPlaying) return;
-            const elapsed = ctx.currentTime - playStartCtxTime;
-            const currentTime = startTime + elapsed;
-            _updateClipPlayhead(currentTime);
-            if (elapsed >= duration) {
-                _stopClipPreview();
-                return;
-            }
-            _clipPreviewRaf = requestAnimationFrame(tickBufferPreview);
-        }
-
-        source.onended = () => {
-            if (_clipPlaying) _stopClipPreview();
-        };
-
-        source.start(0, startTime, duration);
-        _clipPreviewRaf = requestAnimationFrame(tickBufferPreview);
-        return;
-    }
-
     const audio = document.getElementById("clip-audio");
     if (!audio || !audio.src) {
         alert("Nao foi possivel carregar o audio para preview.");
         return;
     }
 
+    const seg = _getClipSegmentBounds();
+    if (seg.duration <= 0) return;
+
     _clipPlaying = true;
     _setClipPlayButton(true);
-    _updateClipPlayhead(startTime);
+    _updateClipPlayhead(seg.start);
 
     audio.pause();
     try {
-        audio.currentTime = startTime;
+        audio.currentTime = seg.start;
     } catch (_) {
         // keep going; some browsers update currentTime only after play starts
     }
 
-    const endTime = startTime + duration;
-    function tickHtmlPreview() {
+    audio.onended = () => {
         if (!_clipPlaying) return;
-        _updateClipPlayhead(audio.currentTime || startTime);
-        if (audio.currentTime >= endTime || audio.ended) {
-            _stopClipPreview();
-            return;
-        }
-        _clipPreviewRaf = requestAnimationFrame(tickHtmlPreview);
-    }
+        _ensureClipPlaybackInSelection(true);
+    };
 
     const playPromise = audio.play();
     if (playPromise && typeof playPromise.then === "function") {
         playPromise
             .then(() => {
-                _clipPreviewRaf = requestAnimationFrame(tickHtmlPreview);
+                _clipPreviewRaf = requestAnimationFrame(_tickClipPreviewLoop);
             })
             .catch(() => {
                 _stopClipPreview();
                 alert("Nao foi possivel reproduzir este trecho.");
             });
     } else {
-        _clipPreviewRaf = requestAnimationFrame(tickHtmlPreview);
+        _clipPreviewRaf = requestAnimationFrame(_tickClipPreviewLoop);
     }
 }
 
@@ -5203,7 +5242,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const modal = document.getElementById("modal-clip-selector");
         if (modal && modal.classList.contains("open")) {
             _syncClipCanvasSize();
-            _updateClipSelection();
+            _updateClipSelection(false);
         }
     });
 });
@@ -6433,11 +6472,13 @@ const _editor = {
     playing: false,
     activeTool: "text",
     subtitleListOpen: false,
-    selectedClip: { kind: "", id: "" },
+    selectedClip: { kind: "", id: "", track: "" },
     // Edit state
     texts: [],          // {id, content, startTime, endTime, x, y, fontSize, color, fontFamily, bold, italic}
     subtitles: [],      // {id, text, startTime, endTime, styleName, x, y, fontSize, fontColor, bgColor, outlineColor, fontFamily, bold, italic}
     videoSegments: [],  // {id, start, end}
+    audioSegments: [],  // {id, start, end}
+    selectedTracks: ["video", "audio"],
     trimStart: 0,
     trimEnd: 0,
     musicUrl: "",
@@ -6453,6 +6494,7 @@ const _editor = {
 };
 
 let _editorTimelineDrag = null;
+let _editorTimelineScrub = null;
 
 function _editorGenId() { return _editor._nextId++; }
 
@@ -6483,6 +6525,8 @@ function _editorSaveState() {
         texts: _editor.texts,
         subtitles: _editor.subtitles,
         videoSegments: _editor.videoSegments,
+        audioSegments: _editor.audioSegments,
+        selectedTracks: _editor.selectedTracks,
         trimStart: _editor.trimStart,
         trimEnd: _editor.trimEnd,
         outputAspectRatio: _editor.outputAspectRatio,
@@ -6504,6 +6548,8 @@ function _editorUndo() {
     const current = JSON.stringify({
         texts: _editor.texts, subtitles: _editor.subtitles, trimStart: _editor.trimStart,
         videoSegments: _editor.videoSegments,
+        audioSegments: _editor.audioSegments,
+        selectedTracks: _editor.selectedTracks,
         trimEnd: _editor.trimEnd, outputAspectRatio: _editor.outputAspectRatio,
         musicUrl: _editor.musicUrl, musicVolume: _editor.musicVolume,
         originalVolume: _editor.originalVolume, filter: _editor.filter, stickers: _editor.stickers, quality: _editor.quality,
@@ -6511,7 +6557,7 @@ function _editorUndo() {
     _editor.redoStack.push(current);
     const snap = JSON.parse(_editor.undoStack.pop());
     Object.assign(_editor, snap);
-    _editor.selectedClip = { kind: "", id: "" };
+    _editor.selectedClip = { kind: "", id: "", track: "" };
     _updateUndoRedoBtns();
     _editorApplyAspectRatio();
     _editorRefreshQuickActions();
@@ -6524,6 +6570,8 @@ function _editorRedo() {
     const current = JSON.stringify({
         texts: _editor.texts, subtitles: _editor.subtitles, trimStart: _editor.trimStart,
         videoSegments: _editor.videoSegments,
+        audioSegments: _editor.audioSegments,
+        selectedTracks: _editor.selectedTracks,
         trimEnd: _editor.trimEnd, outputAspectRatio: _editor.outputAspectRatio,
         musicUrl: _editor.musicUrl, musicVolume: _editor.musicVolume,
         originalVolume: _editor.originalVolume, filter: _editor.filter, stickers: _editor.stickers, quality: _editor.quality,
@@ -6531,7 +6579,7 @@ function _editorRedo() {
     _editor.undoStack.push(current);
     const snap = JSON.parse(_editor.redoStack.pop());
     Object.assign(_editor, snap);
-    _editor.selectedClip = { kind: "", id: "" };
+    _editor.selectedClip = { kind: "", id: "", track: "" };
     _updateUndoRedoBtns();
     _editorApplyAspectRatio();
     _editorRefreshQuickActions();
@@ -6587,12 +6635,77 @@ function _editorSetOutputAspectRatio(value) {
 }
 window._editorSetOutputAspectRatio = _editorSetOutputAspectRatio;
 
+function _editorGetSegments(track = "video") {
+    return track === "audio" ? _editor.audioSegments : _editor.videoSegments;
+}
+
+function _editorSetSegments(track, segments) {
+    if (track === "audio") {
+        _editor.audioSegments = segments;
+    } else {
+        _editor.videoSegments = segments;
+    }
+}
+
+function _editorSortSegments(track = "video") {
+    _editorGetSegments(track).sort((a, b) => (a.start - b.start) || (a.end - b.end));
+}
+
+function _editorFindSegment(track = "video", id) {
+    return _editorGetSegments(track).find(seg => String(seg.id) === String(id));
+}
+
 function _editorSortVideoSegments() {
-    _editor.videoSegments.sort((a, b) => (a.start - b.start) || (a.end - b.end));
+    _editorSortSegments("video");
 }
 
 function _editorFindVideoSegment(id) {
-    return _editor.videoSegments.find(seg => String(seg.id) === String(id));
+    return _editorFindSegment("video", id);
+}
+
+function _editorIsTrackSelectable(track) {
+    return track === "video" || track === "audio";
+}
+
+function _editorGetSelectedSegmentTracks() {
+    const tracks = (_editor.selectedTracks || []).filter(_editorIsTrackSelectable);
+    return tracks.length ? tracks : ["video"];
+}
+
+function _editorIsTrackSelected(track) {
+    return _editorGetSelectedSegmentTracks().includes(track);
+}
+
+function _editorToggleTrackSelection(track) {
+    if (!_editorIsTrackSelectable(track)) return;
+
+    const current = _editorGetSelectedSegmentTracks();
+    let next = [];
+    if (current.includes(track)) {
+        if (current.length <= 1) return;
+        next = current.filter(t => t !== track);
+    } else {
+        next = [...current, track];
+    }
+
+    _editor.selectedTracks = next;
+    _editor.selectedClip = { kind: "", id: "", track: "" };
+    _editorRefreshTrackSelectionUI();
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+
+function _editorRefreshTrackSelectionUI() {
+    document.querySelectorAll(".editor-track").forEach(trackEl => {
+        const track = trackEl.dataset.track || "";
+        trackEl.classList.remove("track-targeted", "track-not-targeted");
+        if (!_editorIsTrackSelectable(track)) return;
+        if (_editorIsTrackSelected(track)) {
+            trackEl.classList.add("track-targeted");
+        } else {
+            trackEl.classList.add("track-not-targeted");
+        }
+    });
 }
 
 function _editorRecomputeTrimBounds() {
@@ -6609,12 +6722,14 @@ function _editorRecomputeTrimBounds() {
 function _editorInitVideoSegments() {
     const dur = Math.max(_editor.duration || 0, 0.1);
     _editor.videoSegments = [{ id: _editorGenId(), start: 0, end: dur }];
+    _editor.audioSegments = [{ id: _editorGenId(), start: 0, end: dur }];
+    _editor.selectedTracks = ["video", "audio"];
     _editorRecomputeTrimBounds();
 }
 
-function _editorClampSegmentRange(segmentId, nextStart, span) {
+function _editorClampSegmentRange(track, segmentId, nextStart, span) {
     const dur = Math.max(_editor.duration || 0, 0.1);
-    const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
+    const sorted = [..._editorGetSegments(track)].sort((a, b) => a.start - b.start);
     const idx = sorted.findIndex(seg => String(seg.id) === String(segmentId));
     if (idx < 0) {
         const clampedStart = Math.max(0, Math.min(Math.max(0, dur - span), nextStart));
@@ -6695,10 +6810,12 @@ async function openEditor(projectId) {
         _editor.playing = false;
         _editor.activeTool = "text";
         _editor.subtitleListOpen = false;
-        _editor.selectedClip = { kind: "", id: "" };
+        _editor.selectedClip = { kind: "", id: "", track: "" };
         _editor.texts = [];
         _editor.subtitles = [];
         _editor.videoSegments = [];
+        _editor.audioSegments = [];
+        _editor.selectedTracks = ["video", "audio"];
         _editor.trimStart = 0;
         _editor.trimEnd = 0;
         _editor.musicUrl = "";
@@ -6751,8 +6868,9 @@ function closeEditor() {
     }
     const wrapper = document.getElementById("editor-canvas-wrapper");
     if (wrapper) wrapper.style.removeProperty("--editor-aspect-ratio");
-    _editor.selectedClip = { kind: "", id: "" };
+    _editor.selectedClip = { kind: "", id: "", track: "" };
     _editorRefreshQuickActions();
+    _editorRefreshTrackSelectionUI();
     _editor.playing = false;
 }
 
@@ -6841,6 +6959,59 @@ function _editorMovePlayhead(t) {
     const trackWidth = document.getElementById("editor-track-video")?.offsetWidth || 600;
     const pct = t / _editor.duration;
     playhead.style.left = (80 + pct * trackWidth) + "px";
+}
+
+function _editorClampToVideoSegments(timeSec) {
+    if (!_editor.videoSegments.length) {
+        return Math.max(0, Math.min(_editor.duration || 0, timeSec));
+    }
+    const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
+    let t = Math.max(0, Math.min(_editor.duration || 0, timeSec));
+    const inside = sorted.find(seg => t >= seg.start && t <= seg.end);
+    if (inside) return t;
+    const next = sorted.find(seg => seg.start > t);
+    if (next) return next.start;
+    return sorted[sorted.length - 1].end;
+}
+
+function _editorSeekByClientX(clientX) {
+    const trackContent = document.getElementById("editor-track-video");
+    const video = document.getElementById("editor-video");
+    if (!trackContent || !video || !_editor.duration) return;
+
+    const rect = trackContent.getBoundingClientRect();
+    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+    const pct = rect.width > 0 ? (x / rect.width) : 0;
+    const rawTime = pct * _editor.duration;
+    const nextTime = _editorClampToVideoSegments(rawTime);
+
+    video.currentTime = nextTime;
+    document.getElementById("editor-time-current").textContent = _fmtTime(nextTime);
+    _editorMovePlayhead(nextTime);
+    _editorDrawOverlays(nextTime);
+}
+
+function _editorStartTimelineScrub(event) {
+    if (!_editor.duration) return false;
+    if (event.button !== undefined && event.button !== 0) return false;
+    if (event.target.closest(".editor-track-clip")) return false;
+    if (event.target.closest(".editor-track-label")) return false;
+
+    _editorTimelineScrub = { active: true };
+    _editorSeekByClientX(event.clientX);
+    document.addEventListener("pointermove", _editorOnTimelineScrubMove);
+    document.addEventListener("pointerup", _editorOnTimelineScrubEnd, { once: true });
+    return true;
+}
+
+function _editorOnTimelineScrubMove(event) {
+    if (!_editorTimelineScrub?.active) return;
+    _editorSeekByClientX(event.clientX);
+}
+
+function _editorOnTimelineScrubEnd() {
+    document.removeEventListener("pointermove", _editorOnTimelineScrubMove);
+    _editorTimelineScrub = null;
 }
 
 // ---------- Draw canvas overlays (texts, stickers, subtitles) ----------
@@ -7078,20 +7249,26 @@ function _editorRenderProps() {
         `;
     } else if (tool === "trim") {
         const selectedSeg = _editor.selectedClip.kind === "segment"
-            ? _editorFindVideoSegment(_editor.selectedClip.id)
+            ? _editorFindSegment(_editor.selectedClip.track || "video", _editor.selectedClip.id)
             : null;
         const segInfo = selectedSeg
             ? `${_fmtTime(selectedSeg.start)} - ${_fmtTime(selectedSeg.end)} (${_fmtTime(selectedSeg.end - selectedSeg.start)})`
             : "Nenhum trecho selecionado";
+        const selectedTracksLabel = _editorGetSelectedSegmentTracks()
+            .map(track => track === "video" ? "Video" : "Audio")
+            .join(" + ");
         container.innerHTML = `
             <div class="editor-props-title">Cortar video</div>
-            <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Use o botao de corte para dividir no playhead e Delete para remover o trecho selecionado na timeline.</p>
+            <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Marque as faixas Video/Audio na timeline. O corte e ajuste serao aplicados somente nas faixas marcadas.</p>
             <div class="editor-trim-range" style="display:grid;gap:8px">
                 <button class="editor-add-btn" type="button" onclick="_editorSplitAtCurrentTime()">Cortar no ponto atual</button>
                 <button class="editor-add-btn" type="button" onclick="_editorResetVideoSegments()" style="background:rgba(255,255,255,0.04)">Restaurar video inteiro</button>
                 <div class="editor-trim-values">
-                    <span>Trechos ativos: ${_editor.videoSegments.length}</span>
+                    <span>Trechos: Video ${_editor.videoSegments.length} | Audio ${_editor.audioSegments.length}</span>
                     <span style="margin-left:10px">Selecionado: ${segInfo}</span>
+                </div>
+                <div class="editor-trim-values">
+                    <span>Faixas marcadas: ${selectedTracksLabel}</span>
                 </div>
             </div>
         `;
@@ -7540,23 +7717,35 @@ function _editorSplitAtCurrentTime() {
     if (!video || !_editor.videoSegments.length) return;
 
     const t = Math.max(0, Math.min(video.currentTime || 0, _editor.duration || 0));
-    const segment = _editor.videoSegments.find(seg => t > seg.start + 0.08 && t < seg.end - 0.08);
-    if (!segment) {
+    const selectedTracks = _editorGetSelectedSegmentTracks();
+    const splitTargets = selectedTracks.map(track => {
+        const seg = _editorGetSegments(track).find(item => t > item.start + 0.08 && t < item.end - 0.08);
+        return { track, seg };
+    }).filter(item => item.seg);
+
+    if (!splitTargets.length) {
         showToast("Posicione o playhead dentro de um trecho para cortar.", "error");
         return;
     }
 
     _editorSaveState();
-    const first = { id: _editorGenId(), start: segment.start, end: t };
-    const second = { id: _editorGenId(), start: t, end: segment.end };
-    _editor.videoSegments = _editor.videoSegments
-        .filter(seg => seg !== segment)
-        .concat([first, second]);
+    let selectedSplit = null;
+    splitTargets.forEach(({ track, seg }) => {
+        const first = { id: _editorGenId(), start: seg.start, end: t };
+        const second = { id: _editorGenId(), start: t, end: seg.end };
+        const nextSegments = _editorGetSegments(track)
+            .filter(item => item !== seg)
+            .concat([first, second]);
+        _editorSetSegments(track, nextSegments);
+        _editorSortSegments(track);
+        selectedSplit = { kind: "segment", id: String(second.id), track };
+    });
+
     _editorRecomputeTrimBounds();
-    _editor.selectedClip = { kind: "segment", id: String(second.id) };
+    _editor.selectedClip = selectedSplit || { kind: "", id: "", track: "" };
     _editorRenderTimeline();
     _editorRenderProps();
-    showToast("Trecho dividido no ponto atual.", "success");
+    showToast(`Trecho dividido em ${splitTargets.length} faixa(s).`, "success");
 }
 window._editorSplitAtCurrentTime = _editorSplitAtCurrentTime;
 
@@ -7564,7 +7753,7 @@ function _editorResetVideoSegments() {
     if (!_editor.duration) return;
     _editorSaveState();
     _editorInitVideoSegments();
-    _editor.selectedClip = { kind: "", id: "" };
+    _editor.selectedClip = { kind: "", id: "", track: "" };
     _editorRenderTimeline();
     _editorRenderProps();
     showToast("Cortes removidos. Video restaurado.", "success");
@@ -7709,30 +7898,32 @@ function _editorRenderTimeline() {
 
     const selectedKind = _editor.selectedClip.kind;
     const selectedId = String(_editor.selectedClip.id || "");
+    const selectedTrack = _editor.selectedClip.track || "";
+    _editorRefreshTrackSelectionUI();
 
     // Video track
     if (trackVideo) {
-        _editorSortVideoSegments();
+        _editorSortSegments("video");
         trackVideo.innerHTML = _editor.videoSegments.map((seg, idx) => {
             const segStart = Math.max(0, Math.min(seg.start, dur));
             const segEnd = Math.max(segStart + 0.05, Math.min(seg.end, dur));
             const startPct = (segStart / dur) * 100;
             const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
-            const selectedClass = selectedKind === "segment" && selectedId === String(seg.id) ? " selected" : "";
-            return `<div class="editor-track-clip clip-video${selectedClass}" data-kind="segment" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Video ${idx + 1}</div>`;
+            const selectedClass = selectedKind === "segment" && selectedTrack === "video" && selectedId === String(seg.id) ? " selected" : "";
+            return `<div class="editor-track-clip clip-video${selectedClass}" data-kind="segment" data-track="video" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Video ${idx + 1}</div>`;
         }).join("");
     }
 
     // Audio track
     if (trackAudio) {
-        _editorSortVideoSegments();
-        let audioHtml = _editor.videoSegments.map((seg, idx) => {
+        _editorSortSegments("audio");
+        let audioHtml = _editor.audioSegments.map((seg, idx) => {
             const segStart = Math.max(0, Math.min(seg.start, dur));
             const segEnd = Math.max(segStart + 0.05, Math.min(seg.end, dur));
             const startPct = (segStart / dur) * 100;
             const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
-            const selectedClass = selectedKind === "segment" && selectedId === String(seg.id) ? " selected" : "";
-            return `<div class="editor-track-clip clip-audio${selectedClass}" data-kind="segment" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Audio ${idx + 1}</div>`;
+            const selectedClass = selectedKind === "segment" && selectedTrack === "audio" && selectedId === String(seg.id) ? " selected" : "";
+            return `<div class="editor-track-clip clip-audio${selectedClass}" data-kind="segment" data-track="audio" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Audio ${idx + 1}</div>`;
         }).join("");
         if (_editor.musicUrl) {
             const musicSelected = selectedKind === "music" ? " selected" : "";
@@ -7782,12 +7973,12 @@ function _editorRefreshQuickActions() {
     const cutBtn = document.getElementById("editor-quick-cut");
     if (delBtn) delBtn.disabled = !_editorSelectionCanDelete();
     if (dupBtn) dupBtn.disabled = !_editorSelectionCanDuplicate();
-    if (cutBtn) cutBtn.disabled = !_editor.duration;
+    if (cutBtn) cutBtn.disabled = !_editor.duration || !_editorGetSelectedSegmentTracks().length;
 }
 
-function _editorSelectTimelineClip(kind, id, renderProps = true) {
+function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
     const normalizedId = String(id ?? "");
-    _editor.selectedClip = { kind: kind || "", id: normalizedId };
+    _editor.selectedClip = { kind: kind || "", id: normalizedId, track: track || "" };
 
     let switchedTool = false;
     if (kind === "segment") {
@@ -7830,9 +8021,12 @@ function _editorDeleteSelectedClip() {
 
     const selKind = _editor.selectedClip.kind;
     const selId = _editor.selectedClip.id;
+    const selTrack = _editor.selectedClip.track || "video";
     if (selKind === "segment") {
-        if (_editor.videoSegments.length <= 1) {
-            showToast("Nao e possivel remover o ultimo trecho do video.", "error");
+        const trackSegments = _editorGetSegments(selTrack);
+        if (trackSegments.length <= 1) {
+            const trackLabel = selTrack === "audio" ? "audio" : "video";
+            showToast(`Nao e possivel remover o ultimo trecho do ${trackLabel}.`, "error");
             return;
         }
     }
@@ -7840,8 +8034,12 @@ function _editorDeleteSelectedClip() {
     _editorSaveState();
 
     if (selKind === "segment") {
-        _editor.videoSegments = _editor.videoSegments.filter(seg => String(seg.id) !== selId);
-        _editorRecomputeTrimBounds();
+        const next = _editorGetSegments(selTrack).filter(seg => String(seg.id) !== selId);
+        _editorSetSegments(selTrack, next);
+        _editorSortSegments(selTrack);
+        if (selTrack === "video") {
+            _editorRecomputeTrimBounds();
+        }
     } else if (selKind === "text") {
         _editor.texts = _editor.texts.filter(t => String(t.id) !== selId);
     } else if (selKind === "subtitle") {
@@ -7858,7 +8056,7 @@ function _editorDeleteSelectedClip() {
         showToast("Audio original silenciado.", "success");
     }
 
-    _editor.selectedClip = { kind: "", id: "" };
+    _editor.selectedClip = { kind: "", id: "", track: "" };
     _editorRenderProps();
     _editorRenderTimeline();
     const video = document.getElementById("editor-video");
@@ -7914,9 +8112,9 @@ function _editorTimelineCanDrag(kind) {
     return ["segment", "text", "subtitle", "sticker"].includes(kind);
 }
 
-function _editorGetTimelineRange(kind, id) {
+function _editorGetTimelineRange(kind, id, track = "") {
     if (kind === "segment") {
-        const item = _editorFindVideoSegment(id);
+        const item = _editorFindSegment(track || "video", id);
         return item ? { start: item.start, end: item.end } : null;
     }
     if (kind === "text") {
@@ -7934,15 +8132,18 @@ function _editorGetTimelineRange(kind, id) {
     return null;
 }
 
-function _editorApplyDraggedRange(kind, id, start, end) {
+function _editorApplyDraggedRange(kind, id, start, end, track = "") {
     if (kind === "segment") {
-        const item = _editorFindVideoSegment(id);
+        const targetTrack = track || "video";
+        const item = _editorFindSegment(targetTrack, id);
         if (!item) return;
         const span = Math.max(0.1, end - start);
-        const [clampedStart, clampedEnd] = _editorClampSegmentRange(id, start, span);
+        const [clampedStart, clampedEnd] = _editorClampSegmentRange(targetTrack, id, start, span);
         item.start = clampedStart;
         item.end = clampedEnd;
-        _editorRecomputeTrimBounds();
+        if (targetTrack === "video") {
+            _editorRecomputeTrimBounds();
+        }
         return;
     }
     if (kind === "text") {
@@ -7970,14 +8171,15 @@ function _editorApplyDraggedRange(kind, id, start, end) {
     }
 }
 
-function _editorStartTimelineDrag(kind, id, event, trackEl) {
-    _editorSelectTimelineClip(kind, id, false);
+function _editorStartTimelineDrag(kind, id, track, event, trackEl) {
+    _editorSelectTimelineClip(kind, id, false, track);
     if (!_editorTimelineCanDrag(kind) || !_editor.duration || !trackEl) return false;
-    const range = _editorGetTimelineRange(kind, id);
+    const range = _editorGetTimelineRange(kind, id, track);
     if (!range) return false;
     _editorTimelineDrag = {
         kind,
         id,
+        track,
         startX: event.clientX,
         trackWidth: Math.max(trackEl.getBoundingClientRect().width, 1),
         duration: Math.max(_editor.duration, 0.1),
@@ -8011,7 +8213,7 @@ function _editorOnTimelineDragMove(event) {
         drag.saved = true;
     }
 
-    _editorApplyDraggedRange(drag.kind, drag.id, nextStart, nextEnd);
+    _editorApplyDraggedRange(drag.kind, drag.id, nextStart, nextEnd, drag.track);
     _editorRenderTimeline();
     const video = document.getElementById("editor-video");
     if (video) _editorDrawOverlays(video.currentTime);
@@ -8024,13 +8226,14 @@ function _editorOnTimelineDragEnd() {
     const moved = _editorTimelineDrag.moved;
     const kind = _editorTimelineDrag.kind;
     const id = _editorTimelineDrag.id;
+    const track = _editorTimelineDrag.track;
     _editorTimelineDrag = null;
 
     if (moved) {
         _editorRenderTimeline();
         _editorRenderProps();
     } else {
-        _editorSelectTimelineClip(kind, id, true);
+        _editorSelectTimelineClip(kind, id, true, track);
     }
 }
 
@@ -8060,6 +8263,12 @@ async function _editorExport() {
         aspect_ratio: _resolveAspectRatio(),
         trim_start: _editor.trimStart,
         trim_end: _editor.trimEnd,
+        trim_video_segments: _editor.videoSegments
+            .map(seg => ({ start: Number(seg.start || 0), end: Number(seg.end || 0) }))
+            .filter(seg => seg.end > seg.start + 0.05),
+        trim_audio_segments: _editor.audioSegments
+            .map(seg => ({ start: Number(seg.start || 0), end: Number(seg.end || 0) }))
+            .filter(seg => seg.end > seg.start + 0.05),
         trim_segments: _editor.videoSegments
             .map(seg => ({ start: Number(seg.start || 0), end: Number(seg.end || 0) }))
             .filter(seg => seg.end > seg.start + 0.05),
@@ -8189,13 +8398,23 @@ function _bindEditorEvents() {
         btn.addEventListener("click", () => _editorSelectTool(btn.dataset.tool));
     });
 
+    document.querySelectorAll(".editor-track-label").forEach(label => {
+        label.addEventListener("click", (e) => {
+            const track = label.closest(".editor-track")?.dataset.track || "";
+            if (!_editorIsTrackSelectable(track)) return;
+            _editorToggleTrackSelection(track);
+            e.stopPropagation();
+        });
+    });
+
     document.getElementById("editor-timeline-tracks")?.addEventListener("pointerdown", (e) => {
         const clip = e.target.closest(".editor-track-clip");
         if (!clip) return;
         const kind = clip.dataset.kind || "";
         const id = clip.dataset.id || "";
+        const track = clip.dataset.track || "";
         const trackEl = clip.parentElement;
-        const dragStarted = _editorStartTimelineDrag(kind, id, e, trackEl);
+        const dragStarted = _editorStartTimelineDrag(kind, id, track, e, trackEl);
         if (dragStarted) {
             e.stopPropagation();
             e.preventDefault();
@@ -8205,33 +8424,27 @@ function _bindEditorEvents() {
     document.getElementById("editor-timeline-tracks")?.addEventListener("click", (e) => {
         const clip = e.target.closest(".editor-track-clip");
         if (!clip) return;
-        _editorSelectTimelineClip(clip.dataset.kind || "", clip.dataset.id || "", true);
+        _editorSelectTimelineClip(
+            clip.dataset.kind || "",
+            clip.dataset.id || "",
+            true,
+            clip.dataset.track || ""
+        );
         e.stopPropagation();
     });
 
     document.addEventListener("keydown", _editorHandleDeleteKey);
 
-    // Timeline click to seek
-    document.getElementById("editor-timeline")?.addEventListener("click", (e) => {
-        const trackContent = document.getElementById("editor-track-video");
-        if (!trackContent) return;
-        const trackRect = trackContent.getBoundingClientRect();
-        const x = e.clientX - trackRect.left;
-        const pct = Math.max(0, Math.min(1, x / trackRect.width));
-        let t = pct * _editor.duration;
-        if (_editor.videoSegments.length) {
-            const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
-            const inSegment = sorted.some(seg => t >= seg.start && t <= seg.end);
-            if (!inSegment) {
-                const next = sorted.find(seg => seg.start > t);
-                t = (next || sorted[sorted.length - 1] || { start: t }).start || t;
-            }
+    // Timeline click-and-hold scrub
+    document.getElementById("editor-timeline")?.addEventListener("pointerdown", (e) => {
+        const started = _editorStartTimelineScrub(e);
+        if (started) {
+            e.preventDefault();
         }
-        const videoEl = document.getElementById("editor-video");
-        if (videoEl) videoEl.currentTime = t;
     });
 
     _editorRefreshQuickActions();
+    _editorRefreshTrackSelectionUI();
 }
 
 // Init editor bindings when DOM ready

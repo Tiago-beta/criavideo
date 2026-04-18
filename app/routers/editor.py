@@ -270,6 +270,8 @@ class ExportRequest(BaseModel):
     aspect_ratio: str = ""
     trim_start: float = 0
     trim_end: float = 0
+    trim_video_segments: list[TrimSegment] = []
+    trim_audio_segments: list[TrimSegment] = []
     trim_segments: list[TrimSegment] = []
     filter: str = "none"
     quality: str = "original"
@@ -514,19 +516,41 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
 
         src_duration, _ = _probe_video_metadata(src_video)
         source_has_audio = _probe_has_audio_stream(src_video)
-        segments = _normalize_trim_segments(
-            req.trim_segments,
+        video_segments = _normalize_trim_segments(
+            req.trim_video_segments or req.trim_segments,
             req.trim_start,
             req.trim_end,
             src_duration,
         )
-        use_segment_filter = not (
-            len(segments) == 1
-            and segments[0][0] <= 0.01
-            and (src_duration <= 0 or segments[0][1] >= max(0.0, src_duration - 0.01))
+        audio_segments = _normalize_trim_segments(
+            req.trim_audio_segments or req.trim_segments,
+            req.trim_start,
+            req.trim_end,
+            src_duration,
         )
-        select_expr = _build_segment_select_expr(segments)
-        logger.info("[editor] Export segments=%s use_segment_filter=%s", segments, use_segment_filter)
+
+        use_video_segment_filter = not (
+            len(video_segments) == 1
+            and video_segments[0][0] <= 0.01
+            and (src_duration <= 0 or video_segments[0][1] >= max(0.0, src_duration - 0.01))
+        )
+        use_audio_segment_filter = not (
+            len(audio_segments) == 1
+            and audio_segments[0][0] <= 0.01
+            and (src_duration <= 0 or audio_segments[0][1] >= max(0.0, src_duration - 0.01))
+        )
+
+        video_select_expr = _build_segment_select_expr(video_segments)
+        audio_select_expr = _build_segment_select_expr(audio_segments)
+        output_video_duration = sum(max(0.0, et - st) for st, et in video_segments)
+
+        logger.info(
+            "[editor] Export video_segments=%s audio_segments=%s use_vf=%s use_af=%s",
+            video_segments,
+            audio_segments,
+            use_video_segment_filter,
+            use_audio_segment_filter,
+        )
 
         # Build FFmpeg command
         cmd = ["ffmpeg", "-y"]
@@ -541,8 +565,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         vfilters = []
         selected_aspect = _normalize_aspect_ratio(req.aspect_ratio) or _normalize_aspect_ratio(render.format) or "16:9"
 
-        if use_segment_filter:
-            vfilters.append(f"select='{select_expr}',setpts=N/FRAME_RATE/TB")
+        if use_video_segment_filter:
+            vfilters.append(f"select='{video_select_expr}',setpts=N/FRAME_RATE/TB")
 
         # CSS-like filter mapping for FFmpeg
         filter_map = {
@@ -568,7 +592,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
 
         # Text overlays using drawtext
         for txt in req.texts:
-            mapped_ranges = _map_source_interval_to_output(txt.start_time, txt.end_time, segments)
+            mapped_ranges = _map_source_interval_to_output(txt.start_time, txt.end_time, video_segments)
             for st, et in mapped_ranges:
                 fontsize = txt.font_size
                 color = txt.color.lstrip("#")
@@ -580,7 +604,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
 
         # Subtitle overlays
         for sub in req.subtitles:
-            mapped_ranges = _map_source_interval_to_output(sub.start_time, sub.end_time, segments)
+            mapped_ranges = _map_source_interval_to_output(sub.start_time, sub.end_time, video_segments)
             for st, et in mapped_ranges:
                 color = sub.font_color.lstrip("#") if sub.font_color else "FFFFFF"
                 fsize = sub.font_size or 28
@@ -610,7 +634,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
 
         # Sticker/emoji overlays (drawtext with emoji font)
         for stk in req.stickers:
-            mapped_ranges = _map_source_interval_to_output(stk.start_time, stk.end_time, segments)
+            mapped_ranges = _map_source_interval_to_output(stk.start_time, stk.end_time, video_segments)
             for st, et in mapped_ranges:
                 x_expr = f"(w*{stk.x/100})"
                 y_expr = f"(h*{stk.y/100})"
@@ -640,30 +664,40 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
             if source_has_audio:
                 base_audio_label = "[0:a]"
                 audio_chain: list[str] = []
-                if use_segment_filter:
-                    audio_chain.append(f"[0:a]aselect='{select_expr}',asetpts=N/SR/TB[a_src]")
+                if use_audio_segment_filter:
+                    audio_chain.append(f"[0:a]aselect='{audio_select_expr}',asetpts=N/SR/TB[a_src]")
                     base_audio_label = "[a_src]"
                 audio_chain.append(f"{base_audio_label}volume={orig_vol}[a0]")
                 audio_chain.append(f"[1:a]volume={music_vol}[a1]")
-                audio_chain.append("[a0][a1]amix=inputs=2:duration=shortest[aout]")
+                audio_chain.append("[a0][a1]amix=inputs=2:duration=shortest[a_mix]")
+                if output_video_duration > 0:
+                    audio_chain.append(f"[a_mix]atrim=0:{output_video_duration:.6f}[aout]")
+                else:
+                    audio_chain.append("[a_mix]anull[aout]")
                 cmd += [
                     "-filter_complex", ";".join(audio_chain),
                     "-map", "0:v",
                     "-map", "[aout]",
                 ]
             else:
+                if output_video_duration > 0:
+                    music_chain = f"[1:a]volume={music_vol}[a1];[a1]atrim=0:{output_video_duration:.6f}[aout]"
+                else:
+                    music_chain = f"[1:a]volume={music_vol}[aout]"
                 cmd += [
-                    "-filter_complex", f"[1:a]volume={music_vol}[aout]",
+                    "-filter_complex", music_chain,
                     "-map", "0:v",
                     "-map", "[aout]",
                 ]
         else:
             orig_vol = req.original_volume / 100
             afilters: list[str] = []
-            if source_has_audio and use_segment_filter:
-                afilters.append(f"aselect='{select_expr}',asetpts=N/SR/TB")
+            if source_has_audio and use_audio_segment_filter:
+                afilters.append(f"aselect='{audio_select_expr}',asetpts=N/SR/TB")
             if source_has_audio and orig_vol != 1.0:
                 afilters.append(f"volume={orig_vol}")
+            if source_has_audio and output_video_duration > 0:
+                afilters.append(f"atrim=0:{output_video_duration:.6f}")
             if afilters:
                 cmd += ["-af", ",".join(afilters)]
 

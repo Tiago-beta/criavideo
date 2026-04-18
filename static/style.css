@@ -5272,6 +5272,25 @@ th,
     background: rgba(0,0,0,0.15);
     border-right: 1px solid var(--border);
     white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+.editor-track.track-targeted .editor-track-label {
+    color: #f8fbff;
+    opacity: 1;
+}
+
+.editor-track[data-track="video"].track-targeted .editor-track-label {
+    background: linear-gradient(135deg, rgba(26, 107, 58, 0.38), rgba(14, 74, 40, 0.35));
+}
+
+.editor-track[data-track="audio"].track-targeted .editor-track-label {
+    background: linear-gradient(135deg, rgba(74, 26, 107, 0.38), rgba(46, 14, 74, 0.35));
+}
+
+.editor-track.track-not-targeted .editor-track-label {
+    opacity: 0.55;
 }
 
 .editor-track-content {
@@ -5330,7 +5349,7 @@ th,
     left: 80px;
     z-index: 10;
     pointer-events: none;
-    transition: left 0.05s linear;
+    transition: none;
 }
 
 .editor-timeline-playhead::before {
