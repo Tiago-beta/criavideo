@@ -4363,6 +4363,7 @@ async function loadAutoSchedules() {
 }
 
 function renderAutoCard(s) {
+    const isTestAccount = !s.social_account_id;
     const typeBadge = s.video_type === "realistic" || s.video_type === "musical_shorts"
         ? '<span class="badge badge-shorts">Realista</span>'
         : '<span class="badge badge-completed">Imagens IA</span>';
@@ -4375,12 +4376,12 @@ function renderAutoCard(s) {
 
     const themes = (s.themes || []);
     const pendingCount = themes.filter(t => t.status === "pending").length;
-    const doneCount = themes.filter(t => t.status === "done").length;
+    const doneCount = themes.filter(t => t.status === "done" || t.status === "completed").length;
 
     const themeListHtml = themes.map(t => {
         let icon, statusClass, statusLabel;
         if (t.status === "done" || t.status === "completed") {
-            icon = "✅"; statusClass = "theme-done"; statusLabel = "Publicado";
+            icon = "✅"; statusClass = "theme-done"; statusLabel = isTestAccount ? "Concluido (teste)" : "Publicado";
         } else if (t.status === "processing") {
             icon = "⏳"; statusClass = "theme-processing"; statusLabel = "Criando...";
         } else if (t.status === "error" || t.status === "failed") {
@@ -4422,6 +4423,7 @@ function renderAutoCard(s) {
         <div class="auto-card-meta">
             <span>${freq} as ${esc(s.time_local || s.time_utc)}</span>
             <span>${pendingCount} pendentes / ${doneCount} feitos</span>
+            <span>Conta: ${esc(s.account_label || (isTestAccount ? "Conta de teste (sem publicacao)" : "Conta conectada"))}</span>
         </div>
         <div class="auto-card-detail">
             <strong>Temas:</strong>
@@ -5533,16 +5535,26 @@ async function loadAutoAccountOptions() {
         const accounts = await api("/social/accounts");
         const platform = document.getElementById("auto-platform")?.value || "youtube";
         const filtered = accounts.filter(a => a.platform === platform);
-        if (!filtered.length) {
-            select.innerHTML = "<option value=''>Conecte uma conta desta plataforma</option>";
-            return;
-        }
-        select.innerHTML = filtered.map(a => {
+        const currentValue = (select.value || "").trim();
+        const accountOptions = filtered.map(a => {
             const label = socialAccountDisplayName(a);
             return `<option value="${a.id}">${esc(label)}</option>`;
-        }).join("");
+        });
+        accountOptions.push("<option value='__test__'>Conta de teste (gera video e nao publica)</option>");
+
+        select.innerHTML = accountOptions.join("");
+
+        const hasCurrent = Array.from(select.options).some(o => o.value === currentValue);
+        if (hasCurrent) {
+            select.value = currentValue;
+        } else if (filtered.length > 0) {
+            select.value = String(filtered[0].id);
+        } else {
+            select.value = "__test__";
+        }
     } catch {
-        select.innerHTML = "<option value=''>Nenhuma conta</option>";
+        select.innerHTML = "<option value='__test__'>Conta de teste (gera video e nao publica)</option>";
+        select.value = "__test__";
     }
 }
 
@@ -5563,10 +5575,17 @@ async function createAutoSchedule() {
         return;
     }
 
-    const accountId = parseInt(document.getElementById("auto-account")?.value || "0", 10);
-    if (!accountId) {
-        alert("Selecione uma conta social.");
-        return;
+    const accountRaw = (document.getElementById("auto-account")?.value || "").trim();
+    let accountId = null;
+    if (accountRaw === "__test__") {
+        accountId = null;
+    } else {
+        const parsed = parseInt(accountRaw || "0", 10);
+        if (!parsed) {
+            alert("Selecione uma conta social ou a Conta de teste.");
+            return;
+        }
+        accountId = parsed;
     }
 
     const creationMode = getSelectedAutoCreationMode();

@@ -173,6 +173,13 @@ async def run_auto_creation(auto_schedule_id: int):
                     platform=schedule.platform,
                     social_account_id=schedule.social_account_id,
                 )
+            else:
+                logger.info(
+                    "Auto-creation in test mode (no publish): schedule=%d, theme=%d, project=%d",
+                    auto_schedule_id,
+                    theme_entry.id,
+                    project_id,
+                )
 
             async with async_session() as db:
                 theme = await db.get(AutoScheduleTheme, theme_entry.id)

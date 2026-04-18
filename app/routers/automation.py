@@ -106,6 +106,8 @@ def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
     account_label = ""
     if s.social_account:
         account_label = s.social_account.account_label or s.social_account.platform_username or ""
+    elif not s.social_account_id:
+        account_label = "Conta de teste (sem publicacao)"
     next_theme = ""
     pending_count = 0
     themes_with_dates = []
@@ -277,9 +279,12 @@ async def create_auto_schedule(
     if req.frequency not in ("daily", "weekly"):
         raise HTTPException(status_code=400, detail="Frequencia invalida.")
 
+    # Normalize special/empty values: no social account means "test account" mode.
+    social_account_id = req.social_account_id if (req.social_account_id and req.social_account_id > 0) else None
+
     # Validate social account if provided
-    if req.social_account_id:
-        acct = await db.get(SocialAccount, req.social_account_id)
+    if social_account_id is not None:
+        acct = await db.get(SocialAccount, social_account_id)
         if not acct or acct.user_id != user["id"]:
             raise HTTPException(status_code=400, detail="Conta social nao encontrada.")
 
@@ -289,7 +294,7 @@ async def create_auto_schedule(
         video_type=req.video_type,
         creation_mode=req.creation_mode,
         platform=req.platform,
-        social_account_id=req.social_account_id,
+        social_account_id=social_account_id,
         frequency=req.frequency,
         time_utc=_local_to_utc(req.time_local, req.timezone),
         timezone=req.timezone,
@@ -394,8 +399,18 @@ async def update_auto_schedule(
         schedule.day_of_week = req.day_of_week
     if req.platform is not None:
         schedule.platform = req.platform
-    if req.social_account_id is not None:
-        schedule.social_account_id = req.social_account_id
+
+    # Allow explicit clear (null) for test-account mode.
+    fields_set = getattr(req, "model_fields_set", None) or getattr(req, "__fields_set__", set())
+    if "social_account_id" in fields_set:
+        if req.social_account_id and req.social_account_id > 0:
+            acct = await db.get(SocialAccount, req.social_account_id)
+            if not acct or acct.user_id != user["id"]:
+                raise HTTPException(status_code=400, detail="Conta social nao encontrada.")
+            schedule.social_account_id = req.social_account_id
+        else:
+            schedule.social_account_id = None
+
     if req.default_settings is not None:
         schedule.default_settings = req.default_settings
 
