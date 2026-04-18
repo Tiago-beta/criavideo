@@ -1,3 +1,4 @@
+console.log("[CriaVideo] app.js v119 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1569,6 +1570,7 @@ function initCreateWizard() {
 }
 
 function switchCreateMode(mode) {
+    console.log("[switchCreateMode] mode=", mode);
     createMode = mode;
     document.querySelectorAll(".create-tab").forEach((t) => {
         t.classList.toggle("active", t.dataset.createMode === mode);
@@ -1576,7 +1578,17 @@ function switchCreateMode(mode) {
     document.getElementById("create-mode-selection").hidden = true;
     document.querySelectorAll(".create-panel").forEach((p) => (p.hidden = true));
     const panel = document.getElementById(`create-panel-${mode}`);
-    if (panel) panel.hidden = false;
+    if (panel) {
+        panel.hidden = false;
+        console.log("[switchCreateMode] panel found, hidden=", panel.hidden, "parentNode=", panel.parentNode && panel.parentNode.id);
+        const steps = panel.querySelectorAll(".wizard-step");
+        console.log("[switchCreateMode] steps count=", steps.length);
+        steps.forEach(s => console.log("[switchCreateMode] step", s.dataset.step, "hidden=", s.hidden, "opacity=", getComputedStyle(s).opacity, "display=", getComputedStyle(s).display));
+        const nav = panel.querySelector(".wizard-nav");
+        console.log("[switchCreateMode] nav=", nav ? "found" : "NOT FOUND", "nav.hidden=", nav && nav.hidden);
+    } else {
+        console.log("[switchCreateMode] panel NOT FOUND for id=create-panel-" + mode);
+    }
     document.getElementById("ai-suggest-panel").hidden = true;
     document.getElementById("create-progress").hidden = true;
 
