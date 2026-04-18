@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Union
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -227,6 +228,37 @@ async def list_tevoxi_songs(user: dict = Depends(get_current_user)):
             ]
     except httpx.HTTPError as e:
         logger.warning("Failed to fetch Tevoxi songs: %s", e)
+        raise HTTPException(status_code=502, detail="Erro de conexao com Tevoxi.")
+
+
+@router.get("/tevoxi-audio/{job_id}")
+async def proxy_tevoxi_audio(job_id: str, user: dict = Depends(get_current_user)):
+    """Proxy Tevoxi audio through this backend to avoid browser CORS/auth issues."""
+    token = _get_tevoxi_token()
+    if not token:
+        raise HTTPException(status_code=500, detail="Tevoxi nao configurado.")
+    if not job_id or not job_id.strip():
+        raise HTTPException(status_code=400, detail="job_id invalido.")
+
+    api_url = settings.tevoxi_api_url.rstrip("/")
+    headers = {"Authorization": f"Bearer {token}"}
+    audio_url = f"{api_url}/api/create-music/audio/{job_id.strip()}"
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(audio_url, headers=headers)
+            if resp.status_code != 200:
+                logger.warning("Tevoxi audio proxy failed for %s with status %s", job_id, resp.status_code)
+                raise HTTPException(status_code=502, detail="Erro ao buscar audio do Tevoxi.")
+
+            media_type = resp.headers.get("content-type", "audio/mpeg")
+            return StreamingResponse(
+                iter([resp.content]),
+                media_type=media_type,
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+            )
+    except httpx.HTTPError as e:
+        logger.warning("Tevoxi audio proxy connection error for %s: %s", job_id, e)
         raise HTTPException(status_code=502, detail="Erro de conexao com Tevoxi.")
 
 

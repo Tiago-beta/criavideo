@@ -4295,6 +4295,13 @@ function openNewAutomationModal() {
     _autoSelectedSong = null;
     _autoShortsCount = 3;
     _clipAudioBuffer = null;
+    _clipWaveformPeaks = [];
+    _clipSongDuration = 0;
+    _clipStart = 0;
+    _clipDuration = 20;
+    _clipDragging = null;
+    _clipDragX = 0;
+    _clipWaveformLoading = false;
     _clipPlaying = false;
 
     // reset video type selection (use video-type-card class from new grid)
@@ -4529,12 +4536,54 @@ function selectTevoxiSong(index) {
    Clip Selector for Tevoxi Songs
    ══════════════════════════════════════════ */
 let _clipAudioBuffer = null;
+let _clipWaveformPeaks = [];
 let _clipSongDuration = 0;
 let _clipStart = 0;
 let _clipDuration = 20;
-let _clipDragging = false;
+let _clipDragging = null;
+let _clipDragX = 0;
+let _clipPreviewCtx = null;
+let _clipPreviewSource = null;
+let _clipPreviewRaf = null;
 let _clipPlaying = false;
-let _clipAnimFrame = null;
+let _clipWaveformLoading = false;
+
+function _getClipAudioUrl(song) {
+    if (!song) return "";
+    if (song.job_id) {
+        return `/api/automation/tevoxi-audio/${encodeURIComponent(song.job_id)}`;
+    }
+    return song.audio_url || "";
+}
+
+function _setClipPlayButton(isPlaying) {
+    const btn = document.getElementById("clip-play-btn");
+    if (!btn) return;
+    if (isPlaying) {
+        btn.style.paddingLeft = "0";
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>';
+    } else {
+        btn.style.paddingLeft = "2px";
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>';
+    }
+}
+
+function _stopClipPreview() {
+    if (_clipPreviewSource) {
+        try { _clipPreviewSource.stop(); } catch (_) {}
+        _clipPreviewSource = null;
+    }
+    if (_clipPreviewRaf) {
+        cancelAnimationFrame(_clipPreviewRaf);
+        _clipPreviewRaf = null;
+    }
+    const audio = document.getElementById("clip-audio");
+    if (audio) audio.pause();
+    _clipPlaying = false;
+    _setClipPlayButton(false);
+    const playhead = document.getElementById("clip-waveform-playhead");
+    if (playhead) playhead.style.display = "none";
+}
 
 function openClipSelector() {
     if (!_autoSelectedSong) {
@@ -4542,112 +4591,244 @@ function openClipSelector() {
         return;
     }
     const song = _autoSelectedSong;
-    _clipSongDuration = song.duration || 120;
+    _clipSongDuration = Math.max(1, Number(song.duration || 120));
     _clipStart = 0;
-    _clipDuration = Math.min(20, _clipSongDuration);
+    _clipDuration = Math.min(20, _clipSongDuration || 20);
     _clipPlaying = false;
     _clipAudioBuffer = null;
+    _clipWaveformPeaks = [];
+    _clipDragging = null;
+    _clipDragX = 0;
 
     document.getElementById("clip-song-title").textContent = song.title || "Musica";
     _updateClipDurationButtons();
-    _updateClipRegion();
-    _updateClipTimeLabel();
-
-    // Load audio for waveform + preview
-    const audio = document.getElementById("clip-audio");
-    audio.pause();
-    audio.src = song.audio_url;
-    audio.load();
-
-    // Draw waveform when audio is loadable
-    _drawClipWaveform(song.audio_url);
-
-    // Reset playhead
-    const ph = document.getElementById("clip-playhead");
-    if (ph) ph.style.display = "none";
+    _setClipPlayButton(false);
+    openModal("modal-clip-selector");
 
     // Reset duration selection
     document.querySelectorAll("#clip-duration-options .duration-option").forEach(b => {
         b.classList.toggle("selected", b.dataset.value === "20");
     });
 
-    openModal("modal-clip-selector");
+    const audioUrl = _getClipAudioUrl(song);
+    const audio = document.getElementById("clip-audio");
+    if (audio) {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.crossOrigin = "anonymous";
+        audio.src = audioUrl;
+        audio.load();
+    }
+
+    requestAnimationFrame(() => {
+        _syncClipCanvasSize();
+        _drawClipLoadingPlaceholder();
+        _updateClipSelection();
+        _loadClipWaveform(song, audioUrl);
+    });
 }
 
 function closeClipSelector() {
+    _stopClipPreview();
     const audio = document.getElementById("clip-audio");
-    if (audio) { audio.pause(); audio.currentTime = 0; }
-    _clipPlaying = false;
-    if (_clipAnimFrame) cancelAnimationFrame(_clipAnimFrame);
+    if (audio) audio.currentTime = 0;
     closeModal("modal-clip-selector");
 }
 
-async function _drawClipWaveform(url) {
+function _syncClipCanvasSize() {
+    const canvas = document.getElementById("clip-waveform-canvas");
+    if (!canvas) return;
+    const container = document.getElementById("clip-waveform-container");
+    const width = container ? container.clientWidth : 300;
+    canvas.width = width;
+    canvas.height = 48;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = "48px";
+}
+
+function _drawClipLoadingPlaceholder() {
     const canvas = document.getElementById("clip-waveform-canvas");
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    const w = canvas.parentElement.clientWidth;
-    canvas.width = w;
-    canvas.height = 80;
-
-    // Draw placeholder
+    _syncClipCanvasSize();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "rgba(255,255,255,0.08)";
-    ctx.fillRect(0, 0, w, 80);
-    ctx.fillStyle = "rgba(255,255,255,0.2)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.font = "13px sans-serif";
     ctx.textAlign = "center";
-    ctx.font = "12px sans-serif";
-    ctx.fillText("Carregando audio...", w / 2, 44);
+    ctx.fillText("Carregando audio...", canvas.width / 2, 28);
+}
+
+async function _loadClipWaveform(song, audioUrl) {
+    if (_clipWaveformLoading || !audioUrl) {
+        if (!audioUrl) {
+            _drawClipFallbackPeaks();
+            _updateClipSelection();
+        }
+        return;
+    }
+    _clipWaveformLoading = true;
+
+    _clipAudioBuffer = null;
+    _clipWaveformPeaks = [];
 
     try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const resp = await fetch(url);
+        const resp = await fetch(audioUrl, { cache: "no-store" });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const arrayBuf = await resp.arrayBuffer();
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const decoded = await audioCtx.decodeAudioData(arrayBuf);
+
         _clipAudioBuffer = decoded;
-        _clipSongDuration = decoded.duration;
+        _clipSongDuration = decoded.duration || _clipSongDuration;
 
-        const raw = decoded.getChannelData(0);
-        const samples = Math.min(w, 300);
-        const step = Math.floor(raw.length / samples);
-        const peaks = [];
-        for (let i = 0; i < samples; i++) {
-            let max = 0;
-            for (let j = 0; j < step; j++) {
-                const v = Math.abs(raw[i * step + j] || 0);
-                if (v > max) max = v;
-            }
-            peaks.push(max);
+        if (_clipDuration > _clipSongDuration) {
+            _clipDuration = _clipSongDuration;
+        }
+        if (_clipStart + _clipDuration > _clipSongDuration) {
+            _clipStart = Math.max(0, _clipSongDuration - _clipDuration);
         }
 
-        ctx.clearRect(0, 0, w, 80);
-        ctx.fillStyle = "rgba(255,255,255,0.08)";
-        ctx.fillRect(0, 0, w, 80);
-
-        const barW = w / samples;
-        for (let i = 0; i < samples; i++) {
-            const h = Math.max(2, peaks[i] * 70);
-            const x = i * barW;
-            ctx.fillStyle = "rgba(255,255,255,0.35)";
-            ctx.fillRect(x, 40 - h / 2, Math.max(1, barW - 1), h);
-        }
-
+        _extractClipPeaksAndDraw();
         _updateClipDurationButtons();
-        audioCtx.close();
+        _updateClipSelection();
+
+        try { await audioCtx.close(); } catch (_) {}
     } catch (e) {
-        ctx.clearRect(0, 0, w, 80);
-        ctx.fillStyle = "rgba(255,255,255,0.08)";
-        ctx.fillRect(0, 0, w, 80);
-        ctx.fillStyle = "rgba(255,255,255,0.2)";
-        ctx.textAlign = "center";
-        ctx.font = "12px sans-serif";
-        ctx.fillText("Audio indisponivel para visualizacao", w / 2, 44);
+        console.warn("[Clip] waveform load failed:", e);
+        _clipAudioBuffer = null;
+        if (!Number.isFinite(_clipSongDuration) || _clipSongDuration <= 0) {
+            _clipSongDuration = Math.max(1, Number(song?.duration || 120));
+        }
+        _drawClipFallbackPeaks();
+        _updateClipDurationButtons();
+        _updateClipSelection();
+    } finally {
+        _clipWaveformLoading = false;
+    }
+}
+
+function _extractClipPeaksAndDraw() {
+    const canvas = document.getElementById("clip-waveform-canvas");
+    if (!canvas || !_clipAudioBuffer) return;
+
+    _syncClipCanvasSize();
+    const channelData = _clipAudioBuffer.getChannelData(0);
+    const numBars = Math.floor(canvas.width / 2);
+    if (numBars <= 0) return;
+
+    const samplesPerBar = Math.floor(channelData.length / numBars);
+    if (samplesPerBar <= 0) return;
+
+    _clipWaveformPeaks = [];
+    let maxPeak = 0;
+    for (let i = 0; i < numBars; i++) {
+        let peak = 0;
+        const start = i * samplesPerBar;
+        for (let j = start; j < start + samplesPerBar && j < channelData.length; j++) {
+            const value = Math.abs(channelData[j]);
+            if (value > peak) peak = value;
+        }
+        _clipWaveformPeaks.push(peak);
+        if (peak > maxPeak) maxPeak = peak;
+    }
+
+    if (maxPeak > 0) {
+        _clipWaveformPeaks = _clipWaveformPeaks.map(p => Math.pow(p / maxPeak, 0.6));
+    }
+
+    _drawClipWaveform();
+}
+
+function _drawClipFallbackPeaks() {
+    const canvas = document.getElementById("clip-waveform-canvas");
+    if (!canvas) return;
+    _syncClipCanvasSize();
+
+    const numBars = Math.floor(canvas.width / 2);
+    const seedSource = String((_autoSelectedSong && (_autoSelectedSong.job_id || _autoSelectedSong.title)) || "clip");
+    let seed = 0;
+    for (let i = 0; i < seedSource.length; i++) {
+        seed += seedSource.charCodeAt(i) * (i + 1);
+    }
+
+    _clipWaveformPeaks = [];
+    for (let i = 0; i < numBars; i++) {
+        const base = Math.sin((i + 1 + seed) * 0.13) * Math.cos((i + seed) * 0.047);
+        const value = 0.22 + Math.abs(base) * 0.72;
+        _clipWaveformPeaks.push(value);
+    }
+
+    _drawClipWaveform();
+}
+
+function _drawClipWaveform() {
+    const canvas = document.getElementById("clip-waveform-canvas");
+    if (!canvas || !_clipWaveformPeaks.length) return;
+
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const numBars = _clipWaveformPeaks.length;
+    const gap = 1;
+    const barW = Math.max(1, (w / numBars) - gap);
+    const step = barW + gap;
+
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    for (let i = 0; i < numBars; i++) {
+        const x = i * step;
+        const barH = Math.max(2, _clipWaveformPeaks[i] * (h - 4));
+        const y = (h - barH) / 2;
+        ctx.fillRect(x, y, barW, barH);
+    }
+}
+
+function _drawClipWaveformWithSelection() {
+    const canvas = document.getElementById("clip-waveform-canvas");
+    if (!canvas || !_clipWaveformPeaks.length || !_clipSongDuration) return;
+
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const numBars = _clipWaveformPeaks.length;
+    const gap = 1;
+    const barW = Math.max(1, (w / numBars) - gap);
+    const step = barW + gap;
+
+    ctx.fillStyle = "rgba(255,255,255,0.20)";
+    for (let i = 0; i < numBars; i++) {
+        const x = i * step;
+        const barH = Math.max(2, _clipWaveformPeaks[i] * (h - 4));
+        const y = (h - barH) / 2;
+        ctx.fillRect(x, y, barW, barH);
+    }
+
+    if (_clipDuration > 0 && _clipDuration < _clipSongDuration) {
+        const selX = (_clipStart / _clipSongDuration) * w;
+        const selW = (_clipDuration / _clipSongDuration) * w;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(selX, 0, selW, h);
+        ctx.clip();
+        ctx.fillStyle = "rgba(224,160,48,0.95)";
+        for (let i = 0; i < numBars; i++) {
+            const x = i * step;
+            const barH = Math.max(2, _clipWaveformPeaks[i] * (h - 4));
+            const y = (h - barH) / 2;
+            ctx.fillRect(x, y, barW, barH);
+        }
+        ctx.restore();
     }
 }
 
 function _updateClipDurationButtons() {
-    // Update "Tudo" vs specific durations
     document.querySelectorAll("#clip-duration-options .duration-option").forEach(b => {
-        const val = parseInt(b.dataset.value);
+        const val = parseInt(b.dataset.value, 10);
         if (val > 0 && val > _clipSongDuration) {
             b.hidden = true;
         } else {
@@ -4657,80 +4838,292 @@ function _updateClipDurationButtons() {
 }
 
 function _selectClipDuration(val) {
+    if (!_clipSongDuration) return;
     _clipDuration = val === 0 ? _clipSongDuration : val;
+    _clipDuration = Math.min(_clipDuration, _clipSongDuration);
     if (_clipStart + _clipDuration > _clipSongDuration) {
         _clipStart = Math.max(0, _clipSongDuration - _clipDuration);
     }
     document.querySelectorAll("#clip-duration-options .duration-option").forEach(b => {
-        b.classList.toggle("selected", parseInt(b.dataset.value) === val);
+        b.classList.toggle("selected", parseInt(b.dataset.value, 10) === val);
     });
-    _updateClipRegion();
-    _updateClipTimeLabel();
+    _updateClipSelection();
 }
 
-function _updateClipRegion() {
-    const region = document.getElementById("clip-region");
-    if (!region || !_clipSongDuration) return;
-    const leftPct = (_clipStart / _clipSongDuration) * 100;
-    const widthPct = (_clipDuration / _clipSongDuration) * 100;
-    region.style.left = leftPct + "%";
-    region.style.width = widthPct + "%";
-}
-
-function _updateClipTimeLabel() {
-    const label = document.getElementById("clip-time-label");
-    if (!label) return;
-    const end = Math.min(_clipStart + _clipDuration, _clipSongDuration);
-    label.textContent = `${_formatDuration(_clipStart)} - ${_formatDuration(end)}`;
-}
-
-function _onClipWaveformInteraction(e) {
+function _updateClipDragHint() {
+    const hint = document.getElementById("clip-waveform-drag-hint");
+    const wrap = document.getElementById("clip-waveform-wrap");
     const container = document.getElementById("clip-waveform-container");
-    if (!container || !_clipSongDuration) return;
-    const rect = container.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    const clickTime = pct * _clipSongDuration;
-    // Center the clip on click position
-    _clipStart = Math.max(0, Math.min(clickTime - _clipDuration / 2, _clipSongDuration - _clipDuration));
-    _updateClipRegion();
-    _updateClipTimeLabel();
+    if (!hint) return;
+
+    const canDrag = _clipDuration > 0 && _clipSongDuration > 0 && _clipDuration < _clipSongDuration && wrap && container;
+    if (!canDrag) {
+        hint.style.display = "none";
+        return;
+    }
+
+    const cw = container.clientWidth || 0;
+    if (cw <= 0) {
+        hint.style.display = "none";
+        return;
+    }
+
+    const centerRatio = (_clipStart + (_clipDuration / 2)) / _clipSongDuration;
+    const centerPx = Math.max(0, Math.min(cw, centerRatio * cw));
+    const leftPx = (container.offsetLeft || 0) + centerPx;
+    const topPx = (container.offsetTop || 0) + container.offsetHeight + 4;
+
+    hint.style.left = `${leftPx}px`;
+    hint.style.top = `${topPx}px`;
+    hint.style.display = "flex";
+}
+
+function _updateClipSelection() {
+    const canvas = document.getElementById("clip-waveform-canvas");
+    const container = document.getElementById("clip-waveform-container");
+    const selection = document.getElementById("clip-waveform-selection");
+    const label = document.getElementById("clip-time-label");
+    if (!canvas || !container || !selection || !_clipSongDuration) return;
+
+    const cw = container.clientWidth || 300;
+    if (canvas.width !== cw) {
+        canvas.width = cw;
+        canvas.style.width = `${cw}px`;
+    }
+
+    if (_clipDuration <= 0 || _clipDuration >= _clipSongDuration) {
+        selection.style.display = "none";
+        if (label) label.textContent = `0:00 - ${_formatDuration(_clipSongDuration)}`;
+        _drawClipWaveform();
+        _updateClipDragHint();
+        return;
+    }
+
+    selection.style.display = "";
+    const maxStart = Math.max(0, _clipSongDuration - _clipDuration);
+    _clipStart = Math.max(0, Math.min(_clipStart, maxStart));
+
+    const leftPx = (_clipStart / _clipSongDuration) * cw;
+    const widthPx = (_clipDuration / _clipSongDuration) * cw;
+    selection.style.left = `${leftPx}px`;
+    selection.style.width = `${widthPx}px`;
+
+    if (label) {
+        const end = _clipStart + _clipDuration;
+        label.textContent = `${_formatDuration(_clipStart)} - ${_formatDuration(end)}`;
+    }
+
+    _drawClipWaveformWithSelection();
+    _updateClipDragHint();
+}
+
+function _updateClipPlayhead(currentTime) {
+    const playhead = document.getElementById("clip-waveform-playhead");
+    const container = document.getElementById("clip-waveform-container");
+    if (!playhead || !container || !_clipSongDuration) return;
+
+    const cw = container.clientWidth || 300;
+    const px = (currentTime / _clipSongDuration) * cw;
+    playhead.style.left = `${Math.max(0, Math.min(cw, px))}px`;
+    playhead.style.display = "block";
+}
+
+function _initClipWaveformDrag() {
+    const container = document.getElementById("clip-waveform-container");
+    const selection = document.getElementById("clip-waveform-selection");
+    const dragHint = document.getElementById("clip-waveform-drag-hint");
+    if (!container) return;
+
+    function getTimeFromX(clientX) {
+        const rect = container.getBoundingClientRect();
+        const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+        return (x / rect.width) * _clipSongDuration;
+    }
+
+    function onStart(e) {
+        if (!_clipSongDuration) return;
+        if (_clipDuration <= 0 || _clipDuration >= _clipSongDuration) return;
+        e.preventDefault();
+
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const target = e.target;
+
+        if (target && target.id === "clip-handle-left") {
+            _clipDragging = "left";
+        } else if (target && target.id === "clip-handle-right") {
+            _clipDragging = "right";
+        } else {
+            _clipDragging = "region";
+        }
+        _clipDragX = clientX;
+    }
+
+    function onMove(e) {
+        if (!_clipDragging || !_clipSongDuration) return;
+        e.preventDefault();
+
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clipDur = _clipDuration || 0;
+        if (clipDur <= 0) return;
+
+        const rect = container.getBoundingClientRect();
+        const deltaX = clientX - _clipDragX;
+        const deltaSec = (deltaX / rect.width) * _clipSongDuration;
+
+        if (_clipDragging === "region") {
+            const maxStart = Math.max(0, _clipSongDuration - clipDur);
+            _clipStart = Math.max(0, Math.min(_clipStart + deltaSec, maxStart));
+        } else if (_clipDragging === "left") {
+            const currentEnd = _clipStart + clipDur;
+            const newStart = Math.max(0, _clipStart + deltaSec);
+            const newDur = currentEnd - newStart;
+            if (newDur >= 5) {
+                _clipStart = newStart;
+                _clipDuration = Math.round(newDur);
+                document.querySelectorAll("#clip-duration-options .duration-option").forEach(b => b.classList.remove("selected"));
+            }
+        } else if (_clipDragging === "right") {
+            const newDur = clipDur + deltaSec;
+            const maxDur = _clipSongDuration - _clipStart;
+            if (newDur >= 5 && newDur <= maxDur) {
+                _clipDuration = Math.round(newDur);
+                document.querySelectorAll("#clip-duration-options .duration-option").forEach(b => b.classList.remove("selected"));
+            }
+        }
+
+        _clipDragX = clientX;
+        _updateClipSelection();
+    }
+
+    function onEnd() {
+        _clipDragging = null;
+    }
+
+    if (selection) {
+        selection.addEventListener("mousedown", onStart);
+        selection.addEventListener("touchstart", onStart, { passive: false });
+    }
+    if (dragHint) {
+        dragHint.addEventListener("mousedown", onStart);
+        dragHint.addEventListener("touchstart", onStart, { passive: false });
+    }
+
+    container.addEventListener("mousedown", (e) => {
+        if (e.target === container || e.target.tagName === "CANVAS") {
+            if (_clipDuration <= 0 || !_clipSongDuration) return;
+            const time = getTimeFromX(e.clientX);
+            const maxStart = Math.max(0, _clipSongDuration - _clipDuration);
+            _clipStart = Math.max(0, Math.min(time - _clipDuration / 2, maxStart));
+            _updateClipSelection();
+        }
+    });
+
+    container.addEventListener("touchstart", (e) => {
+        if (e.target === container || e.target.tagName === "CANVAS") {
+            if (_clipDuration <= 0 || !_clipSongDuration) return;
+            const time = getTimeFromX(e.touches[0].clientX);
+            const maxStart = Math.max(0, _clipSongDuration - _clipDuration);
+            _clipStart = Math.max(0, Math.min(time - _clipDuration / 2, maxStart));
+            _updateClipSelection();
+        }
+    }, { passive: true });
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("mouseup", onEnd);
+    document.addEventListener("touchend", onEnd);
 }
 
 function toggleClipPreview() {
-    const audio = document.getElementById("clip-audio");
-    if (!audio) return;
     if (_clipPlaying) {
-        audio.pause();
-        _clipPlaying = false;
-        const ph = document.getElementById("clip-playhead");
-        if (ph) ph.style.display = "none";
-        if (_clipAnimFrame) cancelAnimationFrame(_clipAnimFrame);
+        _stopClipPreview();
         return;
     }
-    audio.currentTime = _clipStart;
-    audio.play();
-    _clipPlaying = true;
-    const endTime = _clipStart + _clipDuration;
 
-    function _tick() {
+    const startTime = Math.max(0, _clipStart || 0);
+    const maxDur = Math.max(0.1, _clipSongDuration - startTime);
+    const duration = _clipDuration > 0 ? Math.min(_clipDuration, maxDur) : maxDur;
+    if (duration <= 0) return;
+
+    if (_clipAudioBuffer) {
+        if (!_clipPreviewCtx) {
+            _clipPreviewCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const ctx = _clipPreviewCtx;
+        if (ctx.state === "suspended") ctx.resume();
+
+        const source = ctx.createBufferSource();
+        source.buffer = _clipAudioBuffer;
+        source.connect(ctx.destination);
+
+        _clipPreviewSource = source;
+        _clipPlaying = true;
+        _setClipPlayButton(true);
+        _updateClipPlayhead(startTime);
+
+        const playStartCtxTime = ctx.currentTime;
+        function tickBufferPreview() {
+            if (!_clipPlaying) return;
+            const elapsed = ctx.currentTime - playStartCtxTime;
+            const currentTime = startTime + elapsed;
+            _updateClipPlayhead(currentTime);
+            if (elapsed >= duration) {
+                _stopClipPreview();
+                return;
+            }
+            _clipPreviewRaf = requestAnimationFrame(tickBufferPreview);
+        }
+
+        source.onended = () => {
+            if (_clipPlaying) _stopClipPreview();
+        };
+
+        source.start(0, startTime, duration);
+        _clipPreviewRaf = requestAnimationFrame(tickBufferPreview);
+        return;
+    }
+
+    const audio = document.getElementById("clip-audio");
+    if (!audio || !audio.src) {
+        alert("Nao foi possivel carregar o audio para preview.");
+        return;
+    }
+
+    _clipPlaying = true;
+    _setClipPlayButton(true);
+    _updateClipPlayhead(startTime);
+
+    audio.pause();
+    try {
+        audio.currentTime = startTime;
+    } catch (_) {
+        // keep going; some browsers update currentTime only after play starts
+    }
+
+    const endTime = startTime + duration;
+    function tickHtmlPreview() {
         if (!_clipPlaying) return;
-        if (audio.currentTime >= endTime) {
-            audio.pause();
-            _clipPlaying = false;
-            const ph = document.getElementById("clip-playhead");
-            if (ph) ph.style.display = "none";
+        _updateClipPlayhead(audio.currentTime || startTime);
+        if (audio.currentTime >= endTime || audio.ended) {
+            _stopClipPreview();
             return;
         }
-        const ph = document.getElementById("clip-playhead");
-        if (ph && _clipSongDuration > 0) {
-            const pct = (audio.currentTime / _clipSongDuration) * 100;
-            ph.style.left = pct + "%";
-            ph.style.display = "block";
-        }
-        _clipAnimFrame = requestAnimationFrame(_tick);
+        _clipPreviewRaf = requestAnimationFrame(tickHtmlPreview);
     }
-    _tick();
+
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.then === "function") {
+        playPromise
+            .then(() => {
+                _clipPreviewRaf = requestAnimationFrame(tickHtmlPreview);
+            })
+            .catch(() => {
+                _stopClipPreview();
+                alert("Nao foi possivel reproduzir este trecho.");
+            });
+    } else {
+        _clipPreviewRaf = requestAnimationFrame(tickHtmlPreview);
+    }
 }
 
 function addClipToThemes() {
@@ -4756,21 +5149,19 @@ function addClipToThemes() {
 
 // Event listeners for clip selector
 document.addEventListener("DOMContentLoaded", () => {
-    // Duration buttons
     document.getElementById("clip-duration-options")?.addEventListener("click", e => {
         const btn = e.target.closest(".duration-option");
-        if (btn) _selectClipDuration(parseInt(btn.dataset.value));
+        if (btn) _selectClipDuration(parseInt(btn.dataset.value, 10));
     });
-    // Waveform interaction (click/drag)
-    const wf = document.getElementById("clip-waveform-container");
-    if (wf) {
-        wf.addEventListener("mousedown", e => { _clipDragging = true; _onClipWaveformInteraction(e); });
-        wf.addEventListener("mousemove", e => { if (_clipDragging) _onClipWaveformInteraction(e); });
-        document.addEventListener("mouseup", () => { _clipDragging = false; });
-        wf.addEventListener("touchstart", e => { _clipDragging = true; _onClipWaveformInteraction(e); }, { passive: true });
-        wf.addEventListener("touchmove", e => { if (_clipDragging) _onClipWaveformInteraction(e); }, { passive: true });
-        document.addEventListener("touchend", () => { _clipDragging = false; });
-    }
+    _initClipWaveformDrag();
+
+    window.addEventListener("resize", () => {
+        const modal = document.getElementById("modal-clip-selector");
+        if (modal && modal.classList.contains("open")) {
+            _syncClipCanvasSize();
+            _updateClipSelection();
+        }
+    });
 });
 
 function selectAutoVideoType(type) {
@@ -7212,7 +7603,7 @@ function _editorRenderTimeline() {
 }
 
 function _editorSelectionCanDelete() {
-    return ["text", "subtitle", "sticker", "music"].includes(_editor.selectedClip.kind);
+    return ["text", "subtitle", "sticker", "music", "audio"].includes(_editor.selectedClip.kind);
 }
 
 function _editorSelectionCanDuplicate() {
@@ -7260,7 +7651,7 @@ function _editorSelectTimelineClip(kind, id, renderProps = true) {
 function _editorDeleteSelectedClip() {
     if (!_editor.selectedClip.kind) return;
     if (!_editorSelectionCanDelete()) {
-        showToast("Selecione um texto, legenda, sticker ou musica para excluir.", "error");
+        showToast("Selecione um texto, legenda, sticker ou audio/musica para excluir.", "error");
         return;
     }
 
@@ -7277,6 +7668,11 @@ function _editorDeleteSelectedClip() {
     } else if (selKind === "music") {
         _editor.musicUrl = "";
         _editor._musicFile = null;
+    } else if (selKind === "audio") {
+        _editor.originalVolume = 0;
+        const label = document.getElementById("editor-orig-vol-label");
+        if (label) label.textContent = "0%";
+        showToast("Audio original silenciado.", "success");
     }
 
     _editor.selectedClip = { kind: "", id: "" };

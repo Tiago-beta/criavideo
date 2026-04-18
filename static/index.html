@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260418-09">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260418-11">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
@@ -1825,7 +1825,6 @@
                     <div id="auto-clip-add-row" hidden style="margin-bottom:0.5rem">
                         <button class="btn btn-primary btn-sm" type="button" onclick="openClipSelector()">+ Adicionar trecho</button>
                     </div>
-                    </div>
                     <ul id="auto-theme-list" class="auto-theme-list" style="margin-top:0.75rem"></ul>
                 </div>
 
@@ -1906,16 +1905,24 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <div id="clip-waveform-container" class="clip-waveform-container">
-                        <canvas id="clip-waveform-canvas" height="80"></canvas>
-                        <div id="clip-region" class="clip-region"></div>
-                        <div id="clip-playhead" class="clip-playhead"></div>
-                    </div>
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.4rem">
-                        <span id="clip-time-label" style="font-size:0.85rem">0:00 - 0:20</span>
-                        <button id="clip-play-btn" class="btn btn-secondary btn-sm" type="button" onclick="toggleClipPreview()" style="border-radius:50%;width:36px;height:36px;padding:0;display:flex;align-items:center;justify-content:center">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
-                        </button>
+                    <div class="clip-waveform-wrap" id="clip-waveform-wrap">
+                        <div id="clip-waveform-container" class="clip-waveform-container">
+                            <canvas id="clip-waveform-canvas"></canvas>
+                            <div id="clip-waveform-selection" class="clip-waveform-selection">
+                                <div id="clip-handle-left" class="clip-waveform-handle clip-handle-left"></div>
+                                <div id="clip-handle-right" class="clip-waveform-handle clip-handle-right"></div>
+                            </div>
+                            <div id="clip-waveform-playhead" class="clip-waveform-playhead" style="display:none"></div>
+                        </div>
+                        <div class="clip-waveform-info">
+                            <span id="clip-time-label" style="font-size:0.85rem">0:00 - 0:20</span>
+                            <button id="clip-play-btn" class="clip-waveform-play-btn" type="button" onclick="toggleClipPreview()" title="Ouvir trecho">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                            </button>
+                        </div>
+                        <div id="clip-waveform-drag-hint" class="clip-waveform-drag-hint" aria-hidden="true" style="display:none">
+                            <i class="fas fa-hand-pointer"></i>
+                        </div>
                     </div>
                 </div>
                 <audio id="clip-audio" preload="auto"></audio>
@@ -2028,7 +2035,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260418-10"></script>
-    <script src="/video/static/pwa.js?v=20260418-10"></script>
+    <script src="/video/static/app.js?v=20260418-11"></script>
+    <script src="/video/static/pwa.js?v=20260418-11"></script>
 </body>
 </html>
