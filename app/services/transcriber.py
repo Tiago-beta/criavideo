@@ -60,5 +60,6 @@ def transcribe_audio(audio_path: str, language: str = "pt", prompt: str = "") ->
 
     text = response.text if hasattr(response, "text") else ""
     logger.info(f"Transcription complete: {len(words)} words, {len(text)} chars")
+    return {"text": text, "words": words}
 
     return {"text": text, "words": words}

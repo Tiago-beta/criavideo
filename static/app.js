@@ -5693,7 +5693,7 @@ const _editor = {
     activeTool: "text",
     // Edit state
     texts: [],          // {id, content, startTime, endTime, x, y, fontSize, color, fontFamily, bold, italic}
-    subtitles: [],      // {id, text, startTime, endTime, style}
+    subtitles: [],      // {id, text, startTime, endTime, styleName, x, y, fontSize, fontColor, bgColor, outlineColor, fontFamily, bold, italic}
     trimStart: 0,
     trimEnd: 0,
     musicUrl: "",
@@ -5709,6 +5709,28 @@ const _editor = {
 };
 
 function _editorGenId() { return _editor._nextId++; }
+
+// ── Subtitle style presets ──
+const SUBTITLE_STYLES = [
+    { name: "classico", label: "Classico", fontFamily: "Arial, sans-serif", fontSize: 28, fontColor: "#ffffff", bgColor: "rgba(0,0,0,0.6)", outlineColor: "", bold: true, italic: false },
+    { name: "destaque", label: "Destaque", fontFamily: "Arial Black, sans-serif", fontSize: 32, fontColor: "#facc15", bgColor: "rgba(0,0,0,0.7)", outlineColor: "#000000", bold: true, italic: false },
+    { name: "neon", label: "Neon", fontFamily: "Arial, sans-serif", fontSize: 30, fontColor: "#00ff88", bgColor: "", outlineColor: "#00ff88", bold: true, italic: false },
+    { name: "minimalista", label: "Minimalista", fontFamily: "Manrope, sans-serif", fontSize: 24, fontColor: "#ffffff", bgColor: "", outlineColor: "#000000", bold: false, italic: false },
+    { name: "impacto", label: "Impacto", fontFamily: "Arial Black, sans-serif", fontSize: 38, fontColor: "#ffffff", bgColor: "#e11d48", outlineColor: "", bold: true, italic: false },
+    { name: "elegante", label: "Elegante", fontFamily: "Georgia, serif", fontSize: 26, fontColor: "#f0d9b5", bgColor: "rgba(0,0,0,0.5)", outlineColor: "", bold: false, italic: true },
+    { name: "moderno", label: "Moderno", fontFamily: "Outfit, sans-serif", fontSize: 30, fontColor: "#ffffff", bgColor: "#3b82f6", outlineColor: "", bold: true, italic: false },
+    { name: "karaoke", label: "Karaoke", fontFamily: "Arial Black, sans-serif", fontSize: 34, fontColor: "#ffffff", bgColor: "#7c3aed", outlineColor: "#000000", bold: true, italic: false },
+    { name: "sombra", label: "Sombra", fontFamily: "Arial, sans-serif", fontSize: 28, fontColor: "#ffffff", bgColor: "", outlineColor: "#333333", bold: true, italic: false },
+    { name: "retro", label: "Retro", fontFamily: "Courier New, monospace", fontSize: 26, fontColor: "#fbbf24", bgColor: "rgba(0,0,0,0.8)", outlineColor: "", bold: true, italic: false },
+    { name: "arco_iris", label: "Colorido", fontFamily: "Arial Black, sans-serif", fontSize: 32, fontColor: "#ff6b6b", bgColor: "#10b981", outlineColor: "#000000", bold: true, italic: false },
+    { name: "cinema", label: "Cinema", fontFamily: "Georgia, serif", fontSize: 22, fontColor: "#e2e8f0", bgColor: "", outlineColor: "#000000", bold: false, italic: false },
+    { name: "viral", label: "Viral", fontFamily: "Arial Black, sans-serif", fontSize: 36, fontColor: "#ffffff", bgColor: "#f97316", outlineColor: "#000000", bold: true, italic: false },
+    { name: "suave", label: "Suave", fontFamily: "Manrope, sans-serif", fontSize: 24, fontColor: "#d4d4d8", bgColor: "rgba(255,255,255,0.12)", outlineColor: "", bold: false, italic: false },
+];
+
+function _getSubStyle(name) {
+    return SUBTITLE_STYLES.find(s => s.name === name) || SUBTITLE_STYLES[0];
+}
 
 function _editorSaveState() {
     const snap = JSON.stringify({
@@ -5950,23 +5972,45 @@ function _editorDrawOverlays(t) {
     // Draw subtitles
     for (const sub of _editor.subtitles) {
         if (t >= sub.startTime && t <= sub.endTime) {
-            const fs = 20 * (canvas.height / 720);
-            ctx.font = "bold " + fs + "px Manrope, sans-serif";
-            ctx.fillStyle = "#ffffff";
+            const scale = canvas.height / 720;
+            const fs = (sub.fontSize || 28) * scale;
+            let fontStr = "";
+            if (sub.italic) fontStr += "italic ";
+            if (sub.bold) fontStr += "bold ";
+            fontStr += fs + "px " + (sub.fontFamily || "Arial, sans-serif");
+            ctx.font = fontStr;
             ctx.textAlign = "center";
-            ctx.textBaseline = "bottom";
-            ctx.shadowColor = "rgba(0,0,0,0.8)";
-            ctx.shadowBlur = 6;
+            ctx.textBaseline = "middle";
+            const sx = (sub.x / 100) * canvas.width;
+            const sy = (sub.y / 100) * canvas.height;
+            const textW = ctx.measureText(sub.text).width;
+            // Background box
+            if (sub.bgColor) {
+                ctx.fillStyle = sub.bgColor;
+                const pad = 8 * scale;
+                const radius = 6 * scale;
+                const bx = sx - textW / 2 - pad;
+                const by = sy - fs / 2 - pad * 0.6;
+                const bw = textW + pad * 2;
+                const bh = fs + pad * 1.2;
+                ctx.beginPath();
+                ctx.roundRect(bx, by, bw, bh, radius);
+                ctx.fill();
+            }
+            // Outline
+            if (sub.outlineColor) {
+                ctx.strokeStyle = sub.outlineColor;
+                ctx.lineWidth = Math.max(2, fs * 0.08);
+                ctx.lineJoin = "round";
+                ctx.strokeText(sub.text, sx, sy);
+            }
+            // Fill text
+            ctx.fillStyle = sub.fontColor || "#ffffff";
+            ctx.shadowColor = "rgba(0,0,0,0.6)";
+            ctx.shadowBlur = 4;
             ctx.shadowOffsetX = 1;
             ctx.shadowOffsetY = 1;
-            // Background bar
-            const textW = ctx.measureText(sub.text).width;
-            const bgX = canvas.width / 2 - textW / 2 - 8;
-            const bgY = canvas.height - 50 - fs;
-            ctx.fillStyle = "rgba(0,0,0,0.6)";
-            ctx.fillRect(bgX, bgY, textW + 16, fs + 8);
-            ctx.fillStyle = sub.style === "highlight" ? "#facc15" : "#ffffff";
-            ctx.fillText(sub.text, canvas.width / 2, canvas.height - 48);
+            ctx.fillText(sub.text, sx, sy);
             ctx.shadowColor = "transparent";
         }
     }
@@ -6039,10 +6083,19 @@ function _editorRenderProps() {
             ${_editorTextEditForm()}
         `;
     } else if (tool === "subtitles") {
+        const isGenerating = _editor._subtitleGenerating;
         container.innerHTML = `
             <div class="editor-props-title">Legendas</div>
-            <button class="editor-add-btn" onclick="_editorAddSubtitle()">+ Adicionar legenda</button>
-            <div class="editor-props-group" id="editor-subtitle-list">
+            <button class="editor-add-btn" onclick="_editorAutoSubtitles()" ${isGenerating ? "disabled" : ""}>
+                ${isGenerating
+                    ? '<div class="spinner-small" style="width:14px;height:14px"></div> Gerando legendas...'
+                    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg> Gerar legendas automaticas'}
+            </button>
+            <button class="editor-add-btn" onclick="_editorAddSubtitle()" style="margin-top:4px">+ Adicionar legenda manual</button>
+            ${_editor.subtitles.length ? `
+                <button class="editor-add-btn" onclick="_editorClearSubtitles()" style="margin-top:4px;border-color:rgba(239,68,68,0.3);color:#ef4444">Limpar todas</button>
+            ` : ""}
+            <div class="editor-props-group" id="editor-subtitle-list" style="margin-top:8px;max-height:200px;overflow-y:auto">
                 ${_editor.subtitles.map(s => `
                     <div class="editor-subtitle-item${s._selected ? ' active' : ''}" onclick="_editorSelectSubtitle(${s.id})">
                         <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
@@ -6051,6 +6104,17 @@ function _editorRenderProps() {
                     </div>
                 `).join("")}
             </div>
+            ${_editor.subtitles.length ? `
+                <div class="editor-props-title" style="margin-top:12px">Estilos</div>
+                <div class="editor-subtitle-styles-grid" id="editor-sub-styles-grid">
+                    ${SUBTITLE_STYLES.map(st => `
+                        <div class="editor-sub-style-card${(_editor.subtitles.find(s=>s._selected)||{}).styleName === st.name ? ' active' : ''}" onclick="_editorApplySubStyle('${st.name}')">
+                            <div class="editor-sub-style-preview" style="font-family:${st.fontFamily};color:${st.fontColor};font-size:11px;font-weight:${st.bold?'bold':'normal'};font-style:${st.italic?'italic':'normal'};${st.bgColor?'background:'+st.bgColor+';padding:2px 4px;border-radius:3px;':''}${st.outlineColor?'text-shadow:-1px -1px 0 '+st.outlineColor+',1px -1px 0 '+st.outlineColor+',-1px 1px 0 '+st.outlineColor+',1px 1px 0 '+st.outlineColor+';':''}">Abc</div>
+                            <span>${st.label}</span>
+                        </div>
+                    `).join("")}
+                </div>
+            ` : ""}
             ${_editorSubtitleEditForm()}
         `;
     } else if (tool === "trim") {
@@ -6208,11 +6272,50 @@ function _editorSubtitleEditForm() {
         <div class="editor-props-group" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
             <label>Texto da legenda</label>
             <textarea rows="2" style="resize:vertical" oninput="_editorUpdateSubProp(${sel.id},'text',this.value)">${esc(sel.text)}</textarea>
-            <label>Estilo</label>
-            <select onchange="_editorUpdateSubProp(${sel.id},'style',this.value)">
-                <option value="normal" ${sel.style==="normal"?"selected":""}>Normal (branco)</option>
-                <option value="highlight" ${sel.style==="highlight"?"selected":""}>Destaque (amarelo)</option>
+            <label>Cor do texto</label>
+            <div class="editor-color-row">
+                <input type="color" value="${sel.fontColor || '#ffffff'}" oninput="_editorUpdateSubProp(${sel.id},'fontColor',this.value)">
+                <span style="font-size:11px;color:var(--text-muted)">${sel.fontColor || '#ffffff'}</span>
+            </div>
+            <label>Cor de fundo</label>
+            <div class="editor-color-row">
+                <input type="color" value="${(sel.bgColor||'').startsWith('rgba') ? '#000000' : (sel.bgColor || '#000000')}" oninput="_editorUpdateSubProp(${sel.id},'bgColor',this.value)">
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;margin:0"><input type="checkbox" ${sel.bgColor ? 'checked' : ''} onchange="_editorUpdateSubProp(${sel.id},'bgColor',this.checked?'rgba(0,0,0,0.6)':'')"> Ativado</label>
+            </div>
+            <label>Contorno</label>
+            <div class="editor-color-row">
+                <input type="color" value="${sel.outlineColor || '#000000'}" oninput="_editorUpdateSubProp(${sel.id},'outlineColor',this.value)">
+                <label style="display:flex;align-items:center;gap:4px;font-size:11px;margin:0"><input type="checkbox" ${sel.outlineColor ? 'checked' : ''} onchange="_editorUpdateSubProp(${sel.id},'outlineColor',this.checked?'#000000':'')"> Ativado</label>
+            </div>
+            <label>Tamanho da fonte</label>
+            <div class="editor-font-size-row">
+                <input type="range" min="14" max="72" value="${sel.fontSize || 28}" oninput="_editorUpdateSubProp(${sel.id},'fontSize',parseInt(this.value))">
+                <span>${sel.fontSize || 28}px</span>
+            </div>
+            <label>Posicao vertical</label>
+            <div class="editor-font-size-row">
+                <input type="range" min="5" max="95" value="${sel.y || 85}" oninput="_editorUpdateSubProp(${sel.id},'y',parseInt(this.value))">
+                <span>${sel.y || 85}%</span>
+            </div>
+            <label>Posicao horizontal</label>
+            <div class="editor-font-size-row">
+                <input type="range" min="10" max="90" value="${sel.x || 50}" oninput="_editorUpdateSubProp(${sel.id},'x',parseInt(this.value))">
+                <span>${sel.x || 50}%</span>
+            </div>
+            <label>Fonte</label>
+            <select onchange="_editorUpdateSubProp(${sel.id},'fontFamily',this.value)" style="background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:12px">
+                <option value="Arial, sans-serif" ${sel.fontFamily==="Arial, sans-serif"?"selected":""}>Arial</option>
+                <option value="Arial Black, sans-serif" ${sel.fontFamily==="Arial Black, sans-serif"?"selected":""}>Arial Black</option>
+                <option value="Manrope, sans-serif" ${sel.fontFamily==="Manrope, sans-serif"?"selected":""}>Manrope</option>
+                <option value="Outfit, sans-serif" ${sel.fontFamily==="Outfit, sans-serif"?"selected":""}>Outfit</option>
+                <option value="Georgia, serif" ${sel.fontFamily==="Georgia, serif"?"selected":""}>Georgia</option>
+                <option value="Courier New, monospace" ${sel.fontFamily==="Courier New, monospace"?"selected":""}>Courier New</option>
+                <option value="Times New Roman, serif" ${sel.fontFamily==="Times New Roman, serif"?"selected":""}>Times New Roman</option>
             </select>
+            <div style="display:flex;gap:8px">
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" ${sel.bold ? "checked" : ""} onchange="_editorUpdateSubProp(${sel.id},'bold',this.checked)"> Negrito</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" ${sel.italic ? "checked" : ""} onchange="_editorUpdateSubProp(${sel.id},'italic',this.checked)"> Italico</label>
+            </div>
             <label>Tempo</label>
             <div class="editor-trim-values">
                 <span>Inicio: ${_fmtTime(sel.startTime)}</span>
@@ -6274,14 +6377,103 @@ function _editorAddSubtitle() {
     const video = document.getElementById("editor-video");
     const t = video?.currentTime || 0;
     _editor.subtitles.forEach(x => x._selected = false);
+    const defStyle = SUBTITLE_STYLES[0];
     _editor.subtitles.push({
         id: _editorGenId(), text: "Legenda aqui", startTime: t, endTime: Math.min(t + 3, _editor.duration),
-        style: "normal", _selected: true,
+        styleName: defStyle.name, x: 50, y: 82, fontSize: defStyle.fontSize,
+        fontColor: defStyle.fontColor, bgColor: defStyle.bgColor, outlineColor: defStyle.outlineColor,
+        fontFamily: defStyle.fontFamily, bold: defStyle.bold, italic: defStyle.italic, _selected: true,
     });
     _editorRenderProps();
     _editorRenderTimeline();
 }
 window._editorAddSubtitle = _editorAddSubtitle;
+
+function _editorApplySubStyle(styleName) {
+    const sel = _editor.subtitles.find(s => s._selected);
+    if (!sel) {
+        // Apply to all
+        _editorSaveState();
+        const st = _getSubStyle(styleName);
+        _editor.subtitles.forEach(s => {
+            s.styleName = st.name; s.fontSize = st.fontSize; s.fontColor = st.fontColor;
+            s.bgColor = st.bgColor; s.outlineColor = st.outlineColor; s.fontFamily = st.fontFamily;
+            s.bold = st.bold; s.italic = st.italic;
+        });
+    } else {
+        _editorSaveState();
+        const st = _getSubStyle(styleName);
+        sel.styleName = st.name; sel.fontSize = st.fontSize; sel.fontColor = st.fontColor;
+        sel.bgColor = st.bgColor; sel.outlineColor = st.outlineColor; sel.fontFamily = st.fontFamily;
+        sel.bold = st.bold; sel.italic = st.italic;
+    }
+    _editorRenderProps();
+    const videoEl = document.getElementById("editor-video");
+    if (videoEl) _editorDrawOverlays(videoEl.currentTime);
+}
+window._editorApplySubStyle = _editorApplySubStyle;
+
+async function _editorAutoSubtitles() {
+    if (_editor._subtitleGenerating) return;
+    _editor._subtitleGenerating = true;
+    _editorRenderProps();
+    try {
+        const res = await api(`/video/editor/transcribe/${_editor.projectId}`, "POST");
+        if (!res.words || !res.words.length) {
+            showToast("Nao foi possivel detectar fala no video.", "error");
+            _editor._subtitleGenerating = false;
+            _editorRenderProps();
+            return;
+        }
+        _editorSaveState();
+        // Group words into subtitle lines (max ~6 words or 2s gap)
+        const lines = [];
+        let current = { words: [], start: 0, end: 0 };
+        for (const w of res.words) {
+            if (!current.words.length) {
+                current = { words: [w.word], start: w.start, end: w.end };
+            } else if (current.words.length >= 6 || (w.start - current.end) > 1.5) {
+                lines.push(current);
+                current = { words: [w.word], start: w.start, end: w.end };
+            } else {
+                current.words.push(w.word);
+                current.end = w.end;
+            }
+        }
+        if (current.words.length) lines.push(current);
+
+        // Determine style: use currently selected style or default
+        const selSub = _editor.subtitles.find(s => s._selected);
+        const styleName = selSub ? selSub.styleName : "classico";
+        const st = _getSubStyle(styleName);
+
+        _editor.subtitles = lines.map(line => ({
+            id: _editorGenId(),
+            text: line.words.join(" "),
+            startTime: line.start,
+            endTime: line.end,
+            styleName: st.name, x: 50, y: 82, fontSize: st.fontSize,
+            fontColor: st.fontColor, bgColor: st.bgColor, outlineColor: st.outlineColor,
+            fontFamily: st.fontFamily, bold: st.bold, italic: st.italic, _selected: false,
+        }));
+        showToast(`${lines.length} legendas geradas automaticamente!`, "success");
+    } catch (err) {
+        showToast("Erro ao gerar legendas: " + err.message, "error");
+    }
+    _editor._subtitleGenerating = false;
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+window._editorAutoSubtitles = _editorAutoSubtitles;
+
+function _editorClearSubtitles() {
+    if (!_editor.subtitles.length) return;
+    _editorSaveState();
+    _editor.subtitles = [];
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+window._editorClearSubtitles = _editorClearSubtitles;
 
 function _editorSelectSubtitle(id) {
     _editor.subtitles.forEach(s => s._selected = (s.id === id));
@@ -6476,7 +6668,10 @@ async function _editorExport() {
             bold: t.bold, italic: t.italic,
         })),
         subtitles: _editor.subtitles.map(s => ({
-            text: s.text, start_time: s.startTime, end_time: s.endTime, style: s.style,
+            text: s.text, start_time: s.startTime, end_time: s.endTime,
+            x: s.x, y: s.y, font_size: s.fontSize, font_color: s.fontColor,
+            bg_color: s.bgColor, outline_color: s.outlineColor,
+            font_family: s.fontFamily, bold: s.bold, italic: s.italic,
         })),
         stickers: _editor.stickers.map(s => ({
             emoji: s.emoji, x: s.x, y: s.y, start_time: s.startTime, end_time: s.endTime, size: s.size,

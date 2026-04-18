@@ -47,7 +47,15 @@ class SubtitleEntry(BaseModel):
     text: str
     start_time: float
     end_time: float
-    style: str = "normal"
+    x: float = 50
+    y: float = 82
+    font_size: int = 28
+    font_color: str = "#ffffff"
+    bg_color: str = ""
+    outline_color: str = "#000000"
+    font_family: str = "Arial"
+    bold: bool = True
+    italic: bool = False
 
 
 class StickerEntry(BaseModel):
@@ -92,6 +100,64 @@ async def upload_music(
             raise HTTPException(400, "Arquivo muito grande (max 50MB)")
         f.write(content)
     return {"path": str(dest)}
+
+
+# ── Transcribe audio for subtitles ───────────────────
+@router.post("/transcribe/{project_id}")
+async def transcribe_video(
+    project_id: int,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extract audio from video and transcribe using Whisper for auto-subtitles."""
+    result = await db.execute(
+        select(VideoProject)
+        .options(selectinload(VideoProject.renders))
+        .where(VideoProject.id == project_id, VideoProject.user_id == user.id)
+    )
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(404, "Projeto nao encontrado")
+    render = next((r for r in project.renders if r.video_url), None)
+    if not render:
+        raise HTTPException(400, "Nenhum video disponivel")
+
+    # Resolve video path
+    video_url = render.video_url
+    src_video = None
+    if video_url.startswith("/"):
+        src_video = video_url.replace("/video/media/", settings.media_dir + "/")
+    elif "/video/media/" in video_url:
+        src_video = os.path.join(settings.media_dir, video_url.split("/video/media/")[-1])
+    if not src_video or not os.path.exists(src_video):
+        proj_dir = os.path.join(settings.media_dir, str(project.id))
+        candidates = [
+            os.path.join(proj_dir, "output.mp4"),
+            os.path.join(proj_dir, "final.mp4"),
+        ]
+        src_video = next((c for c in candidates if os.path.exists(c)), None)
+    if not src_video:
+        raise HTTPException(400, "Arquivo de video nao encontrado")
+
+    # Extract audio to temp WAV
+    tmp_audio = os.path.join(settings.media_dir, str(project.id), f"_transcribe_{uuid.uuid4().hex[:6]}.wav")
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-i", src_video, "-vn", "-acodec", "pcm_s16le",
+             "-ar", "16000", "-ac", "1", tmp_audio],
+            capture_output=True, timeout=120,
+        )
+        if proc.returncode != 0:
+            raise HTTPException(500, "Falha ao extrair audio do video")
+
+        # Transcribe (sync function, run in thread pool)
+        from app.services.transcriber import transcribe_audio
+        import asyncio
+        result = await asyncio.to_thread(transcribe_audio, tmp_audio, "pt")
+        return {"text": result.get("text", ""), "words": result.get("words", [])}
+    finally:
+        if os.path.exists(tmp_audio):
+            os.remove(tmp_audio)
 
 
 # ── Export (start background job) ──────────────────────
@@ -235,9 +301,30 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         for sub in req.subtitles:
             st = max(0, sub.start_time - req.trim_start)
             et = sub.end_time - req.trim_start
-            color = "FFFF00" if sub.style == "highlight" else "FFFFFF"
-            escaped_text = sub.text.replace("'", "'\\\\\\''").replace(":", "\\:")
-            dt = f"drawtext=text='{escaped_text}':fontsize=24:fontcolor=0x{color}:x=(w-tw)/2:y=h-80:enable='between(t,{st},{et})':shadowcolor=black:shadowx=2:shadowy=2:box=1:boxcolor=black@0.5:boxborderw=5"
+            color = sub.font_color.lstrip("#") if sub.font_color else "FFFFFF"
+            fsize = sub.font_size or 28
+            x_expr = f"(w*{sub.x/100})-tw/2" if sub.x else "(w-tw)/2"
+            y_expr = f"(h*{sub.y/100})-th/2" if sub.y else "h-80"
+            escaped_text = sub.text.replace("'", "'\\\\\\\\''").replace(":", "\\:")
+            font_family = (sub.font_family or "Arial").split(",")[0].strip()
+            dt_parts = [
+                f"drawtext=text='{escaped_text}'",
+                f"fontsize={fsize}",
+                f"fontcolor=0x{color}",
+                f"x={x_expr}",
+                f"y={y_expr}",
+                f"enable='between(t,{st},{et})'",
+                "shadowcolor=black",
+                "shadowx=2",
+                "shadowy=2",
+            ]
+            if sub.bg_color:
+                bg = sub.bg_color.lstrip("#")[:6] if sub.bg_color.startswith("#") else "000000"
+                dt_parts.append(f"box=1:boxcolor=0x{bg}@0.6:boxborderw=8")
+            if sub.outline_color:
+                border_c = sub.outline_color.lstrip("#")[:6]
+                dt_parts.append(f"borderw=2:bordercolor=0x{border_c}")
+            dt = ":".join(dt_parts)
             vfilters.append(dt)
 
         # Sticker/emoji overlays (drawtext with emoji font)
