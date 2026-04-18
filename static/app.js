@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v134 loaded");
+console.log("[CriaVideo] app.js v139 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1165,6 +1165,14 @@ async function createSimilar(projectId) {
         return;
     }
 
+    const realisticArtists = new Set(["MiniMax Hailuo", "Wan 2.2", "Seedance 2.0", "Grok"]);
+    const sourceLooksRealistic = (
+        project.video_type === "realista"
+        || project.video_type === "realistic"
+        || realisticArtists.has((project.track_artist || "").trim())
+    );
+    const inferredVideoType = sourceLooksRealistic ? "realista" : "imagens_ia";
+
     // 1. Reset wizard state
     resetCreateWizard();
 
@@ -1175,11 +1183,22 @@ async function createSimilar(projectId) {
     if (countEl) countEl.textContent = project.lyrics_text.length.toLocaleString("pt-BR");
     const titleEl = document.getElementById("script-title");
     if (titleEl) titleEl.value = project.title || "";
-    if (project.style_prompt) setSelectedStyles("script-style-tags", project.style_prompt);
+    if (project.style_prompt && !sourceLooksRealistic) {
+        setSelectedStyles("script-style-tags", project.style_prompt);
+    }
     const aspectEl = document.getElementById("script-aspect");
     if (aspectEl && project.aspect_ratio) aspectEl.value = project.aspect_ratio;
-    if (project.video_type) scriptData.videoType = project.video_type;
-    scriptStep = 2;
+    const realisticAspectEl = document.getElementById("script-realistic-aspect");
+    if (realisticAspectEl && project.aspect_ratio) realisticAspectEl.value = project.aspect_ratio;
+
+    scriptData.videoType = inferredVideoType;
+    scriptData.promptOptimized = sourceLooksRealistic;
+    scriptStep = 1;
+
+    document.querySelectorAll("#script-video-type-grid .video-type-card").forEach((card) => {
+        card.classList.toggle("selected", card.dataset.type === scriptData.videoType);
+    });
+    adaptScriptStepForVideoType(scriptData.videoType);
 
     // 3. Open modal (same as clicking the new-project button)
     openModal("modal-new-project");
@@ -1187,18 +1206,8 @@ async function createSimilar(projectId) {
     // 4. Switch to script mode AFTER modal is visible (same as user clicking "Meu Roteiro")
     switchCreateMode("script");
 
-    // 5. Show step 1 (the script text step)
-    const scriptPanel = document.getElementById("create-panel-script");
-    if (scriptPanel) {
-        scriptPanel.querySelectorAll(".wizard-step").forEach(s => {
-            s.hidden = parseInt(s.dataset.step) !== 1;
-        });
-    }
-
-    const backBtn = document.getElementById("script-back");
-    if (backBtn) backBtn.hidden = false;
-    const createBtn = document.getElementById("script-create-btn");
-    if (createBtn) createBtn.hidden = true;
+    // 5. Always start at video type step before prompt
+    updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
 }
 
 function openCopyFormatModal(projectId) {
@@ -1660,6 +1669,18 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         return;
     }
 
+    const useScriptPhotosToggle = prefix === "script"
+        ? document.getElementById("script-use-photos")
+        : null;
+    const wantsReferenceImage = prefix === "script"
+        ? !!(useScriptPhotosToggle && useScriptPhotosToggle.checked)
+        : false;
+
+    if (wantsReferenceImage && scriptPhotos.length === 0) {
+        alert("Voce ativou 'Usar minhas fotos no video', mas ainda nao enviou nenhuma foto.");
+        return;
+    }
+
     const durBtn = document.querySelector(`#${durationSelectorId} .duration-option.selected`);
     const duration = durBtn ? parseInt(durBtn.dataset.value) : 7;
     const aspectEl = document.getElementById(aspectSelectorId);
@@ -1692,7 +1713,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     try {
         // Upload reference image if available
         let imageUploadId = "";
-        if (scriptPhotos.length > 0) {
+        const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
+        if (shouldUploadReferenceImage) {
             setCreateProgress(5, "Gerando video realista...", "Enviando imagem de referencia...");
             const uploaded = await uploadTempFileWithRetry(scriptPhotos[0], "image", "imagem de referencia");
             imageUploadId = uploaded.upload_id;

@@ -1534,6 +1534,8 @@ class GenerateRealisticRequest(BaseModel):
     lyrics: str = ""          # Lyrics/transcription for the audio clip
     clip_start: float = 0     # Start time in seconds for audio clip
     clip_duration: float = 0  # Duration of the audio clip (0 = full)
+    prompt_optimized: bool = False
+    realistic_style: str = ""
 
 
 @router.post("/generate-realistic")
@@ -1561,8 +1563,9 @@ async def generate_realistic_endpoint(
     image_path_str = ""
     if req.image_upload_id:
         resolved = _resolve_temp_file(user["id"], req.image_upload_id, IMAGE_EXTS)
-        if resolved:
-            image_path_str = str(resolved)
+        if not resolved:
+            raise HTTPException(status_code=400, detail="Imagem de referencia nao encontrada. Envie a foto novamente.")
+        image_path_str = str(resolved)
 
     # Credit check — multi-clip costs more (1 credit per 15s segment)
     from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
@@ -1589,6 +1592,8 @@ async def generate_realistic_endpoint(
         "add_music": req.add_music or bool(external_audio_url),
         "add_narration": req.add_narration and bool(narration_text),
         "narration_voice": narration_voice,
+        "prompt_optimized": bool(req.prompt_optimized),
+        "realistic_style": (req.realistic_style or "").strip(),
     }
     if external_audio_url:
         tags_data["audio_url"] = external_audio_url
