@@ -220,6 +220,9 @@ async def _create_video_for_theme(
     if video_type == "musical_shorts":
         return await _create_musical_short(theme_text, user_id, cfg, custom_settings)
 
+    if video_type == "realistic":
+        return await _create_realistic_video(theme_text, user_id, cfg)
+
     if video_type == "music":
         return await _create_music_video(theme_text, user_id, cfg)
 
@@ -424,6 +427,129 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
     await run_video_pipeline(project_id)
 
     return project_id
+
+
+async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> int:
+    """Create a realistic video from a theme prompt.
+
+    Uses the realistic video pipeline (Seedance/MiniMax/Grok/Wan2).
+    Optionally adds Tevoxi music or background music.
+    """
+    from app.tasks.video_tasks import run_realistic_video_pipeline
+
+    engine = cfg.get("engine", "minimax")
+    duration = int(cfg.get("duration", 7))
+    aspect_ratio = cfg.get("aspect_ratio", "9:16")
+    realistic_style = cfg.get("realistic_style", "cinematic")
+    add_music = cfg.get("add_music", False)
+    use_tevoxi = cfg.get("use_tevoxi", False)
+
+    # Credit check
+    async with async_session() as db:
+        from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
+        credits_needed = CREDITS_PER_MINUTE  # 1 credit unit per realistic video
+        await deduct_credits(db, user_id, credits_needed)
+
+    # Build tags for the project
+    tags = {"realistic_style": realistic_style}
+    if use_tevoxi:
+        tevoxi_audio_url = cfg.get("tevoxi_audio_url", "")
+        tevoxi_job_id = cfg.get("tevoxi_job_id", "")
+        if tevoxi_audio_url:
+            tags["audio_url"] = tevoxi_audio_url
+            tags["tevoxi_job_id"] = tevoxi_job_id
+
+    # Create project
+    async with async_session() as db:
+        project = VideoProject(
+            user_id=user_id,
+            track_id=0,
+            title=theme_text[:100],
+            description=f"Auto-generated realistic video: {theme_text}",
+            tags=tags,
+            style_prompt="",
+            aspect_ratio=aspect_ratio,
+            track_title=theme_text[:100],
+            track_artist="",
+            track_duration=duration,
+            lyrics_text=theme_text,
+            lyrics_words=[],
+            audio_path=engine,
+            enable_subtitles=False,
+            zoom_images=False,
+            no_background_music=not add_music,
+            is_realistic=True,
+        )
+        db.add(project)
+        await db.commit()
+        await db.refresh(project)
+        project_id = project.id
+
+    # Run realistic video pipeline
+    await run_realistic_video_pipeline(project_id)
+
+    # If Tevoxi music is configured, combine audio with video
+    if use_tevoxi and cfg.get("tevoxi_audio_url"):
+        try:
+            await _download_and_combine_tevoxi_audio(project_id, cfg, duration)
+        except Exception as e:
+            logger.warning("Failed to combine Tevoxi audio for project %d: %s", project_id, e)
+
+    return project_id
+
+
+async def _download_and_combine_tevoxi_audio(project_id: int, cfg: dict, clip_duration: float):
+    """Download Tevoxi audio and merge it with the realistic video output."""
+    from app.config import get_settings
+    settings = get_settings()
+
+    tevoxi_audio_url = cfg.get("tevoxi_audio_url", "")
+    if not tevoxi_audio_url:
+        return
+
+    audio_dir = Path(settings.media_dir) / "audio" / f"realistic_{project_id}"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    audio_path = audio_dir / "tevoxi_music.mp3"
+
+    # Download audio
+    token = settings.tevoxi_api_token
+    if not token and settings.tevoxi_jwt_secret:
+        from jose import jwt as jose_jwt
+        import time
+        payload = {
+            "id": settings.tevoxi_jwt_user_id,
+            "email": settings.tevoxi_jwt_email,
+            "role": "admin",
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 3600,
+        }
+        token = jose_jwt.encode(payload, settings.tevoxi_jwt_secret, algorithm="HS256")
+
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    import httpx
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.get(tevoxi_audio_url, headers=headers)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Failed to download Tevoxi audio: HTTP {resp.status_code}")
+        with open(audio_path, "wb") as f:
+            f.write(resp.content)
+
+    # Trim to clip duration
+    trimmed_path = str(audio_dir / "trimmed.mp3")
+    cmd = [
+        "ffmpeg", "-y", "-i", str(audio_path),
+        "-t", str(clip_duration),
+        "-c:a", "libmp3lame", "-q:a", "2", trimmed_path,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+
+    if not Path(trimmed_path).exists():
+        trimmed_path = str(audio_path)  # fallback to full audio
+
+    await _combine_short_audio(project_id, trimmed_path, clip_duration)
 
 
 async def _create_musical_short(

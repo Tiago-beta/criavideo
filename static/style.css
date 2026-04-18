@@ -1268,6 +1268,57 @@ a {
     border: 1px solid #8b5cf644;
 }
 
+/* ── Automation Video Type Grid (matching project wizard) ── */
+.auto-video-type-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+.auto-video-type-grid .video-type-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.4rem;
+    padding: 1.2rem 0.75rem;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-input);
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.auto-video-type-grid .video-type-card:hover {
+    border-color: var(--primary);
+}
+
+.auto-video-type-grid .video-type-card.selected {
+    border-color: var(--primary);
+    background: rgba(99, 102, 241, 0.08);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.auto-video-type-grid .video-type-card .video-type-icon {
+    margin-bottom: 0.25rem;
+    color: var(--text-muted);
+}
+
+.auto-video-type-grid .video-type-card.selected .video-type-icon {
+    color: var(--primary);
+}
+
+.auto-video-type-grid .video-type-card strong {
+    font-size: 1rem;
+}
+
+.auto-video-type-grid .video-type-card small {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.3;
+}
+
 .modal-footer-space {
     display: flex;
     align-items: center;

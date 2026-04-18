@@ -2,7 +2,6 @@
 Automation Router — CRUD for auto-schedules (automated video creation + publishing).
 """
 import logging
-import math
 from datetime import datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -239,7 +238,7 @@ async def create_auto_schedule(
 ):
     if not req.name or not req.name.strip():
         raise HTTPException(status_code=400, detail="Nome da automacao e obrigatorio.")
-    if req.video_type not in ("narration", "music", "musical_shorts"):
+    if req.video_type not in ("narration", "music", "musical_shorts", "realistic"):
         raise HTTPException(status_code=400, detail="Tipo de video invalido.")
     if req.creation_mode not in ("auto", "manual"):
         raise HTTPException(status_code=400, detail="Modo de criacao invalido.")
@@ -251,26 +250,6 @@ async def create_auto_schedule(
         acct = await db.get(SocialAccount, req.social_account_id)
         if not acct or acct.user_id != user["id"]:
             raise HTTPException(status_code=400, detail="Conta social nao encontrada.")
-
-    # For musical_shorts: auto-generate themes from song segments
-    if req.video_type == "musical_shorts":
-        ds = req.default_settings or {}
-        shorts_count = max(1, min(12, int(ds.get("shorts_count", 1))))
-        song_title = ds.get("tevoxi_title", "Short Musical")
-        song_duration = float(ds.get("tevoxi_duration", 120))
-        segment_duration = 10.0
-        # Distribute segments evenly across the song
-        total_needed = shorts_count * segment_duration
-        if total_needed > song_duration:
-            segment_duration = math.floor(song_duration / shorts_count * 10) / 10
-            segment_duration = max(5, segment_duration)  # min 5s
-        step = song_duration / shorts_count if shorts_count > 1 else 0
-        req.themes = []
-        for i in range(shorts_count):
-            start = round(i * step, 1)
-            req.themes.append(f"Short {i+1} — {song_title}")
-        # Force settings
-        req.creation_mode = "auto"
 
     schedule = AutoSchedule(
         user_id=user["id"],
@@ -290,40 +269,17 @@ async def create_auto_schedule(
     await db.flush()
 
     # Add initial themes
-    if req.video_type == "musical_shorts":
-        ds = req.default_settings or {}
-        shorts_count = max(1, min(12, int(ds.get("shorts_count", 1))))
-        song_duration = float(ds.get("tevoxi_duration", 120))
-        step = song_duration / shorts_count if shorts_count > 1 else 0
-        segment_duration = min(10.0, song_duration / shorts_count) if shorts_count > 0 else 10.0
-        segment_duration = max(5, segment_duration)
-
-        for i, theme_text in enumerate(req.themes):
-            start = round(i * step, 1)
-            theme = AutoScheduleTheme(
-                auto_schedule_id=schedule.id,
-                theme=theme_text.strip(),
-                position=i,
-                status="pending",
-                custom_settings={
-                    "clip_start": start,
-                    "clip_duration": round(min(segment_duration, song_duration - start), 1),
-                    "segment_index": i,
-                },
-            )
-            db.add(theme)
-    else:
-        for i, theme_text in enumerate(req.themes):
-            theme_text = (theme_text or "").strip()
-            if not theme_text:
-                continue
-            theme = AutoScheduleTheme(
-                auto_schedule_id=schedule.id,
-                theme=theme_text,
-                position=i,
-                status="pending",
-            )
-            db.add(theme)
+    for i, theme_text in enumerate(req.themes):
+        theme_text = (theme_text or "").strip()
+        if not theme_text:
+            continue
+        theme = AutoScheduleTheme(
+            auto_schedule_id=schedule.id,
+            theme=theme_text,
+            position=i,
+            status="pending",
+        )
+        db.add(theme)
 
     await db.commit()
     await db.refresh(schedule, ["themes", "social_account"])

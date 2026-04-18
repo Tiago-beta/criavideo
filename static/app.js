@@ -4147,14 +4147,10 @@ async function loadAutoSchedules() {
 }
 
 function renderAutoCard(s) {
-    const typeBadge = s.video_type === "musical_shorts"
-        ? '<span class="badge badge-shorts">Shorts</span>'
-        : s.video_type === "music"
-        ? '<span class="badge badge-processing">Musical</span>'
-        : '<span class="badge badge-completed">Narrado</span>';
-    const modeBadge = s.video_type === "musical_shorts"
-        ? '<span class="badge badge-queued">Realista</span>'
-        : s.creation_mode === "manual"
+    const typeBadge = s.video_type === "realistic" || s.video_type === "musical_shorts"
+        ? '<span class="badge badge-shorts">Realista</span>'
+        : '<span class="badge badge-completed">Imagens IA</span>';
+    const modeBadge = s.creation_mode === "manual"
         ? '<span class="badge">Manual</span>'
         : '<span class="badge badge-queued">Auto</span>';
     const statusBadge = s.is_active
@@ -4195,7 +4191,7 @@ function renderAutoCard(s) {
         ? `Semanal (${["Seg","Ter","Qua","Qui","Sex","Sab","Dom"][s.day_of_week || 0]})`
         : "Diario";
 
-    const addThemeHtml = s.video_type === "musical_shorts" ? "" : `
+    const addThemeHtml = `
             <div class="auto-theme-add" style="margin-top:0.5rem">
                 <input type="text" class="input" placeholder="Novo tema..." id="add-theme-input-${s.id}" maxlength="200">
                 <button class="btn btn-primary btn-sm" type="button" onclick="addAutoThemeToSchedule(${s.id})">+</button>
@@ -4212,7 +4208,7 @@ function renderAutoCard(s) {
             <span>${pendingCount} pendentes / ${doneCount} feitos</span>
         </div>
         <div class="auto-card-detail">
-            <strong>${s.video_type === "musical_shorts" ? "Shorts:" : "Temas:"}</strong>
+            <strong>Temas:</strong>
             <ul class="auto-theme-list">${themeListHtml || "<li class='loading'>Sem temas</li>"}</ul>
             ${addThemeHtml}
         </div>
@@ -4284,19 +4280,39 @@ function openNewAutomationModal() {
     _autoSelectedSong = null;
     _autoShortsCount = 3;
 
-    // reset selections
+    // reset video type selection (use video-type-card class from new grid)
+    document.querySelectorAll("#modal-new-automation .auto-video-type-grid .video-type-card").forEach(c => c.classList.remove("selected"));
+    const imgCard = document.querySelector('#modal-new-automation [data-video-type="imagens_ia"]');
+    if (imgCard) imgCard.classList.add("selected");
+
+    // reset creation mode
     document.querySelectorAll("#modal-new-automation .auto-type-card").forEach(c => c.classList.remove("active"));
-    const narrationBtn = document.querySelector('#modal-new-automation [data-video-type="narration"]');
-    if (narrationBtn) narrationBtn.classList.add("active");
     const autoBtn = document.querySelector('#modal-new-automation [data-creation-mode="auto"]');
     if (autoBtn) autoBtn.classList.add("active");
 
     const manual = document.getElementById("auto-manual-settings");
     if (manual) manual.hidden = true;
-    const musicPanel = document.getElementById("auto-music-settings");
-    if (musicPanel) musicPanel.hidden = true;
-    const songPanel = document.getElementById("auto-song-selection");
-    if (songPanel) songPanel.hidden = true;
+    const realisticPanel = document.getElementById("auto-realistic-settings");
+    if (realisticPanel) realisticPanel.hidden = true;
+    const tevoxiPanel = document.getElementById("auto-tevoxi-panel");
+    if (tevoxiPanel) tevoxiPanel.hidden = true;
+    const tevoxiCb = document.getElementById("auto-realistic-tevoxi");
+    if (tevoxiCb) tevoxiCb.checked = false;
+
+    // reset realistic style tags
+    document.querySelectorAll("#auto-realistic-style-tags .style-tag").forEach(t => t.classList.remove("selected"));
+    const defStyle = document.querySelector('#auto-realistic-style-tags [data-style="cinematic"]');
+    if (defStyle) defStyle.classList.add("selected");
+
+    // reset engine selection
+    document.querySelectorAll("#auto-realistic-engine .engine-option").forEach(e => e.classList.remove("selected"));
+    const defEngine = document.querySelector('#auto-realistic-engine [data-value="minimax"]');
+    if (defEngine) defEngine.classList.add("selected");
+
+    // reset duration selection
+    document.querySelectorAll("#auto-realistic-duration .duration-option").forEach(d => d.classList.remove("selected"));
+    const defDur = document.querySelector('#auto-realistic-duration [data-value="7"]');
+    if (defDur) defDur.classList.add("selected");
 
     document.getElementById("auto-theme-list").innerHTML = "";
     const themeInput = document.getElementById("auto-theme-input");
@@ -4321,19 +4337,10 @@ function openNewAutomationModal() {
 
 function showAutoStep(step) {
     _autoWizardStep = step;
-    const isShorts = getSelectedAutoVideoType() === "music";
-    const totalSteps = isShorts ? 3 : 4;
-
-    // Map logical step to data-auto-step attribute
-    let dataStep = step;
-    if (isShorts) {
-        // Shorts flow: 1 → type, 2 → song selection (step 5), 3 → schedule (step 4)
-        if (step === 2) dataStep = 5;
-        else if (step === 3) dataStep = 4;
-    }
+    const totalSteps = 4; // Always 4 steps: type → mode → themes → schedule
 
     document.querySelectorAll("#modal-new-automation .auto-step").forEach(el => {
-        el.classList.toggle("active", parseInt(el.dataset.autoStep) === dataStep);
+        el.classList.toggle("active", parseInt(el.dataset.autoStep) === step);
     });
 
     // Update dots dynamically
@@ -4357,22 +4364,10 @@ function showAutoStep(step) {
 }
 
 function autoStepNext() {
-    const isShorts = getSelectedAutoVideoType() === "music";
-    const totalSteps = isShorts ? 3 : 4;
+    const totalSteps = 4;
 
-    // Validation for shorts flow step 2 (song selection)
-    if (isShorts && _autoWizardStep === 1) {
-        // Moving from type to song selection — load songs
-        _loadTevoxiSongsIfNeeded();
-    }
-
-    if (isShorts && _autoWizardStep === 2 && !_autoSelectedSong) {
-        alert("Selecione uma musica do Tevoxi.");
-        return;
-    }
-
-    // Validation for narration flow step 3 (themes)
-    if (!isShorts && _autoWizardStep === 3 && _autoWizardThemes.length === 0) {
+    // Validation for step 3 (themes)
+    if (_autoWizardStep === 3 && _autoWizardThemes.length === 0) {
         alert("Digite o tema e aperte no botão + para adicionar.");
         const addBtn = document.getElementById("auto-add-theme-btn");
         if (addBtn) { addBtn.classList.add("btn-error-pulse"); setTimeout(() => addBtn.classList.remove("btn-error-pulse"), 2000); }
@@ -4385,7 +4380,55 @@ function autoStepBack() {
     if (_autoWizardStep > 1) showAutoStep(_autoWizardStep - 1);
 }
 
-/* ── Tevoxi Song Selection (Musical Shorts) ── */
+// Event delegation for realistic settings in automation modal
+document.addEventListener("DOMContentLoaded", () => {
+    const autoModal = document.getElementById("modal-new-automation");
+    if (!autoModal) return;
+    autoModal.addEventListener("click", (e) => {
+        // Style tag click
+        const tag = e.target.closest("#auto-realistic-style-tags .style-tag");
+        if (tag) {
+            document.querySelectorAll("#auto-realistic-style-tags .style-tag").forEach(t => t.classList.remove("selected"));
+            tag.classList.add("selected");
+        }
+        // Engine option click
+        const eng = e.target.closest("#auto-realistic-engine .engine-option");
+        if (eng) {
+            document.querySelectorAll("#auto-realistic-engine .engine-option").forEach(o => o.classList.remove("selected"));
+            eng.classList.add("selected");
+            // Show/hide grok-only durations
+            const isGrok = eng.dataset.value === "grok";
+            document.querySelectorAll("#auto-realistic-duration .grok-only").forEach(btn => { btn.hidden = !isGrok; });
+            if (!isGrok) {
+                document.querySelectorAll("#auto-realistic-duration .duration-option.grok-only.selected").forEach(btn => {
+                    btn.classList.remove("selected");
+                    const def = document.querySelector('#auto-realistic-duration [data-value="7"]');
+                    if (def) def.classList.add("selected");
+                });
+            }
+        }
+        // Duration option click
+        const dur = e.target.closest("#auto-realistic-duration .duration-option");
+        if (dur) {
+            document.querySelectorAll("#auto-realistic-duration .duration-option").forEach(o => o.classList.remove("selected"));
+            dur.classList.add("selected");
+        }
+    });
+});
+
+/* ── Tevoxi Song Selection (for Realistic + Tevoxi music) ── */
+
+function toggleAutoTevoxiSongs() {
+    const checked = document.getElementById("auto-realistic-tevoxi")?.checked;
+    const panel = document.getElementById("auto-tevoxi-panel");
+    if (panel) panel.hidden = !checked;
+    if (checked) _loadTevoxiSongsIfNeeded();
+    // When Tevoxi is checked, uncheck generic music
+    if (checked) {
+        const musicCb = document.getElementById("auto-realistic-music");
+        if (musicCb) musicCb.checked = false;
+    }
+}
 
 async function _loadTevoxiSongsIfNeeded() {
     const list = document.getElementById("auto-song-list");
@@ -4433,33 +4476,11 @@ function _formatDuration(seconds) {
 function selectTevoxiSong(index) {
     _autoSelectedSong = _autoTevoxiSongs[index] || null;
     _renderTevoxiSongs();
-    // Update max shorts based on song duration
-    const maxShorts = _autoSelectedSong ? Math.min(12, Math.floor(_autoSelectedSong.duration / 5)) : 12;
-    const countEl = document.getElementById("auto-shorts-count");
-    if (countEl) {
-        countEl.max = maxShorts;
-        if (parseInt(countEl.value) > maxShorts) countEl.value = maxShorts;
-    }
-    updateShortsCountLabel();
-}
-
-function updateShortsCount(val) {
-    _autoShortsCount = Math.max(1, Math.min(12, parseInt(val) || 3));
-    const countEl = document.getElementById("auto-shorts-count");
-    if (countEl) countEl.value = _autoShortsCount;
-    updateShortsCountLabel();
-}
-
-function updateShortsCountLabel() {
-    const label = document.getElementById("auto-shorts-label");
-    if (!label) return;
-    const total = _autoShortsCount * 10;
-    label.textContent = `${_autoShortsCount} short${_autoShortsCount > 1 ? 's' : ''} (${total}s total)`;
 }
 
 function selectAutoVideoType(type) {
-    document.querySelectorAll('#modal-new-automation [data-auto-step="1"] .auto-type-card').forEach(c => {
-        c.classList.toggle("active", c.dataset.videoType === type);
+    document.querySelectorAll('#modal-new-automation .auto-video-type-grid .video-type-card').forEach(c => {
+        c.classList.toggle("selected", c.dataset.videoType === type);
     });
     // update manual settings visibility based on current mode
     updateAutoManualPanels();
@@ -4476,15 +4497,9 @@ function updateAutoManualPanels() {
     const videoType = getSelectedAutoVideoType();
     const mode = getSelectedAutoCreationMode();
     const narrationPanel = document.getElementById("auto-manual-settings");
-    const musicPanel = document.getElementById("auto-music-settings");
-    if (narrationPanel) narrationPanel.hidden = !(mode === "manual" && videoType === "narration");
-    if (musicPanel) musicPanel.hidden = !(mode === "manual" && videoType === "music");
-    // hide vocalist when instrumental
-    const vocalistGroup = document.getElementById("auto-music-vocalist-group");
-    if (vocalistGroup) {
-        const musicMode = document.getElementById("auto-music-mode")?.value;
-        vocalistGroup.hidden = musicMode === "instrumental";
-    }
+    const realisticPanel = document.getElementById("auto-realistic-settings");
+    if (narrationPanel) narrationPanel.hidden = !(mode === "manual" && videoType === "imagens_ia");
+    if (realisticPanel) realisticPanel.hidden = !(mode === "manual" && videoType === "realista");
 }
 
 function toggleAutoMusicLyrics() {
@@ -4496,8 +4511,8 @@ function toggleAutoMusicLyrics() {
 }
 
 function getSelectedAutoVideoType() {
-    const activeCard = document.querySelector('#modal-new-automation [data-auto-step="1"] .auto-type-card.active');
-    return activeCard ? activeCard.dataset.videoType : "narration";
+    const activeCard = document.querySelector('#modal-new-automation .auto-video-type-grid .video-type-card.selected');
+    return activeCard ? activeCard.dataset.videoType : "imagens_ia";
 }
 
 function getSelectedAutoCreationMode() {
@@ -4560,19 +4575,12 @@ async function createAutoSchedule() {
     }
 
     const videoType = getSelectedAutoVideoType();
-    const isShorts = videoType === "music";
 
-    if (!isShorts && _autoWizardThemes.length === 0) {
+    if (_autoWizardThemes.length === 0) {
         alert("Digite o tema e aperte no botão + para adicionar.");
         showAutoStep(3);
         const addBtn = document.getElementById("auto-add-theme-btn");
         if (addBtn) { addBtn.classList.add("btn-error-pulse"); setTimeout(() => addBtn.classList.remove("btn-error-pulse"), 2000); }
-        return;
-    }
-
-    if (isShorts && !_autoSelectedSong) {
-        alert("Selecione uma musica do Tevoxi.");
-        showAutoStep(2);
         return;
     }
 
@@ -4582,7 +4590,7 @@ async function createAutoSchedule() {
         return;
     }
 
-    const creationMode = isShorts ? "auto" : getSelectedAutoCreationMode();
+    const creationMode = getSelectedAutoCreationMode();
     const platform = document.getElementById("auto-platform")?.value || "youtube";
     const frequency = document.getElementById("auto-frequency")?.value || "daily";
     const timeUtc = document.getElementById("auto-time")?.value || "14:00";
@@ -4590,23 +4598,10 @@ async function createAutoSchedule() {
     const dayOfWeek = frequency === "weekly" ? parseInt(document.getElementById("auto-dow")?.value || "0", 10) : null;
 
     let defaultSettings = null;
-    let finalVideoType = videoType;
+    let finalVideoType = videoType === "imagens_ia" ? "narration" : "realistic";
     let themes = _autoWizardThemes;
 
-    if (isShorts) {
-        finalVideoType = "musical_shorts";
-        const song = _autoSelectedSong;
-        const count = parseInt(document.getElementById("auto-shorts-count")?.value || "3", 10);
-        defaultSettings = {
-            tevoxi_job_id: song.job_id,
-            tevoxi_title: song.title,
-            tevoxi_audio_url: song.audio_url,
-            tevoxi_duration: song.duration || 120,
-            tevoxi_lyrics: (song.lyrics || "").substring(0, 1000),
-            shorts_count: Math.max(1, Math.min(12, count)),
-        };
-        themes = []; // auto-generated by backend
-    } else if (creationMode === "manual" && videoType === "narration") {
+    if (videoType === "imagens_ia" && creationMode === "manual") {
         defaultSettings = {
             tone: document.getElementById("auto-tone")?.value || "informativo",
             voice: document.getElementById("auto-voice")?.value || "onyx",
@@ -4614,19 +4609,29 @@ async function createAutoSchedule() {
             duration: parseInt(document.getElementById("auto-duration")?.value || "120", 10),
             aspect_ratio: document.getElementById("auto-aspect")?.value || "16:9",
         };
-    } else if (creationMode === "manual" && videoType === "music") {
-        const musicMode = document.getElementById("auto-music-mode")?.value || "generate";
+    } else if (videoType === "realista") {
+        // Collect realistic settings
+        const selectedStyle = document.querySelector("#auto-realistic-style-tags .style-tag.selected");
+        const selectedEngine = document.querySelector("#auto-realistic-engine .engine-option.selected");
+        const selectedDur = document.querySelector("#auto-realistic-duration .duration-option.selected");
+        const useTevoxi = document.getElementById("auto-realistic-tevoxi")?.checked || false;
+        const useMusic = document.getElementById("auto-realistic-music")?.checked || false;
+
         defaultSettings = {
-            music_mode: musicMode,
-            music_mood: document.getElementById("auto-music-mood")?.value || "alegre",
-            music_genre: document.getElementById("auto-music-genre")?.value || "gospel",
-            music_vocalist: musicMode === "instrumental" ? "" : (document.getElementById("auto-music-vocalist")?.value || "female"),
-            music_duration: parseInt(document.getElementById("auto-music-duration")?.value || "0", 10) || null,
-            music_language: document.getElementById("auto-music-language")?.value || "pt-BR",
-            music_lyrics: musicMode === "lyrics" ? (document.getElementById("auto-music-lyrics")?.value || "") : "",
-            style: document.getElementById("auto-music-style")?.value || "cinematic, vibrant colors, dynamic lighting",
-            aspect_ratio: document.getElementById("auto-music-aspect")?.value || "16:9",
+            realistic_style: selectedStyle ? selectedStyle.dataset.style : "cinematic",
+            engine: selectedEngine ? selectedEngine.dataset.value : "minimax",
+            duration: selectedDur ? parseInt(selectedDur.dataset.value) : 7,
+            aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",
+            add_music: useMusic && !useTevoxi,
+            use_tevoxi: useTevoxi,
         };
+
+        if (useTevoxi && _autoSelectedSong) {
+            defaultSettings.tevoxi_job_id = _autoSelectedSong.job_id;
+            defaultSettings.tevoxi_title = _autoSelectedSong.title;
+            defaultSettings.tevoxi_audio_url = _autoSelectedSong.audio_url;
+            defaultSettings.tevoxi_duration = _autoSelectedSong.duration || 120;
+        }
     }
 
     const btn = document.getElementById("auto-btn-create");
