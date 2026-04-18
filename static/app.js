@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v119 loaded");
+console.log("[CriaVideo] app.js v120 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -704,6 +704,8 @@ function loadPageData(page) {
         setPublishTab(page === "publish" ? "publish" : page);
     } else if (page === "automate") {
         loadAutoSchedules();
+    } else if (page === "editor") {
+        loadEditorVideosList();
     }
 }
 
@@ -5679,5 +5681,918 @@ document.getElementById("sidebar-credits")?.addEventListener("click", () => {
 
 window.selectCreditPackage = selectCreditPackage;
 window.purchaseCredits = purchaseCredits;
+
+/* ══════════════════════════════════════════════════════════════
+   VIDEO EDITOR ENGINE
+   ══════════════════════════════════════════════════════════════ */
+const _editor = {
+    projectId: 0,
+    videoUrl: "",
+    duration: 0,
+    playing: false,
+    activeTool: "text",
+    // Edit state
+    texts: [],          // {id, content, startTime, endTime, x, y, fontSize, color, fontFamily, bold, italic}
+    subtitles: [],      // {id, text, startTime, endTime, style}
+    trimStart: 0,
+    trimEnd: 0,
+    musicUrl: "",
+    musicVolume: 80,
+    originalVolume: 100,
+    filter: "none",
+    stickers: [],       // {id, emoji, x, y, startTime, endTime, size}
+    quality: "original",
+    // Undo/redo
+    undoStack: [],
+    redoStack: [],
+    _nextId: 1,
+};
+
+function _editorGenId() { return _editor._nextId++; }
+
+function _editorSaveState() {
+    const snap = JSON.stringify({
+        texts: _editor.texts,
+        subtitles: _editor.subtitles,
+        trimStart: _editor.trimStart,
+        trimEnd: _editor.trimEnd,
+        musicUrl: _editor.musicUrl,
+        musicVolume: _editor.musicVolume,
+        originalVolume: _editor.originalVolume,
+        filter: _editor.filter,
+        stickers: _editor.stickers,
+        quality: _editor.quality,
+    });
+    _editor.undoStack.push(snap);
+    _editor.redoStack = [];
+    if (_editor.undoStack.length > 50) _editor.undoStack.shift();
+    _updateUndoRedoBtns();
+}
+
+function _editorUndo() {
+    if (!_editor.undoStack.length) return;
+    const current = JSON.stringify({
+        texts: _editor.texts, subtitles: _editor.subtitles, trimStart: _editor.trimStart,
+        trimEnd: _editor.trimEnd, musicUrl: _editor.musicUrl, musicVolume: _editor.musicVolume,
+        originalVolume: _editor.originalVolume, filter: _editor.filter, stickers: _editor.stickers, quality: _editor.quality,
+    });
+    _editor.redoStack.push(current);
+    const snap = JSON.parse(_editor.undoStack.pop());
+    Object.assign(_editor, snap);
+    _updateUndoRedoBtns();
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+
+function _editorRedo() {
+    if (!_editor.redoStack.length) return;
+    const current = JSON.stringify({
+        texts: _editor.texts, subtitles: _editor.subtitles, trimStart: _editor.trimStart,
+        trimEnd: _editor.trimEnd, musicUrl: _editor.musicUrl, musicVolume: _editor.musicVolume,
+        originalVolume: _editor.originalVolume, filter: _editor.filter, stickers: _editor.stickers, quality: _editor.quality,
+    });
+    _editor.undoStack.push(current);
+    const snap = JSON.parse(_editor.redoStack.pop());
+    Object.assign(_editor, snap);
+    _updateUndoRedoBtns();
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+
+function _updateUndoRedoBtns() {
+    const undo = document.getElementById("editor-undo-btn");
+    const redo = document.getElementById("editor-redo-btn");
+    if (undo) undo.disabled = !_editor.undoStack.length;
+    if (redo) redo.disabled = !_editor.redoStack.length;
+}
+
+// ---------- Load completed videos for selection ----------
+async function loadEditorVideosList() {
+    const container = document.getElementById("editor-videos-list");
+    if (!container) return;
+    try {
+        const data = await api("/video/projects");
+        const completed = data.filter(p => p.status === "completed" && !p.video_expired);
+        if (!completed.length) {
+            container.innerHTML = "<p class='loading'>Nenhum video finalizado para editar. Crie um video primeiro na aba Criar.</p>";
+            return;
+        }
+        container.innerHTML = completed.map(p => {
+            const thumb = p.thumbnail_url
+                ? `<div style="position:relative"><img class="card-thumb" src="${p.thumbnail_url}" alt="" loading="lazy"><div class="editor-video-card-overlay"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></div></div>`
+                : `<div class="card-thumb card-thumb-placeholder" style="position:relative"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg><div class="editor-video-card-overlay"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></div></div>`;
+            return `<div class="card" style="cursor:pointer" onclick="openEditor(${p.id})">
+                ${thumb}
+                <div class="card-body"><h4 class="card-title">${esc(p.title)}</h4></div>
+            </div>`;
+        }).join("");
+    } catch (err) {
+        container.innerHTML = `<p class='loading'>Erro: ${esc(err.message)}</p>`;
+    }
+}
+
+// ---------- Open editor for a project ----------
+async function openEditor(projectId) {
+    try {
+        const detail = await api(`/video/projects/${projectId}`);
+        const render = (detail.renders || []).find(r => r.video_url);
+        if (!render || !render.video_url) {
+            showToast("Este video nao tem arquivo disponivel.", "error");
+            return;
+        }
+        // Reset editor state
+        _editor.projectId = projectId;
+        _editor.videoUrl = render.video_url;
+        _editor.playing = false;
+        _editor.activeTool = "text";
+        _editor.texts = [];
+        _editor.subtitles = [];
+        _editor.trimStart = 0;
+        _editor.trimEnd = 0;
+        _editor.musicUrl = "";
+        _editor.musicVolume = 80;
+        _editor.originalVolume = 100;
+        _editor.filter = "none";
+        _editor.stickers = [];
+        _editor.quality = "original";
+        _editor.undoStack = [];
+        _editor.redoStack = [];
+        _editor._nextId = 1;
+
+        document.getElementById("editor-select-view").hidden = true;
+        document.getElementById("editor-workspace").hidden = false;
+        document.getElementById("editor-project-name").textContent = detail.title || "Projeto";
+
+        const video = document.getElementById("editor-video");
+        video.src = _editor.videoUrl;
+        video.load();
+        video.onloadedmetadata = () => {
+            _editor.duration = video.duration;
+            _editor.trimEnd = video.duration;
+            document.getElementById("editor-time-total").textContent = _fmtTime(video.duration);
+            _editorRenderTimeline();
+            _editorSelectTool("text");
+        };
+        _updateUndoRedoBtns();
+    } catch (err) {
+        showToast("Erro ao abrir editor: " + err.message, "error");
+    }
+}
+window.openEditor = openEditor;
+
+// ---------- Close editor ----------
+function closeEditor() {
+    document.getElementById("editor-select-view").hidden = false;
+    document.getElementById("editor-workspace").hidden = true;
+    const video = document.getElementById("editor-video");
+    video.pause();
+    video.removeAttribute("src");
+    _editor.playing = false;
+}
+
+// ---------- Format time ----------
+function _fmtTime(sec) {
+    if (!sec || isNaN(sec)) return "00:00";
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+}
+
+// ---------- Play/Pause ----------
+function _editorTogglePlay() {
+    const video = document.getElementById("editor-video");
+    if (!video.src) return;
+    if (video.paused) {
+        if (_editor.trimStart > 0 && video.currentTime < _editor.trimStart) {
+            video.currentTime = _editor.trimStart;
+        }
+        video.play();
+        _editor.playing = true;
+    } else {
+        video.pause();
+        _editor.playing = false;
+    }
+    _updatePlayIcon();
+}
+
+function _updatePlayIcon() {
+    const icon = document.getElementById("editor-play-icon");
+    if (_editor.playing) {
+        icon.innerHTML = '<rect x="6" y="4" width="4" height="16" fill="currentColor"/><rect x="14" y="4" width="4" height="16" fill="currentColor"/>';
+    } else {
+        icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
+    }
+}
+
+// ---------- Time update ----------
+function _editorTimeUpdate() {
+    const video = document.getElementById("editor-video");
+    const t = video.currentTime;
+    document.getElementById("editor-time-current").textContent = _fmtTime(t);
+    // Enforce trim boundaries
+    if (_editor.trimEnd > 0 && t >= _editor.trimEnd) {
+        video.pause();
+        _editor.playing = false;
+        _updatePlayIcon();
+    }
+    // Move playhead
+    _editorMovePlayhead(t);
+    // Draw overlays
+    _editorDrawOverlays(t);
+}
+
+function _editorMovePlayhead(t) {
+    const playhead = document.getElementById("editor-timeline-playhead");
+    if (!playhead || !_editor.duration) return;
+    const trackWidth = document.getElementById("editor-track-video")?.offsetWidth || 600;
+    const pct = t / _editor.duration;
+    playhead.style.left = (80 + pct * trackWidth) + "px";
+}
+
+// ---------- Draw canvas overlays (texts, stickers, subtitles) ----------
+function _editorDrawOverlays(t) {
+    const canvas = document.getElementById("editor-overlay-canvas");
+    const wrapper = document.getElementById("editor-canvas-wrapper");
+    if (!canvas || !wrapper) return;
+    canvas.width = wrapper.offsetWidth;
+    canvas.height = wrapper.offsetHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Apply filter to video element
+    const video = document.getElementById("editor-video");
+    video.style.filter = _getCSSFilter(_editor.filter);
+
+    // Draw texts
+    for (const txt of _editor.texts) {
+        if (t >= txt.startTime && t <= txt.endTime) {
+            const fs = txt.fontSize * (canvas.height / 720);
+            let fontStr = "";
+            if (txt.italic) fontStr += "italic ";
+            if (txt.bold) fontStr += "bold ";
+            fontStr += fs + "px " + (txt.fontFamily || "Manrope, sans-serif");
+            ctx.font = fontStr;
+            ctx.fillStyle = txt.color || "#ffffff";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            // Shadow for readability
+            ctx.shadowColor = "rgba(0,0,0,0.7)";
+            ctx.shadowBlur = 4;
+            ctx.shadowOffsetX = 1;
+            ctx.shadowOffsetY = 1;
+            const x = (txt.x / 100) * canvas.width;
+            const y = (txt.y / 100) * canvas.height;
+            ctx.fillText(txt.content, x, y);
+            ctx.shadowColor = "transparent";
+        }
+    }
+
+    // Draw subtitles
+    for (const sub of _editor.subtitles) {
+        if (t >= sub.startTime && t <= sub.endTime) {
+            const fs = 20 * (canvas.height / 720);
+            ctx.font = "bold " + fs + "px Manrope, sans-serif";
+            ctx.fillStyle = "#ffffff";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "bottom";
+            ctx.shadowColor = "rgba(0,0,0,0.8)";
+            ctx.shadowBlur = 6;
+            ctx.shadowOffsetX = 1;
+            ctx.shadowOffsetY = 1;
+            // Background bar
+            const textW = ctx.measureText(sub.text).width;
+            const bgX = canvas.width / 2 - textW / 2 - 8;
+            const bgY = canvas.height - 50 - fs;
+            ctx.fillStyle = "rgba(0,0,0,0.6)";
+            ctx.fillRect(bgX, bgY, textW + 16, fs + 8);
+            ctx.fillStyle = sub.style === "highlight" ? "#facc15" : "#ffffff";
+            ctx.fillText(sub.text, canvas.width / 2, canvas.height - 48);
+            ctx.shadowColor = "transparent";
+        }
+    }
+
+    // Draw stickers
+    for (const st of _editor.stickers) {
+        if (t >= st.startTime && t <= st.endTime) {
+            const size = (st.size || 48) * (canvas.height / 720);
+            const x = (st.x / 100) * canvas.width;
+            const y = (st.y / 100) * canvas.height;
+            ctx.font = size + "px serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(st.emoji, x, y);
+        }
+    }
+}
+
+function _getCSSFilter(name) {
+    const filters = {
+        none: "none",
+        grayscale: "grayscale(1)",
+        sepia: "sepia(0.8)",
+        warm: "saturate(1.3) brightness(1.05) hue-rotate(-10deg)",
+        cool: "saturate(0.9) brightness(1.05) hue-rotate(15deg)",
+        vintage: "sepia(0.4) contrast(1.1) brightness(0.95)",
+        vivid: "saturate(1.6) contrast(1.1)",
+        dramatic: "contrast(1.4) brightness(0.9) saturate(0.8)",
+        fade: "brightness(1.1) saturate(0.7) contrast(0.9)",
+        noir: "grayscale(1) contrast(1.3) brightness(0.85)",
+        cinematic: "contrast(1.15) saturate(1.1) brightness(0.95) sepia(0.1)",
+        retro: "sepia(0.5) hue-rotate(-15deg) saturate(1.2)",
+    };
+    return filters[name] || "none";
+}
+
+// ---------- Tool selection ----------
+function _editorSelectTool(toolName) {
+    _editor.activeTool = toolName;
+    document.querySelectorAll(".editor-tool-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.tool === toolName);
+    });
+    _editorRenderProps();
+    // On mobile, toggle props panel
+    const pp = document.getElementById("editor-props-panel");
+    if (window.innerWidth <= 768) {
+        pp.classList.toggle("open", true);
+    }
+}
+
+// ---------- Render properties panel based on tool ----------
+function _editorRenderProps() {
+    const container = document.getElementById("editor-props-content");
+    if (!container) return;
+    const tool = _editor.activeTool;
+
+    if (tool === "text") {
+        container.innerHTML = `
+            <div class="editor-props-title">Textos</div>
+            <button class="editor-add-btn" onclick="_editorAddText()">+ Adicionar texto</button>
+            <div id="editor-text-list" class="editor-props-group">
+                ${_editor.texts.map(t => `
+                    <div class="editor-subtitle-item${t._selected ? ' active' : ''}" onclick="_editorSelectText(${t.id})">
+                        <span class="sub-time">${_fmtTime(t.startTime)}-${_fmtTime(t.endTime)}</span>
+                        <span class="sub-text">${esc(t.content)}</span>
+                        <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteText(${t.id})">✕</button>
+                    </div>
+                `).join("")}
+            </div>
+            ${_editorTextEditForm()}
+        `;
+    } else if (tool === "subtitles") {
+        container.innerHTML = `
+            <div class="editor-props-title">Legendas</div>
+            <button class="editor-add-btn" onclick="_editorAddSubtitle()">+ Adicionar legenda</button>
+            <div class="editor-props-group" id="editor-subtitle-list">
+                ${_editor.subtitles.map(s => `
+                    <div class="editor-subtitle-item${s._selected ? ' active' : ''}" onclick="_editorSelectSubtitle(${s.id})">
+                        <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
+                        <span class="sub-text">${esc(s.text)}</span>
+                        <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">✕</button>
+                    </div>
+                `).join("")}
+            </div>
+            ${_editorSubtitleEditForm()}
+        `;
+    } else if (tool === "trim") {
+        container.innerHTML = `
+            <div class="editor-props-title">Cortar video</div>
+            <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Ajuste o inicio e fim do video.</p>
+            <div class="editor-trim-range">
+                <label>Inicio: <strong id="trim-start-label">${_fmtTime(_editor.trimStart)}</strong></label>
+                <input type="range" min="0" max="${_editor.duration}" step="0.1" value="${_editor.trimStart}" oninput="_editorSetTrimStart(this.value)">
+                <label>Fim: <strong id="trim-end-label">${_fmtTime(_editor.trimEnd)}</strong></label>
+                <input type="range" min="0" max="${_editor.duration}" step="0.1" value="${_editor.trimEnd}" oninput="_editorSetTrimEnd(this.value)">
+                <div class="editor-trim-values">
+                    <span>Duracao: ${_fmtTime((_editor.trimEnd || _editor.duration) - _editor.trimStart)}</span>
+                </div>
+            </div>
+        `;
+    } else if (tool === "music") {
+        container.innerHTML = `
+            <div class="editor-props-title">Musica & Audio</div>
+            <div class="editor-props-group">
+                <label>Volume do video original</label>
+                <div class="editor-volume-row">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/></svg>
+                    <input type="range" min="0" max="100" value="${_editor.originalVolume}" oninput="_editorSetOriginalVolume(this.value)">
+                    <span id="editor-orig-vol-label">${_editor.originalVolume}%</span>
+                </div>
+            </div>
+            <div class="editor-props-group" style="margin-top:12px">
+                <label>Adicionar musica de fundo</label>
+                <button class="editor-add-btn" onclick="document.getElementById('editor-music-upload').click()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    Enviar arquivo de audio
+                </button>
+                <input type="file" id="editor-music-upload" accept="audio/*" hidden onchange="_editorUploadMusic(this)">
+                ${_editor.musicUrl ? `
+                    <div class="editor-music-current">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                        <div class="editor-music-info">Musica adicionada<small>Arquivo carregado</small></div>
+                        <button class="sub-delete" onclick="_editorRemoveMusic()">✕</button>
+                    </div>
+                    <label>Volume da musica</label>
+                    <div class="editor-volume-row">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                        <input type="range" min="0" max="100" value="${_editor.musicVolume}" oninput="_editorSetMusicVolume(this.value)">
+                        <span id="editor-music-vol-label">${_editor.musicVolume}%</span>
+                    </div>
+                ` : ""}
+            </div>
+        `;
+    } else if (tool === "filters") {
+        const filterNames = ["none","grayscale","sepia","warm","cool","vintage","vivid","dramatic","fade","noir","cinematic","retro"];
+        const filterLabels = {"none":"Original","grayscale":"P&B","sepia":"Sepia","warm":"Quente","cool":"Frio","vintage":"Vintage","vivid":"Vivido","dramatic":"Dramatico","fade":"Desbotado","noir":"Noir","cinematic":"Cinema","retro":"Retro"};
+        container.innerHTML = `
+            <div class="editor-props-title">Filtros</div>
+            <div class="editor-filter-grid">
+                ${filterNames.map(f => `
+                    <div class="editor-filter-card${_editor.filter === f ? ' active' : ''}" onclick="_editorSetFilter('${f}')">
+                        <div class="editor-filter-preview" style="filter:${_getCSSFilter(f)}"></div>
+                        <span>${filterLabels[f]}</span>
+                    </div>
+                `).join("")}
+            </div>
+        `;
+    } else if (tool === "stickers") {
+        const emojis = ["😀","😂","🥰","😎","🔥","⭐","❤️","👍","🎉","🎵","💯","👏","🤩","💪","✨","🌟","😍","🥳","💥","🎬","📸","🎶","💡","🚀","👑","🏆","💎","🌈","🎯","🙏","😱","🤯","💰","📢","🎭","🎨","🎸","🎤","🎧","👀","💬","🔔","⚡","🌺","🦋","🐾","🍕","☕","🎮","🎁"];
+        container.innerHTML = `
+            <div class="editor-props-title">Stickers & Emojis</div>
+            <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Clique para adicionar ao video na posicao atual.</p>
+            <div class="editor-sticker-grid">
+                ${emojis.map(e => `<div class="editor-sticker-item" onclick="_editorAddSticker('${e}')">${e}</div>`).join("")}
+            </div>
+            ${_editor.stickers.length ? `
+                <div class="editor-props-title" style="margin-top:12px">Adicionados</div>
+                <div class="editor-props-group">
+                    ${_editor.stickers.map(s => `
+                        <div class="editor-subtitle-item">
+                            <span style="font-size:20px">${s.emoji}</span>
+                            <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
+                            <button class="sub-delete" onclick="_editorDeleteSticker(${s.id})">✕</button>
+                        </div>
+                    `).join("")}
+                </div>
+            ` : ""}
+        `;
+    } else if (tool === "quality") {
+        const qualities = [
+            {val: "original", label: "Original", desc: "Manter qualidade atual do video"},
+            {val: "enhance", label: "Melhorar", desc: "IA aprimora nitidez e cores"},
+            {val: "hd", label: "HD 720p", desc: "Reescalar para 720p"},
+            {val: "fullhd", label: "Full HD 1080p", desc: "Reescalar para 1080p"},
+        ];
+        container.innerHTML = `
+            <div class="editor-props-title">Qualidade</div>
+            <div class="editor-props-group">
+                ${qualities.map(q => `
+                    <div class="editor-quality-option${_editor.quality === q.val ? ' active' : ''}" onclick="_editorSetQuality('${q.val}')">
+                        <div>
+                            <div class="editor-quality-label">${q.label}</div>
+                            <div class="editor-quality-desc">${q.desc}</div>
+                        </div>
+                    </div>
+                `).join("")}
+            </div>
+        `;
+    }
+}
+
+// Text edit form
+function _editorTextEditForm() {
+    const sel = _editor.texts.find(t => t._selected);
+    if (!sel) return "";
+    return `
+        <div class="editor-props-group" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+            <label>Conteudo</label>
+            <textarea rows="2" style="resize:vertical" oninput="_editorUpdateTextProp(${sel.id},'content',this.value)">${esc(sel.content)}</textarea>
+            <label>Cor</label>
+            <div class="editor-color-row">
+                <input type="color" value="${sel.color}" oninput="_editorUpdateTextProp(${sel.id},'color',this.value)">
+                <span style="font-size:11px;color:var(--text-muted)">${sel.color}</span>
+            </div>
+            <label>Tamanho da fonte</label>
+            <div class="editor-font-size-row">
+                <input type="range" min="12" max="120" value="${sel.fontSize}" oninput="_editorUpdateTextProp(${sel.id},'fontSize',parseInt(this.value))">
+                <span>${sel.fontSize}px</span>
+            </div>
+            <label>Posicao vertical (%)</label>
+            <div class="editor-font-size-row">
+                <input type="range" min="5" max="95" value="${sel.y}" oninput="_editorUpdateTextProp(${sel.id},'y',parseInt(this.value))">
+                <span>${sel.y}%</span>
+            </div>
+            <label>Tempo</label>
+            <div class="editor-trim-values">
+                <span>Inicio: ${_fmtTime(sel.startTime)}</span>
+                <span>Fim: ${_fmtTime(sel.endTime)}</span>
+            </div>
+            <div class="editor-font-size-row">
+                <input type="range" min="0" max="${_editor.duration}" step="0.1" value="${sel.startTime}" oninput="_editorUpdateTextProp(${sel.id},'startTime',parseFloat(this.value))">
+            </div>
+            <div class="editor-font-size-row">
+                <input type="range" min="0" max="${_editor.duration}" step="0.1" value="${sel.endTime}" oninput="_editorUpdateTextProp(${sel.id},'endTime',parseFloat(this.value))">
+            </div>
+            <div style="display:flex;gap:8px">
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" ${sel.bold ? "checked" : ""} onchange="_editorUpdateTextProp(${sel.id},'bold',this.checked)"> Negrito</label>
+                <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" ${sel.italic ? "checked" : ""} onchange="_editorUpdateTextProp(${sel.id},'italic',this.checked)"> Italico</label>
+            </div>
+        </div>
+    `;
+}
+
+// Subtitle edit form
+function _editorSubtitleEditForm() {
+    const sel = _editor.subtitles.find(s => s._selected);
+    if (!sel) return "";
+    return `
+        <div class="editor-props-group" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+            <label>Texto da legenda</label>
+            <textarea rows="2" style="resize:vertical" oninput="_editorUpdateSubProp(${sel.id},'text',this.value)">${esc(sel.text)}</textarea>
+            <label>Estilo</label>
+            <select onchange="_editorUpdateSubProp(${sel.id},'style',this.value)">
+                <option value="normal" ${sel.style==="normal"?"selected":""}>Normal (branco)</option>
+                <option value="highlight" ${sel.style==="highlight"?"selected":""}>Destaque (amarelo)</option>
+            </select>
+            <label>Tempo</label>
+            <div class="editor-trim-values">
+                <span>Inicio: ${_fmtTime(sel.startTime)}</span>
+                <span>Fim: ${_fmtTime(sel.endTime)}</span>
+            </div>
+            <div class="editor-font-size-row">
+                <input type="range" min="0" max="${_editor.duration}" step="0.1" value="${sel.startTime}" oninput="_editorUpdateSubProp(${sel.id},'startTime',parseFloat(this.value))">
+            </div>
+            <div class="editor-font-size-row">
+                <input type="range" min="0" max="${_editor.duration}" step="0.1" value="${sel.endTime}" oninput="_editorUpdateSubProp(${sel.id},'endTime',parseFloat(this.value))">
+            </div>
+        </div>
+    `;
+}
+
+// ---------- Text actions ----------
+function _editorAddText() {
+    _editorSaveState();
+    const video = document.getElementById("editor-video");
+    const t = video?.currentTime || 0;
+    _editor.texts.forEach(x => x._selected = false);
+    _editor.texts.push({
+        id: _editorGenId(), content: "Seu texto aqui", startTime: t, endTime: Math.min(t + 5, _editor.duration),
+        x: 50, y: 50, fontSize: 36, color: "#ffffff", fontFamily: "Manrope, sans-serif", bold: true, italic: false, _selected: true,
+    });
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+window._editorAddText = _editorAddText;
+
+function _editorSelectText(id) {
+    _editor.texts.forEach(t => t._selected = (t.id === id));
+    _editorRenderProps();
+}
+window._editorSelectText = _editorSelectText;
+
+function _editorDeleteText(id) {
+    _editorSaveState();
+    _editor.texts = _editor.texts.filter(t => t.id !== id);
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+window._editorDeleteText = _editorDeleteText;
+
+function _editorUpdateTextProp(id, prop, val) {
+    const t = _editor.texts.find(x => x.id === id);
+    if (!t) return;
+    t[prop] = val;
+    // Re-render the form parts without full rebuild to avoid losing focus
+    const video = document.getElementById("editor-video");
+    if (video) _editorDrawOverlays(video.currentTime);
+    _editorRenderTimeline();
+}
+window._editorUpdateTextProp = _editorUpdateTextProp;
+
+// ---------- Subtitle actions ----------
+function _editorAddSubtitle() {
+    _editorSaveState();
+    const video = document.getElementById("editor-video");
+    const t = video?.currentTime || 0;
+    _editor.subtitles.forEach(x => x._selected = false);
+    _editor.subtitles.push({
+        id: _editorGenId(), text: "Legenda aqui", startTime: t, endTime: Math.min(t + 3, _editor.duration),
+        style: "normal", _selected: true,
+    });
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+window._editorAddSubtitle = _editorAddSubtitle;
+
+function _editorSelectSubtitle(id) {
+    _editor.subtitles.forEach(s => s._selected = (s.id === id));
+    _editorRenderProps();
+}
+window._editorSelectSubtitle = _editorSelectSubtitle;
+
+function _editorDeleteSubtitle(id) {
+    _editorSaveState();
+    _editor.subtitles = _editor.subtitles.filter(s => s.id !== id);
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+window._editorDeleteSubtitle = _editorDeleteSubtitle;
+
+function _editorUpdateSubProp(id, prop, val) {
+    const s = _editor.subtitles.find(x => x.id === id);
+    if (!s) return;
+    s[prop] = val;
+    const video = document.getElementById("editor-video");
+    if (video) _editorDrawOverlays(video.currentTime);
+    _editorRenderTimeline();
+}
+window._editorUpdateSubProp = _editorUpdateSubProp;
+
+// ---------- Trim actions ----------
+function _editorSetTrimStart(val) {
+    _editor.trimStart = parseFloat(val);
+    const label = document.getElementById("trim-start-label");
+    if (label) label.textContent = _fmtTime(_editor.trimStart);
+    _editorRenderTimeline();
+}
+window._editorSetTrimStart = _editorSetTrimStart;
+
+function _editorSetTrimEnd(val) {
+    _editor.trimEnd = parseFloat(val);
+    const label = document.getElementById("trim-end-label");
+    if (label) label.textContent = _fmtTime(_editor.trimEnd);
+    _editorRenderTimeline();
+}
+window._editorSetTrimEnd = _editorSetTrimEnd;
+
+// ---------- Music actions ----------
+function _editorUploadMusic(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+    _editorSaveState();
+    _editor.musicUrl = URL.createObjectURL(file);
+    _editor._musicFile = file;
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+window._editorUploadMusic = _editorUploadMusic;
+
+function _editorRemoveMusic() {
+    _editorSaveState();
+    _editor.musicUrl = "";
+    _editor._musicFile = null;
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+window._editorRemoveMusic = _editorRemoveMusic;
+
+function _editorSetMusicVolume(val) {
+    _editor.musicVolume = parseInt(val);
+    const label = document.getElementById("editor-music-vol-label");
+    if (label) label.textContent = _editor.musicVolume + "%";
+}
+window._editorSetMusicVolume = _editorSetMusicVolume;
+
+function _editorSetOriginalVolume(val) {
+    _editor.originalVolume = parseInt(val);
+    const video = document.getElementById("editor-video");
+    if (video) video.volume = _editor.originalVolume / 100;
+    const label = document.getElementById("editor-orig-vol-label");
+    if (label) label.textContent = _editor.originalVolume + "%";
+}
+window._editorSetOriginalVolume = _editorSetOriginalVolume;
+
+// ---------- Filter ----------
+function _editorSetFilter(name) {
+    _editorSaveState();
+    _editor.filter = name;
+    const video = document.getElementById("editor-video");
+    if (video) video.style.filter = _getCSSFilter(name);
+    _editorRenderProps();
+}
+window._editorSetFilter = _editorSetFilter;
+
+// ---------- Sticker actions ----------
+function _editorAddSticker(emoji) {
+    _editorSaveState();
+    const video = document.getElementById("editor-video");
+    const t = video?.currentTime || 0;
+    _editor.stickers.push({
+        id: _editorGenId(), emoji, x: 50, y: 30, startTime: t, endTime: Math.min(t + 4, _editor.duration), size: 48,
+    });
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+window._editorAddSticker = _editorAddSticker;
+
+function _editorDeleteSticker(id) {
+    _editorSaveState();
+    _editor.stickers = _editor.stickers.filter(s => s.id !== id);
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+window._editorDeleteSticker = _editorDeleteSticker;
+
+// ---------- Quality ----------
+function _editorSetQuality(val) {
+    _editorSaveState();
+    _editor.quality = val;
+    _editorRenderProps();
+}
+window._editorSetQuality = _editorSetQuality;
+
+// ---------- Timeline rendering ----------
+function _editorRenderTimeline() {
+    const dur = _editor.duration || 1;
+    const ruler = document.getElementById("editor-timeline-ruler");
+    const trackVideo = document.getElementById("editor-track-video");
+    const trackAudio = document.getElementById("editor-track-audio");
+    const trackText = document.getElementById("editor-track-text");
+    const trackStickers = document.getElementById("editor-track-stickers");
+    if (!ruler) return;
+
+    // Ruler marks
+    const step = dur > 120 ? 30 : dur > 60 ? 10 : 5;
+    let rulerHtml = "";
+    const trackW = trackVideo?.offsetWidth || 600;
+    for (let t = 0; t <= dur; t += step) {
+        const pct = (t / dur) * trackW;
+        rulerHtml += `<span class="editor-ruler-mark" style="left:${80 + pct}px">${_fmtTime(t)}</span>`;
+        rulerHtml += `<span class="editor-ruler-tick major" style="left:${80 + pct}px"></span>`;
+    }
+    ruler.innerHTML = rulerHtml;
+
+    // Video track
+    if (trackVideo) {
+        const startPct = (_editor.trimStart / dur) * 100;
+        const widthPct = ((_editor.trimEnd - _editor.trimStart) / dur) * 100;
+        trackVideo.innerHTML = `<div class="editor-track-clip clip-video" style="left:${startPct}%;width:${widthPct}%">Video</div>`;
+    }
+
+    // Audio track
+    if (trackAudio) {
+        let audioHtml = `<div class="editor-track-clip clip-audio" style="left:0;width:100%">Audio original</div>`;
+        if (_editor.musicUrl) {
+            audioHtml += `<div class="editor-track-clip clip-audio" style="left:0;width:100%;top:1px;background:linear-gradient(135deg,#6b1a4a,#4a0e2e);border-color:rgba(107,26,74,0.6)">Musica</div>`;
+        }
+        trackAudio.innerHTML = audioHtml;
+    }
+
+    // Text track
+    if (trackText) {
+        trackText.innerHTML = [..._editor.texts, ..._editor.subtitles].map(item => {
+            const left = (item.startTime / dur) * 100;
+            const width = ((item.endTime - item.startTime) / dur) * 100;
+            const label = item.content || item.text || "";
+            return `<div class="editor-track-clip clip-text" style="left:${left}%;width:${width}%">${esc(label.substring(0, 20))}</div>`;
+        }).join("");
+    }
+
+    // Sticker track
+    if (trackStickers) {
+        trackStickers.innerHTML = _editor.stickers.map(s => {
+            const left = (s.startTime / dur) * 100;
+            const width = ((s.endTime - s.startTime) / dur) * 100;
+            return `<div class="editor-track-clip clip-sticker" style="left:${left}%;width:${width}%">${s.emoji}</div>`;
+        }).join("");
+    }
+}
+
+// ---------- Export ----------
+async function _editorExport() {
+    if (!_editor.projectId || !_editor.videoUrl) return;
+
+    // Build edit specification
+    const edits = {
+        project_id: _editor.projectId,
+        trim_start: _editor.trimStart,
+        trim_end: _editor.trimEnd,
+        filter: _editor.filter,
+        quality: _editor.quality,
+        original_volume: _editor.originalVolume,
+        music_volume: _editor.musicVolume,
+        texts: _editor.texts.map(t => ({
+            content: t.content, start_time: t.startTime, end_time: t.endTime,
+            x: t.x, y: t.y, font_size: t.fontSize, color: t.color,
+            bold: t.bold, italic: t.italic,
+        })),
+        subtitles: _editor.subtitles.map(s => ({
+            text: s.text, start_time: s.startTime, end_time: s.endTime, style: s.style,
+        })),
+        stickers: _editor.stickers.map(s => ({
+            emoji: s.emoji, x: s.x, y: s.y, start_time: s.startTime, end_time: s.endTime, size: s.size,
+        })),
+    };
+
+    // Show export overlay
+    const overlay = document.createElement("div");
+    overlay.className = "editor-export-overlay";
+    overlay.innerHTML = `
+        <div class="editor-export-card">
+            <h3>Exportando video</h3>
+            <div class="editor-export-progress"><div class="editor-export-progress-fill" id="editor-export-fill"></div></div>
+            <p class="editor-export-status" id="editor-export-status">Enviando edicoes ao servidor...</p>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    try {
+        // Upload music file if any
+        let musicPath = "";
+        if (_editor._musicFile) {
+            const formData = new FormData();
+            formData.append("file", _editor._musicFile);
+            const uploadRes = await fetch(API.replace("/api", "") + "/api/video/editor/upload-music", {
+                method: "POST",
+                headers: { Authorization: "Bearer " + token },
+                body: formData,
+            });
+            if (!uploadRes.ok) throw new Error("Falha ao enviar musica");
+            const uploadData = await uploadRes.json();
+            musicPath = uploadData.path;
+        }
+        edits.music_path = musicPath;
+
+        // Submit export job
+        const res = await api("/video/editor/export", "POST", edits);
+        const jobId = res.job_id;
+
+        // Poll progress
+        const fill = document.getElementById("editor-export-fill");
+        const status = document.getElementById("editor-export-status");
+        let done = false;
+        while (!done) {
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+                const poll = await api(`/video/editor/export/${jobId}/status`);
+                if (fill) fill.style.width = (poll.progress || 0) + "%";
+                if (status) status.textContent = poll.message || "Processando...";
+                if (poll.status === "completed") {
+                    done = true;
+                    if (status) status.textContent = "Video exportado com sucesso!";
+                    if (fill) fill.style.width = "100%";
+                    await new Promise(r => setTimeout(r, 1500));
+                    overlay.remove();
+                    showToast("Video editado exportado com sucesso!", "success");
+                    closeEditor();
+                    loadEditorVideosList();
+                } else if (poll.status === "failed") {
+                    done = true;
+                    overlay.remove();
+                    showToast("Erro ao exportar: " + (poll.error || "erro desconhecido"), "error");
+                }
+            } catch (e) {
+                done = true;
+                overlay.remove();
+                showToast("Erro ao verificar status: " + e.message, "error");
+            }
+        }
+    } catch (err) {
+        overlay.remove();
+        showToast("Erro ao exportar: " + err.message, "error");
+    }
+}
+
+// ---------- Bind editor events ----------
+function _bindEditorEvents() {
+    const video = document.getElementById("editor-video");
+    if (video) {
+        video.addEventListener("timeupdate", _editorTimeUpdate);
+        video.addEventListener("ended", () => {
+            _editor.playing = false;
+            _updatePlayIcon();
+        });
+    }
+    document.getElementById("editor-play-btn")?.addEventListener("click", _editorTogglePlay);
+    document.getElementById("editor-back-btn")?.addEventListener("click", closeEditor);
+    document.getElementById("editor-undo-btn")?.addEventListener("click", _editorUndo);
+    document.getElementById("editor-redo-btn")?.addEventListener("click", _editorRedo);
+    document.getElementById("editor-export-btn")?.addEventListener("click", _editorExport);
+
+    // Tool buttons
+    document.querySelectorAll(".editor-tool-btn").forEach(btn => {
+        btn.addEventListener("click", () => _editorSelectTool(btn.dataset.tool));
+    });
+
+    // Timeline click to seek
+    document.getElementById("editor-timeline")?.addEventListener("click", (e) => {
+        const timeline = document.getElementById("editor-timeline");
+        const rect = timeline.getBoundingClientRect();
+        const trackContent = document.getElementById("editor-track-video");
+        if (!trackContent) return;
+        const trackRect = trackContent.getBoundingClientRect();
+        const x = e.clientX - trackRect.left;
+        const pct = Math.max(0, Math.min(1, x / trackRect.width));
+        const t = pct * _editor.duration;
+        const videoEl = document.getElementById("editor-video");
+        if (videoEl) videoEl.currentTime = t;
+    });
+}
+
+// Init editor bindings when DOM ready
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", _bindEditorEvents);
+} else {
+    _bindEditorEvents();
+}
 
 bootstrap();

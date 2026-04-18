@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260417-19">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260417-20">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
@@ -132,7 +132,11 @@
                     <nav class="sidebar-nav">
                         <a href="#" class="nav-item active" data-page="projects">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                            <span>Projetos</span>
+                            <span>Criar</span>
+                        </a>
+                        <a href="#" class="nav-item" data-page="editor">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                            <span>Editar</span>
                         </a>
                         <a href="#" class="nav-item" data-page="publish">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
@@ -172,7 +176,7 @@
                                 <button class="mobile-profile-btn" id="mobile-profile-btn" type="button" title="Perfil">
                                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                                 </button>
-                                <h1>Projetos de video</h1>
+                                <h1>Criar videos</h1>
                                 <button id="btn-new-project" class="btn btn-primary btn-add-project" type="button" title="Adicionar novo projeto" aria-label="Adicionar novo projeto">+</button>
                             </div>
                             <div class="sidebar-credits" id="sidebar-credits" title="Clique para comprar créditos">
@@ -182,6 +186,135 @@
                         </div>
                         <div id="projects-list" class="cards-grid">
                             <div class="loading">Carregando projetos...</div>
+                        </div>
+                    </section>
+
+                    <section id="page-editor" class="page">
+                        <!-- Editor: video selection -->
+                        <div id="editor-select-view">
+                            <div class="page-header">
+                                <div class="page-header-left">
+                                    <h1>Editar video</h1>
+                                </div>
+                            </div>
+                            <p class="section-subtitle">Selecione um video finalizado para editar.</p>
+                            <div id="editor-videos-list" class="cards-grid">
+                                <div class="loading">Carregando videos...</div>
+                            </div>
+                        </div>
+                        <!-- Editor: full workspace (hidden until a video is selected) -->
+                        <div id="editor-workspace" class="editor-workspace" hidden>
+                            <!-- Top bar -->
+                            <div class="editor-topbar">
+                                <button class="editor-back-btn" id="editor-back-btn" type="button" title="Voltar">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                                </button>
+                                <span class="editor-project-name" id="editor-project-name">Projeto</span>
+                                <div class="editor-topbar-actions">
+                                    <button class="btn btn-secondary btn-sm" id="editor-undo-btn" type="button" title="Desfazer" disabled>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" id="editor-redo-btn" type="button" title="Refazer" disabled>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
+                                    </button>
+                                    <button class="btn btn-primary btn-sm" id="editor-export-btn" type="button">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                        Exportar
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- Main editor area -->
+                            <div class="editor-main">
+                                <!-- Left tools panel -->
+                                <div class="editor-tools-panel" id="editor-tools-panel">
+                                    <button class="editor-tool-btn active" data-tool="text" type="button" title="Texto">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="8" y1="20" x2="16" y2="20"/></svg>
+                                        <span>Texto</span>
+                                    </button>
+                                    <button class="editor-tool-btn" data-tool="subtitles" type="button" title="Legendas">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 12h4"/><path d="M13 12h4"/><path d="M7 16h10"/></svg>
+                                        <span>Legendas</span>
+                                    </button>
+                                    <button class="editor-tool-btn" data-tool="trim" type="button" title="Cortar">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+                                        <span>Cortar</span>
+                                    </button>
+                                    <button class="editor-tool-btn" data-tool="music" type="button" title="Musica">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                                        <span>Musica</span>
+                                    </button>
+                                    <button class="editor-tool-btn" data-tool="filters" type="button" title="Filtros">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                                        <span>Filtros</span>
+                                    </button>
+                                    <button class="editor-tool-btn" data-tool="stickers" type="button" title="Stickers">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                                        <span>Stickers</span>
+                                    </button>
+                                    <button class="editor-tool-btn" data-tool="quality" type="button" title="Qualidade">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>
+                                        <span>Qualidade</span>
+                                    </button>
+                                </div>
+                                <!-- Preview area -->
+                                <div class="editor-preview-area">
+                                    <div class="editor-canvas-wrapper" id="editor-canvas-wrapper">
+                                        <video id="editor-video" playsinline></video>
+                                        <canvas id="editor-overlay-canvas"></canvas>
+                                    </div>
+                                    <!-- Play controls -->
+                                    <div class="editor-play-controls">
+                                        <button class="editor-play-btn" id="editor-play-btn" type="button" title="Play/Pause">
+                                            <svg id="editor-play-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                        </button>
+                                        <span class="editor-time" id="editor-time-current">00:00</span>
+                                        <span class="editor-time-sep">/</span>
+                                        <span class="editor-time" id="editor-time-total">00:00</span>
+                                    </div>
+                                </div>
+                                <!-- Right properties panel -->
+                                <div class="editor-props-panel" id="editor-props-panel">
+                                    <!-- Dynamic content based on active tool -->
+                                    <div class="editor-props-content" id="editor-props-content">
+                                        <p class="editor-props-hint">Selecione uma ferramenta para comecar.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Timeline -->
+                            <div class="editor-timeline" id="editor-timeline">
+                                <div class="editor-timeline-ruler" id="editor-timeline-ruler"></div>
+                                <div class="editor-timeline-tracks" id="editor-timeline-tracks">
+                                    <div class="editor-track" data-track="video">
+                                        <div class="editor-track-label">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                                            Video
+                                        </div>
+                                        <div class="editor-track-content" id="editor-track-video"></div>
+                                    </div>
+                                    <div class="editor-track" data-track="audio">
+                                        <div class="editor-track-label">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                                            Audio
+                                        </div>
+                                        <div class="editor-track-content" id="editor-track-audio"></div>
+                                    </div>
+                                    <div class="editor-track" data-track="text">
+                                        <div class="editor-track-label">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+                                            Texto
+                                        </div>
+                                        <div class="editor-track-content" id="editor-track-text"></div>
+                                    </div>
+                                    <div class="editor-track" data-track="stickers">
+                                        <div class="editor-track-label">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/></svg>
+                                            Stickers
+                                        </div>
+                                        <div class="editor-track-content" id="editor-track-stickers"></div>
+                                    </div>
+                                </div>
+                                <div class="editor-timeline-playhead" id="editor-timeline-playhead"></div>
+                            </div>
                         </div>
                     </section>
 
@@ -357,7 +490,11 @@
                 <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
                     <button class="mobile-nav-tab active" data-mobile-page="projects">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                        <span>Projetos</span>
+                        <span>Criar</span>
+                    </button>
+                    <button class="mobile-nav-tab" data-mobile-page="editor">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                        <span>Editar</span>
                     </button>
                     <button class="mobile-nav-tab" data-mobile-page="publish">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
@@ -1794,7 +1931,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260417-19"></script>
-    <script src="/video/static/pwa.js?v=20260417-19"></script>
+    <script src="/video/static/app.js?v=20260417-20"></script>
+    <script src="/video/static/pwa.js?v=20260417-20"></script>
 </body>
 </html>

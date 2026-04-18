@@ -78,6 +78,7 @@ from app.routers.voice import router as voice_router
 from app.routers.credits import router as credits_router
 from app.routers.automation import router as automation_router
 from app.routers.risc import router as risc_router
+from app.routers.editor import router as editor_router
 
 app.include_router(auth_router)
 app.include_router(video_router)
@@ -88,6 +89,7 @@ app.include_router(voice_router)
 app.include_router(credits_router)
 app.include_router(automation_router)
 app.include_router(risc_router)
+app.include_router(editor_router)
 
 # ── Serve rendered media files ──
 media_path = Path(settings.media_dir)

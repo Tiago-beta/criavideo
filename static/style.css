@@ -4441,3 +4441,737 @@ th,
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   VIDEO EDITOR — CapCut-style editing workspace
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Editor workspace layout ── */
+.editor-workspace {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 56px);
+    max-height: calc(100dvh - 56px);
+    overflow: hidden;
+    background: var(--bg);
+}
+
+.editor-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: linear-gradient(185deg, rgba(23, 58, 94, 0.85), rgba(10, 31, 51, 0.92));
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    min-height: 48px;
+}
+
+.editor-back-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    transition: background 0.2s, color 0.2s;
+    display: flex;
+    align-items: center;
+}
+.editor-back-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+
+.editor-project-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+}
+
+.editor-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* ── Main editor area (tools + preview + props) ── */
+.editor-main {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Left tools panel */
+.editor-tools-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 4px;
+    background: linear-gradient(185deg, rgba(15, 42, 70, 0.9), rgba(8, 25, 42, 0.95));
+    border-right: 1px solid var(--border);
+    width: 64px;
+    flex-shrink: 0;
+    overflow-y: auto;
+}
+
+.editor-tool-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 4px;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 9px;
+    font-family: inherit;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background 0.2s, color 0.2s;
+}
+.editor-tool-btn:hover { background: rgba(0, 212, 255, 0.08); color: var(--text); }
+.editor-tool-btn.active {
+    background: rgba(0, 212, 255, 0.15);
+    color: var(--accent);
+}
+.editor-tool-btn svg { flex-shrink: 0; }
+
+/* Preview area */
+.editor-preview-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    padding: 12px;
+    gap: 8px;
+    position: relative;
+}
+
+.editor-canvas-wrapper {
+    position: relative;
+    max-width: 100%;
+    max-height: calc(100% - 48px);
+    aspect-ratio: 9 / 16;
+    background: #000;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+.editor-canvas-wrapper video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+#editor-overlay-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.editor-play-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.editor-play-btn {
+    background: rgba(0, 212, 255, 0.15);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    color: var(--accent);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+.editor-play-btn:hover { background: rgba(0, 212, 255, 0.25); }
+
+.editor-time {
+    font-size: 12px;
+    font-family: 'Manrope', monospace;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+.editor-time-sep { color: var(--text-muted); font-size: 12px; margin: 0 2px; }
+
+/* Right properties panel */
+.editor-props-panel {
+    width: 260px;
+    flex-shrink: 0;
+    background: linear-gradient(185deg, rgba(15, 42, 70, 0.9), rgba(8, 25, 42, 0.95));
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 12px;
+}
+
+.editor-props-content { display: flex; flex-direction: column; gap: 12px; }
+
+.editor-props-hint {
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 24px 8px;
+}
+
+.editor-props-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.editor-props-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.editor-props-group label {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.editor-props-group input,
+.editor-props-group select,
+.editor-props-group textarea {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 6px 8px;
+    font-size: 12px;
+    font-family: inherit;
+}
+
+.editor-props-group input:focus,
+.editor-props-group select:focus,
+.editor-props-group textarea:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+
+.editor-color-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.editor-color-row input[type="color"] {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 2px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    background: none;
+}
+
+.editor-font-size-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.editor-font-size-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+}
+
+.editor-font-size-row span {
+    font-size: 11px;
+    color: var(--text-muted);
+    min-width: 28px;
+    text-align: right;
+}
+
+/* Props panel buttons */
+.editor-add-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: rgba(0, 212, 255, 0.12);
+    border: 1px dashed rgba(0, 212, 255, 0.3);
+    border-radius: 8px;
+    color: var(--accent);
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.editor-add-btn:hover { background: rgba(0, 212, 255, 0.2); }
+
+/* Trim controls */
+.editor-trim-range {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.editor-trim-range label {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.editor-trim-range input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+}
+
+.editor-trim-values {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Filter grid */
+.editor-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+}
+
+.editor-filter-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 4px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: border-color 0.2s, background 0.2s;
+}
+.editor-filter-card:hover { border-color: rgba(0, 212, 255, 0.3); background: rgba(0, 212, 255, 0.06); }
+.editor-filter-card.active { border-color: var(--accent); background: rgba(0, 212, 255, 0.12); color: var(--accent); }
+
+.editor-filter-preview {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #1a3a5c, #0a1f33);
+}
+
+/* Sticker/emoji grid */
+.editor-sticker-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+}
+
+.editor-sticker-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    padding: 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.15s;
+    user-select: none;
+}
+.editor-sticker-item:hover { background: rgba(0, 212, 255, 0.1); transform: scale(1.1); }
+
+/* Quality controls */
+.editor-quality-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+.editor-quality-option:hover { border-color: rgba(0, 212, 255, 0.3); }
+.editor-quality-option.active { border-color: var(--accent); background: rgba(0, 212, 255, 0.1); }
+
+.editor-quality-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+}
+.editor-quality-desc {
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+/* Music section */
+.editor-music-current {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.editor-music-info {
+    flex: 1;
+    font-size: 12px;
+    color: var(--text);
+}
+
+.editor-music-info small {
+    display: block;
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+.editor-volume-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.editor-volume-row svg { flex-shrink: 0; color: var(--text-muted); }
+
+.editor-volume-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+}
+
+.editor-volume-row span {
+    font-size: 11px;
+    color: var(--text-muted);
+    min-width: 28px;
+    text-align: right;
+}
+
+/* ── Timeline ── */
+.editor-timeline {
+    flex-shrink: 0;
+    height: 160px;
+    background: linear-gradient(0deg, rgba(8, 25, 42, 0.98), rgba(15, 42, 70, 0.92));
+    border-top: 1px solid var(--border);
+    position: relative;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.editor-timeline-ruler {
+    height: 24px;
+    background: rgba(0,0,0,0.2);
+    display: flex;
+    align-items: flex-end;
+    padding: 0 60px 0 80px;
+    position: relative;
+    border-bottom: 1px solid var(--border);
+}
+
+.editor-ruler-mark {
+    position: absolute;
+    bottom: 4px;
+    font-size: 9px;
+    color: var(--text-muted);
+    transform: translateX(-50%);
+    font-variant-numeric: tabular-nums;
+}
+
+.editor-ruler-tick {
+    position: absolute;
+    bottom: 0;
+    width: 1px;
+    height: 6px;
+    background: rgba(255,255,255,0.15);
+}
+.editor-ruler-tick.major { height: 12px; background: rgba(255,255,255,0.25); }
+
+.editor-timeline-tracks {
+    padding-left: 0;
+}
+
+.editor-track {
+    display: flex;
+    height: 32px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.editor-track-label {
+    width: 80px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+    font-size: 10px;
+    color: var(--text-muted);
+    background: rgba(0,0,0,0.15);
+    border-right: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.editor-track-content {
+    flex: 1;
+    position: relative;
+    min-height: 100%;
+}
+
+.editor-track-clip {
+    position: absolute;
+    top: 3px;
+    height: calc(100% - 6px);
+    border-radius: 4px;
+    font-size: 9px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: opacity 0.2s;
+}
+.editor-track-clip:hover { opacity: 0.85; }
+
+.editor-track-clip.clip-video {
+    background: linear-gradient(135deg, #1a6b3a, #0e4a28);
+    border: 1px solid rgba(26, 107, 58, 0.6);
+}
+.editor-track-clip.clip-audio {
+    background: linear-gradient(135deg, #4a1a6b, #2e0e4a);
+    border: 1px solid rgba(74, 26, 107, 0.6);
+}
+.editor-track-clip.clip-text {
+    background: linear-gradient(135deg, #1a4a6b, #0e2e4a);
+    border: 1px solid rgba(26, 74, 107, 0.6);
+}
+.editor-track-clip.clip-sticker {
+    background: linear-gradient(135deg, #6b5a1a, #4a3e0e);
+    border: 1px solid rgba(107, 90, 26, 0.6);
+}
+
+.editor-timeline-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--accent);
+    left: 80px;
+    z-index: 10;
+    pointer-events: none;
+    transition: left 0.05s linear;
+}
+
+.editor-timeline-playhead::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -5px;
+    width: 12px;
+    height: 12px;
+    background: var(--accent);
+    clip-path: polygon(50% 100%, 0 0, 100% 0);
+}
+
+/* ── Export modal ── */
+.editor-export-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+
+.editor-export-card {
+    background: var(--bg-card-strong);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    text-align: center;
+    max-width: 360px;
+    width: 90%;
+}
+
+.editor-export-card h3 {
+    margin-bottom: 12px;
+    font-size: 18px;
+    color: var(--text);
+}
+
+.editor-export-progress {
+    width: 100%;
+    height: 8px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 16px 0;
+}
+
+.editor-export-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), #7b61ff);
+    border-radius: 4px;
+    transition: width 0.3s;
+    width: 0%;
+}
+
+.editor-export-status {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* ── Editor video selection cards ── */
+.editor-video-card-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.4);
+    opacity: 0;
+    transition: opacity 0.2s;
+    border-radius: 8px 8px 0 0;
+}
+.card:hover .editor-video-card-overlay { opacity: 1; }
+
+.editor-video-card-overlay svg {
+    color: var(--accent);
+    filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5));
+}
+
+/* ── Responsive: mobile editor ── */
+@media (max-width: 768px) {
+    .editor-workspace {
+        height: calc(100vh - 56px);
+        height: calc(100dvh - 56px);
+    }
+
+    .editor-props-panel {
+        display: none;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        top: auto;
+        width: 100%;
+        height: 45vh;
+        z-index: 1100;
+        border-left: none;
+        border-top: 1px solid var(--border);
+        border-radius: 16px 16px 0 0;
+        padding: 16px;
+    }
+
+    .editor-props-panel.open {
+        display: block;
+    }
+
+    .editor-tools-panel {
+        position: fixed;
+        bottom: 160px; /* above timeline */
+        left: 0;
+        right: 0;
+        width: 100%;
+        flex-direction: row;
+        justify-content: space-around;
+        padding: 4px 0;
+        border-right: none;
+        border-top: 1px solid var(--border);
+        z-index: 1050;
+        overflow-x: auto;
+        height: auto;
+    }
+
+    .editor-tool-btn {
+        min-width: 48px;
+    }
+
+    .editor-main {
+        flex-direction: column;
+    }
+
+    .editor-preview-area {
+        flex: 1;
+        padding: 8px;
+        padding-bottom: 52px; /* space for tools bar */
+    }
+
+    .editor-canvas-wrapper {
+        max-height: 100%;
+    }
+
+    .editor-timeline {
+        height: 120px;
+    }
+
+    .editor-topbar {
+        padding: 6px 12px;
+        min-height: 44px;
+    }
+}
+
+/* Landscape phone adjustments */
+@media (max-width: 768px) and (orientation: landscape) {
+    .editor-canvas-wrapper {
+        aspect-ratio: auto;
+        max-height: 100%;
+        width: auto;
+        height: 100%;
+    }
+
+    .editor-timeline {
+        height: 80px;
+    }
+
+    .editor-tools-panel {
+        bottom: 80px;
+    }
+}
+
+/* Subtitle list items */
+.editor-subtitle-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+.editor-subtitle-item:hover { border-color: rgba(0, 212, 255, 0.3); }
+.editor-subtitle-item.active { border-color: var(--accent); background: rgba(0, 212, 255, 0.08); }
+.editor-subtitle-item .sub-time { color: var(--text-muted); font-size: 10px; min-width: 70px; }
+.editor-subtitle-item .sub-text { flex: 1; }
+.editor-subtitle-item .sub-delete {
+    background: none; border: none; color: var(--text-muted); cursor: pointer;
+    padding: 2px; border-radius: 4px;
+}
+.editor-subtitle-item .sub-delete:hover { color: #ef4444; }
