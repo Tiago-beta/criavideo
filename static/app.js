@@ -1152,34 +1152,7 @@ async function createSimilar(projectId) {
     // 1. Reset wizard state
     resetCreateWizard();
 
-    // 2. Prepare content BEFORE opening modal
-    const modeSelection = document.getElementById("create-mode-selection");
-    if (modeSelection) modeSelection.hidden = true;
-
-    document.querySelectorAll(".create-panel").forEach(p => { p.hidden = true; });
-
-    const scriptPanel = document.getElementById("create-panel-script");
-    if (scriptPanel) {
-        scriptPanel.hidden = false;
-        scriptPanel.style.display = "block";
-        const steps = scriptPanel.querySelectorAll(".wizard-step");
-        steps.forEach(s => {
-            const stepNum = parseInt(s.dataset.step);
-            if (stepNum === 1) {
-                s.hidden = false;
-                s.style.animation = "none";
-                s.style.opacity = "1";
-            } else {
-                s.hidden = true;
-            }
-        });
-    }
-
-    const backBtn = document.getElementById("script-back");
-    if (backBtn) backBtn.hidden = false;
-    const createBtn = document.getElementById("script-create-btn");
-    if (createBtn) createBtn.hidden = true;
-
+    // 2. Pre-fill form fields (while modal is still closed)
     const textEl = document.getElementById("script-text");
     if (textEl) textEl.value = project.lyrics_text;
     const countEl = document.getElementById("script-char-count");
@@ -1192,8 +1165,29 @@ async function createSimilar(projectId) {
     if (project.video_type) scriptData.videoType = project.video_type;
     scriptStep = 2;
 
-    // 3. Open modal
+    // 3. Open modal (same as clicking the new-project button — modal opens with mode selection)
     openModal("modal-new-project");
+
+    // 4. Switch to script mode AFTER modal is in DOM/visible (same as user clicking "Meu Roteiro")
+    switchCreateMode("script");
+
+    // 5. Show step 1 (the script text step) — override the default step 2 that updateFlowUI sets
+    const scriptPanel = document.getElementById("create-panel-script");
+    if (scriptPanel) {
+        scriptPanel.querySelectorAll(".wizard-step").forEach(s => {
+            const n = parseInt(s.dataset.step);
+            s.hidden = n !== 1;
+            if (n === 1) {
+                s.style.animation = "none";
+                s.style.opacity = "1";
+            }
+        });
+    }
+
+    const backBtn = document.getElementById("script-back");
+    if (backBtn) backBtn.hidden = false;
+    const createBtn = document.getElementById("script-create-btn");
+    if (createBtn) createBtn.hidden = true;
 }
 
 function openCopyFormatModal(projectId) {
