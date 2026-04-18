@@ -4303,6 +4303,7 @@ function openNewAutomationModal() {
     _clipDragX = 0;
     _clipWaveformLoading = false;
     _clipPlaying = false;
+    _clearClipAudioElementSource();
 
     // reset video type selection (use video-type-card class from new grid)
     document.querySelectorAll("#modal-new-automation .auto-video-type-grid .video-type-card").forEach(c => c.classList.remove("selected"));
@@ -4508,13 +4509,17 @@ function _renderTevoxiSongs() {
     const list = document.getElementById("auto-song-list");
     if (!list) return;
     list.innerHTML = _autoTevoxiSongs.map((s, i) => {
-        const dur = s.duration ? _formatDuration(s.duration) : "?";
-        const genres = (s.genres || []).join(", ");
+        const dur = Number(s.duration) > 0 ? _formatDuration(Number(s.duration)) : "";
+        const genres = (Array.isArray(s.genres) ? s.genres : [])
+            .map(g => String(g || "").trim())
+            .filter(Boolean)
+            .join(", ");
+        const meta = [genres, dur].filter(Boolean).join(" · ");
         const selected = _autoSelectedSong && _autoSelectedSong.job_id === s.job_id;
         return `<button class="auto-song-item${selected ? ' active' : ''}" type="button" onclick="selectTevoxiSong(${i})">
             <div class="song-info">
                 <strong>${esc(s.title || 'Sem titulo')}</strong>
-                <span class="muted">${esc(genres)} · ${dur}</span>
+                <span class="muted">${esc(meta || 'Sem detalhes')}</span>
             </div>
             <span class="song-check">${selected ? '✓' : ''}</span>
         </button>`;
@@ -4547,13 +4552,27 @@ let _clipPreviewSource = null;
 let _clipPreviewRaf = null;
 let _clipPlaying = false;
 let _clipWaveformLoading = false;
+let _clipAudioObjectUrl = "";
 
 function _getClipAudioUrl(song) {
     if (!song) return "";
     if (song.job_id) {
-        return `/api/automation/tevoxi-audio/${encodeURIComponent(song.job_id)}`;
+        return `${API}/automation/tevoxi-audio/${encodeURIComponent(song.job_id)}`;
     }
     return song.audio_url || "";
+}
+
+function _clearClipAudioElementSource() {
+    const audio = document.getElementById("clip-audio");
+    if (audio) {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+    }
+    if (_clipAudioObjectUrl) {
+        URL.revokeObjectURL(_clipAudioObjectUrl);
+        _clipAudioObjectUrl = "";
+    }
 }
 
 function _setClipPlayButton(isPlaying) {
@@ -4611,14 +4630,7 @@ function openClipSelector() {
     });
 
     const audioUrl = _getClipAudioUrl(song);
-    const audio = document.getElementById("clip-audio");
-    if (audio) {
-        audio.pause();
-        audio.currentTime = 0;
-        audio.crossOrigin = "anonymous";
-        audio.src = audioUrl;
-        audio.load();
-    }
+    _clearClipAudioElementSource();
 
     requestAnimationFrame(() => {
         _syncClipCanvasSize();
@@ -4632,6 +4644,7 @@ function closeClipSelector() {
     _stopClipPreview();
     const audio = document.getElementById("clip-audio");
     if (audio) audio.currentTime = 0;
+    _clearClipAudioElementSource();
     closeModal("modal-clip-selector");
 }
 
@@ -4674,9 +4687,35 @@ async function _loadClipWaveform(song, audioUrl) {
     _clipWaveformPeaks = [];
 
     try {
-        const resp = await fetch(audioUrl, { cache: "no-store" });
+        const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+        const resp = await fetch(audioUrl, {
+            method: "GET",
+            headers: authHeaders,
+            cache: "no-store",
+            credentials: "same-origin",
+        });
+        if (resp.status === 401) {
+            clearSession();
+            showAuth("Sua sessao expirou. Entre novamente.");
+            throw new Error("Unauthorized");
+        }
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
         const arrayBuf = await resp.arrayBuffer();
+        const contentType = resp.headers.get("content-type") || "audio/mpeg";
+        const audioBlob = new Blob([arrayBuf.slice(0)], { type: contentType });
+        if (_clipAudioObjectUrl) {
+            URL.revokeObjectURL(_clipAudioObjectUrl);
+        }
+        _clipAudioObjectUrl = URL.createObjectURL(audioBlob);
+        const audio = document.getElementById("clip-audio");
+        if (audio) {
+            audio.pause();
+            audio.currentTime = 0;
+            audio.src = _clipAudioObjectUrl;
+            audio.load();
+        }
+
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const decoded = await audioCtx.decodeAudioData(arrayBuf);
 
@@ -4698,6 +4737,11 @@ async function _loadClipWaveform(song, audioUrl) {
     } catch (e) {
         console.warn("[Clip] waveform load failed:", e);
         _clipAudioBuffer = null;
+        const audio = document.getElementById("clip-audio");
+        if (audio && song?.audio_url) {
+            audio.src = song.audio_url;
+            audio.load();
+        }
         if (!Number.isFinite(_clipSongDuration) || _clipSongDuration <= 0) {
             _clipSongDuration = Math.max(1, Number(song?.duration || 120));
         }
