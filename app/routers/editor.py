@@ -160,15 +160,33 @@ async def transcribe_video(
         raise HTTPException(400, "Arquivo de video nao encontrado")
 
     # Extract audio to temp WAV
-    tmp_audio = os.path.join(settings.media_dir, str(project.id), f"_transcribe_{uuid.uuid4().hex[:6]}.wav")
+    tmp_audio_dir = os.path.join(settings.media_dir, "tmp", "transcribe", str(project.id))
+    os.makedirs(tmp_audio_dir, exist_ok=True)
+    tmp_audio = os.path.join(tmp_audio_dir, f"_transcribe_{uuid.uuid4().hex[:6]}.wav")
     try:
         proc = subprocess.run(
-            ["ffmpeg", "-y", "-i", src_video, "-vn", "-acodec", "pcm_s16le",
-             "-ar", "16000", "-ac", "1", tmp_audio],
+            [
+                "ffmpeg", "-y", "-i", src_video,
+                "-map", "0:a:0", "-vn", "-acodec", "pcm_s16le",
+                "-ar", "16000", "-ac", "1", tmp_audio,
+            ],
             capture_output=True, timeout=120,
         )
         if proc.returncode != 0:
+            stderr_text = (proc.stderr or b"").decode(errors="ignore")
+            logger.error(
+                "[editor] Transcribe audio extraction failed project_id=%s src=%s stderr=%s",
+                project.id,
+                src_video,
+                stderr_text[-1200:],
+            )
+            if "Stream map '0:a:0'" in stderr_text or "matches no streams" in stderr_text:
+                raise HTTPException(400, "Este video nao possui faixa de audio para transcricao")
             raise HTTPException(500, "Falha ao extrair audio do video")
+    except subprocess.TimeoutExpired:
+        logger.error("[editor] Transcribe audio extraction timeout project_id=%s src=%s", project.id, src_video)
+        raise HTTPException(500, "Timeout ao extrair audio do video")
+    try:
 
         # Transcribe (sync function, run in thread pool)
         from app.services.transcriber import transcribe_audio
