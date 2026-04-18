@@ -89,7 +89,7 @@ async def upload_music(
 ):
     if not file.content_type or not file.content_type.startswith("audio"):
         raise HTTPException(400, "Arquivo deve ser de audio")
-    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user.id)
+    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"])
     upload_dir.mkdir(parents=True, exist_ok=True)
     ext = Path(file.filename or "audio.mp3").suffix or ".mp3"
     filename = f"music_{uuid.uuid4().hex[:8]}{ext}"
@@ -113,7 +113,7 @@ async def transcribe_video(
     result = await db.execute(
         select(VideoProject)
         .options(selectinload(VideoProject.renders))
-        .where(VideoProject.id == project_id, VideoProject.user_id == user.id)
+        .where(VideoProject.id == project_id, VideoProject.user_id == user["id"])
     )
     project = result.scalar_one_or_none()
     if not project:
@@ -172,7 +172,7 @@ async def start_export(
     result = await db.execute(
         select(VideoProject)
         .options(selectinload(VideoProject.renders))
-        .where(VideoProject.id == req.project_id, VideoProject.user_id == user.id)
+        .where(VideoProject.id == req.project_id, VideoProject.user_id == user["id"])
     )
     project = result.scalar_one_or_none()
     if not project:
@@ -191,7 +191,7 @@ async def start_export(
     }
 
     background_tasks.add_task(
-        _run_export, job_id, project, render, req, user.id
+        _run_export, job_id, project, render, req, user["id"]
     )
     return {"job_id": job_id}
 
