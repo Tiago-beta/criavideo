@@ -4145,6 +4145,207 @@ let _autoWizardThemes = []; // temporary list while creating
 let _autoTevoxiSongs = [];  // cached Tevoxi songs
 let _autoSelectedSong = null; // selected Tevoxi song for shorts
 let _autoShortsCount = 3;  // default shorts count
+let _autoSubtitleCfg = null;
+
+function _buildAutoSubtitleCfg(styleName = "destaque") {
+    const st = _getSubStyle(styleName || "destaque");
+    return {
+        style_name: st.name,
+        style_label: st.label,
+        x: 50,
+        y: 82,
+        font_size: st.fontSize,
+        font_color: st.fontColor,
+        bg_color: st.bgColor || "",
+        outline_color: st.outlineColor || "",
+        font_family: st.fontFamily,
+        bold: !!st.bold,
+        italic: !!st.italic,
+    };
+}
+
+function _resetAutoSubtitleCfg() {
+    _autoSubtitleCfg = _buildAutoSubtitleCfg("destaque");
+}
+
+function _renderAutoSubtitleStyleGrid() {
+    const grid = document.getElementById("auto-subtitle-style-grid");
+    if (!grid) return;
+    if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
+
+    grid.innerHTML = SUBTITLE_STYLES.map(st => {
+        const active = _autoSubtitleCfg.style_name === st.name;
+        const previewStyle = [
+            `font-family:${st.fontFamily}`,
+            `color:${st.fontColor}`,
+            `font-size:11px`,
+            `font-weight:${st.bold ? "bold" : "normal"}`,
+            `font-style:${st.italic ? "italic" : "normal"}`,
+            st.bgColor ? `background:${st.bgColor};padding:2px 4px;border-radius:3px;` : "",
+            st.outlineColor
+                ? `text-shadow:-1px -1px 0 ${st.outlineColor},1px -1px 0 ${st.outlineColor},-1px 1px 0 ${st.outlineColor},1px 1px 0 ${st.outlineColor};`
+                : "",
+        ].join(";");
+        return `
+            <div class="editor-sub-style-card${active ? " active" : ""}" onclick="_autoPickSubtitleStyle('${st.name}')">
+                <div class="editor-sub-style-preview" style="${previewStyle}">Abc</div>
+                <span>${esc(st.label)}</span>
+            </div>
+        `;
+    }).join("");
+}
+
+function _syncAutoSubtitleControls() {
+    if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
+    const yInput = document.getElementById("auto-subtitle-y");
+    const sizeInput = document.getElementById("auto-subtitle-size");
+    if (yInput) yInput.value = String(Math.round(_autoSubtitleCfg.y || 82));
+    if (sizeInput) sizeInput.value = String(Math.round(_autoSubtitleCfg.font_size || 28));
+    const yValue = document.getElementById("auto-subtitle-y-value");
+    const sizeValue = document.getElementById("auto-subtitle-size-value");
+    if (yValue) yValue.textContent = `${Math.round(_autoSubtitleCfg.y || 82)}%`;
+    if (sizeValue) sizeValue.textContent = `${Math.round(_autoSubtitleCfg.font_size || 28)}px`;
+}
+
+function _renderAutoSubtitlePreview() {
+    if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
+    const caption = document.getElementById("auto-subtitle-preview-caption");
+    if (!caption) return;
+
+    const cfg = _autoSubtitleCfg;
+    caption.style.left = `${cfg.x || 50}%`;
+    caption.style.top = `${cfg.y || 82}%`;
+    caption.style.fontFamily = cfg.font_family || "Arial, sans-serif";
+    caption.style.fontSize = `${Math.round(cfg.font_size || 28)}px`;
+    caption.style.fontWeight = cfg.bold ? "700" : "400";
+    caption.style.fontStyle = cfg.italic ? "italic" : "normal";
+    caption.style.color = cfg.font_color || "#ffffff";
+    caption.style.background = cfg.bg_color || "transparent";
+
+    if (cfg.outline_color) {
+        caption.style.textShadow = `-1px -1px 0 ${cfg.outline_color}, 1px -1px 0 ${cfg.outline_color}, -1px 1px 0 ${cfg.outline_color}, 1px 1px 0 ${cfg.outline_color}`;
+    } else {
+        caption.style.textShadow = "0 2px 6px rgba(0,0,0,0.75)";
+    }
+}
+
+function _updateAutoSubtitleSummary() {
+    if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
+    const summary = document.getElementById("auto-subtitle-setup-summary");
+    if (!summary) return;
+    const label = _autoSubtitleCfg.style_label || "Destaque";
+    const y = Math.round(_autoSubtitleCfg.y || 82);
+    const fs = Math.round(_autoSubtitleCfg.font_size || 28);
+    summary.textContent = `${label} · Posicao ${y}% · ${fs}px`;
+}
+
+function _autoPickSubtitleStyle(styleName) {
+    const st = _getSubStyle(styleName);
+    const y = _autoSubtitleCfg?.y ?? 82;
+    _autoSubtitleCfg = {
+        style_name: st.name,
+        style_label: st.label,
+        x: 50,
+        y,
+        font_size: st.fontSize,
+        font_color: st.fontColor,
+        bg_color: st.bgColor || "",
+        outline_color: st.outlineColor || "",
+        font_family: st.fontFamily,
+        bold: !!st.bold,
+        italic: !!st.italic,
+    };
+    _renderAutoSubtitleStyleGrid();
+    _syncAutoSubtitleControls();
+    _renderAutoSubtitlePreview();
+    _updateAutoSubtitleSummary();
+}
+
+function _autoSetSubtitleY(value, skipRender = false) {
+    if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
+    const y = Math.max(5, Math.min(95, parseInt(value, 10) || 82));
+    _autoSubtitleCfg.y = y;
+    const yValue = document.getElementById("auto-subtitle-y-value");
+    if (yValue) yValue.textContent = `${y}%`;
+    if (!skipRender) {
+        const yInput = document.getElementById("auto-subtitle-y");
+        if (yInput) yInput.value = String(y);
+    }
+    _renderAutoSubtitlePreview();
+    _updateAutoSubtitleSummary();
+}
+
+function _autoSubtitleNudgeY(delta) {
+    if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
+    _autoSetSubtitleY((_autoSubtitleCfg.y || 82) + delta);
+}
+
+function _autoSetSubtitleFontSize(value, skipRender = false) {
+    if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
+    const fs = Math.max(14, Math.min(72, parseInt(value, 10) || 28));
+    _autoSubtitleCfg.font_size = fs;
+    const sizeValue = document.getElementById("auto-subtitle-size-value");
+    if (sizeValue) sizeValue.textContent = `${fs}px`;
+    if (!skipRender) {
+        const sizeInput = document.getElementById("auto-subtitle-size");
+        if (sizeInput) sizeInput.value = String(fs);
+    }
+    _renderAutoSubtitlePreview();
+    _updateAutoSubtitleSummary();
+}
+
+function _autoSubtitleNudgeSize(delta) {
+    if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
+    _autoSetSubtitleFontSize((_autoSubtitleCfg.font_size || 28) + delta);
+}
+
+function toggleAutoSubtitleSetup(checked) {
+    const setupRow = document.getElementById("auto-subtitle-setup-row");
+    if (setupRow) setupRow.hidden = !checked;
+    if (!checked) {
+        closeAutoSubtitleModal();
+        return;
+    }
+    if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
+    _updateAutoSubtitleSummary();
+    openAutoSubtitleModal();
+}
+
+function openAutoSubtitleModal() {
+    const enabled = document.getElementById("auto-realistic-subtitles")?.checked || false;
+    if (!enabled) return;
+    if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
+    _renderAutoSubtitleStyleGrid();
+    _syncAutoSubtitleControls();
+    _renderAutoSubtitlePreview();
+    _updateAutoSubtitleSummary();
+    openModal("modal-auto-subtitle");
+}
+
+function closeAutoSubtitleModal() {
+    closeModal("modal-auto-subtitle");
+}
+
+function confirmAutoSubtitleModal() {
+    _updateAutoSubtitleSummary();
+    closeAutoSubtitleModal();
+}
+
+function _getAutoSubtitleSettingsForSchedule() {
+    if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
+    return {
+        style_name: _autoSubtitleCfg.style_name,
+        x: _autoSubtitleCfg.x,
+        y: _autoSubtitleCfg.y,
+        font_size: _autoSubtitleCfg.font_size,
+        font_color: _autoSubtitleCfg.font_color,
+        bg_color: _autoSubtitleCfg.bg_color,
+        outline_color: _autoSubtitleCfg.outline_color,
+        font_family: _autoSubtitleCfg.font_family,
+        bold: _autoSubtitleCfg.bold,
+        italic: _autoSubtitleCfg.italic,
+    };
+}
 
 async function loadAutoSchedules() {
     const container = document.getElementById("auto-schedules-list");
@@ -4323,6 +4524,13 @@ function openNewAutomationModal() {
     if (tevoxiPanel) tevoxiPanel.hidden = true;
     const tevoxiCb = document.getElementById("auto-realistic-tevoxi");
     if (tevoxiCb) tevoxiCb.checked = false;
+    const subsCb = document.getElementById("auto-realistic-subtitles");
+    if (subsCb) subsCb.checked = false;
+    const subtitleRow = document.getElementById("auto-subtitle-setup-row");
+    if (subtitleRow) subtitleRow.hidden = true;
+    _resetAutoSubtitleCfg();
+    _updateAutoSubtitleSummary();
+    closeAutoSubtitleModal();
 
     // reset realistic style tags
     document.querySelectorAll("#auto-realistic-style-tags .style-tag").forEach(t => t.classList.remove("selected"));
@@ -5403,6 +5611,10 @@ async function createAutoSchedule() {
             use_tevoxi: useTevoxi,
             enable_subtitles: enableSubs,
         };
+
+        if (enableSubs) {
+            defaultSettings.subtitle_settings = _getAutoSubtitleSettingsForSchedule();
+        }
 
         // For clip mode, tevoxi data is per-theme (in custom_settings).
         // For non-clip mode, put song-level defaults.

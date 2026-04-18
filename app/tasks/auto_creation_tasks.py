@@ -444,6 +444,7 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     add_music = cfg.get("add_music", False)
     use_tevoxi = cfg.get("use_tevoxi", False)
     enable_subtitles = cfg.get("enable_subtitles", False)
+    subtitle_settings = cfg.get("subtitle_settings") if isinstance(cfg.get("subtitle_settings"), dict) else {}
 
     # Credit check
     async with async_session() as db:
@@ -453,6 +454,8 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
 
     # Build tags for the project
     tags = {"realistic_style": realistic_style}
+    if enable_subtitles and subtitle_settings:
+        tags["subtitle_settings"] = subtitle_settings
     if use_tevoxi:
         tevoxi_audio_url = cfg.get("tevoxi_audio_url", "")
         tevoxi_job_id = cfg.get("tevoxi_job_id", "")

@@ -944,6 +944,9 @@ async def run_realistic_video_pipeline(project_id: int):
             if not user_prompt:
                 raise ValueError("Nenhuma descricao fornecida para o video realista.")
 
+            transcribed_text_for_subtitles = ""
+            transcribed_words_for_subtitles = []
+
             # ── Step 0.5: Transcribe audio clip for context-aware prompt ──
             tags_data_early = project.tags if isinstance(project.tags, dict) else {}
             external_audio_url_early = (tags_data_early.get("audio_url") or "").strip()
@@ -974,6 +977,19 @@ async def run_realistic_video_pipeline(project_id: int):
                                 None, lambda: transcribe_audio(clip_path, prompt=lyrics_hint)
                             )
                             transcribed_text = (result.get("text", "") or "").strip()
+                            words_raw = result.get("words", []) if isinstance(result, dict) else []
+                            if isinstance(words_raw, list):
+                                transcribed_words_for_subtitles = [w for w in words_raw if isinstance(w, dict) and w.get("word")]
+                            if transcribed_text:
+                                transcribed_text_for_subtitles = transcribed_text
+
+                                # Persist transcript for subtitle fallback/inspection.
+                                if getattr(project, "enable_subtitles", False):
+                                    project.lyrics_text = transcribed_text
+                                    if transcribed_words_for_subtitles:
+                                        project.lyrics_words = transcribed_words_for_subtitles
+                                    await db.commit()
+
                             if transcribed_text:
                                 user_prompt = f"A musica diz neste trecho: \"{transcribed_text}\". Crie um video que represente visualmente o que esta sendo cantado."
                                 logger.info(f"Realistic video: transcribed clip text ({len(transcribed_text)} chars): {transcribed_text[:200]}")
@@ -1293,20 +1309,48 @@ async def run_realistic_video_pipeline(project_id: int):
             await db.commit()
 
             # ── Step 3.5: Burn subtitles if enabled ──
-            if getattr(project, "enable_subtitles", False) and project.lyrics_text:
+            if getattr(project, "enable_subtitles", False):
                 try:
-                    from app.services.subtitle_generator import generate_ass_from_text
+                    from app.services.subtitle_generator import generate_ass_from_text, generate_ass_subtitles
+
                     subtitle_dir = Path(settings.media_dir) / "subtitles" / str(project_id)
                     subtitle_dir.mkdir(parents=True, exist_ok=True)
                     subtitle_path_r = str(subtitle_dir / "realistic.ass")
-                    generate_ass_from_text(
-                        lyrics_text=project.lyrics_text,
-                        duration=video_duration,
-                        aspect_ratio=aspect_ratio,
-                        output_path=subtitle_path_r,
-                        narration_mode=True,
-                    )
-                    if os.path.exists(subtitle_path_r):
+
+                    subtitle_settings = tags.get("subtitle_settings", {}) if isinstance(tags, dict) else {}
+                    words_for_subs = transcribed_words_for_subtitles or (project.lyrics_words or [])
+                    has_external_audio = bool((tags.get("audio_url", "") or "").strip())
+                    if has_external_audio:
+                        text_for_subs = (transcribed_text_for_subtitles or "").strip()
+                    else:
+                        text_for_subs = (transcribed_text_for_subtitles or project.lyrics_text or "").strip()
+
+                    if words_for_subs:
+                        generate_ass_subtitles(
+                            lyrics_words=words_for_subs,
+                            aspect_ratio=aspect_ratio,
+                            output_path=subtitle_path_r,
+                            narration_mode=True,
+                            style_settings=subtitle_settings,
+                        )
+                    elif text_for_subs:
+                        generate_ass_from_text(
+                            lyrics_text=text_for_subs,
+                            duration=video_duration,
+                            aspect_ratio=aspect_ratio,
+                            output_path=subtitle_path_r,
+                            narration_mode=True,
+                            style_settings=subtitle_settings,
+                        )
+                    else:
+                        subtitle_path_r = ""
+                        if has_external_audio:
+                            logger.info(
+                                "Skipping realistic subtitles for project %d: no transcription text was available for external audio",
+                                project_id,
+                            )
+
+                    if subtitle_path_r and os.path.exists(subtitle_path_r):
                         burned_path = str(render_dir / "realistic_video_subs.mp4")
                         sub_cmd = [
                             "ffmpeg", "-y", "-i", final_video_path,

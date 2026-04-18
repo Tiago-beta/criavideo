@@ -18,11 +18,136 @@ PlayResY: {play_res_y}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Karaoke,Arial,{font_size},&H0000FFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,40,40,{margin_v},1
+Style: Karaoke,{font_name},{font_size},{primary_color},{secondary_color},{outline_color},{back_color},{bold},{italic},0,0,100,100,0,0,{border_style},{outline_width},{shadow},2,40,40,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def _css_color_to_ass(color: str | None, default_hex: str, default_alpha: int = 0) -> str:
+    """Convert CSS-like color formats (#RRGGBB / rgba) to ASS format (&HAABBGGRR)."""
+    if not color:
+        color = default_hex
+
+    value = str(color).strip()
+    alpha = int(_clamp(default_alpha, 0, 255))
+
+    # #RGB / #RRGGBB / #RRGGBBAA
+    if value.startswith("#"):
+        raw = value[1:]
+        if len(raw) == 3:
+            raw = "".join(ch * 2 for ch in raw)
+        if len(raw) == 6:
+            try:
+                r = int(raw[0:2], 16)
+                g = int(raw[2:4], 16)
+                b = int(raw[4:6], 16)
+                return f"&H{alpha:02X}{b:02X}{g:02X}{r:02X}"
+            except ValueError:
+                pass
+        if len(raw) == 8:
+            try:
+                r = int(raw[0:2], 16)
+                g = int(raw[2:4], 16)
+                b = int(raw[4:6], 16)
+                css_alpha = int(raw[6:8], 16) / 255.0
+                ass_alpha = int(round((1.0 - css_alpha) * 255))
+                ass_alpha = int(_clamp(ass_alpha, 0, 255))
+                return f"&H{ass_alpha:02X}{b:02X}{g:02X}{r:02X}"
+            except ValueError:
+                pass
+
+    # rgb(...) / rgba(...)
+    m = re.match(r"rgba?\(([^)]+)\)", value, flags=re.IGNORECASE)
+    if m:
+        parts = [p.strip() for p in m.group(1).split(",")]
+        if len(parts) >= 3:
+            try:
+                r = int(float(parts[0]))
+                g = int(float(parts[1]))
+                b = int(float(parts[2]))
+                r = int(_clamp(r, 0, 255))
+                g = int(_clamp(g, 0, 255))
+                b = int(_clamp(b, 0, 255))
+
+                if len(parts) >= 4:
+                    a_val = parts[3]
+                    if a_val.endswith("%"):
+                        css_alpha = float(a_val[:-1]) / 100.0
+                    else:
+                        css_alpha = float(a_val)
+                    css_alpha = _clamp(css_alpha, 0.0, 1.0)
+                    alpha = int(round((1.0 - css_alpha) * 255))
+                    alpha = int(_clamp(alpha, 0, 255))
+
+                return f"&H{alpha:02X}{b:02X}{g:02X}{r:02X}"
+            except ValueError:
+                pass
+
+    # Fallback
+    return _css_color_to_ass(default_hex, default_hex, default_alpha)
+
+
+def _normalize_ass_style(aspect_ratio: str, style_settings: dict | None = None) -> dict:
+    if aspect_ratio == "9:16":
+        play_res_y = 1920
+        font_size_default = 50
+        y_default = 82
+    else:
+        play_res_y = 1080
+        font_size_default = 60
+        y_default = 88
+
+    cfg = style_settings if isinstance(style_settings, dict) else {}
+
+    y_percent = float(cfg.get("y", y_default))
+    y_percent = _clamp(y_percent, 5, 95)
+    margin_v = int(round(((100.0 - y_percent) / 100.0) * play_res_y))
+    margin_v = int(_clamp(margin_v, 20, play_res_y - 20))
+
+    font_size = int(_clamp(float(cfg.get("font_size", font_size_default)), 14, 160))
+
+    font_family = str(cfg.get("font_family") or "Arial").strip()
+    font_name = font_family.split(",")[0].strip().strip('"').strip("'") or "Arial"
+
+    primary_color = _css_color_to_ass(cfg.get("font_color"), "#FFFF00", 0)
+    secondary_color = _css_color_to_ass("#FFFFFF", "#FFFFFF", 0)
+    outline_color = _css_color_to_ass(cfg.get("outline_color"), "#000000", 0)
+
+    bg_raw = cfg.get("bg_color")
+    has_bg = bool(str(bg_raw or "").strip())
+    if has_bg:
+        back_color = _css_color_to_ass(str(bg_raw), "#000000", 128)
+        border_style = 3
+        outline_width = 1
+    else:
+        back_color = _css_color_to_ass("rgba(0,0,0,0.5)", "#000000", 128)
+        border_style = 1
+        outline_width = int(_clamp(float(3), 0, 8))
+
+    bold = -1 if bool(cfg.get("bold", True)) else 0
+    italic = -1 if bool(cfg.get("italic", False)) else 0
+
+    return {
+        "play_res_y": play_res_y,
+        "font_name": font_name,
+        "font_size": font_size,
+        "margin_v": margin_v,
+        "primary_color": primary_color,
+        "secondary_color": secondary_color,
+        "outline_color": outline_color,
+        "back_color": back_color,
+        "bold": bold,
+        "italic": italic,
+        "border_style": border_style,
+        "outline_width": outline_width,
+        "shadow": 1,
+    }
 
 
 def _format_ass_time(seconds: float) -> str:
@@ -80,6 +205,7 @@ def generate_ass_subtitles(
     aspect_ratio: str = "16:9",
     output_path: str = "karaoke.ass",
     narration_mode: bool = False,
+    style_settings: dict | None = None,
 ) -> str:
     """Generate a complete ASS subtitle file with karaoke highlighting.
     Always shows 2 lines: the current line with karaoke effect
@@ -90,20 +216,8 @@ def generate_ass_subtitles(
 
     lyrics_words: list of {"word": str, "start": float, "end": float}
     """
-    if aspect_ratio == "9:16":
-        play_res_y = 1920
-        font_size = 50
-        margin_v = 200
-    else:
-        play_res_y = 1080
-        font_size = 60
-        margin_v = 80
-
-    header = ASS_HEADER.format(
-        play_res_y=play_res_y,
-        font_size=font_size,
-        margin_v=margin_v,
-    )
+    style_cfg = _normalize_ass_style(aspect_ratio, style_settings)
+    header = ASS_HEADER.format(**style_cfg)
 
     lines = group_words_into_lines(lyrics_words)
     events = []
@@ -157,26 +271,15 @@ def generate_ass_from_text(
     aspect_ratio: str = "16:9",
     output_path: str = "karaoke.ass",
     narration_mode: bool = False,
+    style_settings: dict | None = None,
 ) -> str:
     """Generate ASS subtitles from plain text lyrics (no word timestamps).
     Distributes lines evenly across the song duration with highlight effect.
     Always shows 2 lines: current highlighted + next line preview.
     If narration_mode=True, shows only the current spoken line.
     """
-    if aspect_ratio == "9:16":
-        play_res_y = 1920
-        font_size = 50
-        margin_v = 200
-    else:
-        play_res_y = 1080
-        font_size = 60
-        margin_v = 80
-
-    header = ASS_HEADER.format(
-        play_res_y=play_res_y,
-        font_size=font_size,
-        margin_v=margin_v,
-    )
+    style_cfg = _normalize_ass_style(aspect_ratio, style_settings)
+    header = ASS_HEADER.format(**style_cfg)
 
     # Strip structural markers like [Refrão], [Verso 1], [Ponte], etc.
     cleaned = re.sub(r'\[.*?\]', '', lyrics_text)

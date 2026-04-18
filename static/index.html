@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260418-16">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260418-17">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
@@ -1795,9 +1795,13 @@
                         </div>
                         <div class="form-group realistic-audio-toggle">
                             <label class="toggle-label">
-                                <input type="checkbox" id="auto-realistic-subtitles">
+                                <input type="checkbox" id="auto-realistic-subtitles" onchange="toggleAutoSubtitleSetup(this.checked)">
                                 <span>Adicionar legendas</span>
                             </label>
+                            <div id="auto-subtitle-setup-row" class="auto-subtitle-setup-row" hidden>
+                                <button class="btn btn-secondary btn-sm" type="button" onclick="openAutoSubtitleModal()">Configurar legenda</button>
+                                <span id="auto-subtitle-setup-summary" class="muted"></span>
+                            </div>
                         </div>
                         <div class="form-group realistic-audio-toggle">
                             <label class="toggle-label">
@@ -1939,6 +1943,57 @@
         </div>
     </div>
 
+    <!-- Subtitle Setup Modal (Automation) -->
+    <div id="modal-auto-subtitle" class="modal" style="z-index:3120">
+        <div class="modal-content" style="width:min(100%, 640px)">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin:0">Configurar legendas</h3>
+                    <p class="muted" style="margin:0;font-size:0.82rem">Legenda automatica via transcricao do audio</p>
+                </div>
+                <button class="modal-close" onclick="closeAutoSubtitleModal()" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="auto-subtitle-modal-note">Quando o short for criado, o sistema transcreve o trecho da musica e aplica este estilo/posicionamento automaticamente.</p>
+
+                <div class="auto-subtitle-preview-shell">
+                    <div class="auto-subtitle-preview-frame">
+                        <div class="auto-subtitle-preview-bg"></div>
+                        <div id="auto-subtitle-preview-caption" class="auto-subtitle-preview-caption">O SENHOR E MEU PASTOR</div>
+                    </div>
+                </div>
+
+                <div class="editor-sub-quick-card" style="margin-top:10px">
+                    <div class="editor-sub-quick-row">
+                        <span class="editor-sub-quick-label">Posicao</span>
+                        <div class="editor-sub-stepper">
+                            <button type="button" onclick="_autoSubtitleNudgeY(-2)" aria-label="Subir legenda">↑</button>
+                            <input id="auto-subtitle-y" type="range" min="5" max="95" value="82" oninput="_autoSetSubtitleY(this.value, true)">
+                            <button type="button" onclick="_autoSubtitleNudgeY(2)" aria-label="Descer legenda">↓</button>
+                        </div>
+                        <span class="editor-sub-quick-value" id="auto-subtitle-y-value">82%</span>
+                    </div>
+                    <div class="editor-sub-quick-row">
+                        <span class="editor-sub-quick-label">Tamanho</span>
+                        <div class="editor-sub-stepper">
+                            <button type="button" onclick="_autoSubtitleNudgeSize(-2)" aria-label="Reduzir legenda">-</button>
+                            <input id="auto-subtitle-size" type="range" min="14" max="72" value="32" oninput="_autoSetSubtitleFontSize(this.value, true)">
+                            <button type="button" onclick="_autoSubtitleNudgeSize(2)" aria-label="Aumentar legenda">+</button>
+                        </div>
+                        <span class="editor-sub-quick-value" id="auto-subtitle-size-value">32px</span>
+                    </div>
+                </div>
+
+                <div class="auto-subtitle-style-title">Estilo da legenda</div>
+                <div id="auto-subtitle-style-grid" class="editor-subtitle-styles-grid"></div>
+            </div>
+            <div class="modal-footer modal-footer-space">
+                <button class="btn btn-secondary" type="button" onclick="closeAutoSubtitleModal()">Cancelar</button>
+                <button class="btn btn-accent" type="button" onclick="confirmAutoSubtitleModal()">Aplicar legenda</button>
+            </div>
+        </div>
+    </div>
+
     <div id="modal-player" class="modal">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
@@ -2040,7 +2095,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260418-16"></script>
-    <script src="/video/static/pwa.js?v=20260418-16"></script>
+    <script src="/video/static/app.js?v=20260418-17"></script>
+    <script src="/video/static/pwa.js?v=20260418-17"></script>
 </body>
 </html>
