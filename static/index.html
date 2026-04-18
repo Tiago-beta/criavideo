@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260417-16">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260417-17">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 119;
+        var REQUIRED_VER = 120;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -629,10 +629,7 @@
                                 <button class="duration-option grok-only" data-value="30" type="button" hidden>30s</button>
                                 <button class="duration-option grok-only" data-value="45" type="button" hidden>45s</button>
                                 <button class="duration-option grok-only" data-value="60" type="button" hidden>60s</button>
-                                <option value="16:9">16:9 (YouTube / Paisagem)</option>
-                                <option value="9:16">9:16 (TikTok / Reels)</option>
-                                <option value="1:1">1:1 (Instagram)</option>
-                            </select>
+                            </div>
                         </div>
 
                         <div class="form-group realistic-audio-toggle">
@@ -1052,10 +1049,7 @@
                                 <button class="duration-option grok-only" data-value="30" type="button" hidden>30s</button>
                                 <button class="duration-option grok-only" data-value="45" type="button" hidden>45s</button>
                                 <button class="duration-option grok-only" data-value="60" type="button" hidden>60s</button>
-                                <option value="16:9">16:9 (YouTube / Paisagem)</option>
-                                <option value="9:16">9:16 (TikTok / Reels)</option>
-                                <option value="1:1">1:1 (Instagram)</option>
-                            </select>
+                            </div>
                         </div>
 
                         <div class="form-group realistic-audio-toggle">
@@ -1828,7 +1822,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260417-16"></script>
-    <script src="/video/static/pwa.js?v=20260417-16"></script>
+    <script src="/video/static/app.js?v=20260417-17"></script>
+    <script src="/video/static/pwa.js?v=20260417-17"></script>
 </body>
 </html>
