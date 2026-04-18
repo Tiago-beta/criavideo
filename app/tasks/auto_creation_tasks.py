@@ -217,6 +217,9 @@ async def _create_video_for_theme(
     # Merge settings: custom overrides default
     cfg = {**_AUTO_DEFAULTS, **default_settings, **custom_settings}
 
+    if video_type == "musical_shorts":
+        return await _create_musical_short(theme_text, user_id, cfg, custom_settings)
+
     if video_type == "music":
         return await _create_music_video(theme_text, user_id, cfg)
 
@@ -421,6 +424,203 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
     await run_video_pipeline(project_id)
 
     return project_id
+
+
+async def _create_musical_short(
+    theme_text: str, user_id: int, cfg: dict, custom_settings: dict,
+) -> int:
+    """Create a 10-second realistic video short from a Tevoxi music segment.
+
+    Flow: download audio → extract segment → transcribe → generate realistic video
+    → combine audio + video → done.
+    """
+    import shutil
+    import subprocess
+    from app.tasks.video_tasks import run_realistic_video_pipeline
+
+    tevoxi_audio_url = cfg.get("tevoxi_audio_url", "")
+    tevoxi_job_id = cfg.get("tevoxi_job_id", "")
+    tevoxi_title = cfg.get("tevoxi_title", theme_text)
+    clip_start = float(custom_settings.get("clip_start", 0))
+    clip_duration = float(custom_settings.get("clip_duration", 10))
+    segment_index = int(custom_settings.get("segment_index", 0))
+
+    if not tevoxi_audio_url:
+        raise RuntimeError("URL do audio Tevoxi nao configurada.")
+
+    # Credit check (1 credit per short)
+    async with async_session() as db:
+        from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
+        credits_needed = CREDITS_PER_MINUTE  # 1 minute worth for each short
+        await deduct_credits(db, user_id, credits_needed)
+
+    # 1. Download full audio from Tevoxi
+    audio_dir = Path(settings.media_dir) / "audio" / f"short_{tevoxi_job_id}_{segment_index}"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    full_audio_path = audio_dir / "full_music.mp3"
+
+    if not full_audio_path.exists():
+        from app.config import get_settings
+        s = get_settings()
+        token = s.tevoxi_api_token
+        if not token and s.tevoxi_jwt_secret:
+            from jose import jwt as jose_jwt
+            import time
+            payload = {
+                "id": s.tevoxi_jwt_user_id,
+                "email": s.tevoxi_jwt_email,
+                "role": "admin",
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 3600,
+            }
+            token = jose_jwt.encode(payload, s.tevoxi_jwt_secret, algorithm="HS256")
+
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        import httpx
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.get(tevoxi_audio_url, headers=headers)
+            if resp.status_code != 200:
+                raise RuntimeError(f"Falha ao baixar audio do Tevoxi: HTTP {resp.status_code}")
+            with open(full_audio_path, "wb") as f:
+                f.write(resp.content)
+        logger.info("Tevoxi audio downloaded: %s (%d bytes)", full_audio_path, len(resp.content))
+
+    # 2. Extract audio segment
+    segment_audio_path = str(audio_dir / f"segment_{segment_index}.mp3")
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(full_audio_path),
+        "-ss", str(clip_start),
+        "-t", str(clip_duration),
+        "-c:a", "libmp3lame", "-q:a", "2",
+        segment_audio_path,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+    if not Path(segment_audio_path).exists():
+        raise RuntimeError(f"Falha ao extrair segmento de audio (start={clip_start}, dur={clip_duration})")
+
+    # 3. Transcribe segment for visual prompt context
+    visual_prompt = tevoxi_title
+    try:
+        from app.services.transcriber import transcribe_audio
+        lyrics_hint = cfg.get("tevoxi_lyrics", "")
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: transcribe_audio(segment_audio_path, prompt=lyrics_hint),
+        )
+        transcribed = (result.get("text", "") if isinstance(result, dict) else "").strip()
+        if transcribed:
+            visual_prompt = (
+                f'A musica "{tevoxi_title}" diz neste trecho: "{transcribed}". '
+                f"Crie um video realista que represente visualmente o que esta sendo cantado."
+            )
+            logger.info("Short %d transcribed: %s", segment_index, transcribed[:200])
+    except Exception as e:
+        logger.warning("Transcription failed for short %d: %s", segment_index, e)
+        visual_prompt = (
+            f'Crie um video realista inspirado na musica "{tevoxi_title}". '
+            f"Trecho {segment_index + 1}, estilo cinematografico com paisagens e emocao."
+        )
+
+    # 4. Create VideoProject for realistic pipeline
+    async with async_session() as db:
+        project = VideoProject(
+            user_id=user_id,
+            track_id=0,
+            title=f"{tevoxi_title} — Short {segment_index + 1}",
+            description=visual_prompt,
+            tags={
+                "musical_short": True,
+                "segment_index": segment_index,
+                "clip_start": clip_start,
+                "clip_duration": clip_duration,
+                "segment_audio_path": segment_audio_path,
+            },
+            style_prompt="",
+            aspect_ratio="9:16",
+            track_title=tevoxi_title,
+            track_artist="",
+            track_duration=clip_duration,
+            lyrics_text=visual_prompt,
+            lyrics_words=[],
+            audio_path="seedance",  # engine selection stored here
+            enable_subtitles=False,
+            zoom_images=False,
+            no_background_music=True,
+            is_realistic=True,
+        )
+        db.add(project)
+        await db.commit()
+        await db.refresh(project)
+        project_id = project.id
+
+    # 5. Run realistic video pipeline (generates 10s video)
+    await run_realistic_video_pipeline(project_id)
+
+    # 6. After pipeline completes, combine audio segment with video
+    await _combine_short_audio(project_id, segment_audio_path, clip_duration)
+
+    return project_id
+
+
+async def _combine_short_audio(project_id: int, segment_audio_path: str, clip_duration: float):
+    """Merge audio segment with the realistic video output."""
+    import subprocess
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(VideoRender)
+            .where(VideoRender.project_id == project_id)
+            .order_by(VideoRender.created_at.desc())
+        )
+        render = result.scalar_one_or_none()
+        if not render or not render.file_path:
+            logger.warning("No render found for musical short %d", project_id)
+            return
+
+        video_path = render.file_path
+        if not Path(video_path).exists():
+            logger.warning("Render file missing for musical short %d: %s", project_id, video_path)
+            return
+
+        # Combine: video + audio segment → final output
+        render_dir = Path(video_path).parent
+        final_path = str(render_dir / "short_final.mp4")
+
+        fade_start = max(0, clip_duration - 2)
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-i", segment_audio_path,
+            "-filter_complex",
+            f"[1:a]aresample=44100,volume=0.8,afade=t=out:st={fade_start}:d=2[aout]",
+            "-map", "0:v:0",
+            "-map", "[aout]",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k",
+            "-t", str(clip_duration),
+            "-shortest",
+            final_path,
+        ]
+
+        proc = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=120),
+        )
+        if proc.returncode != 0:
+            logger.error("FFmpeg short audio merge failed: %s", proc.stderr[:300])
+            return
+
+        # Replace render file with the combined version
+        if Path(final_path).exists() and Path(final_path).stat().st_size > 0:
+            import shutil
+            shutil.move(final_path, video_path)
+            render.file_size = Path(video_path).stat().st_size
+            render.duration = clip_duration
+            await db.commit()
+            logger.info("Musical short %d: audio merged successfully", project_id)
 
 
 async def _wait_for_project_completion(project_id: int, timeout_minutes: int = 30) -> bool:

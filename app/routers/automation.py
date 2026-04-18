@@ -2,6 +2,7 @@
 Automation Router — CRUD for auto-schedules (automated video creation + publishing).
 """
 import logging
+import math
 from datetime import datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -10,13 +11,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, Field
+import httpx
 
 from app.auth import get_current_user
+from app.config import get_settings
 from app.database import get_db
 from app.models import AutoSchedule, AutoScheduleTheme, SocialAccount
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 router = APIRouter(prefix="/api/automation", tags=["automation"])
+
+
+def _get_tevoxi_token() -> str:
+    """Generate or return Tevoxi API token."""
+    token = settings.tevoxi_api_token
+    if not token and settings.tevoxi_jwt_secret:
+        from jose import jwt as jose_jwt
+        import time
+        payload = {
+            "id": settings.tevoxi_jwt_user_id,
+            "email": settings.tevoxi_jwt_email,
+            "role": "admin",
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 3600,
+        }
+        token = jose_jwt.encode(payload, settings.tevoxi_jwt_secret, algorithm="HS256")
+    return token
 
 
 def _local_to_utc(time_local: str, tz_name: str) -> str:
@@ -174,6 +195,42 @@ def _theme_to_dict(t: AutoScheduleTheme) -> dict:
 
 # ── Endpoints ──
 
+@router.get("/tevoxi-songs")
+async def list_tevoxi_songs(user: dict = Depends(get_current_user)):
+    """Fetch user's songs from Tevoxi/Levita."""
+    token = _get_tevoxi_token()
+    if not token:
+        raise HTTPException(status_code=500, detail="Tevoxi nao configurado.")
+
+    api_url = settings.tevoxi_api_url.rstrip("/")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(f"{api_url}/api/feed/my-created-music", headers=headers)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=502, detail="Erro ao buscar musicas do Tevoxi.")
+            data = resp.json()
+            songs = data.get("songs", data) if isinstance(data, dict) else data
+            # Return simplified list
+            return [
+                {
+                    "job_id": s.get("job_id", ""),
+                    "title": s.get("title", "Sem titulo"),
+                    "duration": s.get("duration", 0),
+                    "audio_url": f"{api_url}{s['audio_url']}" if s.get("audio_url", "").startswith("/") else s.get("audio_url", ""),
+                    "lyrics": s.get("lyrics", ""),
+                    "genres": s.get("genres", []),
+                    "created_at": s.get("created_at", ""),
+                }
+                for s in (songs if isinstance(songs, list) else [])
+                if s.get("job_id")
+            ]
+    except httpx.HTTPError as e:
+        logger.warning("Failed to fetch Tevoxi songs: %s", e)
+        raise HTTPException(status_code=502, detail="Erro de conexao com Tevoxi.")
+
+
 @router.post("/schedules")
 async def create_auto_schedule(
     req: CreateAutoScheduleRequest,
@@ -182,7 +239,7 @@ async def create_auto_schedule(
 ):
     if not req.name or not req.name.strip():
         raise HTTPException(status_code=400, detail="Nome da automacao e obrigatorio.")
-    if req.video_type not in ("narration", "music"):
+    if req.video_type not in ("narration", "music", "musical_shorts"):
         raise HTTPException(status_code=400, detail="Tipo de video invalido.")
     if req.creation_mode not in ("auto", "manual"):
         raise HTTPException(status_code=400, detail="Modo de criacao invalido.")
@@ -194,6 +251,26 @@ async def create_auto_schedule(
         acct = await db.get(SocialAccount, req.social_account_id)
         if not acct or acct.user_id != user["id"]:
             raise HTTPException(status_code=400, detail="Conta social nao encontrada.")
+
+    # For musical_shorts: auto-generate themes from song segments
+    if req.video_type == "musical_shorts":
+        ds = req.default_settings or {}
+        shorts_count = max(1, min(12, int(ds.get("shorts_count", 1))))
+        song_title = ds.get("tevoxi_title", "Short Musical")
+        song_duration = float(ds.get("tevoxi_duration", 120))
+        segment_duration = 10.0
+        # Distribute segments evenly across the song
+        total_needed = shorts_count * segment_duration
+        if total_needed > song_duration:
+            segment_duration = math.floor(song_duration / shorts_count * 10) / 10
+            segment_duration = max(5, segment_duration)  # min 5s
+        step = song_duration / shorts_count if shorts_count > 1 else 0
+        req.themes = []
+        for i in range(shorts_count):
+            start = round(i * step, 1)
+            req.themes.append(f"Short {i+1} — {song_title}")
+        # Force settings
+        req.creation_mode = "auto"
 
     schedule = AutoSchedule(
         user_id=user["id"],
@@ -213,17 +290,40 @@ async def create_auto_schedule(
     await db.flush()
 
     # Add initial themes
-    for i, theme_text in enumerate(req.themes):
-        theme_text = (theme_text or "").strip()
-        if not theme_text:
-            continue
-        theme = AutoScheduleTheme(
-            auto_schedule_id=schedule.id,
-            theme=theme_text,
-            position=i,
-            status="pending",
-        )
-        db.add(theme)
+    if req.video_type == "musical_shorts":
+        ds = req.default_settings or {}
+        shorts_count = max(1, min(12, int(ds.get("shorts_count", 1))))
+        song_duration = float(ds.get("tevoxi_duration", 120))
+        step = song_duration / shorts_count if shorts_count > 1 else 0
+        segment_duration = min(10.0, song_duration / shorts_count) if shorts_count > 0 else 10.0
+        segment_duration = max(5, segment_duration)
+
+        for i, theme_text in enumerate(req.themes):
+            start = round(i * step, 1)
+            theme = AutoScheduleTheme(
+                auto_schedule_id=schedule.id,
+                theme=theme_text.strip(),
+                position=i,
+                status="pending",
+                custom_settings={
+                    "clip_start": start,
+                    "clip_duration": round(min(segment_duration, song_duration - start), 1),
+                    "segment_index": i,
+                },
+            )
+            db.add(theme)
+    else:
+        for i, theme_text in enumerate(req.themes):
+            theme_text = (theme_text or "").strip()
+            if not theme_text:
+                continue
+            theme = AutoScheduleTheme(
+                auto_schedule_id=schedule.id,
+                theme=theme_text,
+                position=i,
+                status="pending",
+            )
+            db.add(theme)
 
     await db.commit()
     await db.refresh(schedule, ["themes", "social_account"])

@@ -4127,6 +4127,9 @@ async function deleteSchedule(id) {
 
 let _autoWizardStep = 1;
 let _autoWizardThemes = []; // temporary list while creating
+let _autoTevoxiSongs = [];  // cached Tevoxi songs
+let _autoSelectedSong = null; // selected Tevoxi song for shorts
+let _autoShortsCount = 3;  // default shorts count
 
 async function loadAutoSchedules() {
     const container = document.getElementById("auto-schedules-list");
@@ -4144,10 +4147,14 @@ async function loadAutoSchedules() {
 }
 
 function renderAutoCard(s) {
-    const typeBadge = s.video_type === "music"
+    const typeBadge = s.video_type === "musical_shorts"
+        ? '<span class="badge badge-shorts">Shorts</span>'
+        : s.video_type === "music"
         ? '<span class="badge badge-processing">Musical</span>'
         : '<span class="badge badge-completed">Narrado</span>';
-    const modeBadge = s.creation_mode === "manual"
+    const modeBadge = s.video_type === "musical_shorts"
+        ? '<span class="badge badge-queued">Realista</span>'
+        : s.creation_mode === "manual"
         ? '<span class="badge">Manual</span>'
         : '<span class="badge badge-queued">Auto</span>';
     const statusBadge = s.is_active
@@ -4188,6 +4195,12 @@ function renderAutoCard(s) {
         ? `Semanal (${["Seg","Ter","Qua","Qui","Sex","Sab","Dom"][s.day_of_week || 0]})`
         : "Diario";
 
+    const addThemeHtml = s.video_type === "musical_shorts" ? "" : `
+            <div class="auto-theme-add" style="margin-top:0.5rem">
+                <input type="text" class="input" placeholder="Novo tema..." id="add-theme-input-${s.id}" maxlength="200">
+                <button class="btn btn-primary btn-sm" type="button" onclick="addAutoThemeToSchedule(${s.id})">+</button>
+            </div>`;
+
     return `<div class="auto-card" id="auto-card-${s.id}">
         <div class="auto-card-header">
             <h4>${esc(s.name || "Automacao")}</h4>
@@ -4199,12 +4212,9 @@ function renderAutoCard(s) {
             <span>${pendingCount} pendentes / ${doneCount} feitos</span>
         </div>
         <div class="auto-card-detail">
-            <strong>Temas:</strong>
+            <strong>${s.video_type === "musical_shorts" ? "Shorts:" : "Temas:"}</strong>
             <ul class="auto-theme-list">${themeListHtml || "<li class='loading'>Sem temas</li>"}</ul>
-            <div class="auto-theme-add" style="margin-top:0.5rem">
-                <input type="text" class="input" placeholder="Novo tema..." id="add-theme-input-${s.id}" maxlength="200">
-                <button class="btn btn-primary btn-sm" type="button" onclick="addAutoThemeToSchedule(${s.id})">+</button>
-            </div>
+            ${addThemeHtml}
         </div>
         <div class="auto-card-actions">
             <button class="btn btn-secondary btn-sm" onclick="toggleAutoSchedule(${s.id},${s.is_active?'false':'true'})" type="button">${s.is_active ? "Pausar" : "Ativar"}</button>
@@ -4271,6 +4281,8 @@ async function addAutoThemeToSchedule(scheduleId) {
 function openNewAutomationModal() {
     _autoWizardStep = 1;
     _autoWizardThemes = [];
+    _autoSelectedSong = null;
+    _autoShortsCount = 3;
 
     // reset selections
     document.querySelectorAll("#modal-new-automation .auto-type-card").forEach(c => c.classList.remove("active"));
@@ -4283,6 +4295,8 @@ function openNewAutomationModal() {
     if (manual) manual.hidden = true;
     const musicPanel = document.getElementById("auto-music-settings");
     if (musicPanel) musicPanel.hidden = true;
+    const songPanel = document.getElementById("auto-song-selection");
+    if (songPanel) songPanel.hidden = true;
 
     document.getElementById("auto-theme-list").innerHTML = "";
     const themeInput = document.getElementById("auto-theme-input");
@@ -4307,32 +4321,140 @@ function openNewAutomationModal() {
 
 function showAutoStep(step) {
     _autoWizardStep = step;
+    const isShorts = getSelectedAutoVideoType() === "music";
+    const totalSteps = isShorts ? 3 : 4;
+
+    // Map logical step to data-auto-step attribute
+    let dataStep = step;
+    if (isShorts) {
+        // Shorts flow: 1 → type, 2 → song selection (step 5), 3 → schedule (step 4)
+        if (step === 2) dataStep = 5;
+        else if (step === 3) dataStep = 4;
+    }
+
     document.querySelectorAll("#modal-new-automation .auto-step").forEach(el => {
-        el.classList.toggle("active", parseInt(el.dataset.autoStep) === step);
+        el.classList.toggle("active", parseInt(el.dataset.autoStep) === dataStep);
     });
-    document.querySelectorAll("#modal-new-automation .auto-dot").forEach(el => {
-        el.classList.toggle("active", parseInt(el.dataset.autoStep) <= step);
-    });
+
+    // Update dots dynamically
+    const dotsContainer = document.querySelector("#modal-new-automation .automation-steps-dots");
+    if (dotsContainer) {
+        dotsContainer.innerHTML = "";
+        for (let i = 1; i <= totalSteps; i++) {
+            const dot = document.createElement("span");
+            dot.className = "auto-dot" + (i <= step ? " active" : "");
+            dot.dataset.autoStep = i;
+            dotsContainer.appendChild(dot);
+        }
+    }
+
     const btnBack = document.getElementById("auto-btn-back");
     const btnNext = document.getElementById("auto-btn-next");
     const btnCreate = document.getElementById("auto-btn-create");
     if (btnBack) btnBack.hidden = step === 1;
-    if (btnNext) btnNext.hidden = step === 4;
-    if (btnCreate) btnCreate.hidden = step !== 4;
+    if (btnNext) btnNext.hidden = step === totalSteps;
+    if (btnCreate) btnCreate.hidden = step !== totalSteps;
 }
 
 function autoStepNext() {
-    if (_autoWizardStep === 3 && _autoWizardThemes.length === 0) {
+    const isShorts = getSelectedAutoVideoType() === "music";
+    const totalSteps = isShorts ? 3 : 4;
+
+    // Validation for shorts flow step 2 (song selection)
+    if (isShorts && _autoWizardStep === 1) {
+        // Moving from type to song selection — load songs
+        _loadTevoxiSongsIfNeeded();
+    }
+
+    if (isShorts && _autoWizardStep === 2 && !_autoSelectedSong) {
+        alert("Selecione uma musica do Tevoxi.");
+        return;
+    }
+
+    // Validation for narration flow step 3 (themes)
+    if (!isShorts && _autoWizardStep === 3 && _autoWizardThemes.length === 0) {
         alert("Digite o tema e aperte no botão + para adicionar.");
         const addBtn = document.getElementById("auto-add-theme-btn");
         if (addBtn) { addBtn.classList.add("btn-error-pulse"); setTimeout(() => addBtn.classList.remove("btn-error-pulse"), 2000); }
         return;
     }
-    if (_autoWizardStep < 4) showAutoStep(_autoWizardStep + 1);
+    if (_autoWizardStep < totalSteps) showAutoStep(_autoWizardStep + 1);
 }
 
 function autoStepBack() {
     if (_autoWizardStep > 1) showAutoStep(_autoWizardStep - 1);
+}
+
+/* ── Tevoxi Song Selection (Musical Shorts) ── */
+
+async function _loadTevoxiSongsIfNeeded() {
+    const list = document.getElementById("auto-song-list");
+    if (!list) return;
+    if (_autoTevoxiSongs.length > 0) {
+        _renderTevoxiSongs();
+        return;
+    }
+    list.innerHTML = '<p class="loading">Carregando musicas do Tevoxi...</p>';
+    try {
+        _autoTevoxiSongs = await api("/automation/tevoxi-songs");
+        if (!_autoTevoxiSongs.length) {
+            list.innerHTML = '<p class="loading">Nenhuma musica encontrada no Tevoxi.</p>';
+            return;
+        }
+        _renderTevoxiSongs();
+    } catch (e) {
+        list.innerHTML = `<p class="loading">Erro: ${esc(e.message)}</p>`;
+    }
+}
+
+function _renderTevoxiSongs() {
+    const list = document.getElementById("auto-song-list");
+    if (!list) return;
+    list.innerHTML = _autoTevoxiSongs.map((s, i) => {
+        const dur = s.duration ? _formatDuration(s.duration) : "?";
+        const genres = (s.genres || []).join(", ");
+        const selected = _autoSelectedSong && _autoSelectedSong.job_id === s.job_id;
+        return `<button class="auto-song-item${selected ? ' active' : ''}" type="button" onclick="selectTevoxiSong(${i})">
+            <div class="song-info">
+                <strong>${esc(s.title || 'Sem titulo')}</strong>
+                <span class="muted">${esc(genres)} · ${dur}</span>
+            </div>
+            <span class="song-check">${selected ? '✓' : ''}</span>
+        </button>`;
+    }).join("");
+}
+
+function _formatDuration(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function selectTevoxiSong(index) {
+    _autoSelectedSong = _autoTevoxiSongs[index] || null;
+    _renderTevoxiSongs();
+    // Update max shorts based on song duration
+    const maxShorts = _autoSelectedSong ? Math.min(12, Math.floor(_autoSelectedSong.duration / 5)) : 12;
+    const countEl = document.getElementById("auto-shorts-count");
+    if (countEl) {
+        countEl.max = maxShorts;
+        if (parseInt(countEl.value) > maxShorts) countEl.value = maxShorts;
+    }
+    updateShortsCountLabel();
+}
+
+function updateShortsCount(val) {
+    _autoShortsCount = Math.max(1, Math.min(12, parseInt(val) || 3));
+    const countEl = document.getElementById("auto-shorts-count");
+    if (countEl) countEl.value = _autoShortsCount;
+    updateShortsCountLabel();
+}
+
+function updateShortsCountLabel() {
+    const label = document.getElementById("auto-shorts-label");
+    if (!label) return;
+    const total = _autoShortsCount * 10;
+    label.textContent = `${_autoShortsCount} short${_autoShortsCount > 1 ? 's' : ''} (${total}s total)`;
 }
 
 function selectAutoVideoType(type) {
@@ -4436,21 +4558,31 @@ async function createAutoSchedule() {
         alert("Informe um nome para a automacao.");
         return;
     }
-    if (_autoWizardThemes.length === 0) {
+
+    const videoType = getSelectedAutoVideoType();
+    const isShorts = videoType === "music";
+
+    if (!isShorts && _autoWizardThemes.length === 0) {
         alert("Digite o tema e aperte no botão + para adicionar.");
         showAutoStep(3);
         const addBtn = document.getElementById("auto-add-theme-btn");
         if (addBtn) { addBtn.classList.add("btn-error-pulse"); setTimeout(() => addBtn.classList.remove("btn-error-pulse"), 2000); }
         return;
     }
+
+    if (isShorts && !_autoSelectedSong) {
+        alert("Selecione uma musica do Tevoxi.");
+        showAutoStep(2);
+        return;
+    }
+
     const accountId = parseInt(document.getElementById("auto-account")?.value || "0", 10);
     if (!accountId) {
         alert("Selecione uma conta social.");
         return;
     }
 
-    const videoType = getSelectedAutoVideoType();
-    const creationMode = getSelectedAutoCreationMode();
+    const creationMode = isShorts ? "auto" : getSelectedAutoCreationMode();
     const platform = document.getElementById("auto-platform")?.value || "youtube";
     const frequency = document.getElementById("auto-frequency")?.value || "daily";
     const timeUtc = document.getElementById("auto-time")?.value || "14:00";
@@ -4458,7 +4590,23 @@ async function createAutoSchedule() {
     const dayOfWeek = frequency === "weekly" ? parseInt(document.getElementById("auto-dow")?.value || "0", 10) : null;
 
     let defaultSettings = null;
-    if (creationMode === "manual" && videoType === "narration") {
+    let finalVideoType = videoType;
+    let themes = _autoWizardThemes;
+
+    if (isShorts) {
+        finalVideoType = "musical_shorts";
+        const song = _autoSelectedSong;
+        const count = parseInt(document.getElementById("auto-shorts-count")?.value || "3", 10);
+        defaultSettings = {
+            tevoxi_job_id: song.job_id,
+            tevoxi_title: song.title,
+            tevoxi_audio_url: song.audio_url,
+            tevoxi_duration: song.duration || 120,
+            tevoxi_lyrics: (song.lyrics || "").substring(0, 1000),
+            shorts_count: Math.max(1, Math.min(12, count)),
+        };
+        themes = []; // auto-generated by backend
+    } else if (creationMode === "manual" && videoType === "narration") {
         defaultSettings = {
             tone: document.getElementById("auto-tone")?.value || "informativo",
             voice: document.getElementById("auto-voice")?.value || "onyx",
@@ -4489,7 +4637,7 @@ async function createAutoSchedule() {
             method: "POST",
             body: JSON.stringify({
                 name,
-                video_type: videoType,
+                video_type: finalVideoType,
                 creation_mode: creationMode,
                 platform,
                 social_account_id: accountId,
@@ -4498,7 +4646,7 @@ async function createAutoSchedule() {
                 timezone: userTimezone,
                 day_of_week: dayOfWeek,
                 default_settings: defaultSettings,
-                themes: _autoWizardThemes,
+                themes,
             }),
         });
         closeModal("modal-new-automation");
