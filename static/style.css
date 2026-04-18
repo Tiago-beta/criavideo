@@ -3132,6 +3132,121 @@ svg.spin {
         flex: 1 1 calc(50% - 0.45rem);
         min-width: 0;
     }
+
+    /* ── Automation mobile fixes ── */
+    .auto-card {
+        padding: 0.75rem 0.85rem;
+        max-width: 100%;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+
+    .auto-card-header h4 {
+        font-size: 0.9rem;
+    }
+
+    .auto-card-meta {
+        gap: 0.5rem;
+        font-size: 0.78rem;
+    }
+
+    .auto-card-detail {
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .auto-theme-item {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .auto-theme-item span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .auto-theme-item .theme-badge {
+        font-size: 0.6rem;
+        padding: 1px 4px;
+    }
+
+    .auto-theme-item .theme-error-btn {
+        font-size: 0.6rem;
+        padding: 1px 4px;
+    }
+
+    .auto-theme-add {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .auto-theme-add .input {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .auto-card-actions {
+        flex-wrap: wrap;
+    }
+
+    .auto-card-actions .btn {
+        font-size: 0.78rem;
+        padding: 0.35rem 0.65rem;
+    }
+
+    /* Modal sizing for mobile */
+    .modal-content-wide {
+        width: calc(100% - 0.5rem);
+        max-width: 100vw;
+    }
+
+    .modal-body {
+        padding: 0.85rem;
+    }
+
+    .auto-type-cards,
+    .auto-video-type-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+    }
+
+    #auto-realistic-settings .form-group label,
+    #auto-manual-settings .form-group label {
+        font-size: 0.85rem;
+    }
+
+    .engine-options {
+        gap: 6px;
+    }
+
+    .engine-option {
+        flex: 1 1 calc(33% - 4px);
+        padding: 6px 4px;
+    }
+
+    .engine-option strong {
+        font-size: 0.72rem;
+    }
+
+    .realistic-inspiration-tags {
+        gap: 6px;
+    }
+
+    .realistic-inspiration-tags .style-tag {
+        font-size: 0.75rem;
+        padding: 5px 10px;
+    }
+
+    .duration-options {
+        gap: 6px;
+    }
+
+    .duration-option {
+        padding: 8px 12px;
+        font-size: 0.8rem;
+    }
 }
 
 @media (max-width: 900px) {

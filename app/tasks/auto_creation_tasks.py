@@ -443,6 +443,7 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     realistic_style = cfg.get("realistic_style", "cinematic")
     add_music = cfg.get("add_music", False)
     use_tevoxi = cfg.get("use_tevoxi", False)
+    enable_subtitles = cfg.get("enable_subtitles", False)
 
     # Credit check
     async with async_session() as db:
@@ -475,7 +476,7 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
             lyrics_text=theme_text,
             lyrics_words=[],
             audio_path=engine,
-            enable_subtitles=False,
+            enable_subtitles=enable_subtitles,
             zoom_images=False,
             no_background_music=not add_music,
             is_realistic=True,

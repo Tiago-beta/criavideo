@@ -1292,6 +1292,41 @@ async def run_realistic_video_pipeline(project_id: int):
             project.progress = 90
             await db.commit()
 
+            # ── Step 3.5: Burn subtitles if enabled ──
+            if getattr(project, "enable_subtitles", False) and project.lyrics_text:
+                try:
+                    from app.services.subtitle_generator import generate_ass_from_text
+                    subtitle_dir = Path(settings.media_dir) / "subtitles" / str(project_id)
+                    subtitle_dir.mkdir(parents=True, exist_ok=True)
+                    subtitle_path_r = str(subtitle_dir / "realistic.ass")
+                    generate_ass_from_text(
+                        lyrics_text=project.lyrics_text,
+                        duration=video_duration,
+                        aspect_ratio=aspect_ratio,
+                        output_path=subtitle_path_r,
+                        narration_mode=True,
+                    )
+                    if os.path.exists(subtitle_path_r):
+                        burned_path = str(render_dir / "realistic_video_subs.mp4")
+                        sub_cmd = [
+                            "ffmpeg", "-y", "-i", final_video_path,
+                            "-vf", f"ass='{subtitle_path_r}'",
+                            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                            "-c:a", "copy", burned_path,
+                        ]
+                        proc = await asyncio.create_subprocess_exec(
+                            *sub_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+                        )
+                        _, stderr = await proc.communicate()
+                        if proc.returncode == 0 and os.path.exists(burned_path) and os.path.getsize(burned_path) > 0:
+                            final_video_path = burned_path
+                            file_size = os.path.getsize(burned_path)
+                            logger.info(f"Subtitles burned into realistic video {project_id}")
+                        else:
+                            logger.warning(f"Subtitle burn failed (rc={proc.returncode}): {stderr.decode()[:500] if stderr else ''}")
+                except Exception as e:
+                    logger.warning(f"Subtitle generation/burn failed for realistic video {project_id}: {e}")
+
             # ── Step 4: Generate thumbnail from video frame ──
             thumb_dir = Path(settings.media_dir) / "thumbnails" / str(project_id)
             thumb_dir.mkdir(parents=True, exist_ok=True)

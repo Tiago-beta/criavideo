@@ -4631,6 +4631,7 @@ async function createAutoSchedule() {
         const selectedDur = document.querySelector("#auto-realistic-duration .duration-option.selected");
         const useTevoxi = document.getElementById("auto-realistic-tevoxi")?.checked || false;
         const useMusic = document.getElementById("auto-realistic-music")?.checked || false;
+        const enableSubs = document.getElementById("auto-realistic-subtitles")?.checked || false;
 
         defaultSettings = {
             realistic_style: selectedStyle ? selectedStyle.dataset.style : "cinematic",
@@ -4639,6 +4640,7 @@ async function createAutoSchedule() {
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",
             add_music: useMusic && !useTevoxi,
             use_tevoxi: useTevoxi,
+            enable_subtitles: enableSubs,
         };
 
         if (useTevoxi && _autoSelectedSong) {
