@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v126 loaded");
+console.log("[CriaVideo] app.js v127 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -5706,6 +5706,7 @@ const _editor = {
     duration: 0,
     playing: false,
     activeTool: "text",
+    subtitleListOpen: false,
     // Edit state
     texts: [],          // {id, content, startTime, endTime, x, y, fontSize, color, fontFamily, bold, italic}
     subtitles: [],      // {id, text, startTime, endTime, styleName, x, y, fontSize, fontColor, bgColor, outlineColor, fontFamily, bold, italic}
@@ -5842,6 +5843,7 @@ async function openEditor(projectId) {
         _editor.videoUrl = render.video_url;
         _editor.playing = false;
         _editor.activeTool = "text";
+        _editor.subtitleListOpen = false;
         _editor.texts = [];
         _editor.subtitles = [];
         _editor.trimStart = 0;
@@ -6099,6 +6101,10 @@ function _editorRenderProps() {
         `;
     } else if (tool === "subtitles") {
         const isGenerating = _editor._subtitleGenerating;
+        const hasSubs = _editor.subtitles.length > 0;
+        const selectedSub = _editor.subtitles.find(s => s._selected) || _editor.subtitles[0] || null;
+        const subtitleY = Math.round(selectedSub?.y ?? 82);
+        const subtitleSize = Math.round(selectedSub?.fontSize ?? 28);
         container.innerHTML = `
             <div class="editor-props-title">Legendas</div>
             <button class="editor-add-btn" onclick="_editorAutoSubtitles()" ${isGenerating ? "disabled" : ""}>
@@ -6107,19 +6113,59 @@ function _editorRenderProps() {
                     : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg> Gerar legendas automaticas'}
             </button>
             <button class="editor-add-btn" onclick="_editorAddSubtitle()" style="margin-top:4px">+ Adicionar legenda manual</button>
-            ${_editor.subtitles.length ? `
+            ${hasSubs ? `
                 <button class="editor-add-btn" onclick="_editorClearSubtitles()" style="margin-top:4px;border-color:rgba(239,68,68,0.3);color:#ef4444">Limpar todas</button>
             ` : ""}
-            <div class="editor-props-group" id="editor-subtitle-list" style="margin-top:8px;max-height:200px;overflow-y:auto">
-                ${_editor.subtitles.map(s => `
-                    <div class="editor-subtitle-item${s._selected ? ' active' : ''}" onclick="_editorSelectSubtitle(${s.id})">
-                        <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
-                        <span class="sub-text">${esc(s.text)}</span>
-                        <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">✕</button>
+            ${hasSubs ? `
+                <div class="editor-sub-toolbar" style="margin-top:8px">
+                    <span class="editor-sub-count">${_editor.subtitles.length} trecho(s) gerado(s)</span>
+                    <button
+                        class="editor-sub-icon-btn${_editor.subtitleListOpen ? " active" : ""}"
+                        onclick="_editorToggleSubtitleList()"
+                        title="Editar trechos"
+                        aria-label="Editar trechos"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 20h9"/>
+                            <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="editor-sub-quick-card">
+                    <div class="editor-sub-quick-row">
+                        <span class="editor-sub-quick-label">Posicao</span>
+                        <div class="editor-sub-stepper">
+                            <button type="button" onclick="_editorNudgeSubtitlesY(-2)" aria-label="Subir legenda">↑</button>
+                            <input type="range" min="5" max="95" value="${subtitleY}" oninput="_editorSetSubtitlesY(this.value, true)">
+                            <button type="button" onclick="_editorNudgeSubtitlesY(2)" aria-label="Descer legenda">↓</button>
+                        </div>
+                        <span class="editor-sub-quick-value" id="editor-sub-global-y-value">${subtitleY}%</span>
                     </div>
-                `).join("")}
-            </div>
-            ${_editor.subtitles.length ? `
+                    <div class="editor-sub-quick-row">
+                        <span class="editor-sub-quick-label">Tamanho</span>
+                        <div class="editor-sub-stepper">
+                            <button type="button" onclick="_editorNudgeSubtitlesSize(-2)" aria-label="Reduzir legenda">-</button>
+                            <input type="range" min="14" max="72" value="${subtitleSize}" oninput="_editorSetSubtitlesFontSize(this.value, true)">
+                            <button type="button" onclick="_editorNudgeSubtitlesSize(2)" aria-label="Aumentar legenda">+</button>
+                        </div>
+                        <span class="editor-sub-quick-value" id="editor-sub-global-size-value">${subtitleSize}px</span>
+                    </div>
+                </div>
+            ` : `
+                <p class="editor-sub-quick-empty">Gere legendas para liberar ajustes de posicao e tamanho.</p>
+            `}
+            ${hasSubs && _editor.subtitleListOpen ? `
+                <div class="editor-props-group" id="editor-subtitle-list" style="margin-top:8px;max-height:200px;overflow-y:auto">
+                    ${_editor.subtitles.map(s => `
+                        <div class="editor-subtitle-item${s._selected ? ' active' : ''}" onclick="_editorSelectSubtitle(${s.id})">
+                            <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
+                            <span class="sub-text">${esc(s.text)}</span>
+                            <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">✕</button>
+                        </div>
+                    `).join("")}
+                </div>
+            ` : ""}
+            ${hasSubs ? `
                 <div class="editor-props-title" style="margin-top:12px">Estilos</div>
                 <div class="editor-subtitle-styles-grid" id="editor-sub-styles-grid">
                     ${SUBTITLE_STYLES.map(st => `
@@ -6130,7 +6176,7 @@ function _editorRenderProps() {
                     `).join("")}
                 </div>
             ` : ""}
-            ${_editorSubtitleEditForm()}
+            ${_editor.subtitleListOpen ? _editorSubtitleEditForm() : ""}
         `;
     } else if (tool === "trim") {
         container.innerHTML = `
@@ -6399,6 +6445,7 @@ function _editorAddSubtitle() {
         fontColor: defStyle.fontColor, bgColor: defStyle.bgColor, outlineColor: defStyle.outlineColor,
         fontFamily: defStyle.fontFamily, bold: defStyle.bold, italic: defStyle.italic, _selected: true,
     });
+    _editor.subtitleListOpen = false;
     _editorRenderProps();
     _editorRenderTimeline();
 }
@@ -6471,6 +6518,7 @@ async function _editorAutoSubtitles() {
             fontColor: st.fontColor, bgColor: st.bgColor, outlineColor: st.outlineColor,
             fontFamily: st.fontFamily, bold: st.bold, italic: st.italic, _selected: false,
         }));
+        _editor.subtitleListOpen = false;
         showToast(`${lines.length} legendas geradas automaticamente!`, "success");
     } catch (err) {
         showToast("Erro ao gerar legendas: " + err.message, "error");
@@ -6485,10 +6533,17 @@ function _editorClearSubtitles() {
     if (!_editor.subtitles.length) return;
     _editorSaveState();
     _editor.subtitles = [];
+    _editor.subtitleListOpen = false;
     _editorRenderProps();
     _editorRenderTimeline();
 }
 window._editorClearSubtitles = _editorClearSubtitles;
+
+function _editorToggleSubtitleList() {
+    _editor.subtitleListOpen = !_editor.subtitleListOpen;
+    _editorRenderProps();
+}
+window._editorToggleSubtitleList = _editorToggleSubtitleList;
 
 function _editorSelectSubtitle(id) {
     _editor.subtitles.forEach(s => s._selected = (s.id === id));
@@ -6513,6 +6568,46 @@ function _editorUpdateSubProp(id, prop, val) {
     _editorRenderTimeline();
 }
 window._editorUpdateSubProp = _editorUpdateSubProp;
+
+function _editorSetSubtitlesY(val, noRender = false) {
+    if (!_editor.subtitles.length) return;
+    const targetY = Math.max(5, Math.min(95, parseInt(val, 10) || 82));
+    _editor.subtitles.forEach(s => { s.y = targetY; });
+    const yLabel = document.getElementById("editor-sub-global-y-value");
+    if (yLabel) yLabel.textContent = `${targetY}%`;
+    const video = document.getElementById("editor-video");
+    if (video) _editorDrawOverlays(video.currentTime);
+    _editorRenderTimeline();
+    if (!noRender) _editorRenderProps();
+}
+window._editorSetSubtitlesY = _editorSetSubtitlesY;
+
+function _editorNudgeSubtitlesY(delta) {
+    if (!_editor.subtitles.length) return;
+    const base = _editor.subtitles.find(s => s._selected)?.y ?? _editor.subtitles[0].y ?? 82;
+    _editorSetSubtitlesY(base + delta);
+}
+window._editorNudgeSubtitlesY = _editorNudgeSubtitlesY;
+
+function _editorSetSubtitlesFontSize(val, noRender = false) {
+    if (!_editor.subtitles.length) return;
+    const targetSize = Math.max(14, Math.min(72, parseInt(val, 10) || 28));
+    _editor.subtitles.forEach(s => { s.fontSize = targetSize; });
+    const sizeLabel = document.getElementById("editor-sub-global-size-value");
+    if (sizeLabel) sizeLabel.textContent = `${targetSize}px`;
+    const video = document.getElementById("editor-video");
+    if (video) _editorDrawOverlays(video.currentTime);
+    _editorRenderTimeline();
+    if (!noRender) _editorRenderProps();
+}
+window._editorSetSubtitlesFontSize = _editorSetSubtitlesFontSize;
+
+function _editorNudgeSubtitlesSize(delta) {
+    if (!_editor.subtitles.length) return;
+    const base = _editor.subtitles.find(s => s._selected)?.fontSize ?? _editor.subtitles[0].fontSize ?? 28;
+    _editorSetSubtitlesFontSize(base + delta);
+}
+window._editorNudgeSubtitlesSize = _editorNudgeSubtitlesSize;
 
 // ---------- Trim actions ----------
 function _editorSetTrimStart(val) {
