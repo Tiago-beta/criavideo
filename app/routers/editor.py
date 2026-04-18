@@ -30,6 +30,37 @@ settings = get_settings()
 _export_jobs: dict[str, dict] = {}
 
 
+def _resolve_render_video_path(render: VideoRender) -> str | None:
+    """Resolve render.file_path or legacy media URL to a local file path."""
+    source = (getattr(render, "file_path", "") or "").strip()
+    if not source:
+        return None
+
+    if source.startswith("/video/media/"):
+        source = os.path.join(settings.media_dir, source.split("/video/media/")[-1].lstrip("/"))
+    elif "/video/media/" in source:
+        source = os.path.join(settings.media_dir, source.split("/video/media/")[-1].lstrip("/"))
+    elif not os.path.isabs(source):
+        source = os.path.join(settings.media_dir, source.lstrip("/"))
+
+    return source
+
+
+def _fallback_project_video_path(project_id: int) -> str | None:
+    """Fallback for old projects when render path is missing/inconsistent."""
+    candidates = [
+        os.path.join(settings.media_dir, str(project_id), "output.mp4"),
+        os.path.join(settings.media_dir, str(project_id), "final.mp4"),
+        os.path.join(settings.media_dir, "renders", str(project_id), "realistic_video_final.mp4"),
+        os.path.join(settings.media_dir, "renders", str(project_id), "final.mp4"),
+        os.path.join(settings.media_dir, "renders", str(project_id), "output.mp4"),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
 # ── Models ──────────────────────────────────────────────
 class TextOverlay(BaseModel):
     content: str
@@ -118,24 +149,13 @@ async def transcribe_video(
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(404, "Projeto nao encontrado")
-    render = next((r for r in project.renders if r.video_url), None)
+    render = next((r for r in sorted(project.renders, key=lambda rr: rr.id or 0, reverse=True) if r.file_path), None)
     if not render:
         raise HTTPException(400, "Nenhum video disponivel")
 
-    # Resolve video path
-    video_url = render.video_url
-    src_video = None
-    if video_url.startswith("/"):
-        src_video = video_url.replace("/video/media/", settings.media_dir + "/")
-    elif "/video/media/" in video_url:
-        src_video = os.path.join(settings.media_dir, video_url.split("/video/media/")[-1])
+    src_video = _resolve_render_video_path(render)
     if not src_video or not os.path.exists(src_video):
-        proj_dir = os.path.join(settings.media_dir, str(project.id))
-        candidates = [
-            os.path.join(proj_dir, "output.mp4"),
-            os.path.join(proj_dir, "final.mp4"),
-        ]
-        src_video = next((c for c in candidates if os.path.exists(c)), None)
+        src_video = _fallback_project_video_path(project.id)
     if not src_video:
         raise HTTPException(400, "Arquivo de video nao encontrado")
 
@@ -177,7 +197,7 @@ async def start_export(
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(404, "Projeto nao encontrado")
-    render = next((r for r in project.renders if r.video_url), None)
+    render = next((r for r in sorted(project.renders, key=lambda rr: rr.id or 0, reverse=True) if r.file_path), None)
     if not render:
         raise HTTPException(400, "Nenhum video disponivel para editar")
 
@@ -213,26 +233,10 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         job["message"] = "Preparando arquivos..."
 
         # Resolve source video path
-        video_url = render.video_url
-        if video_url.startswith("/"):
-            # Local path
-            src_video = video_url.replace("/video/media/", settings.media_dir + "/")
-        else:
-            src_video = video_url
+        src_video = _resolve_render_video_path(render)
 
-        # If it's a URL served by the app, resolve to local file
-        if "/video/media/" in src_video:
-            src_video = src_video.split("/video/media/")[-1]
-            src_video = os.path.join(settings.media_dir, src_video)
-
-        if not os.path.exists(src_video):
-            # Try the render's direct path
-            proj_dir = os.path.join(settings.media_dir, str(project.id))
-            candidates = [
-                os.path.join(proj_dir, "output.mp4"),
-                os.path.join(proj_dir, "final.mp4"),
-            ]
-            src_video = next((c for c in candidates if os.path.exists(c)), None)
+        if not src_video or not os.path.exists(src_video):
+            src_video = _fallback_project_video_path(project.id)
             if not src_video:
                 job["status"] = "failed"
                 job["error"] = "Arquivo de video nao encontrado no servidor"
@@ -409,12 +413,12 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
 
         async def _save_render():
             async with async_session() as db:
-                media_rel = out_file.replace(settings.media_dir, "").lstrip("/")
-                video_url = f"/video/media/{media_rel}"
                 new_render = VideoRender(
                     project_id=project.id,
-                    video_url=video_url,
-                    status="completed",
+                    format=render.format,
+                    file_path=out_file,
+                    file_size=os.path.getsize(out_file) if os.path.exists(out_file) else None,
+                    thumbnail_path=render.thumbnail_path,
                 )
                 db.add(new_render)
                 await db.commit()
