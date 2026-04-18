@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260418-08">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260418-09">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
@@ -1720,7 +1720,7 @@
                             <label>Formato</label>
                             <select id="auto-aspect" class="input">
                                 <option value="16:9">16:9 (YouTube)</option>
-                                <option value="9:16">9:16 (Shorts/TikTok)</option>
+                                <option value="9:16">9:16 (Shorts/Reels)</option>
                                 <option value="1:1">1:1 (Instagram)</option>
                             </select>
                         </div>
@@ -1760,7 +1760,7 @@
                         <div class="form-group">
                             <label>Formato</label>
                             <select id="auto-realistic-aspect" class="input">
-                                <option value="9:16">9:16 (Shorts/TikTok)</option>
+                                <option value="9:16">9:16 (Shorts/Reels)</option>
                                 <option value="16:9">16:9 (YouTube)</option>
                                 <option value="1:1">1:1 (Instagram)</option>
                             </select>
@@ -1791,13 +1791,17 @@
                     </div>
                 </div>
 
-                <!-- Step 3: Temas (Playlist) -->
+                <!-- Step 3: Trechos / Temas -->
                 <div class="auto-step" data-auto-step="3">
-                    <h4 class="auto-step-title">Temas da playlist</h4>
-                    <p class="muted" style="margin-bottom:0.75rem">Adicione os temas dos videos. O sistema criara um video por agendamento na ordem da lista.</p>
-                    <div class="auto-theme-add">
+                    <h4 class="auto-step-title" id="auto-step3-title">Temas da playlist</h4>
+                    <p class="muted" id="auto-step3-desc" style="margin-bottom:0.75rem">Adicione os temas dos videos. O sistema criara um video por agendamento na ordem da lista.</p>
+                    <div id="auto-theme-add-row" class="auto-theme-add">
                         <input id="auto-theme-input" type="text" class="input" placeholder="Ex: 5 dicas de produtividade" maxlength="200">
                         <button id="auto-add-theme-btn" class="btn btn-primary btn-sm" type="button" onclick="addAutoTheme()">+</button>
+                    </div>
+                    <div id="auto-clip-add-row" hidden style="margin-bottom:0.5rem">
+                        <button class="btn btn-primary btn-sm" type="button" onclick="openClipSelector()">+ Adicionar trecho</button>
+                    </div>
                     </div>
                     <ul id="auto-theme-list" class="auto-theme-list" style="margin-top:0.75rem"></ul>
                 </div>
@@ -1850,6 +1854,52 @@
                 <div style="flex:1"></div>
                 <button id="auto-btn-next" class="btn btn-primary" type="button" onclick="autoStepNext()">Proximo</button>
                 <button id="auto-btn-create" class="btn btn-accent" type="button" onclick="createAutoSchedule()" hidden>Ativar Automacao</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Clip Selector Modal -->
+    <div id="modal-clip-selector" class="modal" style="z-index:3100">
+        <div class="modal-content" style="width:min(100%, 440px)">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin:0">Selecionar trecho</h3>
+                    <p id="clip-song-title" class="muted" style="margin:0;font-size:0.82rem"></p>
+                </div>
+                <button class="modal-close" onclick="closeClipSelector()" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Duracao do clipe</label>
+                    <p class="muted" style="font-size:0.78rem;margin:0 0 0.4rem">Escolha quanto da musica usar no video:</p>
+                    <div class="duration-options" id="clip-duration-options">
+                        <button class="duration-option" data-value="0" type="button">Tudo</button>
+                        <button class="duration-option" data-value="10" type="button">10s</button>
+                        <button class="duration-option selected" data-value="20" type="button">20s</button>
+                        <button class="duration-option" data-value="30" type="button">30s</button>
+                        <button class="duration-option" data-value="40" type="button">40s</button>
+                        <button class="duration-option" data-value="50" type="button">50s</button>
+                        <button class="duration-option" data-value="60" type="button">60s</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div id="clip-waveform-container" class="clip-waveform-container">
+                        <canvas id="clip-waveform-canvas" height="80"></canvas>
+                        <div id="clip-region" class="clip-region"></div>
+                        <div id="clip-playhead" class="clip-playhead"></div>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.4rem">
+                        <span id="clip-time-label" style="font-size:0.85rem">0:00 - 0:20</span>
+                        <button id="clip-play-btn" class="btn btn-secondary btn-sm" type="button" onclick="toggleClipPreview()" style="border-radius:50%;width:36px;height:36px;padding:0;display:flex;align-items:center;justify-content:center">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <audio id="clip-audio" preload="auto"></audio>
+            </div>
+            <div class="modal-footer modal-footer-space">
+                <button class="btn btn-secondary" type="button" onclick="closeClipSelector()">Voltar</button>
+                <button class="btn btn-accent" type="button" onclick="addClipToThemes()">Adicionar trecho</button>
             </div>
         </div>
     </div>
@@ -1955,7 +2005,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260418-08"></script>
-    <script src="/video/static/pwa.js?v=20260418-08"></script>
+    <script src="/video/static/app.js?v=20260418-09"></script>
+    <script src="/video/static/pwa.js?v=20260418-09"></script>
 </body>
 </html>

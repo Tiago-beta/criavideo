@@ -456,9 +456,13 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     if use_tevoxi:
         tevoxi_audio_url = cfg.get("tevoxi_audio_url", "")
         tevoxi_job_id = cfg.get("tevoxi_job_id", "")
+        clip_start = float(cfg.get("clip_start", 0))
+        clip_dur = float(cfg.get("clip_duration", duration))
         if tevoxi_audio_url:
             tags["audio_url"] = tevoxi_audio_url
             tags["tevoxi_job_id"] = tevoxi_job_id
+            tags["clip_start"] = clip_start
+            tags["clip_duration"] = clip_dur
 
     # Create project
     async with async_session() as db:
@@ -492,6 +496,17 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     # If Tevoxi music is configured, combine audio with video
     if use_tevoxi and cfg.get("tevoxi_audio_url"):
         try:
+            # If no explicit clip_start, auto-select a segment with vocals
+            # (skip the intro, usually ~20-30s of instrumental)
+            if "clip_start" not in cfg or float(cfg.get("clip_start", 0)) == 0:
+                song_dur = float(cfg.get("tevoxi_duration", 120))
+                # Start at ~25% of the song (past intro, into first verse)
+                auto_start = max(15, song_dur * 0.25)
+                # Ensure we don't exceed song length
+                if auto_start + duration > song_dur:
+                    auto_start = max(0, song_dur - duration - 5)
+                cfg = {**cfg, "clip_start": auto_start}
+                logger.info("Auto-selected clip start at %.1fs for Tevoxi song (song_dur=%.1f)", auto_start, song_dur)
             await _download_and_combine_tevoxi_audio(project_id, cfg, duration)
         except Exception as e:
             logger.warning("Failed to combine Tevoxi audio for project %d: %s", project_id, e)
@@ -535,10 +550,15 @@ async def _download_and_combine_tevoxi_audio(project_id: int, cfg: dict, clip_du
         with open(audio_path, "wb") as f:
             f.write(resp.content)
 
-    # Trim to clip duration
+    # Trim to clip segment (clip_start + clip_duration)
+    clip_start = float(cfg.get("clip_start", 0))
     trimmed_path = str(audio_dir / "trimmed.mp3")
     cmd = [
         "ffmpeg", "-y", "-i", str(audio_path),
+    ]
+    if clip_start > 0:
+        cmd += ["-ss", str(clip_start)]
+    cmd += [
         "-t", str(clip_duration),
         "-c:a", "libmp3lame", "-q:a", "2", trimmed_path,
     ]

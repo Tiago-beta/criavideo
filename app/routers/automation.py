@@ -3,7 +3,7 @@ Automation Router — CRUD for auto-schedules (automated video creation + publis
 """
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Union
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,7 +76,7 @@ class CreateAutoScheduleRequest(BaseModel):
     timezone: str = "UTC"
     day_of_week: Optional[int] = None
     default_settings: Optional[dict] = Field(default=None)
-    themes: list[str] = Field(default_factory=list)
+    themes: list[Union[str, dict]] = Field(default_factory=list)
 
 
 class UpdateAutoScheduleRequest(BaseModel):
@@ -92,7 +92,7 @@ class UpdateAutoScheduleRequest(BaseModel):
 
 
 class AddThemesRequest(BaseModel):
-    themes: list[str]
+    themes: list[Union[str, dict]]
 
 
 class ReorderThemesRequest(BaseModel):
@@ -269,8 +269,13 @@ async def create_auto_schedule(
     await db.flush()
 
     # Add initial themes
-    for i, theme_text in enumerate(req.themes):
-        theme_text = (theme_text or "").strip()
+    for i, raw_theme in enumerate(req.themes):
+        if isinstance(raw_theme, dict):
+            theme_text = (raw_theme.get("text") or "").strip()
+            custom_settings = raw_theme.get("custom_settings")
+        else:
+            theme_text = (raw_theme or "").strip()
+            custom_settings = None
         if not theme_text:
             continue
         theme = AutoScheduleTheme(
@@ -278,6 +283,7 @@ async def create_auto_schedule(
             theme=theme_text,
             position=i,
             status="pending",
+            custom_settings=custom_settings,
         )
         db.add(theme)
 
@@ -401,8 +407,13 @@ async def add_themes(
     max_pos = result.scalar() or -1
 
     added = []
-    for i, theme_text in enumerate(req.themes):
-        theme_text = (theme_text or "").strip()
+    for i, raw_theme in enumerate(req.themes):
+        if isinstance(raw_theme, dict):
+            theme_text = (raw_theme.get("text") or "").strip()
+            custom_settings = raw_theme.get("custom_settings")
+        else:
+            theme_text = (raw_theme or "").strip()
+            custom_settings = None
         if not theme_text:
             continue
         theme = AutoScheduleTheme(
@@ -410,6 +421,7 @@ async def add_themes(
             theme=theme_text,
             position=max_pos + 1 + i,
             status="pending",
+            custom_settings=custom_settings,
         )
         db.add(theme)
         added.append(theme)
