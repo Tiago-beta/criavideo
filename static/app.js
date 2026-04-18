@@ -21,6 +21,19 @@ let _pendingConnectPlatform = "";
 let _editingSocialAccountId = 0;
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 
+// Simple toast notification
+function showToast(msg, type = "info") {
+    const existing = document.getElementById("_app_toast");
+    if (existing) existing.remove();
+    const el = document.createElement("div");
+    el.id = "_app_toast";
+    const bg = type === "error" ? "#ef4444" : type === "success" ? "#22c55e" : "#3b82f6";
+    el.style.cssText = `position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:${bg};color:#fff;padding:10px 20px;border-radius:10px;font-size:13px;z-index:99999;box-shadow:0 4px 20px rgba(0,0,0,0.3);max-width:90vw;text-align:center;animation:fadeIn .2s`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .3s"; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
 function getApiErrorMessage(body, fallback = "Erro inesperado") {
     if (!body) {
         return fallback;
@@ -6418,7 +6431,7 @@ async function _editorAutoSubtitles() {
     _editor._subtitleGenerating = true;
     _editorRenderProps();
     try {
-        const res = await api(`/video/editor/transcribe/${_editor.projectId}`, "POST");
+        const res = await api(`/video/editor/transcribe/${_editor.projectId}`, { method: "POST" });
         if (!res.words || !res.words.length) {
             showToast("Nao foi possivel detectar fala no video.", "error");
             _editor._subtitleGenerating = false;
@@ -6708,7 +6721,11 @@ async function _editorExport() {
         edits.music_path = musicPath;
 
         // Submit export job
-        const res = await api("/video/editor/export", "POST", edits);
+        const res = await api("/video/editor/export", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(edits),
+        });
         const jobId = res.job_id;
 
         // Poll progress
