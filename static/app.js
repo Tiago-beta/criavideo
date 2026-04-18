@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v132 loaded");
+console.log("[CriaVideo] app.js v134 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -6680,12 +6680,18 @@ function _editorToggleTrackSelection(track) {
     if (!_editorIsTrackSelectable(track)) return;
 
     const current = _editorGetSelectedSegmentTracks();
-    let next = [];
+    let next = current;
+
     if (current.includes(track)) {
-        if (current.length <= 1) return;
-        next = current.filter(t => t !== track);
+        // When multiple tracks are active, click isolates the chosen track.
+        if (current.length > 1) {
+            next = [track];
+        }
+    } else if (current.length === 1) {
+        // With one active track, clicking the other track enables multi-select.
+        next = [current[0], track];
     } else {
-        next = [...current, track];
+        next = [track];
     }
 
     _editor.selectedTracks = next;
