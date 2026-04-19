@@ -73,6 +73,33 @@ def _find_custom_video(project_id: int) -> str:
     return ""
 
 
+def _build_tevoxi_auth_headers(audio_url: str) -> dict:
+    """Build auth headers for Tevoxi private audio URLs when possible."""
+    url = (audio_url or "").strip()
+    if "/api/create-music/audio/" not in url:
+        return {}
+
+    token = (getattr(settings, "tevoxi_api_token", "") or "").strip()
+    if not token and getattr(settings, "tevoxi_jwt_secret", ""):
+        try:
+            import time
+            from jose import jwt as jose_jwt
+
+            payload = {
+                "id": settings.tevoxi_jwt_user_id,
+                "email": settings.tevoxi_jwt_email,
+                "role": "admin",
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 3600,
+            }
+            token = jose_jwt.encode(payload, settings.tevoxi_jwt_secret, algorithm="HS256")
+        except Exception as e:
+            logger.warning(f"Failed to create Tevoxi JWT for audio download: {e}")
+            token = ""
+
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
 _REFERENCE_IMAGE_HINT_MARKERS = (
     "reference image",
     "uploaded image",
@@ -311,8 +338,9 @@ async def download_audio_if_url(audio_path: str, project_id: int) -> str:
         return local_path
 
     logger.info(f"Downloading audio from {audio_path}")
+    headers = _build_tevoxi_auth_headers(audio_path)
     async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
-        resp = await client.get(audio_path)
+        resp = await client.get(audio_path, headers=headers or None)
         resp.raise_for_status()
         with open(local_path, "wb") as f:
             f.write(resp.content)
@@ -1009,6 +1037,7 @@ async def run_realistic_video_pipeline(project_id: int):
             # ── Step 0.5: Transcribe audio clip for context-aware prompt ──
             tags_data_early = project.tags if isinstance(project.tags, dict) else {}
             external_audio_url_early = (tags_data_early.get("audio_url") or "").strip()
+            segment_transcription_hint = str(tags_data_early.get("segment_transcription", "") or "").strip()
             clip_start_early = float(tags_data_early.get("clip_start", 0))
             clip_dur_early = float(tags_data_early.get("clip_duration", 0))
             if external_audio_url_early:
@@ -1052,6 +1081,9 @@ async def run_realistic_video_pipeline(project_id: int):
                             if transcribed_text:
                                 user_prompt = _build_transcribed_realistic_prompt(transcribed_text)
                                 logger.info(f"Realistic video: transcribed clip text ({len(transcribed_text)} chars): {transcribed_text[:200]}")
+                            elif segment_transcription_hint:
+                                user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint)
+                                logger.info("Realistic video: using stored segment transcription fallback")
                             elif lyrics_hint:
                                 user_prompt = _build_transcribed_realistic_prompt(lyrics_hint)
                                 logger.info("Realistic video: transcription empty, using lyrics hint for prompt")
@@ -1059,17 +1091,24 @@ async def run_realistic_video_pipeline(project_id: int):
                                 user_prompt = _build_transcribed_realistic_prompt("")
                                 logger.info("Realistic video: no transcription available, using generic clip prompt")
                         else:
-                            if tags_data_early.get("lyrics"):
+                            if segment_transcription_hint:
+                                user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint)
+                            elif tags_data_early.get("lyrics"):
                                 user_prompt = _build_transcribed_realistic_prompt(str(tags_data_early.get("lyrics", "")))
                             else:
                                 user_prompt = _build_transcribed_realistic_prompt("")
                             logger.warning("Realistic video: clip extraction failed, using lyric-based fallback prompt")
                 except Exception as e:
-                    if tags_data_early.get("lyrics"):
+                    if segment_transcription_hint:
+                        user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint)
+                    elif tags_data_early.get("lyrics"):
                         user_prompt = _build_transcribed_realistic_prompt(str(tags_data_early.get("lyrics", "")))
                     else:
                         user_prompt = _build_transcribed_realistic_prompt("")
                     logger.warning(f"Realistic video: clip transcription failed: {e}, using lyric-based fallback prompt")
+            elif segment_transcription_hint:
+                user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint)
+                logger.info("Realistic video: no external audio URL, using stored segment transcription")
 
             # Check for reference image (stored in style_prompt as file path)
             image_path = None

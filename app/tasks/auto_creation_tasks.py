@@ -444,7 +444,7 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     """
     from app.tasks.video_tasks import run_realistic_video_pipeline
 
-    engine = cfg.get("engine", "minimax")
+    engine = str(cfg.get("engine", "minimax") or "minimax").strip().lower()
     duration = int(cfg.get("duration", 7))
     aspect_ratio = cfg.get("aspect_ratio", "9:16")
     realistic_style = cfg.get("realistic_style", "cinematic")
@@ -453,6 +453,10 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     enable_subtitles = cfg.get("enable_subtitles", False)
     subtitle_settings = cfg.get("subtitle_settings") if isinstance(cfg.get("subtitle_settings"), dict) else {}
     tevoxi_lyrics = str(cfg.get("tevoxi_lyrics", "") or "").strip()
+
+    # Backend guardrail: Tevoxi realistic automation always uses Grok.
+    if use_tevoxi:
+        engine = "grok"
 
     # Credit check
     async with async_session() as db:
@@ -625,6 +629,7 @@ async def _create_musical_short(
     clip_start = float(custom_settings.get("clip_start", 0))
     clip_duration = float(custom_settings.get("clip_duration", 10))
     segment_index = int(custom_settings.get("segment_index", 0))
+    engine = "grok"  # musical shorts are Grok-only
 
     if not tevoxi_audio_url:
         raise RuntimeError("URL do audio Tevoxi nao configurada.")
@@ -690,6 +695,7 @@ async def _create_musical_short(
         "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
         "quando isso nao estiver claramente no trecho cantado."
     )
+    segment_transcription = ""
     try:
         from app.services.transcriber import transcribe_audio
         lyrics_hint = cfg.get("tevoxi_lyrics", "")
@@ -698,6 +704,7 @@ async def _create_musical_short(
         )
         transcribed = (result.get("text", "") if isinstance(result, dict) else "").strip()
         if transcribed:
+            segment_transcription = transcribed
             snippet = " ".join(transcribed.split())[:420]
             visual_prompt = (
                 f'Trecho transcrito da musica: "{snippet}". '
@@ -741,6 +748,7 @@ async def _create_musical_short(
                 "clip_start": clip_start,
                 "clip_duration": clip_duration,
                 "segment_audio_path": segment_audio_path,
+                "segment_transcription": segment_transcription,
             },
             style_prompt="",
             aspect_ratio="9:16",
@@ -749,7 +757,7 @@ async def _create_musical_short(
             track_duration=clip_duration,
             lyrics_text=visual_prompt,
             lyrics_words=[],
-            audio_path="seedance",  # engine selection stored here
+            audio_path=engine,  # engine selection stored here
             enable_subtitles=False,
             zoom_images=False,
             no_background_music=True,
