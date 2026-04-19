@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v145 loaded");
+console.log("[CriaVideo] app.js v146 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -8723,19 +8723,27 @@ function _editorApplyDraggedRange(kind, id, start, end, track = "") {
 }
 
 function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
+    const frozenTrackWidth = Math.max(trackEl?.getBoundingClientRect?.().width || 0, 1);
+    const fallbackTrackWidth = Math.max(
+        document.getElementById("editor-track-video")?.getBoundingClientRect?.().width || 0,
+        document.getElementById("editor-timeline")?.getBoundingClientRect?.().width || 0,
+        1
+    );
+    const stableTrackWidth = Math.max(frozenTrackWidth, fallbackTrackWidth);
+    const frozenClipRect = clipEl?.getBoundingClientRect?.() || null;
+
     _editorSelectTimelineClip(kind, id, false, track);
     if (!_editorTimelineCanDrag(kind) || !_editor.duration || !trackEl) return false;
     const range = _editorGetTimelineRange(kind, id, track);
     if (!range) return false;
 
     let mode = "move";
-    if (_editorTimelineCanResize(kind) && clipEl) {
-        const clipRect = clipEl.getBoundingClientRect();
-        const localX = event.clientX - clipRect.left;
-        const edgeSize = Math.max(6, Math.min(14, clipRect.width * 0.2));
+    if (_editorTimelineCanResize(kind) && frozenClipRect) {
+        const localX = event.clientX - frozenClipRect.left;
+        const edgeSize = Math.max(6, Math.min(14, frozenClipRect.width * 0.2));
         if (localX <= edgeSize) {
             mode = "resize-start";
-        } else if (localX >= clipRect.width - edgeSize) {
+        } else if (localX >= frozenClipRect.width - edgeSize) {
             mode = "resize-end";
         }
     }
@@ -8746,7 +8754,7 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
         track,
         mode,
         startX: event.clientX,
-        trackWidth: Math.max(trackEl.getBoundingClientRect().width, 1),
+        trackWidth: stableTrackWidth,
         duration: Math.max(_editor.duration, 0.1),
         baseStart: range.start,
         baseEnd: range.end,
