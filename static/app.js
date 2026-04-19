@@ -4368,6 +4368,8 @@ function _getAutoSubtitleSettingsForSchedule() {
         font_family: _autoSubtitleCfg.font_family,
         bold: _autoSubtitleCfg.bold,
         italic: _autoSubtitleCfg.italic,
+        font_size_mode: "preview_px",
+        preview_reference_width: 240,
     };
 }
 
@@ -5455,6 +5457,7 @@ function addClipToThemes() {
             tevoxi_job_id: _autoSelectedSong.job_id,
             tevoxi_title: _autoSelectedSong.title,
             tevoxi_audio_url: _autoSelectedSong.audio_url,
+            tevoxi_lyrics: _autoSelectedSong.lyrics || "",
             tevoxi_duration: _autoSelectedSong.duration || 120,
             clip_start: Math.round(_clipStart * 10) / 10,
             clip_duration: Math.round(_clipDuration * 10) / 10,
@@ -5665,6 +5668,7 @@ async function createAutoSchedule() {
             defaultSettings.tevoxi_job_id = _autoSelectedSong.job_id;
             defaultSettings.tevoxi_title = _autoSelectedSong.title;
             defaultSettings.tevoxi_audio_url = _autoSelectedSong.audio_url;
+            defaultSettings.tevoxi_lyrics = _autoSelectedSong.lyrics || "";
             defaultSettings.tevoxi_duration = _autoSelectedSong.duration || 120;
         }
     }

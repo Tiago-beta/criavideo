@@ -13,7 +13,7 @@ ScriptType: v4.00+
 WrapStyle: 0
 ScaledBorderAndShadow: yes
 YCbCr Matrix: None
-PlayResX: 1920
+PlayResX: {play_res_x}
 PlayResY: {play_res_y}
 
 [V4+ Styles]
@@ -94,23 +94,51 @@ def _css_color_to_ass(color: str | None, default_hex: str, default_alpha: int = 
 
 
 def _normalize_ass_style(aspect_ratio: str, style_settings: dict | None = None) -> dict:
-    if aspect_ratio == "9:16":
-        play_res_y = 1920
-        font_size_default = 50
-        y_default = 82
-    else:
-        play_res_y = 1080
-        font_size_default = 60
-        y_default = 88
-
     cfg = style_settings if isinstance(style_settings, dict) else {}
+    preview_font_mode = str(cfg.get("font_size_mode", "") or "").strip().lower() == "preview_px"
+
+    # Keep legacy 1920x* script space for old flows; use real aspect script space for preview-based sizing.
+    if preview_font_mode:
+        if aspect_ratio == "9:16":
+            play_res_x = 1080
+            play_res_y = 1920
+            font_size_default = 32
+            y_default = 82
+        elif aspect_ratio == "1:1":
+            play_res_x = 1080
+            play_res_y = 1080
+            font_size_default = 32
+            y_default = 85
+        else:
+            play_res_x = 1920
+            play_res_y = 1080
+            font_size_default = 32
+            y_default = 88
+    else:
+        play_res_x = 1920
+        if aspect_ratio == "9:16":
+            play_res_y = 1920
+            font_size_default = 50
+            y_default = 82
+        else:
+            play_res_y = 1080
+            font_size_default = 60
+            y_default = 88
 
     y_percent = float(cfg.get("y", y_default))
     y_percent = _clamp(y_percent, 5, 95)
     margin_v = int(round(((100.0 - y_percent) / 100.0) * play_res_y))
     margin_v = int(_clamp(margin_v, 20, play_res_y - 20))
 
-    font_size = int(_clamp(float(cfg.get("font_size", font_size_default)), 14, 160))
+    font_size_raw = float(cfg.get("font_size", font_size_default))
+    if preview_font_mode:
+        preview_width = float(cfg.get("preview_reference_width", 240) or 240)
+        preview_width = _clamp(preview_width, 120, 960)
+        # Convert preview pixels to ASS script units so rendered subtitle matches preview size.
+        font_size = int(round(font_size_raw * (play_res_x / preview_width)))
+        font_size = int(_clamp(font_size, 18, 280))
+    else:
+        font_size = int(_clamp(font_size_raw, 14, 160))
 
     font_family = str(cfg.get("font_family") or "Arial").strip()
     font_name = font_family.split(",")[0].strip().strip('"').strip("'") or "Arial"
@@ -134,6 +162,7 @@ def _normalize_ass_style(aspect_ratio: str, style_settings: dict | None = None) 
     italic = -1 if bool(cfg.get("italic", False)) else 0
 
     return {
+        "play_res_x": play_res_x,
         "play_res_y": play_res_y,
         "font_name": font_name,
         "font_size": font_size,

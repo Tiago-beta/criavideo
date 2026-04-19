@@ -100,6 +100,23 @@ def _ensure_reference_image_instruction(prompt: str) -> str:
     return f"{base_prompt}\n\n{reference_rule}"
 
 
+def _build_transcribed_realistic_prompt(transcribed_text: str) -> str:
+    """Build a visual prompt grounded on transcribed lyrics, prioritizing a female lead."""
+    excerpt = " ".join((transcribed_text or "").split())[:420]
+    if not excerpt:
+        return (
+            "Crie uma cena realista cinematografica inspirada no trecho cantado. "
+            "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino."
+        )
+
+    return (
+        f'Trecho transcrito da musica: "{excerpt}". '
+        "Crie uma cena realista cinematografica baseada nessas palavras e na emocao do trecho. "
+        "Use uma pessoa feminina (mulher) como protagonista, evite personagem masculino, "
+        "sem texto na tela e sem sobreposicoes de legenda no proprio frame."
+    )
+
+
 async def _run_custom_video_pipeline(db, project, project_id: int):
     """Pipeline for user-uploaded video: overlay subtitles + optional narration."""
     from app.services.video_composer import compose_overlay_video
@@ -1018,14 +1035,26 @@ async def run_realistic_video_pipeline(project_id: int):
                                     await db.commit()
 
                             if transcribed_text:
-                                user_prompt = f"A musica diz neste trecho: \"{transcribed_text}\". Crie um video que represente visualmente o que esta sendo cantado."
+                                user_prompt = _build_transcribed_realistic_prompt(transcribed_text)
                                 logger.info(f"Realistic video: transcribed clip text ({len(transcribed_text)} chars): {transcribed_text[:200]}")
+                            elif lyrics_hint:
+                                user_prompt = _build_transcribed_realistic_prompt(lyrics_hint)
+                                logger.info("Realistic video: transcription empty, using lyrics hint for prompt")
                             else:
-                                logger.info("Realistic video: transcription returned empty, using original prompt")
+                                user_prompt = _build_transcribed_realistic_prompt("")
+                                logger.info("Realistic video: no transcription available, using generic clip prompt")
                         else:
-                            logger.warning("Realistic video: clip extraction failed, using original prompt")
+                            if tags_data_early.get("lyrics"):
+                                user_prompt = _build_transcribed_realistic_prompt(str(tags_data_early.get("lyrics", "")))
+                            else:
+                                user_prompt = _build_transcribed_realistic_prompt("")
+                            logger.warning("Realistic video: clip extraction failed, using lyric-based fallback prompt")
                 except Exception as e:
-                    logger.warning(f"Realistic video: clip transcription failed: {e}, using original prompt")
+                    if tags_data_early.get("lyrics"):
+                        user_prompt = _build_transcribed_realistic_prompt(str(tags_data_early.get("lyrics", "")))
+                    else:
+                        user_prompt = _build_transcribed_realistic_prompt("")
+                    logger.warning(f"Realistic video: clip transcription failed: {e}, using lyric-based fallback prompt")
 
             # Check for reference image (stored in style_prompt as file path)
             image_path = None

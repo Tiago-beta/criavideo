@@ -452,6 +452,7 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     use_tevoxi = cfg.get("use_tevoxi", False)
     enable_subtitles = cfg.get("enable_subtitles", False)
     subtitle_settings = cfg.get("subtitle_settings") if isinstance(cfg.get("subtitle_settings"), dict) else {}
+    tevoxi_lyrics = str(cfg.get("tevoxi_lyrics", "") or "").strip()
 
     # Credit check
     async with async_session() as db:
@@ -466,13 +467,32 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     if use_tevoxi:
         tevoxi_audio_url = cfg.get("tevoxi_audio_url", "")
         tevoxi_job_id = cfg.get("tevoxi_job_id", "")
+        tevoxi_title = cfg.get("tevoxi_title", "")
         clip_start = float(cfg.get("clip_start", 0))
         clip_dur = float(cfg.get("clip_duration", duration))
         if tevoxi_audio_url:
             tags["audio_url"] = tevoxi_audio_url
             tags["tevoxi_job_id"] = tevoxi_job_id
+            tags["tevoxi_title"] = tevoxi_title
+            if tevoxi_lyrics:
+                tags["lyrics"] = tevoxi_lyrics
             tags["clip_start"] = clip_start
             tags["clip_duration"] = clip_dur
+
+    prompt_seed = (theme_text or "").strip()
+    if use_tevoxi:
+        if tevoxi_lyrics:
+            lyrics_slice = " ".join(tevoxi_lyrics.split())[:420]
+            prompt_seed = (
+                f'Trecho da musica: "{lyrics_slice}". '
+                "Crie uma cena realista cinematografica baseada nessas palavras. "
+                "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino."
+            )
+        else:
+            prompt_seed = (
+                "Crie uma cena realista cinematografica inspirada no trecho cantado. "
+                "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino."
+            )
 
     # Create project
     async with async_session() as db:
@@ -480,14 +500,14 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
             user_id=user_id,
             track_id=0,
             title=theme_text[:100],
-            description=f"Auto-generated realistic video: {theme_text}",
+            description=f"Auto-generated realistic video: {prompt_seed}",
             tags=tags,
             style_prompt="",
             aspect_ratio=aspect_ratio,
             track_title=theme_text[:100],
             track_artist="",
             track_duration=duration,
-            lyrics_text=theme_text,
+            lyrics_text=prompt_seed,
             lyrics_words=[],
             audio_path=engine,
             enable_subtitles=enable_subtitles,
@@ -660,7 +680,10 @@ async def _create_musical_short(
         raise RuntimeError(f"Falha ao extrair segmento de audio (start={clip_start}, dur={clip_duration})")
 
     # 3. Transcribe segment for visual prompt context
-    visual_prompt = tevoxi_title
+    visual_prompt = (
+        "Crie um video realista cinematografico inspirado no trecho cantado. "
+        "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino."
+    )
     try:
         from app.services.transcriber import transcribe_audio
         lyrics_hint = cfg.get("tevoxi_lyrics", "")
@@ -669,17 +692,29 @@ async def _create_musical_short(
         )
         transcribed = (result.get("text", "") if isinstance(result, dict) else "").strip()
         if transcribed:
+            snippet = " ".join(transcribed.split())[:420]
             visual_prompt = (
-                f'A musica "{tevoxi_title}" diz neste trecho: "{transcribed}". '
-                f"Crie um video realista que represente visualmente o que esta sendo cantado."
+                f'Trecho transcrito da musica: "{snippet}". '
+                "Crie uma cena realista cinematografica baseada nessas palavras, "
+                "com uma pessoa feminina (mulher) como protagonista e sem personagem masculino."
             )
             logger.info("Short %d transcribed: %s", segment_index, transcribed[:200])
+        elif lyrics_hint:
+            hint_slice = " ".join(str(lyrics_hint).split())[:420]
+            visual_prompt = (
+                f'Trecho de letra de referencia: "{hint_slice}". '
+                "Crie uma cena realista cinematografica baseada nessas palavras, "
+                "com uma pessoa feminina (mulher) como protagonista e sem personagem masculino."
+            )
     except Exception as e:
         logger.warning("Transcription failed for short %d: %s", segment_index, e)
-        visual_prompt = (
-            f'Crie um video realista inspirado na musica "{tevoxi_title}". '
-            f"Trecho {segment_index + 1}, estilo cinematografico com paisagens e emocao."
-        )
+        if cfg.get("tevoxi_lyrics"):
+            hint_slice = " ".join(str(cfg.get("tevoxi_lyrics", "")).split())[:420]
+            visual_prompt = (
+                f'Trecho de letra de referencia: "{hint_slice}". '
+                "Crie uma cena realista cinematografica baseada nessas palavras, "
+                "com uma pessoa feminina (mulher) como protagonista e sem personagem masculino."
+            )
 
     # 4. Create VideoProject for realistic pipeline
     async with async_session() as db:
