@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260419-26">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260419-27">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 142;
+        var REQUIRED_VER = 144;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -311,36 +311,7 @@
                             <!-- Timeline -->
                             <div class="editor-timeline" id="editor-timeline">
                                 <div class="editor-timeline-ruler" id="editor-timeline-ruler"></div>
-                                <div class="editor-timeline-tracks" id="editor-timeline-tracks">
-                                    <div class="editor-track" data-track="video">
-                                        <div class="editor-track-label">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-                                            Video
-                                        </div>
-                                        <div class="editor-track-content" id="editor-track-video"></div>
-                                    </div>
-                                    <div class="editor-track" data-track="audio">
-                                        <div class="editor-track-label">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                                            Audio
-                                        </div>
-                                        <div class="editor-track-content" id="editor-track-audio"></div>
-                                    </div>
-                                    <div class="editor-track" data-track="text">
-                                        <div class="editor-track-label">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
-                                            Texto
-                                        </div>
-                                        <div class="editor-track-content" id="editor-track-text"></div>
-                                    </div>
-                                    <div class="editor-track" data-track="stickers">
-                                        <div class="editor-track-label">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/></svg>
-                                            Stickers
-                                        </div>
-                                        <div class="editor-track-content" id="editor-track-stickers"></div>
-                                    </div>
-                                </div>
+                                <div class="editor-timeline-tracks" id="editor-timeline-tracks"></div>
                                 <div class="editor-timeline-playhead" id="editor-timeline-playhead"></div>
                             </div>
                         </div>
@@ -2095,7 +2066,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260419-26"></script>
-    <script src="/video/static/pwa.js?v=20260419-26"></script>
+    <script src="/video/static/app.js?v=20260419-27"></script>
+    <script src="/video/static/pwa.js?v=20260419-27"></script>
 </body>
 </html>

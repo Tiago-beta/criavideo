@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v143 loaded");
+console.log("[CriaVideo] app.js v144 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -6747,10 +6747,11 @@ const _editor = {
     subtitles: [],      // {id, text, startTime, endTime, styleName, x, y, fontSize, fontColor, bgColor, outlineColor, fontFamily, bold, italic}
     videoSegments: [],  // {id, start, end}
     audioSegments: [],  // {id, start, end}
-    selectedTracks: ["video", "audio"],
+    selectedTracks: ["video"],
     trimStart: 0,
     trimEnd: 0,
     musicUrl: "",
+    _musicFile: null,
     musicVolume: 80,
     originalVolume: 100,
     filter: "none",
@@ -6826,6 +6827,7 @@ function _editorUndo() {
     _editor.redoStack.push(current);
     const snap = JSON.parse(_editor.undoStack.pop());
     Object.assign(_editor, snap);
+    _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     _editor.selectedClip = { kind: "", id: "", track: "" };
     _updateUndoRedoBtns();
     _editorApplyAspectRatio();
@@ -6848,6 +6850,7 @@ function _editorRedo() {
     _editor.undoStack.push(current);
     const snap = JSON.parse(_editor.redoStack.pop());
     Object.assign(_editor, snap);
+    _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     _editor.selectedClip = { kind: "", id: "", track: "" };
     _updateUndoRedoBtns();
     _editorApplyAspectRatio();
@@ -6932,8 +6935,31 @@ function _editorFindVideoSegment(id) {
     return _editorFindSegment("video", id);
 }
 
+function _editorShouldShowAudioTrack() {
+    return Boolean(_editor.musicUrl || _editor._musicFile);
+}
+
+function _editorCloneVideoSegmentsForAudio() {
+    return _editor.videoSegments.map((seg, idx) => ({
+        id: `auto-audio-${idx + 1}`,
+        start: Number(seg.start || 0),
+        end: Number(seg.end || 0),
+    }));
+}
+
+function _editorSyncAudioSegmentsWithVideoIfNoExternalAudio() {
+    if (_editorShouldShowAudioTrack()) return;
+    _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
+    _editor.selectedTracks = ["video"];
+    if (_editor.selectedClip.track === "audio" || _editor.selectedClip.kind === "music") {
+        _editor.selectedClip = { kind: "", id: "", track: "" };
+    }
+}
+
 function _editorIsTrackSelectable(track) {
-    return track === "video" || track === "audio";
+    if (track === "video") return true;
+    if (track === "audio") return _editorShouldShowAudioTrack();
+    return false;
 }
 
 function _editorGetSelectedSegmentTracks() {
@@ -6997,8 +7023,8 @@ function _editorRecomputeTrimBounds() {
 function _editorInitVideoSegments() {
     const dur = Math.max(_editor.duration || 0, 0.1);
     _editor.videoSegments = [{ id: _editorGenId(), start: 0, end: dur }];
-    _editor.audioSegments = [{ id: _editorGenId(), start: 0, end: dur }];
-    _editor.selectedTracks = ["video", "audio"];
+    _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
+    _editor.selectedTracks = ["video"];
     _editorRecomputeTrimBounds();
 }
 
@@ -7090,10 +7116,11 @@ async function openEditor(projectId) {
         _editor.subtitles = [];
         _editor.videoSegments = [];
         _editor.audioSegments = [];
-        _editor.selectedTracks = ["video", "audio"];
+        _editor.selectedTracks = ["video"];
         _editor.trimStart = 0;
         _editor.trimEnd = 0;
         _editor.musicUrl = "";
+        _editor._musicFile = null;
         _editor.musicVolume = 80;
         _editor.originalVolume = 100;
         _editor.filter = "none";
@@ -7594,6 +7621,7 @@ function _editorRenderProps() {
             ${_editor.subtitleListOpen ? _editorSubtitleEditForm() : ""}
         `;
     } else if (tool === "trim") {
+        const hasExternalAudio = _editorShouldShowAudioTrack();
         const selectedSeg = _editor.selectedClip.kind === "segment"
             ? _editorFindSegment(_editor.selectedClip.track || "video", _editor.selectedClip.id)
             : null;
@@ -7603,14 +7631,20 @@ function _editorRenderProps() {
         const selectedTracksLabel = _editorGetSelectedSegmentTracks()
             .map(track => track === "video" ? "Video" : "Audio")
             .join(" + ");
+        const tracksSummary = hasExternalAudio
+            ? `Trechos: Video ${_editor.videoSegments.length} | Audio ${_editor.audioSegments.length}`
+            : `Trechos: Video ${_editor.videoSegments.length}`;
+        const trimHint = hasExternalAudio
+            ? "Marque as faixas Video/Audio na timeline. O corte e ajuste serao aplicados somente nas faixas marcadas."
+            : "Sem audio externo, o audio original acompanha os cortes do video automaticamente.";
         container.innerHTML = `
             <div class="editor-props-title">Cortar video</div>
-            <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Marque as faixas Video/Audio na timeline. O corte e ajuste serao aplicados somente nas faixas marcadas.</p>
+            <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${trimHint}</p>
             <div class="editor-trim-range" style="display:grid;gap:8px">
                 <button class="editor-add-btn" type="button" onclick="_editorSplitAtCurrentTime()">Cortar no ponto atual</button>
                 <button class="editor-add-btn" type="button" onclick="_editorResetVideoSegments()" style="background:rgba(255,255,255,0.04)">Restaurar video inteiro</button>
                 <div class="editor-trim-values">
-                    <span>Trechos: Video ${_editor.videoSegments.length} | Audio ${_editor.audioSegments.length}</span>
+                    <span>${tracksSummary}</span>
                     <span style="margin-left:10px">Selecionado: ${segInfo}</span>
                 </div>
                 <div class="editor-trim-values">
@@ -8128,6 +8162,7 @@ function _editorSplitAtCurrentTime() {
     });
 
     _editorRecomputeTrimBounds();
+    _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     _editor.selectedClip = selectedSplit || { kind: "", id: "", track: "" };
     _editorRenderTimeline();
     _editorRenderProps();
@@ -8153,6 +8188,7 @@ function _editorSetTrimStart(val) {
     const first = _editor.videoSegments[0];
     first.start = Math.max(0, Math.min(first.end - 0.1, parsed));
     _editorRecomputeTrimBounds();
+    _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     const label = document.getElementById("trim-start-label");
     if (label) label.textContent = _fmtTime(_editor.trimStart);
     _editorRenderTimeline();
@@ -8166,6 +8202,7 @@ function _editorSetTrimEnd(val) {
     const last = _editor.videoSegments[_editor.videoSegments.length - 1];
     last.end = Math.max(last.start + 0.1, Math.min(_editor.duration || parsed, parsed));
     _editorRecomputeTrimBounds();
+    _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     const label = document.getElementById("trim-end-label");
     if (label) label.textContent = _fmtTime(_editor.trimEnd);
     _editorRenderTimeline();
@@ -8179,6 +8216,10 @@ function _editorUploadMusic(input) {
     _editorSaveState();
     _editor.musicUrl = URL.createObjectURL(file);
     _editor._musicFile = file;
+    if (!_editor.audioSegments.length) {
+        _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
+    }
+    _editor.selectedTracks = ["video", "audio"];
     _editor.selectedClip = { kind: "music", id: "music" };
     _editorRefreshQuickActions();
     _editorRenderProps();
@@ -8190,6 +8231,7 @@ function _editorRemoveMusic() {
     _editorSaveState();
     _editor.musicUrl = "";
     _editor._musicFile = null;
+    _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     if (_editor.selectedClip.kind === "music") {
         _editor.selectedClip = { kind: "", id: "" };
     }
@@ -8262,85 +8304,149 @@ function _editorSetQuality(val) {
 window._editorSetQuality = _editorSetQuality;
 
 // ---------- Timeline rendering ----------
+function _editorTimelineTrackIcon(kind) {
+    if (kind === "video") {
+        return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>';
+    }
+    if (kind === "audio") {
+        return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+    }
+    if (kind === "text") {
+        return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><line x1="12" y1="4" x2="12" y2="20"/></svg>';
+    }
+    if (kind === "subtitle") {
+        return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 12h4"/><path d="M13 12h4"/><path d="M7 16h10"/></svg>';
+    }
+    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/></svg>';
+}
+
 function _editorRenderTimeline() {
     const dur = Math.max(_editor.duration || 0, 0.1);
     const ruler = document.getElementById("editor-timeline-ruler");
-    const trackVideo = document.getElementById("editor-track-video");
-    const trackAudio = document.getElementById("editor-track-audio");
-    const trackText = document.getElementById("editor-track-text");
-    const trackStickers = document.getElementById("editor-track-stickers");
-    if (!ruler) return;
+    const tracksWrap = document.getElementById("editor-timeline-tracks");
+    const timelineEl = document.getElementById("editor-timeline");
+    if (!ruler || !tracksWrap) return;
+
+    const selectedKind = _editor.selectedClip.kind;
+    const selectedId = String(_editor.selectedClip.id || "");
+    const selectedTrack = _editor.selectedClip.track || "";
+    const rows = [];
+
+    _editorSortSegments("video");
+    const videoClips = _editor.videoSegments.map((seg, idx) => {
+        const segStart = Math.max(0, Math.min(Number(seg.start || 0), dur));
+        const segEnd = Math.max(segStart + 0.05, Math.min(Number(seg.end || 0), dur));
+        const startPct = (segStart / dur) * 100;
+        const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
+        const selectedClass = selectedKind === "segment" && selectedTrack === "video" && selectedId === String(seg.id) ? " selected" : "";
+        return `<div class="editor-track-clip clip-video${selectedClass}" data-kind="segment" data-track="video" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Video ${idx + 1}</div>`;
+    }).join("");
+    rows.push({
+        track: "video",
+        kind: "video",
+        label: "Video",
+        contentId: "editor-track-video",
+        clipsHtml: videoClips,
+    });
+
+    if (_editorShouldShowAudioTrack()) {
+        _editorSortSegments("audio");
+        let audioClips = _editor.audioSegments.map((seg, idx) => {
+            const segStart = Math.max(0, Math.min(Number(seg.start || 0), dur));
+            const segEnd = Math.max(segStart + 0.05, Math.min(Number(seg.end || 0), dur));
+            const startPct = (segStart / dur) * 100;
+            const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
+            const selectedClass = selectedKind === "segment" && selectedTrack === "audio" && selectedId === String(seg.id) ? " selected" : "";
+            return `<div class="editor-track-clip clip-audio${selectedClass}" data-kind="segment" data-track="audio" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Audio ${idx + 1}</div>`;
+        }).join("");
+
+        const musicSelected = selectedKind === "music" ? " selected" : "";
+        audioClips += `<div class="editor-track-clip clip-audio${musicSelected}" data-kind="music" data-id="music" style="left:0;width:100%;top:1px;background:linear-gradient(135deg,#6b1a4a,#4a0e2e);border-color:rgba(107,26,74,0.6)">Musica</div>`;
+
+        rows.push({
+            track: "audio",
+            kind: "audio",
+            contentId: "editor-track-audio",
+            label: "Audio",
+            clipsHtml: audioClips,
+        });
+    }
+
+    _editor.texts.forEach((item, idx) => {
+        const start = Math.max(0, Math.min(Number(item.startTime || 0), dur));
+        const end = Math.max(start + 0.05, Math.min(Number(item.endTime || 0), dur));
+        const left = (start / dur) * 100;
+        const width = Math.max(0.5, ((end - start) / dur) * 100);
+        const selectedClass = selectedKind === "text" && selectedId === String(item.id) ? " selected" : "";
+        const clipLabel = esc(String(item.content || "Texto").trim().substring(0, 20));
+        rows.push({
+            track: `text-${item.id}`,
+            kind: "text",
+            label: `Texto ${idx + 1}`,
+            clipsHtml: `<div class="editor-track-clip clip-text${selectedClass}" data-kind="text" data-track="text-${item.id}" data-id="${item.id}" style="left:${left}%;width:${width}%">${clipLabel}</div>`,
+        });
+    });
+
+    _editor.subtitles.forEach((item, idx) => {
+        const start = Math.max(0, Math.min(Number(item.startTime || 0), dur));
+        const end = Math.max(start + 0.05, Math.min(Number(item.endTime || 0), dur));
+        const left = (start / dur) * 100;
+        const width = Math.max(0.5, ((end - start) / dur) * 100);
+        const selectedClass = selectedKind === "subtitle" && selectedId === String(item.id) ? " selected" : "";
+        const clipLabel = esc(String(item.text || "Legenda").trim().substring(0, 20));
+        rows.push({
+            track: `subtitle-${item.id}`,
+            kind: "subtitle",
+            label: `Legenda ${idx + 1}`,
+            clipsHtml: `<div class="editor-track-clip clip-text${selectedClass}" data-kind="subtitle" data-track="subtitle-${item.id}" data-id="${item.id}" style="left:${left}%;width:${width}%">${clipLabel}</div>`,
+        });
+    });
+
+    _editor.stickers.forEach((item, idx) => {
+        const start = Math.max(0, Math.min(Number(item.startTime || 0), dur));
+        const end = Math.max(start + 0.05, Math.min(Number(item.endTime || 0), dur));
+        const left = (start / dur) * 100;
+        const width = Math.max(0.5, ((end - start) / dur) * 100);
+        const selectedClass = selectedKind === "sticker" && selectedId === String(item.id) ? " selected" : "";
+        rows.push({
+            track: `sticker-${item.id}`,
+            kind: "sticker",
+            label: `Sticker ${idx + 1}`,
+            clipsHtml: `<div class="editor-track-clip clip-sticker${selectedClass}" data-kind="sticker" data-track="sticker-${item.id}" data-id="${item.id}" style="left:${left}%;width:${width}%">${esc(String(item.emoji || "Sticker"))}</div>`,
+        });
+    });
+
+    tracksWrap.innerHTML = rows.map(row => `
+        <div class="editor-track" data-track="${row.track}">
+            <div class="editor-track-label">${_editorTimelineTrackIcon(row.kind)}${row.label}</div>
+            <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""}>${row.clipsHtml || ""}</div>
+        </div>
+    `).join("");
+
+    _editorRefreshTrackSelectionUI();
+
+    const isMobile = window.innerWidth <= 768;
+    const rowHeight = 32;
+    const trackCount = Math.max(rows.length, 1);
+    const idealHeight = 24 + (trackCount * rowHeight) + 8;
+    const minHeight = isMobile ? 116 : 160;
+    const maxHeight = isMobile ? 300 : 380;
+    const finalHeight = Math.max(minHeight, Math.min(maxHeight, idealHeight));
+    if (timelineEl) {
+        timelineEl.style.height = `${finalHeight}px`;
+        timelineEl.style.overflowY = idealHeight > maxHeight ? "auto" : "hidden";
+    }
 
     // Ruler marks
     const step = dur > 120 ? 30 : dur > 60 ? 10 : 5;
+    const trackW = document.getElementById("editor-track-video")?.offsetWidth || 600;
     let rulerHtml = "";
-    const trackW = trackVideo?.offsetWidth || 600;
     for (let t = 0; t <= dur; t += step) {
         const pct = (t / dur) * trackW;
         rulerHtml += `<span class="editor-ruler-mark" style="left:${80 + pct}px">${_fmtTime(t)}</span>`;
         rulerHtml += `<span class="editor-ruler-tick major" style="left:${80 + pct}px"></span>`;
     }
     ruler.innerHTML = rulerHtml;
-
-    const selectedKind = _editor.selectedClip.kind;
-    const selectedId = String(_editor.selectedClip.id || "");
-    const selectedTrack = _editor.selectedClip.track || "";
-    _editorRefreshTrackSelectionUI();
-
-    // Video track
-    if (trackVideo) {
-        _editorSortSegments("video");
-        trackVideo.innerHTML = _editor.videoSegments.map((seg, idx) => {
-            const segStart = Math.max(0, Math.min(seg.start, dur));
-            const segEnd = Math.max(segStart + 0.05, Math.min(seg.end, dur));
-            const startPct = (segStart / dur) * 100;
-            const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
-            const selectedClass = selectedKind === "segment" && selectedTrack === "video" && selectedId === String(seg.id) ? " selected" : "";
-            return `<div class="editor-track-clip clip-video${selectedClass}" data-kind="segment" data-track="video" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Video ${idx + 1}</div>`;
-        }).join("");
-    }
-
-    // Audio track
-    if (trackAudio) {
-        _editorSortSegments("audio");
-        let audioHtml = _editor.audioSegments.map((seg, idx) => {
-            const segStart = Math.max(0, Math.min(seg.start, dur));
-            const segEnd = Math.max(segStart + 0.05, Math.min(seg.end, dur));
-            const startPct = (segStart / dur) * 100;
-            const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
-            const selectedClass = selectedKind === "segment" && selectedTrack === "audio" && selectedId === String(seg.id) ? " selected" : "";
-            return `<div class="editor-track-clip clip-audio${selectedClass}" data-kind="segment" data-track="audio" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Audio ${idx + 1}</div>`;
-        }).join("");
-        if (_editor.musicUrl) {
-            const musicSelected = selectedKind === "music" ? " selected" : "";
-            audioHtml += `<div class="editor-track-clip clip-audio${musicSelected}" data-kind="music" data-id="music" style="left:0;width:100%;top:1px;background:linear-gradient(135deg,#6b1a4a,#4a0e2e);border-color:rgba(107,26,74,0.6)">Musica</div>`;
-        }
-        trackAudio.innerHTML = audioHtml;
-    }
-
-    // Text track
-    if (trackText) {
-        const textItems = [
-            ..._editor.texts.map(item => ({ ...item, __kind: "text", __label: item.content || "" })),
-            ..._editor.subtitles.map(item => ({ ...item, __kind: "subtitle", __label: item.text || "" })),
-        ];
-        trackText.innerHTML = textItems.map(item => {
-            const left = (item.startTime / dur) * 100;
-            const width = Math.max(0.5, ((item.endTime - item.startTime) / dur) * 100);
-            const selectedClass = selectedKind === item.__kind && selectedId === String(item.id) ? " selected" : "";
-            return `<div class="editor-track-clip clip-text${selectedClass}" data-kind="${item.__kind}" data-id="${item.id}" style="left:${left}%;width:${width}%">${esc(item.__label.substring(0, 20))}</div>`;
-        }).join("");
-    }
-
-    // Sticker track
-    if (trackStickers) {
-        trackStickers.innerHTML = _editor.stickers.map(s => {
-            const left = (s.startTime / dur) * 100;
-            const width = Math.max(0.5, ((s.endTime - s.startTime) / dur) * 100);
-            const selectedClass = selectedKind === "sticker" && selectedId === String(s.id) ? " selected" : "";
-            return `<div class="editor-track-clip clip-sticker${selectedClass}" data-kind="sticker" data-id="${s.id}" style="left:${left}%;width:${width}%">${s.emoji}</div>`;
-        }).join("");
-    }
 
     _editorRefreshQuickActions();
 }
@@ -8425,6 +8531,7 @@ function _editorDeleteSelectedClip() {
         _editorSortSegments(selTrack);
         if (selTrack === "video") {
             _editorRecomputeTrimBounds();
+            _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
         }
     } else if (selKind === "text") {
         _editor.texts = _editor.texts.filter(t => String(t.id) !== selId);
@@ -8435,6 +8542,7 @@ function _editorDeleteSelectedClip() {
     } else if (selKind === "music") {
         _editor.musicUrl = "";
         _editor._musicFile = null;
+        _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     } else if (selKind === "audio") {
         _editor.originalVolume = 0;
         const label = document.getElementById("editor-orig-vol-label");
@@ -8533,6 +8641,7 @@ function _editorApplyDraggedRange(kind, id, start, end, track = "") {
         item.end = clampedEnd;
         if (targetTrack === "video") {
             _editorRecomputeTrimBounds();
+            _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
         }
         return;
     }
@@ -8819,15 +8928,6 @@ function _bindEditorEvents() {
         btn.addEventListener("click", () => _editorSelectTool(btn.dataset.tool));
     });
 
-    document.querySelectorAll(".editor-track-label").forEach(label => {
-        label.addEventListener("click", (e) => {
-            const track = label.closest(".editor-track")?.dataset.track || "";
-            if (!_editorIsTrackSelectable(track)) return;
-            _editorToggleTrackSelection(track);
-            e.stopPropagation();
-        });
-    });
-
     document.getElementById("editor-timeline-tracks")?.addEventListener("pointerdown", (e) => {
         const clip = e.target.closest(".editor-track-clip");
         if (!clip) return;
@@ -8843,6 +8943,16 @@ function _bindEditorEvents() {
     });
 
     document.getElementById("editor-timeline-tracks")?.addEventListener("click", (e) => {
+        const label = e.target.closest(".editor-track-label");
+        if (label) {
+            const track = label.closest(".editor-track")?.dataset.track || "";
+            if (_editorIsTrackSelectable(track)) {
+                _editorToggleTrackSelection(track);
+            }
+            e.stopPropagation();
+            return;
+        }
+
         const clip = e.target.closest(".editor-track-clip");
         if (!clip) return;
         _editorSelectTimelineClip(
