@@ -7669,6 +7669,7 @@ window.openEditor = openEditor;
 
 // ---------- Close editor ----------
 function closeEditor() {
+    _editorCloseTrackVolumeModal();
     document.getElementById("editor-select-view").hidden = false;
     document.getElementById("editor-workspace").hidden = true;
     const video = document.getElementById("editor-video");
@@ -8023,6 +8024,9 @@ function _getCSSFilter(name) {
 // ---------- Tool selection ----------
 function _editorSelectTool(toolName) {
     _editor.activeTool = toolName;
+    if (toolName !== "trim") {
+        _editorCloseTrackVolumeModal();
+    }
     document.querySelectorAll(".editor-tool-btn").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.tool === toolName);
     });
@@ -8158,39 +8162,10 @@ function _editorRenderProps() {
         const trimHint = hasExternalAudio
             ? "Marque as faixas Video/Audio na timeline. O corte e ajuste serao aplicados somente nas faixas marcadas."
             : "Sem audio externo, o audio original acompanha os cortes do video automaticamente.";
-        const selectedVolumeTracks = _editorGetSelectedSegmentTracks().filter(track => track === "video" || (track === "audio" && hasExternalAudio));
-        const volumeControlsHtml = selectedVolumeTracks.map((track) => {
-            const isVideo = track === "video";
-            const volumePct = isVideo
-                ? Math.max(0, Math.min(100, Number(_editor.originalVolume || 0)))
-                : Math.max(0, Math.min(100, Number(_editor.musicVolume || 0)));
-            const trackLabel = isVideo ? "Video original" : "Audio externo";
-            return `
-                <div class="editor-track-props-volume-item">
-                    <div class="editor-track-props-volume-head">
-                        <span class="editor-track-props-volume-name-wrap">
-                            <span class="editor-track-props-volume-icon">${_editorTimelineVolumeIcon(track)}</span>
-                            <span class="editor-track-props-volume-name">${trackLabel}</span>
-                        </span>
-                        <span class="editor-track-props-volume-value" id="editor-track-vol-label-${track}">${volumePct}%</span>
-                    </div>
-                    <input
-                        id="editor-track-vol-input-${track}"
-                        class="editor-track-props-volume-slider"
-                        type="range"
-                        min="0"
-                        max="100"
-                        value="${volumePct}"
-                        oninput="_editorSetTrackVolumeFromTrim('${track}', this.value)"
-                    >
-                </div>
-            `;
-        }).join("");
         container.innerHTML = `
             <div class="editor-props-title">Cortar video</div>
             <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${trimHint}</p>
             <div class="editor-trim-range" style="display:grid;gap:8px">
-                <button class="editor-add-btn" type="button" onclick="_editorResetVideoSegments()" style="background:rgba(255,255,255,0.04)">Restaurar video inteiro</button>
                 <div class="editor-trim-values">
                     <span>${tracksSummary}</span>
                     <span style="margin-left:10px">Selecionado: ${segInfo}</span>
@@ -8198,12 +8173,6 @@ function _editorRenderProps() {
                 <div class="editor-trim-values">
                     <span>Faixas marcadas: ${selectedTracksLabel}</span>
                 </div>
-                ${selectedVolumeTracks.length ? `
-                    <div class="editor-props-group editor-track-props-volume-group">
-                        <label>Volume das faixas selecionadas</label>
-                        <div class="editor-track-props-volume-list">${volumeControlsHtml}</div>
-                    </div>
-                ` : ""}
             </div>
         `;
     } else if (tool === "layers") {
@@ -8867,6 +8836,7 @@ window._editorUploadMusic = _editorUploadMusic;
 
 function _editorRemoveMusic() {
     _editorSaveState();
+    _editorCloseTrackVolumeModal();
     _editor.musicUrl = "";
     _editor._musicFile = null;
     _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
@@ -8886,6 +8856,8 @@ function _editorSetMusicVolume(val) {
     if (label) label.textContent = _editor.musicVolume + "%";
     const trimLabel = document.getElementById("editor-track-vol-label-audio");
     if (trimLabel) trimLabel.textContent = _editor.musicVolume + "%";
+    const modalLabel = document.getElementById("editor-track-volume-modal-value-audio");
+    if (modalLabel) modalLabel.textContent = _editor.musicVolume + "%";
 }
 window._editorSetMusicVolume = _editorSetMusicVolume;
 
@@ -8898,6 +8870,8 @@ function _editorSetOriginalVolume(val) {
     if (label) label.textContent = _editor.originalVolume + "%";
     const trimLabel = document.getElementById("editor-track-vol-label-video");
     if (trimLabel) trimLabel.textContent = _editor.originalVolume + "%";
+    const modalLabel = document.getElementById("editor-track-volume-modal-value-video");
+    if (modalLabel) modalLabel.textContent = _editor.originalVolume + "%";
 }
 window._editorSetOriginalVolume = _editorSetOriginalVolume;
 
@@ -8911,6 +8885,82 @@ function _editorSetTrackVolumeFromTrim(track, val) {
     }
 }
 window._editorSetTrackVolumeFromTrim = _editorSetTrackVolumeFromTrim;
+
+function _editorCloseTrackVolumeModal() {
+    const modal = document.getElementById("editor-track-volume-modal");
+    if (!modal) return;
+    const escHandler = modal._onEscHandler;
+    if (escHandler) {
+        document.removeEventListener("keydown", escHandler);
+    }
+    modal.remove();
+}
+window._editorCloseTrackVolumeModal = _editorCloseTrackVolumeModal;
+
+function _editorOpenTrackVolumeModal(track) {
+    if (track !== "video" && track !== "audio") return;
+    if (track === "audio" && !_editorShouldShowAudioTrack()) return;
+
+    _editorCloseTrackVolumeModal();
+
+    const isVideo = track === "video";
+    const trackLabel = isVideo ? "Video original" : "Audio externo";
+    const volumePct = isVideo
+        ? Math.max(0, Math.min(100, Number(_editor.originalVolume || 0)))
+        : Math.max(0, Math.min(100, Number(_editor.musicVolume || 0)));
+
+    const overlay = document.createElement("div");
+    overlay.id = "editor-track-volume-modal";
+    overlay.className = "editor-track-volume-modal-overlay";
+    overlay.innerHTML = `
+        <div class="editor-track-volume-modal-card" role="dialog" aria-modal="true" aria-label="Volume da faixa">
+            <button class="editor-track-volume-modal-close" type="button" onclick="_editorCloseTrackVolumeModal()" aria-label="Fechar">×</button>
+            <div class="editor-track-volume-modal-title">Volume da faixa</div>
+            <div class="editor-track-props-volume-item">
+                <div class="editor-track-props-volume-head">
+                    <span class="editor-track-props-volume-name-wrap">
+                        <span class="editor-track-props-volume-icon">${_editorTimelineVolumeIcon(track)}</span>
+                        <span class="editor-track-props-volume-name">${trackLabel}</span>
+                    </span>
+                    <span class="editor-track-props-volume-value" id="editor-track-volume-modal-value-${track}">${volumePct}%</span>
+                </div>
+                <input
+                    class="editor-track-props-volume-slider"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value="${volumePct}"
+                    oninput="_editorSetTrackVolumeFromModal('${track}', this.value)"
+                >
+            </div>
+        </div>
+    `;
+
+    overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) {
+            _editorCloseTrackVolumeModal();
+        }
+    });
+
+    const escHandler = (event) => {
+        if (event.key === "Escape") {
+            _editorCloseTrackVolumeModal();
+        }
+    };
+    overlay._onEscHandler = escHandler;
+    document.addEventListener("keydown", escHandler);
+
+    document.body.appendChild(overlay);
+}
+window._editorOpenTrackVolumeModal = _editorOpenTrackVolumeModal;
+
+function _editorSetTrackVolumeFromModal(track, val) {
+    _editorSetTrackVolumeFromTrim(track, val);
+    const pct = Math.max(0, Math.min(100, parseInt(val, 10) || 0));
+    const label = document.getElementById(`editor-track-volume-modal-value-${track}`);
+    if (label) label.textContent = pct + "%";
+}
+window._editorSetTrackVolumeFromModal = _editorSetTrackVolumeFromModal;
 
 // ---------- Filter ----------
 function _editorSetFilter(name) {
@@ -9613,7 +9663,7 @@ async function _editorExport() {
                     if (fill) fill.style.width = "100%";
                     await new Promise(r => setTimeout(r, 1500));
                     overlay.remove();
-                    showToast("Video editado exportado com sucesso!", "success");
+                    showToast("Copia do video exportada com sucesso!", "success");
                     closeEditor();
                     loadEditorVideosList();
                 } else if (poll.status === "failed") {
@@ -9701,7 +9751,15 @@ function _bindEditorEvents() {
         if (label) {
             const track = label.closest(".editor-track")?.dataset.track || "";
             if (_editorIsTrackSelectable(track)) {
-                _editorToggleTrackSelection(track);
+                if (_editor.activeTool === "trim" && (track === "video" || track === "audio")) {
+                    _editor.selectedTracks = [track];
+                    _editor.selectedClip = { kind: "", id: "", track: "" };
+                    _editorRenderProps();
+                    _editorRenderTimeline();
+                    _editorOpenTrackVolumeModal(track);
+                } else {
+                    _editorToggleTrackSelection(track);
+                }
             }
             e.stopPropagation();
             return;
