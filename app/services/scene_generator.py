@@ -110,25 +110,96 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
             )
     full_prompt = style_prefix + prompt
 
-    response = google_client.models.generate_content(
-        model="gemini-2.5-flash-image",
-        contents=[full_prompt],
-        config=types.GenerateContentConfig(
-            response_modalities=["IMAGE"],
-            image_config=types.ImageConfig(
-                aspect_ratio=aspect_ratio,
-            ),
-        )
-    )
+    def _extract_parts(resp):
+        parts = []
+        direct_parts = getattr(resp, "parts", None)
+        if isinstance(direct_parts, list):
+            parts.extend(direct_parts)
+        elif direct_parts:
+            try:
+                parts.extend(list(direct_parts))
+            except TypeError:
+                pass
 
-    for part in response.parts:
-        if part.inline_data is not None:
+        candidates = getattr(resp, "candidates", None) or []
+        for cand in candidates:
+            content = getattr(cand, "content", None)
+            cand_parts = getattr(content, "parts", None) if content is not None else None
+            if isinstance(cand_parts, list):
+                parts.extend(cand_parts)
+            elif cand_parts:
+                try:
+                    parts.extend(list(cand_parts))
+                except TypeError:
+                    pass
+        return parts
+
+    def _save_inline_part(part) -> bool:
+        inline_data = getattr(part, "inline_data", None)
+        if inline_data is None:
+            return False
+
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        try:
             image = part.as_image()
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
             image.save(output_path)
-            logger.info(f"Scene image saved: {output_path}")
-            return output_path
+            return True
+        except Exception:
+            data = getattr(inline_data, "data", None)
+            if not data:
+                return False
+            try:
+                import base64
 
+                if isinstance(data, str):
+                    raw = base64.b64decode(data)
+                else:
+                    raw = bytes(data)
+
+                with open(output_path, "wb") as f:
+                    f.write(raw)
+                return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+            except Exception:
+                return False
+
+    # Retry with a simplified prompt when provider returns metadata without inline image.
+    prompt_attempts = [
+        full_prompt,
+        style_prefix + "Single clear cinematic composition, one focal subject, no text, no overlays.",
+    ]
+    last_response_text = ""
+
+    for idx, attempt_prompt in enumerate(prompt_attempts, start=1):
+        response = google_client.models.generate_content(
+            model="gemini-2.5-flash-image",
+            contents=[attempt_prompt],
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                image_config=types.ImageConfig(
+                    aspect_ratio=aspect_ratio,
+                ),
+            )
+        )
+
+        response_text = (getattr(response, "text", "") or "").strip()
+        if response_text:
+            last_response_text = response_text[:240]
+
+        parts = _extract_parts(response)
+        for part in parts:
+            if _save_inline_part(part):
+                logger.info(f"Scene image saved: {output_path}")
+                return output_path
+
+        logger.warning(
+            "Nano Banana returned no inline image part (attempt %d/%d)",
+            idx,
+            len(prompt_attempts),
+        )
+
+    if last_response_text:
+        raise RuntimeError(f"Nano Banana did not return an image: {last_response_text}")
     raise RuntimeError("Nano Banana did not return an image")
 
 
