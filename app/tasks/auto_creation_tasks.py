@@ -4,6 +4,7 @@ Auto-creation tasks — Automated video generation triggered by scheduler.
 import asyncio
 import logging
 import math
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -31,6 +32,112 @@ _AUTO_DEFAULTS = {
 }
 
 _INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza"}
+
+_GOSPEL_THEME_KEYWORDS = (
+    "deus", "senhor", "jesus", "cristo", "louvor", "adoracao", "gospel", "fe",
+    "oracao", "biblia", "espirito", "igreja", "worship", "god", "lord", "faith",
+)
+
+_SEO_HOOKS_GOSPEL = [
+    "Musica gospel para acalmar",
+    "Mensagem de Deus para hoje",
+    "Se essa musica te encontrou",
+    "Louvor para renovar a fe",
+    "Palavra que conforta o coracao",
+    "Oracao cantada para alma",
+    "Louvor de esperanca e paz",
+    "Hino para fortalecer sua fe",
+]
+
+_SEO_HOOKS_CALM = [
+    "Musica para acalmar",
+    "Som para relaxar a mente",
+    "Musica para aliviar ansiedade",
+    "Melodia para trazer paz",
+    "Trilha para desacelerar",
+    "Musica para respirar fundo",
+]
+
+_SEO_HOOKS_STRENGTH = [
+    "Musica para dias dificeis",
+    "Mensagem de forca e superacao",
+    "Som para levantar o animo",
+    "Musica para recomecar hoje",
+    "Trilha para vencer o cansaco",
+    "Mensagem para nao desistir",
+]
+
+_SEO_HOOKS_GENERAL = [
+    "Musica que prende atencao",
+    "Som perfeito para o momento",
+    "Essa faixa merece seu play",
+    "Uma musica que vai te tocar",
+    "Mensagem que fica no coracao",
+    "Play agora e sinta a diferenca",
+]
+
+
+def _looks_gospel_theme(*texts: str) -> bool:
+    merged = " ".join(str(t or "") for t in texts).lower()
+    return any(kw in merged for kw in _GOSPEL_THEME_KEYWORDS)
+
+
+def _clean_title_part(text: str, max_len: int = 72) -> str:
+    value = " ".join(str(text or "").split())
+    value = re.sub(r"\s+[—-]\s*short\s*\d+\b", "", value, flags=re.IGNORECASE)
+    value = value.strip(" -|,")
+    if len(value) > max_len:
+        value = value[:max_len].rstrip(" -|,")
+    return value
+
+
+def _pick_seo_hook(project: VideoProject, ai_title: str) -> str:
+    title_text = project.track_title or project.title or ""
+    style_text = project.style_prompt or ""
+    desc_text = project.description or ""
+    lyrics_text = (project.lyrics_text or "")[:260]
+    context = " ".join([title_text, style_text, desc_text, lyrics_text, ai_title]).lower()
+
+    if _looks_gospel_theme(context):
+        hooks = _SEO_HOOKS_GOSPEL
+    elif any(term in context for term in ("calma", "acalmar", "ansiedade", "paz", "relax", "seren")):
+        hooks = _SEO_HOOKS_CALM
+    elif any(term in context for term in ("forca", "superacao", "vencer", "motiv", "coragem", "luta")):
+        hooks = _SEO_HOOKS_STRENGTH
+    else:
+        hooks = _SEO_HOOKS_GENERAL
+
+    segment_index = 0
+    if isinstance(project.tags, dict):
+        try:
+            segment_index = int(project.tags.get("segment_index", 0) or 0)
+        except Exception:
+            segment_index = 0
+
+    seed = int(project.id or 0) * 13 + segment_index * 7 + len(ai_title or "")
+    return hooks[seed % len(hooks)]
+
+
+def _compose_seo_automation_title(project: VideoProject, ai_title: str) -> str:
+    raw = _clean_title_part(ai_title, max_len=90)
+    right_part = ""
+    if "|" in raw:
+        parts = [p.strip() for p in raw.split("|", 1)]
+        right_part = _clean_title_part(parts[1] if len(parts) > 1 else "")
+    if not right_part:
+        right_part = _clean_title_part(project.track_title or project.title or raw)
+    if not right_part:
+        right_part = "Louvor de fe e esperanca" if _looks_gospel_theme(project.title, project.description) else "Musica para ouvir hoje"
+
+    hook = _clean_title_part(_pick_seo_hook(project, raw), max_len=52)
+    final_title = f"{hook} | {right_part}"
+
+    if len(final_title) > 90:
+        prefix = f"{hook} | "
+        remaining = max(12, 90 - len(prefix))
+        final_title = prefix + _clean_title_part(right_part, max_len=remaining)
+
+    return final_title.strip(" -|,")
 
 
 def _normalize_interaction_persona(value: str) -> str:
@@ -1018,9 +1125,11 @@ Gere:
 
 REGRAS OBRIGATORIAS:
 - TUDO em portugues brasileiro, natural e humano
-- O titulo deve combinar IDENTIDADE DA MUSICA + INTENCAO DE BUSCA
-- Formato preferencial de titulo: "<identidade da musica> | <frase de busca clara>"
-- Exemplo de estrutura: "Tudo Posso em Cristo | Louvor de Forca e Superacao"
+- O titulo deve combinar GANCHO DE BUSCA + IDENTIDADE DA MUSICA
+- Formato obrigatorio de titulo: "<gancho SEO variavel> | <identidade da musica ou tema>"
+- A parte antes de "|" deve variar entre videos, mesmo quando for a mesma musica
+- A parte antes de "|" deve trazer intencao de busca/atencao (ex.: "Musica para acalmar", "Musica gospel", "Mensagem de Deus", "Se essa musica te encontrou")
+- Evite repetir sempre o mesmo prefixo antes de "|"
 - Use palavras-chave naturais do nicho quando fizer sentido: louvor, fe, forca, superacao, oracao, adoracao, esperanca
 - NUNCA mencione nomes de IA, ferramentas, plataformas ou marcas (nada de Tevoxi, CriaVideo, OpenAI, etc)
 - NUNCA use termos tecnicos como "cinematografico", "experiencia visual", "experiencia cinematografica"
@@ -1053,8 +1162,10 @@ Retorne SOMENTE JSON:
             response_format={"type": "json_object"},
         )
         data = json.loads(resp.choices[0].message.content or "{}")
+        raw_title = str(data.get("title", "")).strip()
+        final_title = _compose_seo_automation_title(project, raw_title)
         return {
-            "title": str(data.get("title", "")).strip()[:90],
+            "title": final_title,
             "description": _strip_lyrics_from_description(str(data.get("description", "")).strip()),
             "hashtags": str(data.get("hashtags", "")).strip(),
             "tags": [str(t).strip() for t in (data.get("tags") or []) if str(t).strip()],
@@ -1062,7 +1173,7 @@ Retorne SOMENTE JSON:
     except Exception as e:
         logger.warning("AI publish metadata generation failed: %s", e)
         return {
-            "title": project.title or "Video automatico",
+            "title": _compose_seo_automation_title(project, project.title or "Video automatico"),
             "description": project.description or "",
             "hashtags": "",
             "tags": [],
