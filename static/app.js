@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v147 loaded");
+console.log("[CriaVideo] app.js v148 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -8512,15 +8512,14 @@ function _editorRenderTimeline() {
 
     tracksWrap.innerHTML = rows.map((row) => {
         const volumeBtn = row.volumeTrack
-            ? `<button class="editor-track-volume-btn" type="button" data-track-volume="${row.volumeTrack}" title="Volume da faixa">${_editorTimelineVolumeIcon(row.volumeTrack)}</button>`
+            ? `<button class="editor-track-inline-volume-btn" type="button" data-track-volume="${row.volumeTrack}" title="Volume da faixa">${_editorTimelineVolumeIcon(row.volumeTrack)}</button>`
             : "";
         return `
             <div class="editor-track" data-track="${row.track}">
                 <div class="editor-track-label">
                     <span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}<span class="editor-track-label-text">${row.label}</span></span>
-                    ${volumeBtn}
                 </div>
-                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""}>${row.clipsHtml || ""}</div>
+                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""}>${volumeBtn}${row.clipsHtml || ""}</div>
             </div>
         `;
     }).join("");
@@ -9053,7 +9052,7 @@ function _bindEditorEvents() {
     });
 
     document.getElementById("editor-timeline-tracks")?.addEventListener("click", (e) => {
-        const volumeBtn = e.target.closest(".editor-track-volume-btn");
+        const volumeBtn = e.target.closest(".editor-track-inline-volume-btn, .editor-track-volume-btn");
         if (volumeBtn) {
             _editorToggleTrackVolume(volumeBtn.dataset.trackVolume || "");
             e.stopPropagation();

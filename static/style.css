@@ -5412,6 +5412,37 @@ th,
     background: rgba(0, 212, 255, 0.12);
 }
 
+.editor-track-inline-volume-btn {
+    position: absolute;
+    left: 6px;
+    top: 5px;
+    width: 20px;
+    height: 20px;
+    border: 1px solid rgba(0, 212, 255, 0.55);
+    background: rgba(0, 212, 255, 0.18);
+    color: #e9f7ff;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+    z-index: 7;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 3px 8px rgba(0, 0, 0, 0.2);
+    transition: transform 0.15s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.editor-track-inline-volume-btn:hover {
+    transform: translateY(-1px);
+    border-color: rgba(0, 212, 255, 0.9);
+    background: rgba(0, 212, 255, 0.28);
+}
+
+.editor-track-inline-volume-btn svg {
+    width: 13px;
+    height: 13px;
+}
+
 .editor-track.track-targeted .editor-track-label {
     color: #f8fbff;
     opacity: 1;
