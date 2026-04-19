@@ -4286,7 +4286,7 @@ function _updateAutoSubtitleSummary() {
     const label = _autoSubtitleCfg.style_label || "Destaque";
     const y = Math.round(_autoSubtitleCfg.y || 82);
     const fs = Math.round(_autoSubtitleCfg.font_size || 14);
-    summary.textContent = `${label} ┬À Posicao ${y}% ┬À ${fs}px`;
+    summary.textContent = `${label} - Posicao ${y}% - ${fs}px`;
 }
 
 function _autoPickSubtitleStyle(styleName) {
@@ -4433,13 +4433,13 @@ function renderAutoCard(s) {
     const themeListHtml = themes.map(t => {
         let icon, statusClass, statusLabel;
         if (t.status === "done" || t.status === "completed") {
-            icon = "Ô£à"; statusClass = "theme-done"; statusLabel = isTestAccount ? "Concluido (teste)" : "Publicado";
+            icon = "OK"; statusClass = "theme-done"; statusLabel = isTestAccount ? "Concluido (teste)" : "Publicado";
         } else if (t.status === "processing") {
-            icon = "ÔÅ│"; statusClass = "theme-processing"; statusLabel = "Criando...";
+            icon = "..."; statusClass = "theme-processing"; statusLabel = "Criando...";
         } else if (t.status === "error" || t.status === "failed") {
-            icon = "ÔØî"; statusClass = "theme-failed"; statusLabel = "Falhou";
+            icon = "X"; statusClass = "theme-failed"; statusLabel = "Falhou";
         } else {
-            icon = "­ƒôà"; statusClass = "theme-pending"; statusLabel = "";
+            icon = "-"; statusClass = "theme-pending"; statusLabel = "";
         }
         const dateLabel = t.scheduled_date ? `<span class="theme-date">${esc(t.scheduled_date)}</span>` : "";
         const statusBadge = statusLabel ? `<span class="theme-badge ${statusClass}">${statusLabel}</span>` : "";
@@ -4826,14 +4826,14 @@ function _renderTevoxiSongs() {
             .map(g => String(g || "").trim())
             .filter(Boolean)
             .join(", ");
-        const meta = [genres, dur].filter(Boolean).join(" ┬À ");
+        const meta = [genres, dur].filter(Boolean).join(" - ");
         const selected = _autoSelectedSong && _autoSelectedSong.job_id === s.job_id;
         return `<button class="auto-song-item${selected ? ' active' : ''}" type="button" onclick="selectTevoxiSong(${i})">
             <div class="song-info">
                 <strong>${esc(s.title || 'Sem titulo')}</strong>
                 <span class="muted">${esc(meta || 'Sem detalhes')}</span>
             </div>
-            <span class="song-check">${selected ? 'Ô£ô' : ''}</span>
+            <span class="song-check">${selected ? 'OK' : ''}</span>
         </button>`;
     }).join("");
 }
