@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v148 loaded");
+console.log("[CriaVideo] app.js v149 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -7682,6 +7682,22 @@ function _editorRenderProps() {
         const trimHint = hasExternalAudio
             ? "Marque as faixas Video/Audio na timeline. O corte e ajuste serao aplicados somente nas faixas marcadas."
             : "Sem audio externo, o audio original acompanha os cortes do video automaticamente.";
+        const selectedVolumeTracks = _editorGetSelectedSegmentTracks().filter(track => track === "video" || (track === "audio" && hasExternalAudio));
+        const volumeControlsHtml = selectedVolumeTracks.map((track) => {
+            const isVideo = track === "video";
+            const volumePct = isVideo
+                ? Math.max(0, Math.min(100, Number(_editor.originalVolume || 0)))
+                : Math.max(0, Math.min(100, Number(_editor.musicVolume || 0)));
+            const trackLabel = isVideo ? "Video original" : "Audio externo";
+            const mutedClass = volumePct <= 0 ? " muted" : "";
+            return `
+                <button class="editor-track-props-volume-btn${mutedClass}" type="button" onclick="_editorToggleTrackVolume('${track}')">
+                    <span class="editor-track-props-volume-icon">${_editorTimelineVolumeIcon(track)}</span>
+                    <span class="editor-track-props-volume-name">${trackLabel}</span>
+                    <span class="editor-track-props-volume-value">${volumePct}%</span>
+                </button>
+            `;
+        }).join("");
         container.innerHTML = `
             <div class="editor-props-title">Cortar video</div>
             <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${trimHint}</p>
@@ -7695,6 +7711,12 @@ function _editorRenderProps() {
                 <div class="editor-trim-values">
                     <span>Faixas marcadas: ${selectedTracksLabel}</span>
                 </div>
+                ${selectedVolumeTracks.length ? `
+                    <div class="editor-props-group editor-track-props-volume-group">
+                        <label>Volume das faixas selecionadas</label>
+                        <div class="editor-track-props-volume-list">${volumeControlsHtml}</div>
+                    </div>
+                ` : ""}
             </div>
         `;
     } else if (tool === "music") {
@@ -8402,11 +8424,12 @@ function _editorToggleTrackVolume(track) {
         }
     }
 
-    if (_editor.activeTool === "music") {
+    if (_editor.activeTool === "music" || _editor.activeTool === "trim") {
         _editorRenderProps();
     }
     _editorRenderTimeline();
 }
+window._editorToggleTrackVolume = _editorToggleTrackVolume;
 
 function _editorRenderTimeline() {
     const dur = Math.max(_editor.duration || 0, 0.1);
@@ -8433,7 +8456,6 @@ function _editorRenderTimeline() {
         track: "video",
         kind: "video",
         label: "Video",
-        volumeTrack: "video",
         contentId: "editor-track-video",
         clipsHtml: videoClips,
     });
@@ -8457,7 +8479,6 @@ function _editorRenderTimeline() {
             kind: "audio",
             contentId: "editor-track-audio",
             label: "Audio",
-            volumeTrack: "audio",
             clipsHtml: audioClips,
         });
     }
@@ -8511,15 +8532,12 @@ function _editorRenderTimeline() {
     });
 
     tracksWrap.innerHTML = rows.map((row) => {
-        const volumeBtn = row.volumeTrack
-            ? `<button class="editor-track-inline-volume-btn" type="button" data-track-volume="${row.volumeTrack}" title="Volume da faixa">${_editorTimelineVolumeIcon(row.volumeTrack)}</button>`
-            : "";
         return `
             <div class="editor-track" data-track="${row.track}">
                 <div class="editor-track-label">
                     <span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}<span class="editor-track-label-text">${row.label}</span></span>
                 </div>
-                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""}>${volumeBtn}${row.clipsHtml || ""}</div>
+                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""}>${row.clipsHtml || ""}</div>
             </div>
         `;
     }).join("");
@@ -9052,13 +9070,6 @@ function _bindEditorEvents() {
     });
 
     document.getElementById("editor-timeline-tracks")?.addEventListener("click", (e) => {
-        const volumeBtn = e.target.closest(".editor-track-inline-volume-btn, .editor-track-volume-btn");
-        if (volumeBtn) {
-            _editorToggleTrackVolume(volumeBtn.dataset.trackVolume || "");
-            e.stopPropagation();
-            return;
-        }
-
         const label = e.target.closest(".editor-track-label");
         if (label) {
             const track = label.closest(".editor-track")?.dataset.track || "";

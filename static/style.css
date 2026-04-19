@@ -5390,57 +5390,67 @@ th,
     text-overflow: ellipsis;
 }
 
-.editor-track-volume-btn {
+.editor-track-props-volume-group {
+    margin-top: 2px;
+    gap: 8px;
+}
+
+.editor-track-props-volume-list {
+    display: grid;
+    gap: 6px;
+}
+
+.editor-track-props-volume-btn {
+    width: 100%;
+    border: 1px solid rgba(0, 212, 255, 0.28);
+    background: rgba(0, 212, 255, 0.1);
+    border-radius: 8px;
+    color: #dff5ff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.editor-track-props-volume-btn:hover {
+    border-color: rgba(0, 212, 255, 0.55);
+    background: rgba(0, 212, 255, 0.18);
+}
+
+.editor-track-props-volume-btn.muted {
+    border-color: rgba(239, 68, 68, 0.42);
+    background: rgba(239, 68, 68, 0.12);
+    color: #ffdede;
+}
+
+.editor-track-props-volume-icon {
     width: 18px;
     height: 18px;
-    border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(255,255,255,0.06);
-    color: var(--text-muted);
-    border-radius: 5px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
-}
-
-.editor-track-volume-btn:hover {
-    border-color: rgba(0, 212, 255, 0.45);
-    color: var(--accent);
-    background: rgba(0, 212, 255, 0.12);
-}
-
-.editor-track-inline-volume-btn {
-    position: absolute;
-    left: 6px;
-    top: 5px;
-    width: 20px;
-    height: 20px;
-    border: 1px solid rgba(0, 212, 255, 0.55);
-    background: rgba(0, 212, 255, 0.18);
-    color: #e9f7ff;
     border-radius: 6px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0;
-    cursor: pointer;
-    z-index: 7;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 3px 8px rgba(0, 0, 0, 0.2);
-    transition: transform 0.15s ease, border-color 0.2s ease, background 0.2s ease;
+    background: rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
 }
 
-.editor-track-inline-volume-btn:hover {
-    transform: translateY(-1px);
-    border-color: rgba(0, 212, 255, 0.9);
-    background: rgba(0, 212, 255, 0.28);
-}
-
-.editor-track-inline-volume-btn svg {
+.editor-track-props-volume-icon svg {
     width: 13px;
     height: 13px;
+}
+
+.editor-track-props-volume-name {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.editor-track-props-volume-value {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-muted);
 }
 
 .editor-track.track-targeted .editor-track-label {
