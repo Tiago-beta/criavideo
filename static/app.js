@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v151 loaded");
+console.log("[CriaVideo] app.js v152 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
