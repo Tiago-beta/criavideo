@@ -128,7 +128,7 @@ def _ensure_reference_image_instruction(prompt: str) -> str:
 
 
 def _build_transcribed_realistic_prompt(transcribed_text: str) -> str:
-    """Build a visual prompt grounded on transcribed lyrics, prioritizing a female lead."""
+    """Build a visual prompt grounded on the exact transcribed segment."""
     excerpt = " ".join((transcribed_text or "").split())[:420]
     excerpt_lower = excerpt.lower()
     has_field_imagery = any(
@@ -145,15 +145,16 @@ def _build_transcribed_realistic_prompt(transcribed_text: str) -> str:
     if not excerpt:
         return (
             "Crie uma cena realista cinematografica inspirada no trecho cantado. "
-            "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino."
+            "Baseie a composicao apenas no trecho atual, sem reaproveitar elementos de outros versos."
             " Evite cliches repetidos como campo de trigo e roupas totalmente brancas "
             "quando isso nao estiver no trecho cantado."
         )
 
     return (
         f'Trecho transcrito da musica: "{excerpt}". '
-        "Crie uma cena realista cinematografica baseada nessas palavras e na emocao do trecho. "
-        "Use uma pessoa feminina (mulher) como protagonista, evite personagem masculino, "
+        "Crie uma cena realista cinematografica baseada somente nessas palavras e na emocao desse trecho, "
+        "sem usar ideias de outros versos da musica. "
+        "Nao force personagem humano quando o trecho nao pedir isso; priorize os simbolos e a acao citados no trecho. "
         "sem texto na tela e sem sobreposicoes de legenda no proprio frame."
         f"{anti_repeat}"
     )

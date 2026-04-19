@@ -490,14 +490,16 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
             prompt_seed = (
                 f'Trecho da musica: "{lyrics_slice}". '
                 "Crie uma cena realista cinematografica baseada nessas palavras. "
-                "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino. "
+                "Baseie a cena somente nesse trecho, sem puxar elementos de outros versos. "
+                "Nao force personagem humano quando o trecho nao pedir isso. "
                 "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
                 "quando isso nao estiver claramente no trecho cantado."
             )
         else:
             prompt_seed = (
                 "Crie uma cena realista cinematografica inspirada no trecho cantado. "
-                "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino. "
+                "Baseie a cena somente no trecho atual, sem puxar elementos de outros versos. "
+                "Nao force personagem humano quando o trecho nao pedir isso. "
                 "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
                 "quando isso nao estiver claramente no trecho cantado."
             )
@@ -691,7 +693,8 @@ async def _create_musical_short(
     # 3. Transcribe segment for visual prompt context
     visual_prompt = (
         "Crie um video realista cinematografico inspirado no trecho cantado. "
-        "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino. "
+        "Baseie a cena somente no trecho atual, sem puxar elementos de outros versos. "
+        "Nao force personagem humano quando o trecho nao pedir isso. "
         "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
         "quando isso nao estiver claramente no trecho cantado."
     )
@@ -709,7 +712,8 @@ async def _create_musical_short(
             visual_prompt = (
                 f'Trecho transcrito da musica: "{snippet}". '
                 "Crie uma cena realista cinematografica baseada nessas palavras, "
-                "com uma pessoa feminina (mulher) como protagonista e sem personagem masculino. "
+                "somente nesse trecho e sem puxar elementos de outros versos. "
+                "Nao force personagem humano quando o trecho nao pedir isso. "
                 "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
                 "quando isso nao estiver claramente no trecho cantado."
             )
@@ -719,7 +723,8 @@ async def _create_musical_short(
             visual_prompt = (
                 f'Trecho de letra de referencia: "{hint_slice}". '
                 "Crie uma cena realista cinematografica baseada nessas palavras, "
-                "com uma pessoa feminina (mulher) como protagonista e sem personagem masculino. "
+                "somente nesse trecho e sem puxar elementos de outros versos. "
+                "Nao force personagem humano quando o trecho nao pedir isso. "
                 "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
                 "quando isso nao estiver claramente no trecho cantado."
             )
@@ -730,7 +735,8 @@ async def _create_musical_short(
             visual_prompt = (
                 f'Trecho de letra de referencia: "{hint_slice}". '
                 "Crie uma cena realista cinematografica baseada nessas palavras, "
-                "com uma pessoa feminina (mulher) como protagonista e sem personagem masculino. "
+                "somente nesse trecho e sem puxar elementos de outros versos. "
+                "Nao force personagem humano quando o trecho nao pedir isso. "
                 "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
                 "quando isso nao estiver claramente no trecho cantado."
             )
