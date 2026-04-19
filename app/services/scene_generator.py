@@ -163,6 +163,96 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
             except Exception:
                 return False
 
+    def _openai_image_size(ar: str) -> str:
+        if ar == "9:16":
+            return "1024x1536"
+        if ar == "1:1":
+            return "1024x1024"
+        return "1536x1024"
+
+    def _save_openai_fallback_image(source_prompt: str) -> bool:
+        if not (settings.openai_api_key or "").strip():
+            return False
+
+        try:
+            client = openai.OpenAI(api_key=settings.openai_api_key)
+            img_resp = client.images.generate(
+                model="gpt-image-1",
+                prompt=(source_prompt or "")[:3800],
+                size=_openai_image_size(aspect_ratio),
+            )
+
+            data_items = getattr(img_resp, "data", None) or []
+            if not data_items:
+                return False
+
+            item = data_items[0]
+            b64_data = getattr(item, "b64_json", None)
+            if not b64_data and isinstance(item, dict):
+                b64_data = item.get("b64_json")
+
+            if b64_data:
+                import base64
+
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                raw = base64.b64decode(b64_data)
+                with open(output_path, "wb") as f:
+                    f.write(raw)
+                return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+
+            img_url = getattr(item, "url", None)
+            if not img_url and isinstance(item, dict):
+                img_url = item.get("url")
+
+            if img_url:
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                with httpx.Client(timeout=120, follow_redirects=True) as client_http:
+                    resp = client_http.get(img_url)
+                    resp.raise_for_status()
+                    with open(output_path, "wb") as f:
+                        f.write(resp.content)
+                return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+        except Exception as e:
+            logger.warning(f"OpenAI fallback image generation failed: {e}")
+
+        return False
+
+    def _save_local_placeholder_image() -> bool:
+        try:
+            from PIL import Image, ImageDraw
+
+            if aspect_ratio == "9:16":
+                width, height = 1080, 1920
+            elif aspect_ratio == "1:1":
+                width, height = 1080, 1080
+            else:
+                width, height = 1920, 1080
+
+            seed = sum(ord(ch) for ch in (prompt or "")) % 255
+            base_top = (20 + seed // 4, 45 + seed // 6, 78 + seed // 8)
+            base_bottom = (90 + seed // 3, 65 + seed // 5, 40 + seed // 7)
+
+            img = Image.new("RGB", (width, height), base_top)
+            draw = ImageDraw.Draw(img)
+
+            for y in range(height):
+                t = y / max(1, height - 1)
+                r = int(base_top[0] * (1 - t) + base_bottom[0] * t)
+                g = int(base_top[1] * (1 - t) + base_bottom[1] * t)
+                b = int(base_top[2] * (1 - t) + base_bottom[2] * t)
+                draw.line([(0, y), (width, y)], fill=(r, g, b))
+
+            # Add subtle focal ellipse so fallback does not look flat.
+            pad = int(min(width, height) * 0.18)
+            draw.ellipse((pad, int(height * 0.12), width - pad, int(height * 0.72)), outline=(235, 220, 170), width=6)
+
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            img.save(output_path)
+            return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+        except Exception as e:
+            logger.warning(f"Local placeholder image generation failed: {e}")
+            return False
+
     # Retry with a simplified prompt when provider returns metadata without inline image.
     prompt_attempts = [
         full_prompt,
@@ -202,6 +292,16 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
             idx,
             len(prompt_attempts),
         )
+
+    # Fallback 1: OpenAI image generation if Gemini image returns empty payload.
+    if _save_openai_fallback_image(full_prompt):
+        logger.info(f"Scene image saved via OpenAI fallback: {output_path}")
+        return output_path
+
+    # Fallback 2: Local generated placeholder so the render pipeline can continue.
+    if _save_local_placeholder_image():
+        logger.warning(f"Scene image saved via local placeholder fallback: {output_path}")
+        return output_path
 
     if last_response_text:
         raise RuntimeError(f"Nano Banana did not return an image: {last_response_text}")
