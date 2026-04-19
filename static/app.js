@@ -7211,6 +7211,7 @@ function _editorSyncMediaLayersWithTime(timeSec) {
     const host = document.getElementById("editor-media-layer-host");
     if (!host) return;
     const currentTime = Math.max(0, Number(timeSec || 0));
+    const shouldPlay = Boolean(_editor.playing);
 
     host.querySelectorAll(".editor-media-layer-item").forEach((item) => {
         const layer = _editorGetMediaLayerById(item.dataset.id || "");
@@ -7224,9 +7225,19 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         const reachedVideoEnd = normalizedLayer.kind === "video"
             && Number(normalizedLayer.duration || 0) > 0
             && localTime > Number(normalizedLayer.duration || 0);
-        const visible = !normalizedLayer.audioOnly && currentTime >= normalizedLayer.startTime && currentTime <= normalizedLayer.endTime && !reachedVideoEnd;
-        item.style.display = visible ? "block" : "none";
-        if (!visible || normalizedLayer.kind !== "video") return;
+        const inRange = currentTime >= normalizedLayer.startTime && currentTime <= normalizedLayer.endTime && !reachedVideoEnd;
+
+        if (normalizedLayer.kind === "video" && normalizedLayer.audioOnly) {
+            item.style.display = inRange ? "block" : "none";
+            item.style.opacity = "0";
+            item.style.pointerEvents = "none";
+        } else {
+            item.style.display = inRange ? "block" : "none";
+            item.style.opacity = "1";
+            item.style.pointerEvents = "";
+        }
+
+        if (normalizedLayer.kind !== "video") return;
 
         const videoEl = item.querySelector("video");
         if (!videoEl) return;
@@ -7241,7 +7252,19 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         }
         videoEl.volume = Math.max(0, Math.min(1, normalizedLayer.volume / 100));
         videoEl.muted = normalizedLayer.volume <= 0;
-        videoEl.pause();
+
+        if (shouldPlay && inRange && !videoEl.ended) {
+            if (videoEl.paused) {
+                const playPromise = videoEl.play();
+                if (playPromise?.catch) {
+                    playPromise.catch(() => {
+                        // Ignore autoplay and interruption errors in preview sync.
+                    });
+                }
+            }
+        } else if (!videoEl.paused) {
+            videoEl.pause();
+        }
     });
 }
 
@@ -7254,8 +7277,7 @@ function _editorRenderMediaLayers() {
     const selectedId = String(_editor.selectedClip.id || "");
 
     const visibleLayers = _editor.mediaLayers
-        .map(rawLayer => _editorNormalizeMediaLayer(rawLayer))
-        .filter(layer => !(layer.kind === "video" && layer.audioOnly));
+        .map(rawLayer => _editorNormalizeMediaLayer(rawLayer));
 
     host.innerHTML = visibleLayers.map((layer, idx) => {
         const layout = _editorGetMediaLayerLayout(layer, hostWidth, hostHeight);
@@ -7263,7 +7285,7 @@ function _editorRenderMediaLayers() {
         const zIndex = (visibleLayers.length - idx) + 1;
         const isSelected = selectedId === String(layer.id) && _editor.selectedClip.kind === "media-layer";
         const mediaHtml = layer.kind === "video"
-            ? `<video src="${esc(layer.url)}" muted playsinline preload="metadata"></video>`
+            ? `<video src="${esc(layer.url)}" playsinline preload="metadata"></video>`
             : `<img src="${esc(layer.url)}" alt="Camada" loading="lazy">`;
         return `
             <div
@@ -7698,6 +7720,7 @@ function _editorTogglePlay() {
         video.pause();
         _editor.playing = false;
     }
+    _editorSyncMediaLayersWithTime(Number(video.currentTime || 0));
     _updatePlayIcon();
 }
 
