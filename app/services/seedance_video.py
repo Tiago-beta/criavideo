@@ -15,6 +15,19 @@ settings = get_settings()
 
 REPLICATE_API_URL = "https://api.replicate.com/v1/predictions"
 SEEDANCE_MODEL_VERSION = "bytedance/seedance-2.0"
+SEEDANCE_RATE_LIMIT_MSG = (
+    "Seedance 2.0 esta com alta demanda no momento (429). "
+    "Tente novamente em alguns segundos ou use MiniMax/Wan 2.2."
+)
+
+
+def _retry_delay_from_header(retry_after: str | None, default_seconds: int = 5) -> int:
+    if not retry_after:
+        return default_seconds
+    try:
+        return max(1, min(int(float(retry_after)), 90))
+    except Exception:
+        return default_seconds
 
 # Curated Seedance prompt engineering system prompt
 _SEEDANCE_SYSTEM_PROMPT = """You are an expert prompt engineer for Seedance 2.0, ByteDance's state-of-the-art AI video generation model.
@@ -213,14 +226,54 @@ async def generate_realistic_video(
     }
 
     # Step 1: Create prediction
+    prediction = None
     async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(
-            "https://api.replicate.com/v1/models/bytedance/seedance-2.0/predictions",
-            headers=headers,
-            json={"input": input_data},
-        )
-        resp.raise_for_status()
-        prediction = resp.json()
+        for attempt in range(5):
+            try:
+                resp = await client.post(
+                    "https://api.replicate.com/v1/models/bytedance/seedance-2.0/predictions",
+                    headers=headers,
+                    json={"input": input_data},
+                )
+            except httpx.RequestError as e:
+                if attempt >= 4:
+                    raise RuntimeError(f"Falha de conexao ao iniciar Seedance: {e}")
+                wait_s = min(20, 2 ** attempt)
+                logger.warning(
+                    "Seedance request error on create (attempt %d/5): %s. Retrying in %ds",
+                    attempt + 1,
+                    e,
+                    wait_s,
+                )
+                await asyncio.sleep(wait_s)
+                continue
+
+            if resp.status_code == 429:
+                if attempt >= 4:
+                    raise RuntimeError(SEEDANCE_RATE_LIMIT_MSG)
+                wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(30, 2 ** (attempt + 2)))
+                logger.warning(
+                    "Seedance rate-limited on create (attempt %d/5). Retrying in %ds",
+                    attempt + 1,
+                    wait_s,
+                )
+                await asyncio.sleep(wait_s)
+                continue
+
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                body = (e.response.text or "").strip()[:300] if e.response is not None else ""
+                msg = f"Erro ao iniciar Seedance (HTTP {e.response.status_code if e.response is not None else '??'})"
+                if body:
+                    msg += f": {body}"
+                raise RuntimeError(msg)
+
+            prediction = resp.json()
+            break
+
+    if not prediction:
+        raise RuntimeError("Nao foi possivel iniciar a geracao no Seedance.")
 
     prediction_id = prediction["id"]
     status = prediction.get("status", "starting")
@@ -237,7 +290,19 @@ async def generate_realistic_video(
     last_progress = 20
     async with httpx.AsyncClient(timeout=60) as client:
         while (time.time() - start_time) < timeout_seconds:
-            resp = await client.get(poll_url, headers=poll_headers)
+            try:
+                resp = await client.get(poll_url, headers=poll_headers)
+            except httpx.RequestError as e:
+                logger.warning("Seedance poll request error: %s", e)
+                await asyncio.sleep(5)
+                continue
+
+            if resp.status_code == 429:
+                wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=6)
+                logger.warning("Seedance rate-limited on poll. Retrying in %ds", wait_s)
+                await asyncio.sleep(wait_s)
+                continue
+
             resp.raise_for_status()
             data = resp.json()
 
@@ -270,10 +335,43 @@ async def generate_realistic_video(
     # Step 3: Download the video
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
-        resp = await client.get(video_url)
-        resp.raise_for_status()
-        with open(output_path, "wb") as f:
-            f.write(resp.content)
+        downloaded = False
+        for attempt in range(4):
+            try:
+                resp = await client.get(video_url)
+            except httpx.RequestError as e:
+                if attempt >= 3:
+                    raise RuntimeError(f"Falha ao baixar video gerado: {e}")
+                wait_s = min(12, 2 ** (attempt + 1))
+                logger.warning(
+                    "Seedance download request error (attempt %d/4): %s. Retrying in %ds",
+                    attempt + 1,
+                    e,
+                    wait_s,
+                )
+                await asyncio.sleep(wait_s)
+                continue
+
+            if resp.status_code == 429:
+                if attempt >= 3:
+                    raise RuntimeError(SEEDANCE_RATE_LIMIT_MSG)
+                wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(20, 2 ** (attempt + 2)))
+                logger.warning(
+                    "Seedance rate-limited on download (attempt %d/4). Retrying in %ds",
+                    attempt + 1,
+                    wait_s,
+                )
+                await asyncio.sleep(wait_s)
+                continue
+
+            resp.raise_for_status()
+            with open(output_path, "wb") as f:
+                f.write(resp.content)
+            downloaded = True
+            break
+
+        if not downloaded:
+            raise RuntimeError("Nao foi possivel baixar o video do Seedance.")
 
     file_size = os.path.getsize(output_path)
     logger.info(f"Seedance video downloaded: {output_path} ({file_size} bytes)")
