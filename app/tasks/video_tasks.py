@@ -103,10 +103,24 @@ def _ensure_reference_image_instruction(prompt: str) -> str:
 def _build_transcribed_realistic_prompt(transcribed_text: str) -> str:
     """Build a visual prompt grounded on transcribed lyrics, prioritizing a female lead."""
     excerpt = " ".join((transcribed_text or "").split())[:420]
+    excerpt_lower = excerpt.lower()
+    has_field_imagery = any(
+        kw in excerpt_lower
+        for kw in ("trigo", "wheat", "campo", "pasto", "pastagem", "fazenda", "meadow", "farm")
+    )
+    anti_repeat = (
+        " Evite cliches repetidos como campo de trigo, roupas totalmente brancas e poses padrao "
+        "quando isso nao estiver claramente no trecho cantado."
+        if not has_field_imagery
+        else ""
+    )
+
     if not excerpt:
         return (
             "Crie uma cena realista cinematografica inspirada no trecho cantado. "
             "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino."
+            " Evite cliches repetidos como campo de trigo e roupas totalmente brancas "
+            "quando isso nao estiver no trecho cantado."
         )
 
     return (
@@ -114,6 +128,7 @@ def _build_transcribed_realistic_prompt(transcribed_text: str) -> str:
         "Crie uma cena realista cinematografica baseada nessas palavras e na emocao do trecho. "
         "Use uma pessoa feminina (mulher) como protagonista, evite personagem masculino, "
         "sem texto na tela e sem sobreposicoes de legenda no proprio frame."
+        f"{anti_repeat}"
     )
 
 

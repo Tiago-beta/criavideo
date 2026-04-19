@@ -86,18 +86,28 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
             "Cinematic, high quality, professional lighting, music video aesthetic. "
             "No text or words in the image. No human faces. "
         )
-    # Detect gospel/religious content and enforce nature imagery
+    # Detect gospel/religious content. Keep strict nature mode only for no-face scenes.
+    # For realistic/face-enabled scenes, preserve lyric-specific imagery to avoid repetitive outputs.
     _gospel_kw = ["god", "lord", "faith", "pray", "worship", "church", "gospel",
                   "heaven", "divine", "spirit", "holy", "jesus", "christ", "deus",
                   "senhor", "louvor", "adoracao", "gospel", "fe", "oracao", "ceu"]
     prompt_lower = prompt.lower()
     if any(kw in prompt_lower for kw in _gospel_kw):
-        style_prefix = (
-            "Beautiful nature landscape, cinematic, high quality, professional lighting. "
-            "Majestic scenery: mountains, forests, rivers, sunlight through clouds, serene lakes, golden hour. "
-            "Spiritual and peaceful atmosphere through nature. "
-            "No text or words in the image. No human faces. No religious symbols or objects. "
-        )
+        if allow_faces:
+            style_prefix = (
+                "Cinematic, high quality, professional lighting, photorealistic. "
+                "Spiritual and emotional atmosphere aligned with the lyrics. "
+                "Use the exact symbols and actions requested in the prompt. "
+                "Do not default to generic wheat fields, white robes, or repeated pastoral clichés unless explicitly requested. "
+                "No text or words in the image. "
+            )
+        else:
+            style_prefix = (
+                "Beautiful nature landscape, cinematic, high quality, professional lighting. "
+                "Majestic scenery: mountains, forests, rivers, sunlight through clouds, serene lakes, golden hour. "
+                "Spiritual and peaceful atmosphere through nature. "
+                "No text or words in the image. No human faces. No religious symbols or objects. "
+            )
     full_prompt = style_prefix + prompt
 
     response = google_client.models.generate_content(

@@ -4576,9 +4576,7 @@ function openNewAutomationModal() {
     if (defStyle) defStyle.classList.add("selected");
 
     // reset engine selection
-    document.querySelectorAll("#auto-realistic-engine .engine-option").forEach(e => e.classList.remove("selected"));
-    const defEngine = document.querySelector('#auto-realistic-engine [data-value="minimax"]');
-    if (defEngine) defEngine.classList.add("selected");
+    _setAutoRealisticEngine("minimax");
 
     // reset duration selection
     document.querySelectorAll("#auto-realistic-duration .duration-option").forEach(d => d.classList.remove("selected"));
@@ -4601,6 +4599,8 @@ function openNewAutomationModal() {
     if (freqEl) freqEl.value = "daily";
     const dowGroup = document.getElementById("auto-dow-group");
     if (dowGroup) dowGroup.hidden = true;
+
+    _applyAutoRealisticEngineRules();
 
     showAutoStep(1);
     openModal("modal-new-automation");
@@ -4660,6 +4660,53 @@ function _isAutoTevoxiClipMode() {
     return vt === "realista" && useTevoxi && _autoSelectedSong;
 }
 
+function _isAutoTevoxiShortMode() {
+    const vt = getSelectedAutoVideoType();
+    const useTevoxi = document.getElementById("auto-realistic-tevoxi")?.checked || false;
+    return vt === "realista" && useTevoxi;
+}
+
+function _setAutoRealisticEngine(engineValue) {
+    const options = document.querySelectorAll("#auto-realistic-engine .engine-option");
+    if (!options.length) return;
+
+    let selected = null;
+    options.forEach((o) => {
+        const isSelected = o.dataset.value === engineValue;
+        o.classList.toggle("selected", isSelected);
+        if (isSelected) selected = o;
+    });
+
+    if (!selected) {
+        selected = document.querySelector('#auto-realistic-engine [data-value="minimax"]');
+        if (selected) selected.classList.add("selected");
+    }
+
+    const isGrok = selected?.dataset.value === "grok";
+    document.querySelectorAll("#auto-realistic-duration .grok-only").forEach(btn => { btn.hidden = !isGrok; });
+    if (!isGrok) {
+        document.querySelectorAll("#auto-realistic-duration .duration-option.grok-only.selected").forEach(btn => {
+            btn.classList.remove("selected");
+            const def = document.querySelector('#auto-realistic-duration [data-value="7"]');
+            if (def) def.classList.add("selected");
+        });
+    }
+}
+
+function _applyAutoRealisticEngineRules() {
+    const engineGroup = document.getElementById("auto-realistic-engine-group");
+    const forceGrok = _isAutoTevoxiShortMode();
+    if (engineGroup) engineGroup.hidden = forceGrok;
+
+    if (forceGrok) {
+        _setAutoRealisticEngine("grok");
+        return;
+    }
+
+    const selected = document.querySelector("#auto-realistic-engine .engine-option.selected");
+    if (!selected) _setAutoRealisticEngine("minimax");
+}
+
 function autoStepNext() {
     const totalSteps = 4;
 
@@ -4695,17 +4742,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // Engine option click
         const eng = e.target.closest("#auto-realistic-engine .engine-option");
         if (eng) {
-            document.querySelectorAll("#auto-realistic-engine .engine-option").forEach(o => o.classList.remove("selected"));
-            eng.classList.add("selected");
-            // Show/hide grok-only durations
-            const isGrok = eng.dataset.value === "grok";
-            document.querySelectorAll("#auto-realistic-duration .grok-only").forEach(btn => { btn.hidden = !isGrok; });
-            if (!isGrok) {
-                document.querySelectorAll("#auto-realistic-duration .duration-option.grok-only.selected").forEach(btn => {
-                    btn.classList.remove("selected");
-                    const def = document.querySelector('#auto-realistic-duration [data-value="7"]');
-                    if (def) def.classList.add("selected");
-                });
+            if (_isAutoTevoxiShortMode()) {
+                _setAutoRealisticEngine("grok");
+            } else {
+                _setAutoRealisticEngine(eng.dataset.value || "minimax");
             }
         }
         // Duration option click
@@ -4729,6 +4769,8 @@ function toggleAutoTevoxiSongs() {
         const musicCb = document.getElementById("auto-realistic-music");
         if (musicCb) musicCb.checked = false;
     }
+
+    _applyAutoRealisticEngineRules();
 }
 
 async function _loadTevoxiSongsIfNeeded() {
@@ -5516,6 +5558,7 @@ function updateAutoManualPanels() {
     const realisticPanel = document.getElementById("auto-realistic-settings");
     if (narrationPanel) narrationPanel.hidden = !(mode === "manual" && videoType === "imagens_ia");
     if (realisticPanel) realisticPanel.hidden = !(mode === "manual" && videoType === "realista");
+    _applyAutoRealisticEngineRules();
 }
 
 function toggleAutoMusicLyrics() {
@@ -5660,7 +5703,7 @@ async function createAutoSchedule() {
 
         defaultSettings = {
             realistic_style: selectedStyle ? selectedStyle.dataset.style : "cinematic",
-            engine: selectedEngine ? selectedEngine.dataset.value : "minimax",
+            engine: useTevoxi ? "grok" : (selectedEngine ? selectedEngine.dataset.value : "minimax"),
             duration: selectedDur ? parseInt(selectedDur.dataset.value) : 7,
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",
             add_music: useMusic && !useTevoxi,

@@ -486,12 +486,16 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
             prompt_seed = (
                 f'Trecho da musica: "{lyrics_slice}". '
                 "Crie uma cena realista cinematografica baseada nessas palavras. "
-                "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino."
+                "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino. "
+                "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
+                "quando isso nao estiver claramente no trecho cantado."
             )
         else:
             prompt_seed = (
                 "Crie uma cena realista cinematografica inspirada no trecho cantado. "
-                "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino."
+                "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino. "
+                "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
+                "quando isso nao estiver claramente no trecho cantado."
             )
 
     # Create project
@@ -682,7 +686,9 @@ async def _create_musical_short(
     # 3. Transcribe segment for visual prompt context
     visual_prompt = (
         "Crie um video realista cinematografico inspirado no trecho cantado. "
-        "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino."
+        "Use uma pessoa feminina (mulher) como protagonista e evite personagem masculino. "
+        "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
+        "quando isso nao estiver claramente no trecho cantado."
     )
     try:
         from app.services.transcriber import transcribe_audio
@@ -696,7 +702,9 @@ async def _create_musical_short(
             visual_prompt = (
                 f'Trecho transcrito da musica: "{snippet}". '
                 "Crie uma cena realista cinematografica baseada nessas palavras, "
-                "com uma pessoa feminina (mulher) como protagonista e sem personagem masculino."
+                "com uma pessoa feminina (mulher) como protagonista e sem personagem masculino. "
+                "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
+                "quando isso nao estiver claramente no trecho cantado."
             )
             logger.info("Short %d transcribed: %s", segment_index, transcribed[:200])
         elif lyrics_hint:
@@ -704,7 +712,9 @@ async def _create_musical_short(
             visual_prompt = (
                 f'Trecho de letra de referencia: "{hint_slice}". '
                 "Crie uma cena realista cinematografica baseada nessas palavras, "
-                "com uma pessoa feminina (mulher) como protagonista e sem personagem masculino."
+                "com uma pessoa feminina (mulher) como protagonista e sem personagem masculino. "
+                "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
+                "quando isso nao estiver claramente no trecho cantado."
             )
     except Exception as e:
         logger.warning("Transcription failed for short %d: %s", segment_index, e)
@@ -713,7 +723,9 @@ async def _create_musical_short(
             visual_prompt = (
                 f'Trecho de letra de referencia: "{hint_slice}". '
                 "Crie uma cena realista cinematografica baseada nessas palavras, "
-                "com uma pessoa feminina (mulher) como protagonista e sem personagem masculino."
+                "com uma pessoa feminina (mulher) como protagonista e sem personagem masculino. "
+                "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
+                "quando isso nao estiver claramente no trecho cantado."
             )
 
     # 4. Create VideoProject for realistic pipeline
