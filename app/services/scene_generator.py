@@ -182,15 +182,20 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
             )
         )
 
-        response_text = (getattr(response, "text", "") or "").strip()
-        if response_text:
-            last_response_text = response_text[:240]
-
         parts = _extract_parts(response)
         for part in parts:
             if _save_inline_part(part):
                 logger.info(f"Scene image saved: {output_path}")
                 return output_path
+
+        # Some SDK versions expose text warnings for image responses.
+        # Only inspect text when image parts are missing.
+        try:
+            response_text = (getattr(response, "text", "") or "").strip()
+            if response_text:
+                last_response_text = response_text[:240]
+        except Exception:
+            pass
 
         logger.warning(
             "Nano Banana returned no inline image part (attempt %d/%d)",
