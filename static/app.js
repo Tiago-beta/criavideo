@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v142 loaded");
+console.log("[CriaVideo] app.js v143 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -7192,6 +7192,20 @@ function _updatePlayIcon() {
     }
 }
 
+function _editorResetPlaybackToStart() {
+    const video = document.getElementById("editor-video");
+    if (!video) return;
+
+    video.pause();
+    video.currentTime = 0;
+    _editor.playing = false;
+    _updatePlayIcon();
+
+    document.getElementById("editor-time-current").textContent = _fmtTime(0);
+    _editorMovePlayhead(0);
+    _editorDrawOverlays(0);
+}
+
 // ---------- Time update ----------
 function _editorTimeUpdate() {
     const video = document.getElementById("editor-video");
@@ -7202,12 +7216,12 @@ function _editorTimeUpdate() {
     if (_editor.videoSegments.length) {
         const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
         const last = sorted[sorted.length - 1];
-        if (last && t >= last.end) {
-            video.pause();
-            video.currentTime = last.end;
-            _editor.playing = false;
-            _updatePlayIcon();
-        } else {
+        if (last && t >= (last.end - 0.02)) {
+            _editorResetPlaybackToStart();
+            return;
+        }
+
+        if (_editor.playing) {
             const inSegment = sorted.some(seg => t >= seg.start && t < seg.end);
             if (!inSegment) {
                 const next = sorted.find(seg => seg.start > t);
@@ -7218,9 +7232,8 @@ function _editorTimeUpdate() {
             }
         }
     } else if (_editor.trimEnd > 0 && t >= _editor.trimEnd) {
-        video.pause();
-        _editor.playing = false;
-        _updatePlayIcon();
+        _editorResetPlaybackToStart();
+        return;
     }
     // Move playhead
     _editorMovePlayhead(t);
@@ -7232,8 +7245,10 @@ function _editorMovePlayhead(t) {
     const playhead = document.getElementById("editor-timeline-playhead");
     if (!playhead || !_editor.duration) return;
     const trackWidth = document.getElementById("editor-track-video")?.offsetWidth || 600;
-    const pct = t / _editor.duration;
-    playhead.style.left = (80 + pct * trackWidth) + "px";
+    const safeTime = Math.max(0, Math.min(_editor.duration, t || 0));
+    const pct = _editor.duration > 0 ? (safeTime / _editor.duration) : 0;
+    const x = Math.max(0, Math.min(trackWidth - 2, pct * trackWidth));
+    playhead.style.left = (80 + x) + "px";
 }
 
 function _editorClampToVideoSegments(timeSec) {
@@ -8777,8 +8792,7 @@ function _bindEditorEvents() {
     if (video) {
         video.addEventListener("timeupdate", _editorTimeUpdate);
         video.addEventListener("ended", () => {
-            _editor.playing = false;
-            _updatePlayIcon();
+            _editorResetPlaybackToStart();
         });
     }
     document.getElementById("editor-overlay-canvas")?.addEventListener("click", _editorHandleOverlayClick);
