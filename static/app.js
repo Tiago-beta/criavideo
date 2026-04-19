@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v150 loaded");
+console.log("[CriaVideo] app.js v151 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -7165,6 +7165,34 @@ async function _editorUploadVideo(input) {
 }
 window._editorUploadVideo = _editorUploadVideo;
 
+async function _editorUploadProjectImages(input) {
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    if (!_editor.projectId) {
+        input.value = "";
+        showToast("Abra um projeto no editor antes de enviar imagens.", "error");
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+        files.forEach((file) => formData.append("images", file));
+        showToast(`Enviando ${files.length} imagem(ns) para o projeto...`);
+        const payload = await apiForm(`/video/projects/${_editor.projectId}/images`, formData, { method: "POST" });
+        const savedCount = Math.max(0, Number(payload?.saved_count || 0));
+        if (savedCount > 0) {
+            showToast(`${savedCount} imagem(ns) enviada(s) para este projeto.`, "success");
+        } else {
+            showToast("Nenhuma imagem valida foi enviada.", "error");
+        }
+    } catch (err) {
+        showToast("Erro ao enviar imagens: " + err.message, "error");
+    } finally {
+        input.value = "";
+    }
+}
+window._editorUploadProjectImages = _editorUploadProjectImages;
+
 // ---------- Open editor for a project ----------
 async function openEditor(projectId) {
     try {
@@ -9060,6 +9088,18 @@ function _bindEditorEvents() {
     document.getElementById("editor-upload-btn")?.addEventListener("click", () => {
         document.getElementById("editor-video-upload-input")?.click();
     });
+    document.getElementById("editor-side-upload-video-btn")?.addEventListener("click", () => {
+        document.getElementById("editor-video-upload-input")?.click();
+    });
+    document.getElementById("editor-side-upload-images-btn")?.addEventListener("click", () => {
+        const imageInput = document.getElementById("editor-project-image-upload-input");
+        if (!imageInput) return;
+        if (!_editor.projectId) {
+            showToast("Abra um projeto no editor antes de enviar imagens.", "error");
+            return;
+        }
+        imageInput.click();
+    });
     document.getElementById("editor-quick-add-text")?.addEventListener("click", _editorAddText);
     document.getElementById("editor-quick-add-subtitle")?.addEventListener("click", _editorAddSubtitle);
     document.getElementById("editor-quick-cut")?.addEventListener("click", _editorSplitAtCurrentTime);
@@ -9072,7 +9112,9 @@ function _bindEditorEvents() {
 
     // Tool buttons
     document.querySelectorAll(".editor-tool-btn").forEach(btn => {
-        btn.addEventListener("click", () => _editorSelectTool(btn.dataset.tool));
+        const tool = btn.dataset.tool;
+        if (!tool) return;
+        btn.addEventListener("click", () => _editorSelectTool(tool));
     });
 
     document.getElementById("editor-timeline-tracks")?.addEventListener("pointerdown", (e) => {

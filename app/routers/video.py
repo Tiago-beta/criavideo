@@ -630,6 +630,77 @@ async def update_project_thumbnail(
     return {"thumbnail_path": str(thumb_path)}
 
 
+@router.post("/projects/{project_id}/images")
+async def upload_project_images(
+    project_id: int,
+    request: Request,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload one or more custom images to an existing project."""
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    form = await request.form()
+    try:
+        raw_images = form.getlist("images")
+    except Exception:
+        raw_images = []
+
+    uploads = [item for item in raw_images if getattr(item, "filename", "")]
+    if not uploads:
+        raise HTTPException(status_code=400, detail="Nenhuma imagem enviada")
+
+    img_dir = Path(settings.media_dir) / "images" / str(project.id)
+    img_dir.mkdir(parents=True, exist_ok=True)
+
+    existing = sorted(img_dir.glob("user_*.*"))
+    next_idx = len(existing)
+    max_total = 20
+    remaining_slots = max_total - next_idx
+    if remaining_slots <= 0:
+        raise HTTPException(status_code=400, detail="Limite de 20 imagens por projeto atingido")
+
+    saved_files: list[str] = []
+    for image in uploads[:remaining_slots]:
+        filename = str(getattr(image, "filename", "") or "").strip()
+        if not filename:
+            continue
+
+        ext = Path(filename).suffix.lower()
+        if ext not in IMAGE_EXTS:
+            raise HTTPException(status_code=400, detail=f"Formato nao suportado para {filename}. Use JPG, PNG ou WebP.")
+
+        content = await image.read()
+        if not content:
+            continue
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"Imagem {filename} excede 10MB")
+
+        target_name = f"user_{next_idx:03d}{ext}"
+        target_path = img_dir / target_name
+        with open(target_path, "wb") as f:
+            f.write(content)
+
+        saved_files.append(target_name)
+        next_idx += 1
+
+    if not saved_files:
+        raise HTTPException(status_code=400, detail="Nenhuma imagem valida enviada")
+
+    if not bool(getattr(project, "use_custom_video", False)):
+        project.use_custom_images = True
+    await db.commit()
+
+    return {
+        "project_id": project.id,
+        "saved_count": len(saved_files),
+        "images": saved_files,
+        "total_images": next_idx,
+    }
+
+
 @router.post("/projects/{project_id}/generate")
 async def generate_video(
     project_id: int,

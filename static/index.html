@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260419-34">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260419-37">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 150;
+        var REQUIRED_VER = 151;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -199,6 +199,7 @@
                                 </div>
                             </div>
                             <input id="editor-video-upload-input" type="file" accept="video/*" hidden onchange="_editorUploadVideo(this)">
+                            <input id="editor-project-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadProjectImages(this)">
                             <p class="section-subtitle">Selecione um video finalizado para editar.</p>
                             <div id="editor-videos-list" class="cards-grid">
                                 <div class="loading">Carregando videos...</div>
@@ -256,6 +257,14 @@
                                     <button class="editor-tool-btn" data-tool="quality" type="button" title="Qualidade">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>
                                         <span>Qualidade</span>
+                                    </button>
+                                    <button class="editor-tool-action-btn" id="editor-side-upload-video-btn" type="button" title="Enviar video">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                        <span>Video+</span>
+                                    </button>
+                                    <button class="editor-tool-action-btn" id="editor-side-upload-images-btn" type="button" title="Enviar imagens">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                        <span>Imagem+</span>
                                     </button>
                                 </div>
                                 <!-- Preview area -->
@@ -2103,7 +2112,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260419-36"></script>
-    <script src="/video/static/pwa.js?v=20260419-36"></script>
+    <script src="/video/static/app.js?v=20260419-37"></script>
+    <script src="/video/static/pwa.js?v=20260419-37"></script>
 </body>
 </html>
