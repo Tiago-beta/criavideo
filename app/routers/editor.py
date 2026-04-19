@@ -46,6 +46,21 @@ def _resolve_render_video_path(render: VideoRender) -> str | None:
     return source
 
 
+def _to_media_url(path: str | None) -> str | None:
+    if not path:
+        return None
+    media_prefix = os.path.normpath(settings.media_dir)
+    target = os.path.normpath(path)
+    try:
+        rel = os.path.relpath(target, media_prefix)
+    except ValueError:
+        return None
+    if rel.startswith(".."):
+        return None
+    rel_url = rel.replace("\\", "/").lstrip("/")
+    return f"/video/media/{rel_url}"
+
+
 def _fallback_project_video_path(project_id: int) -> str | None:
     """Fallback for old projects when render path is missing/inconsistent."""
     candidates = [
@@ -114,6 +129,31 @@ def _probe_video_metadata(video_path: str) -> tuple[float, str]:
         logger.warning("[editor] Failed to probe metadata for %s: %s", video_path, exc)
 
     return duration, aspect_ratio
+
+
+def _probe_media_dimensions(path: str) -> tuple[int, int]:
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height",
+                "-of", "json",
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if proc.returncode != 0:
+            return 0, 0
+        payload = json.loads(proc.stdout or "{}")
+        stream = (payload.get("streams") or [{}])[0]
+        width = int(stream.get("width") or 0)
+        height = int(stream.get("height") or 0)
+        return width, height
+    except Exception:
+        return 0, 0
 
 
 def _probe_has_audio_stream(video_path: str) -> bool:
@@ -260,6 +300,16 @@ class StickerEntry(BaseModel):
     size: int = 48
 
 
+class MediaLayerEntry(BaseModel):
+    kind: str = "image"  # image | video
+    path: str
+    x: float = 0
+    y: float = 0
+    width: float = 100
+    start_time: float = 0
+    end_time: float = 0
+
+
 class TrimSegment(BaseModel):
     start: float
     end: float
@@ -281,6 +331,7 @@ class ExportRequest(BaseModel):
     texts: list[TextOverlay] = []
     subtitles: list[SubtitleEntry] = []
     stickers: list[StickerEntry] = []
+    media_layers: list[MediaLayerEntry] = []
 
 
 # ── Upload music ──────────────────────────────────────
@@ -369,13 +420,95 @@ async def upload_video(
     db.add(render)
     await db.commit()
 
-    media_prefix = settings.media_dir.rstrip("/")
-    video_url = "/video/media" + str(dest)[len(media_prefix):] if str(dest).startswith(media_prefix) else None
+    video_url = _to_media_url(str(dest))
     return {
         "project_id": project.id,
         "video_url": video_url,
         "duration": duration,
         "aspect_ratio": project.aspect_ratio,
+    }
+
+
+@router.post("/upload-layer-video")
+async def upload_layer_video(
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    if not file.content_type or not file.content_type.startswith("video"):
+        raise HTTPException(400, "Arquivo deve ser de video")
+
+    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "layers" / "videos"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = Path(file.filename or "layer.mp4").suffix.lower() or ".mp4"
+    filename = f"layer_video_{uuid.uuid4().hex[:10]}{ext}"
+    dest = upload_dir / filename
+
+    max_size = 500 * 1024 * 1024
+    written = 0
+    with open(dest, "wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > max_size:
+                out.close()
+                if dest.exists():
+                    dest.unlink(missing_ok=True)
+                raise HTTPException(400, "Arquivo muito grande (max 500MB)")
+            out.write(chunk)
+
+    if written <= 0:
+        if dest.exists():
+            dest.unlink(missing_ok=True)
+        raise HTTPException(400, "Arquivo vazio")
+
+    duration, _ = _probe_video_metadata(str(dest))
+    width, height = _probe_media_dimensions(str(dest))
+    return {
+        "path": str(dest),
+        "media_url": _to_media_url(str(dest)),
+        "duration": duration,
+        "width": width,
+        "height": height,
+        "name": Path(file.filename or "Camada video").stem,
+    }
+
+
+@router.post("/upload-layer-image")
+async def upload_layer_image(
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    if file.content_type not in allowed:
+        raise HTTPException(400, "Formato invalido. Envie JPG, PNG ou WebP.")
+
+    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "layers" / "images"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    ext_map = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+    ext = ext_map.get(file.content_type, Path(file.filename or "layer.jpg").suffix.lower() or ".jpg")
+    filename = f"layer_image_{uuid.uuid4().hex[:10]}{ext}"
+    dest = upload_dir / filename
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "Arquivo vazio")
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(400, "Imagem muito grande (max 10MB)")
+
+    with open(dest, "wb") as out:
+        out.write(content)
+
+    width, height = _probe_media_dimensions(str(dest))
+    return {
+        "path": str(dest),
+        "media_url": _to_media_url(str(dest)),
+        "width": width,
+        "height": height,
+        "name": Path(file.filename or "Camada imagem").stem,
     }
 
 
@@ -543,6 +676,50 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         video_select_expr = _build_segment_select_expr(video_segments)
         audio_select_expr = _build_segment_select_expr(audio_segments)
         output_video_duration = sum(max(0.0, et - st) for st, et in video_segments)
+
+        valid_media_layers: list[dict] = []
+        allowed_layer_root = os.path.normpath(
+            str(Path(settings.media_dir) / "editor_uploads" / str(user_id) / "layers")
+        )
+        for layer in req.media_layers or []:
+            kind = str(getattr(layer, "kind", "") or "").strip().lower()
+            if kind not in {"image", "video"}:
+                continue
+
+            raw_path = str(getattr(layer, "path", "") or "").strip()
+            if not raw_path:
+                continue
+
+            resolved_path = raw_path
+            if raw_path.startswith("/video/media/"):
+                resolved_path = os.path.join(settings.media_dir, raw_path.split("/video/media/")[-1].lstrip("/"))
+            elif not os.path.isabs(raw_path):
+                resolved_path = os.path.join(settings.media_dir, raw_path.lstrip("/"))
+            resolved_path = os.path.normpath(resolved_path)
+
+            if not os.path.exists(resolved_path):
+                continue
+            if not resolved_path.startswith(allowed_layer_root):
+                logger.warning("[editor] Ignoring layer outside user scope: %s", resolved_path)
+                continue
+
+            width_pct = max(8.0, min(100.0, float(getattr(layer, "width", 100) or 100)))
+            x_pct = max(0.0, min(100.0, float(getattr(layer, "x", 0) or 0)))
+            y_pct = max(0.0, min(100.0, float(getattr(layer, "y", 0) or 0)))
+            start_time = max(0.0, float(getattr(layer, "start_time", 0) or 0))
+            end_time = max(0.0, float(getattr(layer, "end_time", 0) or 0))
+
+            valid_media_layers.append(
+                {
+                    "kind": kind,
+                    "path": resolved_path,
+                    "width_pct": width_pct,
+                    "x_pct": x_pct,
+                    "y_pct": y_pct,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                }
+            )
 
         logger.info(
             "[editor] Export video_segments=%s audio_segments=%s use_vf=%s use_af=%s",
@@ -740,6 +917,71 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
             job["error"] = "FFmpeg falhou ao processar o video"
             return
 
+        final_out_file = out_file
+        if valid_media_layers:
+            job["progress"] = 92
+            job["message"] = "Aplicando camadas de video/imagem..."
+
+            layered_out_file = os.path.join(out_dir, f"edited_layers_{uuid.uuid4().hex[:8]}.mp4")
+            layer_cmd = ["ffmpeg", "-y", "-i", out_file]
+            for idx, layer in enumerate(valid_media_layers, start=1):
+                layer["input_idx"] = idx
+                if layer["kind"] == "image":
+                    layer_cmd += ["-loop", "1", "-i", layer["path"]]
+                else:
+                    layer_cmd += ["-i", layer["path"]]
+
+            overlay_parts: list[str] = []
+            current_video_label = "[0:v]"
+
+            # First uploaded layer stays on top, so apply overlays from last to first.
+            for step, layer in enumerate(reversed(valid_media_layers)):
+                src_label = f"l{step}_src"
+                lay_label = f"l{step}"
+                ref_label = f"vref{step}"
+                out_label = f"vout{step}"
+
+                overlay_parts.append(f"[{layer['input_idx']}:v]setpts=PTS-STARTPTS[{src_label}]")
+                overlay_parts.append(
+                    f"[{src_label}]{current_video_label}"
+                    f"scale2ref=w='trunc(main_w*{layer['width_pct']/100.0:.6f}/2)*2':h='-2'"
+                    f"[{lay_label}][{ref_label}]"
+                )
+
+                overlay_expr = (
+                    f"[{ref_label}][{lay_label}]overlay="
+                    f"x='(W-w)*{layer['x_pct']/100.0:.6f}':"
+                    f"y='(H-h)*{layer['y_pct']/100.0:.6f}':"
+                    "eof_action=pass"
+                )
+                if layer["end_time"] > layer["start_time"] + 0.02:
+                    overlay_expr += f":enable='between(t,{layer['start_time']:.6f},{layer['end_time']:.6f})'"
+                overlay_expr += f"[{out_label}]"
+                overlay_parts.append(overlay_expr)
+                current_video_label = f"[{out_label}]"
+
+            layer_cmd += [
+                "-filter_complex", ";".join(overlay_parts),
+                "-map", current_video_label,
+                "-map", "0:a?",
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-crf", "23",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-movflags", "+faststart",
+                layered_out_file,
+            ]
+
+            layer_proc = subprocess.run(layer_cmd, capture_output=True)
+            if layer_proc.returncode != 0:
+                logger.error("[editor] Layer overlay FFmpeg failed: %s", (layer_proc.stderr or b"")[:600])
+                job["status"] = "failed"
+                job["error"] = "Falha ao compor camadas de video/imagem"
+                return
+
+            final_out_file = layered_out_file
+
         job["progress"] = 95
         job["message"] = "Finalizando..."
 
@@ -752,8 +994,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
                 new_render = VideoRender(
                     project_id=project.id,
                     format=selected_aspect,
-                    file_path=out_file,
-                    file_size=os.path.getsize(out_file) if os.path.exists(out_file) else None,
+                    file_path=final_out_file,
+                    file_size=os.path.getsize(final_out_file) if os.path.exists(final_out_file) else None,
                     thumbnail_path=render.thumbnail_path,
                 )
                 db.add(new_render)
@@ -766,7 +1008,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         job["progress"] = 100
         job["status"] = "completed"
         job["message"] = "Exportacao concluida!"
-        logger.info(f"[editor] Export completed: {out_file}")
+        logger.info(f"[editor] Export completed: {final_out_file}")
 
     except Exception as e:
         logger.exception(f"[editor] Export error: {e}")

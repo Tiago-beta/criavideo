@@ -199,7 +199,8 @@
                                 </div>
                             </div>
                             <input id="editor-video-upload-input" type="file" accept="video/*" hidden onchange="_editorUploadVideo(this)">
-                            <input id="editor-project-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadProjectImages(this)">
+                            <input id="editor-layer-video-upload-input" type="file" accept="video/*" hidden onchange="_editorUploadLayerVideo(this)">
+                            <input id="editor-layer-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="_editorUploadLayerImage(this)">
                             <p class="section-subtitle">Selecione um video finalizado para editar.</p>
                             <div id="editor-videos-list" class="cards-grid">
                                 <div class="loading">Carregando videos...</div>
@@ -250,6 +251,10 @@
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
                                         <span>Cortar</span>
                                     </button>
+                                    <button class="editor-tool-btn" data-tool="layers" type="button" title="Camadas">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg>
+                                        <span>Camadas</span>
+                                    </button>
                                     <button class="editor-tool-btn" data-tool="music" type="button" title="Musica">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
                                         <span>Musica</span>
@@ -271,6 +276,7 @@
                                 <div class="editor-preview-area">
                                     <div class="editor-canvas-wrapper" id="editor-canvas-wrapper">
                                         <video id="editor-video" playsinline></video>
+                                        <div id="editor-media-layer-host" class="editor-media-layer-host"></div>
                                         <canvas id="editor-overlay-canvas"></canvas>
                                     </div>
                                     <!-- Play controls -->
