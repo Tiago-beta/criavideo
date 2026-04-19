@@ -306,6 +306,8 @@ class MediaLayerEntry(BaseModel):
     x: float = 0
     y: float = 0
     width: float = 100
+    volume: float = 100
+    audio_only: bool = False
     start_time: float = 0
     end_time: float = 0
 
@@ -706,8 +708,13 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
             width_pct = max(8.0, min(100.0, float(getattr(layer, "width", 100) or 100)))
             x_pct = max(0.0, min(100.0, float(getattr(layer, "x", 0) or 0)))
             y_pct = max(0.0, min(100.0, float(getattr(layer, "y", 0) or 0)))
+            volume_pct = max(0.0, min(200.0, float(getattr(layer, "volume", 100) or 100)))
+            audio_only = bool(getattr(layer, "audio_only", False))
             start_time = max(0.0, float(getattr(layer, "start_time", 0) or 0))
             end_time = max(0.0, float(getattr(layer, "end_time", 0) or 0))
+            layer_duration = 0.0
+            if kind == "video":
+                layer_duration, _ = _probe_video_metadata(resolved_path)
 
             valid_media_layers.append(
                 {
@@ -716,8 +723,11 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
                     "width_pct": width_pct,
                     "x_pct": x_pct,
                     "y_pct": y_pct,
+                    "volume_pct": volume_pct,
+                    "audio_only": audio_only,
                     "start_time": start_time,
                     "end_time": end_time,
+                    "duration": max(0.0, layer_duration),
                 }
             )
 
@@ -920,7 +930,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         final_out_file = out_file
         if valid_media_layers:
             job["progress"] = 92
-            job["message"] = "Aplicando camadas de video/imagem..."
+            job["message"] = "Aplicando camadas de video/imagem/audio..."
 
             layered_out_file = os.path.join(out_dir, f"edited_layers_{uuid.uuid4().hex[:8]}.mp4")
             layer_cmd = ["ffmpeg", "-y", "-i", out_file]
@@ -931,11 +941,18 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
                 else:
                     layer_cmd += ["-i", layer["path"]]
 
+            visual_layers = [
+                layer
+                for layer in valid_media_layers
+                if layer["kind"] == "image" or (layer["kind"] == "video" and not layer.get("audio_only"))
+            ]
+            audio_layers = [layer for layer in valid_media_layers if layer["kind"] == "video"]
+
             overlay_parts: list[str] = []
             current_video_label = "[0:v]"
 
             # First uploaded layer stays on top, so apply overlays from last to first.
-            for step, layer in enumerate(reversed(valid_media_layers)):
+            for step, layer in enumerate(reversed(visual_layers)):
                 src_label = f"l{step}_src"
                 lay_label = f"l{step}"
                 ref_label = f"vref{step}"
@@ -960,10 +977,69 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
                 overlay_parts.append(overlay_expr)
                 current_video_label = f"[{out_label}]"
 
+            filter_parts = list(overlay_parts)
+            base_has_audio = _probe_has_audio_stream(out_file)
+            audio_labels: list[str] = []
+            if base_has_audio:
+                filter_parts.append("[0:a]anull[a_base]")
+                audio_labels.append("[a_base]")
+
+            for audio_idx, layer in enumerate(audio_layers):
+                layer_path = layer["path"]
+                if not _probe_has_audio_stream(layer_path):
+                    continue
+
+                start_time = max(0.0, float(layer.get("start_time", 0.0) or 0.0))
+                configured_end = max(start_time, float(layer.get("end_time", 0.0) or 0.0))
+                layer_duration = max(0.0, float(layer.get("duration", 0.0) or 0.0))
+
+                clip_duration = max(0.0, configured_end - start_time)
+                if clip_duration <= 0.02:
+                    clip_duration = layer_duration if layer_duration > 0 else max(0.0, output_video_duration - start_time)
+                if layer_duration > 0:
+                    clip_duration = min(clip_duration, layer_duration)
+                if output_video_duration > 0:
+                    clip_duration = min(clip_duration, max(0.0, output_video_duration - start_time))
+                if clip_duration <= 0.02:
+                    continue
+
+                volume_factor = max(0.0, min(2.0, float(layer.get("volume_pct", 100.0)) / 100.0))
+                if volume_factor <= 0.0001:
+                    continue
+
+                delay_ms = max(0, int(round(start_time * 1000)))
+                src_label = f"lasrc{audio_idx}"
+                out_label = f"la{audio_idx}"
+                filter_parts.append(f"[{layer['input_idx']}:a]asetpts=PTS-STARTPTS[{src_label}]")
+                filter_parts.append(
+                    f"[{src_label}]atrim=0:{clip_duration:.6f},adelay={delay_ms}|{delay_ms},"
+                    f"volume={volume_factor:.4f}[{out_label}]"
+                )
+                audio_labels.append(f"[{out_label}]")
+
+            audio_map = "0:a?"
+            if audio_labels:
+                if len(audio_labels) > 1:
+                    filter_parts.append(
+                        f"{''.join(audio_labels)}amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0[a_mix]"
+                    )
+                    current_audio = "[a_mix]"
+                else:
+                    current_audio = audio_labels[0]
+
+                if output_video_duration > 0:
+                    filter_parts.append(f"{current_audio}atrim=0:{output_video_duration:.6f}[a_out]")
+                    audio_map = "[a_out]"
+                else:
+                    audio_map = current_audio
+
+            video_map = current_video_label if overlay_parts else "0:v"
+
+            if filter_parts:
+                layer_cmd += ["-filter_complex", ";".join(filter_parts)]
             layer_cmd += [
-                "-filter_complex", ";".join(overlay_parts),
-                "-map", current_video_label,
-                "-map", "0:a?",
+                "-map", video_map,
+                "-map", audio_map,
                 "-c:v", "libx264",
                 "-preset", "medium",
                 "-crf", "23",

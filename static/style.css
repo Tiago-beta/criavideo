@@ -1,4 +1,4 @@
-:root {
+﻿:root {
     --bg: #0a1f33;
     --bg-glow: #0f2a44;
     --bg-card: rgba(19, 47, 76, 0.82);
@@ -482,7 +482,7 @@ a {
     display: flex;
 }
 
-/* ── Sidebar (desktop) ── */
+/* ÔöÇÔöÇ Sidebar (desktop) ÔöÇÔöÇ */
 .sidebar {
     width: 240px;
     height: 100vh;
@@ -587,7 +587,7 @@ a {
     color: var(--accent);
 }
 
-/* ── Credits Display & Modal ── */
+/* ÔöÇÔöÇ Credits Display & Modal ÔöÇÔöÇ */
 .sidebar-credits {
     display: flex;
     align-items: center;
@@ -859,7 +859,7 @@ a {
     background: rgba(255, 122, 108, 0.12);
 }
 
-/* ── Main Content ── */
+/* ÔöÇÔöÇ Main Content ÔöÇÔöÇ */
 .main-content {
     margin-left: 240px;
     flex: 1;
@@ -872,7 +872,7 @@ a {
     color: var(--text-muted);
 }
 
-/* ── Profile page ── */
+/* ÔöÇÔöÇ Profile page ÔöÇÔöÇ */
 .profile-container {
     display: flex;
     flex-direction: column;
@@ -917,7 +917,7 @@ a {
     margin-top: 1.5rem;
 }
 
-/* ── Automate Page ── */
+/* ÔöÇÔöÇ Automate Page ÔöÇÔöÇ */
 .automate-sections {
     display: flex;
     flex-direction: column;
@@ -1256,7 +1256,7 @@ a {
     gap: 0.5rem;
 }
 
-/* ── Musical Shorts: Song Selection ── */
+/* ÔöÇÔöÇ Musical Shorts: Song Selection ÔöÇÔöÇ */
 .auto-song-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -1364,7 +1364,7 @@ a {
     border: 1px solid #8b5cf644;
 }
 
-/* ── Automation Video Type Grid (matching project wizard) ── */
+/* ÔöÇÔöÇ Automation Video Type Grid (matching project wizard) ÔöÇÔöÇ */
 .auto-video-type-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1420,7 +1420,7 @@ a {
     align-items: center;
 }
 
-/* ── Clip Selector Waveform ── */
+/* ÔöÇÔöÇ Clip Selector Waveform ÔöÇÔöÇ */
 .clip-waveform-wrap {
     position: relative;
     margin-top: 14px;
@@ -1555,7 +1555,7 @@ a {
     cursor: grabbing;
 }
 
-/* ── Mobile Bottom Nav ── */
+/* ÔöÇÔöÇ Mobile Bottom Nav ÔöÇÔöÇ */
 .mobile-bottom-nav {
     display: none;
 }
@@ -1795,7 +1795,7 @@ a {
     overflow: hidden;
 }
 
-/* Hide title on desktop — thumbnail already shows it */
+/* Hide title on desktop ÔÇö thumbnail already shows it */
 @media (min-width: 769px) {
     .card-body .card-title {
         display: none !important;
@@ -2538,7 +2538,7 @@ th {
     object-fit: contain;
 }
 
-/* ═══ Creation Wizard Styles ═══ */
+/* ÔòÉÔòÉÔòÉ Creation Wizard Styles ÔòÉÔòÉÔòÉ */
 
 .create-tabs-row {
     display: flex;
@@ -3023,7 +3023,7 @@ svg.spin {
     animation: spin 1s linear infinite;
 }
 
-/* ── Photo Upload Section ── */
+/* ÔöÇÔöÇ Photo Upload Section ÔöÇÔöÇ */
 .photo-upload-section {
     margin-top: 16px;
     padding-top: 14px;
@@ -3172,7 +3172,7 @@ svg.spin {
     color: var(--text-muted);
 }
 
-/* ── Toggle Switch ── */
+/* ÔöÇÔöÇ Toggle Switch ÔöÇÔöÇ */
 .toggle-switch {
     position: relative;
     display: inline-block;
@@ -3217,7 +3217,7 @@ svg.spin {
     transform: translateX(18px);
 }
 
-/* ── Subtitle Toggle Row ── */
+/* ÔöÇÔöÇ Subtitle Toggle Row ÔöÇÔöÇ */
 .subtitle-toggle-row {
     display: flex;
     align-items: center;
@@ -3364,7 +3364,7 @@ svg.spin {
         min-width: 0;
     }
 
-    /* ── Automation mobile fixes ── */
+    /* ÔöÇÔöÇ Automation mobile fixes ÔöÇÔöÇ */
     .auto-card {
         padding: 0.75rem 0.85rem;
         max-width: 100%;
@@ -3578,7 +3578,7 @@ svg.spin {
     }
 }
 
-/* ═══ Voice Selector & Manager ═══ */
+/* ÔòÉÔòÉÔòÉ Voice Selector & Manager ÔòÉÔòÉÔòÉ */
 
 .voice-selector {
     max-width: 560px;
@@ -4510,7 +4510,7 @@ th,
     gap: 6px;
 }
 
-/* ═══ Video Type Selection Cards ═══ */
+/* ÔòÉÔòÉÔòÉ Video Type Selection Cards ÔòÉÔòÉÔòÉ */
 
 .video-type-grid {
     display: grid;
@@ -4519,7 +4519,7 @@ th,
     margin-top: 12px;
 }
 
-/* ── Mode Selection Cards (Step 0) ── */
+/* ÔöÇÔöÇ Mode Selection Cards (Step 0) ÔöÇÔöÇ */
 .create-mode-selection {
     text-align: center;
     padding: 10px 0 20px;
@@ -4691,7 +4691,7 @@ th,
     }
 }
 
-/* ═══ Realistic Video Panel (Seedance 2.0) ═══ */
+/* ÔòÉÔòÉÔòÉ Realistic Video Panel (Seedance 2.0) ÔòÉÔòÉÔòÉ */
 
 .tab-badge-beta {
     font-size: 0.6rem;
@@ -4788,11 +4788,11 @@ th,
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* ══════════════════════════════════════════════════════════════
-   VIDEO EDITOR — CapCut-style editing workspace
-   ══════════════════════════════════════════════════════════════ */
+/* ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+   VIDEO EDITOR ÔÇö CapCut-style editing workspace
+   ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ */
 
-/* ── Editor workspace layout ── */
+/* ÔöÇÔöÇ Editor workspace layout ÔöÇÔöÇ */
 .editor-workspace {
     display: flex;
     flex-direction: column;
@@ -4843,7 +4843,7 @@ th,
     flex-shrink: 0;
 }
 
-/* ── Main editor area (tools + preview + props) ── */
+/* ÔöÇÔöÇ Main editor area (tools + preview + props) ÔöÇÔöÇ */
 .editor-main {
     display: flex;
     flex: 1;
@@ -4952,6 +4952,31 @@ th,
 .editor-media-layer-item.selected {
     border-color: rgba(0, 212, 255, 0.85);
     box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.2), 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.editor-media-layer-handle {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgba(0, 212, 255, 0.95);
+    border: 1px solid rgba(3, 10, 17, 0.75);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    cursor: nwse-resize;
+    pointer-events: auto;
+}
+
+.editor-media-layer-handle::after {
+    content: "";
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    right: 3px;
+    bottom: 3px;
+    border-right: 1px solid rgba(3, 10, 17, 0.8);
+    border-bottom: 1px solid rgba(3, 10, 17, 0.8);
 }
 
 .editor-media-layer-item video,
@@ -5273,7 +5298,7 @@ th,
     text-align: right;
 }
 
-/* ── Quick actions row ── */
+/* ÔöÇÔöÇ Quick actions row ÔöÇÔöÇ */
 .editor-quick-actions {
     display: flex;
     align-items: center;
@@ -5344,7 +5369,7 @@ th,
     color: #e6f7ff;
 }
 
-/* ── Timeline ── */
+/* ÔöÇÔöÇ Timeline ÔöÇÔöÇ */
 .editor-timeline {
     flex-shrink: 0;
     height: 160px;
@@ -5658,7 +5683,7 @@ th,
     clip-path: polygon(50% 100%, 0 0, 100% 0);
 }
 
-/* ── Export modal ── */
+/* ÔöÇÔöÇ Export modal ÔöÇÔöÇ */
 .editor-export-overlay {
     position: fixed;
     inset: 0;
@@ -5708,7 +5733,7 @@ th,
     color: var(--text-muted);
 }
 
-/* ── Editor video selection cards ── */
+/* ÔöÇÔöÇ Editor video selection cards ÔöÇÔöÇ */
 .editor-video-card-overlay {
     position: absolute;
     inset: 0;
@@ -5751,7 +5776,7 @@ th,
     filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5));
 }
 
-/* ── Responsive: mobile editor ── */
+/* ÔöÇÔöÇ Responsive: mobile editor ÔöÇÔöÇ */
 @media (max-width: 768px) {
     .editor-workspace {
         height: calc(100vh - 56px);

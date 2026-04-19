@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v152 loaded");
+﻿console.log("[CriaVideo] app.js v152 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -585,7 +585,7 @@ function bindDashboardEvents() {
         details.hidden = true;
     });
 
-    // ── Creation Wizard Event Bindings ──
+    // ÔöÇÔöÇ Creation Wizard Event Bindings ÔöÇÔöÇ
     initCreateWizard();
 }
 
@@ -864,7 +864,7 @@ async function loadProjects() {
     try {
         const data = await api("/video/projects");
         _projectsCache = data;
-        // Filter out expired videos — no need to show them
+        // Filter out expired videos ÔÇö no need to show them
         const visibleData = data.filter(p => !(p.status === "completed" && p.video_expired));
         if (!visibleData.length) {
             container.innerHTML = "<p class='loading'>Nenhum projeto ainda. Crie o primeiro.</p>";
@@ -892,7 +892,7 @@ async function loadProjects() {
                         <div class="card-actions">
                             ${canWatch ? `<button class="card-btn card-btn-watch" onclick="watchVideo(${project.id})" type="button" title="Assistir"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
                             ${canWatch ? `<button class="card-btn card-btn-publish" onclick="openPublishForProject(${project.id})" type="button" title="Publicar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="8 7 12 3 16 7"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg></button>` : ""}
-                            ${(project.status === "pending" || project.status === "failed") ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
+                            ${(project.status === "pending" || project.status === "failed") ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar v├¡deo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
                             ${canWatch ? `<button class="card-btn card-btn-similar" onclick="openCopyChoiceModal(${project.id})" type="button" title="Criar copia"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
                             <button class="card-btn card-btn-edit" onclick="openRenameProjectModal(${project.id})" type="button" title="Editar nome"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>
                             <button class="card-btn card-btn-delete" onclick="deleteProject(${project.id})" type="button" title="Excluir"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
@@ -927,7 +927,7 @@ function _statusPt(status) {
         "generating_scenes": "Gerando cenas...",
         "generating_clips": "Gerando clipes...",
         "rendering": "Renderizando...",
-        "completed": "Concluído",
+        "completed": "Conclu├¡do",
         "failed": "Falhou",
         "published": "Publicado",
     };
@@ -952,13 +952,13 @@ function _renderExpiryOrDate(project) {
         const hours = Math.floor(remaining / 3600000);
         const mins = Math.floor((remaining % 3600000) / 60000);
         if (hours < 6) {
-            return `<span class="expiry-urgent">⏳ ${hours}h ${String(mins).padStart(2,"0")}m</span>`;
+            return `<span class="expiry-urgent">ÔÅ│ ${hours}h ${String(mins).padStart(2,"0")}m</span>`;
         }
-        return `<span class="expiry-countdown">⏳ ${hours}h ${String(mins).padStart(2,"0")}m</span>`;
+        return `<span class="expiry-countdown">ÔÅ│ ${hours}h ${String(mins).padStart(2,"0")}m</span>`;
     }
     // For non-completed projects, show creation date
     const dt = project.created_at ? new Date(project.created_at) : null;
-    return dt ? `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")} · ${dt.toLocaleDateString("pt-BR")}` : "-";
+    return dt ? `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")} ┬À ${dt.toLocaleDateString("pt-BR")}` : "-";
 }
 
 // Auto-refresh countdown timers every minute
@@ -1091,7 +1091,7 @@ function _updateCardInPlace(project) {
     }
 }
 
-// ═══ Creation Wizard State ═══
+// ÔòÉÔòÉÔòÉ Creation Wizard State ÔòÉÔòÉÔòÉ
 let createMode = "wizard"; // "wizard" | "script" | "library"
 let wizardStep = 1;
 let wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
@@ -1321,7 +1321,7 @@ async function openRenameProjectModal(projectId) {
     const thumbRemoveBtn = document.getElementById("edit-thumb-remove");
     if (thumbRemoveBtn) thumbRemoveBtn.hidden = true;
 
-    // Downloads section — only show for completed projects
+    // Downloads section ÔÇö only show for completed projects
     const downloadsEl = document.getElementById("edit-project-downloads");
     if (downloadsEl) {
         if (project.status === "completed") {
@@ -1352,7 +1352,7 @@ async function openRenameProjectModal(projectId) {
                     thumbLink.style.display = "none";
                 }
             } catch (e) {
-                // Silently fail — downloads won't show
+                // Silently fail ÔÇö downloads won't show
             }
         } else {
             downloadsEl.hidden = true;
@@ -1579,7 +1579,7 @@ function initCreateWizard() {
                         if (def7) def7.classList.add("selected");
                     });
                 }
-                // Auto-toggle music checkbox: engines with native audio → uncheck
+                // Auto-toggle music checkbox: engines with native audio ÔåÆ uncheck
                 const hasNativeAudio = (engineVal === "grok" || engineVal === "seedance");
                 const musicCb = container.querySelector("[id$='-realistic-music']");
                 if (musicCb) musicCb.checked = !hasNativeAudio;
@@ -1630,7 +1630,7 @@ function switchCreateMode(mode) {
     }
 }
 
-// ── Flow-based Wizard UI Update ──
+// ÔöÇÔöÇ Flow-based Wizard UI Update ÔöÇÔöÇ
 
 function updateFlowUI(panelId, stepIndex, flow, prefix) {
     const panel = document.getElementById(panelId);
@@ -1660,12 +1660,12 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
     const backBtn = document.getElementById(`${prefix}-back`);
     const nextBtn = document.getElementById(`${prefix}-next`);
     const createBtn = document.getElementById(`${prefix}-create-btn`);
-    if (backBtn) backBtn.hidden = false; // Always show — step 1 goes back to mode selection
+    if (backBtn) backBtn.hidden = false; // Always show ÔÇö step 1 goes back to mode selection
     if (nextBtn) nextBtn.hidden = stepIndex >= flow.length;
     if (createBtn) createBtn.hidden = stepIndex < flow.length;
 }
 
-// ── Shared Realistic Create Logic ──
+// ÔöÇÔöÇ Shared Realistic Create Logic ÔöÇÔöÇ
 
 async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, musicCheckboxId, title, engineSelectorId, prefix, realisticStyle) {
     // Derive prefix from selector IDs if not provided
@@ -1818,7 +1818,7 @@ async function pollRealisticProgress(projectId, engineLabel) {
             if (e.message && !e.message.includes("fetch")) throw e;
         }
     }
-    throw new Error("Tempo limite excedido. O video pode ainda estar sendo gerado — verifique seus projetos.");
+    throw new Error("Tempo limite excedido. O video pode ainda estar sendo gerado ÔÇö verifique seus projetos.");
 }
 
 function resetCreateWizard() {
@@ -1991,7 +1991,7 @@ function resetCreateWizard() {
     updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
 }
 
-// ── Wizard (Assistente) Navigation ──
+// ÔöÇÔöÇ Wizard (Assistente) Navigation ÔöÇÔöÇ
 
 function wizardNext() {
     const flow = getWizardFlow();
@@ -2118,7 +2118,7 @@ async function handleWizardCreate() {
     }
 }
 
-// ── Script (Meu Roteiro) Navigation ──
+// ÔöÇÔöÇ Script (Meu Roteiro) Navigation ÔöÇÔöÇ
 
 function scriptNext() {
     const flow = getScriptFlow();
@@ -2506,9 +2506,9 @@ async function uploadTempFileWithRetry(file, kind, label) {
     }
 }
 
-// ── AI Script Suggestion ──
+// ÔöÇÔöÇ AI Script Suggestion ÔöÇÔöÇ
 
-// ── Photo Upload (Meu Roteiro) ──
+// ÔöÇÔöÇ Photo Upload (Meu Roteiro) ÔöÇÔöÇ
 let scriptPhotos = []; // array of File objects
 let scriptUserAudioFile = null;
 let scriptUserVideoFile = null; // single File object for custom video
@@ -2589,10 +2589,10 @@ function handleUserVideoSelect(event) {
 }
 
 function toggleScriptVideoNarration() {
-    // Narration toggle for custom video mode — controls whether to add AI narration over the video
+    // Narration toggle for custom video mode ÔÇö controls whether to add AI narration over the video
 }
 
-// ── Thumbnail upload for new project ──
+// ÔöÇÔöÇ Thumbnail upload for new project ÔöÇÔöÇ
 let scriptThumbFile = null;
 
 function handleScriptThumbSelect(event) {
@@ -2963,7 +2963,7 @@ async function generateAiScript() {
     }
 }
 
-// ── Progress helpers ──
+// ÔöÇÔöÇ Progress helpers ÔöÇÔöÇ
 
 function setCreateProgress(progress, stage = "Processando...", message = "") {
     const normalized = Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress))) : CREATE_PROGRESS_BASE;
@@ -3034,7 +3034,7 @@ function startKaraokeProgressPolling(operationId) {
     stopKaraokeProgressPolling();
     karaokeProgressOperationId = operationId;
 
-    // Hide verbose message text during vocal removal — keep only spinner, stage and %
+    // Hide verbose message text during vocal removal ÔÇö keep only spinner, stage and %
     const progressTextEl = document.getElementById("create-progress-text");
     if (progressTextEl) progressTextEl.hidden = true;
 
@@ -3072,7 +3072,7 @@ function startKaraokeProgressPolling(operationId) {
     karaokeProgressTimer = setInterval(pollOnce, 2000);
 }
 
-// ── Library (existing flow, renamed) ──
+// ÔöÇÔöÇ Library (existing flow, renamed) ÔöÇÔöÇ
 
 async function createProjectFromLibrary() {
     const songValue = document.getElementById("np-song-select").value;
@@ -3190,10 +3190,10 @@ async function watchVideo(projectId) {
             if (remaining > 0) {
                 const h = Math.floor(remaining / 3600000);
                 const m = Math.floor((remaining % 3600000) / 60000);
-                expiryInfo = `⏳ Expira em ${h}h ${String(m).padStart(2,"0")}m`;
+                expiryInfo = `ÔÅ│ Expira em ${h}h ${String(m).padStart(2,"0")}m`;
             }
         }
-        document.getElementById("player-info").textContent = [render.format, duration, sizeMb, expiryInfo].filter(Boolean).join(" · ");
+        document.getElementById("player-info").textContent = [render.format, duration, sizeMb, expiryInfo].filter(Boolean).join(" ┬À ");
         const download = document.getElementById("player-download");
         download.href = render.video_url;
         download.download = `${project.title || "video"}.mp4`;
@@ -4176,9 +4176,9 @@ async function deleteSchedule(id) {
     }
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Automation (auto-schedules) — CRUD + wizard
-   ═══════════════════════════════════════════════════════════ */
+/* ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+   Automation (auto-schedules) ÔÇö CRUD + wizard
+   ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ */
 
 let _autoWizardStep = 1;
 let _autoWizardThemes = []; // temporary list while creating
@@ -4194,7 +4194,7 @@ function _buildAutoSubtitleCfg(styleName = "destaque") {
         style_label: st.label,
         x: 50,
         y: 82,
-        font_size: st.fontSize,
+        font_size: 14,
         font_color: st.fontColor,
         bg_color: st.bgColor || "",
         outline_color: st.outlineColor || "",
@@ -4240,11 +4240,11 @@ function _syncAutoSubtitleControls() {
     const yInput = document.getElementById("auto-subtitle-y");
     const sizeInput = document.getElementById("auto-subtitle-size");
     if (yInput) yInput.value = String(Math.round(_autoSubtitleCfg.y || 82));
-    if (sizeInput) sizeInput.value = String(Math.round(_autoSubtitleCfg.font_size || 28));
+    if (sizeInput) sizeInput.value = String(Math.round(_autoSubtitleCfg.font_size || 14));
     const yValue = document.getElementById("auto-subtitle-y-value");
     const sizeValue = document.getElementById("auto-subtitle-size-value");
     if (yValue) yValue.textContent = `${Math.round(_autoSubtitleCfg.y || 82)}%`;
-    if (sizeValue) sizeValue.textContent = `${Math.round(_autoSubtitleCfg.font_size || 28)}px`;
+    if (sizeValue) sizeValue.textContent = `${Math.round(_autoSubtitleCfg.font_size || 14)}px`;
 }
 
 function _renderAutoSubtitlePreview() {
@@ -4253,7 +4253,7 @@ function _renderAutoSubtitlePreview() {
     if (!caption) return;
 
     const cfg = _autoSubtitleCfg;
-    const fs = Math.max(8, Math.round(cfg.font_size || 28));
+    const fs = Math.max(8, Math.round(cfg.font_size || 14));
     caption.style.left = `${cfg.x || 50}%`;
     caption.style.top = `${cfg.y || 82}%`;
     caption.style.fontFamily = cfg.font_family || "Arial, sans-serif";
@@ -4285,8 +4285,8 @@ function _updateAutoSubtitleSummary() {
     if (!summary) return;
     const label = _autoSubtitleCfg.style_label || "Destaque";
     const y = Math.round(_autoSubtitleCfg.y || 82);
-    const fs = Math.round(_autoSubtitleCfg.font_size || 28);
-    summary.textContent = `${label} · Posicao ${y}% · ${fs}px`;
+    const fs = Math.round(_autoSubtitleCfg.font_size || 14);
+    summary.textContent = `${label} ┬À Posicao ${y}% ┬À ${fs}px`;
 }
 
 function _autoPickSubtitleStyle(styleName) {
@@ -4332,7 +4332,7 @@ function _autoSubtitleNudgeY(delta) {
 
 function _autoSetSubtitleFontSize(value, skipRender = false) {
     if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
-    const fs = Math.max(8, Math.min(72, parseInt(value, 10) || 28));
+    const fs = Math.max(8, Math.min(72, parseInt(value, 10) || 14));
     _autoSubtitleCfg.font_size = fs;
     const sizeValue = document.getElementById("auto-subtitle-size-value");
     if (sizeValue) sizeValue.textContent = `${fs}px`;
@@ -4346,7 +4346,7 @@ function _autoSetSubtitleFontSize(value, skipRender = false) {
 
 function _autoSubtitleNudgeSize(delta) {
     if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
-    _autoSetSubtitleFontSize((_autoSubtitleCfg.font_size || 28) + delta);
+    _autoSetSubtitleFontSize((_autoSubtitleCfg.font_size || 14) + delta);
 }
 
 function toggleAutoSubtitleSetup(checked) {
@@ -4433,13 +4433,13 @@ function renderAutoCard(s) {
     const themeListHtml = themes.map(t => {
         let icon, statusClass, statusLabel;
         if (t.status === "done" || t.status === "completed") {
-            icon = "✅"; statusClass = "theme-done"; statusLabel = isTestAccount ? "Concluido (teste)" : "Publicado";
+            icon = "Ô£à"; statusClass = "theme-done"; statusLabel = isTestAccount ? "Concluido (teste)" : "Publicado";
         } else if (t.status === "processing") {
-            icon = "⏳"; statusClass = "theme-processing"; statusLabel = "Criando...";
+            icon = "ÔÅ│"; statusClass = "theme-processing"; statusLabel = "Criando...";
         } else if (t.status === "error" || t.status === "failed") {
-            icon = "❌"; statusClass = "theme-failed"; statusLabel = "Falhou";
+            icon = "ÔØî"; statusClass = "theme-failed"; statusLabel = "Falhou";
         } else {
-            icon = "📅"; statusClass = "theme-pending"; statusLabel = "";
+            icon = "­ƒôà"; statusClass = "theme-pending"; statusLabel = "";
         }
         const dateLabel = t.scheduled_date ? `<span class="theme-date">${esc(t.scheduled_date)}</span>` : "";
         const statusBadge = statusLabel ? `<span class="theme-badge ${statusClass}">${statusLabel}</span>` : "";
@@ -4542,7 +4542,7 @@ async function addAutoThemeToSchedule(scheduleId) {
     }
 }
 
-/* ── Automation Wizard (modal-new-automation) ── */
+/* ÔöÇÔöÇ Automation Wizard (modal-new-automation) ÔöÇÔöÇ */
 
 function openNewAutomationModal() {
     _autoWizardStep = 1;
@@ -4627,7 +4627,7 @@ function openNewAutomationModal() {
 
 function showAutoStep(step) {
     _autoWizardStep = step;
-    const totalSteps = 4; // Always 4 steps: type → mode → themes → schedule
+    const totalSteps = 4; // Always 4 steps: type ÔåÆ mode ÔåÆ themes ÔåÆ schedule
 
     document.querySelectorAll("#modal-new-automation .auto-step").forEach(el => {
         el.classList.toggle("active", parseInt(el.dataset.autoStep) === step);
@@ -4734,7 +4734,7 @@ function autoStepNext() {
         if (_isAutoTevoxiClipMode()) {
             alert("Clique em '+ Adicionar trecho' para selecionar trechos da musica.");
         } else {
-            alert("Digite o tema e aperte no botão + para adicionar.");
+            alert("Digite o tema e aperte no bot├úo + para adicionar.");
             const addBtn = document.getElementById("auto-add-theme-btn");
             if (addBtn) { addBtn.classList.add("btn-error-pulse"); setTimeout(() => addBtn.classList.remove("btn-error-pulse"), 2000); }
         }
@@ -4781,7 +4781,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
-/* ── Tevoxi Song Selection (for Realistic + Tevoxi music) ── */
+/* ÔöÇÔöÇ Tevoxi Song Selection (for Realistic + Tevoxi music) ÔöÇÔöÇ */
 
 function toggleAutoTevoxiSongs() {
     const checked = document.getElementById("auto-realistic-tevoxi")?.checked;
@@ -4826,14 +4826,14 @@ function _renderTevoxiSongs() {
             .map(g => String(g || "").trim())
             .filter(Boolean)
             .join(", ");
-        const meta = [genres, dur].filter(Boolean).join(" · ");
+        const meta = [genres, dur].filter(Boolean).join(" ┬À ");
         const selected = _autoSelectedSong && _autoSelectedSong.job_id === s.job_id;
         return `<button class="auto-song-item${selected ? ' active' : ''}" type="button" onclick="selectTevoxiSong(${i})">
             <div class="song-info">
                 <strong>${esc(s.title || 'Sem titulo')}</strong>
                 <span class="muted">${esc(meta || 'Sem detalhes')}</span>
             </div>
-            <span class="song-check">${selected ? '✓' : ''}</span>
+            <span class="song-check">${selected ? 'Ô£ô' : ''}</span>
         </button>`;
     }).join("");
 }
@@ -4849,9 +4849,9 @@ function selectTevoxiSong(index) {
     _renderTevoxiSongs();
 }
 
-/* ══════════════════════════════════════════
+/* ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
    Clip Selector for Tevoxi Songs
-   ══════════════════════════════════════════ */
+   ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ */
 let _clipAudioBuffer = null;
 let _clipWaveformPeaks = [];
 let _clipSongDuration = 0;
@@ -5524,7 +5524,7 @@ function toggleClipPreview() {
 function addClipToThemes() {
     if (!_autoSelectedSong) return;
     const end = Math.min(_clipStart + _clipDuration, _clipSongDuration);
-    const label = `🎵 ${_autoSelectedSong.title} (${_formatDuration(_clipStart)} - ${_formatDuration(end)})`;
+    const label = `­ƒÄÁ ${_autoSelectedSong.title} (${_formatDuration(_clipStart)} - ${_formatDuration(end)})`;
 
     // Store as object with clip metadata
     _autoWizardThemes.push({
@@ -5672,7 +5672,7 @@ async function createAutoSchedule() {
     const videoType = getSelectedAutoVideoType();
 
     if (_autoWizardThemes.length === 0) {
-        alert("Digite o tema e aperte no botão + para adicionar.");
+        alert("Digite o tema e aperte no bot├úo + para adicionar.");
         showAutoStep(3);
         const addBtn = document.getElementById("auto-add-theme-btn");
         if (addBtn) { addBtn.classList.add("btn-error-pulse"); setTimeout(() => addBtn.classList.remove("btn-error-pulse"), 2000); }
@@ -5929,7 +5929,7 @@ async function loadAccounts() {
             const platformClass = `social-platform-${platform.replace(/[^a-z0-9_-]/g, "")}`;
             const accountLabel = socialAccountDisplayName(account);
             const usernameSuffix = account.platform_username && account.platform_username !== accountLabel
-                ? ` · ${account.platform_username}`
+                ? ` ┬À ${account.platform_username}`
                 : "";
             return `
             <div class="card social-account-card ${platformClass}">
@@ -6172,7 +6172,7 @@ window.overwritePublishDraftFromList = overwritePublishDraftFromList;
 window.deletePublishDraftFromList = deletePublishDraftFromList;
 window.loadProjects = loadProjects;
 
-// ── Style Tags System ──
+// ÔöÇÔöÇ Style Tags System ÔöÇÔöÇ
 function initStyleTags() {
     document.querySelectorAll(".style-tag").forEach((tag) => {
         tag.addEventListener("click", () => {
@@ -6219,7 +6219,7 @@ function setSelectedStyles(containerId, styleStr) {
     });
 }
 
-// ── Voice Preview System ──
+// ÔöÇÔöÇ Voice Preview System ÔöÇÔöÇ
 let _voicePreviewAudio = null;
 
 function initVoicePreview() {
@@ -6250,7 +6250,7 @@ function initVoicePreview() {
     });
 }
 
-// ── Voice Profile System (Levita-style) ──
+// ÔöÇÔöÇ Voice Profile System (Levita-style) ÔöÇÔöÇ
 
 let voiceProfiles = [];
 let personaMediaRecorder = null;
@@ -6278,13 +6278,13 @@ function renderPersonaList(prefix) {
     container.innerHTML = voiceProfiles.map(p => {
         const badge = p.is_default ? '<span class="persona-item-badge">Padrao</span>' : '';
         return `<div class="persona-item" data-profile-id="${p.id}" data-value="${p.builtin_voice || 'alloy'}" data-voice-type="profile" onclick="selectPersona(this, '${prefix}')">
-            <div class="persona-item-icon">🎤</div>
+            <div class="persona-item-icon">­ƒÄñ</div>
             <div class="persona-item-info">
                 <div class="persona-item-name">${esc(p.name)}</div>
-                <div class="persona-item-meta">${p.has_custom_voice ? '✅ Voz clonada' : (p.has_sample ? 'Com amostra' : 'Voz IA')}${badge ? ' · ' : ''}${badge}</div>
+                <div class="persona-item-meta">${p.has_custom_voice ? 'Ô£à Voz clonada' : (p.has_sample ? 'Com amostra' : 'Voz IA')}${badge ? ' ┬À ' : ''}${badge}</div>
             </div>
             <div class="persona-item-actions">
-                <button class="btn-icon-sm" onclick="event.stopPropagation();deleteVoiceProfile(${p.id})" title="Excluir" style="color:#e74c3c;width:28px;height:28px;font-size:0.9rem">✕</button>
+                <button class="btn-icon-sm" onclick="event.stopPropagation();deleteVoiceProfile(${p.id})" title="Excluir" style="color:#e74c3c;width:28px;height:28px;font-size:0.9rem">Ô£ò</button>
             </div>
         </div>`;
     }).join('');
@@ -6312,7 +6312,7 @@ function toggleMinhaVoz(prefix) {
     }
 }
 
-// ── Persona Recording (inline in panel) ──
+// ÔöÇÔöÇ Persona Recording (inline in panel) ÔöÇÔöÇ
 
 async function startPersonaRecording(prefix) {
     if (personaMediaRecorder && personaMediaRecorder.state === "recording") {
@@ -6472,7 +6472,7 @@ async function savePersonaVoice(prefix) {
             }),
         });
 
-        // Upload the sample — server auto-clones via Fish Audio
+        // Upload the sample ÔÇö server auto-clones via Fish Audio
         if (profile.id) {
             const formData = new FormData();
             const fname = blob.type === 'audio/wav' ? 'sample.wav' : 'sample.webm';
@@ -6484,9 +6484,9 @@ async function savePersonaVoice(prefix) {
             });
             const result = await resp.json();
             if (result.cloned) {
-                alert("✅ Voz clonada com sucesso! Seus vídeos usarão sua voz.");
+                alert("Ô£à Voz clonada com sucesso! Seus v├¡deos usar├úo sua voz.");
             } else if (result.clone_error) {
-                alert("⚠️ Perfil salvo, mas a clonagem falhou: " + result.clone_error);
+                alert("ÔÜá´©Å Perfil salvo, mas a clonagem falhou: " + result.clone_error);
             }
         }
 
@@ -6506,7 +6506,7 @@ async function savePersonaVoice(prefix) {
     }
 }
 
-// ── Voice Manager Modal (for managing profiles with IA settings) ──
+// ÔöÇÔöÇ Voice Manager Modal (for managing profiles with IA settings) ÔöÇÔöÇ
 
 function openVoiceManager() {
     openModal("modal-voice-manager");
@@ -6530,7 +6530,7 @@ function renderVoiceManagerList() {
         return;
     }
     container.innerHTML = voiceProfiles.map(p => {
-        const icon = p.has_sample ? '🎤' : '🔊';
+        const icon = p.has_sample ? '­ƒÄñ' : '­ƒöè';
         const meta = [];
         if (p.builtin_voice) {
             const names = {onyx:'Grave',echo:'Suave',ash:'Natural M',nova:'Clara',shimmer:'Suave F',coral:'Natural F',alloy:'Neutra',fable:'Narrativa',sage:'Calma'};
@@ -6543,13 +6543,13 @@ function renderVoiceManagerList() {
         return `<div class="vm-profile-card ${p.is_default ? 'is-default' : ''}">
             <div class="vm-profile-icon">${icon}</div>
             <div class="vm-profile-info">
-                <div class="vm-profile-name">${p.name}${p.is_default ? ' <span style="color:var(--accent);font-size:0.75rem">✦ Padrao</span>' : ''}</div>
-                <div class="vm-profile-meta">${meta.join(' · ')}</div>
+                <div class="vm-profile-name">${p.name}${p.is_default ? ' <span style="color:var(--accent);font-size:0.75rem">Ô£ª Padrao</span>' : ''}</div>
+                <div class="vm-profile-meta">${meta.join(' ┬À ')}</div>
             </div>
             <div class="vm-profile-actions">
-                ${!p.is_default ? `<button class="btn-icon-sm" onclick="setDefaultVoice(${p.id})" title="Definir como padrao">⭐</button>` : ''}
-                <button class="btn-icon-sm" onclick="previewVoice(${p.id})" title="Ouvir preview">▶</button>
-                <button class="btn-icon-sm" onclick="deleteVoiceProfile(${p.id})" title="Excluir" style="color:#e74c3c">✕</button>
+                ${!p.is_default ? `<button class="btn-icon-sm" onclick="setDefaultVoice(${p.id})" title="Definir como padrao">Ô¡É</button>` : ''}
+                <button class="btn-icon-sm" onclick="previewVoice(${p.id})" title="Ouvir preview">ÔûÂ</button>
+                <button class="btn-icon-sm" onclick="deleteVoiceProfile(${p.id})" title="Excluir" style="color:#e74c3c">Ô£ò</button>
             </div>
         </div>`;
     }).join('');
@@ -6692,7 +6692,7 @@ function showCreditsPurchaseModal() {
             : "";
         pkgHtml += `
             <label class="credit-package${sel}" data-pkg="${i}" onclick="selectCreditPackage(${i})">
-                <span class="credit-pkg-amount">${p.credits} créditos</span>
+                <span class="credit-pkg-amount">${p.credits} cr├®ditos</span>
                 <span class="credit-pkg-price">R$ ${p.price.toFixed(2).replace(".", ",")}</span>
                 ${badge}
             </label>`;
@@ -6707,7 +6707,7 @@ function showCreditsPurchaseModal() {
             <button class="credits-modal-close" onclick="document.getElementById('credits-modal-overlay').remove()">&times;</button>
             <h2 class="credits-modal-title">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f0a030" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                Comprar Créditos
+                Comprar Cr├®ditos
             </h2>
             <div class="credit-packages">${pkgHtml}</div>
             <div class="credits-cta">
@@ -6717,10 +6717,10 @@ function showCreditsPurchaseModal() {
                 </button>
                 <button class="credits-btn credits-btn-card" onclick="purchaseCredits('card')">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                    Pagar com Cartão
+                    Pagar com Cart├úo
                 </button>
             </div>
-            <p class="credits-hint">Cada minuto de vídeo consome ${_creditsPerMinute} créditos</p>
+            <p class="credits-hint">Cada minuto de v├¡deo consome ${_creditsPerMinute} cr├®ditos</p>
         </div>
     `;
     document.body.appendChild(overlay);
@@ -6768,7 +6768,7 @@ function showPixQrModal(data) {
             <h3>Pague com PIX</h3>
             ${data.qrBase64 ? `<img class="pix-qr-img" src="data:image/png;base64,${data.qrBase64}" alt="QR Code PIX"/>` : ""}
             <div class="pix-code-box" id="pix-code">${data.pixCopiaECola}</div>
-            <button class="pix-copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('pix-code').textContent);this.textContent='Copiado!';">Copiar código PIX</button>
+            <button class="pix-copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('pix-code').textContent);this.textContent='Copiado!';">Copiar c├│digo PIX</button>
             <p class="pix-waiting">Aguardando pagamento...</p>
         </div>
     `;
@@ -6782,7 +6782,7 @@ async function pollCreditStatus(reference) {
             const data = await api(`/credits/status/${encodeURIComponent(reference)}`);
             if (data.status === "confirmed") {
                 document.getElementById("pix-modal-overlay")?.remove();
-                alert(`${data.credits} créditos adicionados!`);
+                alert(`${data.credits} cr├®ditos adicionados!`);
                 updateCreditsDisplay();
                 return;
             }
@@ -6798,9 +6798,9 @@ document.getElementById("sidebar-credits")?.addEventListener("click", () => {
 window.selectCreditPackage = selectCreditPackage;
 window.purchaseCredits = purchaseCredits;
 
-/* ══════════════════════════════════════════════════════════════
+/* ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
    VIDEO EDITOR ENGINE
-   ══════════════════════════════════════════════════════════════ */
+   ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ */
 const _editor = {
     projectId: 0,
     videoUrl: "",
@@ -6827,7 +6827,7 @@ const _editor = {
     _lastOriginalVolume: 100,
     filter: "none",
     stickers: [],       // {id, emoji, x, y, startTime, endTime, size}
-    mediaLayers: [],    // {id, kind, name, url, path, width, x, y, startTime, endTime, duration, aspectRatio}
+    mediaLayers: [],    // {id, kind, name, url, path, width, x, y, startTime, endTime, duration, aspectRatio, volume, audioOnly}
     quality: "original",
     // Undo/redo
     undoStack: [],
@@ -6841,7 +6841,7 @@ let _editorMediaLayerDrag = null;
 
 function _editorGenId() { return _editor._nextId++; }
 
-// ── Subtitle style presets ──
+// ÔöÇÔöÇ Subtitle style presets ÔöÇÔöÇ
 const SUBTITLE_STYLES = [
     { name: "classico", label: "Classico", fontFamily: "Arial, sans-serif", fontSize: 28, fontColor: "#ffffff", bgColor: "rgba(0,0,0,0.6)", outlineColor: "", bold: true, italic: false },
     { name: "destaque", label: "Destaque", fontFamily: "Arial Black, sans-serif", fontSize: 32, fontColor: "#facc15", bgColor: "rgba(0,0,0,0.7)", outlineColor: "#000000", bold: true, italic: false },
@@ -7186,6 +7186,8 @@ function _editorNormalizeMediaLayer(layer) {
         startTime: Math.max(0, Number(layer.startTime || 0)),
         endTime: Math.max(0, Number(layer.endTime || 0)),
         duration: Math.max(0, Number(layer.duration || 0)),
+        volume: Math.max(0, Math.min(200, Number(layer.volume ?? 100))),
+        audioOnly: Boolean(layer.audioOnly),
         aspectRatio: aspect,
     };
 }
@@ -7217,15 +7219,18 @@ function _editorSyncMediaLayersWithTime(timeSec) {
             return;
         }
 
-        const localTime = Math.max(0, currentTime - layer.startTime);
-        const reachedVideoEnd = layer.kind === "video" && Number(layer.duration || 0) > 0 && localTime > Number(layer.duration || 0);
-        const visible = currentTime >= layer.startTime && currentTime <= layer.endTime && !reachedVideoEnd;
+        const normalizedLayer = _editorNormalizeMediaLayer(layer);
+        const localTime = Math.max(0, currentTime - normalizedLayer.startTime);
+        const reachedVideoEnd = normalizedLayer.kind === "video"
+            && Number(normalizedLayer.duration || 0) > 0
+            && localTime > Number(normalizedLayer.duration || 0);
+        const visible = !normalizedLayer.audioOnly && currentTime >= normalizedLayer.startTime && currentTime <= normalizedLayer.endTime && !reachedVideoEnd;
         item.style.display = visible ? "block" : "none";
-        if (!visible || layer.kind !== "video") return;
+        if (!visible || normalizedLayer.kind !== "video") return;
 
         const videoEl = item.querySelector("video");
         if (!videoEl) return;
-        const maxTime = layer.duration > 0 ? Math.max(0, layer.duration - 0.05) : localTime;
+        const maxTime = normalizedLayer.duration > 0 ? Math.max(0, normalizedLayer.duration - 0.05) : localTime;
         const targetTime = Math.min(localTime, maxTime);
         if (Math.abs((videoEl.currentTime || 0) - targetTime) > 0.1) {
             try {
@@ -7234,6 +7239,8 @@ function _editorSyncMediaLayersWithTime(timeSec) {
                 // Ignore seek errors while metadata is loading.
             }
         }
+        videoEl.volume = Math.max(0, Math.min(1, normalizedLayer.volume / 100));
+        videoEl.muted = normalizedLayer.volume <= 0;
         videoEl.pause();
     });
 }
@@ -7246,11 +7253,15 @@ function _editorRenderMediaLayers() {
     const hostHeight = Math.max(1, hostRect.height || host.offsetHeight || 1);
     const selectedId = String(_editor.selectedClip.id || "");
 
-    host.innerHTML = _editor.mediaLayers.map((rawLayer, idx) => {
-        const layer = _editorNormalizeMediaLayer(rawLayer);
+    const visibleLayers = _editor.mediaLayers
+        .map(rawLayer => _editorNormalizeMediaLayer(rawLayer))
+        .filter(layer => !(layer.kind === "video" && layer.audioOnly));
+
+    host.innerHTML = visibleLayers.map((layer, idx) => {
         const layout = _editorGetMediaLayerLayout(layer, hostWidth, hostHeight);
         const selectedClass = selectedId === String(layer.id) && _editor.selectedClip.kind === "media-layer" ? " selected" : "";
-        const zIndex = (_editor.mediaLayers.length - idx) + 1;
+        const zIndex = (visibleLayers.length - idx) + 1;
+        const isSelected = selectedId === String(layer.id) && _editor.selectedClip.kind === "media-layer";
         const mediaHtml = layer.kind === "video"
             ? `<video src="${esc(layer.url)}" muted playsinline preload="metadata"></video>`
             : `<img src="${esc(layer.url)}" alt="Camada" loading="lazy">`;
@@ -7261,6 +7272,7 @@ function _editorRenderMediaLayers() {
                 style="left:${layout.leftPx}px;top:${layout.topPx}px;width:${layout.widthPx}px;height:${layout.heightPx}px;z-index:${zIndex}"
             >
                 ${mediaHtml}
+                ${isSelected ? '<div class="editor-media-layer-handle" data-role="resize"></div>' : ''}
             </div>
         `;
     }).join("");
@@ -7314,6 +7326,26 @@ function _editorSetMediaLayerY(id, val) {
     _editorRenderProps();
 }
 window._editorSetMediaLayerY = _editorSetMediaLayerY;
+
+function _editorSetMediaLayerVolume(id, val) {
+    const layer = _editorGetMediaLayerById(id);
+    if (!layer || layer.kind !== "video") return;
+    layer.volume = Math.max(0, Math.min(200, Number(val || layer.volume || 100)));
+    _editorRenderMediaLayers();
+    _editorRenderProps();
+}
+window._editorSetMediaLayerVolume = _editorSetMediaLayerVolume;
+
+function _editorToggleMediaLayerAudioOnly(id) {
+    const layer = _editorGetMediaLayerById(id);
+    if (!layer || layer.kind !== "video") return;
+    _editorSaveState();
+    layer.audioOnly = !layer.audioOnly;
+    _editorRenderMediaLayers();
+    _editorRenderTimeline();
+    _editorRenderProps();
+}
+window._editorToggleMediaLayerAudioOnly = _editorToggleMediaLayerAudioOnly;
 
 function _editorSetMediaLayerStart(id, val) {
     const layer = _editorGetMediaLayerById(id);
@@ -7382,6 +7414,8 @@ function _editorPushMediaLayer(kind, payload) {
         endTime: Math.max(0.1, initialEnd),
         duration: layerDuration,
         aspectRatio,
+        volume: 100,
+        audioOnly: false,
     };
     _editor.mediaLayers.push(layer);
     _editorSelectMediaLayer(layer.id, true);
@@ -7456,13 +7490,20 @@ function _editorOnMediaLayerPointerDown(e) {
     const hostWidth = Math.max(1, hostRect.width || host.offsetWidth || 1);
     const hostHeight = Math.max(1, hostRect.height || host.offsetHeight || 1);
     const layout = _editorGetMediaLayerLayout(layer, hostWidth, hostHeight);
+    const onResizeHandle = Boolean(e.target.closest(".editor-media-layer-handle[data-role='resize']"));
 
     _editorMediaLayerDrag = {
         id: String(layer.id),
+        mode: onResizeHandle ? "resize" : "move",
         startX: e.clientX,
         startY: e.clientY,
         startLeft: layout.leftPx,
         startTop: layout.topPx,
+        startWidth: layout.widthPx,
+        startHeight: layout.heightPx,
+        hostWidth,
+        hostHeight,
+        aspectRatio: Math.max(0.2, Number(layer.aspectRatio || 1)),
         maxLeft: layout.maxLeft,
         maxTop: layout.maxTop,
         dirty: false,
@@ -7484,16 +7525,38 @@ function _editorOnMediaLayerDragMove(e) {
 
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
-    const nextLeft = Math.max(0, Math.min(drag.maxLeft, drag.startLeft + dx));
-    const nextTop = Math.max(0, Math.min(drag.maxTop, drag.startTop + dy));
 
     if (!drag.dirty && (Math.abs(dx) > 1 || Math.abs(dy) > 1)) {
         _editorSaveState();
         drag.dirty = true;
     }
 
-    layer.x = drag.maxLeft > 0 ? (nextLeft / drag.maxLeft) * 100 : 0;
-    layer.y = drag.maxTop > 0 ? (nextTop / drag.maxTop) * 100 : 0;
+    let nextLeft = drag.startLeft;
+    let nextTop = drag.startTop;
+    let nextWidth = drag.startWidth;
+    let nextHeight = drag.startHeight;
+
+    if (drag.mode === "resize") {
+        const minWidth = Math.max(32, drag.hostWidth * 0.08);
+        const maxByWidth = Math.max(minWidth, drag.hostWidth - drag.startLeft);
+        const maxByHeight = Math.max(minWidth, (drag.hostHeight - drag.startTop) * drag.aspectRatio);
+        nextWidth = Math.max(minWidth, Math.min(Math.min(maxByWidth, maxByHeight), drag.startWidth + dx));
+        nextHeight = nextWidth / drag.aspectRatio;
+
+        const nextMaxLeft = Math.max(0, drag.hostWidth - nextWidth);
+        const nextMaxTop = Math.max(0, drag.hostHeight - nextHeight);
+        nextLeft = Math.max(0, Math.min(nextMaxLeft, drag.startLeft));
+        nextTop = Math.max(0, Math.min(nextMaxTop, drag.startTop));
+
+        layer.width = Math.max(8, Math.min(100, (nextWidth / drag.hostWidth) * 100));
+        layer.x = nextMaxLeft > 0 ? (nextLeft / nextMaxLeft) * 100 : 0;
+        layer.y = nextMaxTop > 0 ? (nextTop / nextMaxTop) * 100 : 0;
+    } else {
+        nextLeft = Math.max(0, Math.min(drag.maxLeft, drag.startLeft + dx));
+        nextTop = Math.max(0, Math.min(drag.maxTop, drag.startTop + dy));
+        layer.x = drag.maxLeft > 0 ? (nextLeft / drag.maxLeft) * 100 : 0;
+        layer.y = drag.maxTop > 0 ? (nextTop / drag.maxTop) * 100 : 0;
+    }
 
     const host = document.getElementById("editor-media-layer-host");
     const safeId = String(layer.id).replace(/"/g, "\\\"");
@@ -7501,6 +7564,10 @@ function _editorOnMediaLayerDragMove(e) {
     if (item) {
         item.style.left = `${nextLeft}px`;
         item.style.top = `${nextTop}px`;
+        if (drag.mode === "resize") {
+            item.style.width = `${nextWidth}px`;
+            item.style.height = `${nextHeight}px`;
+        }
     }
 
     _editorRenderProps();
@@ -7966,7 +8033,7 @@ function _editorRenderProps() {
                     <div class="editor-subtitle-item${t._selected ? ' active' : ''}" onclick="_editorSelectText(${t.id})">
                         <span class="sub-time">${_fmtTime(t.startTime)}-${_fmtTime(t.endTime)}</span>
                         <span class="sub-text">${esc(t.content)}</span>
-                        <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteText(${t.id})">✕</button>
+                        <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteText(${t.id})">Ô£ò</button>
                     </div>
                 `).join("")}
             </div>
@@ -8008,9 +8075,9 @@ function _editorRenderProps() {
                     <div class="editor-sub-quick-row">
                         <span class="editor-sub-quick-label">Posicao</span>
                         <div class="editor-sub-stepper">
-                            <button type="button" onclick="_editorNudgeSubtitlesY(-2)" aria-label="Subir legenda">↑</button>
+                            <button type="button" onclick="_editorNudgeSubtitlesY(-2)" aria-label="Subir legenda">Ôåæ</button>
                             <input type="range" min="5" max="95" value="${subtitleY}" oninput="_editorSetSubtitlesY(this.value, true)">
-                            <button type="button" onclick="_editorNudgeSubtitlesY(2)" aria-label="Descer legenda">↓</button>
+                            <button type="button" onclick="_editorNudgeSubtitlesY(2)" aria-label="Descer legenda">Ôåô</button>
                         </div>
                         <span class="editor-sub-quick-value" id="editor-sub-global-y-value">${subtitleY}%</span>
                     </div>
@@ -8033,7 +8100,7 @@ function _editorRenderProps() {
                         <div class="editor-subtitle-item${s._selected ? ' active' : ''}" onclick="_editorSelectSubtitle(${s.id})">
                             <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
                             <span class="sub-text">${esc(s.text)}</span>
-                            <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">✕</button>
+                            <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">Ô£ò</button>
                         </div>
                     `).join("")}
                 </div>
@@ -8125,11 +8192,12 @@ function _editorRenderProps() {
         const safeStart = selectedLayer ? Math.max(0, Math.min(maxDuration, Number(selectedLayer.startTime || 0))) : 0;
         const safeEnd = selectedLayer ? Math.max(safeStart + 0.1, Math.min(maxDuration, Number(selectedLayer.endTime || maxDuration))) : maxDuration;
         const normalizedSelected = selectedLayer ? _editorNormalizeMediaLayer({ ...selectedLayer, startTime: safeStart, endTime: safeEnd }) : null;
+        const selectedVideoLayer = normalizedSelected && normalizedSelected.kind === "video" ? normalizedSelected : null;
 
         container.innerHTML = `
             <div class="editor-props-title">Camadas de midia</div>
             <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">
-                Cada video/imagem enviada vira uma nova faixa sobre o video base. Arraste na tela para reposicionar.
+                Clique na camada dentro do video para mover. Use o canto inferior direito para redimensionar direto na tela.
             </p>
             <div class="editor-props-group">
                 <button class="editor-add-btn" onclick="document.getElementById('editor-layer-video-upload-input')?.click()">+ Adicionar video em camada</button>
@@ -8144,15 +8212,30 @@ function _editorRenderProps() {
                         <div class="editor-layer-item${active ? " active" : ""}" onclick="_editorSelectMediaLayer('${layer.id}')">
                             <div>
                                 <strong>${name}</strong>
-                                <span>${kindLabel} | ${_fmtTime(layer.startTime)} - ${_fmtTime(layer.endTime)}</span>
+                                <span>${kindLabel}${layer.audioOnly ? " (so audio)" : ""} | ${_fmtTime(layer.startTime)} - ${_fmtTime(layer.endTime)}</span>
                             </div>
-                            <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteMediaLayer('${layer.id}')">✕</button>
+                            <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteMediaLayer('${layer.id}')">Ô£ò</button>
                         </div>
                     `;
-                }).join("") : `<div class="editor-layer-item"><div><strong>Nenhuma camada</strong><span>Envie video ou imagem para começar.</span></div></div>`}
+                }).join("") : `<div class="editor-layer-item"><div><strong>Nenhuma camada</strong><span>Envie video ou imagem para come├ºar.</span></div></div>`}
             </div>
             ${normalizedSelected ? `
                 <div class="editor-props-group" style="margin-top:10px">
+                    ${selectedVideoLayer ? `
+                        <label>Volume da camada (${Math.round(selectedVideoLayer.volume)}%)</label>
+                        <div class="editor-layer-slider-row">
+                            <input type="range" min="0" max="200" value="${selectedVideoLayer.volume}" oninput="_editorSetMediaLayerVolume('${selectedVideoLayer.id}', this.value)">
+                        </div>
+                        <button
+                            class="editor-add-btn"
+                            type="button"
+                            style="margin-top:6px"
+                            onclick="_editorToggleMediaLayerAudioOnly('${selectedVideoLayer.id}')"
+                        >
+                            ${selectedVideoLayer.audioOnly ? "Mostrar video da camada" : "Usar so o audio deste video"}
+                        </button>
+                    ` : ""}
+
                     <label>Tamanho (${Math.round(normalizedSelected.width)}%)</label>
                     <div class="editor-layer-slider-row">
                         <input type="range" min="8" max="100" value="${normalizedSelected.width}" oninput="_editorSetMediaLayerSize('${normalizedSelected.id}', this.value)">
@@ -8207,7 +8290,7 @@ function _editorRenderProps() {
                     <div class="editor-music-current">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
                         <div class="editor-music-info">Musica adicionada<small>Arquivo carregado</small></div>
-                        <button class="sub-delete" onclick="_editorRemoveMusic()">✕</button>
+                        <button class="sub-delete" onclick="_editorRemoveMusic()">Ô£ò</button>
                     </div>
                     <label>Volume da musica</label>
                     <div class="editor-volume-row">
@@ -8233,7 +8316,7 @@ function _editorRenderProps() {
             </div>
         `;
     } else if (tool === "stickers") {
-        const emojis = ["😀","😂","🥰","😎","🔥","⭐","❤️","👍","🎉","🎵","💯","👏","🤩","💪","✨","🌟","😍","🥳","💥","🎬","📸","🎶","💡","🚀","👑","🏆","💎","🌈","🎯","🙏","😱","🤯","💰","📢","🎭","🎨","🎸","🎤","🎧","👀","💬","🔔","⚡","🌺","🦋","🐾","🍕","☕","🎮","🎁"];
+        const emojis = ["­ƒÿÇ","­ƒÿé","­ƒÑ░","­ƒÿÄ","­ƒöÑ","Ô¡É","ÔØñ´©Å","­ƒæì","­ƒÄë","­ƒÄÁ","­ƒÆ»","­ƒæÅ","­ƒñ®","­ƒÆ¬","Ô£¿","­ƒîƒ","­ƒÿì","­ƒÑ│","­ƒÆÑ","­ƒÄ¼","­ƒô©","­ƒÄÂ","­ƒÆí","­ƒÜÇ","­ƒææ","­ƒÅå","­ƒÆÄ","­ƒîê","­ƒÄ»","­ƒÖÅ","­ƒÿ▒","­ƒñ»","­ƒÆ░","­ƒôó","­ƒÄ¡","­ƒÄ¿","­ƒÄ©","­ƒÄñ","­ƒÄº","­ƒæÇ","­ƒÆ¼","­ƒöö","ÔÜí","­ƒî║","­ƒªï","­ƒÉ¥","­ƒìò","Ôÿò","­ƒÄ«","­ƒÄü"];
         container.innerHTML = `
             <div class="editor-props-title">Stickers & Emojis</div>
             <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Clique para adicionar ao video na posicao atual.</p>
@@ -8247,7 +8330,7 @@ function _editorRenderProps() {
                         <div class="editor-subtitle-item">
                             <span style="font-size:20px">${s.emoji}</span>
                             <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
-                            <button class="sub-delete" onclick="_editorDeleteSticker(${s.id})">✕</button>
+                            <button class="sub-delete" onclick="_editorDeleteSticker(${s.id})">Ô£ò</button>
                         </div>
                     `).join("")}
                 </div>
@@ -8495,8 +8578,8 @@ function _normalizeAutoSubtitleText(rawText) {
         text = text.replace(matcher, name);
     }
 
-    text = text.replace(/^(["'([{«“]*)([a-zà-ÿ])/i, (_m, prefix, chr) => `${prefix}${chr.toUpperCase()}`);
-    text = text.replace(/([.!?]\s+)([a-zà-ÿ])/gi, (_m, prev, chr) => `${prev}${chr.toUpperCase()}`);
+    text = text.replace(/^(["'([{┬½ÔÇ£]*)([a-z├á-├┐])/i, (_m, prefix, chr) => `${prefix}${chr.toUpperCase()}`);
+    text = text.replace(/([.!?]\s+)([a-z├á-├┐])/gi, (_m, prev, chr) => `${prev}${chr.toUpperCase()}`);
     return text;
 }
 
@@ -8976,7 +9059,8 @@ function _editorRenderTimeline() {
         const left = (start / dur) * 100;
         const width = Math.max(0.5, ((end - start) / dur) * 100);
         const selectedClass = selectedKind === "media-layer" && selectedId === String(item.id) ? " selected" : "";
-        const kindLabel = item.kind === "video" ? "Video" : "Imagem";
+        const isAudioOnly = item.kind === "video" && Boolean(item.audioOnly);
+        const kindLabel = isAudioOnly ? "Audio" : (item.kind === "video" ? "Video" : "Imagem");
         const layerLabel = esc(String(item.name || `${kindLabel} camada`).trim().substring(0, 20));
         rows.push({
             track: `media-${item.id}`,
@@ -9442,6 +9526,8 @@ async function _editorExport() {
                 x: Number(layer.x || 0),
                 y: Number(layer.y || 0),
                 width: Number(layer.width || 100),
+                volume: Number(layer.volume ?? 100),
+                audio_only: Boolean(layer.audioOnly),
                 start_time: Number(layer.startTime || 0),
                 end_time: Number(layer.endTime || 0),
             }))
