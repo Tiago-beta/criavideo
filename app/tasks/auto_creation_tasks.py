@@ -5,6 +5,7 @@ import asyncio
 import logging
 import math
 import re
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -33,53 +34,223 @@ _AUTO_DEFAULTS = {
 
 _INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza"}
 
-_GOSPEL_THEME_KEYWORDS = (
-    "deus", "senhor", "jesus", "cristo", "louvor", "adoracao", "gospel", "fe",
-    "oracao", "biblia", "espirito", "igreja", "worship", "god", "lord", "faith",
-)
+_NICHE_KEYWORDS = {
+    "gospel": (
+        "deus", "senhor", "jesus", "cristo", "louvor", "adoracao", "gospel", "fe", "oracao",
+        "biblia", "espirito", "igreja", "worship", "god", "lord", "faith", "graca", "milagre",
+    ),
+    "meditacao": (
+        "acalmar", "calma", "ansiedade", "relaxar", "serenidade", "paz", "respirar", "meditacao",
+        "mindfulness", "sono", "antiestresse", "tranquilidade",
+    ),
+    "motivacional": (
+        "motivacao", "forca", "superacao", "coragem", "foco", "disciplina", "vencer", "persistencia",
+        "recomecar", "nao desistir", "proposito", "conquista",
+    ),
+    "relacionamento": (
+        "amor", "casal", "relacionamento", "namoro", "familia", "marido", "esposa", "carinho",
+        "dialogo", "separacao", "cuidado", "companheirismo",
+    ),
+    "financas": (
+        "dinheiro", "renda", "investimento", "economia", "divida", "poupanca", "financeiro", "faturamento",
+        "negocio", "cliente", "vendas", "lucro", "cartao",
+    ),
+    "fitness": (
+        "treino", "fitness", "musculacao", "emagrecer", "dieta", "academia", "massa", "saude",
+        "corrida", "energia", "shape", "metabolismo",
+    ),
+    "beleza": (
+        "beleza", "skincare", "maquiagem", "pele", "cabelo", "estetica", "autocuidado", "glow",
+        "hidratar", "antiidade", "cosmetico",
+    ),
+    "educacao": (
+        "aprender", "estudo", "educacao", "didatica", "resumo", "aula", "prova", "enem",
+        "concurso", "idioma", "memorizacao", "explicacao",
+    ),
+    "humor": (
+        "humor", "engracado", "risada", "meme", "piada", "zoeira", "comedia", "sarcasmo",
+    ),
+    "games": (
+        "game", "gamer", "jogo", "gameplay", "rank", "fps", "rpg", "battle royale", "console",
+        "pc", "dica gamer", "nivel",
+    ),
+    "viagem": (
+        "viagem", "destino", "roteiro", "turismo", "hotel", "praia", "montanha", "ferias",
+        "passagem", "hostel", "aventura",
+    ),
+    "culinaria": (
+        "receita", "cozinha", "prato", "sobremesa", "bolo", "massa", "tempero", "forno",
+        "airfryer", "culinaria", "gastronomia",
+    ),
+    "empreendedorismo": (
+        "empreender", "empreendedor", "startup", "negocio", "cliente", "vendas", "marketing",
+        "escala", "ticket", "conversao", "lideranca",
+    ),
+}
 
-_SEO_HOOKS_GOSPEL = [
-    "Musica gospel para acalmar",
-    "Mensagem de Deus para hoje",
-    "Se essa musica te encontrou",
-    "Louvor para renovar a fe",
-    "Palavra que conforta o coracao",
-    "Oracao cantada para alma",
-    "Louvor de esperanca e paz",
-    "Hino para fortalecer sua fe",
-]
+_SEO_HOOKS_BY_NICHE = {
+    "gospel": [
+        "Mensagem de Deus para hoje",
+        "Se essa musica te encontrou",
+        "Louvor para renovar a fe",
+        "Palavra de fe para {kw}",
+        "Hino para fortalecer sua fe",
+        "Musica gospel para acalmar",
+    ],
+    "meditacao": [
+        "Musica para acalmar a mente",
+        "Som para reduzir ansiedade",
+        "Pausa guiada para respirar",
+        "Trilha calma para {kw}",
+        "Audio para relaxar em minutos",
+        "Momento de paz para o seu dia",
+    ],
+    "motivacional": [
+        "Mensagem de forca para hoje",
+        "Nao desista: isso e para voce",
+        "Palavras de superacao real",
+        "Empurrao diario para {kw}",
+        "Motivacao para seguir em frente",
+        "Coragem para recomecar agora",
+    ],
+    "relacionamento": [
+        "Mensagem para tocar o coracao",
+        "Reflexao sobre amor e cuidado",
+        "Se voce vive {kw}, ouca isso",
+        "Conselho curto para relacionamentos",
+        "Sinais que voce precisa ouvir",
+        "Palavra certa para o casal",
+    ],
+    "financas": [
+        "Dica pratica de dinheiro hoje",
+        "Passo a passo para organizar {kw}",
+        "Erro financeiro que trava sua renda",
+        "Como economizar sem sofrimento",
+        "Guia rapido para sair do aperto",
+        "Estrategia simples para crescer renda",
+    ],
+    "fitness": [
+        "Treino motivador para hoje",
+        "Disciplina que muda o corpo",
+        "Ative seu foco para {kw}",
+        "Dica fitness para resultado real",
+        "Rotina curta para ganhar consistencia",
+        "Comece hoje sem desculpas",
+    ],
+    "beleza": [
+        "Dica de beleza que funciona",
+        "Skincare simples para {kw}",
+        "Erro comum que envelhece a pele",
+        "Passo a passo de autocuidado",
+        "Resultado visivel com rotina curta",
+        "Truque rapido para realcar sua beleza",
+    ],
+    "educacao": [
+        "Aprenda {kw} de forma simples",
+        "Resumo rapido para estudar melhor",
+        "Dica de estudo que acelera resultado",
+        "Entenda isso em poucos minutos",
+        "Metodo pratico para memorizar",
+        "Guia direto para aprender mais rapido",
+    ],
+    "humor": [
+        "Se rir disso, compartilha",
+        "Piada do dia para aliviar",
+        "Humor rapido para seu feed",
+        "Esse momento define {kw}",
+        "Cena que todo mundo ja viveu",
+        "Rindo da vida real",
+    ],
+    "games": [
+        "Dica gamer para subir nivel",
+        "Estrategia rapida para {kw}",
+        "Erro que todo jogador comete",
+        "Gameplay curto e direto",
+        "Truque para melhorar no game",
+        "Se voce joga, precisa ver",
+    ],
+    "viagem": [
+        "Destino perfeito para relaxar",
+        "Roteiro rapido para {kw}",
+        "Dica de viagem que economiza tempo",
+        "Lugar lindo para conhecer agora",
+        "Guia pratico para viajar melhor",
+        "Inspiracao de viagem para o fim de semana",
+    ],
+    "culinaria": [
+        "Receita pratica para hoje",
+        "Como fazer {kw} sem erro",
+        "Truque de cozinha que facilita tudo",
+        "Sabor caseiro em poucos passos",
+        "Dica culinaria para ganhar tempo",
+        "Prato rapido que surpreende",
+    ],
+    "empreendedorismo": [
+        "Estrategia para vender mais hoje",
+        "Dica de negocio para {kw}",
+        "Erro de empreendedor iniciante",
+        "Como atrair clientes sem complicar",
+        "Passo a passo para crescer faturamento",
+        "Mindset para escalar seu negocio",
+    ],
+    "general": [
+        "Conteudo que prende atencao",
+        "Se isso te encontrou, assista",
+        "Dica direta para o seu dia",
+        "Mensagem certa para este momento",
+        "Resumo pratico para aplicar hoje",
+        "Valor real em poucos segundos",
+    ],
+}
 
-_SEO_HOOKS_CALM = [
-    "Musica para acalmar",
-    "Som para relaxar a mente",
-    "Musica para aliviar ansiedade",
-    "Melodia para trazer paz",
-    "Trilha para desacelerar",
-    "Musica para respirar fundo",
-]
-
-_SEO_HOOKS_STRENGTH = [
-    "Musica para dias dificeis",
-    "Mensagem de forca e superacao",
-    "Som para levantar o animo",
-    "Musica para recomecar hoje",
-    "Trilha para vencer o cansaco",
-    "Mensagem para nao desistir",
-]
-
-_SEO_HOOKS_GENERAL = [
-    "Musica que prende atencao",
-    "Som perfeito para o momento",
-    "Essa faixa merece seu play",
-    "Uma musica que vai te tocar",
-    "Mensagem que fica no coracao",
-    "Play agora e sinta a diferenca",
-]
+_SEO_STOPWORDS = {
+    "para", "com", "sem", "sobre", "entre", "depois", "antes", "ainda", "porque", "quando",
+    "essa", "esse", "isso", "voce", "voces", "nos", "eles", "elas", "sua", "seu", "suas", "seus",
+    "mais", "menos", "muito", "muita", "pouco", "pouca", "todo", "toda", "todos", "todas",
+    "video", "videos", "musica", "musicas", "mensagem", "tema", "trecho", "short", "canal",
+}
 
 
-def _looks_gospel_theme(*texts: str) -> bool:
-    merged = " ".join(str(t or "") for t in texts).lower()
-    return any(kw in merged for kw in _GOSPEL_THEME_KEYWORDS)
+def _normalize_text_for_matching(text: str) -> str:
+    raw = str(text or "")
+    normalized = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
+    return normalized.lower()
+
+
+def _detect_ctr_niche(*texts: str) -> str:
+    merged = " ".join(_normalize_text_for_matching(t) for t in texts if t)
+    tokens = set(re.findall(r"[a-z0-9]+", merged))
+    best_niche = "general"
+    best_score = 0
+
+    for niche, keywords in _NICHE_KEYWORDS.items():
+        score = 0
+        for kw in keywords:
+            k = _normalize_text_for_matching(kw)
+            if " " in k:
+                if k in merged:
+                    score += 2
+            else:
+                if k in tokens:
+                    score += 1
+        if score > best_score:
+            best_niche = niche
+            best_score = score
+
+    return best_niche
+
+
+def _extract_focus_keywords(*texts: str, max_keywords: int = 5) -> list[str]:
+    scores = {}
+    for text in texts:
+        normalized = _normalize_text_for_matching(text)
+        for token in re.findall(r"[a-z0-9]{4,}", normalized):
+            if token in _SEO_STOPWORDS:
+                continue
+            scores[token] = scores.get(token, 0) + 1
+
+    ordered = sorted(scores.items(), key=lambda item: (-item[1], -len(item[0]), item[0]))
+    return [token for token, _ in ordered[:max_keywords]]
 
 
 def _clean_title_part(text: str, max_len: int = 72) -> str:
@@ -95,17 +266,11 @@ def _pick_seo_hook(project: VideoProject, ai_title: str) -> str:
     title_text = project.track_title or project.title or ""
     style_text = project.style_prompt or ""
     desc_text = project.description or ""
-    lyrics_text = (project.lyrics_text or "")[:260]
-    context = " ".join([title_text, style_text, desc_text, lyrics_text, ai_title]).lower()
+    lyrics_text = (project.lyrics_text or "")[:300]
+    context_text = " ".join([title_text, style_text, desc_text, lyrics_text, ai_title])
 
-    if _looks_gospel_theme(context):
-        hooks = _SEO_HOOKS_GOSPEL
-    elif any(term in context for term in ("calma", "acalmar", "ansiedade", "paz", "relax", "seren")):
-        hooks = _SEO_HOOKS_CALM
-    elif any(term in context for term in ("forca", "superacao", "vencer", "motiv", "coragem", "luta")):
-        hooks = _SEO_HOOKS_STRENGTH
-    else:
-        hooks = _SEO_HOOKS_GENERAL
+    niche = _detect_ctr_niche(context_text)
+    hooks = _SEO_HOOKS_BY_NICHE.get(niche) or _SEO_HOOKS_BY_NICHE["general"]
 
     segment_index = 0
     if isinstance(project.tags, dict):
@@ -115,7 +280,14 @@ def _pick_seo_hook(project: VideoProject, ai_title: str) -> str:
             segment_index = 0
 
     seed = int(project.id or 0) * 13 + segment_index * 7 + len(ai_title or "")
-    return hooks[seed % len(hooks)]
+    template = hooks[seed % len(hooks)]
+
+    keywords = _extract_focus_keywords(title_text, ai_title, desc_text, lyrics_text)
+    kw = keywords[0] if keywords else (
+        "fe" if niche == "gospel" else "resultado"
+    )
+    hook = template.replace("{kw}", kw)
+    return _clean_title_part(hook, max_len=52)
 
 
 def _compose_seo_automation_title(project: VideoProject, ai_title: str) -> str:
@@ -127,7 +299,15 @@ def _compose_seo_automation_title(project: VideoProject, ai_title: str) -> str:
     if not right_part:
         right_part = _clean_title_part(project.track_title or project.title or raw)
     if not right_part:
-        right_part = "Louvor de fe e esperanca" if _looks_gospel_theme(project.title, project.description) else "Musica para ouvir hoje"
+        niche = _detect_ctr_niche(project.title, project.description)
+        if niche == "gospel":
+            right_part = "Louvor de fe e esperanca"
+        elif niche == "financas":
+            right_part = "Guia pratico para crescer"
+        elif niche == "fitness":
+            right_part = "Disciplina para transformar"
+        else:
+            right_part = "Conteudo para ouvir hoje"
 
     hook = _clean_title_part(_pick_seo_hook(project, raw), max_len=52)
     final_title = f"{hook} | {right_part}"
@@ -1111,7 +1291,7 @@ async def _generate_publish_metadata(project: VideoProject) -> dict:
     context = "\n".join(context_parts) or "Video musical sem detalhes adicionais"
     tema = project.track_title or project.title or "Video musical"
 
-    prompt = f"""Voce e um estrategista de crescimento para canais novos de musica no YouTube. Gere metadados otimizados para descoberta, clique e retenção.
+    prompt = f"""Voce e um estrategista de crescimento para canais novos no YouTube. Gere metadados otimizados para descoberta, clique e retencao.
 
 DADOS DO VIDEO:
 Tema: {tema}
@@ -1125,10 +1305,13 @@ Gere:
 
 REGRAS OBRIGATORIAS:
 - TUDO em portugues brasileiro, natural e humano
+- Primeiro identifique o nicho principal do video (gospel, meditacao, motivacional, relacionamento, financas, fitness, beleza, educacao, humor, games, viagem, culinaria, empreendedorismo ou geral)
 - O titulo deve combinar GANCHO DE BUSCA + IDENTIDADE DA MUSICA
 - Formato obrigatorio de titulo: "<gancho SEO variavel> | <identidade da musica ou tema>"
 - A parte antes de "|" deve variar entre videos, mesmo quando for a mesma musica
 - A parte antes de "|" deve trazer intencao de busca/atencao (ex.: "Musica para acalmar", "Musica gospel", "Mensagem de Deus", "Se essa musica te encontrou")
+- O gancho antes de "|" deve ser coerente com o nicho identificado e com o tema do video
+- Se o nicho nao estiver claro, use gancho geral com beneficio pratico e linguagem simples
 - Evite repetir sempre o mesmo prefixo antes de "|"
 - Use palavras-chave naturais do nicho quando fizer sentido: louvor, fe, forca, superacao, oracao, adoracao, esperanca
 - NUNCA mencione nomes de IA, ferramentas, plataformas ou marcas (nada de Tevoxi, CriaVideo, OpenAI, etc)
