@@ -5389,6 +5389,30 @@ th,
 }
 .editor-track-clip:hover { opacity: 0.85; }
 
+.editor-track-clip.clip-text {
+    padding: 0 10px;
+}
+
+.editor-track-clip.clip-text::before,
+.editor-track-clip.clip-text::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    width: 3px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.35);
+    opacity: 0.9;
+}
+
+.editor-track-clip.clip-text::before {
+    left: 2px;
+}
+
+.editor-track-clip.clip-text::after {
+    right: 2px;
+}
+
 .editor-track-clip.selected {
     outline: 2px solid rgba(0, 212, 255, 0.8);
     outline-offset: -1px;

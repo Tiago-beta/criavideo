@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v141 loaded");
+console.log("[CriaVideo] app.js v142 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -7377,6 +7377,62 @@ function _editorDrawOverlays(t) {
     }
 }
 
+function _editorFindSubtitleAtCanvasPoint(clientX, clientY) {
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas || !_editor.subtitles.length) return null;
+
+    const video = document.getElementById("editor-video");
+    if (!video) return null;
+    const currentTime = Number(video.currentTime || 0);
+
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const activeSubs = _editor.subtitles.filter(sub => currentTime >= sub.startTime && currentTime <= sub.endTime);
+    if (!activeSubs.length) return null;
+
+    for (let i = activeSubs.length - 1; i >= 0; i -= 1) {
+        const sub = activeSubs[i];
+        const scale = canvas.height / 720;
+        const fs = (sub.fontSize || 28) * scale;
+        let fontStr = "";
+        if (sub.italic) fontStr += "italic ";
+        if (sub.bold) fontStr += "bold ";
+        fontStr += fs + "px " + (sub.fontFamily || "Arial, sans-serif");
+        ctx.font = fontStr;
+
+        const sx = (sub.x / 100) * canvas.width;
+        const sy = (sub.y / 100) * canvas.height;
+        const textW = ctx.measureText(sub.text || "").width;
+        const pad = sub.bgColor ? 8 * scale : 4 * scale;
+
+        const left = sx - textW / 2 - pad;
+        const right = sx + textW / 2 + pad;
+        const top = sy - fs / 2 - pad * 0.7;
+        const bottom = sy + fs / 2 + pad * 0.7;
+
+        if (x >= left && x <= right && y >= top && y <= bottom) {
+            return sub;
+        }
+    }
+
+    return null;
+}
+
+function _editorHandleOverlayClick(event) {
+    const hitSubtitle = _editorFindSubtitleAtCanvasPoint(event.clientX, event.clientY);
+    if (!hitSubtitle) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    _editorSelectSubtitle(hitSubtitle.id, true);
+}
+
 function _getCSSFilter(name) {
     const filters = {
         none: "none",
@@ -7832,6 +7888,26 @@ function _editorApplySubStyle(styleName) {
 }
 window._editorApplySubStyle = _editorApplySubStyle;
 
+const _subtitleProperNames = ["Senhor", "Deus", "Pastor", "Jesus", "Cristo", "Pai"];
+
+function _normalizeAutoSubtitleText(rawText) {
+    let text = String(rawText || "").trim();
+    if (!text) return "";
+
+    // Keep auto subtitles in sentence case: mostly lowercase, first letter uppercase.
+    text = text.replace(/\s+/g, " ").toLowerCase();
+
+    // Religious proper names stay capitalized even when in the middle of a sentence.
+    for (const name of _subtitleProperNames) {
+        const matcher = new RegExp(`\\b${name.toLowerCase()}\\b`, "gi");
+        text = text.replace(matcher, name);
+    }
+
+    text = text.replace(/^(["'([{«“]*)([a-zà-ÿ])/i, (_m, prefix, chr) => `${prefix}${chr.toUpperCase()}`);
+    text = text.replace(/([.!?]\s+)([a-zà-ÿ])/gi, (_m, prev, chr) => `${prev}${chr.toUpperCase()}`);
+    return text;
+}
+
 async function _editorAutoSubtitles() {
     if (_editor._subtitleGenerating) return;
     _editor._subtitleGenerating = true;
@@ -7868,7 +7944,7 @@ async function _editorAutoSubtitles() {
 
         _editor.subtitles = lines.map(line => ({
             id: _editorGenId(),
-            text: line.words.join(" "),
+            text: _normalizeAutoSubtitleText(line.words.join(" ")),
             startTime: line.start,
             endTime: line.end,
             styleName: st.name, x: 50, y: 82, fontSize: st.fontSize,
@@ -7906,11 +7982,31 @@ function _editorToggleSubtitleList() {
 }
 window._editorToggleSubtitleList = _editorToggleSubtitleList;
 
-function _editorSelectSubtitle(id) {
+function _editorSelectSubtitle(id, openEditor = false) {
     _editor.subtitles.forEach(s => s._selected = (s.id === id));
-    _editor.selectedClip = { kind: "subtitle", id: String(id) };
+    _editor.selectedClip = { kind: "subtitle", id: String(id), track: "text" };
+    if (openEditor) {
+        _editor.subtitleListOpen = true;
+    }
+
+    if (openEditor && _editor.activeTool !== "subtitles") {
+        _editorSelectTool("subtitles");
+    } else {
+        _editorRenderProps();
+    }
+
     _editorRefreshQuickActions();
-    _editorRenderProps();
+    _editorRenderTimeline();
+
+    if (openEditor) {
+        requestAnimationFrame(() => {
+            const textarea = document.querySelector("#editor-props-content textarea");
+            if (textarea) {
+                textarea.focus();
+                textarea.select();
+            }
+        });
+    }
 }
 window._editorSelectSubtitle = _editorSelectSubtitle;
 
@@ -8377,6 +8473,10 @@ function _editorTimelineCanDrag(kind) {
     return ["segment", "text", "subtitle", "sticker"].includes(kind);
 }
 
+function _editorTimelineCanResize(kind) {
+    return ["text", "subtitle"].includes(kind);
+}
+
 function _editorGetTimelineRange(kind, id, track = "") {
     if (kind === "segment") {
         const item = _editorFindSegment(track || "video", id);
@@ -8411,45 +8511,65 @@ function _editorApplyDraggedRange(kind, id, start, end, track = "") {
         }
         return;
     }
+
+    const duration = Math.max(_editor.duration || 0.1, 0.1);
+    const safeStart = Math.max(0, Math.min(duration - 0.1, start));
+    const safeEnd = Math.max(safeStart + 0.1, Math.min(duration, end));
+
     if (kind === "text") {
         const item = _editor.texts.find(t => String(t.id) === String(id));
         if (item) {
-            item.startTime = start;
-            item.endTime = end;
+            item.startTime = safeStart;
+            item.endTime = safeEnd;
         }
         return;
     }
     if (kind === "subtitle") {
         const item = _editor.subtitles.find(s => String(s.id) === String(id));
         if (item) {
-            item.startTime = start;
-            item.endTime = end;
+            item.startTime = safeStart;
+            item.endTime = safeEnd;
         }
         return;
     }
     if (kind === "sticker") {
         const item = _editor.stickers.find(s => String(s.id) === String(id));
         if (item) {
-            item.startTime = start;
-            item.endTime = end;
+            item.startTime = safeStart;
+            item.endTime = safeEnd;
         }
     }
 }
 
-function _editorStartTimelineDrag(kind, id, track, event, trackEl) {
+function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
     _editorSelectTimelineClip(kind, id, false, track);
     if (!_editorTimelineCanDrag(kind) || !_editor.duration || !trackEl) return false;
     const range = _editorGetTimelineRange(kind, id, track);
     if (!range) return false;
+
+    let mode = "move";
+    if (_editorTimelineCanResize(kind) && clipEl) {
+        const clipRect = clipEl.getBoundingClientRect();
+        const localX = event.clientX - clipRect.left;
+        const edgeSize = Math.max(6, Math.min(14, clipRect.width * 0.2));
+        if (localX <= edgeSize) {
+            mode = "resize-start";
+        } else if (localX >= clipRect.width - edgeSize) {
+            mode = "resize-end";
+        }
+    }
+
     _editorTimelineDrag = {
         kind,
         id,
         track,
+        mode,
         startX: event.clientX,
         trackWidth: Math.max(trackEl.getBoundingClientRect().width, 1),
         duration: Math.max(_editor.duration, 0.1),
         baseStart: range.start,
         baseEnd: range.end,
+        minDuration: kind === "sticker" ? 0.5 : 0.2,
         moved: false,
         saved: false,
     };
@@ -8465,10 +8585,21 @@ function _editorOnTimelineDragMove(event) {
     const drag = _editorTimelineDrag;
     const dx = event.clientX - drag.startX;
     const deltaSec = (dx / drag.trackWidth) * drag.duration;
-    const span = Math.max(0.1, drag.baseEnd - drag.baseStart);
-    const maxStart = Math.max(0, drag.duration - span);
-    const nextStart = Math.max(0, Math.min(maxStart, drag.baseStart + deltaSec));
-    const nextEnd = nextStart + span;
+    const baseSpan = Math.max(0.1, drag.baseEnd - drag.baseStart);
+    let nextStart = drag.baseStart;
+    let nextEnd = drag.baseEnd;
+
+    if (drag.mode === "resize-start") {
+        const maxStart = drag.baseEnd - drag.minDuration;
+        nextStart = Math.max(0, Math.min(maxStart, drag.baseStart + deltaSec));
+    } else if (drag.mode === "resize-end") {
+        const minEnd = drag.baseStart + drag.minDuration;
+        nextEnd = Math.max(minEnd, Math.min(drag.duration, drag.baseEnd + deltaSec));
+    } else {
+        const maxStart = Math.max(0, drag.duration - baseSpan);
+        nextStart = Math.max(0, Math.min(maxStart, drag.baseStart + deltaSec));
+        nextEnd = nextStart + baseSpan;
+    }
 
     if (Math.abs(dx) > 1) {
         drag.moved = true;
@@ -8640,6 +8771,7 @@ function _bindEditorEvents() {
             _updatePlayIcon();
         });
     }
+    document.getElementById("editor-overlay-canvas")?.addEventListener("click", _editorHandleOverlayClick);
     document.getElementById("editor-play-btn")?.addEventListener("click", _editorTogglePlay);
     document.getElementById("editor-back-btn")?.addEventListener("click", closeEditor);
     document.getElementById("editor-undo-btn")?.addEventListener("click", _editorUndo);
@@ -8679,7 +8811,7 @@ function _bindEditorEvents() {
         const id = clip.dataset.id || "";
         const track = clip.dataset.track || "";
         const trackEl = clip.parentElement;
-        const dragStarted = _editorStartTimelineDrag(kind, id, track, e, trackEl);
+        const dragStarted = _editorStartTimelineDrag(kind, id, track, e, trackEl, clip);
         if (dragStarted) {
             e.stopPropagation();
             e.preventDefault();
