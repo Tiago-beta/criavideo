@@ -9773,6 +9773,15 @@ function _bindEditorEvents() {
             true,
             clip.dataset.track || ""
         );
+
+        const clipKind = clip.dataset.kind || "";
+        const clipTrack = clip.dataset.track || "";
+        if (_editor.activeTool === "trim" && clipKind === "segment" && (clipTrack === "video" || clipTrack === "audio") && _editorIsTrackSelectable(clipTrack)) {
+            _editor.selectedTracks = [clipTrack];
+            _editorRenderProps();
+            _editorRenderTimeline();
+            _editorOpenTrackVolumeModal(clipTrack);
+        }
         e.stopPropagation();
     });
 
