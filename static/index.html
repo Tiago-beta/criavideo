@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260419-41">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260419-42">
     <script>
-    // Force SW refresh ÔÇö bump this version to invalidate stale workers
+    // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 152;
+        var REQUIRED_VER = 153;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -179,9 +179,9 @@
                                 <h1>Criar videos</h1>
                                 <button id="btn-new-project" class="btn btn-primary btn-add-project" type="button" title="Adicionar novo projeto" aria-label="Adicionar novo projeto">+</button>
                             </div>
-                            <div class="sidebar-credits" id="sidebar-credits" title="Clique para comprar cr├®ditos">
+                            <div class="sidebar-credits" id="sidebar-credits" title="Clique para comprar créditos">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="#f0a030" stroke="#f0a030" stroke-width="1.5"><circle cx="12" cy="12" r="10" fill="none" stroke-width="2"/><text x="12" y="16.5" text-anchor="middle" font-size="14" font-weight="bold" fill="#f0a030" stroke="none">C</text></svg>
-                                <span id="credits-count">0</span> cr├®ditos
+                                <span id="credits-count">0</span> créditos
                             </div>
                         </div>
                         <div id="projects-list" class="cards-grid">
@@ -559,7 +559,7 @@
                     <button class="create-tab" data-create-mode="library" type="button" style="display:none">Biblioteca</button>
                 </div>
 
-                <!-- ÔòÉÔòÉÔòÉ PANEL: Assistente (Wizard) ÔòÉÔòÉÔòÉ -->
+                <!-- ═══ PANEL: Assistente (Wizard) ═══ -->
                 <div id="create-panel-wizard" class="create-panel" hidden>
                     <!-- Step 1: Topic -->
                     <div class="wizard-step" data-step="1">
@@ -855,7 +855,7 @@
                     </button>
                 </div>
 
-                <!-- ÔòÉÔòÉÔòÉ PANEL: Meu Roteiro ÔòÉÔòÉÔòÉ -->
+                <!-- ═══ PANEL: Meu Roteiro ═══ -->
                 <div id="create-panel-script" class="create-panel" hidden>
                     <!-- Step 1: Write script -->
                     <div class="wizard-step" data-step="1">
@@ -1296,7 +1296,7 @@
                     </button>
                 </div>
 
-                <!-- ÔòÉÔòÉÔòÉ PANEL: Biblioteca (existing flow) ÔòÉÔòÉÔòÉ -->
+                <!-- ═══ PANEL: Biblioteca (existing flow) ═══ -->
                 <div id="create-panel-library" class="create-panel" hidden>
                     <div class="form-group">
                         <label>Biblioteca Levita</label>
@@ -1366,7 +1366,7 @@
                     </div>
                 </div>
 
-                <!-- ÔòÉÔòÉÔòÉ AI Suggestion Modal (inline) ÔòÉÔòÉÔòÉ -->
+                <!-- ═══ AI Suggestion Modal (inline) ═══ -->
                 <div id="ai-suggest-panel" class="ai-suggest-panel" hidden>
                     <h3 class="wizard-question" id="ai-suggest-title">Gerar roteiro com IA</h3>
                     <p class="wizard-hint" id="ai-suggest-hint">Descreva o tema e a IA criara um roteiro completo</p>
@@ -1423,7 +1423,7 @@
                     </div>
                 </div>
 
-                <!-- ÔòÉÔòÉÔòÉ Progress overlay ÔòÉÔòÉÔòÉ -->
+                <!-- ═══ Progress overlay ═══ -->
                 <div id="create-progress" class="create-progress" hidden>
                     <div class="create-spinner">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-dasharray="60" stroke-dashoffset="20"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/></circle></svg>
@@ -1651,7 +1651,7 @@
         </div>
     </div>
 
-    <!-- ÔòÉÔòÉÔòÉ MODAL: Nova Automa├º├úo ÔòÉÔòÉÔòÉ -->
+    <!-- ═══ MODAL: Nova Automação ═══ -->
     <div id="modal-new-automation" class="modal">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
@@ -1690,7 +1690,7 @@
                     </div>
                 </div>
 
-                <!-- Step 2: Modo de Cria├º├úo -->
+                <!-- Step 2: Modo de Criação -->
                 <div class="auto-step" data-auto-step="2">
                     <h4 class="auto-step-title">Modo de criacao</h4>
                     <div class="auto-type-cards">
@@ -1705,7 +1705,7 @@
                             <span class="muted">Voce define cada variavel</span>
                         </button>
                     </div>
-                    <!-- Manual settings: Narra├º├úo (Imagens IA) -->
+                    <!-- Manual settings: Narração (Imagens IA) -->
                     <div id="auto-manual-settings" class="auto-manual-settings" hidden>
                         <div class="form-group">
                             <label>Tom da narracao</label>
@@ -2033,19 +2033,19 @@
         </div>
     </div>
 
-    <!-- ÔòÉÔòÉÔòÉ Expiry Warning Modal ÔòÉÔòÉÔòÉ -->
+    <!-- ═══ Expiry Warning Modal ═══ -->
     <div id="modal-expiry-warning" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>ÔÜá´©Å Aviso Importante</h3>
+                <h3>⚠️ Aviso Importante</h3>
                 <button class="modal-close" onclick="closeModal('modal-expiry-warning')" type="button">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="expiry-warning-content">
-                    <p><strong>Seu v├¡deo foi gerado com sucesso!</strong></p>
-                    <p>Por quest├Áes de privacidade e armazenamento, os v├¡deos permanecem no servidor por apenas <strong>48 horas</strong>.</p>
-                    <p>Ap├│s esse per├¡odo, o v├¡deo ser├í <strong>exclu├¡do automaticamente</strong> do servidor.</p>
-                    <p class="expiry-warning-highlight">­ƒôÑ Recomendamos que voc├¬ <strong>baixe o v├¡deo agora</strong> para n├úo perd├¬-lo!</p>
+                    <p><strong>Seu vídeo foi gerado com sucesso!</strong></p>
+                    <p>Por questões de privacidade e armazenamento, os vídeos permanecem no servidor por apenas <strong>48 horas</strong>.</p>
+                    <p>Após esse período, o vídeo será <strong>excluído automaticamente</strong> do servidor.</p>
+                    <p class="expiry-warning-highlight">📥 Recomendamos que você <strong>baixe o vídeo agora</strong> para não perdê-lo!</p>
                 </div>
             </div>
             <div class="modal-footer">
@@ -2054,7 +2054,7 @@
         </div>
     </div>
 
-    <!-- ÔòÉÔòÉÔòÉ Voice Manager Modal ÔòÉÔòÉÔòÉ -->
+    <!-- ═══ Voice Manager Modal ═══ -->
     <div id="modal-voice-manager" class="modal">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
@@ -2118,7 +2118,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260419-41"></script>
-    <script src="/video/static/pwa.js?v=20260419-41"></script>
+    <script src="/video/static/app.js?v=20260419-42"></script>
+    <script src="/video/static/pwa.js?v=20260419-42"></script>
 </body>
 </html>

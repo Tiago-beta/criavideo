@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v152 loaded");
+console.log("[CriaVideo] app.js v152 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -585,7 +585,7 @@ function bindDashboardEvents() {
         details.hidden = true;
     });
 
-    // ÔöÇÔöÇ Creation Wizard Event Bindings ÔöÇÔöÇ
+    // ── Creation Wizard Event Bindings ──
     initCreateWizard();
 }
 
@@ -864,7 +864,7 @@ async function loadProjects() {
     try {
         const data = await api("/video/projects");
         _projectsCache = data;
-        // Filter out expired videos ÔÇö no need to show them
+        // Filter out expired videos — no need to show them
         const visibleData = data.filter(p => !(p.status === "completed" && p.video_expired));
         if (!visibleData.length) {
             container.innerHTML = "<p class='loading'>Nenhum projeto ainda. Crie o primeiro.</p>";
@@ -892,7 +892,7 @@ async function loadProjects() {
                         <div class="card-actions">
                             ${canWatch ? `<button class="card-btn card-btn-watch" onclick="watchVideo(${project.id})" type="button" title="Assistir"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
                             ${canWatch ? `<button class="card-btn card-btn-publish" onclick="openPublishForProject(${project.id})" type="button" title="Publicar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="8 7 12 3 16 7"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg></button>` : ""}
-                            ${(project.status === "pending" || project.status === "failed") ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar v├¡deo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
+                            ${(project.status === "pending" || project.status === "failed") ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
                             ${canWatch ? `<button class="card-btn card-btn-similar" onclick="openCopyChoiceModal(${project.id})" type="button" title="Criar copia"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
                             <button class="card-btn card-btn-edit" onclick="openRenameProjectModal(${project.id})" type="button" title="Editar nome"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>
                             <button class="card-btn card-btn-delete" onclick="deleteProject(${project.id})" type="button" title="Excluir"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
@@ -927,7 +927,7 @@ function _statusPt(status) {
         "generating_scenes": "Gerando cenas...",
         "generating_clips": "Gerando clipes...",
         "rendering": "Renderizando...",
-        "completed": "Conclu├¡do",
+        "completed": "Concluído",
         "failed": "Falhou",
         "published": "Publicado",
     };
@@ -952,13 +952,13 @@ function _renderExpiryOrDate(project) {
         const hours = Math.floor(remaining / 3600000);
         const mins = Math.floor((remaining % 3600000) / 60000);
         if (hours < 6) {
-            return `<span class="expiry-urgent">ÔÅ│ ${hours}h ${String(mins).padStart(2,"0")}m</span>`;
+            return `<span class="expiry-urgent">⏳ ${hours}h ${String(mins).padStart(2,"0")}m</span>`;
         }
-        return `<span class="expiry-countdown">ÔÅ│ ${hours}h ${String(mins).padStart(2,"0")}m</span>`;
+        return `<span class="expiry-countdown">⏳ ${hours}h ${String(mins).padStart(2,"0")}m</span>`;
     }
     // For non-completed projects, show creation date
     const dt = project.created_at ? new Date(project.created_at) : null;
-    return dt ? `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")} ┬À ${dt.toLocaleDateString("pt-BR")}` : "-";
+    return dt ? `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")} · ${dt.toLocaleDateString("pt-BR")}` : "-";
 }
 
 // Auto-refresh countdown timers every minute
@@ -1091,7 +1091,7 @@ function _updateCardInPlace(project) {
     }
 }
 
-// ÔòÉÔòÉÔòÉ Creation Wizard State ÔòÉÔòÉÔòÉ
+// ═══ Creation Wizard State ═══
 let createMode = "wizard"; // "wizard" | "script" | "library"
 let wizardStep = 1;
 let wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
@@ -1321,7 +1321,7 @@ async function openRenameProjectModal(projectId) {
     const thumbRemoveBtn = document.getElementById("edit-thumb-remove");
     if (thumbRemoveBtn) thumbRemoveBtn.hidden = true;
 
-    // Downloads section ÔÇö only show for completed projects
+    // Downloads section — only show for completed projects
     const downloadsEl = document.getElementById("edit-project-downloads");
     if (downloadsEl) {
         if (project.status === "completed") {
@@ -1352,7 +1352,7 @@ async function openRenameProjectModal(projectId) {
                     thumbLink.style.display = "none";
                 }
             } catch (e) {
-                // Silently fail ÔÇö downloads won't show
+                // Silently fail — downloads won't show
             }
         } else {
             downloadsEl.hidden = true;
@@ -1579,7 +1579,7 @@ function initCreateWizard() {
                         if (def7) def7.classList.add("selected");
                     });
                 }
-                // Auto-toggle music checkbox: engines with native audio ÔåÆ uncheck
+                // Auto-toggle music checkbox: engines with native audio → uncheck
                 const hasNativeAudio = (engineVal === "grok" || engineVal === "seedance");
                 const musicCb = container.querySelector("[id$='-realistic-music']");
                 if (musicCb) musicCb.checked = !hasNativeAudio;
@@ -1630,7 +1630,7 @@ function switchCreateMode(mode) {
     }
 }
 
-// ÔöÇÔöÇ Flow-based Wizard UI Update ÔöÇÔöÇ
+// ── Flow-based Wizard UI Update ──
 
 function updateFlowUI(panelId, stepIndex, flow, prefix) {
     const panel = document.getElementById(panelId);
@@ -1660,12 +1660,12 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
     const backBtn = document.getElementById(`${prefix}-back`);
     const nextBtn = document.getElementById(`${prefix}-next`);
     const createBtn = document.getElementById(`${prefix}-create-btn`);
-    if (backBtn) backBtn.hidden = false; // Always show ÔÇö step 1 goes back to mode selection
+    if (backBtn) backBtn.hidden = false; // Always show — step 1 goes back to mode selection
     if (nextBtn) nextBtn.hidden = stepIndex >= flow.length;
     if (createBtn) createBtn.hidden = stepIndex < flow.length;
 }
 
-// ÔöÇÔöÇ Shared Realistic Create Logic ÔöÇÔöÇ
+// ── Shared Realistic Create Logic ──
 
 async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, musicCheckboxId, title, engineSelectorId, prefix, realisticStyle) {
     // Derive prefix from selector IDs if not provided
@@ -1818,7 +1818,7 @@ async function pollRealisticProgress(projectId, engineLabel) {
             if (e.message && !e.message.includes("fetch")) throw e;
         }
     }
-    throw new Error("Tempo limite excedido. O video pode ainda estar sendo gerado ÔÇö verifique seus projetos.");
+    throw new Error("Tempo limite excedido. O video pode ainda estar sendo gerado — verifique seus projetos.");
 }
 
 function resetCreateWizard() {
@@ -1991,7 +1991,7 @@ function resetCreateWizard() {
     updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
 }
 
-// ÔöÇÔöÇ Wizard (Assistente) Navigation ÔöÇÔöÇ
+// ── Wizard (Assistente) Navigation ──
 
 function wizardNext() {
     const flow = getWizardFlow();
@@ -2118,7 +2118,7 @@ async function handleWizardCreate() {
     }
 }
 
-// ÔöÇÔöÇ Script (Meu Roteiro) Navigation ÔöÇÔöÇ
+// ── Script (Meu Roteiro) Navigation ──
 
 function scriptNext() {
     const flow = getScriptFlow();
@@ -2506,9 +2506,9 @@ async function uploadTempFileWithRetry(file, kind, label) {
     }
 }
 
-// ÔöÇÔöÇ AI Script Suggestion ÔöÇÔöÇ
+// ── AI Script Suggestion ──
 
-// ÔöÇÔöÇ Photo Upload (Meu Roteiro) ÔöÇÔöÇ
+// ── Photo Upload (Meu Roteiro) ──
 let scriptPhotos = []; // array of File objects
 let scriptUserAudioFile = null;
 let scriptUserVideoFile = null; // single File object for custom video
@@ -2589,10 +2589,10 @@ function handleUserVideoSelect(event) {
 }
 
 function toggleScriptVideoNarration() {
-    // Narration toggle for custom video mode ÔÇö controls whether to add AI narration over the video
+    // Narration toggle for custom video mode — controls whether to add AI narration over the video
 }
 
-// ÔöÇÔöÇ Thumbnail upload for new project ÔöÇÔöÇ
+// ── Thumbnail upload for new project ──
 let scriptThumbFile = null;
 
 function handleScriptThumbSelect(event) {
@@ -2963,7 +2963,7 @@ async function generateAiScript() {
     }
 }
 
-// ÔöÇÔöÇ Progress helpers ÔöÇÔöÇ
+// ── Progress helpers ──
 
 function setCreateProgress(progress, stage = "Processando...", message = "") {
     const normalized = Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress))) : CREATE_PROGRESS_BASE;
@@ -3034,7 +3034,7 @@ function startKaraokeProgressPolling(operationId) {
     stopKaraokeProgressPolling();
     karaokeProgressOperationId = operationId;
 
-    // Hide verbose message text during vocal removal ÔÇö keep only spinner, stage and %
+    // Hide verbose message text during vocal removal — keep only spinner, stage and %
     const progressTextEl = document.getElementById("create-progress-text");
     if (progressTextEl) progressTextEl.hidden = true;
 
@@ -3072,7 +3072,7 @@ function startKaraokeProgressPolling(operationId) {
     karaokeProgressTimer = setInterval(pollOnce, 2000);
 }
 
-// ÔöÇÔöÇ Library (existing flow, renamed) ÔöÇÔöÇ
+// ── Library (existing flow, renamed) ──
 
 async function createProjectFromLibrary() {
     const songValue = document.getElementById("np-song-select").value;
@@ -3190,10 +3190,10 @@ async function watchVideo(projectId) {
             if (remaining > 0) {
                 const h = Math.floor(remaining / 3600000);
                 const m = Math.floor((remaining % 3600000) / 60000);
-                expiryInfo = `ÔÅ│ Expira em ${h}h ${String(m).padStart(2,"0")}m`;
+                expiryInfo = `⏳ Expira em ${h}h ${String(m).padStart(2,"0")}m`;
             }
         }
-        document.getElementById("player-info").textContent = [render.format, duration, sizeMb, expiryInfo].filter(Boolean).join(" ┬À ");
+        document.getElementById("player-info").textContent = [render.format, duration, sizeMb, expiryInfo].filter(Boolean).join(" · ");
         const download = document.getElementById("player-download");
         download.href = render.video_url;
         download.download = `${project.title || "video"}.mp4`;
@@ -4176,9 +4176,9 @@ async function deleteSchedule(id) {
     }
 }
 
-/* ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
-   Automation (auto-schedules) ÔÇö CRUD + wizard
-   ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ */
+/* ═══════════════════════════════════════════════════════════
+   Automation (auto-schedules) — CRUD + wizard
+   ═══════════════════════════════════════════════════════════ */
 
 let _autoWizardStep = 1;
 let _autoWizardThemes = []; // temporary list while creating
@@ -4542,7 +4542,7 @@ async function addAutoThemeToSchedule(scheduleId) {
     }
 }
 
-/* ÔöÇÔöÇ Automation Wizard (modal-new-automation) ÔöÇÔöÇ */
+/* ── Automation Wizard (modal-new-automation) ── */
 
 function openNewAutomationModal() {
     _autoWizardStep = 1;
@@ -4627,7 +4627,7 @@ function openNewAutomationModal() {
 
 function showAutoStep(step) {
     _autoWizardStep = step;
-    const totalSteps = 4; // Always 4 steps: type ÔåÆ mode ÔåÆ themes ÔåÆ schedule
+    const totalSteps = 4; // Always 4 steps: type → mode → themes → schedule
 
     document.querySelectorAll("#modal-new-automation .auto-step").forEach(el => {
         el.classList.toggle("active", parseInt(el.dataset.autoStep) === step);
@@ -4734,7 +4734,7 @@ function autoStepNext() {
         if (_isAutoTevoxiClipMode()) {
             alert("Clique em '+ Adicionar trecho' para selecionar trechos da musica.");
         } else {
-            alert("Digite o tema e aperte no bot├úo + para adicionar.");
+            alert("Digite o tema e aperte no botão + para adicionar.");
             const addBtn = document.getElementById("auto-add-theme-btn");
             if (addBtn) { addBtn.classList.add("btn-error-pulse"); setTimeout(() => addBtn.classList.remove("btn-error-pulse"), 2000); }
         }
@@ -4781,7 +4781,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
-/* ÔöÇÔöÇ Tevoxi Song Selection (for Realistic + Tevoxi music) ÔöÇÔöÇ */
+/* ── Tevoxi Song Selection (for Realistic + Tevoxi music) ── */
 
 function toggleAutoTevoxiSongs() {
     const checked = document.getElementById("auto-realistic-tevoxi")?.checked;
@@ -4849,9 +4849,9 @@ function selectTevoxiSong(index) {
     _renderTevoxiSongs();
 }
 
-/* ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+/* ══════════════════════════════════════════
    Clip Selector for Tevoxi Songs
-   ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ */
+   ══════════════════════════════════════════ */
 let _clipAudioBuffer = null;
 let _clipWaveformPeaks = [];
 let _clipSongDuration = 0;
@@ -5524,7 +5524,7 @@ function toggleClipPreview() {
 function addClipToThemes() {
     if (!_autoSelectedSong) return;
     const end = Math.min(_clipStart + _clipDuration, _clipSongDuration);
-    const label = `­ƒÄÁ ${_autoSelectedSong.title} (${_formatDuration(_clipStart)} - ${_formatDuration(end)})`;
+    const label = `🎵 ${_autoSelectedSong.title} (${_formatDuration(_clipStart)} - ${_formatDuration(end)})`;
 
     // Store as object with clip metadata
     _autoWizardThemes.push({
@@ -5672,7 +5672,7 @@ async function createAutoSchedule() {
     const videoType = getSelectedAutoVideoType();
 
     if (_autoWizardThemes.length === 0) {
-        alert("Digite o tema e aperte no bot├úo + para adicionar.");
+        alert("Digite o tema e aperte no botão + para adicionar.");
         showAutoStep(3);
         const addBtn = document.getElementById("auto-add-theme-btn");
         if (addBtn) { addBtn.classList.add("btn-error-pulse"); setTimeout(() => addBtn.classList.remove("btn-error-pulse"), 2000); }
@@ -5929,7 +5929,7 @@ async function loadAccounts() {
             const platformClass = `social-platform-${platform.replace(/[^a-z0-9_-]/g, "")}`;
             const accountLabel = socialAccountDisplayName(account);
             const usernameSuffix = account.platform_username && account.platform_username !== accountLabel
-                ? ` ┬À ${account.platform_username}`
+                ? ` · ${account.platform_username}`
                 : "";
             return `
             <div class="card social-account-card ${platformClass}">
@@ -6172,7 +6172,7 @@ window.overwritePublishDraftFromList = overwritePublishDraftFromList;
 window.deletePublishDraftFromList = deletePublishDraftFromList;
 window.loadProjects = loadProjects;
 
-// ÔöÇÔöÇ Style Tags System ÔöÇÔöÇ
+// ── Style Tags System ──
 function initStyleTags() {
     document.querySelectorAll(".style-tag").forEach((tag) => {
         tag.addEventListener("click", () => {
@@ -6219,7 +6219,7 @@ function setSelectedStyles(containerId, styleStr) {
     });
 }
 
-// ÔöÇÔöÇ Voice Preview System ÔöÇÔöÇ
+// ── Voice Preview System ──
 let _voicePreviewAudio = null;
 
 function initVoicePreview() {
@@ -6250,7 +6250,7 @@ function initVoicePreview() {
     });
 }
 
-// ÔöÇÔöÇ Voice Profile System (Levita-style) ÔöÇÔöÇ
+// ── Voice Profile System (Levita-style) ──
 
 let voiceProfiles = [];
 let personaMediaRecorder = null;
@@ -6278,13 +6278,13 @@ function renderPersonaList(prefix) {
     container.innerHTML = voiceProfiles.map(p => {
         const badge = p.is_default ? '<span class="persona-item-badge">Padrao</span>' : '';
         return `<div class="persona-item" data-profile-id="${p.id}" data-value="${p.builtin_voice || 'alloy'}" data-voice-type="profile" onclick="selectPersona(this, '${prefix}')">
-            <div class="persona-item-icon">­ƒÄñ</div>
+            <div class="persona-item-icon">🎤</div>
             <div class="persona-item-info">
                 <div class="persona-item-name">${esc(p.name)}</div>
-                <div class="persona-item-meta">${p.has_custom_voice ? 'Ô£à Voz clonada' : (p.has_sample ? 'Com amostra' : 'Voz IA')}${badge ? ' ┬À ' : ''}${badge}</div>
+                <div class="persona-item-meta">${p.has_custom_voice ? '✅ Voz clonada' : (p.has_sample ? 'Com amostra' : 'Voz IA')}${badge ? ' · ' : ''}${badge}</div>
             </div>
             <div class="persona-item-actions">
-                <button class="btn-icon-sm" onclick="event.stopPropagation();deleteVoiceProfile(${p.id})" title="Excluir" style="color:#e74c3c;width:28px;height:28px;font-size:0.9rem">Ô£ò</button>
+                <button class="btn-icon-sm" onclick="event.stopPropagation();deleteVoiceProfile(${p.id})" title="Excluir" style="color:#e74c3c;width:28px;height:28px;font-size:0.9rem">✕</button>
             </div>
         </div>`;
     }).join('');
@@ -6312,7 +6312,7 @@ function toggleMinhaVoz(prefix) {
     }
 }
 
-// ÔöÇÔöÇ Persona Recording (inline in panel) ÔöÇÔöÇ
+// ── Persona Recording (inline in panel) ──
 
 async function startPersonaRecording(prefix) {
     if (personaMediaRecorder && personaMediaRecorder.state === "recording") {
@@ -6472,7 +6472,7 @@ async function savePersonaVoice(prefix) {
             }),
         });
 
-        // Upload the sample ÔÇö server auto-clones via Fish Audio
+        // Upload the sample — server auto-clones via Fish Audio
         if (profile.id) {
             const formData = new FormData();
             const fname = blob.type === 'audio/wav' ? 'sample.wav' : 'sample.webm';
@@ -6484,9 +6484,9 @@ async function savePersonaVoice(prefix) {
             });
             const result = await resp.json();
             if (result.cloned) {
-                alert("Ô£à Voz clonada com sucesso! Seus v├¡deos usar├úo sua voz.");
+                alert("✅ Voz clonada com sucesso! Seus vídeos usarão sua voz.");
             } else if (result.clone_error) {
-                alert("ÔÜá´©Å Perfil salvo, mas a clonagem falhou: " + result.clone_error);
+                alert("⚠️ Perfil salvo, mas a clonagem falhou: " + result.clone_error);
             }
         }
 
@@ -6506,7 +6506,7 @@ async function savePersonaVoice(prefix) {
     }
 }
 
-// ÔöÇÔöÇ Voice Manager Modal (for managing profiles with IA settings) ÔöÇÔöÇ
+// ── Voice Manager Modal (for managing profiles with IA settings) ──
 
 function openVoiceManager() {
     openModal("modal-voice-manager");
@@ -6530,7 +6530,7 @@ function renderVoiceManagerList() {
         return;
     }
     container.innerHTML = voiceProfiles.map(p => {
-        const icon = p.has_sample ? '­ƒÄñ' : '­ƒöè';
+        const icon = p.has_sample ? '🎤' : '🔊';
         const meta = [];
         if (p.builtin_voice) {
             const names = {onyx:'Grave',echo:'Suave',ash:'Natural M',nova:'Clara',shimmer:'Suave F',coral:'Natural F',alloy:'Neutra',fable:'Narrativa',sage:'Calma'};
@@ -6543,13 +6543,13 @@ function renderVoiceManagerList() {
         return `<div class="vm-profile-card ${p.is_default ? 'is-default' : ''}">
             <div class="vm-profile-icon">${icon}</div>
             <div class="vm-profile-info">
-                <div class="vm-profile-name">${p.name}${p.is_default ? ' <span style="color:var(--accent);font-size:0.75rem">Ô£ª Padrao</span>' : ''}</div>
-                <div class="vm-profile-meta">${meta.join(' ┬À ')}</div>
+                <div class="vm-profile-name">${p.name}${p.is_default ? ' <span style="color:var(--accent);font-size:0.75rem">✦ Padrao</span>' : ''}</div>
+                <div class="vm-profile-meta">${meta.join(' · ')}</div>
             </div>
             <div class="vm-profile-actions">
-                ${!p.is_default ? `<button class="btn-icon-sm" onclick="setDefaultVoice(${p.id})" title="Definir como padrao">Ô¡É</button>` : ''}
-                <button class="btn-icon-sm" onclick="previewVoice(${p.id})" title="Ouvir preview">ÔûÂ</button>
-                <button class="btn-icon-sm" onclick="deleteVoiceProfile(${p.id})" title="Excluir" style="color:#e74c3c">Ô£ò</button>
+                ${!p.is_default ? `<button class="btn-icon-sm" onclick="setDefaultVoice(${p.id})" title="Definir como padrao">⭐</button>` : ''}
+                <button class="btn-icon-sm" onclick="previewVoice(${p.id})" title="Ouvir preview">▶</button>
+                <button class="btn-icon-sm" onclick="deleteVoiceProfile(${p.id})" title="Excluir" style="color:#e74c3c">✕</button>
             </div>
         </div>`;
     }).join('');
@@ -6692,7 +6692,7 @@ function showCreditsPurchaseModal() {
             : "";
         pkgHtml += `
             <label class="credit-package${sel}" data-pkg="${i}" onclick="selectCreditPackage(${i})">
-                <span class="credit-pkg-amount">${p.credits} cr├®ditos</span>
+                <span class="credit-pkg-amount">${p.credits} créditos</span>
                 <span class="credit-pkg-price">R$ ${p.price.toFixed(2).replace(".", ",")}</span>
                 ${badge}
             </label>`;
@@ -6707,7 +6707,7 @@ function showCreditsPurchaseModal() {
             <button class="credits-modal-close" onclick="document.getElementById('credits-modal-overlay').remove()">&times;</button>
             <h2 class="credits-modal-title">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f0a030" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                Comprar Cr├®ditos
+                Comprar Créditos
             </h2>
             <div class="credit-packages">${pkgHtml}</div>
             <div class="credits-cta">
@@ -6717,10 +6717,10 @@ function showCreditsPurchaseModal() {
                 </button>
                 <button class="credits-btn credits-btn-card" onclick="purchaseCredits('card')">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                    Pagar com Cart├úo
+                    Pagar com Cartão
                 </button>
             </div>
-            <p class="credits-hint">Cada minuto de v├¡deo consome ${_creditsPerMinute} cr├®ditos</p>
+            <p class="credits-hint">Cada minuto de vídeo consome ${_creditsPerMinute} créditos</p>
         </div>
     `;
     document.body.appendChild(overlay);
@@ -6768,7 +6768,7 @@ function showPixQrModal(data) {
             <h3>Pague com PIX</h3>
             ${data.qrBase64 ? `<img class="pix-qr-img" src="data:image/png;base64,${data.qrBase64}" alt="QR Code PIX"/>` : ""}
             <div class="pix-code-box" id="pix-code">${data.pixCopiaECola}</div>
-            <button class="pix-copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('pix-code').textContent);this.textContent='Copiado!';">Copiar c├│digo PIX</button>
+            <button class="pix-copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('pix-code').textContent);this.textContent='Copiado!';">Copiar código PIX</button>
             <p class="pix-waiting">Aguardando pagamento...</p>
         </div>
     `;
@@ -6782,7 +6782,7 @@ async function pollCreditStatus(reference) {
             const data = await api(`/credits/status/${encodeURIComponent(reference)}`);
             if (data.status === "confirmed") {
                 document.getElementById("pix-modal-overlay")?.remove();
-                alert(`${data.credits} cr├®ditos adicionados!`);
+                alert(`${data.credits} créditos adicionados!`);
                 updateCreditsDisplay();
                 return;
             }
@@ -6798,9 +6798,9 @@ document.getElementById("sidebar-credits")?.addEventListener("click", () => {
 window.selectCreditPackage = selectCreditPackage;
 window.purchaseCredits = purchaseCredits;
 
-/* ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+/* ══════════════════════════════════════════════════════════════
    VIDEO EDITOR ENGINE
-   ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ */
+   ══════════════════════════════════════════════════════════════ */
 const _editor = {
     projectId: 0,
     videoUrl: "",
@@ -6841,7 +6841,7 @@ let _editorMediaLayerDrag = null;
 
 function _editorGenId() { return _editor._nextId++; }
 
-// ÔöÇÔöÇ Subtitle style presets ÔöÇÔöÇ
+// ── Subtitle style presets ──
 const SUBTITLE_STYLES = [
     { name: "classico", label: "Classico", fontFamily: "Arial, sans-serif", fontSize: 28, fontColor: "#ffffff", bgColor: "rgba(0,0,0,0.6)", outlineColor: "", bold: true, italic: false },
     { name: "destaque", label: "Destaque", fontFamily: "Arial Black, sans-serif", fontSize: 32, fontColor: "#facc15", bgColor: "rgba(0,0,0,0.7)", outlineColor: "#000000", bold: true, italic: false },
@@ -8056,7 +8056,7 @@ function _editorRenderProps() {
                     <div class="editor-subtitle-item${t._selected ? ' active' : ''}" onclick="_editorSelectText(${t.id})">
                         <span class="sub-time">${_fmtTime(t.startTime)}-${_fmtTime(t.endTime)}</span>
                         <span class="sub-text">${esc(t.content)}</span>
-                        <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteText(${t.id})">Ô£ò</button>
+                        <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteText(${t.id})">✕</button>
                     </div>
                 `).join("")}
             </div>
@@ -8098,9 +8098,9 @@ function _editorRenderProps() {
                     <div class="editor-sub-quick-row">
                         <span class="editor-sub-quick-label">Posicao</span>
                         <div class="editor-sub-stepper">
-                            <button type="button" onclick="_editorNudgeSubtitlesY(-2)" aria-label="Subir legenda">Ôåæ</button>
+                            <button type="button" onclick="_editorNudgeSubtitlesY(-2)" aria-label="Subir legenda">↑</button>
                             <input type="range" min="5" max="95" value="${subtitleY}" oninput="_editorSetSubtitlesY(this.value, true)">
-                            <button type="button" onclick="_editorNudgeSubtitlesY(2)" aria-label="Descer legenda">Ôåô</button>
+                            <button type="button" onclick="_editorNudgeSubtitlesY(2)" aria-label="Descer legenda">↓</button>
                         </div>
                         <span class="editor-sub-quick-value" id="editor-sub-global-y-value">${subtitleY}%</span>
                     </div>
@@ -8123,7 +8123,7 @@ function _editorRenderProps() {
                         <div class="editor-subtitle-item${s._selected ? ' active' : ''}" onclick="_editorSelectSubtitle(${s.id})">
                             <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
                             <span class="sub-text">${esc(s.text)}</span>
-                            <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">Ô£ò</button>
+                            <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">✕</button>
                         </div>
                     `).join("")}
                 </div>
@@ -8237,10 +8237,10 @@ function _editorRenderProps() {
                                 <strong>${name}</strong>
                                 <span>${kindLabel}${layer.audioOnly ? " (so audio)" : ""} | ${_fmtTime(layer.startTime)} - ${_fmtTime(layer.endTime)}</span>
                             </div>
-                            <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteMediaLayer('${layer.id}')">Ô£ò</button>
+                            <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteMediaLayer('${layer.id}')">✕</button>
                         </div>
                     `;
-                }).join("") : `<div class="editor-layer-item"><div><strong>Nenhuma camada</strong><span>Envie video ou imagem para come├ºar.</span></div></div>`}
+                }).join("") : `<div class="editor-layer-item"><div><strong>Nenhuma camada</strong><span>Envie video ou imagem para começar.</span></div></div>`}
             </div>
             ${normalizedSelected ? `
                 <div class="editor-props-group" style="margin-top:10px">
@@ -8313,7 +8313,7 @@ function _editorRenderProps() {
                     <div class="editor-music-current">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
                         <div class="editor-music-info">Musica adicionada<small>Arquivo carregado</small></div>
-                        <button class="sub-delete" onclick="_editorRemoveMusic()">Ô£ò</button>
+                        <button class="sub-delete" onclick="_editorRemoveMusic()">✕</button>
                     </div>
                     <label>Volume da musica</label>
                     <div class="editor-volume-row">
@@ -8339,7 +8339,7 @@ function _editorRenderProps() {
             </div>
         `;
     } else if (tool === "stickers") {
-        const emojis = ["­ƒÿÇ","­ƒÿé","­ƒÑ░","­ƒÿÄ","­ƒöÑ","Ô¡É","ÔØñ´©Å","­ƒæì","­ƒÄë","­ƒÄÁ","­ƒÆ»","­ƒæÅ","­ƒñ®","­ƒÆ¬","Ô£¿","­ƒîƒ","­ƒÿì","­ƒÑ│","­ƒÆÑ","­ƒÄ¼","­ƒô©","­ƒÄÂ","­ƒÆí","­ƒÜÇ","­ƒææ","­ƒÅå","­ƒÆÄ","­ƒîê","­ƒÄ»","­ƒÖÅ","­ƒÿ▒","­ƒñ»","­ƒÆ░","­ƒôó","­ƒÄ¡","­ƒÄ¿","­ƒÄ©","­ƒÄñ","­ƒÄº","­ƒæÇ","­ƒÆ¼","­ƒöö","ÔÜí","­ƒî║","­ƒªï","­ƒÉ¥","­ƒìò","Ôÿò","­ƒÄ«","­ƒÄü"];
+        const emojis = ["😀","😂","🥰","😎","🔥","⭐","❤️","👍","🎉","🎵","💯","👏","🤩","💪","✨","🌟","😍","🥳","💥","🎬","📸","🎶","💡","🚀","👑","🏆","💎","🌈","🎯","🙏","😱","🤯","💰","📢","🎭","🎨","🎸","🎤","🎧","👀","💬","🔔","⚡","🌺","🦋","🐾","🍕","☕","🎮","🎁"];
         container.innerHTML = `
             <div class="editor-props-title">Stickers & Emojis</div>
             <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Clique para adicionar ao video na posicao atual.</p>
@@ -8353,7 +8353,7 @@ function _editorRenderProps() {
                         <div class="editor-subtitle-item">
                             <span style="font-size:20px">${s.emoji}</span>
                             <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
-                            <button class="sub-delete" onclick="_editorDeleteSticker(${s.id})">Ô£ò</button>
+                            <button class="sub-delete" onclick="_editorDeleteSticker(${s.id})">✕</button>
                         </div>
                     `).join("")}
                 </div>
@@ -8601,8 +8601,8 @@ function _normalizeAutoSubtitleText(rawText) {
         text = text.replace(matcher, name);
     }
 
-    text = text.replace(/^(["'([{┬½ÔÇ£]*)([a-z├á-├┐])/i, (_m, prefix, chr) => `${prefix}${chr.toUpperCase()}`);
-    text = text.replace(/([.!?]\s+)([a-z├á-├┐])/gi, (_m, prev, chr) => `${prev}${chr.toUpperCase()}`);
+    text = text.replace(/^(["'([{«“]*)([a-zà-ÿ])/i, (_m, prefix, chr) => `${prefix}${chr.toUpperCase()}`);
+    text = text.replace(/([.!?]\s+)([a-zà-ÿ])/gi, (_m, prev, chr) => `${prev}${chr.toUpperCase()}`);
     return text;
 }
 
