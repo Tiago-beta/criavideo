@@ -2874,6 +2874,8 @@ async function generateAiScript() {
         const style = document.getElementById("ai-suggest-style").value;
         const engineBtn = document.querySelector("#wizard-realistic-engine .engine-option.selected") || document.querySelector("#script-realistic-engine .engine-option.selected");
         const engine = engineBtn ? engineBtn.dataset.value : "minimax";
+        const usePhotosToggle = document.getElementById("script-use-photos");
+        const hasReferenceImage = scriptPhotos.length > 0 && (!usePhotosToggle || usePhotosToggle.checked);
         const engineLabel = engine === "grok" ? "Grok" : engine === "minimax" ? "MiniMax" : engine === "wan2" ? "Wan 2.2" : "Seedance";
         showCreateProgress("Gerando prompt cinematografico com IA...", {
             progress: 30,
@@ -2882,7 +2884,7 @@ async function generateAiScript() {
         try {
             const result = await api("/video/generate-realistic-prompt", {
                 method: "POST",
-                body: JSON.stringify({ topic, style, engine }),
+                body: JSON.stringify({ topic, style, engine, has_reference_image: hasReferenceImage }),
             });
             hideCreateProgress();
             document.getElementById("script-text").value = result.prompt;

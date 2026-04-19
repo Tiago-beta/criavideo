@@ -29,23 +29,31 @@ RULES:
 7. Include camera direction: slow push in, pan, dolly, tracking shot, crane, etc.
 8. Keep the prompt concise but detailed — under 500 words.
 9. Preserve the user's creative intent while enhancing with cinematic quality.
-10. CONTENT SAFETY: Avoid violent, sexual, or controversial content."""
+10. CONTENT SAFETY: Avoid violent, sexual, or controversial content.
+11. If the user says there is a reference image, explicitly anchor the scene to that image and preserve the same subject identity and key visual traits."""
 
 
 async def optimize_prompt_for_grok(
     user_description: str,
     duration: int = 7,
+    has_reference_image: bool = False,
 ) -> str:
     """Convert user's description into an optimized Grok video prompt with PT-BR audio."""
     client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
     system = _GROK_SYSTEM_PROMPT.replace("{duration}", str(duration))
+    user_msg = user_description
+    if has_reference_image:
+        user_msg += (
+            "\n\nMANDATORY REFERENCE IMAGE RULE: The user uploaded a reference image. "
+            "The prompt must preserve the same subject identity and key visual traits from that image."
+        )
 
     try:
         resp = await client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": user_description},
+                {"role": "user", "content": user_msg},
             ],
             temperature=0.7,
             max_tokens=800,

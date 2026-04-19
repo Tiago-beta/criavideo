@@ -48,6 +48,30 @@ AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus", ".webm"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".webm", ".mkv"}
 KARAOKE_PROGRESS_TTL_MINUTES = 120
 _karaoke_progress_store: dict[str, dict] = {}
+_REFERENCE_IMAGE_HINT_MARKERS = (
+    "reference image",
+    "uploaded image",
+    "user-provided image",
+    "first frame",
+    "imagem de referencia",
+    "foto enviada",
+)
+
+
+def _ensure_reference_image_instruction(prompt: str) -> str:
+    base_prompt = (prompt or "").strip()
+    if not base_prompt:
+        return base_prompt
+
+    lowered = base_prompt.lower()
+    if any(marker in lowered for marker in _REFERENCE_IMAGE_HINT_MARKERS):
+        return base_prompt
+
+    reference_rule = (
+        "Mandatory reference image rule: use the uploaded user image as the primary visual anchor. "
+        "Keep the same main subject identity, face traits, hair, colors, and overall visual style from that reference image."
+    )
+    return f"{base_prompt}\n\n{reference_rule}"
 
 
 def _cleanup_karaoke_progress_store() -> None:
@@ -1495,6 +1519,8 @@ async def generate_audio_endpoint(
 class GenerateRealisticPromptRequest(BaseModel):
     topic: str
     style: str = "cinematic"
+    engine: str = "seedance"
+    has_reference_image: bool = False
 
 
 @router.post("/generate-realistic-prompt")
@@ -1509,12 +1535,30 @@ async def generate_realistic_prompt_endpoint(
     if len(topic) > 2000:
         raise HTTPException(status_code=400, detail="Tema muito longo (maximo 2000 caracteres).")
 
-    from app.services.seedance_video import optimize_prompt_for_seedance
-    optimized = await optimize_prompt_for_seedance(
-        user_description=topic,
-        duration=7,
-        tone=req.style,
-    )
+    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "seedance"
+    prompt_for_optimizer = _ensure_reference_image_instruction(topic) if req.has_reference_image else topic
+
+    if engine == "grok":
+        from app.services.grok_video import optimize_prompt_for_grok
+
+        optimized = await optimize_prompt_for_grok(
+            user_description=prompt_for_optimizer,
+            duration=7,
+            has_reference_image=req.has_reference_image,
+        )
+    else:
+        from app.services.seedance_video import optimize_prompt_for_seedance
+
+        optimized = await optimize_prompt_for_seedance(
+            user_description=prompt_for_optimizer,
+            duration=7,
+            tone=req.style,
+            has_reference_image=req.has_reference_image,
+        )
+
+    if req.has_reference_image:
+        optimized = _ensure_reference_image_instruction(optimized)
+
     return {"prompt": optimized}
 
 
@@ -1566,6 +1610,9 @@ async def generate_realistic_endpoint(
         if not resolved:
             raise HTTPException(status_code=400, detail="Imagem de referencia nao encontrada. Envie a foto novamente.")
         image_path_str = str(resolved)
+    has_reference_image = bool(image_path_str)
+    if has_reference_image:
+        prompt = _ensure_reference_image_instruction(prompt)
 
     # Credit check — multi-clip costs more (1 credit per 15s segment)
     from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
@@ -1589,6 +1636,7 @@ async def generate_realistic_endpoint(
     tags_data = {
         "type": "realista",
         "engine": engine,
+        "has_reference_image": has_reference_image,
         "add_music": req.add_music or bool(external_audio_url),
         "add_narration": req.add_narration and bool(narration_text),
         "narration_voice": narration_voice,

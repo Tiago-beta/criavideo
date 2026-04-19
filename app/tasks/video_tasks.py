@@ -73,6 +73,33 @@ def _find_custom_video(project_id: int) -> str:
     return ""
 
 
+_REFERENCE_IMAGE_HINT_MARKERS = (
+    "reference image",
+    "uploaded image",
+    "user-provided image",
+    "first frame",
+    "imagem de referencia",
+    "foto enviada",
+)
+
+
+def _ensure_reference_image_instruction(prompt: str) -> str:
+    """Guarantee that prompt text explicitly anchors generation to user reference image."""
+    base_prompt = (prompt or "").strip()
+    if not base_prompt:
+        return base_prompt
+
+    lowered = base_prompt.lower()
+    if any(marker in lowered for marker in _REFERENCE_IMAGE_HINT_MARKERS):
+        return base_prompt
+
+    reference_rule = (
+        "Mandatory reference image rule: use the uploaded user image as the primary visual anchor. "
+        "Keep the same main subject identity, face traits, hair, colors, and overall visual style from that reference image."
+    )
+    return f"{base_prompt}\n\n{reference_rule}"
+
+
 async def _run_custom_video_pipeline(db, project, project_id: int):
     """Pipeline for user-uploaded video: overlay subtitles + optional narration."""
     from app.services.video_composer import compose_overlay_video
@@ -1005,6 +1032,11 @@ async def run_realistic_video_pipeline(project_id: int):
             if project.style_prompt and os.path.exists(project.style_prompt):
                 image_path = project.style_prompt
                 logger.info(f"Realistic video with reference image: {image_path}")
+            has_reference_image = bool(image_path)
+
+            if has_reference_image:
+                user_prompt = _ensure_reference_image_instruction(user_prompt)
+                logger.info("Realistic video: reference-image rule injected into prompt")
 
             duration = int(project.track_duration or 7)
             max_dur = 60 if engine == "grok" else 10
@@ -1033,14 +1065,22 @@ async def run_realistic_video_pipeline(project_id: int):
                 logger.info(f"Realistic prompt already optimized, using as-is: {optimized_prompt[:200]}...")
             elif engine == "grok":
                 from app.services.grok_video import optimize_prompt_for_grok
-                optimized_prompt = await optimize_prompt_for_grok(user_description=user_prompt, duration=duration)
+                optimized_prompt = await optimize_prompt_for_grok(
+                    user_description=user_prompt,
+                    duration=duration,
+                    has_reference_image=has_reference_image,
+                )
                 logger.info(f"Grok prompt optimized: {optimized_prompt[:200]}...")
             else:
                 optimized_prompt = await optimize_prompt_for_seedance(
                     user_description=user_prompt,
                     duration=duration,
+                    has_reference_image=has_reference_image,
                 )
                 logger.info(f"Seedance prompt optimized: {optimized_prompt[:200]}...")
+
+            if has_reference_image:
+                optimized_prompt = _ensure_reference_image_instruction(optimized_prompt)
 
             project.progress = 10
             await db.commit()
@@ -1097,6 +1137,8 @@ async def run_realistic_video_pipeline(project_id: int):
                             None, generate_scene_image, img_prompt, aspect_ratio, grok_image_path, True
                         )
                         logger.info(f"Grok reference image generated: {grok_image_path}")
+                    else:
+                        logger.info(f"Grok using uploaded reference image: {grok_image_path}")
 
                     await _on_progress(18, "Iniciando geracao de video Grok...")
                     await generate_video_clip(

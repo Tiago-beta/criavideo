@@ -64,6 +64,7 @@ RULES:
 8. Do NOT include dialogue or subtitle cues — focus on visuals, motion, and atmosphere.
 9. If the user mentions a product, brand, or specific object, describe it precisely in the scene.
 10. Preserve the user's creative intent while enhancing with cinematic details.
+11. If the user says there is a reference image, explicitly anchor the scene to that image and preserve the same subject identity and key visual traits.
 
 EXAMPLES OF GREAT SEEDANCE PROMPTS:
 
@@ -106,6 +107,7 @@ async def optimize_prompt_for_seedance(
     user_description: str,
     duration: int = 7,
     tone: str | None = None,
+    has_reference_image: bool = False,
 ) -> str:
     """Convert user's description (Portuguese) into an optimized English Seedance 2.0 prompt."""
     client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
@@ -114,6 +116,11 @@ async def optimize_prompt_for_seedance(
     user_msg = user_description
     if tone:
         user_msg += f"\n\nTom/estilo desejado: {tone}"
+    if has_reference_image:
+        user_msg += (
+            "\n\nMANDATORY REFERENCE IMAGE RULE: The user uploaded a reference image. "
+            "The prompt must preserve the same subject identity and key visual traits from that image."
+        )
 
     try:
         resp = await client.chat.completions.create(
