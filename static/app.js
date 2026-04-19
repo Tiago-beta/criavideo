@@ -8190,7 +8190,6 @@ function _editorRenderProps() {
             <div class="editor-props-title">Cortar video</div>
             <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${trimHint}</p>
             <div class="editor-trim-range" style="display:grid;gap:8px">
-                <button class="editor-add-btn" type="button" onclick="_editorSplitAtCurrentTime()">Cortar no ponto atual</button>
                 <button class="editor-add-btn" type="button" onclick="_editorResetVideoSegments()" style="background:rgba(255,255,255,0.04)">Restaurar video inteiro</button>
                 <div class="editor-trim-values">
                     <span>${tracksSummary}</span>
