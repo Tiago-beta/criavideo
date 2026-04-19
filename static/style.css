@@ -5362,8 +5362,9 @@ th,
     flex-shrink: 0;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 4px;
-    padding: 0 8px;
+    padding: 0 6px 0 8px;
     font-size: 10px;
     color: var(--text-muted);
     background: rgba(0,0,0,0.15);
@@ -5375,6 +5376,40 @@ th,
 
 .editor-track-label svg {
     flex-shrink: 0;
+}
+
+.editor-track-label-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+.editor-track-label-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.editor-track-volume-btn {
+    width: 18px;
+    height: 18px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.06);
+    color: var(--text-muted);
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.editor-track-volume-btn:hover {
+    border-color: rgba(0, 212, 255, 0.45);
+    color: var(--accent);
+    background: rgba(0, 212, 255, 0.12);
 }
 
 .editor-track.track-targeted .editor-track-label {

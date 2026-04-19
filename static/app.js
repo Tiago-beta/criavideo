@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v146 loaded");
+console.log("[CriaVideo] app.js v147 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -6797,6 +6797,8 @@ const _editor = {
     _musicFile: null,
     musicVolume: 80,
     originalVolume: 100,
+    _lastMusicVolume: 80,
+    _lastOriginalVolume: 100,
     filter: "none",
     stickers: [],       // {id, emoji, x, y, startTime, endTime, size}
     quality: "original",
@@ -7258,7 +7260,7 @@ function _updatePlayIcon() {
     if (_editor.playing) {
         icon.innerHTML = '<rect x="6" y="4" width="4" height="16" fill="currentColor"/><rect x="14" y="4" width="4" height="16" fill="currentColor"/>';
     } else {
-        icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
+        icon.innerHTML = '<polygon points="6 3 20 12 6 21 6 3"/>';
     }
 }
 
@@ -8363,6 +8365,49 @@ function _editorTimelineTrackIcon(kind) {
     return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/></svg>';
 }
 
+function _editorTimelineVolumeIcon(track) {
+    const muted = track === "video"
+        ? Number(_editor.originalVolume || 0) <= 0
+        : Number(_editor.musicVolume || 0) <= 0;
+
+    if (muted) {
+        return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+    }
+    return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>';
+}
+
+function _editorToggleTrackVolume(track) {
+    if (track !== "video" && track !== "audio") return;
+    if (track === "audio" && !_editorShouldShowAudioTrack()) return;
+
+    _editorSaveState();
+
+    if (track === "video") {
+        const current = Math.max(0, Math.min(100, Number(_editor.originalVolume || 0)));
+        if (current > 0) {
+            _editor._lastOriginalVolume = current;
+            _editor.originalVolume = 0;
+        } else {
+            _editor.originalVolume = Math.max(10, Math.min(100, Number(_editor._lastOriginalVolume || 100)));
+        }
+        const video = document.getElementById("editor-video");
+        if (video) video.volume = _editor.originalVolume / 100;
+    } else {
+        const current = Math.max(0, Math.min(100, Number(_editor.musicVolume || 0)));
+        if (current > 0) {
+            _editor._lastMusicVolume = current;
+            _editor.musicVolume = 0;
+        } else {
+            _editor.musicVolume = Math.max(10, Math.min(100, Number(_editor._lastMusicVolume || 80)));
+        }
+    }
+
+    if (_editor.activeTool === "music") {
+        _editorRenderProps();
+    }
+    _editorRenderTimeline();
+}
+
 function _editorRenderTimeline() {
     const dur = Math.max(_editor.duration || 0, 0.1);
     const ruler = document.getElementById("editor-timeline-ruler");
@@ -8388,6 +8433,7 @@ function _editorRenderTimeline() {
         track: "video",
         kind: "video",
         label: "Video",
+        volumeTrack: "video",
         contentId: "editor-track-video",
         clipsHtml: videoClips,
     });
@@ -8411,6 +8457,7 @@ function _editorRenderTimeline() {
             kind: "audio",
             contentId: "editor-track-audio",
             label: "Audio",
+            volumeTrack: "audio",
             clipsHtml: audioClips,
         });
     }
@@ -8463,12 +8510,20 @@ function _editorRenderTimeline() {
         });
     });
 
-    tracksWrap.innerHTML = rows.map(row => `
-        <div class="editor-track" data-track="${row.track}">
-            <div class="editor-track-label">${_editorTimelineTrackIcon(row.kind)}${row.label}</div>
-            <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""}>${row.clipsHtml || ""}</div>
-        </div>
-    `).join("");
+    tracksWrap.innerHTML = rows.map((row) => {
+        const volumeBtn = row.volumeTrack
+            ? `<button class="editor-track-volume-btn" type="button" data-track-volume="${row.volumeTrack}" title="Volume da faixa">${_editorTimelineVolumeIcon(row.volumeTrack)}</button>`
+            : "";
+        return `
+            <div class="editor-track" data-track="${row.track}">
+                <div class="editor-track-label">
+                    <span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}<span class="editor-track-label-text">${row.label}</span></span>
+                    ${volumeBtn}
+                </div>
+                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""}>${row.clipsHtml || ""}</div>
+            </div>
+        `;
+    }).join("");
 
     _editorRefreshTrackSelectionUI();
 
@@ -8998,6 +9053,13 @@ function _bindEditorEvents() {
     });
 
     document.getElementById("editor-timeline-tracks")?.addEventListener("click", (e) => {
+        const volumeBtn = e.target.closest(".editor-track-volume-btn");
+        if (volumeBtn) {
+            _editorToggleTrackVolume(volumeBtn.dataset.trackVolume || "");
+            e.stopPropagation();
+            return;
+        }
+
         const label = e.target.closest(".editor-track-label");
         if (label) {
             const track = label.closest(".editor-track")?.dataset.track || "";
