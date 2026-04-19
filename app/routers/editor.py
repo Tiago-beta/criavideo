@@ -28,6 +28,7 @@ settings = get_settings()
 
 # In-memory export jobs
 _export_jobs: dict[str, dict] = {}
+_FFMPEG_EXPORT_TIMEOUT_SECONDS = 45 * 60
 
 
 def _resolve_render_video_path(render: VideoRender) -> str | None:
@@ -629,7 +630,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
     try:
         job = _export_jobs[job_id]
         job["progress"] = 5
-        job["message"] = "Preparando arquivos..."
+        job["message"] = "Preparando exportacao..."
 
         # Resolve source video path
         src_video = _resolve_render_video_path(render)
@@ -647,7 +648,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         out_file = os.path.join(out_dir, f"edited_{uuid.uuid4().hex[:8]}.mp4")
 
         job["progress"] = 10
-        job["message"] = "Construindo filtros FFmpeg..."
+        job["message"] = "Preparando exportacao..."
 
         src_duration, _ = _probe_video_metadata(src_video)
         source_has_audio = _probe_has_audio_stream(src_video)
@@ -838,7 +839,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
             vfilters.append("unsharp=5:5:0.8:5:5:0.4")
 
         job["progress"] = 20
-        job["message"] = "Renderizando video..."
+        job["message"] = "Exportando video..."
 
         # Video filter
         if vfilters:
@@ -903,26 +904,21 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         ]
 
         job["progress"] = 30
-        job["message"] = "Processando com FFmpeg..."
+        job["message"] = "Exportando video..."
 
         logger.info(f"[editor] Export cmd: {' '.join(cmd)}")
 
-        proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
+        try:
+            proc = subprocess.run(cmd, capture_output=True, timeout=_FFMPEG_EXPORT_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            logger.error("[editor] FFmpeg export timeout after %ss", _FFMPEG_EXPORT_TIMEOUT_SECONDS)
+            job["status"] = "failed"
+            job["error"] = "Timeout ao exportar video (demorou demais)"
+            return
 
-        # Wait for completion with progress simulation
-        import time
-        progress = 30
-        while proc.poll() is None:
-            time.sleep(2)
-            progress = min(progress + 5, 90)
-            job["progress"] = progress
-            job["message"] = "Processando com FFmpeg..."
-
-        stdout, stderr = proc.communicate()
+        job["progress"] = 90
         if proc.returncode != 0:
-            logger.error(f"[editor] FFmpeg failed: {stderr.decode()[:500]}")
+            logger.error("[editor] FFmpeg failed: %s", (proc.stderr or b"")[:500])
             job["status"] = "failed"
             job["error"] = "FFmpeg falhou ao processar o video"
             return
@@ -930,7 +926,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
         final_out_file = out_file
         if valid_media_layers:
             job["progress"] = 92
-            job["message"] = "Aplicando camadas de video/imagem/audio..."
+            job["message"] = "Exportando video..."
 
             layered_out_file = os.path.join(out_dir, f"edited_layers_{uuid.uuid4().hex[:8]}.mp4")
             layer_cmd = ["ffmpeg", "-y", "-i", out_file]
@@ -1049,7 +1045,13 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
                 layered_out_file,
             ]
 
-            layer_proc = subprocess.run(layer_cmd, capture_output=True)
+            try:
+                layer_proc = subprocess.run(layer_cmd, capture_output=True, timeout=_FFMPEG_EXPORT_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                logger.error("[editor] Layer FFmpeg timeout after %ss", _FFMPEG_EXPORT_TIMEOUT_SECONDS)
+                job["status"] = "failed"
+                job["error"] = "Timeout ao compor camadas (demorou demais)"
+                return
             if layer_proc.returncode != 0:
                 logger.error("[editor] Layer overlay FFmpeg failed: %s", (layer_proc.stderr or b"")[:600])
                 job["status"] = "failed"
@@ -1059,7 +1061,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
             final_out_file = layered_out_file
 
         job["progress"] = 95
-        job["message"] = "Finalizando..."
+        job["message"] = "Finalizando exportacao..."
 
         # Register as a new render
         from app.database import async_session

@@ -9564,7 +9564,6 @@ async function _editorExport() {
         <div class="editor-export-card">
             <h3>Exportando video</h3>
             <div class="editor-export-progress"><div class="editor-export-progress-fill" id="editor-export-fill"></div></div>
-            <p class="editor-export-status" id="editor-export-status">Enviando edicoes ao servidor...</p>
         </div>
     `;
     document.body.appendChild(overlay);
@@ -9596,17 +9595,22 @@ async function _editorExport() {
 
         // Poll progress
         const fill = document.getElementById("editor-export-fill");
-        const status = document.getElementById("editor-export-status");
         let done = false;
+        const pollStartedAt = Date.now();
+        const maxPollDurationMs = 45 * 60 * 1000;
         while (!done) {
+            if (Date.now() - pollStartedAt > maxPollDurationMs) {
+                done = true;
+                overlay.remove();
+                showToast("Exportacao demorou demais e foi interrompida. Tente novamente.", "error");
+                break;
+            }
             await new Promise(r => setTimeout(r, 2000));
             try {
                 const poll = await api(`/video/editor/export/${jobId}/status`);
                 if (fill) fill.style.width = (poll.progress || 0) + "%";
-                if (status) status.textContent = poll.message || "Processando...";
                 if (poll.status === "completed") {
                     done = true;
-                    if (status) status.textContent = "Video exportado com sucesso!";
                     if (fill) fill.style.width = "100%";
                     await new Promise(r => setTimeout(r, 1500));
                     overlay.remove();
