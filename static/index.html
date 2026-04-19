@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260419-46">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260419-47">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 157;
+        var REQUIRED_VER = 158;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -246,10 +246,6 @@
                                     <button class="editor-tool-btn" data-tool="subtitles" type="button" title="Legendas">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 12h4"/><path d="M13 12h4"/><path d="M7 16h10"/></svg>
                                         <span>Legendas</span>
-                                    </button>
-                                    <button class="editor-tool-btn" data-tool="trim" type="button" title="Cortar">
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
-                                        <span>Cortar</span>
                                     </button>
                                     <button class="editor-tool-btn" data-tool="layers" type="button" title="Camadas">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg>
@@ -2118,7 +2114,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260419-46"></script>
-    <script src="/video/static/pwa.js?v=20260419-46"></script>
+    <script src="/video/static/app.js?v=20260419-47"></script>
+    <script src="/video/static/pwa.js?v=20260419-47"></script>
 </body>
 </html>
