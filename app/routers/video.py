@@ -56,6 +56,7 @@ _REFERENCE_IMAGE_HINT_MARKERS = (
     "imagem de referencia",
     "foto enviada",
 )
+_INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza"}
 
 
 def _ensure_reference_image_instruction(prompt: str) -> str:
@@ -72,6 +73,20 @@ def _ensure_reference_image_instruction(prompt: str) -> str:
         "Keep the same main subject identity, face traits, hair, colors, and overall visual style from that reference image."
     )
     return f"{base_prompt}\n\n{reference_rule}"
+
+
+def _normalize_interaction_persona(value: str) -> str:
+    raw = str(value or "").strip().lower()
+    mapping = {
+        "criança": "crianca",
+        "crianca": "crianca",
+        "família": "familia",
+        "familia": "familia",
+    }
+    normalized = mapping.get(raw, raw)
+    if normalized in _INTERACTION_PERSONAS:
+        return normalized
+    return "natureza"
 
 
 def _cleanup_karaoke_progress_store() -> None:
@@ -1580,6 +1595,7 @@ class GenerateRealisticRequest(BaseModel):
     clip_duration: float = 0  # Duration of the audio clip (0 = full)
     prompt_optimized: bool = False
     realistic_style: str = ""
+    interaction_persona: str = "natureza"
 
 
 @router.post("/generate-realistic")
@@ -1631,6 +1647,7 @@ async def generate_realistic_endpoint(
     # Narration config stored in tags JSON
     narration_text = (req.narration_text or "").strip() if req.add_narration else ""
     narration_voice = req.narration_voice or "onyx"
+    interaction_persona = _normalize_interaction_persona(req.interaction_persona)
     external_audio_url = (req.audio_url or "").strip()
     external_lyrics = (req.lyrics or "").strip()
     tags_data = {
@@ -1642,6 +1659,7 @@ async def generate_realistic_endpoint(
         "narration_voice": narration_voice,
         "prompt_optimized": bool(req.prompt_optimized),
         "realistic_style": (req.realistic_style or "").strip(),
+        "interaction_persona": interaction_persona,
     }
     if external_audio_url:
         tags_data["audio_url"] = external_audio_url

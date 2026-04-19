@@ -1527,6 +1527,15 @@ function initCreateWizard() {
 
     // Wizard option clicks (event delegation)
     document.getElementById("modal-new-project").addEventListener("click", (e) => {
+        const personaTag = e.target.closest("#wizard-realistic-persona-tags .style-tag, #script-realistic-persona-tags .style-tag");
+        if (personaTag) {
+            const group = personaTag.closest(".realistic-inspiration-tags");
+            if (group) {
+                group.querySelectorAll(".style-tag").forEach((t) => t.classList.remove("selected"));
+                personaTag.classList.add("selected");
+            }
+        }
+
         const opt = e.target.closest(".wizard-option");
         if (opt) {
             const grid = opt.closest(".wizard-grid");
@@ -1690,6 +1699,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
     const engine = engineBtn ? engineBtn.dataset.value : "minimax";
     const engineLabel = engine === "minimax" ? "MiniMax Hailuo" : engine === "wan2" ? "Wan 2.2" : engine === "grok" ? "Grok" : "Seedance 2.0";
+    const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
+    const interactionPersona = personaBtn ? (personaBtn.dataset.persona || "") : "natureza";
 
     // Narration fields
     const narrationEl = document.getElementById(`${prefix}-realistic-narration`);
@@ -1740,6 +1751,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 engine: engine,
                 prompt_optimized: scriptData.promptOptimized || false,
                 realistic_style: realisticStyle || "",
+                interaction_persona: interactionPersona,
             }),
         });
 
@@ -1941,6 +1953,10 @@ function resetCreateWizard() {
     });
     // Reset style tags
     document.querySelectorAll(".style-tag.selected").forEach((t) => t.classList.remove("selected"));
+    const defWizardPersona = document.querySelector('#wizard-realistic-persona-tags [data-persona="natureza"]');
+    if (defWizardPersona) defWizardPersona.classList.add("selected");
+    const defScriptPersona = document.querySelector('#script-realistic-persona-tags [data-persona="natureza"]');
+    if (defScriptPersona) defScriptPersona.classList.add("selected");
 
     // Load voice profiles into selectors
     loadVoiceProfiles();
@@ -4574,6 +4590,9 @@ function openNewAutomationModal() {
     document.querySelectorAll("#auto-realistic-style-tags .style-tag").forEach(t => t.classList.remove("selected"));
     const defStyle = document.querySelector('#auto-realistic-style-tags [data-style="cinematic"]');
     if (defStyle) defStyle.classList.add("selected");
+    document.querySelectorAll("#auto-realistic-persona-tags .style-tag").forEach(t => t.classList.remove("selected"));
+    const defPersona = document.querySelector('#auto-realistic-persona-tags [data-persona="natureza"]');
+    if (defPersona) defPersona.classList.add("selected");
 
     // reset engine selection
     _setAutoRealisticEngine("minimax");
@@ -4738,6 +4757,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (tag) {
             document.querySelectorAll("#auto-realistic-style-tags .style-tag").forEach(t => t.classList.remove("selected"));
             tag.classList.add("selected");
+        }
+        const persona = e.target.closest("#auto-realistic-persona-tags .style-tag");
+        if (persona) {
+            document.querySelectorAll("#auto-realistic-persona-tags .style-tag").forEach(t => t.classList.remove("selected"));
+            persona.classList.add("selected");
         }
         // Engine option click
         const eng = e.target.closest("#auto-realistic-engine .engine-option");
@@ -5695,6 +5719,7 @@ async function createAutoSchedule() {
     } else if (videoType === "realista") {
         // Collect realistic settings
         const selectedStyle = document.querySelector("#auto-realistic-style-tags .style-tag.selected");
+        const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
         const selectedEngine = document.querySelector("#auto-realistic-engine .engine-option.selected");
         const selectedDur = document.querySelector("#auto-realistic-duration .duration-option.selected");
         const useTevoxi = document.getElementById("auto-realistic-tevoxi")?.checked || false;
@@ -5703,6 +5728,7 @@ async function createAutoSchedule() {
 
         defaultSettings = {
             realistic_style: selectedStyle ? selectedStyle.dataset.style : "cinematic",
+            interaction_persona: selectedPersona ? selectedPersona.dataset.persona : "natureza",
             engine: useTevoxi ? "grok" : (selectedEngine ? selectedEngine.dataset.value : "minimax"),
             duration: selectedDur ? parseInt(selectedDur.dataset.value) : 7,
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",

@@ -30,6 +30,49 @@ _AUTO_DEFAULTS = {
     "pause_level": "normal",
 }
 
+_INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza"}
+
+
+def _normalize_interaction_persona(value: str) -> str:
+    raw = str(value or "").strip().lower()
+    mapping = {
+        "criança": "crianca",
+        "crianca": "crianca",
+        "família": "familia",
+        "familia": "familia",
+    }
+    normalized = mapping.get(raw, raw)
+    if normalized in _INTERACTION_PERSONAS:
+        return normalized
+    return "natureza"
+
+
+def _build_interaction_persona_instruction(interaction_persona: str) -> str:
+    persona = _normalize_interaction_persona(interaction_persona)
+    if persona == "homem":
+        return (
+            "Inclua um homem em cena interagindo com o ambiente e com a emocao do trecho "
+            "(por exemplo, orando, cantando, caminhando ou contemplando), sem perder o sentido da letra."
+        )
+    if persona == "mulher":
+        return (
+            "Inclua uma mulher em cena interagindo com o ambiente e com a emocao do trecho "
+            "(por exemplo, orando, cantando, caminhando ou contemplando), sem perder o sentido da letra."
+        )
+    if persona == "crianca":
+        return (
+            "Inclua uma crianca em cena interagindo com o ambiente e com a emocao do trecho, "
+            "com linguagem visual sensivel e respeitosa."
+        )
+    if persona == "familia":
+        return (
+            "Inclua uma familia (duas ou mais pessoas) interagindo de forma natural com o ambiente e com a emocao do trecho."
+        )
+    return (
+        "Priorize natureza viva e inclua obrigatoriamente pelo menos um elemento visual de conexao "
+        "(animal, flor, ave, borboleta ou outro ser vivo natural) em destaque e coerente com o trecho."
+    )
+
 
 def _strip_lyrics_from_description(text: str) -> str:
     """Remove lyrics-like blocks from publish descriptions and keep it concise."""
@@ -448,6 +491,7 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     duration = int(cfg.get("duration", 7))
     aspect_ratio = cfg.get("aspect_ratio", "9:16")
     realistic_style = cfg.get("realistic_style", "cinematic")
+    interaction_persona = _normalize_interaction_persona(cfg.get("interaction_persona", "natureza"))
     add_music = cfg.get("add_music", False)
     use_tevoxi = cfg.get("use_tevoxi", False)
     enable_subtitles = cfg.get("enable_subtitles", False)
@@ -465,7 +509,10 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
         await deduct_credits(db, user_id, credits_needed)
 
     # Build tags for the project
-    tags = {"realistic_style": realistic_style}
+    tags = {
+        "realistic_style": realistic_style,
+        "interaction_persona": interaction_persona,
+    }
     if enable_subtitles and subtitle_settings:
         tags["subtitle_settings"] = subtitle_settings
     if use_tevoxi:
@@ -484,6 +531,7 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
             tags["clip_duration"] = clip_dur
 
     prompt_seed = (theme_text or "").strip()
+    persona_instruction = _build_interaction_persona_instruction(interaction_persona)
     if use_tevoxi:
         if tevoxi_lyrics:
             lyrics_slice = " ".join(tevoxi_lyrics.split())[:420]
@@ -503,6 +551,9 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
                 "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
                 "quando isso nao estiver claramente no trecho cantado."
             )
+
+    if persona_instruction:
+        prompt_seed = f"{prompt_seed} {persona_instruction}"
 
     # Create project
     async with async_session() as db:
@@ -631,6 +682,9 @@ async def _create_musical_short(
     clip_start = float(custom_settings.get("clip_start", 0))
     clip_duration = float(custom_settings.get("clip_duration", 10))
     segment_index = int(custom_settings.get("segment_index", 0))
+    interaction_persona = _normalize_interaction_persona(
+        custom_settings.get("interaction_persona") or cfg.get("interaction_persona", "natureza")
+    )
     engine = "grok"  # musical shorts are Grok-only
 
     if not tevoxi_audio_url:
@@ -698,6 +752,9 @@ async def _create_musical_short(
         "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
         "quando isso nao estiver claramente no trecho cantado."
     )
+    persona_instruction = _build_interaction_persona_instruction(interaction_persona)
+    if persona_instruction:
+        visual_prompt = f"{visual_prompt} {persona_instruction}"
     segment_transcription = ""
     try:
         from app.services.transcriber import transcribe_audio
@@ -717,6 +774,8 @@ async def _create_musical_short(
                 "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
                 "quando isso nao estiver claramente no trecho cantado."
             )
+            if persona_instruction:
+                visual_prompt = f"{visual_prompt} {persona_instruction}"
             logger.info("Short %d transcribed: %s", segment_index, transcribed[:200])
         elif lyrics_hint:
             hint_slice = " ".join(str(lyrics_hint).split())[:420]
@@ -728,6 +787,8 @@ async def _create_musical_short(
                 "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
                 "quando isso nao estiver claramente no trecho cantado."
             )
+            if persona_instruction:
+                visual_prompt = f"{visual_prompt} {persona_instruction}"
     except Exception as e:
         logger.warning("Transcription failed for short %d: %s", segment_index, e)
         if cfg.get("tevoxi_lyrics"):
@@ -740,6 +801,8 @@ async def _create_musical_short(
                 "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
                 "quando isso nao estiver claramente no trecho cantado."
             )
+            if persona_instruction:
+                visual_prompt = f"{visual_prompt} {persona_instruction}"
 
     # 4. Create VideoProject for realistic pipeline
     async with async_session() as db:
@@ -755,6 +818,7 @@ async def _create_musical_short(
                 "clip_duration": clip_duration,
                 "segment_audio_path": segment_audio_path,
                 "segment_transcription": segment_transcription,
+                "interaction_persona": interaction_persona,
             },
             style_prompt="",
             aspect_ratio="9:16",

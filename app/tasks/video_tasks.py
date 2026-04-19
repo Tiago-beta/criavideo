@@ -108,6 +108,7 @@ _REFERENCE_IMAGE_HINT_MARKERS = (
     "imagem de referencia",
     "foto enviada",
 )
+_INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza"}
 
 
 def _ensure_reference_image_instruction(prompt: str) -> str:
@@ -127,7 +128,62 @@ def _ensure_reference_image_instruction(prompt: str) -> str:
     return f"{base_prompt}\n\n{reference_rule}"
 
 
-def _build_transcribed_realistic_prompt(transcribed_text: str) -> str:
+def _normalize_interaction_persona(value: str) -> str:
+    raw = str(value or "").strip().lower()
+    mapping = {
+        "criança": "crianca",
+        "crianca": "crianca",
+        "família": "familia",
+        "familia": "familia",
+    }
+    normalized = mapping.get(raw, raw)
+    return normalized if normalized in _INTERACTION_PERSONAS else ""
+
+
+def _build_interaction_persona_instruction(interaction_persona: str) -> str:
+    persona = _normalize_interaction_persona(interaction_persona)
+    if persona == "homem":
+        return (
+            "PERSONA DE INTERACAO: inclua um homem em cena interagindo com o ambiente e a emocao do trecho "
+            "(por exemplo, orando, cantando, caminhando, contemplando), sem perder o sentido da letra."
+        )
+    if persona == "mulher":
+        return (
+            "PERSONA DE INTERACAO: inclua uma mulher em cena interagindo com o ambiente e a emocao do trecho "
+            "(por exemplo, orando, cantando, caminhando, contemplando), sem perder o sentido da letra."
+        )
+    if persona == "crianca":
+        return (
+            "PERSONA DE INTERACAO: inclua uma crianca em cena interagindo com o ambiente e a emocao do trecho, "
+            "com linguagem visual sensivel e respeitosa."
+        )
+    if persona == "familia":
+        return (
+            "PERSONA DE INTERACAO: inclua uma familia (duas ou mais pessoas) interagindo de forma natural com a cena "
+            "e com a emocao do trecho."
+        )
+    if persona == "natureza":
+        return (
+            "PERSONA DE INTERACAO: priorize natureza viva e inclua obrigatoriamente pelo menos um elemento visual "
+            "de conexao (animal, flor, ave, borboleta ou outro ser vivo natural) em destaque, coerente com o trecho."
+        )
+    return ""
+
+
+def _inject_interaction_persona_instruction(prompt: str, interaction_persona: str) -> str:
+    base_prompt = (prompt or "").strip()
+    if not base_prompt:
+        return base_prompt
+    if "PERSONA DE INTERACAO:" in base_prompt:
+        return base_prompt
+
+    persona_instruction = _build_interaction_persona_instruction(interaction_persona)
+    if not persona_instruction:
+        return base_prompt
+    return f"{base_prompt} {persona_instruction}"
+
+
+def _build_transcribed_realistic_prompt(transcribed_text: str, interaction_persona: str = "") -> str:
     """Build a visual prompt grounded on the exact transcribed segment."""
     excerpt = " ".join((transcribed_text or "").split())[:420]
     excerpt_lower = excerpt.lower()
@@ -141,6 +197,8 @@ def _build_transcribed_realistic_prompt(transcribed_text: str) -> str:
         if not has_field_imagery
         else ""
     )
+    persona_instruction = _build_interaction_persona_instruction(interaction_persona)
+    persona_suffix = f" {persona_instruction}" if persona_instruction else ""
 
     if not excerpt:
         return (
@@ -148,6 +206,7 @@ def _build_transcribed_realistic_prompt(transcribed_text: str) -> str:
             "Baseie a composicao apenas no trecho atual, sem reaproveitar elementos de outros versos."
             " Evite cliches repetidos como campo de trigo e roupas totalmente brancas "
             "quando isso nao estiver no trecho cantado."
+            f"{persona_suffix}"
         )
 
     return (
@@ -157,6 +216,7 @@ def _build_transcribed_realistic_prompt(transcribed_text: str) -> str:
         "Nao force personagem humano quando o trecho nao pedir isso; priorize os simbolos e a acao citados no trecho. "
         "sem texto na tela e sem sobreposicoes de legenda no proprio frame."
         f"{anti_repeat}"
+        f"{persona_suffix}"
     )
 
 
@@ -1039,6 +1099,7 @@ async def run_realistic_video_pipeline(project_id: int):
             tags_data_early = project.tags if isinstance(project.tags, dict) else {}
             external_audio_url_early = (tags_data_early.get("audio_url") or "").strip()
             segment_transcription_hint = str(tags_data_early.get("segment_transcription", "") or "").strip()
+            interaction_persona = _normalize_interaction_persona(tags_data_early.get("interaction_persona", ""))
             clip_start_early = float(tags_data_early.get("clip_start", 0))
             clip_dur_early = float(tags_data_early.get("clip_duration", 0))
             if external_audio_url_early:
@@ -1080,36 +1141,38 @@ async def run_realistic_video_pipeline(project_id: int):
                                     await db.commit()
 
                             if transcribed_text:
-                                user_prompt = _build_transcribed_realistic_prompt(transcribed_text)
+                                user_prompt = _build_transcribed_realistic_prompt(transcribed_text, interaction_persona)
                                 logger.info(f"Realistic video: transcribed clip text ({len(transcribed_text)} chars): {transcribed_text[:200]}")
                             elif segment_transcription_hint:
-                                user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint)
+                                user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint, interaction_persona)
                                 logger.info("Realistic video: using stored segment transcription fallback")
                             elif lyrics_hint:
-                                user_prompt = _build_transcribed_realistic_prompt(lyrics_hint)
+                                user_prompt = _build_transcribed_realistic_prompt(lyrics_hint, interaction_persona)
                                 logger.info("Realistic video: transcription empty, using lyrics hint for prompt")
                             else:
-                                user_prompt = _build_transcribed_realistic_prompt("")
+                                user_prompt = _build_transcribed_realistic_prompt("", interaction_persona)
                                 logger.info("Realistic video: no transcription available, using generic clip prompt")
                         else:
                             if segment_transcription_hint:
-                                user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint)
+                                user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint, interaction_persona)
                             elif tags_data_early.get("lyrics"):
-                                user_prompt = _build_transcribed_realistic_prompt(str(tags_data_early.get("lyrics", "")))
+                                user_prompt = _build_transcribed_realistic_prompt(str(tags_data_early.get("lyrics", "")), interaction_persona)
                             else:
-                                user_prompt = _build_transcribed_realistic_prompt("")
+                                user_prompt = _build_transcribed_realistic_prompt("", interaction_persona)
                             logger.warning("Realistic video: clip extraction failed, using lyric-based fallback prompt")
                 except Exception as e:
                     if segment_transcription_hint:
-                        user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint)
+                        user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint, interaction_persona)
                     elif tags_data_early.get("lyrics"):
-                        user_prompt = _build_transcribed_realistic_prompt(str(tags_data_early.get("lyrics", "")))
+                        user_prompt = _build_transcribed_realistic_prompt(str(tags_data_early.get("lyrics", "")), interaction_persona)
                     else:
-                        user_prompt = _build_transcribed_realistic_prompt("")
+                        user_prompt = _build_transcribed_realistic_prompt("", interaction_persona)
                     logger.warning(f"Realistic video: clip transcription failed: {e}, using lyric-based fallback prompt")
             elif segment_transcription_hint:
-                user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint)
+                user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint, interaction_persona)
                 logger.info("Realistic video: no external audio URL, using stored segment transcription")
+
+            user_prompt = _inject_interaction_persona_instruction(user_prompt, interaction_persona)
 
             # Check for reference image (stored in style_prompt as file path)
             image_path = None
