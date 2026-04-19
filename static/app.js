@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v144 loaded");
+console.log("[CriaVideo] app.js v145 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -8387,20 +8387,24 @@ function _editorRenderTimeline() {
         });
     });
 
-    _editor.subtitles.forEach((item, idx) => {
-        const start = Math.max(0, Math.min(Number(item.startTime || 0), dur));
-        const end = Math.max(start + 0.05, Math.min(Number(item.endTime || 0), dur));
-        const left = (start / dur) * 100;
-        const width = Math.max(0.5, ((end - start) / dur) * 100);
-        const selectedClass = selectedKind === "subtitle" && selectedId === String(item.id) ? " selected" : "";
-        const clipLabel = esc(String(item.text || "Legenda").trim().substring(0, 20));
+    if (_editor.subtitles.length) {
+        const subtitleClips = _editor.subtitles.map((item) => {
+            const start = Math.max(0, Math.min(Number(item.startTime || 0), dur));
+            const end = Math.max(start + 0.05, Math.min(Number(item.endTime || 0), dur));
+            const left = (start / dur) * 100;
+            const width = Math.max(0.5, ((end - start) / dur) * 100);
+            const selectedClass = selectedKind === "subtitle" && selectedId === String(item.id) ? " selected" : "";
+            const clipLabel = esc(String(item.text || "Legenda").trim().substring(0, 20));
+            return `<div class="editor-track-clip clip-text${selectedClass}" data-kind="subtitle" data-track="subtitle" data-id="${item.id}" style="left:${left}%;width:${width}%">${clipLabel}</div>`;
+        }).join("");
+
         rows.push({
-            track: `subtitle-${item.id}`,
+            track: "subtitle",
             kind: "subtitle",
-            label: `Legenda ${idx + 1}`,
-            clipsHtml: `<div class="editor-track-clip clip-text${selectedClass}" data-kind="subtitle" data-track="subtitle-${item.id}" data-id="${item.id}" style="left:${left}%;width:${width}%">${clipLabel}</div>`,
+            label: "Legendas",
+            clipsHtml: subtitleClips,
         });
-    });
+    }
 
     _editor.stickers.forEach((item, idx) => {
         const start = Math.max(0, Math.min(Number(item.startTime || 0), dur));
