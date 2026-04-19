@@ -4237,19 +4237,29 @@ function _renderAutoSubtitlePreview() {
     if (!caption) return;
 
     const cfg = _autoSubtitleCfg;
+    const fs = Math.max(8, Math.round(cfg.font_size || 28));
     caption.style.left = `${cfg.x || 50}%`;
     caption.style.top = `${cfg.y || 82}%`;
     caption.style.fontFamily = cfg.font_family || "Arial, sans-serif";
-    caption.style.fontSize = `${Math.round(cfg.font_size || 28)}px`;
+    caption.style.fontSize = `${fs}px`;
     caption.style.fontWeight = cfg.bold ? "700" : "400";
     caption.style.fontStyle = cfg.italic ? "italic" : "normal";
     caption.style.color = cfg.font_color || "#ffffff";
     caption.style.background = cfg.bg_color || "transparent";
 
+    const hasBg = !!String(cfg.bg_color || "").trim();
+    const padY = Math.max(2, Math.round(fs * 0.15));
+    const padX = Math.max(4, Math.round(fs * 0.28));
+    caption.style.padding = hasBg ? `${padY}px ${padX}px` : "0";
+    caption.style.borderRadius = `${Math.max(4, Math.round(fs * 0.22))}px`;
+    caption.style.letterSpacing = `${Math.max(0, Math.round(fs * 0.01 * 10) / 10)}px`;
+
     if (cfg.outline_color) {
-        caption.style.textShadow = `-1px -1px 0 ${cfg.outline_color}, 1px -1px 0 ${cfg.outline_color}, -1px 1px 0 ${cfg.outline_color}, 1px 1px 0 ${cfg.outline_color}`;
+        const o = Math.max(1, Math.round(fs * 0.06));
+        caption.style.textShadow = `-${o}px -${o}px 0 ${cfg.outline_color}, ${o}px -${o}px 0 ${cfg.outline_color}, -${o}px ${o}px 0 ${cfg.outline_color}, ${o}px ${o}px 0 ${cfg.outline_color}`;
     } else {
-        caption.style.textShadow = "0 2px 6px rgba(0,0,0,0.75)";
+        const blur = Math.max(3, Math.round(fs * 0.25));
+        caption.style.textShadow = `0 ${Math.max(1, Math.round(fs * 0.08))}px ${blur}px rgba(0,0,0,0.75)`;
     }
 }
 
@@ -4306,7 +4316,7 @@ function _autoSubtitleNudgeY(delta) {
 
 function _autoSetSubtitleFontSize(value, skipRender = false) {
     if (!_autoSubtitleCfg) _resetAutoSubtitleCfg();
-    const fs = Math.max(14, Math.min(72, parseInt(value, 10) || 28));
+    const fs = Math.max(8, Math.min(72, parseInt(value, 10) || 28));
     _autoSubtitleCfg.font_size = fs;
     const sizeValue = document.getElementById("auto-subtitle-size-value");
     if (sizeValue) sizeValue.textContent = `${fs}px`;

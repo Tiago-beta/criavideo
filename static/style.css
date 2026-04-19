@@ -1048,13 +1048,14 @@ a {
     font-weight: 700;
     text-align: center;
     text-transform: uppercase;
-    line-height: 1.15;
+    line-height: 1.12;
     letter-spacing: 0.3px;
     text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
-    max-width: 92%;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: inline-block;
+    max-width: 88%;
+    white-space: normal;
+    word-break: break-word;
+    overflow: visible;
 }
 
 .auto-subtitle-style-title {
