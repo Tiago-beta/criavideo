@@ -5400,30 +5400,29 @@ th,
     gap: 6px;
 }
 
-.editor-track-props-volume-btn {
+.editor-track-props-volume-item {
     width: 100%;
     border: 1px solid rgba(0, 212, 255, 0.28);
     background: rgba(0, 212, 255, 0.1);
     border-radius: 8px;
     color: #dff5ff;
+    padding: 8px;
+    display: grid;
+    gap: 6px;
+}
+
+.editor-track-props-volume-head {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
-    padding: 8px;
-    cursor: pointer;
-    text-align: left;
-    transition: background 0.2s ease, border-color 0.2s ease;
 }
 
-.editor-track-props-volume-btn:hover {
-    border-color: rgba(0, 212, 255, 0.55);
-    background: rgba(0, 212, 255, 0.18);
-}
-
-.editor-track-props-volume-btn.muted {
-    border-color: rgba(239, 68, 68, 0.42);
-    background: rgba(239, 68, 68, 0.12);
-    color: #ffdede;
+.editor-track-props-volume-name-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
 }
 
 .editor-track-props-volume-icon {
@@ -5447,10 +5446,16 @@ th,
     font-weight: 600;
 }
 
+.editor-track-props-volume-slider {
+    width: 100%;
+    min-width: 0;
+    accent-color: var(--accent);
+}
+
 .editor-track-props-volume-value {
-    margin-left: auto;
     font-size: 11px;
     color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
 }
 
 .editor-track.track-targeted .editor-track-label {

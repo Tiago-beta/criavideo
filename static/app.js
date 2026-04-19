@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v149 loaded");
+console.log("[CriaVideo] app.js v150 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -7689,13 +7689,25 @@ function _editorRenderProps() {
                 ? Math.max(0, Math.min(100, Number(_editor.originalVolume || 0)))
                 : Math.max(0, Math.min(100, Number(_editor.musicVolume || 0)));
             const trackLabel = isVideo ? "Video original" : "Audio externo";
-            const mutedClass = volumePct <= 0 ? " muted" : "";
             return `
-                <button class="editor-track-props-volume-btn${mutedClass}" type="button" onclick="_editorToggleTrackVolume('${track}')">
-                    <span class="editor-track-props-volume-icon">${_editorTimelineVolumeIcon(track)}</span>
-                    <span class="editor-track-props-volume-name">${trackLabel}</span>
-                    <span class="editor-track-props-volume-value">${volumePct}%</span>
-                </button>
+                <div class="editor-track-props-volume-item">
+                    <div class="editor-track-props-volume-head">
+                        <span class="editor-track-props-volume-name-wrap">
+                            <span class="editor-track-props-volume-icon">${_editorTimelineVolumeIcon(track)}</span>
+                            <span class="editor-track-props-volume-name">${trackLabel}</span>
+                        </span>
+                        <span class="editor-track-props-volume-value" id="editor-track-vol-label-${track}">${volumePct}%</span>
+                    </div>
+                    <input
+                        id="editor-track-vol-input-${track}"
+                        class="editor-track-props-volume-slider"
+                        type="range"
+                        min="0"
+                        max="100"
+                        value="${volumePct}"
+                        oninput="_editorSetTrackVolumeFromTrim('${track}', this.value)"
+                    >
+                </div>
             `;
         }).join("");
         container.innerHTML = `
@@ -8309,20 +8321,37 @@ function _editorRemoveMusic() {
 window._editorRemoveMusic = _editorRemoveMusic;
 
 function _editorSetMusicVolume(val) {
-    _editor.musicVolume = parseInt(val);
+    const next = Math.max(0, Math.min(100, parseInt(val, 10) || 0));
+    _editor.musicVolume = next;
     const label = document.getElementById("editor-music-vol-label");
     if (label) label.textContent = _editor.musicVolume + "%";
+    const trimLabel = document.getElementById("editor-track-vol-label-audio");
+    if (trimLabel) trimLabel.textContent = _editor.musicVolume + "%";
 }
 window._editorSetMusicVolume = _editorSetMusicVolume;
 
 function _editorSetOriginalVolume(val) {
-    _editor.originalVolume = parseInt(val);
+    const next = Math.max(0, Math.min(100, parseInt(val, 10) || 0));
+    _editor.originalVolume = next;
     const video = document.getElementById("editor-video");
     if (video) video.volume = _editor.originalVolume / 100;
     const label = document.getElementById("editor-orig-vol-label");
     if (label) label.textContent = _editor.originalVolume + "%";
+    const trimLabel = document.getElementById("editor-track-vol-label-video");
+    if (trimLabel) trimLabel.textContent = _editor.originalVolume + "%";
 }
 window._editorSetOriginalVolume = _editorSetOriginalVolume;
+
+function _editorSetTrackVolumeFromTrim(track, val) {
+    if (track === "video") {
+        _editorSetOriginalVolume(val);
+        return;
+    }
+    if (track === "audio") {
+        _editorSetMusicVolume(val);
+    }
+}
+window._editorSetTrackVolumeFromTrim = _editorSetTrackVolumeFromTrim;
 
 // ---------- Filter ----------
 function _editorSetFilter(name) {
@@ -8397,39 +8426,6 @@ function _editorTimelineVolumeIcon(track) {
     }
     return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>';
 }
-
-function _editorToggleTrackVolume(track) {
-    if (track !== "video" && track !== "audio") return;
-    if (track === "audio" && !_editorShouldShowAudioTrack()) return;
-
-    _editorSaveState();
-
-    if (track === "video") {
-        const current = Math.max(0, Math.min(100, Number(_editor.originalVolume || 0)));
-        if (current > 0) {
-            _editor._lastOriginalVolume = current;
-            _editor.originalVolume = 0;
-        } else {
-            _editor.originalVolume = Math.max(10, Math.min(100, Number(_editor._lastOriginalVolume || 100)));
-        }
-        const video = document.getElementById("editor-video");
-        if (video) video.volume = _editor.originalVolume / 100;
-    } else {
-        const current = Math.max(0, Math.min(100, Number(_editor.musicVolume || 0)));
-        if (current > 0) {
-            _editor._lastMusicVolume = current;
-            _editor.musicVolume = 0;
-        } else {
-            _editor.musicVolume = Math.max(10, Math.min(100, Number(_editor._lastMusicVolume || 80)));
-        }
-    }
-
-    if (_editor.activeTool === "music" || _editor.activeTool === "trim") {
-        _editorRenderProps();
-    }
-    _editorRenderTimeline();
-}
-window._editorToggleTrackVolume = _editorToggleTrackVolume;
 
 function _editorRenderTimeline() {
     const dur = Math.max(_editor.duration || 0, 0.1);
@@ -8663,9 +8659,7 @@ function _editorDeleteSelectedClip() {
         _editor._musicFile = null;
         _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     } else if (selKind === "audio") {
-        _editor.originalVolume = 0;
-        const label = document.getElementById("editor-orig-vol-label");
-        if (label) label.textContent = "0%";
+        _editorSetOriginalVolume(0);
         showToast("Audio original silenciado.", "success");
     }
 
