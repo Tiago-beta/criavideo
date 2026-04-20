@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260420-01">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260420-02">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 160;
+        var REQUIRED_VER = 161;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -308,8 +308,7 @@
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                                 </button>
                                 <div class="editor-aspect-selector">
-                                    <label for="editor-aspect-select">Proporcao</label>
-                                    <select id="editor-aspect-select">
+                                    <select id="editor-aspect-select" aria-label="Proporcao do video">
                                         <option value="source">Original</option>
                                         <option value="9:16">9:16</option>
                                         <option value="16:9">16:9</option>
@@ -2112,7 +2111,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260420-01"></script>
-    <script src="/video/static/pwa.js?v=20260420-01"></script>
+    <script src="/video/static/app.js?v=20260420-02"></script>
+    <script src="/video/static/pwa.js?v=20260420-02"></script>
 </body>
 </html>
