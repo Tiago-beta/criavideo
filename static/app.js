@@ -7353,8 +7353,14 @@ function _editorSetMediaLayerVolume(id, val) {
     const layer = _editorGetMediaLayerById(id);
     if (!layer || layer.kind !== "video") return;
     layer.volume = Math.max(0, Math.min(200, Number(val || layer.volume || 100)));
-    _editorRenderMediaLayers();
-    _editorRenderProps();
+
+    const label = document.getElementById("editor-layer-vol-label");
+    if (label && _editor.selectedClip.kind === "media-layer" && String(_editor.selectedClip.id) === String(id)) {
+        label.textContent = `${Math.round(layer.volume)}%`;
+    }
+
+    const video = document.getElementById("editor-video");
+    _editorSyncMediaLayersWithTime(Number(video?.currentTime || 0));
 }
 window._editorSetMediaLayerVolume = _editorSetMediaLayerVolume;
 
@@ -8265,7 +8271,6 @@ function _editorRenderProps() {
             </div>
         `;
     } else if (tool === "layers") {
-        const duration = Math.max(_editor.duration || 0.1, 0.1);
         const selectedLayer = _editor.selectedClip.kind === "media-layer"
             ? _editorGetMediaLayerById(_editor.selectedClip.id)
             : null;
@@ -8298,28 +8303,13 @@ function _editorRenderProps() {
             ${selectedLayer ? `
                 <div class="editor-props-title" style="margin-top:12px">Editar camada</div>
                 <div class="editor-props-group">
-                    <label>Tamanho (${Math.round(selectedLayer.width || 100)}%)</label>
-                    <input type="range" min="8" max="100" value="${Math.round(selectedLayer.width || 100)}" oninput="_editorSetMediaLayerSize('${selectedLayer.id}', this.value)">
-
-                    <label>Posicao X (${Math.round(selectedLayer.x || 0)}%)</label>
-                    <input type="range" min="0" max="100" value="${Math.round(selectedLayer.x || 0)}" oninput="_editorSetMediaLayerX('${selectedLayer.id}', this.value)">
-
-                    <label>Posicao Y (${Math.round(selectedLayer.y || 0)}%)</label>
-                    <input type="range" min="0" max="100" value="${Math.round(selectedLayer.y || 0)}" oninput="_editorSetMediaLayerY('${selectedLayer.id}', this.value)">
-
-                    <label>Inicio (${_fmtTime(selectedLayer.startTime || 0)})</label>
-                    <input type="range" min="0" max="${duration}" step="0.1" value="${Math.max(0, Math.min(duration, Number(selectedLayer.startTime || 0)))}" oninput="_editorSetMediaLayerStart('${selectedLayer.id}', this.value)">
-
-                    <label>Fim (${_fmtTime(selectedLayer.endTime || duration)})</label>
-                    <input type="range" min="0.1" max="${duration}" step="0.1" value="${Math.max(0.1, Math.min(duration, Number(selectedLayer.endTime || duration)))}" oninput="_editorSetMediaLayerEnd('${selectedLayer.id}', this.value)">
-
                     ${selectedLayer.kind === 'video' ? `
-                        <label>Volume (${Math.round(selectedLayer.volume ?? 100)}%)</label>
+                        <label>Volume (<span id="editor-layer-vol-label">${Math.round(selectedLayer.volume ?? 100)}%</span>)</label>
                         <input type="range" min="0" max="200" value="${Math.round(selectedLayer.volume ?? 100)}" oninput="_editorSetMediaLayerVolume('${selectedLayer.id}', this.value)">
                         <button class="editor-add-btn" type="button" style="margin-top:8px" onclick="_editorToggleMediaLayerAudioOnly('${selectedLayer.id}')">
                             ${selectedLayer.audioOnly ? 'Mostrar video + audio' : 'Usar somente audio da camada'}
                         </button>
-                    ` : ''}
+                    ` : '<p style="font-size:11px;color:var(--text-muted)">Camada de imagem nao possui ajuste de volume.</p>'}
 
                     <button class="editor-add-btn" type="button" style="margin-top:10px;border-color:rgba(239,68,68,.35);color:#ef4444" onclick="_editorDeleteMediaLayer('${selectedLayer.id}')">
                         Remover camada
