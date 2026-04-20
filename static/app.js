@@ -9684,6 +9684,17 @@ async function _editorExport() {
                     await new Promise(r => setTimeout(r, 1500));
                     overlay.remove();
                     showToast("Video editado exportado com sucesso!", "success");
+
+                    if (poll.output_url) {
+                        const link = document.createElement("a");
+                        link.href = poll.output_url;
+                        link.download = "video-editado.mp4";
+                        link.style.display = "none";
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    }
+
                     closeEditor();
                     loadEditorVideosList();
                 } else if (poll.status === "failed") {

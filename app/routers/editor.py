@@ -1115,6 +1115,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         job["progress"] = 100
         job["status"] = "completed"
         job["message"] = "Exportacao concluida!"
+        job["output_url"] = _to_media_url(final_out_file)
         logger.info(f"[editor] Export completed: {final_out_file}")
 
     except Exception as e:
