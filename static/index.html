@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260420-05">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260420-06">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 164;
+        var REQUIRED_VER = 165;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -199,6 +199,8 @@
                                 </div>
                             </div>
                             <input id="editor-video-upload-input" type="file" accept="video/*" hidden onchange="_editorUploadVideo(this)">
+                            <input id="editor-layer-video-upload-input" type="file" accept="video/*" hidden onchange="_editorUploadLayerVideo(this)">
+                            <input id="editor-layer-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="_editorUploadLayerImage(this)">
                             <input id="editor-project-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadProjectImages(this)">
                             <p class="section-subtitle">Selecione um video finalizado para editar.</p>
                             <div id="editor-videos-list" class="cards-grid">
@@ -2111,7 +2113,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260420-05"></script>
-    <script src="/video/static/pwa.js?v=20260420-05"></script>
+    <script src="/video/static/app.js?v=20260420-06"></script>
+    <script src="/video/static/pwa.js?v=20260420-06"></script>
 </body>
 </html>

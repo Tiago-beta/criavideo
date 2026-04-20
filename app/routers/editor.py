@@ -7,7 +7,6 @@ import logging
 import os
 import shutil
 import subprocess
-import asyncio
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -29,7 +28,6 @@ settings = get_settings()
 
 # In-memory export jobs
 _export_jobs: dict[str, dict] = {}
-_FFMPEG_EXPORT_TIMEOUT_SECONDS = 45 * 60
 
 
 def _resolve_render_video_path(render: VideoRender) -> str | None:
@@ -304,6 +302,7 @@ class StickerEntry(BaseModel):
 
 class MediaLayerEntry(BaseModel):
     kind: str = "image"  # image | video
+    media_type: Optional[str] = None
     path: str
     x: float = 0
     y: float = 0
@@ -312,6 +311,7 @@ class MediaLayerEntry(BaseModel):
     audio_only: bool = False
     start_time: float = 0
     end_time: float = 0
+    duration: float = 0
 
 
 class TrimSegment(BaseModel):
@@ -611,9 +611,8 @@ async def start_export(
         "output_url": None,
     }
 
-    main_loop = asyncio.get_running_loop()
     background_tasks.add_task(
-        _run_export, job_id, project, render, req, user["id"], main_loop
+        _run_export, job_id, project, render, req, user["id"]
     )
     return {"job_id": job_id}
 
@@ -628,11 +627,11 @@ async def export_status(job_id: str, user=Depends(get_current_user)):
 
 
 # ── Background export function ─────────────────────────
-def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, main_loop: asyncio.AbstractEventLoop):
+def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
     try:
         job = _export_jobs[job_id]
         job["progress"] = 5
-        job["message"] = "Preparando exportacao..."
+        job["message"] = "Preparando arquivos..."
 
         # Resolve source video path
         src_video = _resolve_render_video_path(render)
@@ -650,7 +649,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         out_file = os.path.join(out_dir, f"edited_{uuid.uuid4().hex[:8]}.mp4")
 
         job["progress"] = 10
-        job["message"] = "Preparando exportacao..."
+        job["message"] = "Construindo filtros FFmpeg..."
 
         src_duration, _ = _probe_video_metadata(src_video)
         source_has_audio = _probe_has_audio_stream(src_video)
@@ -687,7 +686,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             str(Path(settings.media_dir) / "editor_uploads" / str(user_id) / "layers")
         )
         for layer in req.media_layers or []:
-            kind = str(getattr(layer, "kind", "") or "").strip().lower()
+            kind = str(getattr(layer, "kind", "") or getattr(layer, "media_type", "") or "").strip().lower()
             if kind not in {"image", "video"}:
                 continue
 
@@ -697,6 +696,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
             resolved_path = raw_path
             if raw_path.startswith("/video/media/"):
+                resolved_path = os.path.join(settings.media_dir, raw_path.split("/video/media/")[-1].lstrip("/"))
+            elif "/video/media/" in raw_path:
                 resolved_path = os.path.join(settings.media_dir, raw_path.split("/video/media/")[-1].lstrip("/"))
             elif not os.path.isabs(raw_path):
                 resolved_path = os.path.join(settings.media_dir, raw_path.lstrip("/"))
@@ -714,10 +715,31 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             volume_pct = max(0.0, min(200.0, float(getattr(layer, "volume", 100) or 100)))
             audio_only = bool(getattr(layer, "audio_only", False))
             start_time = max(0.0, float(getattr(layer, "start_time", 0) or 0))
-            end_time = max(0.0, float(getattr(layer, "end_time", 0) or 0))
+            end_time = max(start_time, float(getattr(layer, "end_time", 0) or 0))
+
             layer_duration = 0.0
             if kind == "video":
                 layer_duration, _ = _probe_video_metadata(resolved_path)
+
+            if output_video_duration > 0:
+                start_time = min(start_time, max(0.0, output_video_duration - 0.02))
+                end_cap = output_video_duration
+            else:
+                end_cap = max(end_time, start_time + 0.1)
+
+            if end_time <= start_time + 0.02:
+                if kind == "video" and layer_duration > 0:
+                    end_time = start_time + layer_duration
+                else:
+                    fallback = max(0.1, end_cap - start_time)
+                    end_time = start_time + fallback
+
+            if kind == "video" and layer_duration > 0:
+                end_time = min(end_time, start_time + layer_duration)
+            if output_video_duration > 0:
+                end_time = min(end_time, output_video_duration)
+            if end_time <= start_time + 0.02:
+                continue
 
             valid_media_layers.append(
                 {
@@ -841,7 +863,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             vfilters.append("unsharp=5:5:0.8:5:5:0.4")
 
         job["progress"] = 20
-        job["message"] = "Exportando video..."
+        job["message"] = "Renderizando video..."
 
         # Video filter
         if vfilters:
@@ -906,21 +928,26 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         ]
 
         job["progress"] = 30
-        job["message"] = "Exportando video..."
+        job["message"] = "Processando com FFmpeg..."
 
         logger.info(f"[editor] Export cmd: {' '.join(cmd)}")
 
-        try:
-            proc = subprocess.run(cmd, capture_output=True, timeout=_FFMPEG_EXPORT_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
-            logger.error("[editor] FFmpeg export timeout after %ss", _FFMPEG_EXPORT_TIMEOUT_SECONDS)
-            job["status"] = "failed"
-            job["error"] = "Timeout ao exportar video (demorou demais)"
-            return
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
 
-        job["progress"] = 90
+        # Wait for completion with progress simulation
+        import time
+        progress = 30
+        while proc.poll() is None:
+            time.sleep(2)
+            progress = min(progress + 5, 90)
+            job["progress"] = progress
+            job["message"] = "Processando com FFmpeg..."
+
+        stdout, stderr = proc.communicate()
         if proc.returncode != 0:
-            logger.error("[editor] FFmpeg failed: %s", (proc.stderr or b"")[:500])
+            logger.error(f"[editor] FFmpeg failed: {stderr.decode()[:500]}")
             job["status"] = "failed"
             job["error"] = "FFmpeg falhou ao processar o video"
             return
@@ -928,7 +955,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         final_out_file = out_file
         if valid_media_layers:
             job["progress"] = 92
-            job["message"] = "Exportando video..."
+            job["message"] = "Compondo camadas adicionais..."
 
             layered_out_file = os.path.join(out_dir, f"edited_layers_{uuid.uuid4().hex[:8]}.mp4")
             layer_cmd = ["ffmpeg", "-y", "-i", out_file]
@@ -949,7 +976,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             overlay_parts: list[str] = []
             current_video_label = "[0:v]"
 
-            # First uploaded layer stays on top, so apply overlays from last to first.
+            # First uploaded layer stays on top, so overlays are applied from last to first.
             for step, layer in enumerate(reversed(visual_layers)):
                 src_label = f"l{step}_src"
                 lay_label = f"l{step}"
@@ -967,10 +994,9 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     f"[{ref_label}][{lay_label}]overlay="
                     f"x='(W-w)*{layer['x_pct']/100.0:.6f}':"
                     f"y='(H-h)*{layer['y_pct']/100.0:.6f}':"
+                    f"enable='between(t,{layer['start_time']:.6f},{layer['end_time']:.6f})':"
                     "eof_action=pass"
                 )
-                if layer["end_time"] > layer["start_time"] + 0.02:
-                    overlay_expr += f":enable='between(t,{layer['start_time']:.6f},{layer['end_time']:.6f})'"
                 overlay_expr += f"[{out_label}]"
                 overlay_parts.append(overlay_expr)
                 current_video_label = f"[{out_label}]"
@@ -1047,13 +1073,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 layered_out_file,
             ]
 
-            try:
-                layer_proc = subprocess.run(layer_cmd, capture_output=True, timeout=_FFMPEG_EXPORT_TIMEOUT_SECONDS)
-            except subprocess.TimeoutExpired:
-                logger.error("[editor] Layer FFmpeg timeout after %ss", _FFMPEG_EXPORT_TIMEOUT_SECONDS)
-                job["status"] = "failed"
-                job["error"] = "Timeout ao compor camadas (demorou demais)"
-                return
+            logger.info(f"[editor] Layer export cmd: {' '.join(layer_cmd)}")
+            layer_proc = subprocess.run(layer_cmd, capture_output=True)
             if layer_proc.returncode != 0:
                 logger.error("[editor] Layer overlay FFmpeg failed: %s", (layer_proc.stderr or b"")[:600])
                 job["status"] = "failed"
@@ -1063,10 +1084,11 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             final_out_file = layered_out_file
 
         job["progress"] = 95
-        job["message"] = "Finalizando exportacao..."
+        job["message"] = "Finalizando..."
 
         # Register as a new render
         from app.database import async_session
+        import asyncio
 
         async def _save_render():
             async with async_session() as db:
@@ -1080,14 +1102,9 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 db.add(new_render)
                 await db.commit()
 
-        future = asyncio.run_coroutine_threadsafe(_save_render(), main_loop)
-        try:
-            future.result(timeout=60)
-        except Exception as save_error:
-            logger.exception("[editor] Failed to persist export render: %s", save_error)
-            job["status"] = "failed"
-            job["error"] = "Falha ao salvar o video exportado"
-            return
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(_save_render())
+        loop.close()
 
         job["progress"] = 100
         job["status"] = "completed"

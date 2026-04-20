@@ -4936,6 +4936,77 @@ th,
     pointer-events: auto;
 }
 
+.editor-media-layer-item {
+    position: absolute;
+    overflow: hidden;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: rgba(5, 12, 20, 0.45);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+.editor-media-layer-item:active {
+    cursor: grabbing;
+}
+
+.editor-media-layer-item.selected {
+    border-color: rgba(0, 212, 255, 0.8);
+    box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.35), 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.editor-media-layer-item video,
+.editor-media-layer-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    pointer-events: none;
+}
+
+.editor-media-layer-handle {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.92), rgba(18, 128, 220, 0.9));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    cursor: nwse-resize;
+}
+
+.editor-layer-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 170px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.editor-layer-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.editor-layer-list-item.active {
+    border-color: rgba(0, 212, 255, 0.45);
+    background: rgba(0, 212, 255, 0.12);
+}
+
 .editor-play-controls {
     display: flex;
     align-items: center;
@@ -5555,6 +5626,11 @@ th,
 .editor-track-clip.clip-sticker {
     background: linear-gradient(135deg, #6b5a1a, #4a3e0e);
     border: 1px solid rgba(107, 90, 26, 0.6);
+}
+
+.editor-track-clip.clip-media {
+    background: linear-gradient(135deg, #8d3f1f, #61250f);
+    border: 1px solid rgba(141, 63, 31, 0.65);
 }
 
 .editor-timeline-playhead {
