@@ -1037,7 +1037,7 @@ async function _autoDownloadCompleted(projects) {
     for (const p of projects) {
         try {
             const detail = await api(`/video/projects/${p.id}`);
-            const render = (detail.renders || []).find(r => r.video_url);
+            const render = _pickLatestAvailableRender(detail.renders || []);
             if (!render) continue;
             const a = document.createElement("a");
             a.href = render.video_url;
@@ -1329,7 +1329,7 @@ async function openRenameProjectModal(projectId) {
             try {
                 const detail = await api(`/video/projects/${project.id}`);
                 const renders = Array.isArray(detail.renders) ? detail.renders : [];
-                const render = renders.find((item) => item && item.video_url) || renders[0] || null;
+                const render = _pickLatestAvailableRender(renders) || _sortRendersNewestFirst(renders)[0] || null;
                 const videoLink = document.getElementById("edit-download-video");
                 const thumbLink = document.getElementById("edit-download-thumb");
                 if (render && render.video_url && videoLink) {
@@ -3140,6 +3140,18 @@ async function deleteProject(id) {
     }
 }
 
+function _sortRendersNewestFirst(renders) {
+    return [...(Array.isArray(renders) ? renders : [])].sort((a, b) => {
+        const idA = Number(a?.id || 0);
+        const idB = Number(b?.id || 0);
+        return idB - idA;
+    });
+}
+
+function _pickLatestAvailableRender(renders) {
+    return _sortRendersNewestFirst(renders).find((item) => item && item.video_url) || null;
+}
+
 async function watchVideo(projectId) {
     try {
         const project = await api(`/video/projects/${projectId}`);
@@ -3147,7 +3159,7 @@ async function watchVideo(projectId) {
             alert("Nenhum video renderizado encontrado.");
             return;
         }
-        const render = project.renders.find((item) => item && item.video_url);
+        const render = _pickLatestAvailableRender(project.renders);
         if (!render) {
             alert("Este video nao esta mais disponivel para reproducao.");
             return;
@@ -3220,7 +3232,8 @@ async function loadRenders(preselectProjectId = 0) {
             }
             try {
                 const detail = await api(`/video/projects/${project.id}`);
-                for (const render of detail.renders || []) {
+                const orderedRenders = _sortRendersNewestFirst(detail.renders || []);
+                for (const render of orderedRenders) {
                     if (!render.video_url) {
                         continue;
                     }
@@ -7641,7 +7654,7 @@ window._editorUploadProjectImages = _editorUploadProjectImages;
 async function openEditor(projectId) {
     try {
         const detail = await api(`/video/projects/${projectId}`);
-        const render = [...(detail.renders || [])].reverse().find(r => r.video_url);
+        const render = _pickLatestAvailableRender(detail.renders || []);
         if (!render || !render.video_url) {
             showToast("Este video nao tem arquivo disponivel.", "error");
             return;

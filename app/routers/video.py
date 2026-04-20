@@ -479,25 +479,41 @@ async def list_projects(
         .order_by(VideoProject.created_at.desc())
     )
     projects = result.scalars().all()
-    return [
-        {
-            "id": p.id,
-            "title": p.title,
-            "track_title": p.track_title,
-            "track_artist": p.track_artist,
-            "status": p.status.value,
-            "progress": p.progress,
-            "aspect_ratio": p.aspect_ratio,
-            "error_message": p.error_message,
-            "created_at": p.created_at.isoformat() if p.created_at else None,
-            "render_created_at": p.renders[0].created_at.isoformat() if p.renders and p.renders[0].created_at else None,
-            "video_expired": p.renders[0].file_path is None if p.renders else False,
-            "lyrics_text": p.lyrics_text or "",
-            "style_prompt": p.style_prompt or "",
-            "thumbnail_url": _to_media_url(p.renders[0].thumbnail_path) if p.renders else None,
-        }
-        for p in projects
-    ]
+
+    def _ordered_renders(renders: list[VideoRender]) -> list[VideoRender]:
+        return sorted(
+            renders or [],
+            key=lambda r: (r.created_at or datetime.min, r.id or 0),
+            reverse=True,
+        )
+
+    payload = []
+    for p in projects:
+        ordered = _ordered_renders(list(p.renders or []))
+        latest_any = ordered[0] if ordered else None
+        latest_active = next((r for r in ordered if r.file_path), None)
+        display_render = latest_active or latest_any
+
+        payload.append(
+            {
+                "id": p.id,
+                "title": p.title,
+                "track_title": p.track_title,
+                "track_artist": p.track_artist,
+                "status": p.status.value,
+                "progress": p.progress,
+                "aspect_ratio": p.aspect_ratio,
+                "error_message": p.error_message,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+                "render_created_at": display_render.created_at.isoformat() if display_render and display_render.created_at else None,
+                "video_expired": bool(ordered) and latest_active is None,
+                "lyrics_text": p.lyrics_text or "",
+                "style_prompt": p.style_prompt or "",
+                "thumbnail_url": _to_media_url(display_render.thumbnail_path) if display_render else None,
+            }
+        )
+
+    return payload
 
 
 @router.get("/projects/{project_id}")
@@ -517,7 +533,9 @@ async def get_project(
     scenes = result_scenes.scalars().all()
 
     result_renders = await db.execute(
-        select(VideoRender).where(VideoRender.project_id == project_id)
+        select(VideoRender)
+        .where(VideoRender.project_id == project_id)
+        .order_by(VideoRender.created_at.desc(), VideoRender.id.desc())
     )
     renders = result_renders.scalars().all()
 
@@ -555,6 +573,7 @@ async def get_project(
                 "file_size": r.file_size,
                 "thumbnail_path": r.thumbnail_path,
                 "duration": r.duration,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
                 "video_url": _to_media_url(r.file_path),
                 "thumbnail_url": _to_media_url(r.thumbnail_path),
             }
