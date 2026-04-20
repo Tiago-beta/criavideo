@@ -5759,6 +5759,10 @@ th,
         display: block;
     }
 
+    .editor-props-panel .editor-props-title {
+        display: none;
+    }
+
     .editor-timeline {
         height: auto;
         min-height: 116px;
