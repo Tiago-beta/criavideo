@@ -7694,9 +7694,7 @@ function _editorRenderProps() {
                         <span class="editor-sub-quick-value" id="editor-sub-global-size-value">${subtitleSize}px</span>
                     </div>
                 </div>
-            ` : `
-                <p class="editor-sub-quick-empty">Gere legendas para liberar ajustes de posicao e tamanho.</p>
-            `}
+            ` : ""}
             ${hasSubs && _editor.subtitleListOpen ? `
                 <div class="editor-props-group" id="editor-subtitle-list" style="margin-top:8px;max-height:200px;overflow-y:auto">
                     ${_editor.subtitles.map(s => `
@@ -7791,7 +7789,6 @@ function _editorRenderProps() {
         container.innerHTML = `
             <div class="editor-props-title">Audio</div>
             <div class="editor-props-group" style="margin-top:12px">
-                <label>Adicionar audio de fundo</label>
                 <button class="editor-add-btn" onclick="document.getElementById('editor-music-upload').click()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                     Enviar arquivo de audio
@@ -7830,7 +7827,6 @@ function _editorRenderProps() {
         const emojis = ["😀","😂","🥰","😎","🔥","⭐","❤️","👍","🎉","🎵","💯","👏","🤩","💪","✨","🌟","😍","🥳","💥","🎬","📸","🎶","💡","🚀","👑","🏆","💎","🌈","🎯","🙏","😱","🤯","💰","📢","🎭","🎨","🎸","🎤","🎧","👀","💬","🔔","⚡","🌺","🦋","🐾","🍕","☕","🎮","🎁"];
         container.innerHTML = `
             <div class="editor-props-title">Stickers & Emojis</div>
-            <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Clique para adicionar ao video na posicao atual.</p>
             <div class="editor-sticker-grid">
                 ${emojis.map(e => `<div class="editor-sticker-item" onclick="_editorAddSticker('${e}')">${e}</div>`).join("")}
             </div>
