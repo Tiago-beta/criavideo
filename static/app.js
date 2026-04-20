@@ -7409,6 +7409,27 @@ function _editorDeleteMediaLayer(id) {
 }
 window._editorDeleteMediaLayer = _editorDeleteMediaLayer;
 
+function _editorCycleMediaLayerOrder() {
+    if (_editor.mediaLayers.length < 2) {
+        showToast("Adicione pelo menos 2 camadas para trocar a ordem.", "error");
+        return;
+    }
+
+    _editorSaveState();
+    const firstLayer = _editor.mediaLayers.shift();
+    if (firstLayer) {
+        _editor.mediaLayers.push(firstLayer);
+    }
+
+    _editorRenderTimeline();
+    _editorRenderMediaLayers();
+    if (_editor.activeTool === "layers") {
+        _editorRenderProps();
+    }
+    _editorRefreshQuickActions();
+}
+window._editorCycleMediaLayerOrder = _editorCycleMediaLayerOrder;
+
 function _editorPushMediaLayer(kind, payload) {
     const previewUrl = String(payload?.media_url || "").trim();
     const serverPath = String(payload?.path || "").trim();
@@ -9207,9 +9228,11 @@ function _editorRefreshQuickActions() {
     const delBtn = document.getElementById("editor-quick-delete");
     const dupBtn = document.getElementById("editor-quick-duplicate");
     const cutBtn = document.getElementById("editor-quick-cut");
+    const layerOrderBtn = document.getElementById("editor-quick-layer-order");
     if (delBtn) delBtn.disabled = !_editorSelectionCanDelete();
     if (dupBtn) dupBtn.disabled = !_editorSelectionCanDuplicate();
     if (cutBtn) cutBtn.disabled = !_editor.duration || !_editorGetSelectedSegmentTracks().length;
+    if (layerOrderBtn) layerOrderBtn.disabled = _editor.mediaLayers.length < 2;
 }
 
 function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
@@ -9718,6 +9741,7 @@ function _bindEditorEvents() {
     document.getElementById("editor-quick-add-text")?.addEventListener("click", _editorAddText);
     document.getElementById("editor-quick-add-subtitle")?.addEventListener("click", _editorAddSubtitle);
     document.getElementById("editor-quick-cut")?.addEventListener("click", _editorSplitAtCurrentTime);
+    document.getElementById("editor-quick-layer-order")?.addEventListener("click", _editorCycleMediaLayerOrder);
     document.getElementById("editor-quick-delete")?.addEventListener("click", _editorDeleteSelectedClip);
     document.getElementById("editor-quick-duplicate")?.addEventListener("click", _editorDuplicateSelectedClip);
     document.getElementById("editor-aspect-select")?.addEventListener("change", (e) => {

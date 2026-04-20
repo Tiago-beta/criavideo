@@ -5836,6 +5836,7 @@ th,
         height: calc(100dvh - 56px);
         display: flex;
         flex-direction: column;
+        --editor-mobile-props-height: clamp(140px, 30vh, 260px);
     }
 
     .editor-main {
@@ -5865,7 +5866,7 @@ th,
 
     .editor-preview-area {
         order: 1;
-        flex: 1;
+        flex: 1 1 0;
         padding: 6px;
         min-height: 0;
     }
@@ -5897,9 +5898,9 @@ th,
         position: relative;
         bottom: auto; left: auto; right: auto; top: auto;
         width: 100%;
-        height: auto;
-        max-height: 32vh;
-        min-height: 120px;
+        height: var(--editor-mobile-props-height);
+        max-height: var(--editor-mobile-props-height);
+        min-height: var(--editor-mobile-props-height);
         border-left: none;
         border-top: 1px solid var(--border);
         border-radius: 0;
@@ -5937,6 +5938,10 @@ th,
 
 /* Landscape phone adjustments */
 @media (max-width: 768px) and (orientation: landscape) {
+    .editor-workspace {
+        --editor-mobile-props-height: clamp(96px, 26vh, 160px);
+    }
+
     .editor-canvas-wrapper {
         aspect-ratio: auto;
         max-height: 100%;
