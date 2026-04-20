@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import subprocess
+import asyncio
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -611,8 +612,9 @@ async def start_export(
         "output_url": None,
     }
 
+    main_loop = asyncio.get_running_loop()
     background_tasks.add_task(
-        _run_export, job_id, project, render, req, user["id"]
+        _run_export, job_id, project, render, req, user["id"], main_loop
     )
     return {"job_id": job_id}
 
@@ -627,7 +629,7 @@ async def export_status(job_id: str, user=Depends(get_current_user)):
 
 
 # ── Background export function ─────────────────────────
-def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
+def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, main_loop: asyncio.AbstractEventLoop):
     try:
         job = _export_jobs[job_id]
         job["progress"] = 5
@@ -1088,7 +1090,6 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
 
         # Register as a new render
         from app.database import async_session
-        import asyncio
 
         async def _save_render():
             async with async_session() as db:
@@ -1102,9 +1103,14 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int):
                 db.add(new_render)
                 await db.commit()
 
-        loop = asyncio.new_event_loop()
-        loop.run_until_complete(_save_render())
-        loop.close()
+        future = asyncio.run_coroutine_threadsafe(_save_render(), main_loop)
+        try:
+            future.result(timeout=60)
+        except Exception as save_error:
+            logger.exception("[editor] Failed to persist export render: %s", save_error)
+            job["status"] = "failed"
+            job["error"] = "Falha ao salvar o video exportado"
+            return
 
         job["progress"] = 100
         job["status"] = "completed"
