@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v166 loaded");
+﻿console.log("[CriaVideo] app.js v167 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1794,6 +1794,25 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         personaProfileIds = await _ensurePersonaSelections(contextKey, interactionPersona);
         personaProfileId = personaProfileIds[0] || 0;
 
+        const selectedPersonaProfiles = personaProfileIds
+            .map((sid) => _getPersonaProfiles(interactionPersona).find((profile) => (parseInt(profile?.id || "0", 10) || 0) === sid))
+            .filter(Boolean)
+            .slice(0, 4);
+
+        const dialogueEnabled = !!(addNarration && !narrationText);
+        const dialogueCharacters = selectedPersonaProfiles
+            .map((profile) => String(profile?.name || "").trim())
+            .filter((name) => !!name)
+            .slice(0, 4);
+        if (dialogueEnabled && !dialogueCharacters.length) {
+            dialogueCharacters.push("Personagem");
+        }
+
+        const dialogueVoiceProfileIds = selectedPersonaProfiles
+            .map((profile) => _getPersonaVoiceProfileId(profile))
+            .filter((id, idx, arr) => id > 0 && arr.indexOf(id) === idx)
+            .slice(0, 4);
+
         if (!wantsReferenceImage && !personaProfileIds.length) {
             throw new Error("Crie uma ou mais personas de interação primeiro para gerar o vídeo realista.");
         }
@@ -1827,6 +1846,11 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 add_narration: addNarration,
                 narration_text: narrationText,
                 narration_voice: narrationVoice,
+                dialogue_enabled: dialogueEnabled,
+                dialogue_characters: dialogueEnabled ? dialogueCharacters : [],
+                dialogue_voice_profile_ids: dialogueEnabled ? dialogueVoiceProfileIds : [],
+                dialogue_tone: "informativo",
+                dialogue_duration: dialogueEnabled ? duration : 0,
                 title: title || "",
                 image_upload_id: imageUploadId,
                 image_upload_ids: imageUploadIds,
@@ -2964,6 +2988,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (drawingStyle) {
         drawingStyle.addEventListener("change", _updatePersonaManagerFormByType);
     }
+    const personaVoiceSelect = document.getElementById("persona-manager-voice-profile");
+    if (personaVoiceSelect) {
+        personaVoiceSelect.addEventListener("change", () => {
+            const selectedId = parseInt(personaVoiceSelect.value || "0", 10) || 0;
+            const playBtn = document.getElementById("persona-manager-voice-play");
+            if (playBtn) {
+                playBtn.disabled = !selectedId;
+                playBtn.classList.toggle("disabled", !selectedId);
+            }
+        });
+    }
 });
 
 function adaptScriptStepForVideoType(videoType) {
@@ -3389,6 +3424,57 @@ function _formatDrawingStyleLabel(styleValue, customStyleValue) {
     return labels[style] || style;
 }
 
+function _getPersonaVoiceProfileId(profile) {
+    if (!profile || typeof profile !== "object") return 0;
+
+    const topLevel = parseInt(profile.voice_profile_id || "0", 10) || 0;
+    if (topLevel > 0) return topLevel;
+
+    const attrs = (profile.attributes && typeof profile.attributes === "object") ? profile.attributes : {};
+    const fromAttrs = parseInt(attrs.voice_profile_id || "0", 10) || 0;
+    return fromAttrs > 0 ? fromAttrs : 0;
+}
+
+function _getVoiceProfileNameById(voiceProfileId) {
+    const pid = parseInt(voiceProfileId || "0", 10) || 0;
+    if (!pid) return "Sem voz";
+    const profile = (voiceProfiles || []).find((item) => (parseInt(item?.id || "0", 10) || 0) === pid);
+    return profile ? (profile.name || `Voz ${pid}`) : `Voz ${pid}`;
+}
+
+function _buildPersonaVoiceOptions(selectedVoiceProfileId = 0) {
+    const selectedId = parseInt(selectedVoiceProfileId || "0", 10) || 0;
+    const options = [`<option value="0">Sem voz vinculada</option>`];
+    (voiceProfiles || []).forEach((profile) => {
+        const pid = parseInt(profile?.id || "0", 10) || 0;
+        if (!pid) return;
+        const selectedAttr = pid === selectedId ? ' selected' : '';
+        const defaultSuffix = profile.is_default ? " (Padrao)" : "";
+        options.push(`<option value="${pid}"${selectedAttr}>${esc(profile.name || `Voz ${pid}`)}${defaultSuffix}</option>`);
+    });
+    return options.join("");
+}
+
+function _renderPersonaManagerCreateVoiceSelect() {
+    const selectEl = document.getElementById("persona-manager-voice-profile");
+    if (!selectEl) return;
+
+    const currentValue = parseInt(selectEl.value || "0", 10) || 0;
+    let selectedId = currentValue;
+    if (!selectedId) {
+        const defaultVoice = (voiceProfiles || []).find((item) => !!item?.is_default);
+        selectedId = parseInt(defaultVoice?.id || "0", 10) || 0;
+    }
+    selectEl.innerHTML = _buildPersonaVoiceOptions(selectedId);
+    selectEl.value = String(selectedId || 0);
+
+    const playBtn = document.getElementById("persona-manager-voice-play");
+    if (playBtn) {
+        playBtn.disabled = !selectedId;
+        playBtn.classList.toggle("disabled", !selectedId);
+    }
+}
+
 function _buildPersonaManagerMeta(profile) {
     const typeLabel = REALISTIC_PERSONA_LABELS[_personaManagerType] || _personaManagerType;
     const attrs = (profile && typeof profile.attributes === "object" && profile.attributes) ? profile.attributes : {};
@@ -3401,6 +3487,11 @@ function _buildPersonaManagerMeta(profile) {
 
     if (profile?.is_default) {
         parts.push("Padrao");
+    }
+
+    const voiceProfileId = _getPersonaVoiceProfileId(profile);
+    if (voiceProfileId > 0) {
+        parts.push(`Voz: ${_getVoiceProfileNameById(voiceProfileId)}`);
     }
 
     return parts.join(" - ");
@@ -3422,6 +3513,9 @@ function _renderPersonaManagerList() {
         const isSelected = selectedIds.includes(pid);
         const selectedClass = isSelected ? " selected" : "";
         const metaText = _buildPersonaManagerMeta(profile);
+        const voiceProfileId = _getPersonaVoiceProfileId(profile);
+        const voiceOptions = _buildPersonaVoiceOptions(voiceProfileId);
+        const voicePlayDisabled = voiceProfileId <= 0;
         const imageUrl = profile.image_url || "";
         const image = imageUrl
             ? `<img class="persona-manager-photo" src="${imageUrl}" alt="${esc(profile.name || "Persona")}">`
@@ -3437,6 +3531,17 @@ function _renderPersonaManagerList() {
                 <div class="persona-manager-info">
                     <div class="persona-manager-name">${esc(profile.name || `Persona ${pid}`)}</div>
                     <div class="persona-manager-meta">${esc(metaText)}</div>
+                </div>
+                <div class="persona-manager-voice-row">
+                    <select class="input persona-manager-voice-select" onchange="setPersonaVoiceFromManager(${pid}, this.value)">
+                        ${voiceOptions}
+                    </select>
+                    <button
+                        class="btn btn-secondary btn-sm persona-manager-voice-play${voicePlayDisabled ? " disabled" : ""}"
+                        type="button"
+                        onclick="previewPersonaVoiceFromManager(${pid})"
+                        title="Ouvir prévia da voz"
+                        ${voicePlayDisabled ? "disabled" : ""}>▶</button>
                 </div>
                 <div class="persona-manager-actions">
                     <button class="btn btn-secondary btn-sm" type="button" onclick="${useActionHandler}">${useActionLabel}</button>
@@ -3458,6 +3563,47 @@ async function _refreshPersonaManagerList() {
     } catch (error) {
         if (listEl) listEl.innerHTML = `<p class="muted">${esc(error.message || "Falha ao carregar personas")}</p>`;
     }
+}
+
+async function setPersonaVoiceFromManager(profileId, voiceProfileIdValue) {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return;
+    const voiceProfileId = parseInt(voiceProfileIdValue || "0", 10) || 0;
+
+    try {
+        await api(`/persona/profiles/${pid}/voice`, {
+            method: "PUT",
+            body: JSON.stringify({ voice_profile_id: voiceProfileId }),
+        });
+        await _refreshPersonaManagerList();
+        showToast("Voz da persona atualizada.", "success");
+    } catch (error) {
+        alert(`Erro ao atualizar voz da persona: ${error.message}`);
+    }
+}
+
+async function previewPersonaVoiceFromManager(profileId) {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return;
+
+    const profiles = _getPersonaProfiles(_personaManagerType);
+    const profile = profiles.find((item) => (parseInt(item?.id || "0", 10) || 0) === pid);
+    const voiceProfileId = _getPersonaVoiceProfileId(profile);
+    if (!voiceProfileId) {
+        showToast("Esta persona ainda não tem voz vinculada.");
+        return;
+    }
+    await previewVoice(voiceProfileId);
+}
+
+async function previewPersonaCreateVoice() {
+    const selectEl = document.getElementById("persona-manager-voice-profile");
+    const voiceProfileId = parseInt(selectEl?.value || "0", 10) || 0;
+    if (!voiceProfileId) {
+        showToast("Selecione uma voz para ouvir a prévia.");
+        return;
+    }
+    await previewVoice(voiceProfileId);
 }
 
 function removePersonaReferenceImage() {
@@ -3587,6 +3733,9 @@ async function openPersonaManager(context = "script") {
     if (customDescEl) customDescEl.value = "";
     removePersonaReferenceImage();
 
+    await loadVoiceProfiles();
+    _renderPersonaManagerCreateVoiceSelect();
+
     _updatePersonaManagerFormByType();
     openModal("modal-persona-manager");
     await _refreshPersonaManagerList();
@@ -3608,6 +3757,7 @@ async function createPersonaFromManager() {
         const drawingOther = (document.getElementById("persona-manager-drawing-other")?.value || "").trim();
         const customDesc = (document.getElementById("persona-manager-custom-desc")?.value || "").trim();
         const extra = (document.getElementById("persona-manager-extra")?.value || "").trim();
+        const selectedVoiceProfileId = parseInt(document.getElementById("persona-manager-voice-profile")?.value || "0", 10) || 0;
 
         const attributes = {};
         if (_personaManagerType === "natureza") {
@@ -3672,6 +3822,17 @@ async function createPersonaFromManager() {
 
         const createdId = parseInt(response?.profile?.id || "0", 10) || 0;
         if (createdId) {
+            if (selectedVoiceProfileId > 0) {
+                try {
+                    await api(`/persona/profiles/${createdId}/voice`, {
+                        method: "PUT",
+                        body: JSON.stringify({ voice_profile_id: selectedVoiceProfileId }),
+                    });
+                } catch (voiceError) {
+                    console.warn("Failed to link voice profile to persona:", voiceError);
+                }
+            }
+
             if (_personaManagerMulti) {
                 const selectedIds = _getSelectedPersonaProfileIds(_personaManagerContext, _personaManagerType);
                 _setSelectedPersonaProfileIds(_personaManagerContext, _personaManagerType, [...selectedIds, createdId]);
@@ -7721,6 +7882,9 @@ window.handlePersonaReferenceImagePaste = handlePersonaReferenceImagePaste;
 window.removePersonaReferenceImage = removePersonaReferenceImage;
 window.createPersonaFromManager = createPersonaFromManager;
 window.selectPersonaFromManager = selectPersonaFromManager;
+window.setPersonaVoiceFromManager = setPersonaVoiceFromManager;
+window.previewPersonaVoiceFromManager = previewPersonaVoiceFromManager;
+window.previewPersonaCreateVoice = previewPersonaCreateVoice;
 window.setDefaultPersonaFromManager = setDefaultPersonaFromManager;
 window.deletePersonaFromManager = deletePersonaFromManager;
 window.openVoiceManager = openVoiceManager;

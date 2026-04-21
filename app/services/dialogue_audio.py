@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 _openai = openai.AsyncOpenAI(api_key=settings.openai_api_key)
 
-_DEFAULT_CHARACTERS = ["Personagem A", "Personagem B"]
+_DEFAULT_CHARACTERS = ["Personagem"]
 _DEFAULT_BUILTIN_VOICES = ["onyx", "nova", "echo", "shimmer", "alloy", "coral", "ash", "sage"]
 _VALID_MOODS = {
     "inspiracional",
@@ -61,7 +61,7 @@ def _normalize_characters(raw_names: list[str] | None, limit: int = 4) -> list[s
             names.append(cleaned)
         if len(names) >= limit:
             break
-    if len(names) < 2:
+    if len(names) < 1:
         return _DEFAULT_CHARACTERS.copy()
     return names
 
@@ -149,7 +149,7 @@ async def _generate_dialogue_turns(
             if len(turns) >= turns_count:
                 break
 
-        if len(turns) < 2:
+        if len(turns) < 1:
             return _fallback_dialogue_turns(prompt_text, characters, target_duration)
         return turns
     except Exception as exc:

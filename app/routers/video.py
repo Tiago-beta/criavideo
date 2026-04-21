@@ -1807,8 +1807,6 @@ async def generate_realistic_endpoint(
         if cleaned and cleaned not in dialogue_characters:
             dialogue_characters.append(cleaned[:40])
     dialogue_characters = dialogue_characters[:4]
-    if dialogue_enabled and len(dialogue_characters) < 2:
-        dialogue_characters = ["Personagem A", "Personagem B"]
 
     dialogue_voice_profile_ids: list[int] = []
     for raw_voice_id in (req.dialogue_voice_profile_ids or []):
@@ -1835,6 +1833,9 @@ async def generate_realistic_endpoint(
     # Resolve reference image with precedence: uploaded images > selected personas > default persona
     image_path_str = ""
     reference_count = 0
+    resolved_personas = []
+    persona_dialogue_voice_profile_ids: list[int] = []
+    persona_dialogue_characters: list[str] = []
     if upload_ids:
         upload_image_paths: list[str] = []
         for upload_id in upload_ids:
@@ -1886,8 +1887,30 @@ async def generate_realistic_endpoint(
             prefix="persona_refs",
         )
 
+        for profile in resolved_personas:
+            persona_name = str(getattr(profile, "name", "") or "").strip()
+            if persona_name and persona_name not in persona_dialogue_characters:
+                persona_dialogue_characters.append(persona_name[:40])
+
+            attrs = getattr(profile, "attributes", {}) if isinstance(getattr(profile, "attributes", {}), dict) else {}
+            try:
+                voice_pid = int(attrs.get("voice_profile_id") or 0)
+            except Exception:
+                voice_pid = 0
+            if voice_pid > 0 and voice_pid not in persona_dialogue_voice_profile_ids:
+                persona_dialogue_voice_profile_ids.append(voice_pid)
+
         selected_persona_profile_ids = [int(profile.id) for profile in resolved_personas]
         selected_persona_profile_id = selected_persona_profile_ids[0] if selected_persona_profile_ids else 0
+
+    if dialogue_enabled:
+        if not dialogue_characters and persona_dialogue_characters:
+            dialogue_characters = persona_dialogue_characters[:4]
+        if not dialogue_characters:
+            dialogue_characters = ["Personagem"]
+
+        if not dialogue_voice_profile_ids and persona_dialogue_voice_profile_ids:
+            dialogue_voice_profile_ids = persona_dialogue_voice_profile_ids[:4]
 
     has_reference_image = bool(image_path_str)
     if not has_reference_image:

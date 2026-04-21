@@ -27,6 +27,23 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def _extract_voice_profile_id(attributes: dict | None) -> int:
+    raw = (attributes or {}).get("voice_profile_id") if isinstance(attributes, dict) else 0
+    try:
+        value = int(raw)
+    except Exception:
+        return 0
+    return value if value > 0 else 0
+
+
+def _preserve_persona_metadata(new_attributes: dict | None, previous_attributes: dict | None) -> dict:
+    merged = dict(new_attributes or {})
+    voice_profile_id = _extract_voice_profile_id(previous_attributes)
+    if voice_profile_id:
+        merged["voice_profile_id"] = voice_profile_id
+    return merged
+
+
 def _media_url_from_path(path: str | None) -> str | None:
     if not path:
         return None
@@ -38,12 +55,15 @@ def _media_url_from_path(path: str | None) -> str | None:
 
 
 def serialize_persona_profile(profile: PersonaProfile) -> dict:
+    attrs = profile.attributes or {}
+    voice_profile_id = _extract_voice_profile_id(attrs)
     return {
         "id": profile.id,
         "persona_type": profile.persona_type,
         "persona_label": PERSONA_LABELS.get(profile.persona_type, profile.persona_type),
         "name": profile.name,
-        "attributes": profile.attributes or {},
+        "attributes": attrs,
+        "voice_profile_id": voice_profile_id,
         "image_path": profile.image_path,
         "image_url": _media_url_from_path(profile.image_path),
         "is_default": bool(profile.is_default),
@@ -288,7 +308,7 @@ async def resolve_persona_reference_image(
         )
         profile.image_path = regenerated["image_path"]
         profile.prompt_text = regenerated["prompt_text"]
-        profile.attributes = regenerated["attributes"]
+        profile.attributes = _preserve_persona_metadata(regenerated["attributes"], profile.attributes)
         await db.commit()
         await db.refresh(profile)
         return profile, str(profile.image_path)
@@ -359,7 +379,7 @@ async def resolve_persona_reference_images(
         )
         profile.image_path = regenerated["image_path"]
         profile.prompt_text = regenerated["prompt_text"]
-        profile.attributes = regenerated["attributes"]
+        profile.attributes = _preserve_persona_metadata(regenerated["attributes"], profile.attributes)
         await db.flush()
 
         refreshed_path = str(profile.image_path or "")

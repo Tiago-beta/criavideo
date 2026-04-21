@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
+from app.models import PersonaProfile, VoiceProfile
 from app.services.persona_image import (
     PERSONA_LABELS,
     PERSONA_TYPES,
@@ -53,6 +54,10 @@ class CreatePersonaProfileRequest(BaseModel):
 
 class SetDefaultRequest(BaseModel):
     profile_id: int = Field(gt=0)
+
+
+class UpdatePersonaVoiceRequest(BaseModel):
+    voice_profile_id: int = 0
 
 
 def _parse_attributes_json(attributes_json: str) -> dict:
@@ -237,6 +242,42 @@ async def set_profile_default(
     return {
         "profile": serialize_persona_profile(profile),
         "message": "Persona padrao atualizada",
+    }
+
+
+@router.put("/profiles/{profile_id}/voice")
+async def update_profile_voice(
+    profile_id: int,
+    payload: UpdatePersonaVoiceRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    if profile_id <= 0:
+        raise HTTPException(status_code=400, detail="profile_id inválido")
+
+    profile = await db.get(PersonaProfile, int(profile_id))
+    if not profile or profile.user_id != current_user["id"] or not bool(profile.is_active):
+        raise HTTPException(status_code=404, detail="Perfil de persona nao encontrado")
+
+    voice_profile_id = int(payload.voice_profile_id or 0)
+    if voice_profile_id > 0:
+        voice_profile = await db.get(VoiceProfile, voice_profile_id)
+        if not voice_profile or voice_profile.user_id != current_user["id"]:
+            raise HTTPException(status_code=400, detail="Perfil de voz inválido")
+
+    attrs = dict(profile.attributes or {}) if isinstance(profile.attributes, dict) else {}
+    if voice_profile_id > 0:
+        attrs["voice_profile_id"] = voice_profile_id
+    else:
+        attrs.pop("voice_profile_id", None)
+
+    profile.attributes = attrs
+    await db.commit()
+    await db.refresh(profile)
+
+    return {
+        "profile": serialize_persona_profile(profile),
+        "message": "Voz da persona atualizada",
     }
 
 

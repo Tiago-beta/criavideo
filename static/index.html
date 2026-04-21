@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 182;
+        var REQUIRED_VER = 183;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -821,7 +821,7 @@
                         <div id="wizard-realistic-narration-options" class="realistic-narration-options" hidden>
                             <div class="form-group">
                                 <label>Texto da narração</label>
-                                <textarea id="wizard-realistic-narration-text" class="input" rows="3" placeholder="Ex: Uma cachorra adotou um gatinho abandonado e o amamentou como seu próprio filhote..."></textarea>
+                                <textarea id="wizard-realistic-narration-text" class="input" rows="3" placeholder="Opcional: se deixar em branco, a IA cria falas automáticas usando as vozes das personas selecionadas."></textarea>
                             </div>
                             <div class="form-group">
                                 <label>Voz</label>
@@ -1287,7 +1287,7 @@
                         <div id="script-realistic-narration-options" class="realistic-narration-options" hidden>
                             <div class="form-group">
                                 <label>Texto da narração</label>
-                                <textarea id="script-realistic-narration-text" class="input" rows="3" placeholder="Ex: Uma cachorra adotou um gatinho abandonado e o amamentou como seu próprio filhote..."></textarea>
+                                <textarea id="script-realistic-narration-text" class="input" rows="3" placeholder="Opcional: se deixar em branco, a IA cria falas automáticas usando as vozes das personas selecionadas."></textarea>
                             </div>
                             <div class="form-group">
                                 <label>Voz</label>
@@ -2265,6 +2265,13 @@
                     <textarea id="persona-manager-extra" class="input" rows="2" placeholder="Ex: luz dourada no fim da tarde, expressão tranquila" onpaste="handlePersonaReferenceImagePaste(event)"></textarea>
                 </div>
                 <div class="form-group">
+                    <label>Voz da persona (opcional)</label>
+                    <div class="persona-manager-voice-create-row">
+                        <select id="persona-manager-voice-profile" class="input"></select>
+                        <button id="persona-manager-voice-play" class="btn btn-secondary btn-sm persona-manager-voice-play" type="button" onclick="previewPersonaCreateVoice()" title="Ouvir prévia da voz">▶</button>
+                    </div>
+                </div>
+                <div class="form-group">
                     <label>Imagem de referência (opcional)</label>
                     <div class="persona-reference-upload">
                         <input
@@ -2291,8 +2298,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-13"></script>
-    <script src="/video/static/pwa.js?v=20260421-13"></script>
+    <script src="/video/static/app.js?v=20260421-14"></script>
+    <script src="/video/static/pwa.js?v=20260421-14"></script>
 </body>
 </html>
 

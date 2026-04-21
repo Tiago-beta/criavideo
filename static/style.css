@@ -4983,6 +4983,36 @@ th,
     color: var(--text-muted);
 }
 
+.persona-manager-voice-row {
+    display: flex;
+    gap: 8px;
+    padding: 0 10px 10px;
+    align-items: center;
+}
+
+.persona-manager-voice-select {
+    flex: 1;
+    height: 34px;
+    font-size: 0.8rem;
+    padding: 6px 10px;
+}
+
+.persona-manager-voice-play {
+    width: 38px;
+    min-width: 38px;
+    height: 34px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.persona-manager-voice-play.disabled,
+.persona-manager-voice-play:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .persona-manager-actions {
     display: flex;
     gap: 6px;
@@ -5004,6 +5034,16 @@ th,
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+}
+
+.persona-manager-voice-create-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.persona-manager-voice-create-row .input {
+    flex: 1;
 }
 
 .persona-reference-preview {
