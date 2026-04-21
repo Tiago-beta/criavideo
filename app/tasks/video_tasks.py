@@ -108,7 +108,7 @@ _REFERENCE_IMAGE_HINT_MARKERS = (
     "imagem de referencia",
     "foto enviada",
 )
-_INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza"}
+_INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"}
 _GROK_IDENTITY_HINT_MARKERS = (
     "grok identity lock",
     "close-up identity lock",
@@ -158,6 +158,8 @@ def _normalize_interaction_persona(value: str) -> str:
         "crianca": "crianca",
         "família": "familia",
         "familia": "familia",
+        "personalizada": "personalizado",
+        "custom": "personalizado",
     }
     normalized = mapping.get(raw, raw)
     return normalized if normalized in _INTERACTION_PERSONAS else ""
@@ -184,6 +186,16 @@ def _build_interaction_persona_instruction(interaction_persona: str) -> str:
         return (
             "PERSONA DE INTERACAO: inclua uma familia (duas ou mais pessoas) interagindo de forma natural com a cena "
             "e com a emocao do trecho."
+        )
+    if persona == "desenho":
+        return (
+            "PERSONA DE INTERACAO: inclua um personagem em estilo desenho/animacao (cartoon, 3D, anime, etc.) "
+            "interagindo de forma natural com a cena e com a emocao do trecho."
+        )
+    if persona == "personalizado":
+        return (
+            "PERSONA DE INTERACAO: inclua a persona personalizada definida pelo usuario, mantendo os tracos, "
+            "estilo e identidade visual da referencia enviada."
         )
     if persona == "natureza":
         return (
@@ -1086,7 +1098,7 @@ async def _combine_realistic_audio(
 
 
 async def run_realistic_video_pipeline(project_id: int):
-    """Pipeline for realistic video generation via Seedance 2.0 or MiniMax Hailuo.
+    """Pipeline for realistic video generation via the configured realistic engine.
     Much simpler than the standard pipeline: optimize prompt → generate → thumbnail → done.
     """
     async with async_session() as db:
@@ -1101,9 +1113,9 @@ async def run_realistic_video_pipeline(project_id: int):
             # Determine engine from audio_path field (used to store engine choice)
             engine = (project.audio_path or "").strip()
             if engine not in ("seedance", "minimax", "wan2", "grok"):
-                engine = "seedance"
-            engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.2", "seedance": "Seedance 2.0", "grok": "Grok"}
-            engine_label = engine_labels.get(engine, "Seedance 2.0")
+                engine = "wan2"
+            engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Ultra High 2.2", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
+            engine_label = engine_labels.get(engine, "Ultra High 2.2")
             logger.info(f"Realistic video pipeline for project {project_id} using engine: {engine}")
 
             # ── Step 1: Optimize prompt via GPT ──

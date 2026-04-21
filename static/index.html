@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 172;
+        var REQUIRED_VER = 173;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -593,7 +593,7 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Video realista ate 60s com Grok e as melhores tecnologias</small>
+                                <small>Video realista ate 60s com Cria 3.0 speed e Ultra High 2.2</small>
                                 <span class="credit-badge credit-high">Creditos: Alto</span>
                             </div>
                         </div>
@@ -753,6 +753,8 @@
                                 <button class="style-tag" type="button" data-persona="crianca">Crianca</button>
                                 <button class="style-tag" type="button" data-persona="familia">Familia</button>
                                 <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
+                                <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
+                                <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
                             </div>
                             <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interacao.</small>
                             <div id="wizard-realistic-persona-preview" class="realistic-persona-preview"></div>
@@ -764,17 +766,17 @@
                         <div class="form-group" id="wizard-realistic-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="wizard-realistic-engine">
-                                <button class="engine-option" data-value="seedance" type="button">
+                                <button class="engine-option" data-value="seedance" type="button" hidden>
                                     <strong>Seedance 2.0</strong>
                                 </button>
-                                <button class="engine-option selected" data-value="minimax" type="button">
+                                <button class="engine-option" data-value="minimax" type="button" hidden>
                                     <strong>MiniMax</strong>
                                 </button>
-                                <button class="engine-option" data-value="wan2" type="button">
-                                    <strong>Wan 2.2</strong>
+                                <button class="engine-option selected" data-value="wan2" type="button">
+                                    <strong>Ultra High 2.2</strong>
                                 </button>
                                 <button class="engine-option" data-value="grok" type="button">
-                                    <strong>Grok</strong>
+                                    <strong>Cria 3.0 speed</strong>
                                 </button>
                             </div>
                         </div>
@@ -1001,7 +1003,7 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Video realista ate 60s com Grok e as melhores tecnologias</small>
+                                <small>Video realista ate 60s com Cria 3.0 speed e Ultra High 2.2</small>
                                 <span class="credit-badge credit-high">Creditos: Alto</span>
                             </div>
                         </div>
@@ -1195,6 +1197,8 @@
                                 <button class="style-tag" type="button" data-persona="crianca">Crianca</button>
                                 <button class="style-tag" type="button" data-persona="familia">Familia</button>
                                 <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
+                                <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
+                                <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
                             </div>
                             <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interacao.</small>
                             <div id="script-realistic-persona-preview" class="realistic-persona-preview"></div>
@@ -1206,17 +1210,17 @@
                         <div class="form-group" id="script-realistic-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="script-realistic-engine">
-                                <button class="engine-option" data-value="seedance" type="button">
+                                <button class="engine-option" data-value="seedance" type="button" hidden>
                                     <strong>Seedance 2.0</strong>
                                 </button>
-                                <button class="engine-option selected" data-value="minimax" type="button">
+                                <button class="engine-option" data-value="minimax" type="button" hidden>
                                     <strong>MiniMax</strong>
                                 </button>
-                                <button class="engine-option" data-value="wan2" type="button">
-                                    <strong>Wan 2.2</strong>
+                                <button class="engine-option selected" data-value="wan2" type="button">
+                                    <strong>Ultra High 2.2</strong>
                                 </button>
                                 <button class="engine-option" data-value="grok" type="button">
-                                    <strong>Grok</strong>
+                                    <strong>Cria 3.0 speed</strong>
                                 </button>
                             </div>
                         </div>
@@ -1405,6 +1409,8 @@
                             <button class="style-tag" type="button" data-persona="crianca">Crianca</button>
                             <button class="style-tag" type="button" data-persona="familia">Familia</button>
                             <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
+                            <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
+                            <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
                         </div>
                         <small class="pause-hint">A IA vai manter essa persona no contexto da cena.</small>
                         <div id="ai-suggest-persona-preview" class="realistic-persona-preview"></div>
@@ -1809,6 +1815,8 @@
                                 <button class="style-tag" type="button" data-persona="crianca">Crianca</button>
                                 <button class="style-tag" type="button" data-persona="familia">Familia</button>
                                 <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
+                                <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
+                                <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
                             </div>
                             <small class="pause-hint">A cena segue o trecho e inclui essa persona em interacao.</small>
                             <div id="auto-realistic-persona-preview" class="realistic-persona-preview"></div>
@@ -1819,9 +1827,9 @@
                         <div class="form-group" id="auto-realistic-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="auto-realistic-engine">
-                                <button class="engine-option selected" data-value="minimax" type="button"><strong>MiniMax</strong></button>
-                                <button class="engine-option" data-value="wan2" type="button"><strong>Wan 2.2</strong></button>
-                                <button class="engine-option" data-value="grok" type="button"><strong>Grok</strong></button>
+                                <button class="engine-option" data-value="minimax" type="button" hidden><strong>MiniMax</strong></button>
+                                <button class="engine-option selected" data-value="wan2" type="button"><strong>Ultra High 2.2</strong></button>
+                                <button class="engine-option" data-value="grok" type="button"><strong>Cria 3.0 speed</strong></button>
                             </div>
                         </div>
                         <div class="form-group">
@@ -2194,6 +2202,28 @@
                     <label>Descreva "outros"</label>
                     <input id="persona-manager-nature-other" class="input" type="text" maxlength="80" placeholder="Ex: tartaruga marinha">
                 </div>
+                <div class="form-group" id="persona-manager-drawing-style-group" hidden>
+                    <label>Estilo de desenho</label>
+                    <select id="persona-manager-drawing-style" class="input">
+                        <option value="cartoon">Cartoon</option>
+                        <option value="3d">3D</option>
+                        <option value="anime">Anime</option>
+                        <option value="comic">Comic</option>
+                        <option value="manga">Manga</option>
+                        <option value="pixar">Pixar</option>
+                        <option value="pixel_art">Pixel Art</option>
+                        <option value="aquarela">Aquarela</option>
+                        <option value="outros">Outros</option>
+                    </select>
+                </div>
+                <div class="form-group" id="persona-manager-drawing-other-group" hidden>
+                    <label>Descreva o estilo personalizado</label>
+                    <input id="persona-manager-drawing-other" class="input" type="text" maxlength="80" placeholder="Ex: claymation retro com texturas artesanais">
+                </div>
+                <div class="form-group" id="persona-manager-custom-desc-group" hidden>
+                    <label>Descricao da persona personalizada *</label>
+                    <textarea id="persona-manager-custom-desc" class="input" rows="3" placeholder="Ex: guerreira futurista afro-brasileira com armadura leve dourada e capa azul, olhar determinado"></textarea>
+                </div>
                 <div class="form-group">
                     <label>Descricao extra (opcional)</label>
                     <textarea id="persona-manager-extra" class="input" rows="2" placeholder="Ex: luz dourada no fim da tarde, expressao tranquila"></textarea>
@@ -2211,7 +2241,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-03"></script>
-    <script src="/video/static/pwa.js?v=20260421-03"></script>
+    <script src="/video/static/app.js?v=20260421-04"></script>
+    <script src="/video/static/pwa.js?v=20260421-04"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v156 loaded");
+console.log("[CriaVideo] app.js v157 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -21,13 +21,15 @@ let _pendingConnectPlatform = "";
 let _editingSocialAccountId = 0;
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 
-const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza"];
+const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
 const REALISTIC_PERSONA_LABELS = {
     homem: "Homem",
     mulher: "Mulher",
     crianca: "Crianca",
     familia: "Familia",
     natureza: "Natureza",
+    desenho: "Desenho",
+    personalizado: "Personalizado",
 };
 let _personaProfilesByType = {};
 let _personaSelectionByContext = {
@@ -1187,7 +1189,14 @@ async function createSimilar(projectId) {
         return;
     }
 
-    const realisticArtists = new Set(["MiniMax Hailuo", "Wan 2.2", "Seedance 2.0", "Grok"]);
+    const realisticArtists = new Set([
+        "MiniMax Hailuo",
+        "Wan 2.2",
+        "Ultra High 2.2",
+        "Seedance 2.0",
+        "Grok",
+        "Cria 3.0 speed",
+    ]);
     const sourceLooksRealistic = (
         project.video_type === "realista"
         || project.video_type === "realistic"
@@ -1715,7 +1724,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const musicEl = document.getElementById(musicCheckboxId);
     const addMusic = musicEl ? musicEl.checked : true;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
-    let engine = engineBtn ? engineBtn.dataset.value : "minimax";
+    let engine = engineBtn ? engineBtn.dataset.value : "wan2";
     if (duration > 10 && engine !== "grok") {
         const engineSelector = document.getElementById(engineSelectorId);
         const grokBtn = engineSelector?.querySelector('.engine-option[data-value="grok"]');
@@ -1724,9 +1733,15 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             grokBtn.classList.add("selected");
         }
         engine = "grok";
-        showToast("Duracoes acima de 10s usam Grok automaticamente.");
+        showToast("Duracoes acima de 10s usam Cria 3.0 speed automaticamente.");
     }
-    const engineLabel = engine === "minimax" ? "MiniMax Hailuo" : engine === "wan2" ? "Wan 2.2" : engine === "grok" ? "Grok" : "Seedance 2.0";
+    const engineLabel = engine === "minimax"
+        ? "MiniMax Hailuo"
+        : engine === "wan2"
+            ? "Ultra High 2.2"
+            : engine === "grok"
+                ? "Cria 3.0 speed"
+                : "Seedance 2.0";
     const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
     const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
     let personaProfileId = 0;
@@ -1754,7 +1769,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         personaProfileId = await _ensurePersonaSelection(prefix === "wizard" ? "wizard" : "script", interactionPersona);
 
         if (!wantsReferenceImage && !personaProfileId) {
-            throw new Error("Crie uma persona primeiro e preencha idade, cor da pele e cor do cabelo.");
+            throw new Error("Crie uma persona de interacao primeiro para gerar o video realista.");
         }
 
         // Upload reference image if available
@@ -2891,6 +2906,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (personaSubtype) {
         personaSubtype.addEventListener("change", _updatePersonaManagerFormByType);
     }
+    const drawingStyle = document.getElementById("persona-manager-drawing-style");
+    if (drawingStyle) {
+        drawingStyle.addEventListener("change", _updatePersonaManagerFormByType);
+    }
 });
 
 function adaptScriptStepForVideoType(videoType) {
@@ -2916,8 +2935,12 @@ function adaptScriptStepForVideoType(videoType) {
 function _normalizeRealisticPersonaType(value) {
     const raw = String(value || "").trim().toLowerCase();
     const mapping = {
+        "criança": "crianca",
         crianca: "crianca",
+        "família": "familia",
         familia: "familia",
+        personalizada: "personalizado",
+        custom: "personalizado",
     };
     const normalized = mapping[raw] || raw;
     return REALISTIC_PERSONA_TYPES.includes(normalized) ? normalized : "natureza";
@@ -3052,16 +3075,30 @@ async function _ensurePersonaSelection(context, personaType) {
 
 function _updatePersonaManagerFormByType() {
     const isNature = _personaManagerType === "natureza";
+    const isDrawing = _personaManagerType === "desenho";
+    const isCustom = _personaManagerType === "personalizado";
+    const isHuman = !isNature && !isDrawing && !isCustom;
     const humanFields = document.getElementById("persona-manager-human-fields");
-    const subtypeGroup = document.getElementById("persona-manager-nature-subtype-group");
-    const otherGroup = document.getElementById("persona-manager-nature-other-group");
-    const subtypeEl = document.getElementById("persona-manager-nature-subtype");
-    if (humanFields) humanFields.hidden = isNature;
-    if (subtypeGroup) subtypeGroup.hidden = !isNature;
-    if (otherGroup) {
-        const isOther = isNature && subtypeEl && subtypeEl.value === "outros";
-        otherGroup.hidden = !isOther;
+    const natureSubtypeGroup = document.getElementById("persona-manager-nature-subtype-group");
+    const natureOtherGroup = document.getElementById("persona-manager-nature-other-group");
+    const natureSubtypeEl = document.getElementById("persona-manager-nature-subtype");
+    const drawingStyleGroup = document.getElementById("persona-manager-drawing-style-group");
+    const drawingOtherGroup = document.getElementById("persona-manager-drawing-other-group");
+    const drawingStyleEl = document.getElementById("persona-manager-drawing-style");
+    const customDescGroup = document.getElementById("persona-manager-custom-desc-group");
+
+    if (humanFields) humanFields.hidden = !isHuman;
+    if (natureSubtypeGroup) natureSubtypeGroup.hidden = !isNature;
+    if (natureOtherGroup) {
+        const isNatureOther = isNature && natureSubtypeEl && natureSubtypeEl.value === "outros";
+        natureOtherGroup.hidden = !isNatureOther;
     }
+    if (drawingStyleGroup) drawingStyleGroup.hidden = !isDrawing;
+    if (drawingOtherGroup) {
+        const isDrawingOther = isDrawing && drawingStyleEl && drawingStyleEl.value === "outros";
+        drawingOtherGroup.hidden = !isDrawingOther;
+    }
+    if (customDescGroup) customDescGroup.hidden = !isCustom;
 }
 
 function _renderPersonaManagerList() {
@@ -3139,6 +3176,12 @@ async function openPersonaManager(context = "script") {
     if (subtypeEl) subtypeEl.value = "gato";
     const otherEl = document.getElementById("persona-manager-nature-other");
     if (otherEl) otherEl.value = "";
+    const drawingStyleEl = document.getElementById("persona-manager-drawing-style");
+    if (drawingStyleEl) drawingStyleEl.value = "cartoon";
+    const drawingOtherEl = document.getElementById("persona-manager-drawing-other");
+    if (drawingOtherEl) drawingOtherEl.value = "";
+    const customDescEl = document.getElementById("persona-manager-custom-desc");
+    if (customDescEl) customDescEl.value = "";
 
     _updatePersonaManagerFormByType();
     openModal("modal-persona-manager");
@@ -3157,6 +3200,9 @@ async function createPersonaFromManager() {
         const age = (document.getElementById("persona-manager-age")?.value || "").trim();
         const skin = (document.getElementById("persona-manager-skin")?.value || "").trim();
         const hair = (document.getElementById("persona-manager-hair")?.value || "").trim();
+        const drawingStyle = (document.getElementById("persona-manager-drawing-style")?.value || "cartoon").trim();
+        const drawingOther = (document.getElementById("persona-manager-drawing-other")?.value || "").trim();
+        const customDesc = (document.getElementById("persona-manager-custom-desc")?.value || "").trim();
         const extra = (document.getElementById("persona-manager-extra")?.value || "").trim();
         const setDefault = !!document.getElementById("persona-manager-set-default")?.checked;
 
@@ -3168,6 +3214,21 @@ async function createPersonaFromManager() {
                 const other = (document.getElementById("persona-manager-nature-other")?.value || "").trim();
                 if (other) attributes.outros_texto = other;
             }
+        } else if (_personaManagerType === "desenho") {
+            attributes.estilo_desenho = drawingStyle || "cartoon";
+            if (attributes.estilo_desenho === "outros") {
+                if (!drawingOther) {
+                    alert("Descreva o estilo personalizado antes de gerar a persona de desenho.");
+                    return;
+                }
+                attributes.estilo_desenho_custom = drawingOther;
+            }
+        } else if (_personaManagerType === "personalizado") {
+            if (!customDesc) {
+                alert("Descreva sua persona personalizada antes de gerar.");
+                return;
+            }
+            attributes.descricao_persona = customDesc;
         } else {
             if (!age || !skin || !hair) {
                 alert("Preencha idade, cor da pele e cor do cabelo antes de gerar a persona.");
@@ -3323,7 +3384,7 @@ async function generateAiScript() {
         const realisticDurationBtn = document.querySelector("#ai-suggest-realistic-duration .duration-option.selected");
         const realisticDuration = realisticDurationBtn ? parseInt(realisticDurationBtn.dataset.value, 10) : 10;
         let engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected") || document.querySelector("#wizard-realistic-engine .engine-option.selected");
-        let engine = engineBtn ? engineBtn.dataset.value : "minimax";
+        let engine = engineBtn ? engineBtn.dataset.value : "wan2";
         if (realisticDuration > 10 && engine !== "grok") {
             const engineSelector = document.getElementById("script-realistic-engine") || document.getElementById("wizard-realistic-engine");
             const grokBtn = engineSelector?.querySelector('.engine-option[data-value="grok"]');
@@ -3333,11 +3394,17 @@ async function generateAiScript() {
                 engineBtn = grokBtn;
             }
             engine = "grok";
-            showToast("Duracoes acima de 10s usam Grok automaticamente.");
+            showToast("Duracoes acima de 10s usam Cria 3.0 speed automaticamente.");
         }
         const usePhotosToggle = document.getElementById("script-use-photos");
         const hasReferenceImage = scriptPhotos.length > 0 && (!usePhotosToggle || usePhotosToggle.checked);
-        const engineLabel = engine === "grok" ? "Grok" : engine === "minimax" ? "MiniMax" : engine === "wan2" ? "Wan 2.2" : "Seedance";
+        const engineLabel = engine === "grok"
+            ? "Cria 3.0 speed"
+            : engine === "minimax"
+                ? "MiniMax"
+                : engine === "wan2"
+                    ? "Ultra High 2.2"
+                    : "Seedance";
         showCreateProgress("Gerando prompt cinematografico com IA...", {
             progress: 30,
             stage: `Otimizando prompt ${engineLabel}...`,
@@ -5062,7 +5129,7 @@ function openNewAutomationModal() {
     _refreshPersonaContext("auto", "natureza");
 
     // reset engine selection
-    _setAutoRealisticEngine("minimax");
+    _setAutoRealisticEngine("wan2");
 
     // reset duration selection
     document.querySelectorAll("#auto-realistic-duration .duration-option").forEach(d => d.classList.remove("selected"));
@@ -5164,7 +5231,7 @@ function _setAutoRealisticEngine(engineValue) {
     });
 
     if (!selected) {
-        selected = document.querySelector('#auto-realistic-engine [data-value="minimax"]');
+        selected = document.querySelector('#auto-realistic-engine [data-value="wan2"]');
         if (selected) selected.classList.add("selected");
     }
 
@@ -5190,7 +5257,7 @@ function _applyAutoRealisticEngineRules() {
     }
 
     const selected = document.querySelector("#auto-realistic-engine .engine-option.selected");
-    if (!selected) _setAutoRealisticEngine("minimax");
+    if (!selected) _setAutoRealisticEngine("wan2");
 }
 
 function autoStepNext() {
@@ -5237,7 +5304,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (_isAutoTevoxiShortMode()) {
                 _setAutoRealisticEngine("grok");
             } else {
-                _setAutoRealisticEngine(eng.dataset.value || "minimax");
+                _setAutoRealisticEngine(eng.dataset.value || "wan2");
             }
         }
         // Duration option click
@@ -6202,7 +6269,7 @@ async function createAutoSchedule() {
             return;
         }
         if (!personaProfileId) {
-            alert("Crie uma persona (com idade, cor da pele e cor do cabelo) antes de salvar a automacao realista.");
+            alert("Crie uma persona de interacao antes de salvar a automacao realista.");
             return;
         }
         const selectedEngine = document.querySelector("#auto-realistic-engine .engine-option.selected");
@@ -6215,7 +6282,7 @@ async function createAutoSchedule() {
             realistic_style: selectedStyle ? selectedStyle.dataset.style : "cinematic",
             interaction_persona: interactionPersona,
             persona_profile_id: personaProfileId,
-            engine: useTevoxi ? "grok" : (selectedEngine ? selectedEngine.dataset.value : "minimax"),
+            engine: useTevoxi ? "grok" : (selectedEngine ? selectedEngine.dataset.value : "wan2"),
             duration: selectedDur ? parseInt(selectedDur.dataset.value) : 7,
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",
             add_music: useMusic && !useTevoxi,

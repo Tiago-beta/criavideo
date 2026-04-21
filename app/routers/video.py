@@ -57,7 +57,7 @@ _REFERENCE_IMAGE_HINT_MARKERS = (
     "imagem de referencia",
     "foto enviada",
 )
-_INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza"}
+_INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"}
 
 
 def _ensure_reference_image_instruction(prompt: str) -> str:
@@ -83,6 +83,8 @@ def _normalize_interaction_persona(value: str) -> str:
         "crianca": "crianca",
         "família": "familia",
         "familia": "familia",
+        "personalizada": "personalizado",
+        "custom": "personalizado",
     }
     normalized = mapping.get(raw, raw)
     if normalized in _INTERACTION_PERSONAS:
@@ -111,6 +113,16 @@ def _build_interaction_persona_instruction(interaction_persona: str) -> str:
         return (
             "Inclua uma familia (duas ou mais pessoas) interagindo de forma natural com o ambiente "
             "e com a emocao do tema."
+        )
+    if persona == "desenho":
+        return (
+            "Inclua obrigatoriamente um personagem em estilo desenho/animacao (cartoon, 3D, anime, etc.) "
+            "interagindo com o ambiente e com a emocao do tema, com consistencia visual cinematografica."
+        )
+    if persona == "personalizado":
+        return (
+            "Inclua obrigatoriamente a persona personalizada definida pelo usuario, mantendo os tracos, estilo "
+            "e identidade visual descritos na referencia."
         )
     return (
         "Priorize natureza viva e inclua obrigatoriamente pelo menos um elemento visual de conexao "
@@ -1668,7 +1680,7 @@ async def generate_audio_endpoint(
 class GenerateRealisticPromptRequest(BaseModel):
     topic: str
     style: str = "cinematic"
-    engine: str = "seedance"
+    engine: str = "wan2"
     duration: int = 10
     interaction_persona: str = "natureza"
     has_reference_image: bool = False
@@ -1679,14 +1691,14 @@ async def generate_realistic_prompt_endpoint(
     req: GenerateRealisticPromptRequest,
     user: dict = Depends(get_current_user),
 ):
-    """Generate an optimized Seedance 2.0 prompt from a simple topic/theme."""
+    """Generate an optimized realistic-video prompt from a simple topic/theme."""
     topic = (req.topic or "").strip()
     if not topic:
         raise HTTPException(status_code=400, detail="Descreva o tema do video.")
     if len(topic) > 2000:
         raise HTTPException(status_code=400, detail="Tema muito longo (maximo 2000 caracteres).")
 
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "seedance"
+    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
     max_dur = 60 if engine == "grok" else 10
     duration = max(1, min(int(req.duration or 10), max_dur))
     interaction_persona = _normalize_interaction_persona(req.interaction_persona)
@@ -1728,7 +1740,7 @@ class GenerateRealisticRequest(BaseModel):
     narration_voice: str = "onyx"
     title: str = ""
     image_upload_id: str = ""
-    engine: str = "seedance"  # "seedance" or "minimax"
+    engine: str = "wan2"  # "seedance", "minimax", "wan2" or "grok"
     audio_url: str = ""       # External audio URL (e.g. from Tevoxi)
     lyrics: str = ""          # Lyrics/transcription for the audio clip
     clip_start: float = 0     # Start time in seconds for audio clip
@@ -1746,14 +1758,14 @@ async def generate_realistic_endpoint(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate a realistic AI video using Seedance 2.0, MiniMax Hailuo, or Wan 2.2."""
+    """Generate a realistic AI video using the available realistic engines."""
     prompt = (req.prompt or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Descreva a cena que voce quer ver no video.")
     if len(prompt) > 5000:
         raise HTTPException(status_code=400, detail="Descricao muito longa (maximo 5000 caracteres).")
 
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "seedance"
+    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
     max_dur = 60 if engine == "grok" else 10
     duration = max(1, min(req.duration, max_dur))
 
@@ -1783,7 +1795,7 @@ async def generate_realistic_endpoint(
             raise HTTPException(status_code=503, detail=str(exc))
 
         if not persona_image_path:
-            raise HTTPException(status_code=400, detail="Crie uma persona e preencha idade, cor da pele e cor do cabelo antes de gerar o video realista.")
+            raise HTTPException(status_code=400, detail="Crie uma persona de interacao primeiro antes de gerar o video realista.")
 
         image_path_str = str(persona_image_path)
         if resolved_persona:
@@ -1806,8 +1818,8 @@ async def generate_realistic_endpoint(
     if not project_title:
         project_title = prompt[:100]
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.2", "seedance": "Seedance 2.0", "grok": "Grok"}
-    engine_label = engine_labels.get(engine, "Seedance 2.0")
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Ultra High 2.2", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
+    engine_label = engine_labels.get(engine, "Ultra High 2.2")
 
     # Narration config stored in tags JSON
     narration_text = (req.narration_text or "").strip() if req.add_narration else ""

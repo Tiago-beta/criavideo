@@ -33,7 +33,7 @@ _AUTO_DEFAULTS = {
     "pause_level": "normal",
 }
 
-_INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza"}
+_INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"}
 
 _NICHE_KEYWORDS = {
     "gospel": (
@@ -328,6 +328,8 @@ def _normalize_interaction_persona(value: str) -> str:
         "crianca": "crianca",
         "família": "familia",
         "familia": "familia",
+        "personalizada": "personalizado",
+        "custom": "personalizado",
     }
     normalized = mapping.get(raw, raw)
     if normalized in _INTERACTION_PERSONAS:
@@ -355,6 +357,16 @@ def _build_interaction_persona_instruction(interaction_persona: str) -> str:
     if persona == "familia":
         return (
             "Inclua uma familia (duas ou mais pessoas) interagindo de forma natural com o ambiente e com a emocao do trecho."
+        )
+    if persona == "desenho":
+        return (
+            "Inclua um personagem em estilo desenho/animacao (cartoon, 3D, anime, etc.) interagindo com o ambiente "
+            "e com a emocao do trecho, mantendo coerencia visual cinematografica."
+        )
+    if persona == "personalizado":
+        return (
+            "Inclua a persona personalizada definida pelo usuario, respeitando os tracos, estilo e identidade visual "
+            "da referencia escolhida."
         )
     return (
         "Priorize natureza viva e inclua obrigatoriamente pelo menos um elemento visual de conexao "
@@ -770,12 +782,12 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
 async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> int:
     """Create a realistic video from a theme prompt.
 
-    Uses the realistic video pipeline (Seedance/MiniMax/Grok/Wan2).
+    Uses the realistic video pipeline (Wan2/Grok/Seedance/MiniMax).
     Optionally adds Tevoxi music or background music.
     """
     from app.tasks.video_tasks import run_realistic_video_pipeline
 
-    engine = str(cfg.get("engine", "minimax") or "minimax").strip().lower()
+    engine = str(cfg.get("engine", "wan2") or "wan2").strip().lower()
     duration = int(cfg.get("duration", 7))
     aspect_ratio = cfg.get("aspect_ratio", "9:16")
     realistic_style = cfg.get("realistic_style", "cinematic")
@@ -801,7 +813,7 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
         except RuntimeError as exc:
             raise RuntimeError(str(exc))
         if not reference_image_path:
-            raise RuntimeError("Crie uma persona com idade, cor da pele e cor do cabelo antes de rodar automacao realista")
+            raise RuntimeError("Crie uma persona de interacao antes de rodar automacao realista")
         if resolved_persona:
             resolved_persona_profile_id = int(resolved_persona.id)
 
@@ -1016,7 +1028,7 @@ async def _create_musical_short(
         except RuntimeError as exc:
             raise RuntimeError(str(exc))
         if not reference_image_path:
-            raise RuntimeError("Crie uma persona com idade, cor da pele e cor do cabelo antes de gerar short realista")
+            raise RuntimeError("Crie uma persona de interacao antes de gerar short realista")
         if resolved_persona:
             resolved_persona_profile_id = int(resolved_persona.id)
 

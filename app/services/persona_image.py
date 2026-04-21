@@ -16,20 +16,37 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-PERSONA_TYPES = ("homem", "mulher", "crianca", "familia", "natureza")
+PERSONA_TYPES = ("homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado")
 PERSONA_LABELS = {
     "homem": "Homem",
     "mulher": "Mulher",
     "crianca": "Crianca",
     "familia": "Familia",
     "natureza": "Natureza",
+    "desenho": "Desenho",
+    "personalizado": "Personalizado",
 }
 NATURE_SUBTYPES = {"gato", "cachorro", "papagaio", "outros"}
+DRAWING_STYLES = {
+    "cartoon",
+    "3d",
+    "anime",
+    "comic",
+    "manga",
+    "pixar",
+    "pixel_art",
+    "aquarela",
+    "outros",
+}
 
 
 def normalize_persona_type(value: str) -> str:
     raw = str(value or "").strip().lower()
     mapping = {
+        "desenho": "desenho",
+        "personalizado": "personalizado",
+        "personalizada": "personalizado",
+        "custom": "personalizado",
         "crianca": "crianca",
         "familia": "familia",
     }
@@ -87,6 +104,21 @@ def default_persona_attributes(persona_type: str) -> dict:
             "expressao": "afeto e unidade",
             "cenario": "ambiente externo natural",
         }
+    if persona_type == "desenho":
+        return {
+            "estilo_desenho": "cartoon",
+            "personagem_base": "heroina simpatica",
+            "paleta": "cores vivas e harmonicas",
+            "expressao": "confiante e amigavel",
+            "cenario": "fundo simples com profundidade",
+        }
+    if persona_type == "personalizado":
+        return {
+            "descricao_persona": "personagem autoral com identidade visual unica",
+            "estilo_visual": "cinematico realista",
+            "expressao": "natural e cativante",
+            "cenario": "fundo neutro com luz suave",
+        }
     return {
         "subtipo": "gato",
         "raca_ou_tipo": "domestico",
@@ -124,6 +156,24 @@ def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> 
             "cenario",
             "descricao_extra",
         ]
+    elif persona_type == "desenho":
+        keys = [
+            "estilo_desenho",
+            "estilo_desenho_custom",
+            "personagem_base",
+            "paleta",
+            "expressao",
+            "cenario",
+            "descricao_extra",
+        ]
+    elif persona_type == "personalizado":
+        keys = [
+            "descricao_persona",
+            "estilo_visual",
+            "expressao",
+            "cenario",
+            "descricao_extra",
+        ]
     else:
         keys = [
             "subtipo",
@@ -152,6 +202,30 @@ def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> 
         if subtype not in NATURE_SUBTYPES:
             subtype = "gato"
         normalized["subtipo"] = subtype
+    elif persona_type == "desenho":
+        style = normalized.get("estilo_desenho", "").lower()
+        style_map = {
+            "3d": "3d",
+            "cartoon": "cartoon",
+            "anime": "anime",
+            "comic": "comic",
+            "manga": "manga",
+            "pixar": "pixar",
+            "pixel": "pixel_art",
+            "pixelart": "pixel_art",
+            "pixel_art": "pixel_art",
+            "aquarela": "aquarela",
+            "watercolor": "aquarela",
+            "outros": "outros",
+            "outro": "outros",
+        }
+        style = style_map.get(style, style)
+        if style not in DRAWING_STYLES:
+            style = "cartoon"
+        normalized["estilo_desenho"] = style
+    elif persona_type == "personalizado":
+        if not normalized.get("descricao_persona"):
+            normalized["descricao_persona"] = "personagem autoral com identidade visual unica"
 
     if not normalized:
         normalized = default_persona_attributes(persona_type)
@@ -167,12 +241,25 @@ def build_default_persona_name(persona_type: str) -> str:
 def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
     persona_type = normalize_persona_type(persona_type)
 
-    base_rules = (
-        "Create one ultra-realistic portrait photo for a video reference persona. "
-        "The image must look like a high-quality real camera photo, sharp focus, natural skin textures, "
-        "balanced cinematic lighting, neutral background depth, no text, no watermark, no logo, no collage. "
-        "Keep only one clear main subject, centered, from chest-up framing, facing camera with slight natural pose."
-    )
+    if persona_type == "desenho":
+        base_rules = (
+            "Create one high-quality illustrated character reference image for video continuity. "
+            "No text, no watermark, no logo, no collage. Keep one clear subject centered, chest-up framing, "
+            "clean silhouette and consistent facial traits."
+        )
+    elif persona_type == "personalizado":
+        base_rules = (
+            "Create one high-quality character reference portrait for video continuity. "
+            "No text, no watermark, no logo, no collage. Keep one clear subject centered, chest-up framing, "
+            "strong identity consistency and coherent style."
+        )
+    else:
+        base_rules = (
+            "Create one ultra-realistic portrait photo for a video reference persona. "
+            "The image must look like a high-quality real camera photo, sharp focus, natural skin textures, "
+            "balanced cinematic lighting, neutral background depth, no text, no watermark, no logo, no collage. "
+            "Keep only one clear main subject, centered, from chest-up framing, facing camera with slight natural pose."
+        )
 
     if persona_type == "homem":
         details = (
@@ -206,7 +293,7 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
             f"Clothing style: {attributes.get('roupa', 'casual harmonizada')}. Expression: {attributes.get('expressao', 'afeto e unidade')}. "
             f"Environment mood: {attributes.get('cenario', 'ambiente externo natural')}."
         )
-    else:
+    elif persona_type == "natureza":
         subtype = attributes.get("subtipo", "gato")
         if subtype == "outros":
             nature_subject = attributes.get("outros_texto", "animal de estimacao exotico")
@@ -216,6 +303,24 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
             f"Subject: {nature_subject}. Type or breed: {attributes.get('raca_ou_tipo', 'domestico')}. "
             f"Color pattern: {attributes.get('cor', 'caramelo e branco')}. Expression: {attributes.get('expressao', 'serena e atenta')}. "
             f"Environment mood: {attributes.get('cenario', 'jardim ao por do sol')}."
+        )
+    elif persona_type == "desenho":
+        drawing_style = attributes.get("estilo_desenho", "cartoon")
+        if drawing_style == "outros":
+            drawing_style = attributes.get("estilo_desenho_custom", "estilo autoral")
+        details = (
+            f"Subject: illustrated character. Drawing style: {drawing_style}. "
+            f"Character concept: {attributes.get('personagem_base', 'heroina simpatica')}. "
+            f"Color palette: {attributes.get('paleta', 'cores vivas e harmonicas')}. "
+            f"Expression: {attributes.get('expressao', 'confiante e amigavel')}. "
+            f"Environment mood: {attributes.get('cenario', 'fundo simples com profundidade')}."
+        )
+    else:
+        details = (
+            f"Subject concept: {attributes.get('descricao_persona', 'personagem autoral com identidade visual unica')}. "
+            f"Visual style: {attributes.get('estilo_visual', 'cinematico realista')}. "
+            f"Expression: {attributes.get('expressao', 'natural e cativante')}. "
+            f"Environment mood: {attributes.get('cenario', 'fundo neutro com luz suave')}."
         )
 
     extra = attributes.get("descricao_extra", "")
