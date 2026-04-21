@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v161 loaded");
+console.log("[CriaVideo] app.js v162 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -47,6 +47,7 @@ let _personaMultiSelectionByContext = {
 let _personaManagerContext = "script";
 let _personaManagerType = "natureza";
 let _personaManagerMulti = false;
+let personaManagerReferenceImageFile = null;
 
 // Simple toast notification
 function showToast(msg, type = "info") {
@@ -3395,6 +3396,75 @@ async function _refreshPersonaManagerList() {
     }
 }
 
+function removePersonaReferenceImage() {
+    const inputEl = document.getElementById("persona-manager-reference-image");
+    if (inputEl) {
+        inputEl.value = "";
+    }
+
+    const previewEl = document.getElementById("persona-manager-reference-preview");
+    if (previewEl) {
+        const blobUrl = previewEl.dataset.objectUrl || "";
+        if (blobUrl.startsWith("blob:")) {
+            try {
+                URL.revokeObjectURL(blobUrl);
+            } catch {}
+        }
+        previewEl.src = "";
+        previewEl.hidden = true;
+        delete previewEl.dataset.objectUrl;
+    }
+
+    const removeBtn = document.getElementById("persona-manager-reference-remove");
+    if (removeBtn) {
+        removeBtn.hidden = true;
+    }
+
+    personaManagerReferenceImageFile = null;
+}
+
+function handlePersonaReferenceImageSelect(event) {
+    const file = event?.target?.files?.[0] || null;
+    if (!file) {
+        removePersonaReferenceImage();
+        return;
+    }
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (file.type && !allowedTypes.includes(file.type)) {
+        alert("Formato de imagem nao suportado. Use JPG, PNG ou WEBP.");
+        removePersonaReferenceImage();
+        return;
+    }
+
+    if ((file.size || 0) > 10 * 1024 * 1024) {
+        alert("Imagem muito grande (max 10MB).");
+        removePersonaReferenceImage();
+        return;
+    }
+
+    personaManagerReferenceImageFile = file;
+
+    const previewEl = document.getElementById("persona-manager-reference-preview");
+    if (previewEl) {
+        const previousUrl = previewEl.dataset.objectUrl || "";
+        if (previousUrl.startsWith("blob:")) {
+            try {
+                URL.revokeObjectURL(previousUrl);
+            } catch {}
+        }
+        const objectUrl = URL.createObjectURL(file);
+        previewEl.src = objectUrl;
+        previewEl.dataset.objectUrl = objectUrl;
+        previewEl.hidden = false;
+    }
+
+    const removeBtn = document.getElementById("persona-manager-reference-remove");
+    if (removeBtn) {
+        removeBtn.hidden = false;
+    }
+}
+
 async function openPersonaManager(context = "script") {
     _personaManagerContext = ["wizard", "script", "ai", "auto"].includes(context) ? context : "script";
     _personaManagerType = _getRealisticPersonaTypeByContext(_personaManagerContext);
@@ -3432,6 +3502,7 @@ async function openPersonaManager(context = "script") {
     if (drawingOtherEl) drawingOtherEl.value = "";
     const customDescEl = document.getElementById("persona-manager-custom-desc");
     if (customDescEl) customDescEl.value = "";
+    removePersonaReferenceImage();
 
     _updatePersonaManagerFormByType();
     openModal("modal-persona-manager");
@@ -3498,15 +3569,26 @@ async function createPersonaFromManager() {
             attributes.descricao_extra = extra;
         }
 
-        const response = await api("/persona/profiles", {
-            method: "POST",
-            body: JSON.stringify({
-                persona_type: _personaManagerType,
-                name,
-                attributes,
-                set_default: setDefault,
-            }),
-        });
+        let response = null;
+        if (personaManagerReferenceImageFile) {
+            const formData = new FormData();
+            formData.append("persona_type", _personaManagerType);
+            formData.append("name", name);
+            formData.append("attributes_json", JSON.stringify(attributes));
+            formData.append("set_default", setDefault ? "true" : "false");
+            formData.append("reference_image", personaManagerReferenceImageFile, personaManagerReferenceImageFile.name || "reference.png");
+            response = await apiForm("/persona/profiles/from-reference", formData);
+        } else {
+            response = await api("/persona/profiles", {
+                method: "POST",
+                body: JSON.stringify({
+                    persona_type: _personaManagerType,
+                    name,
+                    attributes,
+                    set_default: setDefault,
+                }),
+            });
+        }
 
         const createdId = parseInt(response?.profile?.id || "0", 10) || 0;
         if (createdId) {
@@ -3519,6 +3601,7 @@ async function createPersonaFromManager() {
         }
 
         await _refreshPersonaManagerList();
+        removePersonaReferenceImage();
     } catch (error) {
         alert(`Erro ao criar persona: ${error.message}`);
     } finally {
@@ -7496,6 +7579,8 @@ window.handlePersonaUpload = handlePersonaUpload;
 window.savePersonaVoice = savePersonaVoice;
 window.cancelPersonaPreview = cancelPersonaPreview;
 window.openPersonaManager = openPersonaManager;
+window.handlePersonaReferenceImageSelect = handlePersonaReferenceImageSelect;
+window.removePersonaReferenceImage = removePersonaReferenceImage;
 window.createPersonaFromManager = createPersonaFromManager;
 window.selectPersonaFromManager = selectPersonaFromManager;
 window.setDefaultPersonaFromManager = setDefaultPersonaFromManager;

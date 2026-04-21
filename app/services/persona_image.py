@@ -5,6 +5,7 @@ Creates realistic persona portraits using OpenAI gpt-image-1.
 
 import base64
 import logging
+import mimetypes
 import uuid
 from pathlib import Path
 
@@ -230,6 +231,10 @@ def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> 
     if not normalized:
         normalized = default_persona_attributes(persona_type)
 
+    reference_visual = _clean_text(raw.get("referencia_visual", ""), max_len=700)
+    if reference_visual:
+        normalized["referencia_visual"] = reference_visual
+
     return normalized
 
 
@@ -327,6 +332,14 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
     if extra:
         details = f"{details} Extra details: {extra}."
 
+    reference_visual = attributes.get("referencia_visual", "")
+    if reference_visual:
+        details = (
+            f"{details} Reference image guidance: {reference_visual}. "
+            "Use this as inspiration for visual traits and style, while creating a new original persona variation. "
+            "Do not copy logos, text, or exact copyrighted characters."
+        )
+
     return f"{base_rules} {details}"
 
 
@@ -336,9 +349,108 @@ def _persona_storage_dir(user_id: int, persona_type: str) -> Path:
     return target
 
 
-async def generate_persona_image(user_id: int, persona_type: str, attributes: dict | None) -> dict:
+def _extract_chat_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+
+    chunks: list[str] = []
+    for item in content:
+        if isinstance(item, dict):
+            if item.get("type") == "text" and item.get("text"):
+                chunks.append(str(item.get("text")))
+            continue
+
+        text = getattr(item, "text", "")
+        if text:
+            chunks.append(str(text))
+
+    return " ".join(chunks)
+
+
+async def _describe_reference_image(reference_image_path: str) -> str:
+    path = Path(str(reference_image_path or "")).expanduser()
+    if not path.exists():
+        return ""
+
+    try:
+        raw = path.read_bytes()
+    except Exception as exc:
+        logger.warning("Could not read persona reference image %s: %s", path, exc)
+        return ""
+
+    if not raw:
+        return ""
+
+    mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
+    encoded = base64.b64encode(raw).decode("ascii")
+    data_url = f"data:{mime_type};base64,{encoded}"
+
+    try:
+        client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+        analysis = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.2,
+            max_tokens=260,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a visual art director. Describe only objective visual traits "
+                        "for generating a similar original persona image."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Describe this reference image in one concise paragraph covering: "
+                                "facial traits, apparent age, skin tone, hairstyle, clothing style/colors, "
+                                "accessories, expression, framing, lighting and overall style. "
+                                "Do not mention brands, logos, text overlays, or copyrighted names."
+                            ),
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": data_url},
+                        },
+                    ],
+                },
+            ],
+        )
+    except Exception as exc:
+        logger.warning("Reference image analysis failed for %s: %s", path, exc)
+        return ""
+
+    choices = getattr(analysis, "choices", None) or []
+    if not choices:
+        return ""
+
+    message = getattr(choices[0], "message", None)
+    if not message:
+        return ""
+
+    text = _extract_chat_text(getattr(message, "content", ""))
+    return _clean_text(text, max_len=700)
+
+
+async def generate_persona_image(
+    user_id: int,
+    persona_type: str,
+    attributes: dict | None,
+    reference_image_path: str = "",
+) -> dict:
     normalized_type = normalize_persona_type(persona_type)
     normalized_attrs = normalize_persona_attributes(normalized_type, attributes)
+
+    if reference_image_path:
+        reference_visual = await _describe_reference_image(reference_image_path)
+        if reference_visual:
+            normalized_attrs["referencia_visual"] = reference_visual
+
     prompt = _build_persona_prompt(normalized_type, normalized_attrs)
 
     if not (settings.openai_api_key or "").strip():

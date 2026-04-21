@@ -73,6 +73,7 @@ async def create_persona_profile(
     name: str = "",
     attributes: dict | None = None,
     set_default: bool = False,
+    reference_image_path: str = "",
 ) -> PersonaProfile:
     persona_type = normalize_persona_type(persona_type)
     attrs = normalize_persona_attributes(persona_type, attributes)
@@ -81,6 +82,7 @@ async def create_persona_profile(
         user_id=user_id,
         persona_type=persona_type,
         attributes=attrs,
+        reference_image_path=reference_image_path,
     )
 
     profiles = await _query_active_profiles(db, user_id, persona_type)
