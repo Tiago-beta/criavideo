@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v159 loaded");
+console.log("[CriaVideo] app.js v160 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -3005,7 +3005,7 @@ function _getMultiPersonaCheckbox(context) {
 }
 
 function _supportsInlineMultiPersona(context) {
-    return context === "wizard" || context === "script" || context === "ai";
+    return context === "wizard" || context === "script" || context === "ai" || context === "auto";
 }
 
 function _isMultiPersonaEnabled(context) {
@@ -3167,37 +3167,29 @@ function _renderPersonaPreview(context) {
 
     if (_supportsInlineMultiPersona(context)) {
         const selectedSet = new Set(selectedIds);
-        const selectedCount = selectedIds.length;
-        const selectedLabel = `${selectedCount} selecionada${selectedCount === 1 ? "" : "s"}`;
         const cards = profiles.map((profile) => {
             const pid = parseInt(profile.id, 10) || 0;
             const isSelected = selectedSet.has(pid);
             const selectedClass = isSelected ? " selected" : "";
+            const profileName = esc(profile.name || `Persona ${pid}`);
             const imageHtml = profile.image_url
                 ? `<img class="realistic-persona-thumb" src="${profile.image_url}" alt="Persona ${esc(profile.name || "")}">`
                 : '<div class="realistic-persona-thumb"></div>';
-            const subtitle = profile.is_default ? "Padrao deste tipo" : "Persona personalizada";
 
             return `
                 <button
                     class="realistic-persona-option${selectedClass}"
                     type="button"
                     onclick="togglePersonaSelectionFromPreview('${context}', ${pid})"
+                    title="${profileName}"
+                    aria-label="${profileName}"
                     aria-pressed="${isSelected ? "true" : "false"}">
                     ${imageHtml}
-                    <div class="realistic-persona-meta">
-                        <div class="realistic-persona-name">${esc(profile.name || `Persona ${pid}`)}</div>
-                        <div class="realistic-persona-sub">${esc(subtitle)} - ${esc(REALISTIC_PERSONA_LABELS[type] || type)}</div>
-                    </div>
                 </button>
             `;
         }).join("");
 
         el.innerHTML = `
-            <div class="realistic-persona-picker-head">
-                <span class="realistic-persona-picker-label">Selecione uma ou mais personas</span>
-                <span class="realistic-persona-picker-count">${selectedLabel}</span>
-            </div>
             <div class="realistic-persona-grid">
                 ${cards}
             </div>
