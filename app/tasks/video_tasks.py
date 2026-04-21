@@ -1460,19 +1460,63 @@ async def run_realistic_video_pipeline(project_id: int):
             add_narration = tags.get("add_narration", False)
             narration_voice = tags.get("narration_voice", "onyx")
             narration_text = (project.description or "").strip() if add_narration else ""
+            dialogue_enabled = bool(tags.get("dialogue_enabled", False))
+            dialogue_characters = tags.get("dialogue_characters", []) if isinstance(tags.get("dialogue_characters", []), list) else []
+            dialogue_voice_profile_ids = tags.get("dialogue_voice_profile_ids", []) if isinstance(tags.get("dialogue_voice_profile_ids", []), list) else []
+            dialogue_tone = str(tags.get("dialogue_tone", "informativo") or "informativo").strip() or "informativo"
+            dialogue_duration = float(tags.get("dialogue_duration", 0) or 0)
 
             final_video_path = output_path
             has_audio = False
 
-            if engine in ("minimax", "wan2", "grok") and (add_narration or add_music):
+            if engine in ("minimax", "wan2", "grok") and (add_narration or add_music or dialogue_enabled):
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
                 audio_dir.mkdir(parents=True, exist_ok=True)
 
                 narration_path = ""
                 music_path = ""
 
+                # Dialogue mode: generate multi-speaker spoken track (+ optional separate BGM)
+                if dialogue_enabled:
+                    project.progress = 82
+                    await db.commit()
+                    try:
+                        from app.services.dialogue_audio import generate_dialogue_audio_bundle
+
+                        dialogue_result = await generate_dialogue_audio_bundle(
+                            db=db,
+                            user_id=int(project.user_id),
+                            project_id=project_id,
+                            prompt_text=user_prompt,
+                            target_duration=(dialogue_duration if dialogue_duration > 0 else video_duration),
+                            characters=dialogue_characters,
+                            voice_profile_ids=dialogue_voice_profile_ids,
+                            tone=dialogue_tone,
+                            interaction_persona=interaction_persona,
+                            realistic_style=realistic_style,
+                            add_music=bool(add_music),
+                        )
+                        narration_path = (dialogue_result.get("audio_path") or "").strip()
+                        if add_music:
+                            music_path = (dialogue_result.get("music_path") or "").strip()
+
+                        dialogue_script = (dialogue_result.get("script") or "").strip()
+                        dialogue_turns = dialogue_result.get("turns") or []
+                        if dialogue_script:
+                            tags["dialogue_script"] = dialogue_script
+                            if not transcribed_text_for_subtitles:
+                                transcribed_text_for_subtitles = dialogue_script
+                        if isinstance(dialogue_turns, list) and dialogue_turns:
+                            tags["dialogue_turns"] = dialogue_turns
+                        project.tags = tags
+                        await db.commit()
+                        logger.info("Dialogue audio generated for realistic project %s", project_id)
+                    except Exception as e:
+                        logger.warning(f"Dialogue generation failed, falling back to regular narration/music: {e}")
+                        dialogue_enabled = False
+
                 # Generate narration via TTS
-                if add_narration and narration_text:
+                if not dialogue_enabled and add_narration and narration_text:
                     project.progress = 82
                     await db.commit()
                     logger.info(f"Generating narration for realistic video {project_id}: voice={narration_voice}")
@@ -1493,7 +1537,7 @@ async def run_realistic_video_pipeline(project_id: int):
 
                 # Use external audio URL (from Tevoxi) or generate background music
                 external_audio_url = tags.get("audio_url", "")
-                if add_music and external_audio_url:
+                if add_music and external_audio_url and not dialogue_enabled:
                     project.progress = 85
                     await db.commit()
                     logger.info(f"Downloading external audio for realistic video {project_id}: {external_audio_url[:100]}")
@@ -1531,18 +1575,29 @@ async def run_realistic_video_pipeline(project_id: int):
                     await db.commit()
                     logger.info(f"Generating background music for realistic video {project_id}")
                     try:
-                        from app.services.tevoxi_music import generate_music_from_theme
-                        music_theme = user_prompt[:200]
-                        music_result = await generate_music_from_theme(
-                            theme=music_theme,
-                            project_id=project_id,
-                            duration=max(int(video_duration) + 5, 30),
-                            manual_settings={
-                                "music_mode": "instrumental",
-                                "music_duration": max(int(video_duration) + 5, 30),
-                            },
-                        )
-                        music_path = music_result.get("audio_path", "")
+                        if dialogue_enabled:
+                            from app.services.suno_music import generate_suno_music
+
+                            music_path = await generate_suno_music(
+                                output_path=str(audio_dir / "dialogue_music_fallback.mp3"),
+                                duration=max(video_duration + 2.0, 8.0),
+                                mood="informativo",
+                                topic=user_prompt[:120],
+                            )
+                        else:
+                            from app.services.tevoxi_music import generate_music_from_theme
+
+                            music_theme = user_prompt[:200]
+                            music_result = await generate_music_from_theme(
+                                theme=music_theme,
+                                project_id=project_id,
+                                duration=max(int(video_duration) + 5, 30),
+                                manual_settings={
+                                    "music_mode": "instrumental",
+                                    "music_duration": max(int(video_duration) + 5, 30),
+                                },
+                            )
+                            music_path = music_result.get("audio_path", "")
                         logger.info(f"Background music generated: {music_path}")
                     except Exception as e:
                         logger.warning(f"Music generation failed, trying FFmpeg fallback: {e}")
@@ -1596,7 +1651,12 @@ async def run_realistic_video_pipeline(project_id: int):
                     if has_external_audio:
                         text_for_subs = (transcribed_text_for_subtitles or "").strip()
                     else:
-                        text_for_subs = (transcribed_text_for_subtitles or project.lyrics_text or "").strip()
+                        text_for_subs = (
+                            transcribed_text_for_subtitles
+                            or str(tags.get("dialogue_script") or "")
+                            or project.lyrics_text
+                            or ""
+                        ).strip()
 
                     if words_for_subs:
                         generate_ass_subtitles(

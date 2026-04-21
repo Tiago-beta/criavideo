@@ -1757,6 +1757,11 @@ class GenerateRealisticRequest(BaseModel):
     interaction_persona: str = "natureza"
     persona_profile_id: int = 0
     persona_profile_ids: list[int] = Field(default_factory=list)
+    dialogue_enabled: bool = False
+    dialogue_characters: list[str] = Field(default_factory=list)
+    dialogue_voice_profile_ids: list[int] = Field(default_factory=list)
+    dialogue_tone: str = "informativo"
+    dialogue_duration: int = 0
 
 
 @router.post("/generate-realistic")
@@ -1794,6 +1799,29 @@ async def generate_realistic_endpoint(
     # Backward compatibility for older clients that send only persona_profile_id.
     if selected_persona_profile_id and selected_persona_profile_id not in selected_persona_profile_ids:
         selected_persona_profile_ids.insert(0, selected_persona_profile_id)
+
+    dialogue_enabled = bool(req.dialogue_enabled)
+    dialogue_characters: list[str] = []
+    for raw_name in (req.dialogue_characters or []):
+        cleaned = str(raw_name or "").strip()
+        if cleaned and cleaned not in dialogue_characters:
+            dialogue_characters.append(cleaned[:40])
+    dialogue_characters = dialogue_characters[:4]
+    if dialogue_enabled and len(dialogue_characters) < 2:
+        dialogue_characters = ["Personagem A", "Personagem B"]
+
+    dialogue_voice_profile_ids: list[int] = []
+    for raw_voice_id in (req.dialogue_voice_profile_ids or []):
+        try:
+            parsed_voice_id = int(raw_voice_id)
+        except Exception:
+            continue
+        if parsed_voice_id > 0 and parsed_voice_id not in dialogue_voice_profile_ids:
+            dialogue_voice_profile_ids.append(parsed_voice_id)
+    dialogue_voice_profile_ids = dialogue_voice_profile_ids[:4]
+
+    dialogue_tone = (req.dialogue_tone or "informativo").strip()[:40] or "informativo"
+    dialogue_duration = max(1, min(duration, int(req.dialogue_duration or duration))) if dialogue_enabled else 0
 
     upload_ids: list[str] = []
     for upload_id in (req.image_upload_ids or []):
@@ -1888,7 +1916,7 @@ async def generate_realistic_endpoint(
     engine_label = engine_labels.get(engine, "Ultra High 2.2")
 
     # Narration config stored in tags JSON
-    narration_text = (req.narration_text or "").strip() if req.add_narration else ""
+    narration_text = (req.narration_text or "").strip() if req.add_narration and not dialogue_enabled else ""
     narration_voice = req.narration_voice or "onyx"
     external_audio_url = (req.audio_url or "").strip()
     external_lyrics = (req.lyrics or "").strip()
@@ -1899,13 +1927,18 @@ async def generate_realistic_endpoint(
         "reference_source": "upload" if upload_ids else "persona",
         "reference_count": max(1, reference_count),
         "add_music": req.add_music or bool(external_audio_url),
-        "add_narration": req.add_narration and bool(narration_text),
+        "add_narration": req.add_narration and bool(narration_text) and not dialogue_enabled,
         "narration_voice": narration_voice,
         "prompt_optimized": bool(req.prompt_optimized),
         "realistic_style": (req.realistic_style or "").strip(),
         "interaction_persona": interaction_persona,
         "persona_profile_id": 0 if upload_ids else selected_persona_profile_id,
         "persona_profile_ids": [] if upload_ids else selected_persona_profile_ids,
+        "dialogue_enabled": dialogue_enabled,
+        "dialogue_characters": dialogue_characters,
+        "dialogue_voice_profile_ids": dialogue_voice_profile_ids,
+        "dialogue_tone": dialogue_tone,
+        "dialogue_duration": dialogue_duration,
     }
     if external_audio_url:
         tags_data["audio_url"] = external_audio_url

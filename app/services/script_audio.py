@@ -325,6 +325,7 @@ async def generate_tts_audio(
     voice_type: str = "builtin",
     pause_level: str = "normal",
     tone: str = "informativo",
+    output_filename: str = "narration.mp3",
 ) -> str:
     """Generate TTS audio and save to media directory. Returns file path.
 
@@ -335,7 +336,11 @@ async def generate_tts_audio(
     """
     audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
     audio_dir.mkdir(parents=True, exist_ok=True)
-    output_path = audio_dir / "narration.mp3"
+    safe_filename = (output_filename or "narration.mp3").strip() or "narration.mp3"
+    safe_filename = os.path.basename(safe_filename)
+    if not safe_filename.lower().endswith(".mp3"):
+        safe_filename = f"{safe_filename}.mp3"
+    output_path = audio_dir / safe_filename
 
     # Enhance TTS instructions based on pause level (for gpt-4o-mini-tts)
     if pause_level in ("relaxed", "deep"):

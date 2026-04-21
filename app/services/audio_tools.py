@@ -555,3 +555,78 @@ async def remove_vocals_track(
     logger.info("Olevita vocal removal unavailable. Using FFmpeg fallback.")
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _remove_vocals_ffmpeg, input_path, output_path)
+
+
+async def compose_dialogue_tracks(segments: list[dict], output_path: str) -> str:
+    """Compose dialogue turns on a timeline into a single MP3 track.
+
+    Each segment accepts: {"path": str, "start": float, "volume": float(optional)}.
+    """
+    valid_segments: list[dict] = []
+    for segment in segments or []:
+        path = str(segment.get("path") or "").strip()
+        if not path or not os.path.exists(path) or os.path.getsize(path) <= 0:
+            continue
+        try:
+            start = float(segment.get("start") or 0.0)
+        except Exception:
+            start = 0.0
+        try:
+            volume = float(segment.get("volume") or 1.0)
+        except Exception:
+            volume = 1.0
+        valid_segments.append({
+            "path": path,
+            "start": max(0.0, start),
+            "volume": max(0.05, min(2.0, volume)),
+        })
+
+    if not valid_segments:
+        raise RuntimeError("No valid dialogue segments to compose")
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+    inputs: list[str] = []
+    filters: list[str] = []
+    delayed_labels: list[str] = []
+
+    for idx, segment in enumerate(valid_segments):
+        inputs.extend(["-i", segment["path"]])
+        delay_ms = max(0, int(round(segment["start"] * 1000)))
+        label = f"d{idx}"
+        filters.append(
+            f"[{idx}:a]aresample=44100,volume={segment['volume']:.3f},adelay={delay_ms}|{delay_ms}[{label}]"
+        )
+        delayed_labels.append(f"[{label}]")
+
+    if len(delayed_labels) == 1:
+        filters.append(f"{delayed_labels[0]}anull[aout]")
+    else:
+        filters.append(
+            f"{''.join(delayed_labels)}amix=inputs={len(delayed_labels)}:duration=longest:normalize=0[aout]"
+        )
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        *inputs,
+        "-filter_complex",
+        ";".join(filters),
+        "-map",
+        "[aout]",
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        "192k",
+        output_path,
+    ]
+
+    loop = asyncio.get_event_loop()
+    proc = await loop.run_in_executor(
+        None,
+        lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=240),
+    )
+    if proc.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
+        raise RuntimeError(f"Dialogue composition failed: {proc.stderr[-300:]}")
+
+    return output_path
