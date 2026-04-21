@@ -52,6 +52,9 @@ async def optimize_prompt_for_grok(
             "Do not introduce a different person or morph the face."
         )
 
+    # Lower creativity when identity lock is required, so prompt drift is reduced.
+    temperature = 0.35 if has_reference_image else 0.7
+
     try:
         resp = await client.chat.completions.create(
             model="gpt-4o",
@@ -59,7 +62,7 @@ async def optimize_prompt_for_grok(
                 {"role": "system", "content": system},
                 {"role": "user", "content": user_msg},
             ],
-            temperature=0.7,
+            temperature=temperature,
             max_tokens=800,
         )
         optimized = resp.choices[0].message.content.strip()
