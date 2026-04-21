@@ -4,6 +4,7 @@ filters, music replacement, stickers, quality enhancement, export).
 """
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -94,6 +95,35 @@ def _build_aspect_pad_filter(aspect_ratio: str | None) -> str | None:
     if ar == "16:9":
         return "pad=w='ceil(max(iw,ih*16/9)/2)*2':h='ceil(max(ih,iw*9/16)/2)*2':x='(ow-iw)/2':y='(oh-ih)/2':color=black"
     return "pad=w='ceil(max(iw,ih)/2)*2':h='ceil(max(iw,ih)/2)*2':x='(ow-iw)/2':y='(oh-ih)/2':color=black"
+
+
+def _round_up_even(value: float) -> int:
+    iv = int(math.ceil(float(value or 0)))
+    if iv <= 0:
+        return 0
+    return iv if iv % 2 == 0 else iv + 1
+
+
+def _estimate_padded_canvas_size(width: int, height: int, aspect_ratio: str | None) -> tuple[int, int]:
+    """Mirror pad() geometry used in FFmpeg so overlay px sizing matches preview scale."""
+    w = max(1, int(width or 0))
+    h = max(1, int(height or 0))
+    ar = _normalize_aspect_ratio(aspect_ratio)
+    if not ar:
+        return w, h
+
+    if ar == "9:16":
+        out_w = max(float(w), float(h) * 9.0 / 16.0)
+        out_h = max(float(h), float(w) * 16.0 / 9.0)
+    elif ar == "16:9":
+        out_w = max(float(w), float(h) * 16.0 / 9.0)
+        out_h = max(float(h), float(w) * 9.0 / 16.0)
+    else:  # 1:1
+        mx = float(max(w, h))
+        out_w = mx
+        out_h = mx
+
+    return _round_up_even(out_w), _round_up_even(out_h)
 
 
 def _probe_video_metadata(video_path: str) -> tuple[float, str]:
@@ -781,6 +811,9 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         # Build video filter chain
         vfilters = []
         selected_aspect = _normalize_aspect_ratio(req.aspect_ratio) or _normalize_aspect_ratio(render.format) or "16:9"
+        src_width, src_height = _probe_media_dimensions(src_video)
+        _, overlay_canvas_height = _estimate_padded_canvas_size(src_width, src_height, selected_aspect)
+        overlay_scale = (overlay_canvas_height / 720.0) if overlay_canvas_height > 0 else 1.0
 
         if use_video_segment_filter:
             vfilters.append(f"select='{video_select_expr}',setpts=N/FRAME_RATE/TB")
@@ -812,12 +845,12 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             mapped_ranges = _map_source_interval_to_output(txt.start_time, txt.end_time, video_segments)
             for st, et in mapped_ranges:
                 base_fontsize = max(8, int(txt.font_size or 36))
-                fontsize_expr = f"h*{base_fontsize}/720"
+                fontsize_px = max(8, int(round(base_fontsize * overlay_scale)))
                 color = txt.color.lstrip("#")
                 x_expr = f"(w*{txt.x/100})"
                 y_expr = f"(h*{txt.y/100})"
                 escaped_text = txt.content.replace("'", "'\\\\\\''").replace(":", "\\:")
-                dt = f"drawtext=text='{escaped_text}':fontsize={fontsize_expr}:fontcolor=0x{color}:x={x_expr}-tw/2:y={y_expr}-th/2:enable='between(t,{st},{et})':shadowcolor=black:shadowx=2:shadowy=2"
+                dt = f"drawtext=text='{escaped_text}':fontsize={fontsize_px}:fontcolor=0x{color}:x={x_expr}-tw/2:y={y_expr}-th/2:enable='between(t,{st},{et})':shadowcolor=black:shadowx=2:shadowy=2"
                 vfilters.append(dt)
 
         # Subtitle overlays
@@ -826,16 +859,16 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             for st, et in mapped_ranges:
                 color = sub.font_color.lstrip("#") if sub.font_color else "FFFFFF"
                 base_fontsize = max(8, int(sub.font_size or 28))
-                fontsize_expr = f"h*{base_fontsize}/720"
-                outline_width_expr = f"max(2,h*{base_fontsize}*0.08/720)"
-                box_padding_expr = "h*8/720"
+                fontsize_px = max(8, int(round(base_fontsize * overlay_scale)))
+                outline_width_px = max(2, int(round(fontsize_px * 0.08)))
+                box_padding_px = max(1, int(round(8 * overlay_scale)))
                 x_expr = f"(w*{sub.x/100})-tw/2" if sub.x else "(w-tw)/2"
                 y_expr = f"(h*{sub.y/100})-th/2" if sub.y else "h-80"
                 escaped_text = sub.text.replace("'", "'\\\\\\\\''").replace(":", "\\:")
                 font_family = (sub.font_family or "Arial").split(",")[0].strip()
                 dt_parts = [
                     f"drawtext=text='{escaped_text}'",
-                    f"fontsize={fontsize_expr}",
+                    f"fontsize={fontsize_px}",
                     f"fontcolor=0x{color}",
                     f"x={x_expr}",
                     f"y={y_expr}",
@@ -846,10 +879,10 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 ]
                 if sub.bg_color:
                     bg = sub.bg_color.lstrip("#")[:6] if sub.bg_color.startswith("#") else "000000"
-                    dt_parts.append(f"box=1:boxcolor=0x{bg}@0.6:boxborderw={box_padding_expr}")
+                    dt_parts.append(f"box=1:boxcolor=0x{bg}@0.6:boxborderw={box_padding_px}")
                 if sub.outline_color:
                     border_c = sub.outline_color.lstrip("#")[:6]
-                    dt_parts.append(f"borderw='{outline_width_expr}':bordercolor=0x{border_c}")
+                    dt_parts.append(f"borderw={outline_width_px}:bordercolor=0x{border_c}")
                 dt = ":".join(dt_parts)
                 vfilters.append(dt)
 
@@ -956,7 +989,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
         stdout, stderr = proc.communicate()
         if proc.returncode != 0:
-            logger.error(f"[editor] FFmpeg failed: {stderr.decode()[:500]}")
+            err_text = stderr.decode(errors="ignore")
+            logger.error("[editor] FFmpeg failed: %s", err_text[-1800:])
             job["status"] = "failed"
             job["error"] = "FFmpeg falhou ao processar o video"
             return
