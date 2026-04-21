@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v158 loaded");
+console.log("[CriaVideo] app.js v159 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -3004,7 +3004,14 @@ function _getMultiPersonaCheckbox(context) {
     return document.getElementById("script-realistic-multi-persona");
 }
 
+function _supportsInlineMultiPersona(context) {
+    return context === "wizard" || context === "script" || context === "ai";
+}
+
 function _isMultiPersonaEnabled(context) {
+    if (_supportsInlineMultiPersona(context)) {
+        return true;
+    }
     const cb = _getMultiPersonaCheckbox(context);
     return !!(cb && cb.checked);
 }
@@ -3021,6 +3028,31 @@ function toggleMultiPersona(context, enabled) {
     _renderPersonaPreview(ctx);
 }
 window.toggleMultiPersona = toggleMultiPersona;
+
+function togglePersonaSelectionFromPreview(context, profileId) {
+    const ctx = ["wizard", "script", "ai", "auto"].includes(context) ? context : "script";
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return;
+
+    const type = _getRealisticPersonaTypeByContext(ctx);
+    const selectedIds = _getSelectedPersonaProfileIds(ctx, type);
+
+    if (selectedIds.includes(pid)) {
+        if (selectedIds.length === 1) {
+            return;
+        }
+        _setSelectedPersonaProfileIds(
+            ctx,
+            type,
+            selectedIds.filter((sid) => sid !== pid),
+        );
+    } else {
+        _setSelectedPersonaProfileIds(ctx, type, [...selectedIds, pid]);
+    }
+
+    _renderPersonaPreview(ctx);
+}
+window.togglePersonaSelectionFromPreview = togglePersonaSelectionFromPreview;
 
 async function _loadPersonaProfiles(personaType, ensureDefault = false) {
     const type = _normalizeRealisticPersonaType(personaType);
@@ -3119,7 +3151,60 @@ function _renderPersonaPreview(context) {
 
     const type = _getRealisticPersonaTypeByContext(context);
     const profiles = _getPersonaProfiles(type);
-    const selectedIds = _getSelectedPersonaProfileIds(context, type);
+    if (!profiles.length) {
+        el.innerHTML = '<div class="realistic-persona-empty">Nenhuma persona disponivel para este tipo ainda.</div>';
+        return;
+    }
+
+    let selectedIds = _getSelectedPersonaProfileIds(context, type)
+        .filter((sid) => profiles.some((profile) => parseInt(profile.id, 10) === sid));
+
+    if (!selectedIds.length) {
+        const fallback = profiles.find((profile) => !!profile.is_default) || profiles[0] || null;
+        selectedIds = fallback ? [parseInt(fallback.id, 10) || 0] : [];
+        _setSelectedPersonaProfileIds(context, type, selectedIds);
+    }
+
+    if (_supportsInlineMultiPersona(context)) {
+        const selectedSet = new Set(selectedIds);
+        const selectedCount = selectedIds.length;
+        const selectedLabel = `${selectedCount} selecionada${selectedCount === 1 ? "" : "s"}`;
+        const cards = profiles.map((profile) => {
+            const pid = parseInt(profile.id, 10) || 0;
+            const isSelected = selectedSet.has(pid);
+            const selectedClass = isSelected ? " selected" : "";
+            const imageHtml = profile.image_url
+                ? `<img class="realistic-persona-thumb" src="${profile.image_url}" alt="Persona ${esc(profile.name || "")}">`
+                : '<div class="realistic-persona-thumb"></div>';
+            const subtitle = profile.is_default ? "Padrao deste tipo" : "Persona personalizada";
+
+            return `
+                <button
+                    class="realistic-persona-option${selectedClass}"
+                    type="button"
+                    onclick="togglePersonaSelectionFromPreview('${context}', ${pid})"
+                    aria-pressed="${isSelected ? "true" : "false"}">
+                    ${imageHtml}
+                    <div class="realistic-persona-meta">
+                        <div class="realistic-persona-name">${esc(profile.name || `Persona ${pid}`)}</div>
+                        <div class="realistic-persona-sub">${esc(subtitle)} - ${esc(REALISTIC_PERSONA_LABELS[type] || type)}</div>
+                    </div>
+                </button>
+            `;
+        }).join("");
+
+        el.innerHTML = `
+            <div class="realistic-persona-picker-head">
+                <span class="realistic-persona-picker-label">Selecione uma ou mais personas</span>
+                <span class="realistic-persona-picker-count">${selectedLabel}</span>
+            </div>
+            <div class="realistic-persona-grid">
+                ${cards}
+            </div>
+        `;
+        return;
+    }
+
     const selectedProfiles = selectedIds
         .map((sid) => profiles.find((profile) => parseInt(profile.id, 10) === sid))
         .filter(Boolean);

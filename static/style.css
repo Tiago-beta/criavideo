@@ -4519,6 +4519,13 @@ th,
     margin-top: 12px;
 }
 
+#wizard-video-type-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 680px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
 /* ── Mode Selection Cards (Step 0) ── */
 .create-mode-selection {
     text-align: center;
@@ -4673,6 +4680,10 @@ th,
     .video-type-grid {
         grid-template-columns: 1fr;
         gap: 10px;
+    }
+    #wizard-video-type-grid {
+        grid-template-columns: 1fr;
+        max-width: none;
     }
     .video-type-card {
         flex-direction: row;
@@ -4829,10 +4840,86 @@ th,
     padding: 8px 2px;
 }
 
+.realistic-persona-picker-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.realistic-persona-picker-label {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+}
+
+.realistic-persona-picker-count {
+    font-size: 0.76rem;
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.realistic-persona-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+}
+
+.realistic-persona-option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.realistic-persona-option:hover {
+    border-color: rgba(0, 212, 255, 0.42);
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.12);
+}
+
+.realistic-persona-option.selected {
+    border-color: var(--accent);
+    background: linear-gradient(130deg, rgba(var(--accent-rgb), 0.16), rgba(var(--accent-strong-rgb), 0.12));
+    box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.28);
+}
+
+.realistic-persona-option .realistic-persona-thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.realistic-persona-option .realistic-persona-name {
+    font-size: 0.8rem;
+}
+
+.realistic-persona-option .realistic-persona-sub {
+    font-size: 0.7rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .realistic-persona-actions {
     margin-top: 8px;
     display: flex;
     justify-content: flex-start;
+    align-items: center;
+    gap: 8px;
+}
+
+.realistic-persona-gear {
+    width: 34px;
+    height: 34px;
+    padding: 0;
 }
 
 .persona-manager-list {
