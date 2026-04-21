@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v157 loaded");
+console.log("[CriaVideo] app.js v158 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -38,8 +38,15 @@ let _personaSelectionByContext = {
     ai: {},
     auto: {},
 };
+let _personaMultiSelectionByContext = {
+    wizard: {},
+    script: {},
+    ai: {},
+    auto: {},
+};
 let _personaManagerContext = "script";
 let _personaManagerType = "natureza";
+let _personaManagerMulti = false;
 
 // Simple toast notification
 function showToast(msg, type = "info") {
@@ -1745,6 +1752,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
     const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
     let personaProfileId = 0;
+    let personaProfileIds = [];
 
     // Narration fields
     const narrationEl = document.getElementById(`${prefix}-realistic-narration`);
@@ -1766,19 +1774,26 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     _startSmoothProgress();
 
     try {
-        personaProfileId = await _ensurePersonaSelection(prefix === "wizard" ? "wizard" : "script", interactionPersona);
+        const contextKey = prefix === "wizard" ? "wizard" : "script";
+        personaProfileIds = await _ensurePersonaSelections(contextKey, interactionPersona);
+        personaProfileId = personaProfileIds[0] || 0;
 
-        if (!wantsReferenceImage && !personaProfileId) {
-            throw new Error("Crie uma persona de interacao primeiro para gerar o video realista.");
+        if (!wantsReferenceImage && !personaProfileIds.length) {
+            throw new Error("Crie uma ou mais personas de interacao primeiro para gerar o video realista.");
         }
 
         // Upload reference image if available
         let imageUploadId = "";
+        let imageUploadIds = [];
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
         if (shouldUploadReferenceImage) {
             setCreateProgress(5, "Gerando video realista...", "Enviando imagem de referencia...");
-            const uploaded = await uploadTempFileWithRetry(scriptPhotos[0], "image", "imagem de referencia");
-            imageUploadId = uploaded.upload_id;
+            const photosToUpload = scriptPhotos.slice(0, 6);
+            for (const photo of photosToUpload) {
+                const uploaded = await uploadTempFileWithRetry(photo, "image", "imagem de referencia");
+                imageUploadIds.push(uploaded.upload_id);
+            }
+            imageUploadId = imageUploadIds[0] || "";
             _smoothProgressTarget = 15;
         }
 
@@ -1798,11 +1813,13 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 narration_voice: narrationVoice,
                 title: title || "",
                 image_upload_id: imageUploadId,
+                image_upload_ids: imageUploadIds,
                 engine: engine,
                 prompt_optimized: scriptData.promptOptimized || false,
                 realistic_style: realisticStyle || "",
                 interaction_persona: interactionPersona,
                 persona_profile_id: personaProfileId,
+                persona_profile_ids: personaProfileIds,
             }),
         });
 
@@ -2014,9 +2031,22 @@ function resetCreateWizard() {
         defAiPersona.classList.add("selected");
     }
 
+    [
+        "wizard-realistic-multi-persona",
+        "script-realistic-multi-persona",
+        "ai-realistic-multi-persona",
+        "auto-realistic-multi-persona",
+    ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = false;
+    });
+
     _personaSelectionByContext.wizard = {};
     _personaSelectionByContext.script = {};
     _personaSelectionByContext.ai = {};
+    _personaMultiSelectionByContext.wizard = {};
+    _personaMultiSelectionByContext.script = {};
+    _personaMultiSelectionByContext.ai = {};
     _refreshPersonaContext("wizard", "natureza");
     _refreshPersonaContext("script", "natureza");
     _refreshPersonaContext("ai", "natureza");
@@ -2967,6 +2997,31 @@ function _getPersonaProfiles(personaType) {
     return _personaProfilesByType[_normalizeRealisticPersonaType(personaType)] || [];
 }
 
+function _getMultiPersonaCheckbox(context) {
+    if (context === "wizard") return document.getElementById("wizard-realistic-multi-persona");
+    if (context === "ai") return document.getElementById("ai-realistic-multi-persona");
+    if (context === "auto") return document.getElementById("auto-realistic-multi-persona");
+    return document.getElementById("script-realistic-multi-persona");
+}
+
+function _isMultiPersonaEnabled(context) {
+    const cb = _getMultiPersonaCheckbox(context);
+    return !!(cb && cb.checked);
+}
+
+function toggleMultiPersona(context, enabled) {
+    const ctx = ["wizard", "script", "ai", "auto"].includes(context) ? context : "script";
+    const type = _getRealisticPersonaTypeByContext(ctx);
+    const selectedIds = _getSelectedPersonaProfileIds(ctx, type);
+    const isEnabled = !!enabled;
+
+    if (!isEnabled && selectedIds.length > 1) {
+        _setSelectedPersonaProfileIds(ctx, type, [selectedIds[0]]);
+    }
+    _renderPersonaPreview(ctx);
+}
+window.toggleMultiPersona = toggleMultiPersona;
+
 async function _loadPersonaProfiles(personaType, ensureDefault = false) {
     const type = _normalizeRealisticPersonaType(personaType);
     const query = new URLSearchParams({
@@ -2982,7 +3037,10 @@ async function _loadPersonaProfiles(personaType, ensureDefault = false) {
 function _getSelectedPersonaProfileId(context, personaType) {
     const type = _normalizeRealisticPersonaType(personaType);
     const ctx = _personaSelectionByContext[context] || {};
-    return parseInt(ctx[type] || "0", 10) || 0;
+    const raw = parseInt(ctx[type] || "0", 10) || 0;
+    if (raw > 0) return raw;
+    const ids = _getSelectedPersonaProfileIds(context, type);
+    return ids.length ? ids[0] : 0;
 }
 
 function _setSelectedPersonaProfileId(context, personaType, profileId) {
@@ -2990,18 +3048,66 @@ function _setSelectedPersonaProfileId(context, personaType, profileId) {
     if (!_personaSelectionByContext[context]) {
         _personaSelectionByContext[context] = {};
     }
-    _personaSelectionByContext[context][type] = parseInt(profileId || "0", 10) || 0;
+    const pid = parseInt(profileId || "0", 10) || 0;
+    _personaSelectionByContext[context][type] = pid;
+
+    if (!_personaMultiSelectionByContext[context]) {
+        _personaMultiSelectionByContext[context] = {};
+    }
+    _personaMultiSelectionByContext[context][type] = pid ? [pid] : [];
+}
+
+function _getSelectedPersonaProfileIds(context, personaType) {
+    const type = _normalizeRealisticPersonaType(personaType);
+    const ctx = _personaMultiSelectionByContext[context] || {};
+    const rawList = Array.isArray(ctx[type]) ? ctx[type] : [];
+    const normalized = [];
+    rawList.forEach((value) => {
+        const pid = parseInt(value || "0", 10) || 0;
+        if (pid > 0 && !normalized.includes(pid)) {
+            normalized.push(pid);
+        }
+    });
+
+    if (normalized.length) {
+        return normalized;
+    }
+
+    const fallback = _personaSelectionByContext[context] || {};
+    const single = parseInt(fallback[type] || "0", 10) || 0;
+    return single ? [single] : [];
+}
+
+function _setSelectedPersonaProfileIds(context, personaType, profileIds) {
+    const type = _normalizeRealisticPersonaType(personaType);
+    if (!_personaMultiSelectionByContext[context]) {
+        _personaMultiSelectionByContext[context] = {};
+    }
+    if (!_personaSelectionByContext[context]) {
+        _personaSelectionByContext[context] = {};
+    }
+
+    const normalized = [];
+    (Array.isArray(profileIds) ? profileIds : []).forEach((value) => {
+        const pid = parseInt(value || "0", 10) || 0;
+        if (pid > 0 && !normalized.includes(pid)) {
+            normalized.push(pid);
+        }
+    });
+
+    _personaMultiSelectionByContext[context][type] = normalized;
+    _personaSelectionByContext[context][type] = normalized[0] || 0;
 }
 
 function _getSelectedPersonaProfile(context, personaType) {
     const type = _normalizeRealisticPersonaType(personaType);
     const profiles = _getPersonaProfiles(type);
-    const selectedId = _getSelectedPersonaProfileId(context, type);
-    let selected = profiles.find((profile) => parseInt(profile.id, 10) === selectedId);
+    const selectedIds = _getSelectedPersonaProfileIds(context, type);
+    let selected = profiles.find((profile) => parseInt(profile.id, 10) === (selectedIds[0] || 0));
     if (!selected) {
         selected = profiles.find((profile) => !!profile.is_default) || profiles[0] || null;
         if (selected) {
-            _setSelectedPersonaProfileId(context, type, selected.id);
+            _setSelectedPersonaProfileIds(context, type, [selected.id]);
         }
     }
     return selected;
@@ -3012,9 +3118,37 @@ function _renderPersonaPreview(context) {
     if (!el) return;
 
     const type = _getRealisticPersonaTypeByContext(context);
-    const profile = _getSelectedPersonaProfile(context, type);
-    if (!profile) {
+    const profiles = _getPersonaProfiles(type);
+    const selectedIds = _getSelectedPersonaProfileIds(context, type);
+    const selectedProfiles = selectedIds
+        .map((sid) => profiles.find((profile) => parseInt(profile.id, 10) === sid))
+        .filter(Boolean);
+
+    const profile = selectedProfiles[0] || _getSelectedPersonaProfile(context, type);
+    if (!profile && !selectedProfiles.length) {
         el.innerHTML = '<div class="realistic-persona-empty">Nenhuma persona disponivel para este tipo ainda.</div>';
+        return;
+    }
+
+    if (_isMultiPersonaEnabled(context) && selectedProfiles.length > 1) {
+        const thumbs = selectedProfiles.slice(0, 4).map((item) => {
+            if (item.image_url) {
+                return `<img class="realistic-persona-thumb" src="${item.image_url}" alt="Persona ${esc(item.name || "")}">`;
+            }
+            return '<div class="realistic-persona-thumb"></div>';
+        }).join("");
+        const names = selectedProfiles.slice(0, 4).map((item) => esc(item.name || `Persona ${item.id}`)).join(", ");
+        const extra = selectedProfiles.length > 4 ? ` e +${selectedProfiles.length - 4}` : "";
+
+        el.innerHTML = `
+            <div class="realistic-persona-card">
+                <div style="display:flex; gap:0.45rem; align-items:center;">${thumbs}</div>
+                <div class="realistic-persona-meta">
+                    <div class="realistic-persona-name">${selectedProfiles.length} personas selecionadas</div>
+                    <div class="realistic-persona-sub">${names}${extra}</div>
+                </div>
+            </div>
+        `;
         return;
     }
 
@@ -3047,12 +3181,19 @@ async function _refreshPersonaContext(context, forcedPersonaType = "") {
     }
 
     const profiles = _getPersonaProfiles(type);
-    const selectedId = _getSelectedPersonaProfileId(context, type);
-    const hasSelected = profiles.some((profile) => parseInt(profile.id, 10) === selectedId);
-    if (!hasSelected) {
-        const fallback = profiles.find((profile) => !!profile.is_default) || profiles[0] || null;
-        _setSelectedPersonaProfileId(context, type, fallback ? fallback.id : 0);
+    let selectedIds = _getSelectedPersonaProfileIds(context, type)
+        .filter((sid) => profiles.some((profile) => parseInt(profile.id, 10) === sid));
+
+    if (!_isMultiPersonaEnabled(context) && selectedIds.length > 1) {
+        selectedIds = [selectedIds[0]];
     }
+
+    if (!selectedIds.length) {
+        const fallback = profiles.find((profile) => !!profile.is_default) || profiles[0] || null;
+        selectedIds = fallback ? [fallback.id] : [];
+    }
+
+    _setSelectedPersonaProfileIds(context, type, selectedIds);
 
     _renderPersonaPreview(context);
 }
@@ -3071,6 +3212,28 @@ async function _ensurePersonaSelection(context, personaType) {
     }
     const selected = _getSelectedPersonaProfile(context, type);
     return selected ? (parseInt(selected.id, 10) || 0) : 0;
+}
+
+async function _ensurePersonaSelections(context, personaType) {
+    const type = _normalizeRealisticPersonaType(personaType);
+    if (!_getPersonaProfiles(type).length) {
+        await _loadPersonaProfiles(type, false);
+    }
+    const profiles = _getPersonaProfiles(type);
+    let selectedIds = _getSelectedPersonaProfileIds(context, type)
+        .filter((sid) => profiles.some((profile) => parseInt(profile.id, 10) === sid));
+
+    if (!_isMultiPersonaEnabled(context) && selectedIds.length > 1) {
+        selectedIds = [selectedIds[0]];
+    }
+
+    if (!selectedIds.length) {
+        const fallback = profiles.find((profile) => !!profile.is_default) || profiles[0] || null;
+        selectedIds = fallback ? [parseInt(fallback.id, 10)] : [];
+    }
+
+    _setSelectedPersonaProfileIds(context, type, selectedIds);
+    return selectedIds;
 }
 
 function _updatePersonaManagerFormByType() {
@@ -3111,15 +3274,20 @@ function _renderPersonaManagerList() {
         return;
     }
 
-    const selectedId = _getSelectedPersonaProfileId(_personaManagerContext, _personaManagerType);
+    const selectedIds = _getSelectedPersonaProfileIds(_personaManagerContext, _personaManagerType);
     listEl.innerHTML = profiles.map((profile) => {
         const pid = parseInt(profile.id, 10) || 0;
-        const selectedClass = pid === selectedId ? " selected" : "";
+        const isSelected = selectedIds.includes(pid);
+        const selectedClass = isSelected ? " selected" : "";
         const defaultBadge = profile.is_default ? " - Padrao" : "";
         const imageUrl = profile.image_url || "";
         const image = imageUrl
             ? `<img class="persona-manager-photo" src="${imageUrl}" alt="${esc(profile.name || "Persona")}">`
             : '<div class="persona-manager-photo"></div>';
+        const useActionLabel = _personaManagerMulti ? (isSelected ? "Remover" : "Selecionar") : "Usar";
+        const useActionHandler = _personaManagerMulti
+            ? `togglePersonaSelectionFromManager(${pid})`
+            : `selectPersonaFromManager(${pid})`;
 
         return `
             <div class="persona-manager-card${selectedClass}">
@@ -3129,7 +3297,7 @@ function _renderPersonaManagerList() {
                     <div class="persona-manager-meta">${esc(REALISTIC_PERSONA_LABELS[_personaManagerType] || _personaManagerType)}${esc(defaultBadge)}</div>
                 </div>
                 <div class="persona-manager-actions">
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="selectPersonaFromManager(${pid})">Usar</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="${useActionHandler}">${useActionLabel}</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="setDefaultPersonaFromManager(${pid})">Padrao</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="deletePersonaFromManager(${pid})">Excluir</button>
                 </div>
@@ -3153,12 +3321,17 @@ async function _refreshPersonaManagerList() {
 async function openPersonaManager(context = "script") {
     _personaManagerContext = ["wizard", "script", "ai", "auto"].includes(context) ? context : "script";
     _personaManagerType = _getRealisticPersonaTypeByContext(_personaManagerContext);
+    _personaManagerMulti = _isMultiPersonaEnabled(_personaManagerContext);
 
     const titleEl = document.getElementById("persona-manager-title");
     if (titleEl) titleEl.textContent = `Gerenciar personas (${REALISTIC_PERSONA_LABELS[_personaManagerType] || _personaManagerType})`;
 
     const subtitleEl = document.getElementById("persona-manager-subtitle");
-    if (subtitleEl) subtitleEl.textContent = "Escolha ou gere personas para manter o mesmo personagem nos videos realistas.";
+    if (subtitleEl) {
+        subtitleEl.textContent = _personaManagerMulti
+            ? "Selecione varias personas para compor cenas com casal, amigos ou grupos."
+            : "Escolha ou gere personas para manter o mesmo personagem nos videos realistas.";
+    }
 
     const nameEl = document.getElementById("persona-manager-name");
     if (nameEl) nameEl.value = "";
@@ -3260,7 +3433,12 @@ async function createPersonaFromManager() {
 
         const createdId = parseInt(response?.profile?.id || "0", 10) || 0;
         if (createdId) {
-            _setSelectedPersonaProfileId(_personaManagerContext, _personaManagerType, createdId);
+            if (_personaManagerMulti) {
+                const selectedIds = _getSelectedPersonaProfileIds(_personaManagerContext, _personaManagerType);
+                _setSelectedPersonaProfileIds(_personaManagerContext, _personaManagerType, [...selectedIds, createdId]);
+            } else {
+                _setSelectedPersonaProfileId(_personaManagerContext, _personaManagerType, createdId);
+            }
         }
 
         await _refreshPersonaManagerList();
@@ -3278,6 +3456,29 @@ async function selectPersonaFromManager(profileId) {
     const pid = parseInt(profileId || "0", 10) || 0;
     if (!pid) return;
     _setSelectedPersonaProfileId(_personaManagerContext, _personaManagerType, pid);
+    _renderPersonaManagerList();
+    _refreshAllPersonaPreviews();
+}
+
+async function togglePersonaSelectionFromManager(profileId) {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return;
+
+    const selectedIds = _getSelectedPersonaProfileIds(_personaManagerContext, _personaManagerType);
+    if (selectedIds.includes(pid)) {
+        _setSelectedPersonaProfileIds(
+            _personaManagerContext,
+            _personaManagerType,
+            selectedIds.filter((sid) => sid !== pid),
+        );
+    } else {
+        _setSelectedPersonaProfileIds(
+            _personaManagerContext,
+            _personaManagerType,
+            [...selectedIds, pid],
+        );
+    }
+
     _renderPersonaManagerList();
     _refreshAllPersonaPreviews();
 }
@@ -3307,9 +3508,13 @@ async function deletePersonaFromManager(profileId) {
         await api(`/persona/profiles/${pid}`, { method: "DELETE" });
 
         ["wizard", "script", "ai", "auto"].forEach((ctx) => {
-            const selectedId = _getSelectedPersonaProfileId(ctx, _personaManagerType);
-            if (selectedId === pid) {
-                _setSelectedPersonaProfileId(ctx, _personaManagerType, 0);
+            const selectedIds = _getSelectedPersonaProfileIds(ctx, _personaManagerType);
+            if (selectedIds.includes(pid)) {
+                _setSelectedPersonaProfileIds(
+                    ctx,
+                    _personaManagerType,
+                    selectedIds.filter((sid) => sid !== pid),
+                );
             }
         });
 
@@ -3396,8 +3601,14 @@ async function generateAiScript() {
             engine = "grok";
             showToast("Duracoes acima de 10s usam Cria 3.0 speed automaticamente.");
         }
+        let selectedPersonaIds = [];
+        try {
+            selectedPersonaIds = await _ensurePersonaSelections("ai", interactionPersona);
+        } catch (_) {
+            selectedPersonaIds = [];
+        }
         const usePhotosToggle = document.getElementById("script-use-photos");
-        const hasReferenceImage = scriptPhotos.length > 0 && (!usePhotosToggle || usePhotosToggle.checked);
+        const hasReferenceImage = selectedPersonaIds.length > 0 || (scriptPhotos.length > 0 && (!usePhotosToggle || usePhotosToggle.checked));
         const engineLabel = engine === "grok"
             ? "Cria 3.0 speed"
             : engine === "minimax"
@@ -5125,7 +5336,10 @@ function openNewAutomationModal() {
     document.querySelectorAll("#auto-realistic-persona-tags .style-tag").forEach(t => t.classList.remove("selected"));
     const defPersona = document.querySelector('#auto-realistic-persona-tags [data-persona="natureza"]');
     if (defPersona) defPersona.classList.add("selected");
+    const autoMultiPersona = document.getElementById("auto-realistic-multi-persona");
+    if (autoMultiPersona) autoMultiPersona.checked = false;
     _personaSelectionByContext.auto = {};
+    _personaMultiSelectionByContext.auto = {};
     _refreshPersonaContext("auto", "natureza");
 
     // reset engine selection
@@ -6262,14 +6476,16 @@ async function createAutoSchedule() {
         const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
         const interactionPersona = _normalizeRealisticPersonaType(selectedPersona ? selectedPersona.dataset.persona : "natureza");
         let personaProfileId = 0;
+        let personaProfileIds = [];
         try {
-            personaProfileId = await _ensurePersonaSelection("auto", interactionPersona);
+            personaProfileIds = await _ensurePersonaSelections("auto", interactionPersona);
+            personaProfileId = personaProfileIds[0] || 0;
         } catch (error) {
             alert(`Erro ao carregar persona: ${error.message}`);
             return;
         }
-        if (!personaProfileId) {
-            alert("Crie uma persona de interacao antes de salvar a automacao realista.");
+        if (!personaProfileIds.length) {
+            alert("Crie uma ou mais personas de interacao antes de salvar a automacao realista.");
             return;
         }
         const selectedEngine = document.querySelector("#auto-realistic-engine .engine-option.selected");
@@ -6282,6 +6498,7 @@ async function createAutoSchedule() {
             realistic_style: selectedStyle ? selectedStyle.dataset.style : "cinematic",
             interaction_persona: interactionPersona,
             persona_profile_id: personaProfileId,
+            persona_profile_ids: personaProfileIds,
             engine: useTevoxi ? "grok" : (selectedEngine ? selectedEngine.dataset.value : "wan2"),
             duration: selectedDur ? parseInt(selectedDur.dataset.value) : 7,
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",

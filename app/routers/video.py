@@ -20,7 +20,11 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.models import VideoProject, VideoScene, VideoRender, VideoStatus
 from app.config import get_settings
-from app.services.persona_registry import resolve_persona_reference_image
+from app.services.persona_registry import (
+    build_persona_reference_montage,
+    resolve_persona_reference_image,
+    resolve_persona_reference_images,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/video", tags=["video"])
@@ -1740,6 +1744,7 @@ class GenerateRealisticRequest(BaseModel):
     narration_voice: str = "onyx"
     title: str = ""
     image_upload_id: str = ""
+    image_upload_ids: list[str] = Field(default_factory=list)
     engine: str = "wan2"  # "seedance", "minimax", "wan2" or "grok"
     audio_url: str = ""       # External audio URL (e.g. from Tevoxi)
     lyrics: str = ""          # Lyrics/transcription for the audio clip
@@ -1749,6 +1754,7 @@ class GenerateRealisticRequest(BaseModel):
     realistic_style: str = ""
     interaction_persona: str = "natureza"
     persona_profile_id: int = 0
+    persona_profile_ids: list[int] = Field(default_factory=list)
 
 
 @router.post("/generate-realistic")
@@ -1774,38 +1780,96 @@ async def generate_realistic_endpoint(
 
     interaction_persona = _normalize_interaction_persona(req.interaction_persona)
     selected_persona_profile_id = int(req.persona_profile_id or 0)
+    selected_persona_profile_ids: list[int] = []
+    for raw_pid in (req.persona_profile_ids or []):
+        try:
+            parsed_pid = int(raw_pid)
+        except Exception:
+            continue
+        if parsed_pid > 0 and parsed_pid not in selected_persona_profile_ids:
+            selected_persona_profile_ids.append(parsed_pid)
 
-    # Resolve reference image with precedence: uploaded image > selected persona > default persona
+    # Backward compatibility for older clients that send only persona_profile_id.
+    if selected_persona_profile_id and selected_persona_profile_id not in selected_persona_profile_ids:
+        selected_persona_profile_ids.insert(0, selected_persona_profile_id)
+
+    upload_ids: list[str] = []
+    for upload_id in (req.image_upload_ids or []):
+        cleaned = str(upload_id or "").strip()
+        if cleaned and cleaned not in upload_ids:
+            upload_ids.append(cleaned)
+    if req.image_upload_id and req.image_upload_id not in upload_ids:
+        upload_ids.insert(0, req.image_upload_id)
+    upload_ids = upload_ids[:6]
+
+    # Resolve reference image with precedence: uploaded images > selected personas > default persona
     image_path_str = ""
-    if req.image_upload_id:
-        resolved = _resolve_temp_file(user["id"], req.image_upload_id, IMAGE_EXTS)
-        if not resolved:
-            raise HTTPException(status_code=400, detail="Imagem de referencia nao encontrada. Envie a foto novamente.")
-        image_path_str = str(resolved)
+    reference_count = 0
+    if upload_ids:
+        upload_image_paths: list[str] = []
+        for upload_id in upload_ids:
+            resolved = _resolve_temp_file(user["id"], upload_id, IMAGE_EXTS)
+            if not resolved:
+                raise HTTPException(status_code=400, detail="Uma das imagens de referencia nao foi encontrada. Envie novamente.")
+            upload_image_paths.append(str(resolved))
+
+        image_path_str = build_persona_reference_montage(
+            user_id=user["id"],
+            image_paths=upload_image_paths,
+            prefix="upload_refs",
+        )
+        reference_count = len(upload_image_paths)
     else:
         try:
-            resolved_persona, persona_image_path = await resolve_persona_reference_image(
+            resolved_personas, persona_image_paths = await resolve_persona_reference_images(
                 db=db,
                 user_id=user["id"],
                 persona_type=interaction_persona,
-                persona_profile_id=selected_persona_profile_id,
+                persona_profile_ids=selected_persona_profile_ids,
                 ensure_default=False,
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc))
 
-        if not persona_image_path:
-            raise HTTPException(status_code=400, detail="Crie uma persona de interacao primeiro antes de gerar o video realista.")
+        if not persona_image_paths:
+            try:
+                resolved_persona, persona_image_path = await resolve_persona_reference_image(
+                    db=db,
+                    user_id=user["id"],
+                    persona_type=interaction_persona,
+                    persona_profile_id=selected_persona_profile_id,
+                    ensure_default=False,
+                )
+                if resolved_persona and persona_image_path:
+                    resolved_personas = [resolved_persona]
+                    persona_image_paths = [persona_image_path]
+            except RuntimeError as exc:
+                raise HTTPException(status_code=503, detail=str(exc))
 
-        image_path_str = str(persona_image_path)
-        if resolved_persona:
-            selected_persona_profile_id = int(resolved_persona.id)
+        if not persona_image_paths:
+            raise HTTPException(status_code=400, detail="Crie uma ou mais personas de interacao antes de gerar o video realista.")
+
+        reference_count = len(persona_image_paths)
+        image_path_str = build_persona_reference_montage(
+            user_id=user["id"],
+            image_paths=persona_image_paths,
+            prefix="persona_refs",
+        )
+
+        selected_persona_profile_ids = [int(profile.id) for profile in resolved_personas]
+        selected_persona_profile_id = selected_persona_profile_ids[0] if selected_persona_profile_ids else 0
 
     has_reference_image = bool(image_path_str)
     if not has_reference_image:
         raise HTTPException(status_code=400, detail="Video realista exige imagem de referencia.")
 
     prompt = _ensure_reference_image_instruction(prompt)
+    if reference_count > 1:
+        prompt = (
+            f"{prompt}\n\n"
+            "MULTI-PERSONA REFERENCE RULE: Use all uploaded reference identities together in the same scene. "
+            "Preserve each face identity and visual traits without merging faces into one person."
+        )
 
     # Credit check — multi-clip costs more (1 credit per 15s segment)
     from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
@@ -1830,14 +1894,16 @@ async def generate_realistic_endpoint(
         "type": "realista",
         "engine": engine,
         "has_reference_image": has_reference_image,
-        "reference_source": "upload" if req.image_upload_id else "persona",
+        "reference_source": "upload" if upload_ids else "persona",
+        "reference_count": max(1, reference_count),
         "add_music": req.add_music or bool(external_audio_url),
         "add_narration": req.add_narration and bool(narration_text),
         "narration_voice": narration_voice,
         "prompt_optimized": bool(req.prompt_optimized),
         "realistic_style": (req.realistic_style or "").strip(),
         "interaction_persona": interaction_persona,
-        "persona_profile_id": 0 if req.image_upload_id else selected_persona_profile_id,
+        "persona_profile_id": 0 if upload_ids else selected_persona_profile_id,
+        "persona_profile_ids": [] if upload_ids else selected_persona_profile_ids,
     }
     if external_audio_url:
         tags_data["audio_url"] = external_audio_url

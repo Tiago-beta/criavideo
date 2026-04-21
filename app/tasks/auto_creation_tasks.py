@@ -18,7 +18,11 @@ from app.models import (
     AutoSchedule, AutoScheduleTheme, VideoProject, VideoStatus,
     PublishJob, PublishStatus, SocialAccount, VideoRender,
 )
-from app.services.persona_registry import resolve_persona_reference_image
+from app.services.persona_registry import (
+    build_persona_reference_montage,
+    resolve_persona_reference_image,
+    resolve_persona_reference_images,
+)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -793,6 +797,16 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     realistic_style = cfg.get("realistic_style", "cinematic")
     interaction_persona = _normalize_interaction_persona(cfg.get("interaction_persona", "natureza"))
     requested_persona_profile_id = int(cfg.get("persona_profile_id", 0) or 0)
+    requested_persona_profile_ids: list[int] = []
+    for raw_pid in (cfg.get("persona_profile_ids") or []):
+        try:
+            parsed_pid = int(raw_pid)
+        except Exception:
+            continue
+        if parsed_pid > 0 and parsed_pid not in requested_persona_profile_ids:
+            requested_persona_profile_ids.append(parsed_pid)
+    if requested_persona_profile_id and requested_persona_profile_id not in requested_persona_profile_ids:
+        requested_persona_profile_ids.insert(0, requested_persona_profile_id)
     add_music = cfg.get("add_music", False)
     use_tevoxi = cfg.get("use_tevoxi", False)
     enable_subtitles = cfg.get("enable_subtitles", False)
@@ -801,21 +815,43 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
 
     reference_image_path = ""
     resolved_persona_profile_id = 0
+    resolved_persona_profile_ids: list[int] = []
     async with async_session() as db:
         try:
-            resolved_persona, reference_image_path = await resolve_persona_reference_image(
-                db=db,
-                user_id=user_id,
-                persona_type=interaction_persona,
-                persona_profile_id=requested_persona_profile_id,
-                ensure_default=False,
-            )
+            if requested_persona_profile_ids:
+                resolved_personas, persona_image_paths = await resolve_persona_reference_images(
+                    db=db,
+                    user_id=user_id,
+                    persona_type=interaction_persona,
+                    persona_profile_ids=requested_persona_profile_ids,
+                    ensure_default=False,
+                )
+                if persona_image_paths:
+                    reference_image_path = build_persona_reference_montage(
+                        user_id=user_id,
+                        image_paths=persona_image_paths,
+                        prefix="auto_persona_refs",
+                    )
+                    resolved_persona_profile_ids = [int(profile.id) for profile in resolved_personas]
+                    if resolved_persona_profile_ids:
+                        resolved_persona_profile_id = resolved_persona_profile_ids[0]
+
+            if not reference_image_path:
+                resolved_persona, single_reference_path = await resolve_persona_reference_image(
+                    db=db,
+                    user_id=user_id,
+                    persona_type=interaction_persona,
+                    persona_profile_id=requested_persona_profile_id,
+                    ensure_default=False,
+                )
+                reference_image_path = single_reference_path
+                if resolved_persona:
+                    resolved_persona_profile_id = int(resolved_persona.id)
+                    resolved_persona_profile_ids = [resolved_persona_profile_id]
         except RuntimeError as exc:
             raise RuntimeError(str(exc))
         if not reference_image_path:
             raise RuntimeError("Crie uma persona de interacao antes de rodar automacao realista")
-        if resolved_persona:
-            resolved_persona_profile_id = int(resolved_persona.id)
 
     # Backend guardrail: Tevoxi realistic automation always uses Grok.
     if use_tevoxi:
@@ -834,6 +870,7 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
         "reference_source": "persona",
         "has_reference_image": True,
         "persona_profile_id": resolved_persona_profile_id,
+        "persona_profile_ids": resolved_persona_profile_ids,
     }
     if enable_subtitles and subtitle_settings:
         tags["subtitle_settings"] = subtitle_settings
@@ -1012,25 +1049,57 @@ async def _create_musical_short(
         or cfg.get("persona_profile_id")
         or 0
     )
+    requested_persona_profile_ids: list[int] = []
+    for raw_pid in (custom_settings.get("persona_profile_ids") or cfg.get("persona_profile_ids") or []):
+        try:
+            parsed_pid = int(raw_pid)
+        except Exception:
+            continue
+        if parsed_pid > 0 and parsed_pid not in requested_persona_profile_ids:
+            requested_persona_profile_ids.append(parsed_pid)
+    if requested_persona_profile_id and requested_persona_profile_id not in requested_persona_profile_ids:
+        requested_persona_profile_ids.insert(0, requested_persona_profile_id)
     engine = "grok"  # musical shorts are Grok-only
 
     reference_image_path = ""
     resolved_persona_profile_id = 0
+    resolved_persona_profile_ids: list[int] = []
     async with async_session() as db:
         try:
-            resolved_persona, reference_image_path = await resolve_persona_reference_image(
-                db=db,
-                user_id=user_id,
-                persona_type=interaction_persona,
-                persona_profile_id=requested_persona_profile_id,
-                ensure_default=False,
-            )
+            if requested_persona_profile_ids:
+                resolved_personas, persona_image_paths = await resolve_persona_reference_images(
+                    db=db,
+                    user_id=user_id,
+                    persona_type=interaction_persona,
+                    persona_profile_ids=requested_persona_profile_ids,
+                    ensure_default=False,
+                )
+                if persona_image_paths:
+                    reference_image_path = build_persona_reference_montage(
+                        user_id=user_id,
+                        image_paths=persona_image_paths,
+                        prefix="short_persona_refs",
+                    )
+                    resolved_persona_profile_ids = [int(profile.id) for profile in resolved_personas]
+                    if resolved_persona_profile_ids:
+                        resolved_persona_profile_id = resolved_persona_profile_ids[0]
+
+            if not reference_image_path:
+                resolved_persona, single_reference_path = await resolve_persona_reference_image(
+                    db=db,
+                    user_id=user_id,
+                    persona_type=interaction_persona,
+                    persona_profile_id=requested_persona_profile_id,
+                    ensure_default=False,
+                )
+                reference_image_path = single_reference_path
+                if resolved_persona:
+                    resolved_persona_profile_id = int(resolved_persona.id)
+                    resolved_persona_profile_ids = [resolved_persona_profile_id]
         except RuntimeError as exc:
             raise RuntimeError(str(exc))
         if not reference_image_path:
             raise RuntimeError("Crie uma persona de interacao antes de gerar short realista")
-        if resolved_persona:
-            resolved_persona_profile_id = int(resolved_persona.id)
 
     if not tevoxi_audio_url:
         raise RuntimeError("URL do audio Tevoxi nao configurada.")
@@ -1167,6 +1236,7 @@ async def _create_musical_short(
                 "reference_source": "persona",
                 "has_reference_image": True,
                 "persona_profile_id": resolved_persona_profile_id,
+                "persona_profile_ids": resolved_persona_profile_ids,
             },
             style_prompt=reference_image_path,
             aspect_ratio="9:16",

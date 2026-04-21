@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 173;
+        var REQUIRED_VER = 174;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -761,6 +761,12 @@
                             <div class="realistic-persona-actions">
                                 <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaManager('wizard')">Gerenciar personas</button>
                             </div>
+                            <div class="form-group" style="margin-top:0.6rem; margin-bottom:0;">
+                                <label class="toggle-label">
+                                    <input type="checkbox" id="wizard-realistic-multi-persona" onchange="toggleMultiPersona('wizard', this.checked)">
+                                    <span>Usar multiplas personas (casal, amigos, grupos)</span>
+                                </label>
+                            </div>
                         </div>
 
                         <div class="form-group" id="wizard-realistic-engine-group">
@@ -1205,6 +1211,12 @@
                             <div class="realistic-persona-actions">
                                 <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaManager('script')">Gerenciar personas</button>
                             </div>
+                            <div class="form-group" style="margin-top:0.6rem; margin-bottom:0;">
+                                <label class="toggle-label">
+                                    <input type="checkbox" id="script-realistic-multi-persona" onchange="toggleMultiPersona('script', this.checked)">
+                                    <span>Usar multiplas personas (casal, amigos, grupos)</span>
+                                </label>
+                            </div>
                         </div>
 
                         <div class="form-group" id="script-realistic-engine-group">
@@ -1416,6 +1428,12 @@
                         <div id="ai-suggest-persona-preview" class="realistic-persona-preview"></div>
                         <div class="realistic-persona-actions">
                             <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaManager('ai')">Gerenciar personas</button>
+                        </div>
+                        <div class="form-group" style="margin-top:0.6rem; margin-bottom:0;">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="ai-realistic-multi-persona" onchange="toggleMultiPersona('ai', this.checked)">
+                                <span>Usar multiplas personas (casal, amigos, grupos)</span>
+                            </label>
                         </div>
                     </div>
                     <div class="form-group" id="ai-suggest-realistic-duration-group" hidden>
@@ -1822,6 +1840,12 @@
                             <div id="auto-realistic-persona-preview" class="realistic-persona-preview"></div>
                             <div class="realistic-persona-actions">
                                 <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaManager('auto')">Gerenciar personas</button>
+                            </div>
+                            <div class="form-group" style="margin-top:0.6rem; margin-bottom:0;">
+                                <label class="toggle-label">
+                                    <input type="checkbox" id="auto-realistic-multi-persona" onchange="toggleMultiPersona('auto', this.checked)">
+                                    <span>Usar multiplas personas (casal, amigos, grupos)</span>
+                                </label>
                             </div>
                         </div>
                         <div class="form-group" id="auto-realistic-engine-group">
@@ -2241,7 +2265,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-04"></script>
-    <script src="/video/static/pwa.js?v=20260421-04"></script>
+    <script src="/video/static/app.js?v=20260421-05"></script>
+    <script src="/video/static/pwa.js?v=20260421-05"></script>
 </body>
 </html>
