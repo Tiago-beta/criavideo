@@ -225,8 +225,8 @@ async def ai_suggest(
             return ""
 
         markers = [
-            "🎵 letra da musica",
-            "letra da musica",
+            "🎵 letra da música",
+            "letra da música",
             "letra da música",
             "[verso",
             "[refr",
@@ -249,70 +249,70 @@ async def ai_suggest(
     # Build context for AI
     context_parts = []
     if project.title:
-        context_parts.append(f"Titulo do projeto: {project.title}")
+        context_parts.append(f"Título do projeto: {project.title}")
     if project.track_title:
-        context_parts.append(f"Musica: {project.track_title}")
+        context_parts.append(f"Música: {project.track_title}")
     if project.track_artist:
         context_parts.append(f"Artista: {project.track_artist}")
     if project.style_prompt:
         context_parts.append(f"Estilo visual: {project.style_prompt}")
     if project.lyrics_text:
         lyrics_preview = project.lyrics_text[:500]
-        context_parts.append(f"Letra da musica:\n{lyrics_preview}")
+        context_parts.append(f"Letra da música:\n{lyrics_preview}")
     if project.description:
-        context_parts.append(f"Descricao do projeto: {project.description}")
+        context_parts.append(f"Descrição do projeto: {project.description}")
 
-    context = "\n".join(context_parts) or "Video musical sem detalhes adicionais"
+    context = "\n".join(context_parts) or "Vídeo musical sem detalhes adicionais"
 
-    tema = project.track_title or project.title or "Video musical"
+    tema = project.track_title or project.title or "Vídeo musical"
     resumo = context[:2200]
     tags = [str(tag).strip() for tag in (project.tags or []) if str(tag).strip()]
-    publico = "Publico brasileiro do YouTube interessado em musica e conteudo emocional."
+    publico = "Público brasileiro do YouTube interessado em música e conteúdo emocional."
     if tags:
-        publico = f"Publico principal ligado a: {', '.join(tags[:6])}."
+        publico = f"Público principal ligado a: {', '.join(tags[:6])}."
     objetivo = "Maximizar CTR sem clickbait enganoso e melhorar clareza para o algoritmo."
     tom_desejado = project.style_prompt or "envolvente, premium e humano"
 
-    stage1_prompt = f"""Voce e um estrategista de crescimento para canais pequenos de musica no YouTube.
+    stage1_prompt = f"""Você é um estrategista de crescimento para canais pequenos de música no YouTube.
 
-Sua tarefa e transformar o conteudo de um video em:
-- 3 titulos fortes com potencial de CTR e clareza de busca
-- 1 descricao final enxuta para descoberta
+Sua tarefa é transformar o conteúdo de um vídeo em:
+- 3 títulos fortes com potencial de CTR e clareza de busca
+- 1 descrição final enxuta para descoberta
 
 Antes de escrever, descubra:
-- promessa principal da musica
-- emocao principal (forca, cura, esperanca, fe, etc)
+- promessa principal da música
+- emoção principal (força, cura, esperança, fé, etc)
 - palavras-chave de busca mais naturais para esse tema
-- melhor angulo para gerar clique sem enganar
+- melhor ângulo para gerar clique sem enganar
 
-REGRAS DE TITULO:
-- sempre em portugues brasileiro
-- formato preferencial: "<identidade da musica> | <frase de busca clara>"
-- combinar nome/identidade da musica com intencao de busca
-- maximo 80 caracteres
+REGRAS DE TÍTULO:
+- sempre em português brasileiro
+- formato preferencial: "<identidade da música> | <frase de busca clara>"
+- combinar nome/identidade da música com intenção de busca
+- máximo 80 caracteres
 - sem nomes de IA/plataforma/marca
 - sem clickbait enganoso
 
-REGRAS DE DESCRICAO:
+REGRAS DE DESCRIÇÃO:
 - 3 a 5 linhas curtas
 - linha 1: gancho emocional forte
-- linha 2: reforco com 2 ou 3 palavras-chave naturais
-- linha 3: CTA simples (ouca completa, curta, compartilhe, inscreva-se)
-- nao incluir letra completa da musica
-- nao iniciar com bloco de letra
-- nao usar texto tecnico sobre producao
+- linha 2: reforço com 2 ou 3 palavras-chave naturais
+- linha 3: CTA simples (ouça completa, curta, compartilhe, inscreva-se)
+- não incluir letra completa da música
+- não iniciar com bloco de letra
+- não usar texto técnico sobre produção
 
 Entregue:
 1. palavras-chave principais
-2. angulo central
-3. 3 titulos
-4. melhor titulo escolhido
-5. descricao final pronta para colar no YouTube
+2. ângulo central
+3. 3 títulos
+4. melhor título escolhido
+5. descrição final pronta para colar no YouTube
 
 DADOS DO VIDEO:
 Tema: {tema}
 Resumo: {resumo}
-Publico: {publico}
+Público: {publico}
 Objetivo: {objetivo}
 Tom desejado: {tom_desejado}
 
@@ -320,7 +320,7 @@ Retorne SOMENTE JSON (sem markdown) neste formato:
 {{
   "keywords": ["...", "..."],
   "angle": "...",
-  "titles": ["titulo 1", "titulo 2", "titulo 3"],
+    "titles": ["título 1", "título 2", "título 3"],
   "selected_title": "...",
   "description": "..."
 }}"""
@@ -351,7 +351,7 @@ Retorne SOMENTE JSON (sem markdown) neste formato:
             raw_titles = [raw_titles]
         title_options = [str(t).strip() for t in raw_titles if str(t).strip()]
         if not title_options:
-            title_options = [project.title or project.track_title or "Novo video"]
+            title_options = [project.title or project.track_title or "Novo vídeo"]
         while len(title_options) < 3:
             title_options.append(title_options[-1])
         title_options = title_options[:3]
@@ -372,38 +372,38 @@ Retorne SOMENTE JSON (sem markdown) neste formato:
         ).strip()
         draft_description = _strip_lyrics_blocks(draft_description)
 
-        stage2_prompt = f"""Voce e uma segunda IA de revisao editorial para YouTube.
+        stage2_prompt = f"""Você é uma segunda IA de revisão editorial para YouTube.
 
-Sua funcao e revisar e pontuar 3 titulos gerados por uma IA anterior, depois escolher o melhor e refinar a descricao final.
+    Sua função é revisar e pontuar 3 títulos gerados por uma IA anterior, depois escolher o melhor e refinar a descrição final.
 
 CONTEXTO REAL DO VIDEO:
 {context}
 
-PALAVRAS-CHAVE (IA 1): {', '.join(keywords[:6]) if keywords else 'nao informado'}
-ANGULO CENTRAL (IA 1): {angle or 'nao informado'}
+    PALAVRAS-CHAVE (IA 1): {', '.join(keywords[:6]) if keywords else 'não informado'}
+    ÂNGULO CENTRAL (IA 1): {angle or 'não informado'}
 
 TITULOS CANDIDATOS:
 1) {title_options[0]}
 2) {title_options[1]}
 3) {title_options[2]}
 
-DESCRICAO CANDIDATA:
-{draft_description or 'nao informado'}
+DESCRIÇÃO CANDIDATA:
+{draft_description or 'não informado'}
 
-CRITERIOS DE REVISAO:
+CRITÉRIOS DE REVISÃO:
 - clareza da promessa
 - potencial de CTR sem clickbait enganoso
 - leitura em mobile
-- aderencia ao conteudo real
-- combinacao entre identidade da musica e intencao de busca
-- uso estrategico de maiusculas/minusculas para destaque natural
-- descricao curta, objetiva e sem letra completa
+- aderência ao conteúdo real
+- combinação entre identidade da música e intenção de busca
+- uso estratégico de maiúsculas/minúsculas para destaque natural
+- descrição curta, objetiva e sem letra completa
 
-REGRAS OBRIGATORIAS DE SAIDA:
-- tudo em portugues brasileiro
-- titulo final com no maximo 80 caracteres
-- priorize formato "identidade da musica | frase de busca"
-- nao incluir letra completa da musica na descricao
+REGRAS OBRIGATÓRIAS DE SAÍDA:
+- tudo em português brasileiro
+- título final com no máximo 80 caracteres
+- priorize formato "identidade da música | frase de busca"
+- não incluir letra completa da música na descrição
 - sem nomes de IA/plataforma/marca
 
 Retorne SOMENTE JSON (sem markdown) neste formato:
@@ -612,3 +612,4 @@ async def save_publish_links(
     account.publish_links = req.links
     await db.commit()
     return {"ok": True}
+

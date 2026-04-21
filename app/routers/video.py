@@ -125,11 +125,11 @@ def _build_interaction_persona_instruction(interaction_persona: str) -> str:
         )
     if persona == "personalizado":
         return (
-            "Inclua obrigatoriamente a persona personalizada definida pelo usuario, mantendo os tracos, estilo "
+            "Inclua obrigatoriamente a persona personalizada definida pelo usuário, mantendo os traços, estilo "
             "e identidade visual descritos na referencia."
         )
     return (
-        "Priorize natureza viva e inclua obrigatoriamente pelo menos um elemento visual de conexao "
+        "Priorize natureza viva e inclua obrigatoriamente pelo menos um elemento visual de conexão "
         "(animal, flor, ave, borboleta ou outro ser vivo natural) em destaque e coerente com o tema."
     )
 
@@ -237,10 +237,10 @@ async def upload_temp_image(
     user: dict = Depends(get_current_user),
 ):
     if not file.filename:
-        raise HTTPException(status_code=400, detail="Arquivo de imagem invalido")
+        raise HTTPException(status_code=400, detail="Arquivo de imagem inválido")
     ext = Path(file.filename).suffix.lower()
     if ext not in IMAGE_EXTS:
-        raise HTTPException(status_code=400, detail="Formato de imagem nao suportado")
+        raise HTTPException(status_code=400, detail="Formato de imagem não suportado")
 
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:
@@ -259,14 +259,14 @@ async def upload_temp_audio(
     user: dict = Depends(get_current_user),
 ):
     if not file.filename:
-        raise HTTPException(status_code=400, detail="Arquivo de audio invalido")
+        raise HTTPException(status_code=400, detail="Arquivo de áudio inválido")
     ext = Path(file.filename).suffix.lower()
     if ext not in AUDIO_EXTS:
-        raise HTTPException(status_code=400, detail="Formato de audio nao suportado")
+        raise HTTPException(status_code=400, detail="Formato de áudio não suportado")
 
     content = await file.read()
     if len(content) > 80 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Audio excede 80MB")
+        raise HTTPException(status_code=400, detail="Áudio excede 80MB")
 
     upload_id = f"{uuid.uuid4().hex}{ext}"
     target = _temp_user_dir(user["id"]) / upload_id
@@ -281,14 +281,14 @@ async def upload_temp_video(
     user: dict = Depends(get_current_user),
 ):
     if not file.filename:
-        raise HTTPException(status_code=400, detail="Arquivo de video invalido")
+        raise HTTPException(status_code=400, detail="Arquivo de vídeo inválido")
     ext = Path(file.filename).suffix.lower()
     if ext not in VIDEO_EXTS:
-        raise HTTPException(status_code=400, detail="Formato de video nao suportado. Use MP4, MOV, AVI ou WEBM.")
+        raise HTTPException(status_code=400, detail="Formato de vídeo não suportado. Use MP4, MOV, AVI ou WEBM.")
 
     content = await file.read()
     if len(content) > 500 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Video excede 500MB")
+        raise HTTPException(status_code=400, detail="Vídeo excede 500MB")
 
     upload_id = f"{uuid.uuid4().hex}{ext}"
     target = _temp_user_dir(user["id"]) / upload_id
@@ -308,7 +308,7 @@ async def upload_temp_chunk_start(
     size = int(payload.get("size", 0) or 0)
 
     if not filename:
-        raise HTTPException(status_code=400, detail="Nome de arquivo invalido")
+        raise HTTPException(status_code=400, detail="Nome de arquivo inválido")
 
     ext = Path(filename).suffix.lower()
     if kind == "audio":
@@ -319,9 +319,9 @@ async def upload_temp_chunk_start(
         max_size = 10 * 1024 * 1024
 
     if ext not in allowed:
-        raise HTTPException(status_code=400, detail="Formato de arquivo nao suportado")
+        raise HTTPException(status_code=400, detail="Formato de arquivo não suportado")
     if size <= 0 or size > max_size:
-        raise HTTPException(status_code=400, detail="Tamanho de arquivo invalido")
+        raise HTTPException(status_code=400, detail="Tamanho de arquivo inválido")
 
     user_dir = _temp_user_dir(user["id"])
     session_id = uuid.uuid4().hex
@@ -353,17 +353,17 @@ async def upload_temp_chunk(
     meta_path = user_dir / f"{session_id}.json"
     part_path = user_dir / f"{session_id}.part"
     if not meta_path.exists() or not part_path.exists():
-        raise HTTPException(status_code=404, detail="Sessao de upload nao encontrada")
+        raise HTTPException(status_code=404, detail="Sessão de upload não encontrada")
 
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
     except Exception:
-        raise HTTPException(status_code=500, detail="Metadados de upload invalidos")
+        raise HTTPException(status_code=500, detail="Metadados de upload inválidos")
 
     try:
         offset = int(request.headers.get("x-upload-offset", "0"))
     except Exception:
-        raise HTTPException(status_code=400, detail="Offset invalido")
+        raise HTTPException(status_code=400, detail="Offset inválido")
 
     received = int(meta.get("received", 0))
     if offset != received:
@@ -396,12 +396,12 @@ async def upload_temp_chunk_finish(
     meta_path = user_dir / f"{session_id}.json"
     part_path = user_dir / f"{session_id}.part"
     if not meta_path.exists() or not part_path.exists():
-        raise HTTPException(status_code=404, detail="Sessao de upload nao encontrada")
+        raise HTTPException(status_code=404, detail="Sessão de upload não encontrada")
 
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
     except Exception:
-        raise HTTPException(status_code=500, detail="Metadados de upload invalidos")
+        raise HTTPException(status_code=500, detail="Metadados de upload inválidos")
 
     size = int(meta.get("size", 0))
     received = int(meta.get("received", 0))
@@ -656,9 +656,9 @@ async def rename_project(
 
     new_title = (req.title or "").strip()
     if not new_title:
-        raise HTTPException(status_code=400, detail="Titulo nao pode ficar vazio")
+        raise HTTPException(status_code=400, detail="Título não pode ficar vazio")
     if len(new_title) > 500:
-        raise HTTPException(status_code=400, detail="Titulo muito longo (maximo 500 caracteres)")
+        raise HTTPException(status_code=400, detail="Título muito longo (máximo 500 caracteres)")
 
     project.title = new_title
     await db.commit()
@@ -681,9 +681,9 @@ async def update_project_thumbnail(
     # Validate image type
     allowed = {"image/jpeg", "image/png", "image/webp"}
     if file.content_type not in allowed:
-        raise HTTPException(status_code=400, detail="Formato invalido. Envie JPG, PNG ou WebP.")
+        raise HTTPException(status_code=400, detail="Formato inválido. Envie JPG, PNG ou WebP.")
     if file.size and file.size > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Imagem muito grande (maximo 10MB)")
+        raise HTTPException(status_code=400, detail="Imagem muito grande (máximo 10MB)")
 
     ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(file.content_type, ".jpg")
     thumb_dir = Path("thumbnails") / str(project_id)
@@ -749,7 +749,7 @@ async def upload_project_images(
 
         ext = Path(filename).suffix.lower()
         if ext not in IMAGE_EXTS:
-            raise HTTPException(status_code=400, detail=f"Formato nao suportado para {filename}. Use JPG, PNG ou WebP.")
+            raise HTTPException(status_code=400, detail=f"Formato não suportado para {filename}. Use JPG, PNG ou WebP.")
 
         content = await image.read()
         if not content:
@@ -766,7 +766,7 @@ async def upload_project_images(
         next_idx += 1
 
     if not saved_files:
-        raise HTTPException(status_code=400, detail="Nenhuma imagem valida enviada")
+        raise HTTPException(status_code=400, detail="Nenhuma imagem válida enviada")
 
     if not bool(getattr(project, "use_custom_video", False)):
         project.use_custom_images = True
@@ -832,9 +832,9 @@ async def generate_video(
             project.track_duration = round(word_count / 2.5)
         except Exception as e:
             project.status = VideoStatus.FAILED
-            project.error_message = f"Erro ao gerar audio: {e}"
+            project.error_message = f"Erro ao gerar áudio: {e}"
             await db.commit()
-            raise HTTPException(status_code=500, detail=f"Erro ao gerar audio: {e}")
+            raise HTTPException(status_code=500, detail=f"Erro ao gerar áudio: {e}")
 
     project.status = VideoStatus.GENERATING_SCENES
     project.progress = 0
@@ -857,7 +857,7 @@ async def copy_project_with_format(
 ):
     """Create an exact copy of a completed project and re-render in another aspect ratio."""
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
-        raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1")
+        raise HTTPException(status_code=400, detail="Formato inválido. Use 16:9, 9:16 ou 1:1")
 
     source = await db.get(VideoProject, project_id)
     if not source or source.user_id != user["id"]:
@@ -872,9 +872,9 @@ async def copy_project_with_format(
     )
     source_render = source_render_res.scalars().first()
     if not source_render or not source_render.file_path:
-        raise HTTPException(status_code=400, detail="Projeto origem sem video renderizado")
+        raise HTTPException(status_code=400, detail="Projeto origem sem vídeo renderizado")
     if not os.path.exists(source_render.file_path):
-        raise HTTPException(status_code=400, detail="Arquivo do video origem nao foi encontrado")
+        raise HTTPException(status_code=400, detail="Arquivo do vídeo origem não foi encontrado")
 
     title = (source.title or source.track_title or "Video").strip()
     new_title = f"{title} [{req.aspect_ratio}]"
@@ -1115,10 +1115,10 @@ async def fix_text_endpoint(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": (
-                "Voce e um corretor ortografico e gramatical de portugues brasileiro. "
-                "Corrija APENAS erros de ortografia, acentuacao, pontuacao e gramatica no texto. "
-                "NAO altere o significado, o estilo, o tom ou a estrutura do texto. "
-                "NAO remova nem adicione frases. NAO reescreva o texto. "
+                "Você é um corretor ortográfico e gramatical de português brasileiro. "
+                "Corrija APENAS erros de ortografia, acentuação, pontuação e gramática no texto. "
+                "NÃO altere o significado, o estilo, o tom ou a estrutura do texto. "
+                "NÃO remova nem adicione frases. NÃO reescreva o texto. "
                 "Mantenha exatamente as reticencias (...), quebras de linha e formatacao original. "
                 "Retorne SOMENTE o texto corrigido, sem explicacoes."
             )},
@@ -1264,14 +1264,14 @@ async def generate_audio_endpoint(
     script_text = (req.script or "").strip()
     has_custom_audio = bool(custom_audio_id) or bool(custom_audio_upload and custom_audio_upload.filename)
     if req.use_custom_audio and not has_custom_audio:
-        raise HTTPException(status_code=400, detail="Usar meu audio esta ativo, mas nenhum arquivo foi enviado.")
+        raise HTTPException(status_code=400, detail="Usar meu áudio está ativo, mas nenhum arquivo foi enviado.")
 
     if req.use_custom_audio and req.audio_is_music:
         req.remove_vocals = True
         req.enable_subtitles = True
 
     if not script_text and not custom_image_uploads and not custom_image_ids and not has_custom_audio:
-        raise HTTPException(status_code=400, detail="Sem narracao, envie fotos ou audio para criar um video personalizado.")
+        raise HTTPException(status_code=400, detail="Sem narração, envie fotos ou áudio para criar um vídeo personalizado.")
 
     # ── Credit check: estimate duration → deduct credits ──
     from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
@@ -1333,13 +1333,13 @@ async def generate_audio_endpoint(
     project = VideoProject(
         user_id=user["id"],
         track_id=0,
-        title=req.title or "Video com IA",
+        title=req.title or "Vídeo com IA",
         description="",
         tags=[],
         style_prompt=req.style_prompt or "cinematic, vibrant colors, dynamic lighting",
         aspect_ratio=req.aspect_ratio,
-        track_title=req.title or ("Video enviado" if has_custom_video else "Audio enviado" if has_custom_audio else "Narração IA"),
-        track_artist="Usuario" if (has_custom_audio or has_custom_video) else "CriaVideo AI",
+        track_title=req.title or ("Vídeo enviado" if has_custom_video else "Áudio enviado" if has_custom_audio else "Narração IA"),
+        track_artist="Usuário" if (has_custom_audio or has_custom_video) else "CriaVideo AI",
         track_duration=0,
         lyrics_text=req.script,
         lyrics_words=[],
@@ -1399,7 +1399,7 @@ async def generate_audio_endpoint(
         try:
             src = _resolve_temp_file(user["id"], custom_video_id, VIDEO_EXTS)
             if not src:
-                raise HTTPException(status_code=400, detail="Video enviado nao foi encontrado.")
+                raise HTTPException(status_code=400, detail="Vídeo enviado não foi encontrado.")
             vid_dir = Path(settings.media_dir) / "videos" / str(project.id)
             vid_dir.mkdir(parents=True, exist_ok=True)
             ext = src.suffix.lower() if src.suffix else ".mp4"
@@ -1475,7 +1475,7 @@ async def generate_audio_endpoint(
             if custom_audio_id:
                 source_path = _resolve_temp_file(user["id"], custom_audio_id, AUDIO_EXTS)
                 if not source_path:
-                    raise HTTPException(status_code=400, detail="Audio enviado nao foi encontrado.")
+                    raise HTTPException(status_code=400, detail="Áudio enviado não foi encontrado.")
                 ext = source_path.suffix.lower() if source_path.suffix else ".mp3"
 
             target = audio_dir / f"user_main_audio{ext}"
@@ -1490,7 +1490,7 @@ async def generate_audio_endpoint(
                 with open(target, "wb") as f:
                     f.write(await custom_audio_upload.read())
             else:
-                raise HTTPException(status_code=400, detail="Audio principal nao enviado.")
+                raise HTTPException(status_code=400, detail="Áudio principal não enviado.")
 
             custom_main_audio_path = str(target)
             project.audio_path = custom_main_audio_path
@@ -1569,7 +1569,7 @@ async def generate_audio_endpoint(
                             )
                         raise HTTPException(
                             status_code=502,
-                            detail="Nao foi possivel concluir a remocao de voz agora. Tente novamente em alguns minutos.",
+                            detail="Não foi possível concluir a remoção de voz agora. Tente novamente em alguns minutos.",
                         )
 
                     if not instrumental_path or not os.path.exists(instrumental_path):
@@ -1578,12 +1578,12 @@ async def generate_audio_endpoint(
                                 karaoke_operation_id,
                                 user["id"],
                                 100,
-                                "Nao foi possivel baixar o audio sem voz.",
+                                "Não foi possível baixar o áudio sem voz.",
                                 status="failed",
                                 stage="removing_vocals",
                                 error="instrumental_output_missing",
                             )
-                        raise HTTPException(status_code=500, detail="Nao foi possivel remover a voz do audio.")
+                        raise HTTPException(status_code=500, detail="Não foi possível remover a voz do áudio.")
 
                     if karaoke_operation_id:
                         _set_karaoke_progress(
@@ -1601,7 +1601,7 @@ async def generate_audio_endpoint(
             raise
         except Exception as e:
             logger.warning(f"Failed to save custom main audio for project {project.id}: {e}")
-            raise HTTPException(status_code=400, detail=f"Falha ao processar audio enviado: {e}")
+            raise HTTPException(status_code=400, detail=f"Falha ao processar áudio enviado: {e}")
 
     try:
         if custom_main_audio_path:
@@ -1620,7 +1620,7 @@ async def generate_audio_endpoint(
                     tone=req.tone,
                 )
                 if not audio_path:
-                    raise Exception("Falha ao gerar narracao Suno AI. Tente novamente.")
+                    raise Exception("Falha ao gerar narração Suno AI. Tente novamente.")
                 project.audio_path = audio_path
                 # Suno narration includes background music — skip separate BGM
                 project.no_background_music = True
@@ -1668,14 +1668,14 @@ async def generate_audio_endpoint(
         }
     except HTTPException:
         project.status = VideoStatus.FAILED
-        project.error_message = "Configuracao invalida para geracao de audio"
+        project.error_message = "Configuração inválida para geração de áudio"
         await db.commit()
         raise
     except Exception as e:
         project.status = VideoStatus.FAILED
         project.error_message = str(e)
         await db.commit()
-        raise HTTPException(status_code=500, detail=f"Erro ao gerar audio: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar áudio: {e}")
 
 
 # ── Realistic Video (Seedance 2.0) ──────────────────────────────
@@ -1698,9 +1698,9 @@ async def generate_realistic_prompt_endpoint(
     """Generate an optimized realistic-video prompt from a simple topic/theme."""
     topic = (req.topic or "").strip()
     if not topic:
-        raise HTTPException(status_code=400, detail="Descreva o tema do video.")
+        raise HTTPException(status_code=400, detail="Descreva o tema do vídeo.")
     if len(topic) > 2000:
-        raise HTTPException(status_code=400, detail="Tema muito longo (maximo 2000 caracteres).")
+        raise HTTPException(status_code=400, detail="Tema muito longo (máximo 2000 caracteres).")
 
     engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
     max_dur = 60 if engine == "grok" else 10
@@ -1767,16 +1767,16 @@ async def generate_realistic_endpoint(
     """Generate a realistic AI video using the available realistic engines."""
     prompt = (req.prompt or "").strip()
     if not prompt:
-        raise HTTPException(status_code=400, detail="Descreva a cena que voce quer ver no video.")
+        raise HTTPException(status_code=400, detail="Descreva a cena que você quer ver no vídeo.")
     if len(prompt) > 5000:
-        raise HTTPException(status_code=400, detail="Descricao muito longa (maximo 5000 caracteres).")
+        raise HTTPException(status_code=400, detail="Descrição muito longa (máximo 5000 caracteres).")
 
     engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
     max_dur = 60 if engine == "grok" else 10
     duration = max(1, min(req.duration, max_dur))
 
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
-        raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1.")
+        raise HTTPException(status_code=400, detail="Formato inválido. Use 16:9, 9:16 ou 1:1.")
 
     interaction_persona = _normalize_interaction_persona(req.interaction_persona)
     selected_persona_profile_id = int(req.persona_profile_id or 0)
@@ -1810,7 +1810,7 @@ async def generate_realistic_endpoint(
         for upload_id in upload_ids:
             resolved = _resolve_temp_file(user["id"], upload_id, IMAGE_EXTS)
             if not resolved:
-                raise HTTPException(status_code=400, detail="Uma das imagens de referencia nao foi encontrada. Envie novamente.")
+                raise HTTPException(status_code=400, detail="Uma das imagens de referência não foi encontrada. Envie novamente.")
             upload_image_paths.append(str(resolved))
 
         image_path_str = build_persona_reference_montage(
@@ -1847,7 +1847,7 @@ async def generate_realistic_endpoint(
                 raise HTTPException(status_code=503, detail=str(exc))
 
         if not persona_image_paths:
-            raise HTTPException(status_code=400, detail="Crie uma ou mais personas de interacao antes de gerar o video realista.")
+            raise HTTPException(status_code=400, detail="Crie uma ou mais personas de interação antes de gerar o vídeo realista.")
 
         reference_count = len(persona_image_paths)
         image_path_str = build_persona_reference_montage(
@@ -1861,7 +1861,7 @@ async def generate_realistic_endpoint(
 
     has_reference_image = bool(image_path_str)
     if not has_reference_image:
-        raise HTTPException(status_code=400, detail="Video realista exige imagem de referencia.")
+        raise HTTPException(status_code=400, detail="Vídeo realista exige imagem de referência.")
 
     prompt = _ensure_reference_image_instruction(prompt)
     if reference_count > 1:
@@ -1947,3 +1947,4 @@ async def generate_realistic_endpoint(
         "status": "generating_scenes",
         "duration": duration,
     }
+

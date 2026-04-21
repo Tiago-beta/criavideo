@@ -93,7 +93,7 @@ async def create_voice_profile(
     """Create a new voice profile (from built-in voice)."""
     valid_ids = [v["id"] for v in BUILTIN_VOICES]
     if req.builtin_voice not in valid_ids:
-        raise HTTPException(status_code=400, detail=f"Voz invalida. Opcoes: {valid_ids}")
+        raise HTTPException(status_code=400, detail=f"Voz inválida. Opções: {valid_ids}")
 
     if req.is_default:
         await db.execute(
@@ -126,7 +126,7 @@ async def update_voice_profile(
     """Update a voice profile."""
     profile = await db.get(VoiceProfile, profile_id)
     if not profile or profile.user_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Perfil nao encontrado")
+        raise HTTPException(status_code=404, detail="Perfil não encontrado")
 
     if req.name is not None:
         profile.name = req.name
@@ -154,7 +154,7 @@ async def delete_voice_profile(
     """Delete a voice profile."""
     profile = await db.get(VoiceProfile, profile_id)
     if not profile or profile.user_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Perfil nao encontrado")
+        raise HTTPException(status_code=404, detail="Perfil não encontrado")
 
     # Clean up files
     voice_dir = Path(settings.media_dir) / "voices" / str(user["id"]) / str(profile_id)
@@ -176,7 +176,7 @@ async def set_default_voice(
     """Set a voice profile as the user's default."""
     profile = await db.get(VoiceProfile, profile_id)
     if not profile or profile.user_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Perfil nao encontrado")
+        raise HTTPException(status_code=404, detail="Perfil não encontrado")
 
     await db.execute(
         update(VoiceProfile)
@@ -221,12 +221,12 @@ async def upload_voice_sample(
     """Upload a voice sample for a profile (for custom voice cloning)."""
     profile = await db.get(VoiceProfile, profile_id)
     if not profile or profile.user_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Perfil nao encontrado")
+        raise HTTPException(status_code=404, detail="Perfil não encontrado")
 
     allowed = {"audio/webm", "audio/wav", "audio/mpeg", "audio/mp4", "audio/ogg", "audio/flac",
                "audio/x-wav", "audio/mp3", "video/webm"}
     if file.content_type and file.content_type not in allowed:
-        raise HTTPException(status_code=400, detail="Formato de audio nao suportado")
+        raise HTTPException(status_code=400, detail="Formato de áudio não suportado")
 
     voice_dir = Path(settings.media_dir) / "voices" / str(user["id"]) / str(profile_id)
     voice_dir.mkdir(parents=True, exist_ok=True)
@@ -306,9 +306,9 @@ async def preview_voice(
     """Generate a short preview audio with the voice profile."""
     profile = await db.get(VoiceProfile, profile_id)
     if not profile or profile.user_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Perfil nao encontrado")
+        raise HTTPException(status_code=404, detail="Perfil não encontrado")
 
-    preview_text = "Ola! Esta e uma previa de como minha voz vai soar nos seus videos. Espero que goste!"
+    preview_text = "Olá! Esta é uma prévia de como minha voz vai soar nos seus vídeos. Espero que goste!"
 
     voice_dir = Path(settings.media_dir) / "voices" / str(user["id"]) / str(profile_id)
     voice_dir.mkdir(parents=True, exist_ok=True)
@@ -342,3 +342,4 @@ async def preview_voice(
     except Exception as e:
         logger.error(f"Voice preview failed: {e}")
         raise HTTPException(status_code=500, detail=f"Erro ao gerar preview: {e}")
+

@@ -1257,13 +1257,13 @@ function openCopyFormatModal(projectId) {
     }
     const project = _projectsCache.find(p => p.id === projectId);
     if (!project || project.status !== "completed") {
-        alert("Somente videos concluidos podem ser copiados de formato.");
+        alert("Somente vídeos concluídos podem ser copiados de formato.");
         return;
     }
     _copyFormatSourceProjectId = projectId;
     const sourceEl = document.getElementById("copy-format-source");
     if (sourceEl) {
-        sourceEl.textContent = `Origem: ${project.title || "Video"} (${project.aspect_ratio || "16:9"})`;
+        sourceEl.textContent = `Origem: ${project.title || "Vídeo"} (${project.aspect_ratio || "16:9"})`;
     }
     const selectEl = document.getElementById("copy-format-aspect");
     if (selectEl) {
@@ -1276,13 +1276,13 @@ function openCopyFormatModal(projectId) {
 function openCopyChoiceModal(projectId) {
     const project = _projectsCache.find(p => p.id === projectId);
     if (!project || project.status !== "completed") {
-        alert("Somente videos concluidos podem ser copiados.");
+        alert("Somente vídeos concluídos podem ser copiados.");
         return;
     }
     _copyFormatSourceProjectId = projectId;
     const sourceEl = document.getElementById("copy-choice-source");
     if (sourceEl) {
-        sourceEl.textContent = `Origem: ${project.title || "Video"} (${project.aspect_ratio || "16:9"})`;
+        sourceEl.textContent = `Origem: ${project.title || "Vídeo"} (${project.aspect_ratio || "16:9"})`;
     }
     openModal("modal-copy-choice");
 }
@@ -1290,7 +1290,7 @@ function openCopyChoiceModal(projectId) {
 function chooseCopyScript() {
     const projectId = _copyFormatSourceProjectId;
     if (!projectId) {
-        alert("Nenhum video selecionado para copia.");
+        alert("Nenhum vídeo selecionado para cópia.");
         return;
     }
     closeModal("modal-copy-choice");
@@ -1300,7 +1300,7 @@ function chooseCopyScript() {
 
 function chooseCopyFormat() {
     if (!_copyFormatSourceProjectId) {
-        alert("Nenhum video selecionado para copia.");
+        alert("Nenhum vídeo selecionado para cópia.");
         return;
     }
     closeModal("modal-copy-choice");
@@ -1309,7 +1309,7 @@ function chooseCopyFormat() {
 
 async function createFormatCopy() {
     if (!_copyFormatSourceProjectId) {
-        alert("Nenhum video selecionado para copia.");
+        alert("Nenhum vídeo selecionado para cópia.");
         return;
     }
     const selectEl = document.getElementById("copy-format-aspect");
@@ -1340,7 +1340,7 @@ async function openRenameProjectModal(projectId) {
     _editThumbFile = null;
     const sourceEl = document.getElementById("edit-project-source");
     if (sourceEl) {
-        sourceEl.textContent = `Projeto atual: ${project.title || "Video"}`;
+        sourceEl.textContent = `Projeto atual: ${project.title || "Vídeo"}`;
     }
 
     const input = document.getElementById("edit-project-title");
@@ -1452,7 +1452,7 @@ async function saveProjectEdit() {
     const input = document.getElementById("edit-project-title");
     const newTitle = (input?.value || "").trim();
     if (!newTitle) {
-        alert("Digite um nome para o video.");
+        alert("Digite um nome para o vídeo.");
         if (input) input.focus();
         return;
     }
@@ -1772,7 +1772,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const scrCreateBtn = document.getElementById("script-create-btn");
     if (wizCreateBtn) wizCreateBtn.hidden = true;
     if (scrCreateBtn) scrCreateBtn.hidden = true;
-    setCreateProgress(CREATE_PROGRESS_BASE, "Gerando video realista...", "Preparando...");
+    setCreateProgress(CREATE_PROGRESS_BASE, "Gerando vídeo realista...", "Preparando...");
     _smoothProgressTarget = 10;
     _startSmoothProgress();
 
@@ -1782,7 +1782,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         personaProfileId = personaProfileIds[0] || 0;
 
         if (!wantsReferenceImage && !personaProfileIds.length) {
-            throw new Error("Crie uma ou mais personas de interacao primeiro para gerar o video realista.");
+            throw new Error("Crie uma ou mais personas de interação primeiro para gerar o vídeo realista.");
         }
 
         // Upload reference image if available
@@ -1790,17 +1790,17 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         let imageUploadIds = [];
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
         if (shouldUploadReferenceImage) {
-            setCreateProgress(5, "Gerando video realista...", "Enviando imagem de referencia...");
+            setCreateProgress(5, "Gerando vídeo realista...", "Enviando imagem de referência...");
             const photosToUpload = scriptPhotos.slice(0, 6);
             for (const photo of photosToUpload) {
-                const uploaded = await uploadTempFileWithRetry(photo, "image", "imagem de referencia");
+                const uploaded = await uploadTempFileWithRetry(photo, "image", "imagem de referência");
                 imageUploadIds.push(uploaded.upload_id);
             }
             imageUploadId = imageUploadIds[0] || "";
             _smoothProgressTarget = 15;
         }
 
-        setCreateProgress(10, "Gerando video realista...", "Otimizando prompt com IA...");
+        setCreateProgress(10, "Gerando vídeo realista...", "Otimizando prompt com IA...");
         _smoothProgressTarget = 15;
 
         const resp = await api("/video/generate-realistic", {
@@ -1829,12 +1829,12 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         const projectId = resp.id;
 
         _smoothProgressTarget = 25;
-        setCreateProgress(25, "Gerando video realista...", `${engineLabel} esta criando seu video...`);
+        setCreateProgress(25, "Gerando vídeo realista...", `${engineLabel} está criando seu vídeo...`);
 
         await pollRealisticProgress(projectId, engineLabel);
 
         _stopSmoothProgress();
-        setCreateProgress(100, "Concluido!", "Video realista gerado com sucesso!");
+        setCreateProgress(100, "Concluído!", "Vídeo realista gerado com sucesso!");
 
         setTimeout(() => {
             closeModal("modal-new-project");
@@ -1844,7 +1844,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
 
     } catch (e) {
         _stopSmoothProgress();
-        let msg = e.message || "Erro ao gerar video realista.";
+        let msg = e.message || "Erro ao gerar vídeo realista.";
         if (msg.includes("flagged as sensitive") || msg.includes("E005")) {
             msg = "O conteudo do prompt foi considerado sensivel pelo modelo de IA. Tente reformular seu texto evitando temas violentos, sexuais ou controversos.";
         }
@@ -1873,23 +1873,23 @@ async function pollRealisticProgress(projectId, engineLabel) {
             const status = data.status || "";
 
             _smoothProgressTarget = Math.max(_smoothProgressTarget, progress);
-            setCreateProgress(progress, "Gerando video realista...",
+            setCreateProgress(progress, "Gerando vídeo realista...",
                 progress < 15 ? "Otimizando prompt com IA..." :
-                progress < 80 ? `${label} esta criando seu video...` :
-                progress < 90 ? "Baixando video gerado..." :
+                progress < 80 ? `${label} está criando seu vídeo...` :
+                progress < 90 ? "Baixando vídeo gerado..." :
                 progress < 95 ? "Gerando thumbnail..." :
                 "Finalizando..."
             );
 
             if (status === "completed") return;
             if (status === "failed") {
-                throw new Error(data.error_message || "Falha na geracao do video realista.");
+                throw new Error(data.error_message || "Falha na geração do vídeo realista.");
             }
         } catch (e) {
             if (e.message && !e.message.includes("fetch")) throw e;
         }
     }
-    throw new Error("Tempo limite excedido. O video pode ainda estar sendo gerado — verifique seus projetos.");
+    throw new Error("Tempo limite excedido. O vídeo pode ainda estar sendo gerado — verifique seus projetos.");
 }
 
 function resetCreateWizard() {
@@ -2099,7 +2099,7 @@ function wizardNext() {
     if (currentDataStep === 2) {
         // Capture video type selection
         const sel = document.querySelector("#wizard-video-type-grid .video-type-card.selected");
-        if (!sel) { alert("Escolha o tipo de video."); return; }
+        if (!sel) { alert("Escolha o tipo de vídeo."); return; }
         wizardData.videoType = sel.dataset.type;
         // Show/hide style buttons on topic step for realistic mode
         const topicInspirationEl = document.getElementById("wizard-topic-inspiration");
@@ -2107,7 +2107,7 @@ function wizardNext() {
     }
     if (currentDataStep === 1) {
         const topic = document.getElementById("wizard-topic").value.trim();
-        if (!topic) { alert("Digite o tema do video."); return; }
+        if (!topic) { alert("Digite o tema do vídeo."); return; }
         wizardData.topic = topic;
     }
     if (currentDataStep === 3) {
@@ -2226,7 +2226,7 @@ function scriptNext() {
     if (currentDataStep === 2) {
         // Capture video type selection (first step)
         const selectedCard = document.querySelector("#script-video-type-grid .video-type-card.selected");
-        if (!selectedCard) { alert("Escolha o tipo de video."); return; }
+        if (!selectedCard) { alert("Escolha o tipo de vídeo."); return; }
         scriptData.videoType = selectedCard.dataset.type;
         // Adapt next step UI for video type
         adaptScriptStepForVideoType(scriptData.videoType);
@@ -2238,7 +2238,7 @@ function scriptNext() {
 
         // Realistic mode: only need prompt text, optionally photos/audio
         if (scriptData.videoType === "realista") {
-            if (!title && !text) { alert("Escreva um titulo ou um prompt para o video."); return; }
+            if (!title && !text) { alert("Escreva um título ou um prompt para o vídeo."); return; }
             scriptData.title = title || text.substring(0, 100);
             scriptData.text = text;
             const usePhotos = document.getElementById("script-use-photos").checked;
@@ -2258,7 +2258,7 @@ function scriptNext() {
         const hasUserAudio = useUserAudioToggle && !!scriptUserAudioFile;
         const createNarration = !usePhotos || document.getElementById("script-create-narration").checked;
         const videoCreateNarration = hasVideo ? !!document.getElementById("script-video-create-narration")?.checked : false;
-        if (!title) { alert("Digite o titulo do projeto."); return; }
+        if (!title) { alert("Digite o título do projeto."); return; }
 
         if (hasVideo) {
             scriptData.title = title;
@@ -2275,7 +2275,7 @@ function scriptNext() {
             }
         } else {
             if (useUserAudioToggle && !hasUserAudio) {
-                alert("Envie um audio para usar no video.");
+                alert("Envie um áudio para usar no vídeo.");
                 return;
             }
             if (createNarration && !hasUserAudio && (!text || text.length < 20)) {
@@ -2439,12 +2439,12 @@ async function handleScriptCreate() {
     const bgmFile = bgmEnabled && bgmFileInput && bgmFileInput.files ? bgmFileInput.files[0] : null;
 
     if (useAudioSelected && !scriptData.useCustomAudio && !scriptData.useCustomVideo) {
-        alert("Selecione um arquivo de audio para usar no video.");
+        alert("Selecione um arquivo de áudio para usar no vídeo.");
         return;
     }
 
     if (useVideoSelected && !scriptData.useCustomVideo) {
-        alert("Selecione um video para enviar.");
+        alert("Selecione um vídeo para enviar.");
         return;
     }
 
@@ -2463,10 +2463,10 @@ async function handleScriptCreate() {
     }
 
     const startMessage = scriptData.useCustomVideo
-        ? "Preparando video com legendas..."
+        ? "Preparando vídeo com legendas..."
         : scriptData.useCustomAudio
-        ? "Preparando video a partir do seu audio..."
-        : (scriptData.text ? "Gerando narração com voz IA..." : "Preparando video com fotos (musica automatica se não enviar)...");
+        ? "Preparando vídeo a partir do seu áudio..."
+        : (scriptData.text ? "Gerando narração com voz IA..." : "Preparando vídeo com fotos (música automática se não enviar)...");
     const startStage = scriptData.removeVocals ? "Removendo voz..." : "Processando...";
     showCreateProgress(startMessage, { progress: 12, stage: startStage });
 
@@ -2479,7 +2479,7 @@ async function handleScriptCreate() {
         let karaokeOperationId = "";
 
         if (scriptData.useCustomVideo && scriptUserVideoFile) {
-            showCreateProgress("Enviando video...", { progress: 15, stage: "Enviando arquivos..." });
+            showCreateProgress("Enviando vídeo...", { progress: 15, stage: "Enviando arquivos..." });
             const uploadedVideo = await uploadTempFileWithRetry(scriptUserVideoFile, "video", "video");
             uploadedVideoId = uploadedVideo.upload_id || "";
         }
@@ -2503,14 +2503,14 @@ async function handleScriptCreate() {
         }
 
         if (scriptData.useCustomAudio && scriptUserAudioFile) {
-            showCreateProgress("Enviando audio principal...", { progress: 48, stage: "Enviando arquivos..." });
+            showCreateProgress("Enviando áudio principal...", { progress: 48, stage: "Enviando arquivos..." });
             const uploadedMainAudio = await uploadTempFileWithRetry(scriptUserAudioFile, "audio", "audio principal");
             uploadedMainAudioId = uploadedMainAudio.upload_id || "";
         }
 
         if (scriptData.removeVocals) {
             karaokeOperationId = createKaraokeOperationId();
-            showCreateProgress("Removendo voz do audio...", { progress: 52, stage: "Removendo voz..." });
+            showCreateProgress("Removendo voz do áudio...", { progress: 52, stage: "Removendo voz..." });
             startKaraokeProgressPolling(karaokeOperationId);
         } else {
             showCreateProgress(startMessage, { progress: 52, stage: "Processando..." });
@@ -2527,7 +2527,7 @@ async function handleScriptCreate() {
         formData.append("voice", scriptData.voice || "");
         formData.append("voice_profile_id", String(scriptData.voiceProfileId || 0));
         formData.append("voice_type", scriptData.voiceType || "");
-        formData.append("title", scriptData.title || "Video com roteiro");
+        formData.append("title", scriptData.title || "Vídeo com roteiro");
         formData.append("aspect_ratio", scriptData.aspect);
         formData.append("style_prompt", scriptData.style);
         formData.append("pause_level", scriptData.pauseLevel || "normal");
@@ -2565,7 +2565,7 @@ async function handleScriptCreate() {
 
         const result = await apiForm("/video/generate-audio", formData);
         stopKaraokeProgressPolling();
-        setCreateProgress(100, "Concluido", "Audio processado com sucesso.");
+        setCreateProgress(100, "Concluído", "Áudio processado com sucesso.");
 
         closeModal("modal-new-project");
         updateCreditsDisplay();
@@ -2672,7 +2672,7 @@ function handleUserVideoSelect(event) {
         return;
     }
     if (file.size > MAX_VIDEO_SIZE) {
-        alert("Video excede 500MB. Reduza o tamanho e tente novamente.");
+        alert("Vídeo excede 500MB. Reduza o tamanho e tente novamente.");
         event.target.value = "";
         return;
     }
@@ -2681,7 +2681,7 @@ function handleUserVideoSelect(event) {
     const nameEl = document.getElementById("script-video-name");
     if (nameEl) {
         nameEl.hidden = false;
-        nameEl.textContent = "Video selecionado: " + file.name + " (" + (file.size / 1024 / 1024).toFixed(1) + "MB)";
+        nameEl.textContent = "Vídeo selecionado: " + file.name + " (" + (file.size / 1024 / 1024).toFixed(1) + "MB)";
     }
     const narChoice = document.getElementById("script-video-narration-choice");
     if (narChoice) narChoice.hidden = false;
@@ -2764,7 +2764,7 @@ function handleUserAudioSelect(event) {
         return;
     }
     if (file.size > MAX_AUDIO_SIZE) {
-        alert("Audio excede 80MB. Reduza o tamanho e tente novamente.");
+        alert("Áudio excede 80MB. Reduza o tamanho e tente novamente.");
         event.target.value = "";
         return;
     }
@@ -3155,7 +3155,7 @@ function _renderPersonaPreview(context) {
     const type = _getRealisticPersonaTypeByContext(context);
     const profiles = _getPersonaProfiles(type);
     if (!profiles.length) {
-        el.innerHTML = '<div class="realistic-persona-empty">Nenhuma persona disponivel para este tipo ainda.</div>';
+        el.innerHTML = '<div class="realistic-persona-empty">Nenhuma persona disponível para este tipo ainda.</div>';
         return;
     }
 
@@ -3206,7 +3206,7 @@ function _renderPersonaPreview(context) {
 
     const profile = selectedProfiles[0] || _getSelectedPersonaProfile(context, type);
     if (!profile && !selectedProfiles.length) {
-        el.innerHTML = '<div class="realistic-persona-empty">Nenhuma persona disponivel para este tipo ainda.</div>';
+        el.innerHTML = '<div class="realistic-persona-empty">Nenhuma persona disponível para este tipo ainda.</div>';
         return;
     }
 
@@ -3774,7 +3774,7 @@ function showAiSuggestPanel() {
     // Adapt AI suggest panel for mode
     document.getElementById("ai-suggest-title").textContent = isRealistic ? "Gerar prompt com IA" : "Gerar roteiro com IA";
     document.getElementById("ai-suggest-hint").textContent = isRealistic
-        ? "Descreva a cena e escolha a duracao para a IA criar um prompt cinematografico profissional"
+        ? "Descreva a cena e escolha a duração para a IA criar um prompt cinematográfico profissional"
         : "Descreva o tema e a IA criara um roteiro completo";
     document.getElementById("ai-suggest-topic").placeholder = isRealistic
         ? "Ex: uma cachorra adotou um gatinho, produto girando..."
@@ -3796,7 +3796,7 @@ function hideAiSuggestPanel() {
 
 async function generateAiScript() {
     const topic = document.getElementById("ai-suggest-topic").value.trim();
-    if (!topic) { alert("Digite o tema do video."); return; }
+    if (!topic) { alert("Digite o tema do vídeo."); return; }
     const isRealistic = scriptData.videoType === "realista";
 
     if (isRealistic) {
@@ -3835,7 +3835,7 @@ async function generateAiScript() {
                 : engine === "wan2"
                     ? "Ultra High 2.2"
                     : "Seedance";
-        showCreateProgress("Gerando prompt cinematografico com IA...", {
+        showCreateProgress("Gerando prompt cinematográfico com IA...", {
             progress: 30,
             stage: `Otimizando prompt ${engineLabel}...`,
         });
@@ -4105,7 +4105,7 @@ async function watchVideo(projectId) {
     try {
         const project = await api(`/video/projects/${projectId}`);
         if (!project.renders || !project.renders.length) {
-            alert("Nenhum video renderizado encontrado.");
+            alert("Nenhum vídeo renderizado encontrado.");
             return;
         }
         const render = _pickLatestAvailableRender(project.renders);
@@ -4119,7 +4119,7 @@ async function watchVideo(projectId) {
             window.open(render.video_url, "_blank");
             return;
         }
-        document.getElementById("player-title").textContent = project.title || "Video";
+        document.getElementById("player-title").textContent = project.title || "Vídeo";
         // Open modal first so mobile browsers render video track correctly.
         openModal("modal-player");
         video.pause();
@@ -4237,7 +4237,7 @@ function getCheckedPublishPlatforms() {
 function buildPublishPayload(scheduledAt = "") {
     const renderId = document.getElementById("pub-render-select").value;
     if (!renderId) {
-        alert("Selecione um video");
+        alert("Selecione um vídeo");
         return null;
     }
 
@@ -4637,7 +4637,7 @@ async function applyPublishDraft(renderId) {
 function savePublishDraft() {
     const renderId = parseInt(document.getElementById("pub-render-select")?.value || "", 10);
     if (!renderId) {
-        alert("Selecione um video para salvar rascunho.");
+        alert("Selecione um vídeo para salvar rascunho.");
         return;
     }
 
@@ -4650,7 +4650,7 @@ function savePublishDraft() {
 async function openPublishDraftFromList(renderId) {
     const parsedRenderId = parseInt(renderId, 10);
     if (!Number.isFinite(parsedRenderId) || parsedRenderId <= 0) {
-        alert("Rascunho invalido.");
+        alert("Rascunho inválido.");
         return;
     }
 
@@ -4664,7 +4664,7 @@ async function openPublishDraftFromList(renderId) {
         await loadRenders();
     }
     if (!hasRenderOption()) {
-        alert("Este video nao esta mais disponivel para abrir o rascunho.");
+        alert("Este vídeo não está mais disponível para abrir o rascunho.");
         return;
     }
 
@@ -4685,7 +4685,7 @@ async function openPublishDraftFromList(renderId) {
 function overwritePublishDraftFromList(renderId) {
     const parsedRenderId = parseInt(renderId, 10);
     if (!Number.isFinite(parsedRenderId) || parsedRenderId <= 0) {
-        alert("Rascunho invalido.");
+        alert("Rascunho inválido.");
         return;
     }
 
@@ -4702,7 +4702,7 @@ function overwritePublishDraftFromList(renderId) {
 function deletePublishDraftFromList(renderId) {
     const parsedRenderId = parseInt(renderId, 10);
     if (!Number.isFinite(parsedRenderId) || parsedRenderId <= 0) {
-        alert("Rascunho invalido.");
+        alert("Rascunho inválido.");
         return;
     }
 
@@ -4744,7 +4744,7 @@ function _toDatetimeLocalValue(date) {
 function openPublishScheduleModal() {
     const renderId = document.getElementById("pub-render-select")?.value;
     if (!renderId) {
-        alert("Selecione um video antes de agendar.");
+        alert("Selecione um vídeo antes de agendar.");
         return;
     }
 
@@ -4760,7 +4760,7 @@ async function confirmSchedulePublish() {
     const dtInput = document.getElementById("pub-schedule-datetime");
     const rawValue = (dtInput?.value || "").trim();
     if (!rawValue) {
-        alert("Escolha data e horario para agendar.");
+        alert("Escolha data e horário para agendar.");
         if (dtInput) dtInput.focus();
         return;
     }
@@ -4771,7 +4771,7 @@ async function confirmSchedulePublish() {
         return;
     }
     if (scheduledDate.getTime() <= Date.now() + 30000) {
-        alert("Escolha um horario futuro para o agendamento.");
+        alert("Escolha um horário futuro para o agendamento.");
         return;
     }
 
@@ -4876,34 +4876,34 @@ function friendlyPublishError(raw) {
     if (!raw) return "Erro desconhecido. Tente novamente mais tarde.";
     const lower = raw.toLowerCase();
     if (lower.includes("youtube data api") && lower.includes("not been used")) {
-        return "A API do YouTube nao esta ativada no projeto Google Cloud.\n\nPasso a passo:\n1. Acesse console.cloud.google.com\n2. Selecione o projeto do CriaVideo\n3. Va em APIs e Servicos > Biblioteca\n4. Busque 'YouTube Data API v3' e clique em Ativar\n5. Aguarde alguns minutos e tente publicar novamente.";
+        return "A API do YouTube não está ativada no projeto Google Cloud.\n\nPasso a passo:\n1. Acesse console.cloud.google.com\n2. Selecione o projeto do CriaVideo\n3. Vá em APIs e Serviços > Biblioteca\n4. Busque 'YouTube Data API v3' e clique em Ativar\n5. Aguarde alguns minutos e tente publicar novamente.";
     }
     if (lower.includes("accessnotconfigured") || lower.includes("api has not been enabled")) {
-        return "Uma API necessaria nao esta ativada no Google Cloud. Acesse console.cloud.google.com, ative a API indicada e tente novamente.";
+        return "Uma API necessária não está ativada no Google Cloud. Acesse console.cloud.google.com, ative a API indicada e tente novamente.";
     }
     if (lower.includes("invalid_grant") || lower.includes("token has been expired") || lower.includes("token has been revoked")) {
-        return "Sua conexao com a plataforma expirou.\n\nPasso a passo:\n1. Va na aba 'Contas' na pagina de publicacao\n2. Desconecte a conta afetada\n3. Conecte novamente\n4. Tente publicar de novo.";
+        return "Sua conexão com a plataforma expirou.\n\nPasso a passo:\n1. Vá na aba 'Contas' na página de publicação\n2. Desconecte a conta afetada\n3. Conecte novamente\n4. Tente publicar de novo.";
     }
     if (lower.includes("custom video thumbnails") || lower.includes("thumbnails/set")) {
-        return "O video foi publicado, mas o YouTube bloqueou a thumbnail personalizada desta conta/canal.\n\nComo resolver:\n1. No YouTube Studio, confirme se o canal esta verificado (telefone)\n2. Ative recursos avancados/intermediarios da conta\n3. Aguarde alguns minutos apos a verificacao\n4. Publique novamente para aplicar a thumbnail";
+        return "O vídeo foi publicado, mas o YouTube bloqueou a thumbnail personalizada desta conta/canal.\n\nComo resolver:\n1. No YouTube Studio, confirme se o canal está verificado (telefone)\n2. Ative recursos avançados/intermediários da conta\n3. Aguarde alguns minutos após a verificação\n4. Publique novamente para aplicar a thumbnail";
     }
     if (lower.includes("quota") || lower.includes("rate limit") || lower.includes("too many requests")) {
         return "Limite de uso da API atingido. Aguarde algumas horas e tente novamente, ou verifique sua cota no painel do Google Cloud.";
     }
     if (lower.includes("forbidden") || lower.includes("403")) {
-        return "Acesso negado pela plataforma. Verifique se a conta conectada tem permissao para publicar videos e se todas as APIs necessarias estao ativadas.";
+        return "Acesso negado pela plataforma. Verifique se a conta conectada tem permissão para publicar vídeos e se todas as APIs necessárias estão ativadas.";
     }
     if (lower.includes("unauthorized") || lower.includes("401")) {
         return "Autenticacao falhou.\n\nPasso a passo:\n1. Va na aba 'Contas'\n2. Desconecte e reconecte a conta\n3. Tente publicar novamente.";
     }
     if (lower.includes("not found") || lower.includes("file not found") || lower.includes("render file")) {
-        return "O arquivo de video nao foi encontrado no servidor. Tente renderizar o video novamente antes de publicar.";
+        return "O arquivo de vídeo não foi encontrado no servidor. Tente renderizar o vídeo novamente antes de publicar.";
     }
     if (lower.includes("social account not found")) {
-        return "A conta social nao foi encontrada. Reconecte sua conta na aba 'Contas' e tente novamente.";
+        return "A conta social não foi encontrada. Reconecte sua conta na aba 'Contas' e tente novamente.";
     }
     if (lower.includes("network") || lower.includes("timeout") || lower.includes("connection")) {
-        return "Erro de conexao com a plataforma. Verifique sua internet e tente novamente em alguns minutos.";
+        return "Erro de conexão com a plataforma. Verifique sua internet e tente novamente em alguns minutos.";
     }
     return "Erro ao publicar: " + raw + "\n\nSe o problema persistir, entre em contato com o suporte.";
 }
@@ -4913,7 +4913,7 @@ async function loadPublishJobs() {
     try {
         const jobs = await api("/publish/jobs");
         if (!jobs.length) {
-            container.innerHTML = "<p class='loading'>Nenhuma publicacao ainda.</p>";
+            container.innerHTML = "<p class='loading'>Nenhuma publicação ainda.</p>";
             return;
         }
         container.innerHTML = `
@@ -4949,7 +4949,7 @@ function showPublishError(jobId) {
     openModal("modal-publish-error");
     const title = document.getElementById("publish-error-title");
     if (title) {
-        title.textContent = job.status === "failed" ? "Motivo da falha" : "Aviso da publicacao";
+        title.textContent = job.status === "failed" ? "Motivo da falha" : "Aviso da publicação";
     }
     const body = document.getElementById("publish-error-body");
     if (body) body.textContent = friendly;
@@ -5002,7 +5002,7 @@ async function renderPublishAccountSelectors(forceReload = false) {
                 : "<option value=''>Conecte uma conta em Contas sociais</option>";
 
             const helpText = accounts.length
-                ? "Escolha qual conta desta plataforma sera usada na publicacao."
+                ? "Escolha qual conta desta plataforma será usada na publicação."
                 : "Nenhuma conta conectada para esta plataforma.";
 
             return `
@@ -5395,7 +5395,7 @@ function renderAutoCard(s) {
     const themeListHtml = themes.map(t => {
         let icon, statusClass, statusLabel;
         if (t.status === "done" || t.status === "completed") {
-            icon = "✅"; statusClass = "theme-done"; statusLabel = isTestAccount ? "Concluido (teste)" : "Publicado";
+            icon = "✅"; statusClass = "theme-done"; statusLabel = isTestAccount ? "Concluído (teste)" : "Publicado";
         } else if (t.status === "processing") {
             icon = "⏳"; statusClass = "theme-processing"; statusLabel = "Criando...";
         } else if (t.status === "error" || t.status === "failed") {
@@ -5437,7 +5437,7 @@ function renderAutoCard(s) {
         <div class="auto-card-meta">
             <span>${freq} as ${esc(s.time_local || s.time_utc)}</span>
             <span>${pendingCount} pendentes / ${doneCount} feitos</span>
-            <span>Conta: ${esc(s.account_label || (isTestAccount ? "Conta de teste (sem publicacao)" : "Conta conectada"))}</span>
+            <span>Conta: ${esc(s.account_label || (isTestAccount ? "Conta de teste (sem publicação)" : "Conta conectada"))}</span>
         </div>
         <div class="auto-card-detail">
             <strong>Temas:</strong>
@@ -5620,13 +5620,13 @@ function showAutoStep(step) {
         const themeAddRow = document.getElementById("auto-theme-add-row");
         const clipAddRow = document.getElementById("auto-clip-add-row");
         if (isTevoxiClipMode) {
-            if (title) title.textContent = "Trechos da musica";
-            if (desc) desc.textContent = "Selecione trechos da musica para criar um short de cada trecho.";
+            if (title) title.textContent = "Trechos da música";
+            if (desc) desc.textContent = "Selecione trechos da música para criar um short de cada trecho.";
             if (themeAddRow) themeAddRow.hidden = true;
             if (clipAddRow) clipAddRow.hidden = false;
         } else {
             if (title) title.textContent = "Temas da playlist";
-            if (desc) desc.textContent = "Adicione os temas dos videos. O sistema criara um video por agendamento na ordem da lista.";
+            if (desc) desc.textContent = "Adicione os temas dos vídeos. O sistema criará um vídeo por agendamento na ordem da lista.";
             if (themeAddRow) themeAddRow.hidden = false;
             if (clipAddRow) clipAddRow.hidden = true;
         }
@@ -5699,7 +5699,7 @@ function autoStepNext() {
     // Validation for step 3 (themes/clips)
     if (_autoWizardStep === 3 && _autoWizardThemes.length === 0) {
         if (_isAutoTevoxiClipMode()) {
-            alert("Clique em '+ Adicionar trecho' para selecionar trechos da musica.");
+            alert("Clique em '+ Adicionar trecho' para selecionar trechos da música.");
         } else {
             alert("Digite o tema e aperte no botão + para adicionar.");
             const addBtn = document.getElementById("auto-add-theme-btn");
@@ -5772,7 +5772,7 @@ async function _loadTevoxiSongsIfNeeded() {
         _renderTevoxiSongs();
         return;
     }
-    list.innerHTML = '<p class="loading">Carregando musicas do Tevoxi...</p>';
+    list.innerHTML = '<p class="loading">Carregando músicas do Tevoxi...</p>';
     try {
         _autoTevoxiSongs = await api("/automation/tevoxi-songs");
         if (!_autoTevoxiSongs.length) {
@@ -5977,7 +5977,7 @@ function openClipSelector() {
     _clipDragging = null;
     _clipDragX = 0;
 
-    document.getElementById("clip-song-title").textContent = song.title || "Musica";
+    document.getElementById("clip-song-title").textContent = song.title || "Música";
     _updateClipDurationButtons();
     _setClipPlayButton(false);
     openModal("modal-clip-selector");
@@ -6028,7 +6028,7 @@ function _drawClipLoadingPlaceholder() {
     ctx.fillStyle = "rgba(255,255,255,0.25)";
     ctx.font = "13px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("Carregando audio...", canvas.width / 2, 28);
+    ctx.fillText("Carregando áudio...", canvas.width / 2, 28);
 }
 
 async function _loadClipWaveform(song, audioUrl) {
@@ -6451,7 +6451,7 @@ function toggleClipPreview() {
 
     const audio = document.getElementById("clip-audio");
     if (!audio || !audio.src) {
-        alert("Não foi possível carregar o audio para preview.");
+        alert("Não foi possível carregar o áudio para preview.");
         return;
     }
 
@@ -6617,7 +6617,7 @@ async function loadAutoAccountOptions() {
             const label = socialAccountDisplayName(a);
             return `<option value="${a.id}">${esc(label)}</option>`;
         });
-        accountOptions.push("<option value='__test__'>Conta de teste (gera video e nao publica)</option>");
+        accountOptions.push("<option value='__test__'>Conta de teste (gera vídeo e não publica)</option>");
 
         select.innerHTML = accountOptions.join("");
 
@@ -6630,7 +6630,7 @@ async function loadAutoAccountOptions() {
             select.value = "__test__";
         }
     } catch {
-        select.innerHTML = "<option value='__test__'>Conta de teste (gera video e nao publica)</option>";
+        select.innerHTML = "<option value='__test__'>Conta de teste (gera vídeo e não publica)</option>";
         select.value = "__test__";
     }
 }
@@ -6704,7 +6704,7 @@ async function createAutoSchedule() {
             return;
         }
         if (!personaProfileIds.length) {
-            alert("Crie uma ou mais personas de interacao antes de salvar a automacao realista.");
+            alert("Crie uma ou mais personas de interação antes de salvar a automação realista.");
             return;
         }
         const selectedEngine = document.querySelector("#auto-realistic-engine .engine-option.selected");
@@ -6848,7 +6848,7 @@ async function confirmConnectPlatform() {
         if (tiktokClientSecret) query.set("client_secret", tiktokClientSecret);
         const data = await api(`/social/connect/${_pendingConnectPlatform}?${query.toString()}`);
         if (!data.auth_url) {
-            throw new Error("A plataforma nao retornou URL de autorizacao");
+            throw new Error("A plataforma não retornou URL de autorização");
         }
         window.location.href = data.auth_url;
     } catch (error) {
@@ -6864,9 +6864,9 @@ async function confirmConnectPlatform() {
 function formatSocialConnectError(rawMessage, platform) {
     const message = String(rawMessage || "Erro desconhecido");
     const lower = message.toLowerCase();
-    if (platform === "instagram" && (lower.includes("facebook_app_id") || lower.includes("facebook app_id") || lower.includes("instagram oauth nao configurado"))) {
+    if (platform === "instagram" && (lower.includes("facebook_app_id") || lower.includes("facebook app_id") || lower.includes("instagram oauth não configurado"))) {
         return [
-            "Erro ao conectar Instagram: faltam configuracoes no servidor.",
+            "Erro ao conectar Instagram: faltam configurações no servidor.",
             "",
             "Como resolver:",
             "1. Criar/abrir um app no Meta for Developers",
@@ -6949,7 +6949,7 @@ async function loadAccounts() {
 function openEditSocialAccountModal(accountId) {
     const account = (_socialAccountsCache || []).find((item) => item.id === accountId);
     if (!account) {
-        alert("Conta nao encontrada.");
+        alert("Conta não encontrada.");
         return;
     }
 
@@ -7048,7 +7048,7 @@ async function quickCreate(songData) {
     container.innerHTML = `
         <div class="card" style="text-align:center;">
             <h3>Preparando seu video...</h3>
-            <p>${esc(songData.song_title || "Sua musica")}</p>
+            <p>${esc(songData.song_title || "Sua música")}</p>
             <p>Estamos montando o projeto e gerando o estilo visual.</p>
             <div class="progress-bar"><div class="progress-bar-fill" style="width: 8%;"></div></div>
         </div>
@@ -7093,8 +7093,8 @@ function pollProject(projectId) {
             const labels = {
                 generating_scenes: "Gerando cenas com IA...",
                 generating_clips: "Criando clipes...",
-                rendering: "Renderizando video final...",
-                completed: "Video pronto.",
+                rendering: "Renderizando vídeo final...",
+                completed: "Vídeo pronto.",
                 failed: "Erro na geracao.",
             };
             if (status) {
@@ -7349,10 +7349,10 @@ async function handlePersonaUpload(event, prefix) {
     const file = event.target.files[0];
     if (!file) return;
     const hint = document.querySelector(`#${prefix}-persona-panel .persona-hint`);
-    if (hint) hint.textContent = "Processando audio...";
+    if (hint) hint.textContent = "Processando áudio...";
     const result = await trimAudioTo30s(file);
     if (result.tooLarge) {
-        alert("Audio muito grande. Grave pelo microfone ou envie um arquivo menor (max 10MB).");
+        alert("Áudio muito grande. Grave pelo microfone ou envie um arquivo menor (max 10MB).");
         if (hint) hint.textContent = "Grave ou envie 10-30s falando para criar seu perfil de voz";
         event.target.value = '';
         return;
@@ -7447,7 +7447,7 @@ async function savePersonaVoice(prefix) {
     if (!name) { alert("Digite um nome para o perfil."); return; }
 
     const blob = personaSampleBlobs[prefix];
-    if (!blob) { alert("Grave ou envie um audio primeiro."); return; }
+    if (!blob) { alert("Grave ou envie um áudio primeiro."); return; }
 
     try {
         // Create profile with default base voice (alloy)
@@ -8091,7 +8091,7 @@ function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
                 playPromise.catch(() => {
                     if (!_editorMusicPreviewWarned) {
                         _editorMusicPreviewWarned = true;
-                        showToast("Não foi possível tocar a previa do audio externo. O audio sera aplicado na exportacao.", "error");
+                        showToast("Não foi possível tocar a prévia do áudio externo. O áudio será aplicado na exportação.", "error");
                     }
                 });
             }
@@ -8241,7 +8241,7 @@ async function _editorUploadVideo(input) {
     if (!file) return;
 
     try {
-        showToast("Enviando video para o editor...");
+        showToast("Enviando vídeo para o editor...");
         const formData = new FormData();
         formData.append("file", file);
         const payload = await apiForm("/video/editor/upload-video", formData, { method: "POST" });
@@ -8249,13 +8249,13 @@ async function _editorUploadVideo(input) {
 
         await loadEditorVideosList();
         if (payload?.project_id) {
-            showToast("Video enviado! Abrindo editor...", "success");
+            showToast("Vídeo enviado! Abrindo editor...", "success");
             await openEditor(payload.project_id);
         } else {
-            showToast("Video enviado com sucesso.", "success");
+            showToast("Vídeo enviado com sucesso.", "success");
         }
     } catch (err) {
-        showToast("Erro ao enviar video: " + err.message, "error");
+        showToast("Erro ao enviar vídeo: " + err.message, "error");
     }
 }
 window._editorUploadVideo = _editorUploadVideo;
@@ -8542,22 +8542,22 @@ async function _editorUploadLayerVideo(input) {
     if (!file) return;
     if (!_editor.projectId) {
         input.value = "";
-        showToast("Abra um projeto no editor antes de enviar videos em camada.", "error");
+        showToast("Abra um projeto no editor antes de enviar vídeos em camada.", "error");
         return;
     }
 
     try {
         _editorSaveState();
-        showToast("Enviando video para camada...");
+        showToast("Enviando vídeo para camada...");
         const formData = new FormData();
         formData.append("file", file);
         const payload = await apiForm("/video/editor/upload-layer-video", formData, { method: "POST" });
         _editorPushMediaLayer("video", payload);
         _editorRenderTimeline();
         _editorRenderMediaLayers();
-        showToast("Nova camada de video adicionada.", "success");
+        showToast("Nova camada de vídeo adicionada.", "success");
     } catch (err) {
-        showToast("Erro ao enviar video da camada: " + err.message, "error");
+        showToast("Erro ao enviar vídeo da camada: " + err.message, "error");
     } finally {
         input.value = "";
     }
@@ -8731,7 +8731,7 @@ async function openEditor(projectId) {
         const detail = await api(`/video/projects/${projectId}`);
         const render = _pickLatestAvailableRender(detail.renders || []);
         if (!render || !render.video_url) {
-            showToast("Este video nao tem arquivo disponivel.", "error");
+            showToast("Este vídeo não tem arquivo disponível.", "error");
             return;
         }
         // Reset editor state
@@ -9413,7 +9413,7 @@ function _editorRenderProps() {
                         <button class="editor-add-btn" type="button" style="margin-top:8px" onclick="_editorToggleMediaLayerAudioOnly('${selectedLayer.id}')">
                             ${selectedLayer.audioOnly ? 'Mostrar video + audio' : 'Usar somente audio da camada'}
                         </button>
-                    ` : '<p style="font-size:11px;color:var(--text-muted)">Camada de imagem nao possui ajuste de volume.</p>'}
+                    ` : '<p style="font-size:11px;color:var(--text-muted)">Camada de imagem não possui ajuste de volume.</p>'}
 
                     <button class="editor-add-btn" type="button" style="margin-top:10px;border-color:rgba(239,68,68,.35);color:#ef4444" onclick="_editorDeleteMediaLayer('${selectedLayer.id}')">
                         Remover camada
@@ -9709,7 +9709,7 @@ async function _editorAutoSubtitles() {
     try {
         const res = await api(`/video/editor/transcribe/${_editor.projectId}`, { method: "POST" });
         if (!res.words || !res.words.length) {
-            showToast("Não foi possível detectar fala no video.", "error");
+            showToast("Não foi possível detectar fala no vídeo.", "error");
             _editor._subtitleGenerating = false;
             _editorRenderProps();
             return;
@@ -9912,7 +9912,7 @@ function _editorResetVideoSegments() {
     _editor.selectedClip = { kind: "", id: "", track: "" };
     _editorRenderTimeline();
     _editorRenderProps();
-    showToast("Cortes removidos. Video restaurado.", "success");
+    showToast("Cortes removidos. Vídeo restaurado.", "success");
 }
 window._editorResetVideoSegments = _editorResetVideoSegments;
 
@@ -9970,7 +9970,7 @@ async function _editorUploadVideoForMusic(input) {
     if (!file) return;
     try {
         _editorSaveState();
-        showToast("Extraindo audio do video...");
+        showToast("Extraindo áudio do vídeo...");
 
         const formData = new FormData();
         formData.append("file", file);
@@ -9999,9 +9999,9 @@ async function _editorUploadVideoForMusic(input) {
         _editorRefreshQuickActions();
         _editorRenderProps();
         _editorRenderTimeline();
-        showToast("Audio extraido do video com sucesso!", "success");
+        showToast("Áudio extraído do vídeo com sucesso!", "success");
     } catch (err) {
-        showToast("Erro ao extrair audio do video: " + (err?.message || "erro desconhecido"), "error");
+        showToast("Erro ao extrair áudio do vídeo: " + (err?.message || "erro desconhecido"), "error");
     } finally {
         if (input) input.value = "";
     }
@@ -10412,7 +10412,7 @@ function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
 function _editorDeleteSelectedClip() {
     if (!_editor.selectedClip.kind) return;
     if (!_editorSelectionCanDelete()) {
-        showToast("Selecione um trecho, texto, legenda, sticker ou audio/musica para excluir.", "error");
+        showToast("Selecione um trecho, texto, legenda, sticker ou áudio/música para excluir.", "error");
         return;
     }
 
@@ -10423,7 +10423,7 @@ function _editorDeleteSelectedClip() {
         const trackSegments = _editorGetSegments(selTrack);
         if (trackSegments.length <= 1) {
             const trackLabel = selTrack === "audio" ? "audio" : "video";
-            showToast(`Nao e possivel remover o ultimo trecho do ${trackLabel}.`, "error");
+            showToast(`Não é possível remover o último trecho do ${trackLabel}.`, "error");
             return;
         }
     }
@@ -10455,7 +10455,7 @@ function _editorDeleteSelectedClip() {
         _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     } else if (selKind === "audio") {
         _editorSetOriginalVolume(0);
-        showToast("Audio original silenciado.", "success");
+        showToast("Áudio original silenciado.", "success");
     }
 
     _editor.selectedClip = { kind: "", id: "", track: "" };
@@ -10843,11 +10843,11 @@ async function _editorExport() {
                 if (status) status.textContent = poll.message || "Processando...";
                 if (poll.status === "completed") {
                     done = true;
-                    if (status) status.textContent = "Video exportado com sucesso!";
+                    if (status) status.textContent = "Vídeo exportado com sucesso!";
                     if (fill) fill.style.width = "100%";
                     await new Promise(r => setTimeout(r, 1500));
                     overlay.remove();
-                    showToast("Video editado exportado com sucesso!", "success");
+                    showToast("Vídeo editado exportado com sucesso!", "success");
 
                     if (poll.output_url) {
                         const link = document.createElement("a");
@@ -10900,7 +10900,7 @@ function _bindEditorEvents() {
         const layerVideoInput = document.getElementById("editor-layer-video-upload-input");
         if (!layerVideoInput) return;
         if (!_editor.projectId) {
-            showToast("Abra um projeto no editor antes de enviar videos em camada.", "error");
+            showToast("Abra um projeto no editor antes de enviar vídeos em camada.", "error");
             return;
         }
         layerVideoInput.click();
@@ -10995,4 +10995,6 @@ if (document.readyState === "loading") {
 }
 
 bootstrap();
+
+
 

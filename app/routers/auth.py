@@ -111,7 +111,7 @@ async def login(
             raise HTTPException(status_code=401, detail="Esta conta usa login pelo Levita. Clique em 'Entrar com Levita'.")
         if existing and existing.auth_source == "google" and not existing.password_hash:
             raise HTTPException(status_code=401, detail="Esta conta usa login Google. Clique em 'Fazer login com o Google'.")
-        raise HTTPException(status_code=401, detail="Email ou senha invalidos")
+        raise HTTPException(status_code=401, detail="Email ou senha inválidos")
     return _session_response(user)
 
 
@@ -121,7 +121,7 @@ async def google_login(
     db: AsyncSession = Depends(get_db),
 ):
     if not settings.google_oauth_client_id:
-        raise HTTPException(status_code=400, detail="Google login nao configurado")
+        raise HTTPException(status_code=400, detail="Google login não configurado")
 
     try:
         payload = google_id_token.verify_oauth2_token(
@@ -134,7 +134,7 @@ async def google_login(
 
     email = (payload.get("email") or "").strip().lower()
     if not email:
-        raise HTTPException(status_code=400, detail="Google nao retornou email")
+        raise HTTPException(status_code=400, detail="Google não retornou email")
 
     user = await find_user_by_email(email, db)
     if user:
@@ -190,7 +190,7 @@ async def login_with_levita_credentials(
         raise HTTPException(status_code=502, detail="Falha ao conectar com o Levita") from exc
 
     if response.status_code >= 400:
-        detail = "Credenciais invalidas no Levita"
+        detail = "Credenciais inválidas no Levita"
         try:
             payload = response.json()
             detail = payload.get("detail") or payload.get("message") or detail
@@ -201,7 +201,7 @@ async def login_with_levita_credentials(
     payload = response.json()
     levita_token = payload.get("token") or payload.get("access_token")
     if not levita_token:
-        raise HTTPException(status_code=502, detail="Levita nao retornou token de sessao")
+        raise HTTPException(status_code=502, detail="Levita não retornou token de sessão")
 
     user = await resolve_user_from_token(str(levita_token), db)
     return _session_response(user)
@@ -210,3 +210,4 @@ async def login_with_levita_credentials(
 @router.post("/logout")
 async def logout():
     return {"ok": True}
+

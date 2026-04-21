@@ -379,7 +379,7 @@ async def upload_music(
     user=Depends(get_current_user),
 ):
     if not file.content_type or not file.content_type.startswith("audio"):
-        raise HTTPException(400, "Arquivo deve ser de audio")
+        raise HTTPException(400, "Arquivo deve ser de áudio")
     upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"])
     upload_dir.mkdir(parents=True, exist_ok=True)
     ext = Path(file.filename or "audio.mp3").suffix or ".mp3"
@@ -405,7 +405,7 @@ async def upload_video_audio(
     file_ext = Path(file.filename or "").suffix.lower()
     has_video_mime = bool(file.content_type and file.content_type.startswith("video"))
     if not has_video_mime and file_ext not in allowed_video_exts:
-        raise HTTPException(400, "Arquivo deve ser de video")
+        raise HTTPException(400, "Arquivo deve ser de vídeo")
 
     upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"])
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -434,7 +434,7 @@ async def upload_video_audio(
 
     if not _probe_has_audio_stream(str(src_video)):
         src_video.unlink(missing_ok=True)
-        raise HTTPException(400, "Este video nao possui faixa de audio")
+        raise HTTPException(400, "Este vídeo não possui faixa de áudio")
 
     try:
         proc = subprocess.run(
@@ -455,11 +455,11 @@ async def upload_video_audio(
         if proc.returncode != 0:
             logger.error("[editor] Failed to extract audio from uploaded video: %s", (proc.stderr or "")[-1200:])
             out_audio.unlink(missing_ok=True)
-            raise HTTPException(500, "Falha ao extrair audio do video")
+            raise HTTPException(500, "Falha ao extrair áudio do vídeo")
 
         if not out_audio.exists() or out_audio.stat().st_size <= 0:
             out_audio.unlink(missing_ok=True)
-            raise HTTPException(500, "Falha ao extrair audio do video")
+            raise HTTPException(500, "Falha ao extrair áudio do vídeo")
 
         return {
             "path": str(out_audio),
@@ -467,7 +467,7 @@ async def upload_video_audio(
         }
     except subprocess.TimeoutExpired:
         out_audio.unlink(missing_ok=True)
-        raise HTTPException(500, "Timeout ao extrair audio do video")
+        raise HTTPException(500, "Timeout ao extrair áudio do vídeo")
     finally:
         src_video.unlink(missing_ok=True)
 
@@ -479,7 +479,7 @@ async def upload_video(
     db: AsyncSession = Depends(get_db),
 ):
     if not file.content_type or not file.content_type.startswith("video"):
-        raise HTTPException(400, "Arquivo deve ser de video")
+        raise HTTPException(400, "Arquivo deve ser de vídeo")
 
     upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "videos"
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -509,15 +509,15 @@ async def upload_video(
         raise HTTPException(400, "Arquivo vazio")
 
     duration, detected_aspect = _probe_video_metadata(str(dest))
-    title = (Path(file.filename or "Video enviado").stem or "Video enviado").strip()[:500]
+    title = (Path(file.filename or "Vídeo enviado").stem or "Vídeo enviado").strip()[:500]
     if not title:
-        title = "Video enviado"
+        title = "Vídeo enviado"
 
     project = VideoProject(
         user_id=user["id"],
         track_id=0,
         title=title,
-        description="Video enviado para edicao",
+        description="Vídeo enviado para edição",
         aspect_ratio=detected_aspect or "16:9",
         status=VideoStatus.COMPLETED,
         progress=100,
@@ -552,7 +552,7 @@ async def upload_layer_video(
     user=Depends(get_current_user),
 ):
     if not file.content_type or not file.content_type.startswith("video"):
-        raise HTTPException(400, "Arquivo deve ser de video")
+        raise HTTPException(400, "Arquivo deve ser de vídeo")
 
     upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "layers" / "videos"
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -589,7 +589,7 @@ async def upload_layer_video(
         "duration": duration,
         "width": width,
         "height": height,
-        "name": Path(file.filename or "Camada video").stem,
+        "name": Path(file.filename or "Camada vídeo").stem,
     }
 
 
@@ -600,7 +600,7 @@ async def upload_layer_image(
 ):
     allowed = {"image/jpeg", "image/png", "image/webp"}
     if file.content_type not in allowed:
-        raise HTTPException(400, "Formato invalido. Envie JPG, PNG ou WebP.")
+        raise HTTPException(400, "Formato inválido. Envie JPG, PNG ou WebP.")
 
     upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "layers" / "images"
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -644,16 +644,16 @@ async def transcribe_video(
     )
     project = result.scalar_one_or_none()
     if not project:
-        raise HTTPException(404, "Projeto nao encontrado")
+        raise HTTPException(404, "Projeto não encontrado")
     render = next((r for r in sorted(project.renders, key=lambda rr: rr.id or 0, reverse=True) if r.file_path), None)
     if not render:
-        raise HTTPException(400, "Nenhum video disponivel")
+        raise HTTPException(400, "Nenhum vídeo disponível")
 
     src_video = _resolve_render_video_path(render)
     if not src_video or not os.path.exists(src_video):
         src_video = _fallback_project_video_path(project.id)
     if not src_video:
-        raise HTTPException(400, "Arquivo de video nao encontrado")
+        raise HTTPException(400, "Arquivo de vídeo não encontrado")
 
     # Extract audio to temp WAV
     tmp_audio_dir = os.path.join(settings.media_dir, "tmp", "transcribe", str(project.id))
@@ -677,11 +677,11 @@ async def transcribe_video(
                 stderr_text[-1200:],
             )
             if "Stream map '0:a:0'" in stderr_text or "matches no streams" in stderr_text:
-                raise HTTPException(400, "Este video nao possui faixa de audio para transcricao")
-            raise HTTPException(500, "Falha ao extrair audio do video")
+                raise HTTPException(400, "Este vídeo não possui faixa de áudio para transcrição")
+            raise HTTPException(500, "Falha ao extrair áudio do vídeo")
     except subprocess.TimeoutExpired:
         logger.error("[editor] Transcribe audio extraction timeout project_id=%s src=%s", project.id, src_video)
-        raise HTTPException(500, "Timeout ao extrair audio do video")
+        raise HTTPException(500, "Timeout ao extrair áudio do vídeo")
     try:
 
         # Transcribe (sync function, run in thread pool)
@@ -710,10 +710,10 @@ async def start_export(
     )
     project = result.scalar_one_or_none()
     if not project:
-        raise HTTPException(404, "Projeto nao encontrado")
+        raise HTTPException(404, "Projeto não encontrado")
     render = next((r for r in sorted(project.renders, key=lambda rr: rr.id or 0, reverse=True) if r.file_path), None)
     if not render:
-        raise HTTPException(400, "Nenhum video disponivel para editar")
+        raise HTTPException(400, "Nenhum vídeo disponível para editar")
 
     job_id = uuid.uuid4().hex[:12]
     _export_jobs[job_id] = {
@@ -736,7 +736,7 @@ async def start_export(
 async def export_status(job_id: str, user=Depends(get_current_user)):
     job = _export_jobs.get(job_id)
     if not job:
-        raise HTTPException(404, "Job nao encontrado")
+        raise HTTPException(404, "Job não encontrado")
     return job
 
 
@@ -754,7 +754,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             src_video = _fallback_project_video_path(project.id)
             if not src_video:
                 job["status"] = "failed"
-                job["error"] = "Arquivo de video nao encontrado no servidor"
+                job["error"] = "Arquivo de vídeo não encontrado no servidor"
                 return
 
         # Output directory
@@ -984,7 +984,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             vfilters.append("unsharp=5:5:0.8:5:5:0.4")
 
         job["progress"] = 20
-        job["message"] = "Renderizando video..."
+        job["message"] = "Renderizando vídeo..."
 
         # Video filter
         if vfilters:
@@ -1071,7 +1071,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             err_text = stderr.decode(errors="ignore")
             logger.error("[editor] FFmpeg failed: %s", err_text[-1800:])
             job["status"] = "failed"
-            job["error"] = "FFmpeg falhou ao processar o video"
+            job["error"] = "FFmpeg falhou ao processar o vídeo"
             return
 
         final_out_file = out_file
@@ -1222,7 +1222,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 if layer_proc.returncode != 0:
                     logger.error("[editor] Layer overlay FFmpeg failed: %s", (layer_proc.stderr or b"")[:600])
                     job["status"] = "failed"
-                    job["error"] = "Falha ao compor camadas de video/imagem"
+                    job["error"] = "Falha ao compor camadas de vídeo/imagem"
                     return
 
                 final_out_file = layered_out_file
@@ -1251,7 +1251,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         except Exception as save_error:
             logger.exception("[editor] Failed to persist export render: %s", save_error)
             job["status"] = "failed"
-            job["error"] = "Falha ao salvar o video exportado"
+            job["error"] = "Falha ao salvar o vídeo exportado"
             return
 
         job["progress"] = 100
@@ -1264,3 +1264,4 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         logger.exception(f"[editor] Export error: {e}")
         _export_jobs[job_id]["status"] = "failed"
         _export_jobs[job_id]["error"] = str(e)
+

@@ -4,6 +4,7 @@ Creates realistic persona portraits using OpenAI gpt-image-1.
 """
 
 import base64
+import json
 import logging
 import mimetypes
 import uuid
@@ -231,7 +232,7 @@ def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> 
     if not normalized:
         normalized = default_persona_attributes(persona_type)
 
-    reference_visual = _clean_text(raw.get("referencia_visual", ""), max_len=700)
+    reference_visual = _clean_text(raw.get("referencia_visual", ""), max_len=1400)
     if reference_visual:
         normalized["referencia_visual"] = reference_visual
 
@@ -336,8 +337,9 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
     if reference_visual:
         details = (
             f"{details} Reference image guidance: {reference_visual}. "
-            "Use this as inspiration for visual traits and style, while creating a new original persona variation. "
-            "Do not copy logos, text, or exact copyrighted characters."
+            "Match facial identity traits, hairstyle, skin tone, outfit details, accessories, and color palette "
+            "as closely as possible to the reference. Keep framing and lighting similar when possible. "
+            "Do not include logos, text overlays, or exact copyrighted character replicas."
         )
 
     return f"{base_rules} {details}"
@@ -369,6 +371,70 @@ def _extract_chat_text(content: object) -> str:
     return " ".join(chunks)
 
 
+def _extract_json_object(raw_text: str) -> dict:
+    text = str(raw_text or "").strip()
+    if not text:
+        return {}
+
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines:
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        candidate = text[start : end + 1]
+        try:
+            data = json.loads(candidate)
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            return {}
+
+    return {}
+
+
+def _build_reference_guidance_from_json(data: dict) -> str:
+    if not isinstance(data, dict):
+        return ""
+
+    fields = [
+        ("identity_signature", "identity"),
+        ("face_shape", "face shape"),
+        ("eye_details", "eyes"),
+        ("nose_mouth_details", "nose and mouth"),
+        ("hairstyle", "hair"),
+        ("skin_tone", "skin tone"),
+        ("body_proportions", "body proportions"),
+        ("outfit", "outfit"),
+        ("accessories", "accessories"),
+        ("color_palette", "color palette"),
+        ("pose_and_framing", "pose and framing"),
+        ("lighting", "lighting"),
+        ("style_family", "style"),
+        ("keep_unchanged", "must preserve"),
+    ]
+
+    parts: list[str] = []
+    for key, label in fields:
+        value = _clean_text(data.get(key, ""), max_len=220)
+        if value:
+            parts.append(f"{label}: {value}")
+
+    return _clean_text(" | ".join(parts), max_len=1400)
+
+
 async def _describe_reference_image(reference_image_path: str) -> str:
     path = Path(str(reference_image_path or "")).expanduser()
     if not path.exists():
@@ -387,54 +453,93 @@ async def _describe_reference_image(reference_image_path: str) -> str:
     encoded = base64.b64encode(raw).decode("ascii")
     data_url = f"data:{mime_type};base64,{encoded}"
 
-    try:
-        client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
-        analysis = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.2,
-            max_tokens=260,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a visual art director. Describe only objective visual traits "
-                        "for generating a similar original persona image."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                "Describe this reference image in one concise paragraph covering: "
-                                "facial traits, apparent age, skin tone, hairstyle, clothing style/colors, "
-                                "accessories, expression, framing, lighting and overall style. "
-                                "Do not mention brands, logos, text overlays, or copyrighted names."
-                            ),
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": data_url},
-                        },
-                    ],
-                },
-            ],
+    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+    analysis_models = ("gpt-4.1-mini", "gpt-4o-mini")
+
+    for model_name in analysis_models:
+        try:
+            analysis = await client.chat.completions.create(
+                model=model_name,
+                temperature=0.1,
+                max_tokens=520,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a senior visual identity analyst for character consistency. "
+                            "Return only objective visual descriptors."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "Analyze this reference image and return ONLY a compact JSON object with keys: "
+                                    "identity_signature, face_shape, eye_details, nose_mouth_details, hairstyle, skin_tone, "
+                                    "body_proportions, outfit, accessories, color_palette, pose_and_framing, lighting, "
+                                    "style_family, keep_unchanged. "
+                                    "Be concrete and specific about details that help replicate the same character look. "
+                                    "Do not include brand names or text from the image."
+                                ),
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": data_url,
+                                    "detail": "high",
+                                },
+                            },
+                        ],
+                    },
+                ],
+            )
+        except Exception as exc:
+            logger.info("Reference analysis model %s unavailable or failed for %s: %s", model_name, path, exc)
+            continue
+
+        choices = getattr(analysis, "choices", None) or []
+        if not choices:
+            continue
+
+        message = getattr(choices[0], "message", None)
+        if not message:
+            continue
+
+        text = _extract_chat_text(getattr(message, "content", ""))
+        if not text:
+            continue
+
+        parsed = _extract_json_object(text)
+        guidance = _build_reference_guidance_from_json(parsed)
+        if guidance:
+            return guidance
+
+        fallback = _clean_text(text, max_len=1400)
+        if fallback:
+            return fallback
+
+    logger.warning("Reference image analysis failed for %s in all fallback models", path)
+    return ""
+
+
+async def _generate_with_reference_image_edit(
+    client: openai.AsyncOpenAI,
+    reference_image_path: str,
+    prompt: str,
+):
+    reference_path = Path(str(reference_image_path or "")).expanduser()
+    if not reference_path.exists():
+        raise RuntimeError("Reference image file not found for edit mode")
+
+    with reference_path.open("rb") as image_file:
+        return await client.images.edit(
+            model="gpt-image-1",
+            image=image_file,
+            prompt=prompt[:3800],
+            size="1024x1024",
         )
-    except Exception as exc:
-        logger.warning("Reference image analysis failed for %s: %s", path, exc)
-        return ""
-
-    choices = getattr(analysis, "choices", None) or []
-    if not choices:
-        return ""
-
-    message = getattr(choices[0], "message", None)
-    if not message:
-        return ""
-
-    text = _extract_chat_text(getattr(message, "content", ""))
-    return _clean_text(text, max_len=700)
 
 
 async def generate_persona_image(
@@ -461,11 +566,29 @@ async def generate_persona_image(
 
     try:
         client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
-        image_response = await client.images.generate(
-            model="gpt-image-1",
-            prompt=prompt[:3800],
-            size="1024x1024",
-        )
+        image_response = None
+
+        if reference_image_path:
+            try:
+                image_response = await _generate_with_reference_image_edit(
+                    client=client,
+                    reference_image_path=reference_image_path,
+                    prompt=prompt,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Reference-conditioned persona edit failed for user=%s type=%s, using text fallback: %s",
+                    user_id,
+                    normalized_type,
+                    exc,
+                )
+
+        if image_response is None:
+            image_response = await client.images.generate(
+                model="gpt-image-1",
+                prompt=prompt[:3800],
+                size="1024x1024",
+            )
     except Exception as exc:
         logger.error("Persona image generation failed for user=%s type=%s: %s", user_id, normalized_type, exc)
         raise RuntimeError("Nao foi possivel gerar a imagem da persona agora")

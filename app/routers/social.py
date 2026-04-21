@@ -215,8 +215,8 @@ async def connect_platform(
             raise HTTPException(
                 status_code=500,
                 detail=(
-                    f"Instagram OAuth nao configurado no servidor ({missing_text}). "
-                    "Configure essas variaveis no .env e execute o deploy."
+                    f"Instagram OAuth não configurado no servidor ({missing_text}). "
+                    "Configure essas variáveis no .env e execute o deploy."
                 ),
             )
         config = INSTAGRAM_OAUTH_CONFIG
@@ -246,14 +246,14 @@ async def oauth_callback(
         raise HTTPException(status_code=400, detail="Invalid platform")
 
     if error:
-        reason = (error_description or error or "Autorizacao cancelada").strip()
+        reason = (error_description or error or "Autorização cancelada").strip()
         return RedirectResponse(url=_build_social_redirect(platform=platform, reason=reason))
 
     if not code:
         return RedirectResponse(
             url=_build_social_redirect(
                 platform=platform,
-                reason="Fluxo OAuth invalido: codigo de autorizacao ausente. Inicie a conexao novamente.",
+                reason="Fluxo OAuth inválido: código de autorização ausente. Inicie a conexão novamente.",
             )
         )
 
@@ -264,7 +264,7 @@ async def oauth_callback(
         return RedirectResponse(
             url=_build_social_redirect(
                 platform=platform,
-                reason="State OAuth invalido ou expirado. Tente conectar a conta novamente.",
+                reason="State OAuth inválido ou expirado. Tente conectar a conta novamente.",
             )
         )
 
@@ -296,7 +296,7 @@ async def oauth_callback(
             if not settings.facebook_app_id or not settings.facebook_app_secret:
                 raise HTTPException(
                     status_code=500,
-                    detail="Instagram OAuth nao configurado no servidor (FACEBOOK_APP_ID/FACEBOOK_APP_SECRET)",
+                    detail="Instagram OAuth não configurado no servidor (FACEBOOK_APP_ID/FACEBOOK_APP_SECRET)",
                 )
             resp = await client.get(INSTAGRAM_OAUTH_CONFIG["token_uri"], params={
                 "client_id": settings.facebook_app_id,
@@ -384,9 +384,9 @@ async def update_account_label(
 
     label = (req.account_label or "").strip()
     if not label:
-        raise HTTPException(status_code=400, detail="Nome da conta nao pode ficar vazio")
+        raise HTTPException(status_code=400, detail="Nome da conta não pode ficar vazio")
     if len(label) > 255:
-        raise HTTPException(status_code=400, detail="Nome da conta muito longo (maximo 255 caracteres)")
+        raise HTTPException(status_code=400, detail="Nome da conta muito longo (máximo 255 caracteres)")
 
     account.account_label = label
     await db.commit()
@@ -398,3 +398,4 @@ async def update_account_label(
         "account_label": account.account_label,
         "platform_username": account.platform_username,
     }
+

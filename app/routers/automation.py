@@ -202,7 +202,7 @@ async def list_tevoxi_songs(user: dict = Depends(get_current_user)):
     """Fetch user's songs from Tevoxi/Levita."""
     token = _get_tevoxi_token()
     if not token:
-        raise HTTPException(status_code=500, detail="Tevoxi nao configurado.")
+        raise HTTPException(status_code=500, detail="Tevoxi não configurado.")
 
     api_url = settings.tevoxi_api_url.rstrip("/")
     headers = {"Authorization": f"Bearer {token}"}
@@ -211,14 +211,14 @@ async def list_tevoxi_songs(user: dict = Depends(get_current_user)):
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(f"{api_url}/api/feed/my-created-music", headers=headers)
             if resp.status_code != 200:
-                raise HTTPException(status_code=502, detail="Erro ao buscar musicas do Tevoxi.")
+                raise HTTPException(status_code=502, detail="Erro ao buscar músicas do Tevoxi.")
             data = resp.json()
             songs = data.get("songs", data) if isinstance(data, dict) else data
             # Return simplified list
             return [
                 {
                     "job_id": s.get("job_id", ""),
-                    "title": s.get("title", "Sem titulo"),
+                    "title": s.get("title", "Sem título"),
                     "duration": s.get("duration", 0),
                     "audio_url": f"{api_url}{s['audio_url']}" if s.get("audio_url", "").startswith("/") else s.get("audio_url", ""),
                     "lyrics": s.get("lyrics", ""),
@@ -230,7 +230,7 @@ async def list_tevoxi_songs(user: dict = Depends(get_current_user)):
             ]
     except httpx.HTTPError as e:
         logger.warning("Failed to fetch Tevoxi songs: %s", e)
-        raise HTTPException(status_code=502, detail="Erro de conexao com Tevoxi.")
+        raise HTTPException(status_code=502, detail="Erro de conexão com Tevoxi.")
 
 
 @router.get("/tevoxi-audio/{job_id}")
@@ -238,9 +238,9 @@ async def proxy_tevoxi_audio(job_id: str, user: dict = Depends(get_current_user)
     """Proxy Tevoxi audio through this backend to avoid browser CORS/auth issues."""
     token = _get_tevoxi_token()
     if not token:
-        raise HTTPException(status_code=500, detail="Tevoxi nao configurado.")
+        raise HTTPException(status_code=500, detail="Tevoxi não configurado.")
     if not job_id or not job_id.strip():
-        raise HTTPException(status_code=400, detail="job_id invalido.")
+        raise HTTPException(status_code=400, detail="job_id inválido.")
 
     api_url = settings.tevoxi_api_url.rstrip("/")
     headers = {"Authorization": f"Bearer {token}"}
@@ -251,7 +251,7 @@ async def proxy_tevoxi_audio(job_id: str, user: dict = Depends(get_current_user)
             resp = await client.get(audio_url, headers=headers)
             if resp.status_code != 200:
                 logger.warning("Tevoxi audio proxy failed for %s with status %s", job_id, resp.status_code)
-                raise HTTPException(status_code=502, detail="Erro ao buscar audio do Tevoxi.")
+                raise HTTPException(status_code=502, detail="Erro ao buscar áudio do Tevoxi.")
 
             media_type = resp.headers.get("content-type", "audio/mpeg")
             return StreamingResponse(
@@ -261,7 +261,7 @@ async def proxy_tevoxi_audio(job_id: str, user: dict = Depends(get_current_user)
             )
     except httpx.HTTPError as e:
         logger.warning("Tevoxi audio proxy connection error for %s: %s", job_id, e)
-        raise HTTPException(status_code=502, detail="Erro de conexao com Tevoxi.")
+        raise HTTPException(status_code=502, detail="Erro de conexão com Tevoxi.")
 
 
 @router.post("/schedules")
@@ -271,13 +271,13 @@ async def create_auto_schedule(
     db: AsyncSession = Depends(get_db),
 ):
     if not req.name or not req.name.strip():
-        raise HTTPException(status_code=400, detail="Nome da automacao e obrigatorio.")
+        raise HTTPException(status_code=400, detail="Nome da automação é obrigatório.")
     if req.video_type not in ("narration", "music", "musical_shorts", "realistic"):
-        raise HTTPException(status_code=400, detail="Tipo de video invalido.")
+        raise HTTPException(status_code=400, detail="Tipo de vídeo inválido.")
     if req.creation_mode not in ("auto", "manual"):
-        raise HTTPException(status_code=400, detail="Modo de criacao invalido.")
+        raise HTTPException(status_code=400, detail="Modo de criação inválido.")
     if req.frequency not in ("daily", "weekly"):
-        raise HTTPException(status_code=400, detail="Frequencia invalida.")
+        raise HTTPException(status_code=400, detail="Frequência inválida.")
 
     # Normalize special/empty values: no social account means "test account" mode.
     social_account_id = req.social_account_id if (req.social_account_id and req.social_account_id > 0) else None
@@ -286,7 +286,7 @@ async def create_auto_schedule(
     if social_account_id is not None:
         acct = await db.get(SocialAccount, social_account_id)
         if not acct or acct.user_id != user["id"]:
-            raise HTTPException(status_code=400, detail="Conta social nao encontrada.")
+            raise HTTPException(status_code=400, detail="Conta social não encontrada.")
 
     schedule = AutoSchedule(
         user_id=user["id"],
@@ -358,7 +358,7 @@ async def get_auto_schedule(
     )
     schedule = result.scalar_one_or_none()
     if not schedule:
-        raise HTTPException(status_code=404, detail="Automacao nao encontrada.")
+        raise HTTPException(status_code=404, detail="Automação não encontrada.")
 
     data = _schedule_to_dict(schedule)
     data["themes"] = sorted(
@@ -377,7 +377,7 @@ async def update_auto_schedule(
 ):
     schedule = await db.get(AutoSchedule, schedule_id)
     if not schedule or schedule.user_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Automacao nao encontrada.")
+        raise HTTPException(status_code=404, detail="Automação não encontrada.")
 
     if req.name is not None:
         schedule.name = req.name.strip()
@@ -406,7 +406,7 @@ async def update_auto_schedule(
         if req.social_account_id and req.social_account_id > 0:
             acct = await db.get(SocialAccount, req.social_account_id)
             if not acct or acct.user_id != user["id"]:
-                raise HTTPException(status_code=400, detail="Conta social nao encontrada.")
+                raise HTTPException(status_code=400, detail="Conta social não encontrada.")
             schedule.social_account_id = req.social_account_id
         else:
             schedule.social_account_id = None
@@ -428,7 +428,7 @@ async def delete_auto_schedule(
 ):
     schedule = await db.get(AutoSchedule, schedule_id)
     if not schedule or schedule.user_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Automacao nao encontrada.")
+        raise HTTPException(status_code=404, detail="Automação não encontrada.")
 
     await db.delete(schedule)
     await db.commit()
@@ -444,7 +444,7 @@ async def add_themes(
 ):
     schedule = await db.get(AutoSchedule, schedule_id)
     if not schedule or schedule.user_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Automacao nao encontrada.")
+        raise HTTPException(status_code=404, detail="Automação não encontrada.")
 
     # Find max position
     result = await db.execute(
@@ -490,7 +490,7 @@ async def delete_theme(
     )
     theme = result.scalar_one_or_none()
     if not theme:
-        raise HTTPException(status_code=404, detail="Tema nao encontrado.")
+        raise HTTPException(status_code=404, detail="Tema não encontrado.")
 
     await db.delete(theme)
     await db.commit()
@@ -506,7 +506,7 @@ async def reorder_themes(
 ):
     schedule = await db.get(AutoSchedule, schedule_id)
     if not schedule or schedule.user_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Automacao nao encontrada.")
+        raise HTTPException(status_code=404, detail="Automação não encontrada.")
 
     result = await db.execute(
         select(AutoScheduleTheme)
@@ -520,3 +520,4 @@ async def reorder_themes(
 
     await db.commit()
     return {"ok": True}
+

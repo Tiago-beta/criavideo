@@ -63,7 +63,7 @@ def _parse_attributes_json(attributes_json: str) -> dict:
     try:
         parsed = json.loads(raw)
     except Exception:
-        raise HTTPException(status_code=400, detail="attributes_json invalido")
+        raise HTTPException(status_code=400, detail="attributes_json inválido")
 
     if parsed is None:
         return {}
@@ -174,11 +174,11 @@ async def create_profile_from_reference(
 
     content_type = str(reference_image.content_type or "").lower().strip()
     if content_type and content_type not in _ALLOWED_REFERENCE_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="Formato de imagem nao suportado")
+        raise HTTPException(status_code=400, detail="Formato de imagem não suportado")
 
     content = await reference_image.read()
     if not content:
-        raise HTTPException(status_code=400, detail="Envie uma imagem de referencia valida")
+        raise HTTPException(status_code=400, detail="Envie uma imagem de referência válida")
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Imagem muito grande (max 10MB)")
 
@@ -206,7 +206,7 @@ async def create_profile_from_reference(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Falha ao criar persona com referencia: {exc}")
+        raise HTTPException(status_code=500, detail=f"Falha ao criar persona com referência: {exc}")
     finally:
         try:
             reference_path.unlink(missing_ok=True)
@@ -247,7 +247,7 @@ async def delete_profile(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     if profile_id <= 0:
-        raise HTTPException(status_code=400, detail="profile_id invalido")
+        raise HTTPException(status_code=400, detail="profile_id inválido")
 
     try:
         result = await delete_persona_profile(
@@ -263,3 +263,4 @@ async def delete_profile(
         **result,
         "message": "Persona removida",
     }
+
