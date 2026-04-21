@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v163 loaded");
+﻿console.log("[CriaVideo] app.js v164 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -81,7 +81,7 @@ function getApiErrorMessage(body, fallback = "Erro inesperado") {
             }
             if (item && typeof item === "object") {
                 const location = Array.isArray(item.loc) ? `${item.loc.join(".")}: ` : "";
-                return `${location}${item.msg || "Erro de validacao"}`;
+                return `${location}${item.msg || "Erro de validação"}`;
             }
             return String(item);
         });
@@ -142,13 +142,13 @@ async function apiForm(path, formData, options = {}) {
             lastError = error;
             const isNetworkError = error && /failed to fetch|networkerror|load failed/i.test(String(error.message || error));
             if (!isNetworkError || attempt === 1) {
-                throw new Error("Falha de conexao ao enviar arquivos. Verifique a internet e tente novamente.");
+                throw new Error("Falha de conexão ao enviar arquivos. Verifique a internet e tente novamente.");
             }
             await new Promise((resolve) => setTimeout(resolve, 800));
         }
     }
     if (!response) {
-        throw new Error(lastError?.message || "Falha ao enviar requisicao.");
+        throw new Error(lastError?.message || "Falha ao enviar requisição.");
     }
     if (response.status === 401) {
         clearSession();
@@ -209,7 +209,7 @@ function renderSession() {
     const profileName = document.getElementById("profile-name");
     const profileEmail = document.getElementById("profile-email");
     const profileBadge = document.getElementById("profile-role-badge");
-    if (profileName) profileName.textContent = currentUser.name || "Usuario";
+    if (profileName) profileName.textContent = currentUser.name || "Usuário";
     if (profileEmail) profileEmail.textContent = currentUser.email || "-";
     if (profileBadge) {
         const src = currentUser.source === "levita" ? "Levita" : currentUser.source === "google" ? "Google" : "Local";
@@ -248,9 +248,9 @@ function setAuthMode(mode) {
     document.getElementById("auth-title").textContent = isLogin ? "Entrar" : "Criar conta";
     const subtitle = document.getElementById("auth-subtitle");
     if (subtitle) subtitle.textContent = isLogin
-        ? "Acesse seus projetos e publique em multiplos canais."
-        : "Crie sua conta para receber clientes e gerar videos fora do Levita.";
-    document.getElementById("auth-switch-copy").textContent = isLogin ? "Nao tem conta?" : "Ja tem conta?";
+        ? "Acesse seus projetos e publique em múltiplos canais."
+        : "Crie sua conta para receber clientes e gerar vídeos fora do Levita.";
+    document.getElementById("auth-switch-copy").textContent = isLogin ? "Não tem conta?" : "Já tem conta?";
     document.getElementById("auth-switch-button").textContent = isLogin ? "Criar conta" : "Entrar";
     setAuthStatus("");
 }
@@ -336,7 +336,7 @@ async function exchangeLevitaToken(rawToken) {
     });
     if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(getApiErrorMessage(error, "Nao foi possivel validar o login do Levita"));
+        throw new Error(getApiErrorMessage(error, "Não foi possível validar o login do Levita"));
     }
     const data = await response.json();
     setSession(data.access_token, data.user, rawToken);
@@ -357,7 +357,7 @@ async function loginWithLevitaCredentials(email, password) {
 
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-        throw new Error(getApiErrorMessage(body, "Nao foi possivel entrar com credenciais do Levita"));
+        throw new Error(getApiErrorMessage(body, "Não foi possível entrar com credenciais do Levita"));
     }
 
     return body;
@@ -604,7 +604,7 @@ function bindDashboardEvents() {
             manualFields.hidden = true;
             details.hidden = false;
             details.innerHTML = `
-                <p><strong>${esc(selectedSong.title || "Sem titulo")}</strong></p>
+                <p><strong>${esc(selectedSong.title || "Sem título")}</strong></p>
                 ${selectedSong.artist ? `<p>${esc(selectedSong.artist)}</p>` : ""}
                 ${selectedSong.duration ? `<p>${Math.round(selectedSong.duration)}s</p>` : ""}
                 ${selectedSong.lyrics ? `<p>${esc(selectedSong.lyrics).slice(0, 280)}...</p>` : ""}
@@ -662,7 +662,7 @@ function handleSocialCallbackResult() {
 
     const platformName = socialPlatformName(socialError || "social");
     const reasonText = socialReason ? `\n\nDetalhes: ${socialReason}` : "";
-    alert(`Nao foi possivel conectar ${platformName}.${reasonText}`);
+    alert(`Não foi possível conectar ${platformName}.${reasonText}`);
     navigateTo("accounts");
 }
 
@@ -875,7 +875,7 @@ async function populateSongSelector() {
     details.hidden = true;
     select.innerHTML = "<option value=''>Carregando...</option>";
     const songs = await loadLevitaSongs();
-    const baseOptions = ["<option value=''>Selecione uma musica</option>", "<option value='manual'>Inserir manualmente</option>"];
+    const baseOptions = ["<option value=''>Selecione uma música</option>", "<option value='manual'>Inserir manualmente</option>"];
     if (!songs.length) {
         select.innerHTML = baseOptions.join("");
         document.getElementById("np-manual-fields").hidden = false;
@@ -884,7 +884,7 @@ async function populateSongSelector() {
     document.getElementById("np-manual-fields").hidden = true;
     select.innerHTML = baseOptions.join("") + songs.map((song, index) => {
         const artist = song.artist ? ` - ${esc(song.artist)}` : "";
-        return `<option value="${index}">${esc(song.title || "Sem titulo")}${artist}</option>`;
+        return `<option value="${index}">${esc(song.title || "Sem título")}${artist}</option>`;
     }).join("");
 }
 
@@ -1195,7 +1195,7 @@ function _stopSmoothProgress() {
 async function createSimilar(projectId) {
     const project = _projectsCache.find(p => p.id === projectId);
     if (!project || !project.lyrics_text) {
-        alert("Roteiro nao disponivel para este projeto.");
+        alert("Roteiro não disponível para este projeto.");
         return;
     }
 
@@ -1332,7 +1332,7 @@ let _editThumbFile = null; // File object for new thumbnail in edit modal
 async function openRenameProjectModal(projectId) {
     const project = _projectsCache.find((p) => p.id === projectId);
     if (!project) {
-        alert("Projeto nao encontrado.");
+        alert("Projeto não encontrado.");
         return;
     }
 
@@ -1711,7 +1711,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     }
 
     if (!prompt) {
-        alert("Descreva a cena que voce quer ver no video.");
+        alert("Descreva a cena que você quer ver no vídeo.");
         return;
     }
 
@@ -1723,7 +1723,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         : false;
 
     if (wantsReferenceImage && scriptPhotos.length === 0) {
-        alert("Voce ativou 'Usar minhas fotos no video', mas ainda nao enviou nenhuma foto.");
+        alert("Você ativou 'Usar minhas fotos no vídeo', mas ainda não enviou nenhuma foto.");
         return;
     }
 
@@ -2112,7 +2112,7 @@ function wizardNext() {
     }
     if (currentDataStep === 3) {
         const sel = document.querySelector("#create-panel-wizard .wizard-step[data-step='3'] .wizard-option.selected");
-        if (!sel) { alert("Escolha o tom da narracao."); return; }
+        if (!sel) { alert("Escolha o tom da narração."); return; }
         wizardData.tone = sel.dataset.value;
     }
     if (currentDataStep === 4) {
@@ -2190,7 +2190,7 @@ async function handleWizardCreate() {
             }),
         });
 
-        showCreateProgress("Gerando narracao com voz IA...");
+        showCreateProgress("Gerando narração com voz IA...");
 
         // Step 2: Generate audio + create project
         const result = await api("/video/generate-audio", {
@@ -2270,7 +2270,7 @@ function scriptNext() {
             scriptData.createNarration = videoCreateNarration;
             scriptData.text = videoCreateNarration ? text : "";
             if (videoCreateNarration && (!text || text.length < 20)) {
-                alert("Escreva um roteiro com pelo menos 20 caracteres para a narracao.");
+                alert("Escreva um roteiro com pelo menos 20 caracteres para a narração.");
                 return;
             }
         } else {
@@ -2283,7 +2283,7 @@ function scriptNext() {
                 return;
             }
             if (!createNarration && scriptPhotos.length === 0 && !hasUserAudio) {
-                alert("Envie fotos para criar o video sem narracao.");
+                alert("Envie fotos para criar o vídeo sem narração.");
                 return;
             }
             scriptData.title = title;
@@ -2322,7 +2322,7 @@ function scriptNext() {
             scriptData.tone = "informativo";
         } else {
             const sel = document.querySelector("#create-panel-script .wizard-step[data-step='3'] .wizard-option.selected");
-            if (!sel) { alert("Escolha o tom da narracao."); return; }
+            if (!sel) { alert("Escolha o tom da narração."); return; }
             scriptData.tone = sel.dataset.value;
         }
     }
@@ -2449,7 +2449,7 @@ async function handleScriptCreate() {
     }
 
     if (!scriptData.text && !scriptData.useCustomImages && !scriptData.useCustomAudio && !scriptData.useCustomVideo) {
-        alert("Sem narracao, envie fotos, video ou audio para criar um video personalizado.");
+        alert("Sem narração, envie fotos, vídeo ou áudio para criar um vídeo personalizado.");
         return;
     }
 
@@ -2466,7 +2466,7 @@ async function handleScriptCreate() {
         ? "Preparando video com legendas..."
         : scriptData.useCustomAudio
         ? "Preparando video a partir do seu audio..."
-        : (scriptData.text ? "Gerando narracao com voz IA..." : "Preparando video com fotos (musica automatica se nao enviar)...");
+        : (scriptData.text ? "Gerando narração com voz IA..." : "Preparando video com fotos (musica automatica se não enviar)...");
     const startStage = scriptData.removeVocals ? "Removendo voz..." : "Processando...";
     showCreateProgress(startMessage, { progress: 12, stage: startStage });
 
@@ -2667,7 +2667,7 @@ function handleUserVideoSelect(event) {
 
     const validTypes = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/webm", "video/x-matroska"];
     if (!file.type.startsWith("video/") && !validTypes.includes(file.type)) {
-        alert("Formato nao suportado. Envie um video MP4, MOV, AVI ou WEBM.");
+        alert("Formato não suportado. Envie um vídeo MP4, MOV, AVI ou WEBM.");
         event.target.value = "";
         return;
     }
@@ -2759,7 +2759,7 @@ function handleUserAudioSelect(event) {
     if (!file) return;
 
     if (!file.type.startsWith("audio/")) {
-        alert("Formato nao suportado. Envie um arquivo de audio valido.");
+        alert("Formato não suportado. Envie um arquivo de áudio válido.");
         event.target.value = "";
         return;
     }
@@ -2808,9 +2808,9 @@ function toggleScriptNarration() {
     textarea.disabled = disableText;
     if (aiBtn) aiBtn.disabled = disableText;
     if (disableText) {
-        textarea.placeholder = "Narracao desativada. O video sera criado com fotos + fundo musical.";
+        textarea.placeholder = "Narração desativada. O vídeo será criado com fotos + fundo musical.";
     } else {
-        textarea.placeholder = "Cole ou escreva o roteiro completo da narracao aqui...";
+        textarea.placeholder = "Cole ou escreva o roteiro completo da narração aqui...";
     }
 }
 
@@ -2847,7 +2847,7 @@ function addPhotos(files) {
             break;
         }
         if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
-            alert(`Formato nao suportado: ${file.name}. Use JPG, PNG ou WebP.`);
+            alert(`Formato não suportado: ${file.name}. Use JPG, PNG ou WebP.`);
             continue;
         }
         if (file.size > MAX_PHOTO_SIZE) {
@@ -2953,7 +2953,7 @@ function adaptScriptStepForVideoType(videoType) {
     if (textarea) {
         textarea.placeholder = isRealistic
             ? "Cole ou escreva seu prompt aqui..."
-            : "Cole ou escreva o roteiro completo da narracao aqui...";
+            : "Cole ou escreva o roteiro completo da narração aqui...";
     }
     // Reset video toggle if switching to realistic
     if (isRealistic) {
@@ -3344,6 +3344,47 @@ function _updatePersonaManagerFormByType() {
     if (customDescGroup) customDescGroup.hidden = !isCustom;
 }
 
+function _formatDrawingStyleLabel(styleValue, customStyleValue) {
+    const style = String(styleValue || "").trim().toLowerCase();
+    const customStyle = String(customStyleValue || "").trim();
+    const labels = {
+        cartoon: "Cartoon",
+        "3d": "3D",
+        anime: "Anime",
+        comic: "Comic",
+        manga: "Manga",
+        pixar: "Pixar",
+        pixel_art: "Pixel Art",
+        aquarela: "Aquarela",
+        outros: "Personalizado",
+    };
+
+    if (!style) {
+        return "Cartoon";
+    }
+    if (style === "outros") {
+        return customStyle || labels.outros;
+    }
+    return labels[style] || style;
+}
+
+function _buildPersonaManagerMeta(profile) {
+    const typeLabel = REALISTIC_PERSONA_LABELS[_personaManagerType] || _personaManagerType;
+    const attrs = (profile && typeof profile.attributes === "object" && profile.attributes) ? profile.attributes : {};
+    const parts = [typeLabel];
+
+    if (_personaManagerType === "desenho") {
+        const styleLabel = _formatDrawingStyleLabel(attrs.estilo_desenho, attrs.estilo_desenho_custom);
+        parts.push(`Estilo: ${styleLabel}`);
+    }
+
+    if (profile?.is_default) {
+        parts.push("Padrao");
+    }
+
+    return parts.join(" - ");
+}
+
 function _renderPersonaManagerList() {
     const listEl = document.getElementById("persona-manager-list");
     if (!listEl) return;
@@ -3359,7 +3400,7 @@ function _renderPersonaManagerList() {
         const pid = parseInt(profile.id, 10) || 0;
         const isSelected = selectedIds.includes(pid);
         const selectedClass = isSelected ? " selected" : "";
-        const defaultBadge = profile.is_default ? " - Padrao" : "";
+        const metaText = _buildPersonaManagerMeta(profile);
         const imageUrl = profile.image_url || "";
         const image = imageUrl
             ? `<img class="persona-manager-photo" src="${imageUrl}" alt="${esc(profile.name || "Persona")}">`
@@ -3374,7 +3415,7 @@ function _renderPersonaManagerList() {
                 ${image}
                 <div class="persona-manager-info">
                     <div class="persona-manager-name">${esc(profile.name || `Persona ${pid}`)}</div>
-                    <div class="persona-manager-meta">${esc(REALISTIC_PERSONA_LABELS[_personaManagerType] || _personaManagerType)}${esc(defaultBadge)}</div>
+                    <div class="persona-manager-meta">${esc(metaText)}</div>
                 </div>
                 <div class="persona-manager-actions">
                     <button class="btn btn-secondary btn-sm" type="button" onclick="${useActionHandler}">${useActionLabel}</button>
@@ -3432,7 +3473,7 @@ function _setPersonaReferenceImage(file) {
     }
 
     if (file.type && !PERSONA_REFERENCE_ALLOWED_TYPES.includes(file.type)) {
-        alert("Formato de imagem nao suportado. Use JPG, PNG ou WEBP.");
+        alert("Formato de imagem não suportado. Use JPG, PNG ou WEBP.");
         removePersonaReferenceImage();
         return false;
     }
@@ -4003,7 +4044,7 @@ async function createProjectFromLibrary() {
         lyricsText = song.lyrics || "";
         trackDuration = Math.round(song.duration) || 180;
     } else {
-        alert("Selecione uma musica ou use o modo manual.");
+        alert("Selecione uma música ou use o modo manual.");
         return;
     }
     try {
@@ -4069,7 +4110,7 @@ async function watchVideo(projectId) {
         }
         const render = _pickLatestAvailableRender(project.renders);
         if (!render) {
-            alert("Este video nao esta mais disponivel para reproducao.");
+            alert("Este vídeo não está mais disponível para reprodução.");
             return;
         }
         const playerModal = document.getElementById("modal-player");
@@ -4148,7 +4189,7 @@ async function loadRenders(preselectProjectId = 0) {
                     const duration = render.duration != null
                         ? `${Math.floor(render.duration / 60)}:${String(Math.round(render.duration % 60)).padStart(2, "0")}`
                         : "?";
-                    const optionLabel = `[${project.title || "Sem titulo"}] ${render.format} - ${duration}`;
+                    const optionLabel = `[${project.title || "Sem título"}] ${render.format} - ${duration}`;
                     select.innerHTML += `<option value="${render.id}">${esc(optionLabel)}</option>`;
                     renderOptions[String(render.id)] = optionLabel;
                     if (wantedProjectId && project.id === wantedProjectId && !preselectRenderId) {
@@ -4513,11 +4554,11 @@ function renderPublishDraftList() {
     container.innerHTML = `
         <div class="publish-drafts-list">
             ${drafts.map((draft) => {
-                const title = draft.title.trim() || "Sem titulo";
+                const title = draft.title.trim() || "Sem título";
                 const description = draft.description.trim();
                 const descriptionPreview = description
                     ? (description.length > 140 ? `${description.slice(0, 140).trim()}...` : description)
-                    : "Sem descricao.";
+                    : "Sem descrição.";
                 const platforms = draft.platforms.length
                     ? draft.platforms.map((item) => socialPlatformName(item)).join(", ")
                     : "Sem plataformas selecionadas";
@@ -4683,7 +4724,7 @@ async function submitPublishNow() {
             method: "POST",
             body: JSON.stringify(payload),
         });
-        alert("Publicacao iniciada.");
+        alert("Publicação iniciada.");
         loadPublishJobs();
     } catch (error) {
         alert(`Erro: ${error.message}`);
@@ -4749,7 +4790,7 @@ async function confirmSchedulePublish() {
             body: JSON.stringify(payload),
         });
         closeModal("modal-publish-schedule");
-        alert("Publicacao agendada com sucesso.");
+        alert("Publicação agendada com sucesso.");
         loadPublishJobs();
     } catch (error) {
         alert(`Erro: ${error.message}`);
@@ -5326,7 +5367,7 @@ async function loadAutoSchedules() {
     try {
         const data = await api("/automation/schedules");
         if (!data.length) {
-            container.innerHTML = "<p class='loading'>Nenhuma automacao criada.</p>";
+            container.innerHTML = "<p class='loading'>Nenhuma automação criada.</p>";
             return;
         }
         container.innerHTML = data.map(renderAutoCard).join("");
@@ -5389,7 +5430,7 @@ function renderAutoCard(s) {
 
     return `<div class="auto-card" id="auto-card-${s.id}">
         <div class="auto-card-header">
-            <h4>${esc(s.name || "Automacao")}</h4>
+            <h4>${esc(s.name || "Automação")}</h4>
             ${statusBadge}
         </div>
         <div class="auto-card-badges">${typeBadge} ${modeBadge}</div>
@@ -5735,7 +5776,7 @@ async function _loadTevoxiSongsIfNeeded() {
     try {
         _autoTevoxiSongs = await api("/automation/tevoxi-songs");
         if (!_autoTevoxiSongs.length) {
-            list.innerHTML = '<p class="loading">Nenhuma musica encontrada no Tevoxi.</p>';
+            list.innerHTML = '<p class="loading">Nenhuma música encontrada no Tevoxi.</p>';
             return;
         }
         _renderTevoxiSongs();
@@ -5757,7 +5798,7 @@ function _renderTevoxiSongs() {
         const selected = _autoSelectedSong && _autoSelectedSong.job_id === s.job_id;
         return `<button class="auto-song-item${selected ? ' active' : ''}" type="button" onclick="selectTevoxiSong(${i})">
             <div class="song-info">
-                <strong>${esc(s.title || 'Sem titulo')}</strong>
+                <strong>${esc(s.title || 'Sem título')}</strong>
                 <span class="muted">${esc(meta || 'Sem detalhes')}</span>
             </div>
             <span class="song-check">${selected ? '✓' : ''}</span>
@@ -5923,7 +5964,7 @@ function _stopClipPreview() {
 
 function openClipSelector() {
     if (!_autoSelectedSong) {
-        alert("Selecione uma musica primeiro.");
+        alert("Selecione uma música primeiro.");
         return;
     }
     const song = _autoSelectedSong;
@@ -6410,7 +6451,7 @@ function toggleClipPreview() {
 
     const audio = document.getElementById("clip-audio");
     if (!audio || !audio.src) {
-        alert("Nao foi possivel carregar o audio para preview.");
+        alert("Não foi possível carregar o audio para preview.");
         return;
     }
 
@@ -6441,7 +6482,7 @@ function toggleClipPreview() {
             })
             .catch(() => {
                 _stopClipPreview();
-                alert("Nao foi possivel reproduzir este trecho.");
+                alert("Não foi possível reproduzir este trecho.");
             });
     } else {
         _clipPreviewRaf = requestAnimationFrame(_tickClipPreviewLoop);
@@ -6725,7 +6766,7 @@ async function createAutoSchedule() {
     } catch (error) {
         alert(`Erro: ${error.message}`);
     } finally {
-        if (btn) { btn.disabled = false; btn.textContent = "Ativar Automacao"; }
+        if (btn) { btn.disabled = false; btn.textContent = "Ativar Automação"; }
     }
 }
 
@@ -6829,7 +6870,7 @@ function formatSocialConnectError(rawMessage, platform) {
             "",
             "Como resolver:",
             "1. Criar/abrir um app no Meta for Developers",
-            "2. Habilitar Facebook Login e permissoes do Instagram",
+            "2. Habilitar Facebook Login e permissões do Instagram",
             "3. Definir Redirect URI: https://criavideo.pro/api/social/callback/instagram",
             "4. Configurar no servidor (.env): FACEBOOK_APP_ID e FACEBOOK_APP_SECRET",
             "5. Executar deploy e tentar conectar novamente",
@@ -7291,7 +7332,7 @@ async function startPersonaRecording(prefix) {
             if (seconds >= 30) stopPersonaRecording(prefix);
         }, 1000);
     } catch (err) {
-        alert("Nao foi possivel acessar o microfone. Verifique as permissoes do navegador.");
+        alert("Não foi possível acessar o microfone. Verifique as permissoes do navegador.");
     }
 }
 
@@ -8050,7 +8091,7 @@ function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
                 playPromise.catch(() => {
                     if (!_editorMusicPreviewWarned) {
                         _editorMusicPreviewWarned = true;
-                        showToast("Nao foi possivel tocar a previa do audio externo. O audio sera aplicado na exportacao.", "error");
+                        showToast("Não foi possível tocar a previa do audio externo. O audio sera aplicado na exportacao.", "error");
                     }
                 });
             }
@@ -9668,7 +9709,7 @@ async function _editorAutoSubtitles() {
     try {
         const res = await api(`/video/editor/transcribe/${_editor.projectId}`, { method: "POST" });
         if (!res.words || !res.words.length) {
-            showToast("Nao foi possivel detectar fala no video.", "error");
+            showToast("Não foi possível detectar fala no video.", "error");
             _editor._subtitleGenerating = false;
             _editorRenderProps();
             return;
@@ -10954,3 +10995,4 @@ if (document.readyState === "loading") {
 }
 
 bootstrap();
+

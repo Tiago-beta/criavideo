@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260421-10">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260421-11">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 179;
+        var REQUIRED_VER = 180;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -103,14 +103,14 @@
                 </div>
 
                 <p class="auth-switch">
-                    <span id="auth-switch-copy">Nao tem conta?</span>
+                    <span id="auth-switch-copy">Não tem conta?</span>
                     <button id="auth-switch-button" class="link-button" type="button">Criar conta</button>
                 </p>
 
                 <p class="auth-legal-links">
-                    <a href="/privacy" target="_blank" rel="noopener noreferrer">Politica de Privacidade</a>
+                    <a href="/privacy" target="_blank" rel="noopener noreferrer">Política de Privacidade</a>
                     <span>&middot;</span>
-                    <a href="/terms" target="_blank" rel="noopener noreferrer">Termos de Servico</a>
+                    <a href="/terms" target="_blank" rel="noopener noreferrer">Termos de Serviço</a>
                 </p>
             </div>
         </section>
@@ -155,7 +155,7 @@
                             </div>
                             <div class="user-details">
                                 <span class="user-name" id="session-name">Cliente</span>
-                                <span class="user-role" id="session-meta">Sem sessao</span>
+                                <span class="user-role" id="session-meta">Sem sessão</span>
                             </div>
                             <button id="btn-logout" class="btn-logout-icon" type="button" title="Sair">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -176,7 +176,7 @@
                                 <button class="mobile-profile-btn" id="mobile-profile-btn" type="button" title="Perfil">
                                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                                 </button>
-                                <h1>Criar videos</h1>
+                                <h1>Criar vídeos</h1>
                                 <button id="btn-new-project" class="btn btn-primary btn-add-project" type="button" title="Adicionar novo projeto" aria-label="Adicionar novo projeto">+</button>
                             </div>
                             <div class="sidebar-credits" id="sidebar-credits" title="Clique para comprar créditos">
@@ -194,17 +194,17 @@
                         <div id="editor-select-view">
                             <div class="page-header">
                                 <div class="page-header-left">
-                                    <h1>Editar video</h1>
-                                    <button id="editor-upload-btn" class="btn btn-primary btn-add-project" type="button" title="Enviar video para editar" aria-label="Enviar video para editar">+</button>
+                                    <h1>Editar vídeo</h1>
+                                    <button id="editor-upload-btn" class="btn btn-primary btn-add-project" type="button" title="Enviar vídeo para editar" aria-label="Enviar vídeo para editar">+</button>
                                 </div>
                             </div>
                             <input id="editor-video-upload-input" type="file" accept="video/*" hidden onchange="_editorUploadVideo(this)">
                             <input id="editor-layer-video-upload-input" type="file" accept="video/*" hidden onchange="_editorUploadLayerVideo(this)">
                             <input id="editor-layer-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="_editorUploadLayerImage(this)">
                             <input id="editor-project-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadProjectImages(this)">
-                            <p class="section-subtitle">Selecione um video finalizado para editar.</p>
+                            <p class="section-subtitle">Selecione um vídeo finalizado para editar.</p>
                             <div id="editor-videos-list" class="cards-grid">
-                                <div class="loading">Carregando videos...</div>
+                                <div class="loading">Carregando vídeos...</div>
                             </div>
                         </div>
                         <!-- Editor: full workspace (hidden until a video is selected) -->
@@ -232,9 +232,9 @@
                             <div class="editor-main">
                                 <!-- Left tools panel -->
                                 <div class="editor-tools-panel" id="editor-tools-panel">
-                                    <button class="editor-tool-btn" id="editor-side-upload-video-btn" type="button" title="Enviar video">
+                                    <button class="editor-tool-btn" id="editor-side-upload-video-btn" type="button" title="Enviar vídeo">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                        <span>Video+</span>
+                                        <span>Vídeo+</span>
                                     </button>
                                     <button class="editor-tool-btn" id="editor-side-upload-images-btn" type="button" title="Enviar imagens">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
@@ -248,9 +248,9 @@
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 12h4"/><path d="M13 12h4"/><path d="M7 16h10"/></svg>
                                         <span>Legendas</span>
                                     </button>
-                                    <button class="editor-tool-btn" data-tool="music" type="button" title="Audio">
+                                    <button class="editor-tool-btn" data-tool="music" type="button" title="Áudio">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                                        <span>Audio</span>
+                                        <span>Áudio</span>
                                     </button>
                                     <button class="editor-tool-btn" data-tool="filters" type="button" title="Filtros">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
@@ -286,7 +286,7 @@
                                 <div class="editor-props-panel" id="editor-props-panel">
                                     <!-- Dynamic content based on active tool -->
                                     <div class="editor-props-content" id="editor-props-content">
-                                        <p class="editor-props-hint">Selecione uma ferramenta para comecar.</p>
+                                        <p class="editor-props-hint">Selecione uma ferramenta para começar.</p>
                                     </div>
                                 </div>
                             </div>
@@ -310,7 +310,7 @@
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                                 </button>
                                 <div class="editor-aspect-selector">
-                                    <select id="editor-aspect-select" aria-label="Proporcao do video">
+                                    <select id="editor-aspect-select" aria-label="Proporção do vídeo">
                                         <option value="source">Original</option>
                                         <option value="9:16">9:16</option>
                                         <option value="16:9">16:9</option>
@@ -329,9 +329,9 @@
 
                     <section id="page-publish" class="page">
                         <div class="page-header">
-                            <h1>Publicar videos You Tube</h1>
-                            <div class="publish-top-tabs" role="tablist" aria-label="Opcoes de publicar">
-                                <button class="btn btn-secondary publish-top-tab active" type="button" data-publish-tab="publish">Publicacao</button>
+                            <h1>Publicar vídeos YouTube</h1>
+                            <div class="publish-top-tabs" role="tablist" aria-label="Opções de publicar">
+                                <button class="btn btn-secondary publish-top-tab active" type="button" data-publish-tab="publish">Publicação</button>
                                 <button class="btn btn-secondary publish-top-tab" type="button" data-publish-tab="accounts">Contas</button>
                             </div>
                         </div>
@@ -340,7 +340,7 @@
                                 <div id="publish-form-area">
                                     <div class="publish-select-row">
                                         <div class="form-group publish-form-group">
-                                            <select id="pub-render-select" class="input" aria-label="Selecione o video renderizado">
+                                            <select id="pub-render-select" class="input" aria-label="Selecione o vídeo renderizado">
                                                 <option value="">Selecione aqui...</option>
                                             </select>
                                         </div>
@@ -352,29 +352,29 @@
                                     </div>
                                     <div id="pub-ai-loading" class="pub-ai-loading" hidden>
                                         <div class="spinner-small"></div>
-                                        <span>IA gerando sugestoes...</span>
+                                        <span>IA gerando sugestões...</span>
                                     </div>
                                     <div class="form-group publish-form-group">
                                         <div id="pub-account-selectors" class="publish-account-selectors" hidden></div>
                                     </div>
                                     <div class="form-group publish-form-group">
-                                        <input id="pub-title" type="text" class="input" placeholder="Escreva o Titulo aqui" aria-label="Titulo do video">
+                                        <input id="pub-title" type="text" class="input" placeholder="Escreva o Título aqui" aria-label="Título do vídeo">
                                     </div>
                                     <div class="form-group publish-form-group">
-                                        <textarea id="pub-description" class="input" rows="3" placeholder="Escreva a Descricao aqui" aria-label="Descricao do video"></textarea>
+                                        <textarea id="pub-description" class="input" rows="3" placeholder="Escreva a Descrição aqui" aria-label="Descrição do vídeo"></textarea>
                                     </div>
                                     <div class="form-group publish-form-group">
-                                        <textarea id="pub-hashtags" class="input" rows="2" placeholder="Hashtags serao geradas automaticamente pela IA" aria-label="Hashtags"></textarea>
+                                        <textarea id="pub-hashtags" class="input" rows="2" placeholder="Hashtags serão geradas automaticamente pela IA" aria-label="Hashtags"></textarea>
                                     </div>
                                     <div class="form-group publish-form-group pub-links-section">
                                         <div class="pub-links-header" id="pub-links-toggle">
-                                            <span class="pub-links-title">Links para descricao</span>
+                                            <span class="pub-links-title">Links para descrição</span>
                                             <span class="pub-links-arrow" id="pub-links-arrow">&#9660;</span>
                                         </div>
                                         <div id="pub-links-body" class="pub-links-body" hidden>
-                                            <p class="pub-links-hint">Adicione links de redes sociais ou outros links importantes. Eles serao anexados automaticamente na descricao do video. Os links sao salvos por conta.</p>
+                                            <p class="pub-links-hint">Adicione links de redes sociais ou outros links importantes. Eles serão anexados automaticamente na descrição do vídeo. Os links são salvos por conta.</p>
                                             <p class="pub-links-account-label" id="pub-links-account-label"></p>
-                                            <textarea id="pub-links" class="input" rows="4" placeholder="Ex:&#10;Instagram: https://instagram.com/seuuser&#10;TikTok: https://tiktok.com/@seuuser&#10;Site: https://seusite.com" aria-label="Links para descricao"></textarea>
+                                            <textarea id="pub-links" class="input" rows="4" placeholder="Ex:&#10;Instagram: https://instagram.com/seuuser&#10;TikTok: https://tiktok.com/@seuuser&#10;Site: https://seusite.com" aria-label="Links para descrição"></textarea>
                                             <button id="btn-save-links" class="btn btn-secondary btn-sm" type="button">Salvar links</button>
                                         </div>
                                     </div>
@@ -394,7 +394,7 @@
                                             <span class="publish-action-btn-text">Salvar<br>rascunho</span>
                                         </button>
                                         <button id="btn-schedule-publish" class="btn btn-provider publish-action-btn" type="button">
-                                            <span class="publish-action-btn-text">Agendar<br>publicacao</span>
+                                            <span class="publish-action-btn-text">Agendar<br>publicação</span>
                                         </button>
                                     </div>
                                 </div>
@@ -412,7 +412,7 @@
                             </div>
                             <div class="collapsible-section">
                                 <button class="collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
-                                    <h3 class="section-title">Historico de publicacoes</h3>
+                                    <h3 class="section-title">Histórico de publicações</h3>
                                     <span class="collapsible-arrow">&#9660;</span>
                                 </button>
                                 <div class="collapsible-body" hidden>
@@ -423,12 +423,12 @@
                             </div>
                             <div class="collapsible-section">
                                 <button class="collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
-                                    <h3 class="section-title">Agendamentos de publicacao</h3>
+                                    <h3 class="section-title">Agendamentos de publicação</h3>
                                     <span class="collapsible-arrow">&#9660;</span>
                                 </button>
                                 <div class="collapsible-body" hidden>
                                     <div class="panel">
-                                        <p class="section-subtitle" style="margin-bottom:0.75rem">Agende a publicacao automatica de videos ja renderizados.</p>
+                                        <p class="section-subtitle" style="margin-bottom:0.75rem">Agende a publicação automática de vídeos já renderizados.</p>
                                         <button id="btn-new-schedule" class="btn btn-secondary btn-sm" type="button">+ Novo agendamento</button>
                                         <div id="schedules-list" class="cards-grid" style="margin-top:1rem">
                                             <div class="loading">Carregando agendamentos...</div>
@@ -462,15 +462,15 @@
                         <div class="page-header">
                             <div class="page-header-left">
                                 <h1>Automatizar</h1>
-                                <button id="btn-new-automation" class="btn btn-primary btn-add-project" type="button" title="Nova automacao" aria-label="Nova automacao">+</button>
+                                <button id="btn-new-automation" class="btn btn-primary btn-add-project" type="button" title="Nova automação" aria-label="Nova automação">+</button>
                             </div>
                         </div>
                         <div class="automate-sections">
                             <div class="automate-section">
-                                <h3 class="section-title">Criacao automatica</h3>
-                                <p class="section-subtitle">Crie e publique videos automaticamente com IA. Defina temas, frequencia e deixe o sistema trabalhar.</p>
+                                <h3 class="section-title">Criação automática</h3>
+                                <p class="section-subtitle">Crie e publique vídeos automaticamente com IA. Defina temas, frequência e deixe o sistema trabalhar.</p>
                                 <div id="auto-schedules-list" class="cards-grid">
-                                    <div class="loading">Carregando automacoes...</div>
+                                    <div class="loading">Carregando automações...</div>
                                 </div>
                             </div>
                         </div>
@@ -484,7 +484,7 @@
                             <div class="profile-avatar">
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                             </div>
-                            <h2 class="profile-name" id="profile-name">Usuario</h2>
+                            <h2 class="profile-name" id="profile-name">Usuário</h2>
                             <span class="profile-email" id="profile-email">-</span>
                             <span class="profile-role-badge" id="profile-role-badge">Membro</span>
                             <div class="profile-actions">
@@ -521,28 +521,28 @@
     <div id="modal-new-project" class="modal">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
-                <h3 id="create-modal-title">Novo projeto de video</h3>
+                <h3 id="create-modal-title">Novo projeto de vídeo</h3>
                 <button class="modal-close" onclick="closeModal('modal-new-project')" type="button">&times;</button>
             </div>
             <div class="modal-body">
 
                 <!-- Mode Selection (Step 0) -->
                 <div id="create-mode-selection" class="create-mode-selection">
-                    <h3 class="wizard-question">Como voce quer criar seu video?</h3>
+                    <h3 class="wizard-question">Como você quer criar seu vídeo?</h3>
                     <div class="mode-selection-grid">
                         <div class="mode-selection-card" data-create-mode="wizard" tabindex="0">
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                             </div>
                             <strong>Assistente</strong>
-                            <small>A IA cria o roteiro, imagens e narracao automaticamente. Basta informar o tema.</small>
+                            <small>A IA cria o roteiro, imagens e narração automaticamente. Basta informar o tema.</small>
                         </div>
                         <div class="mode-selection-card" data-create-mode="script" tabindex="0">
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                             </div>
                             <strong>Meu Roteiro</strong>
-                            <small>Escreva ou cole seu proprio roteiro e envie fotos, audios ou videos.</small>
+                            <small>Escreva ou cole seu próprio roteiro e envie fotos, áudios ou vídeos.</small>
                         </div>
                     </div>
                 </div>
@@ -558,15 +558,15 @@
                 <div id="create-panel-wizard" class="create-panel" hidden>
                     <!-- Step 1: Topic -->
                     <div class="wizard-step" data-step="1">
-                        <h3 class="wizard-question">Sobre o que e o video?</h3>
+                        <h3 class="wizard-question">Sobre o que é o vídeo?</h3>
                         <div class="wizard-input-wrap">
                             <input type="text" class="wizard-input" id="wizard-topic"
-                                   placeholder="Ex: 5 dicas de produtividade, historia do cafe, receita de bolo...">
+                                   placeholder="Ex: 5 dicas de produtividade, história do café, receita de bolo...">
                         </div>
                         <div class="realistic-inspiration" id="wizard-topic-inspiration" hidden>
-                            <span class="realistic-inspiration-label">Estilo do video:</span>
+                            <span class="realistic-inspiration-label">Estilo do vídeo:</span>
                             <div class="realistic-inspiration-tags" id="wizard-topic-style-tags">
-                                <button class="style-tag" type="button" data-style="cinematic">Cinematico</button>
+                                <button class="style-tag" type="button" data-style="cinematic">Cinemático</button>
                                 <button class="style-tag" type="button" data-style="commercial">Comercial</button>
                                 <button class="style-tag" type="button" data-style="meme">Meme Viral</button>
                                 <button class="style-tag" type="button" data-style="anime">Anime</button>
@@ -578,43 +578,43 @@
 
                     <!-- Step 2: Video Type (NEW) -->
                     <div class="wizard-step" data-step="2" hidden>
-                        <h3 class="wizard-question">Qual o tipo de video?</h3>
+                        <h3 class="wizard-question">Qual o tipo de vídeo?</h3>
                         <div class="video-type-grid" id="wizard-video-type-grid">
                             <div class="video-type-card" data-type="imagens_ia" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                                 </div>
                                 <strong>Imagens IA</strong>
-                                <small>Imagens geradas por inteligencia artificial com narracao</small>
-                                <span class="credit-badge credit-moderate">Creditos: Moderado</span>
+                                <small>Imagens geradas por inteligência artificial com narração</small>
+                                <span class="credit-badge credit-moderate">Créditos: Moderado</span>
                             </div>
                             <div class="video-type-card" data-type="realista" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Video realista ate 60s com Cria 3.0 speed e Ultra High 2.2</small>
-                                <span class="credit-badge credit-high">Creditos: Alto</span>
+                                <small>Vídeo realista até 60s com Cria 3.0 speed e Ultra High 2.2</small>
+                                <span class="credit-badge credit-high">Créditos: Alto</span>
                             </div>
                         </div>
                     </div>
 
                     <!-- Step 3: Tone -->
                     <div class="wizard-step" data-step="3" hidden>
-                        <h3 class="wizard-question">Qual o tom da narracao?</h3>
+                        <h3 class="wizard-question">Qual o tom da narração?</h3>
                         <div class="wizard-grid">
                             <button class="wizard-option" data-value="informativo" type="button">Informativo</button>
                             <button class="wizard-option" data-value="inspirador" type="button">Inspirador</button>
-                            <button class="wizard-option" data-value="descontraido" type="button">Descontraido</button>
+                            <button class="wizard-option" data-value="descontraido" type="button">Descontraído</button>
                             <button class="wizard-option" data-value="profundo" type="button">Profundo</button>
-                            <button class="wizard-option" data-value="dramatico" type="button">Dramatico</button>
+                            <button class="wizard-option" data-value="dramatico" type="button">Dramático</button>
                             <button class="wizard-option" data-value="motivacional" type="button">Motivacional</button>
                         </div>
                     </div>
 
                     <!-- Step 4: Voice -->
                     <div class="wizard-step" data-step="4" hidden>
-                        <h3 class="wizard-question">Escolha a voz da narracao</h3>
+                        <h3 class="wizard-question">Escolha a voz da narração</h3>
                         <div id="wizard-voice-selector" class="voice-selector">
                             <!-- Minha Voz button -->
                             <button class="minha-voz-btn" id="wizard-minha-voz-btn" onclick="toggleMinhaVoz('wizard')" type="button">
@@ -631,7 +631,7 @@
                                     </button>
                                     <label class="persona-upload-btn">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                        Enviar Audio
+                                        Enviar Áudio
                                         <input type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'wizard')" hidden>
                                     </label>
                                 </div>
@@ -667,14 +667,14 @@
                             </div>
                             <!-- Vozes Suno AI -->
                             <div class="voice-section">
-                                <span class="voice-section-title">Vozes Suno AI <small style="color:var(--accent);font-weight:normal">voz + musica</small></span>
+                                <span class="voice-section-title">Vozes Suno AI <small style="color:var(--accent);font-weight:normal">voz + música</small></span>
                                 <div class="wizard-grid" id="wizard-suno-voices">
                                     <div class="voice-card"><button class="wizard-option" data-value="suno_narrator_male_deep" data-voice-type="suno" type="button">Narrador Profundo<small>Masculina Grave</small></button></div>
-                                    <div class="voice-card"><button class="wizard-option" data-value="suno_narrator_male_dramatic" data-voice-type="suno" type="button">Narrador Dramatico<small>Masculina Intensa</small></button></div>
+                                    <div class="voice-card"><button class="wizard-option" data-value="suno_narrator_male_dramatic" data-voice-type="suno" type="button">Narrador Dramático<small>Masculina Intensa</small></button></div>
                                     <div class="voice-card"><button class="wizard-option" data-value="suno_narrator_female_soft" data-voice-type="suno" type="button">Narradora Suave<small>Feminina Calma</small></button></div>
                                     <div class="voice-card"><button class="wizard-option" data-value="suno_narrator_female_energetic" data-voice-type="suno" type="button">Narradora Energetica<small>Feminina Animada</small></button></div>
                                 </div>
-                                <p class="suno-voice-hint">Gera narracao com musica de fundo integrada</p>
+                                <p class="suno-voice-hint">Gera narração com música de fundo integrada</p>
                             </div>
                         </div>
                     </div>
@@ -706,7 +706,7 @@
                         <h3 class="wizard-question">Detalhes finais</h3>
                         <div class="wizard-details-grid">
                             <div class="form-group">
-                                <label>Duracao</label>
+                                <label>Duração</label>
                                 <div class="duration-options">
                                     <button class="duration-option selected" data-value="60" type="button">~1min</button>
                                     <button class="duration-option" data-value="120" type="button">~2min</button>
@@ -727,13 +727,13 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>Ritmo da narracao</label>
+                                <label>Ritmo da narração</label>
                                 <div class="pause-options" id="wizard-pause-options">
                                     <button class="pause-option selected" data-value="normal" type="button">Normal</button>
                                     <button class="pause-option" data-value="relaxed" type="button">Pausas Suaves</button>
                                     <button class="pause-option" data-value="deep" type="button">Pausas Profundas</button>
                                 </div>
-                                <small class="pause-hint">Pausas profundas ideal para meditacao, hipnose e relaxamento</small>
+                                <small class="pause-hint">Pausas profundas ideais para meditação, hipnose e relaxamento</small>
                             </div>
                         </div>
                     </div>
@@ -742,21 +742,21 @@
                     <div class="wizard-step" data-step="7" hidden>
                         <div class="realistic-info-banner">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                            <span>A IA vai otimizar seu tema em um prompt cinematografico profissional para gerar o melhor video possivel</span>
+                            <span>A IA vai otimizar seu tema em um prompt cinematográfico profissional para gerar o melhor vídeo possível</span>
                         </div>
 
                         <div class="form-group">
-                            <label>Persona de interacao</label>
+                            <label>Persona de interação</label>
                             <div class="realistic-inspiration-tags" id="wizard-realistic-persona-tags">
                                 <button class="style-tag" type="button" data-persona="homem">Homem</button>
                                 <button class="style-tag" type="button" data-persona="mulher">Mulher</button>
-                                <button class="style-tag" type="button" data-persona="crianca">Crianca</button>
-                                <button class="style-tag" type="button" data-persona="familia">Familia</button>
+                                <button class="style-tag" type="button" data-persona="crianca">Criança</button>
+                                <button class="style-tag" type="button" data-persona="familia">Família</button>
                                 <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
                                 <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
                                 <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
                             </div>
-                            <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interacao.</small>
+                            <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interação.</small>
                             <div id="wizard-realistic-persona-preview" class="realistic-persona-preview"></div>
                             <div class="realistic-persona-actions">
                                 <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('wizard')" title="Gerenciar personas" aria-label="Gerenciar personas">
@@ -784,7 +784,7 @@
                         </div>
 
                         <div class="form-group" id="wizard-realistic-duration-group">
-                            <label>Duracao</label>
+                            <label>Duração</label>
                             <div class="duration-options" id="wizard-realistic-duration">
                                 <button class="duration-option" data-value="5" type="button">5s</button>
                                 <button class="duration-option selected" data-value="10" type="button">10s</button>
@@ -807,21 +807,21 @@
                         <div class="form-group realistic-audio-toggle">
                             <label class="toggle-label">
                                 <input type="checkbox" id="wizard-realistic-music" checked>
-                                <span>Adicionar musica de fundo</span>
+                                <span>Adicionar música de fundo</span>
                             </label>
                         </div>
 
                         <div class="form-group realistic-audio-toggle">
                             <label class="toggle-label">
                                 <input type="checkbox" id="wizard-realistic-narration">
-                                <span>Adicionar narracao</span>
+                                <span>Adicionar narração</span>
                             </label>
                         </div>
 
                         <div id="wizard-realistic-narration-options" class="realistic-narration-options" hidden>
                             <div class="form-group">
-                                <label>Texto da narracao</label>
-                                <textarea id="wizard-realistic-narration-text" class="input" rows="3" placeholder="Ex: Uma cachorra adotou um gatinho abandonado e o amamentou como seu proprio filhote..."></textarea>
+                                <label>Texto da narração</label>
+                                <textarea id="wizard-realistic-narration-text" class="input" rows="3" placeholder="Ex: Uma cachorra adotou um gatinho abandonado e o amamentou como seu próprio filhote..."></textarea>
                             </div>
                             <div class="form-group">
                                 <label>Voz</label>
@@ -849,11 +849,11 @@
                             <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
                         </div>
-                        <button class="btn btn-primary btn-sm wizard-next-btn" id="wizard-next" type="button">Proximo &rarr;</button>
+                        <button class="btn btn-primary btn-sm wizard-next-btn" id="wizard-next" type="button">Próximo &rarr;</button>
                     </div>
                     <button class="btn btn-primary btn-block btn-create-video" id="wizard-create-btn" type="button" hidden>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                        Criar Video com IA
+                        Criar Vídeo com IA
                     </button>
                 </div>
 
@@ -870,7 +870,7 @@
                                 </label>
                                 <span class="photo-upload-label">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                                    Usar minhas fotos no video
+                                    Usar minhas fotos no vídeo
                                 </span>
 
                             </div>
@@ -891,13 +891,13 @@
                                         <span class="toggle-slider"></span>
                                     </label>
                                     <div class="narration-choice-text">
-                                        <strong>Criar narracao com IA</strong>
+                                        <strong>Criar narração com IA</strong>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Upload de video proprio -->
+                        <!-- Upload de vídeo próprio -->
                         <div class="photo-upload-section" id="script-video-upload-section">
                             <div class="photo-upload-header">
                                 <label class="toggle-switch">
@@ -906,13 +906,13 @@
                                 </label>
                                 <span class="photo-upload-label">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                                    Usar meu video
+                                    Usar meu vídeo
                                 </span>
                             </div>
                             <div id="script-video-area" class="photo-upload-area" hidden>
                                 <div id="script-video-dropzone" class="photo-dropzone" onclick="document.getElementById('script-video-input').click()">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                    <p>Clique ou arraste seu video aqui</p>
+                                    <p>Clique ou arraste seu vídeo aqui</p>
                                     <small>MP4, MOV, AVI ou WEBM &bull; Max 500MB</small>
                                 </div>
                                 <input id="script-video-input" type="file" accept="video/mp4,video/quicktime,video/x-msvideo,video/webm,video/*" hidden onchange="handleUserVideoSelect(event)">
@@ -923,14 +923,14 @@
                                         <span class="toggle-slider"></span>
                                     </label>
                                     <div class="narration-choice-text">
-                                        <strong>Criar narracao com IA</strong>
-                                        <small>Adiciona narracao por cima do video.</small>
+                                        <strong>Criar narração com IA</strong>
+                                        <small>Adiciona narração por cima do vídeo.</small>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Upload de audio proprio -->
+                        <!-- Upload de áudio próprio -->
                         <div class="photo-upload-section">
                             <div class="photo-upload-header">
                                 <label class="toggle-switch">
@@ -939,13 +939,13 @@
                                 </label>
                                 <span class="photo-upload-label">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                                    Usar meu audio no video
+                                    Usar meu áudio no vídeo
                                 </span>
                             </div>
                             <div id="script-user-audio-area" class="photo-upload-area" hidden>
                                 <div id="script-audio-dropzone" class="photo-dropzone" onclick="document.getElementById('script-user-audio-input').click()">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                    <p>Clique ou arraste seu audio aqui</p>
+                                    <p>Clique ou arraste seu áudio aqui</p>
                                     <small>MP3, WAV, M4A, OGG, FLAC, OPUS ou WEBM &bull; Max 80MB</small>
                                 </div>
                                 <input id="script-user-audio-input" type="file" accept="audio/*" hidden onchange="handleUserAudioSelect(event)">
@@ -965,14 +965,14 @@
                         </div>
 
                         <div class="form-group script-title-gap">
-                            <input id="script-title" type="text" class="input" placeholder="Escreva o Titulo Aqui:">
+                            <input id="script-title" type="text" class="input" placeholder="Escreva o Título aqui:">
                         </div>
 
                         <div class="textarea-wrapper">
                             <textarea id="script-text" class="wizard-textarea" rows="10" maxlength="20000"
-                                      placeholder="Cole ou escreva o roteiro completo da narracao aqui..."></textarea>
+                                      placeholder="Cole ou escreva o roteiro completo da narração aqui..."></textarea>
                             <div class="textarea-inline-actions">
-                                <button class="textarea-icon-btn" id="btn-ai-suggest-script" type="button" title="Sugestao de IA">
+                                <button class="textarea-icon-btn" id="btn-ai-suggest-script" type="button" title="Sugestão de IA">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                 </button>
                             </div>
@@ -984,31 +984,31 @@
 
                     <!-- Step 2: Video Type (NEW) -->
                     <div class="wizard-step" data-step="2" hidden>
-                        <h3 class="wizard-question">Qual o tipo de video?</h3>
+                        <h3 class="wizard-question">Qual o tipo de vídeo?</h3>
                         <div class="video-type-grid" id="script-video-type-grid">
                             <div class="video-type-card" data-type="imagens_proprias" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                 </div>
-                                <strong>Imagens Proprias</strong>
-                                <small>Envie suas fotos e a IA cria o video com narracao</small>
-                                <span class="credit-badge credit-regular">Creditos: Regular</span>
+                                <strong>Imagens Próprias</strong>
+                                <small>Envie suas fotos e a IA cria o vídeo com narração</small>
+                                <span class="credit-badge credit-regular">Créditos: Regular</span>
                             </div>
                             <div class="video-type-card" data-type="imagens_ia" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                                 </div>
                                 <strong>Imagens IA</strong>
-                                <small>Imagens geradas por inteligencia artificial com narracao</small>
-                                <span class="credit-badge credit-moderate">Creditos: Moderado</span>
+                                <small>Imagens geradas por inteligência artificial com narração</small>
+                                <span class="credit-badge credit-moderate">Créditos: Moderado</span>
                             </div>
                             <div class="video-type-card" data-type="realista" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Video realista ate 60s com Cria 3.0 speed e Ultra High 2.2</small>
-                                <span class="credit-badge credit-high">Creditos: Alto</span>
+                                <small>Vídeo realista até 60s com Cria 3.0 speed e Ultra High 2.2</small>
+                                <span class="credit-badge credit-high">Créditos: Alto</span>
                             </div>
                         </div>
                     </div>
@@ -1019,9 +1019,9 @@
                         <div class="wizard-grid">
                             <button class="wizard-option" data-value="informativo" type="button">Informativo</button>
                             <button class="wizard-option" data-value="inspirador" type="button">Inspirador</button>
-                            <button class="wizard-option" data-value="descontraido" type="button">Descontraido</button>
+                            <button class="wizard-option" data-value="descontraido" type="button">Descontraído</button>
                             <button class="wizard-option" data-value="profundo" type="button">Profundo</button>
-                            <button class="wizard-option" data-value="dramatico" type="button">Dramatico</button>
+                            <button class="wizard-option" data-value="dramatico" type="button">Dramático</button>
                             <button class="wizard-option" data-value="motivacional" type="button">Motivacional</button>
                         </div>
                     </div>
@@ -1045,7 +1045,7 @@
                                     </button>
                                     <label class="persona-upload-btn">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                        Enviar Audio
+                                        Enviar Áudio
                                         <input type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'script')" hidden>
                                     </label>
                                 </div>
@@ -1081,14 +1081,14 @@
                             </div>
                             <!-- Vozes Suno AI -->
                             <div class="voice-section">
-                                <span class="voice-section-title">Vozes Suno AI <small style="color:var(--accent);font-weight:normal">voz + musica</small></span>
+                                <span class="voice-section-title">Vozes Suno AI <small style="color:var(--accent);font-weight:normal">voz + música</small></span>
                                 <div class="wizard-grid" id="script-suno-voices">
                                     <div class="voice-card"><button class="wizard-option" data-value="suno_narrator_male_deep" data-voice-type="suno" type="button">Narrador Profundo<small>Masculina Grave</small></button></div>
-                                    <div class="voice-card"><button class="wizard-option" data-value="suno_narrator_male_dramatic" data-voice-type="suno" type="button">Narrador Dramatico<small>Masculina Intensa</small></button></div>
+                                    <div class="voice-card"><button class="wizard-option" data-value="suno_narrator_male_dramatic" data-voice-type="suno" type="button">Narrador Dramático<small>Masculina Intensa</small></button></div>
                                     <div class="voice-card"><button class="wizard-option" data-value="suno_narrator_female_soft" data-voice-type="suno" type="button">Narradora Suave<small>Feminina Calma</small></button></div>
                                     <div class="voice-card"><button class="wizard-option" data-value="suno_narrator_female_energetic" data-voice-type="suno" type="button">Narradora Energetica<small>Feminina Animada</small></button></div>
                                 </div>
-                                <p class="suno-voice-hint">Gera narracao com musica de fundo integrada</p>
+                                <p class="suno-voice-hint">Gera narração com música de fundo integrada</p>
                             </div>
                         </div>
                         <div class="form-group" style="margin-top:18px">
@@ -1115,7 +1115,7 @@
                             </div>
                             <div class="form-group" id="script-photo-seconds-group" hidden>
                                 <label>Tempo por imagem (segundos)</label>
-                                <input id="script-image-seconds" type="number" class="input" min="1" max="30" step="1" placeholder="Automatico (duracao total)">
+                                <input id="script-image-seconds" type="number" class="input" min="1" max="30" step="1" placeholder="Automático (duração total)">
                                 <small class="field-hint">Defina quantos segundos cada foto fica na tela antes de trocar.</small>
                             </div>
                             <div class="form-group" id="script-subtitles-group">
@@ -1125,7 +1125,7 @@
                                         <input type="checkbox" id="script-enable-subtitles" checked>
                                         <span class="toggle-slider"></span>
                                     </label>
-                                    <span class="subtitle-toggle-label">Exibir legendas no video</span>
+                                    <span class="subtitle-toggle-label">Exibir legendas no vídeo</span>
                                 </div>
                             </div>
                             <div class="form-group">
@@ -1138,13 +1138,13 @@
                                     <span class="subtitle-toggle-label">Ativar fundo musical</span>
                                 </div>
                                 <div id="script-bgm-upload-area">
-                                    <small class="field-hint" style="margin-bottom:6px;display:block">Envie seu proprio audio ou deixe vazio para gerar automaticamente.</small>
+                                    <small class="field-hint" style="margin-bottom:6px;display:block">Envie seu próprio áudio ou deixe vazio para gerar automaticamente.</small>
                                     <input id="script-bgm-file" type="file" class="input" accept="audio/*">
                                 </div>
                             </div>
                             <div class="form-group">
                                 <label>Thumbnail personalizada</label>
-                                <small class="field-hint" style="margin-bottom:6px;display:block">Envie uma imagem para usar como capa do video. Se vazio, sera gerada automaticamente.</small>
+                                <small class="field-hint" style="margin-bottom:6px;display:block">Envie uma imagem para usar como capa do vídeo. Se vazio, será gerada automaticamente.</small>
                                 <div class="edit-thumb-preview-row">
                                     <img id="script-thumb-preview" class="edit-thumb-img" src="" alt="" hidden>
                                     <div class="edit-thumb-actions">
@@ -1190,21 +1190,21 @@
                     <div class="wizard-step" data-step="7" hidden>
                         <div class="realistic-info-banner">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                            <span>A IA vai otimizar seu roteiro em um prompt cinematografico profissional para gerar o melhor video possivel</span>
+                            <span>A IA vai otimizar seu roteiro em um prompt cinematográfico profissional para gerar o melhor vídeo possível</span>
                         </div>
 
                         <div class="form-group">
-                            <label>Persona de interacao</label>
+                            <label>Persona de interação</label>
                             <div class="realistic-inspiration-tags" id="script-realistic-persona-tags">
                                 <button class="style-tag" type="button" data-persona="homem">Homem</button>
                                 <button class="style-tag" type="button" data-persona="mulher">Mulher</button>
-                                <button class="style-tag" type="button" data-persona="crianca">Crianca</button>
-                                <button class="style-tag" type="button" data-persona="familia">Familia</button>
+                                <button class="style-tag" type="button" data-persona="crianca">Criança</button>
+                                <button class="style-tag" type="button" data-persona="familia">Família</button>
                                 <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
                                 <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
                                 <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
                             </div>
-                            <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interacao.</small>
+                            <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interação.</small>
                             <div id="script-realistic-persona-preview" class="realistic-persona-preview"></div>
                             <div class="realistic-persona-actions">
                                 <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('script')" title="Gerenciar personas" aria-label="Gerenciar personas">
@@ -1232,7 +1232,7 @@
                         </div>
 
                         <div class="form-group" id="script-realistic-duration-group">
-                            <label>Duracao</label>
+                            <label>Duração</label>
                             <div class="duration-options" id="script-realistic-duration">
                                 <button class="duration-option" data-value="5" type="button">5s</button>
                                 <button class="duration-option selected" data-value="10" type="button">10s</button>
@@ -1255,21 +1255,21 @@
                         <div class="form-group realistic-audio-toggle">
                             <label class="toggle-label">
                                 <input type="checkbox" id="script-realistic-music" checked>
-                                <span>Adicionar musica de fundo</span>
+                                <span>Adicionar música de fundo</span>
                             </label>
                         </div>
 
                         <div class="form-group realistic-audio-toggle">
                             <label class="toggle-label">
                                 <input type="checkbox" id="script-realistic-narration">
-                                <span>Adicionar narracao</span>
+                                <span>Adicionar narração</span>
                             </label>
                         </div>
 
                         <div id="script-realistic-narration-options" class="realistic-narration-options" hidden>
                             <div class="form-group">
-                                <label>Texto da narracao</label>
-                                <textarea id="script-realistic-narration-text" class="input" rows="3" placeholder="Ex: Uma cachorra adotou um gatinho abandonado e o amamentou como seu proprio filhote..."></textarea>
+                                <label>Texto da narração</label>
+                                <textarea id="script-realistic-narration-text" class="input" rows="3" placeholder="Ex: Uma cachorra adotou um gatinho abandonado e o amamentou como seu próprio filhote..."></textarea>
                             </div>
                             <div class="form-group">
                                 <label>Voz</label>
@@ -1297,11 +1297,11 @@
                             <span class="wizard-dot"></span>
                             <span class="wizard-dot"></span>
                         </div>
-                        <button class="btn btn-primary btn-sm wizard-next-btn" id="script-next" type="button">Proximo &rarr;</button>
+                        <button class="btn btn-primary btn-sm wizard-next-btn" id="script-next" type="button">Próximo &rarr;</button>
                     </div>
                     <button class="btn btn-primary btn-block btn-create-video" id="script-create-btn" type="button" hidden>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                        Criar Video com IA
+                        Criar Vídeo com IA
                     </button>
                 </div>
 
@@ -1310,33 +1310,33 @@
                     <div class="form-group">
                         <label>Biblioteca Levita</label>
                         <select id="np-song-select" class="input">
-                            <option value="">Selecione uma musica</option>
+                            <option value="">Selecione uma música</option>
                         </select>
                     </div>
                     <div id="np-song-details" class="song-details" hidden></div>
                     <div class="form-group">
-                        <label>Titulo do projeto</label>
+                        <label>Título do projeto</label>
                         <input id="np-title" type="text" class="input" placeholder="Ex: Clipe oficial">
                     </div>
                     <div id="np-manual-fields" hidden>
                         <div class="form-group">
-                            <label>Titulo da musica</label>
-                            <input id="np-track-title" type="text" class="input" placeholder="Nome da musica">
+                            <label>Título da música</label>
+                            <input id="np-track-title" type="text" class="input" placeholder="Nome da música">
                         </div>
                         <div class="form-group">
                             <label>Artista</label>
                             <input id="np-artist" type="text" class="input" placeholder="Nome do artista">
                         </div>
                         <div class="form-group">
-                            <label>URL do audio</label>
+                            <label>URL do áudio</label>
                             <input id="np-audio" type="text" class="input" placeholder="https://...">
                         </div>
                         <div class="form-group">
-                            <label>Letra da musica</label>
+                            <label>Letra da música</label>
                             <textarea id="np-lyrics" class="input" rows="6" placeholder="Cole a letra aqui"></textarea>
                         </div>
                         <div class="form-group">
-                            <label>Duracao (segundos)</label>
+                            <label>Duração (segundos)</label>
                             <input id="np-duration" type="number" class="input" value="180" min="10" max="3600">
                         </div>
                     </div>
@@ -1380,24 +1380,24 @@
                     <h3 class="wizard-question" id="ai-suggest-title">Gerar roteiro com IA</h3>
                     <p class="wizard-hint" id="ai-suggest-hint">Descreva o tema e a IA criara um roteiro completo</p>
                     <div class="form-group">
-                        <label>Tema do video</label>
-                        <input id="ai-suggest-topic" type="text" class="input" placeholder="Ex: beneficios da meditacao, como fazer pao caseiro...">
+                        <label>Tema do vídeo</label>
+                        <input id="ai-suggest-topic" type="text" class="input" placeholder="Ex: benefícios da meditação, como fazer pão caseiro...">
                     </div>
                     <div class="form-group" id="ai-suggest-tone-group">
-                        <label>Tom da narracao</label>
+                        <label>Tom da narração</label>
                         <select id="ai-suggest-tone" class="input">
                             <option value="informativo">Informativo</option>
                             <option value="inspirador">Inspirador</option>
-                            <option value="descontraido">Descontraido</option>
+                            <option value="descontraido">Descontraído</option>
                             <option value="profundo">Profundo</option>
-                            <option value="dramatico">Dramatico</option>
+                            <option value="dramatico">Dramático</option>
                             <option value="motivacional">Motivacional</option>
                         </select>
                     </div>
                     <div class="form-group" id="ai-suggest-style-group" hidden>
                         <label>Estilo do video</label>
                         <select id="ai-suggest-style" class="input">
-                            <option value="cinematic">Cinematico</option>
+                            <option value="cinematic">Cinemático</option>
                             <option value="commercial">Comercial</option>
                             <option value="meme">Meme Viral</option>
                             <option value="ugc">UGC / Caseiro</option>
@@ -1410,12 +1410,12 @@
                         </select>
                     </div>
                     <div class="form-group" id="ai-suggest-persona-group" hidden>
-                        <label>Persona de interacao</label>
+                        <label>Persona de interação</label>
                         <div class="realistic-inspiration-tags" id="ai-suggest-persona-tags">
                             <button class="style-tag" type="button" data-persona="homem">Homem</button>
                             <button class="style-tag" type="button" data-persona="mulher">Mulher</button>
-                            <button class="style-tag" type="button" data-persona="crianca">Crianca</button>
-                            <button class="style-tag" type="button" data-persona="familia">Familia</button>
+                            <button class="style-tag" type="button" data-persona="crianca">Criança</button>
+                            <button class="style-tag" type="button" data-persona="familia">Família</button>
                             <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
                             <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
                             <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
@@ -1429,7 +1429,7 @@
                         </div>
                     </div>
                     <div class="form-group" id="ai-suggest-realistic-duration-group" hidden>
-                        <label>Duracao do video para o prompt</label>
+                        <label>Duração do vídeo para o prompt</label>
                         <div class="duration-options" id="ai-suggest-realistic-duration">
                             <button class="duration-option" data-value="5" type="button">5s</button>
                             <button class="duration-option selected" data-value="10" type="button">10s</button>
@@ -1438,10 +1438,10 @@
                             <button class="duration-option" data-value="45" type="button">45s</button>
                             <button class="duration-option" data-value="60" type="button">60s</button>
                         </div>
-                        <small class="field-hint">Esse tempo orienta a IA a montar um prompt coerente com a duracao final.</small>
+                        <small class="field-hint">Esse tempo orienta a IA a montar um prompt coerente com a duração final.</small>
                     </div>
                     <div class="form-group" id="ai-suggest-duration-group">
-                        <label>Duracao aproximada</label>
+                        <label>Duração aproximada</label>
                         <select id="ai-suggest-duration" class="input">
                             <option value="60" selected>~1 minuto</option>
                             <option value="120">~2 minutos</option>
@@ -1487,20 +1487,20 @@
     <div id="modal-copy-choice" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Como deseja copiar este video?</h3>
+                <h3>Como deseja copiar este vídeo?</h3>
                 <button class="modal-close" onclick="closeModal('modal-copy-choice')" type="button">&times;</button>
             </div>
             <div class="modal-body">
-                <p id="copy-choice-source" class="muted">Video selecionado</p>
-                <p class="copy-choice-subtitle">Escolha uma opcao:</p>
+                <p id="copy-choice-source" class="muted">Vídeo selecionado</p>
+                <p class="copy-choice-subtitle">Escolha uma opção:</p>
                 <div class="copy-choice-grid">
                     <button class="copy-choice-card" onclick="chooseCopyScript()" type="button">
                         <strong>COPIAR ROTEIRO</strong>
-                        <span>Abre novo projeto com o texto do roteiro para voce ajustar e gerar novamente.</span>
+                        <span>Abre novo projeto com o texto do roteiro para você ajustar e gerar novamente.</span>
                     </button>
                     <button class="copy-choice-card" onclick="chooseCopyFormat()" type="button">
                         <strong>NOVO FORMATO</strong>
-                        <span>Cria copia exata do video atual mudando apenas o formato final.</span>
+                        <span>Cria cópia exata do vídeo atual mudando apenas o formato final.</span>
                     </button>
                 </div>
             </div>
@@ -1513,11 +1513,11 @@
     <div id="modal-copy-format" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Criar copia em outro formato</h3>
+                <h3>Criar cópia em outro formato</h3>
                 <button class="modal-close" onclick="closeModal('modal-copy-format')" type="button">&times;</button>
             </div>
             <div class="modal-body">
-                <p id="copy-format-source" class="muted">Video selecionado</p>
+                <p id="copy-format-source" class="muted">Vídeo selecionado</p>
                 <div class="form-group">
                     <label>Novo formato</label>
                     <select id="copy-format-aspect" class="input">
@@ -1529,7 +1529,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('modal-copy-format')" type="button">Cancelar</button>
-                <button class="btn btn-primary" onclick="createFormatCopy()" type="button">Criar copia</button>
+                <button class="btn btn-primary" onclick="createFormatCopy()" type="button">Criar cópia</button>
             </div>
         </div>
     </div>
@@ -1543,15 +1543,15 @@
             <div class="modal-body">
                 <p id="edit-project-source" class="muted">Projeto selecionado</p>
                 <div class="form-group">
-                    <label>Nome do video</label>
-                    <input id="edit-project-title" type="text" class="input" maxlength="500" placeholder="Digite o novo nome do video">
+                    <label>Nome do vídeo</label>
+                    <input id="edit-project-title" type="text" class="input" maxlength="500" placeholder="Digite o novo nome do vídeo">
                 </div>
                 <div id="edit-project-downloads" class="edit-downloads" hidden>
                     <label>Downloads</label>
                     <div class="edit-download-btns">
                         <a id="edit-download-video" class="btn btn-secondary btn-sm" download>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                            Baixar video
+                            Baixar vídeo
                         </a>
                         <a id="edit-download-thumb" class="btn btn-secondary btn-sm" download>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
@@ -1625,13 +1625,13 @@
     <div id="modal-publish-schedule" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Agendar publicacao</h3>
+                <h3>Agendar publicação</h3>
                 <button class="modal-close" onclick="closeModal('modal-publish-schedule')" type="button">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="muted">Defina data e horario para publicar automaticamente.</p>
+                <p class="muted">Defina data e horário para publicar automaticamente.</p>
                 <div class="form-group">
-                    <label>Data e horario</label>
+                    <label>Data e horário</label>
                     <input id="pub-schedule-datetime" type="datetime-local" class="input">
                 </div>
             </div>
@@ -1645,7 +1645,7 @@
     <div id="modal-publish-error" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="publish-error-title">Detalhes da publicacao</h3>
+                <h3 id="publish-error-title">Detalhes da publicação</h3>
                 <button class="modal-close" onclick="closeModal('modal-publish-error')" type="button">&times;</button>
             </div>
             <div class="modal-body">
@@ -1675,14 +1675,14 @@
                     <select id="ns-account" class="input"></select>
                 </div>
                 <div class="form-group">
-                    <label>Frequencia</label>
+                    <label>Frequência</label>
                     <select id="ns-frequency" class="input">
                         <option value="daily">Diario</option>
                         <option value="weekly">Semanal</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Horario</label>
+                    <label>Horário</label>
                     <input id="ns-time" type="time" class="input" value="14:00">
                 </div>
             </div>
@@ -1697,7 +1697,7 @@
     <div id="modal-new-automation" class="modal">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
-                <h3>Nova automacao</h3>
+                <h3>Nova automação</h3>
                 <button class="modal-close" onclick="closeModal('modal-new-automation')" type="button">&times;</button>
             </div>
             <div class="modal-body">
@@ -1711,52 +1711,52 @@
 
                 <!-- Step 1: Tipo de Video -->
                 <div class="auto-step active" data-auto-step="1">
-                    <h4 class="auto-step-title">Qual o tipo de video?</h4>
+                    <h4 class="auto-step-title">Qual o tipo de vídeo?</h4>
                     <div class="video-type-grid auto-video-type-grid">
                         <div class="video-type-card selected" data-video-type="imagens_ia" tabindex="0" onclick="selectAutoVideoType('imagens_ia')">
                             <div class="video-type-icon">
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                             </div>
                             <strong>Imagens IA</strong>
-                            <small>Imagens geradas por inteligencia artificial com narracao</small>
-                            <span class="credit-badge credit-moderate">Creditos: Moderado</span>
+                            <small>Imagens geradas por inteligência artificial com narração</small>
+                            <span class="credit-badge credit-moderate">Créditos: Moderado</span>
                         </div>
                         <div class="video-type-card" data-video-type="realista" tabindex="0" onclick="selectAutoVideoType('realista')">
                             <div class="video-type-icon">
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                             </div>
                             <strong>Realista</strong>
-                            <small>Video realista com as melhores tecnologias de IA</small>
-                            <span class="credit-badge credit-high">Creditos: Alto</span>
+                            <small>Vídeo realista com as melhores tecnologias de IA</small>
+                            <span class="credit-badge credit-high">Créditos: Alto</span>
                         </div>
                     </div>
                 </div>
 
                 <!-- Step 2: Modo de Criação -->
                 <div class="auto-step" data-auto-step="2">
-                    <h4 class="auto-step-title">Modo de criacao</h4>
+                    <h4 class="auto-step-title">Modo de criação</h4>
                     <div class="auto-type-cards">
                         <button class="auto-type-card active" data-creation-mode="auto" type="button" onclick="selectAutoCreationMode('auto')">
                             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                            <strong>Automatico</strong>
+                            <strong>Automático</strong>
                             <span class="muted">IA decide tom, voz e estilo</span>
                         </button>
                         <button class="auto-type-card" data-creation-mode="manual" type="button" onclick="selectAutoCreationMode('manual')">
                             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             <strong>Manual</strong>
-                            <span class="muted">Voce define cada variavel</span>
+                            <span class="muted">Você define cada variável</span>
                         </button>
                     </div>
                     <!-- Manual settings: Narração (Imagens IA) -->
                     <div id="auto-manual-settings" class="auto-manual-settings" hidden>
                         <div class="form-group">
-                            <label>Tom da narracao</label>
+                            <label>Tom da narração</label>
                             <select id="auto-tone" class="input">
                                 <option value="informativo">Informativo</option>
                                 <option value="inspirador">Inspirador</option>
-                                <option value="descontraido">Descontraido</option>
+                                <option value="descontraido">Descontraído</option>
                                 <option value="profundo">Profundo</option>
-                                <option value="dramatico">Dramatico</option>
+                                <option value="dramatico">Dramático</option>
                                 <option value="motivacional">Motivacional</option>
                             </select>
                         </div>
@@ -1777,7 +1777,7 @@
                         <div class="form-group">
                             <label>Estilo visual</label>
                             <select id="auto-style" class="input">
-                                <option value="cinematic, vibrant colors, dynamic lighting">Cinematico</option>
+                                <option value="cinematic, vibrant colors, dynamic lighting">Cinemático</option>
                                 <option value="minimalist, clean, modern">Minimalista</option>
                                 <option value="colorful, playful, energetic">Colorido</option>
                                 <option value="dark, moody, dramatic">Dark</option>
@@ -1788,7 +1788,7 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Duracao</label>
+                            <label>Duração</label>
                             <select id="auto-duration" class="input">
                                 <option value="60">~1 min</option>
                                 <option value="120">~2 min</option>
@@ -1809,9 +1809,9 @@
                     <!-- Manual settings: Realista -->
                     <div id="auto-realistic-settings" class="auto-manual-settings" hidden>
                         <div class="form-group">
-                            <label>Estilo do video</label>
+                            <label>Estilo do vídeo</label>
                             <div class="realistic-inspiration-tags" id="auto-realistic-style-tags">
-                                <button class="style-tag selected" type="button" data-style="cinematic">Cinematico</button>
+                                <button class="style-tag selected" type="button" data-style="cinematic">Cinemático</button>
                                 <button class="style-tag" type="button" data-style="commercial">Comercial</button>
                                 <button class="style-tag" type="button" data-style="meme">Meme Viral</button>
                                 <button class="style-tag" type="button" data-style="anime">Anime</button>
@@ -1820,17 +1820,17 @@
                             </div>
                         </div>
                         <div class="form-group">
-                            <label>Persona de interacao</label>
+                            <label>Persona de interação</label>
                             <div class="realistic-inspiration-tags" id="auto-realistic-persona-tags">
                                 <button class="style-tag" type="button" data-persona="homem">Homem</button>
                                 <button class="style-tag" type="button" data-persona="mulher">Mulher</button>
-                                <button class="style-tag" type="button" data-persona="crianca">Crianca</button>
-                                <button class="style-tag" type="button" data-persona="familia">Familia</button>
+                                <button class="style-tag" type="button" data-persona="crianca">Criança</button>
+                                <button class="style-tag" type="button" data-persona="familia">Família</button>
                                 <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
                                 <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
                                 <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
                             </div>
-                            <small class="pause-hint">A cena segue o trecho e inclui essa persona em interacao.</small>
+                            <small class="pause-hint">A cena segue o trecho e inclui essa persona em interação.</small>
                             <div id="auto-realistic-persona-preview" class="realistic-persona-preview"></div>
                             <div class="realistic-persona-actions">
                                 <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('auto')" title="Gerenciar personas" aria-label="Gerenciar personas">
@@ -1847,7 +1847,7 @@
                             </div>
                         </div>
                         <div class="form-group">
-                            <label>Duracao do video</label>
+                            <label>Duração do vídeo</label>
                             <div class="duration-options" id="auto-realistic-duration">
                                 <button class="duration-option" data-value="5" type="button">5s</button>
                                 <button class="duration-option selected" data-value="7" type="button">7s</button>
@@ -1877,18 +1877,18 @@
                         <div class="form-group realistic-audio-toggle">
                             <label class="toggle-label">
                                 <input type="checkbox" id="auto-realistic-music" checked>
-                                <span>Adicionar musica de fundo</span>
+                                <span>Adicionar música de fundo</span>
                             </label>
                         </div>
                         <div class="form-group realistic-audio-toggle">
                             <label class="toggle-label">
                                 <input type="checkbox" id="auto-realistic-tevoxi" onchange="toggleAutoTevoxiSongs()">
-                                <span>Usar musica do Tevoxi</span>
+                                <span>Usar música do Tevoxi</span>
                             </label>
                         </div>
                         <div id="auto-tevoxi-panel" hidden>
                             <div id="auto-song-list" class="auto-song-list">
-                                <p class="loading">Carregando musicas...</p>
+                                <p class="loading">Carregando músicas...</p>
                             </div>
                         </div>
                     </div>
@@ -1897,7 +1897,7 @@
                 <!-- Step 3: Trechos / Temas -->
                 <div class="auto-step" data-auto-step="3">
                     <h4 class="auto-step-title" id="auto-step3-title">Temas da playlist</h4>
-                    <p class="muted" id="auto-step3-desc" style="margin-bottom:0.75rem">Adicione os temas dos videos. O sistema criara um video por agendamento na ordem da lista.</p>
+                    <p class="muted" id="auto-step3-desc" style="margin-bottom:0.75rem">Adicione os temas dos vídeos. O sistema criará um vídeo por agendamento na ordem da lista.</p>
                     <div id="auto-theme-add-row" class="auto-theme-add">
                         <input id="auto-theme-input" type="text" class="input" placeholder="Ex: 5 dicas de produtividade" maxlength="200">
                         <button id="auto-add-theme-btn" class="btn btn-primary btn-sm" type="button" onclick="addAutoTheme()">+</button>
@@ -1912,7 +1912,7 @@
                 <div class="auto-step" data-auto-step="4">
                     <h4 class="auto-step-title">Agendamento</h4>
                     <div class="form-group">
-                        <label>Plataforma de publicacao</label>
+                        <label>Plataforma de publicação</label>
                         <select id="auto-platform" class="input" onchange="loadAutoAccountOptions()">
                             <option value="youtube">YouTube</option>
                         </select>
@@ -1922,9 +1922,9 @@
                         <select id="auto-account" class="input"></select>
                     </div>
                     <div class="form-group">
-                        <label>Frequencia</label>
+                        <label>Frequência</label>
                         <select id="auto-frequency" class="input" onchange="document.getElementById('auto-dow-group').hidden = this.value !== 'weekly'">
-                            <option value="daily">Diario</option>
+                            <option value="daily">Diário</option>
                             <option value="weekly">Semanal</option>
                         </select>
                     </div>
@@ -1932,21 +1932,21 @@
                         <label>Dia da semana</label>
                         <select id="auto-dow" class="input">
                             <option value="0">Segunda</option>
-                            <option value="1">Terca</option>
+                            <option value="1">Terça</option>
                             <option value="2">Quarta</option>
                             <option value="3">Quinta</option>
                             <option value="4">Sexta</option>
-                            <option value="5">Sabado</option>
+                            <option value="5">Sábado</option>
                             <option value="6">Domingo</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Horario</label>
+                        <label>Horário</label>
                         <input id="auto-time" type="time" class="input" value="14:00">
                     </div>
                     <div class="form-group">
-                        <label>Nome da automacao</label>
-                        <input id="auto-name" type="text" class="input" placeholder="Ex: Videos diarios de produtividade" maxlength="100">
+                        <label>Nome da automação</label>
+                        <input id="auto-name" type="text" class="input" placeholder="Ex: Vídeos diários de produtividade" maxlength="100">
                     </div>
                 </div>
 
@@ -1956,8 +1956,8 @@
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
                 </button>
                 <div style="flex:1"></div>
-                <button id="auto-btn-next" class="btn btn-primary" type="button" onclick="autoStepNext()">Proximo</button>
-                <button id="auto-btn-create" class="btn btn-accent" type="button" onclick="createAutoSchedule()" hidden>Ativar Automacao</button>
+                <button id="auto-btn-next" class="btn btn-primary" type="button" onclick="autoStepNext()">Próximo</button>
+                <button id="auto-btn-create" class="btn btn-accent" type="button" onclick="createAutoSchedule()" hidden>Ativar Automação</button>
             </div>
         </div>
     </div>
@@ -1974,8 +1974,8 @@
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>Duracao do clipe</label>
-                    <p class="muted" style="font-size:0.78rem;margin:0 0 0.4rem">Escolha quanto da musica usar no video:</p>
+                    <label>Duração do clipe</label>
+                    <p class="muted" style="font-size:0.78rem;margin:0 0 0.4rem">Escolha quanto da música usar no vídeo:</p>
                     <div class="duration-options" id="clip-duration-options">
                         <button class="duration-option" data-value="0" type="button">Tudo</button>
                         <button class="duration-option" data-value="10" type="button">10s</button>
@@ -2026,12 +2026,12 @@
             <div class="modal-header">
                 <div>
                     <h3 style="margin:0">Configurar legendas</h3>
-                    <p class="muted" style="margin:0;font-size:0.82rem">Legenda automatica via transcricao do audio</p>
+                    <p class="muted" style="margin:0;font-size:0.82rem">Legenda automática via transcrição do áudio</p>
                 </div>
                 <button class="modal-close" onclick="closeAutoSubtitleModal()" type="button">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="auto-subtitle-modal-note">Quando o short for criado, o sistema transcreve o trecho da musica e aplica este estilo/posicionamento automaticamente.</p>
+                <p class="auto-subtitle-modal-note">Quando o short for criado, o sistema transcreve o trecho da música e aplica este estilo/posicionamento automaticamente.</p>
 
                 <div class="auto-subtitle-preview-shell">
                     <div class="auto-subtitle-preview-frame">
@@ -2042,7 +2042,7 @@
 
                 <div class="editor-sub-quick-card" style="margin-top:10px">
                     <div class="editor-sub-quick-row">
-                        <span class="editor-sub-quick-label">Posicao</span>
+                        <span class="editor-sub-quick-label">Posição</span>
                         <div class="editor-sub-stepper">
                             <button type="button" onclick="_autoSubtitleNudgeY(-2)" aria-label="Subir legenda">↑</button>
                             <input id="auto-subtitle-y" type="range" min="5" max="95" value="82" oninput="_autoSetSubtitleY(this.value, true)">
@@ -2074,7 +2074,7 @@
     <div id="modal-player" class="modal">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
-                <h3 id="player-title">Video</h3>
+                <h3 id="player-title">Vídeo</h3>
                 <button class="modal-close" onclick="closeModal('modal-player')" type="button">&times;</button>
             </div>
             <div class="modal-body modal-video">
@@ -2082,7 +2082,7 @@
             </div>
             <div class="modal-footer modal-footer-space">
                 <span id="player-info" class="muted"></span>
-                <a id="player-download" class="btn btn-primary" download>Baixar video</a>
+                <a id="player-download" class="btn btn-primary" download>Baixar vídeo</a>
             </div>
         </div>
     </div>
@@ -2180,7 +2180,7 @@
                 <button class="modal-close" onclick="closeModal('modal-persona-manager')" type="button">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="wizard-hint" id="persona-manager-subtitle">Escolha uma imagem de persona para os videos realistas.</p>
+                <p class="wizard-hint" id="persona-manager-subtitle">Escolha uma imagem de persona para os vídeos realistas.</p>
 
                 <div id="persona-manager-list" class="persona-manager-list">
                     <p class="muted">Carregando personas...</p>
@@ -2239,15 +2239,15 @@
                     <input id="persona-manager-drawing-other" class="input" type="text" maxlength="80" placeholder="Ex: claymation retro com texturas artesanais">
                 </div>
                 <div class="form-group" id="persona-manager-custom-desc-group" hidden>
-                    <label>Descricao da persona personalizada *</label>
+                    <label>Descrição da persona personalizada *</label>
                     <textarea id="persona-manager-custom-desc" class="input" rows="3" placeholder="Ex: guerreira futurista afro-brasileira com armadura leve dourada e capa azul, olhar determinado"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>Descricao extra (opcional)</label>
-                    <textarea id="persona-manager-extra" class="input" rows="2" placeholder="Ex: luz dourada no fim da tarde, expressao tranquila" onpaste="handlePersonaReferenceImagePaste(event)"></textarea>
+                    <label>Descrição extra (opcional)</label>
+                    <textarea id="persona-manager-extra" class="input" rows="2" placeholder="Ex: luz dourada no fim da tarde, expressão tranquila" onpaste="handlePersonaReferenceImagePaste(event)"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>Imagem de referencia (opcional)</label>
+                    <label>Imagem de referência (opcional)</label>
                     <div class="persona-reference-upload">
                         <input
                             id="persona-manager-reference-image"
@@ -2261,7 +2261,7 @@
                             onclick="document.getElementById('persona-manager-reference-image').click()">
                             Enviar imagem
                         </button>
-                        <img id="persona-manager-reference-preview" class="persona-reference-preview" src="" alt="Imagem de referencia" hidden>
+                        <img id="persona-manager-reference-preview" class="persona-reference-preview" src="" alt="Imagem de referência" hidden>
                         <button id="persona-manager-reference-remove" class="btn btn-secondary btn-sm" type="button" onclick="removePersonaReferenceImage()" hidden>Remover</button>
                     </div>
                 </div>
@@ -2273,7 +2273,10 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-10"></script>
-    <script src="/video/static/pwa.js?v=20260421-10"></script>
+    <script src="/video/static/app.js?v=20260421-11"></script>
+    <script src="/video/static/pwa.js?v=20260421-11"></script>
 </body>
 </html>
+
+
+
