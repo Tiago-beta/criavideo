@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 185;
+        var REQUIRED_VER = 186;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2324,6 +2324,13 @@
                     <input id="persona-voice-builder-name" class="input" type="text" maxlength="80" placeholder="Ex: Voz da personagem principal">
                 </div>
                 <div class="form-group">
+                    <label>Provider de voz</label>
+                    <select id="persona-voice-builder-provider" class="input">
+                        <option value="openai">OpenAI GPT TTS (recomendado)</option>
+                        <option value="elevenlabs">ElevenLabs</option>
+                    </select>
+                </div>
+                <div class="form-group">
                     <label>Caracteristicas da voz</label>
                     <textarea id="persona-voice-builder-description" class="input" rows="4" placeholder="Ex: mulher, jovem, alegre, ritmo rapido, voz calorosa"></textarea>
                 </div>
@@ -2337,7 +2344,7 @@
                     <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('calma')">calma</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('narrativa')">narrativa</button>
                 </div>
-                <p id="persona-voice-builder-status" class="muted" style="margin-top:10px;">Fish Audio exige amostra de voz. Este modal gera voz por descricao usando GPT TTS.</p>
+                <p id="persona-voice-builder-status" class="muted" style="margin-top:10px;">Fish Audio exige amostra de voz. Este modal gera voz por descricao usando OpenAI ou ElevenLabs.</p>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" type="button" onclick="closeModal('modal-persona-voice-builder')">Cancelar</button>
@@ -2346,8 +2353,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-16"></script>
-    <script src="/video/static/pwa.js?v=20260421-16"></script>
+    <script src="/video/static/app.js?v=20260421-17"></script>
+    <script src="/video/static/pwa.js?v=20260421-17"></script>
 </body>
 </html>
 

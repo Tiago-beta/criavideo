@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 from pathlib import Path
 
 import openai
@@ -50,6 +51,16 @@ _STYLE_TO_MOOD = {
 }
 
 
+def _estimate_turn_count(target_duration: float) -> int:
+    duration = max(3.0, float(target_duration or 0.0))
+    if duration <= 4.0:
+        return 1
+    if duration <= 6.0:
+        return 2
+    estimated = int(round(duration / 2.6))
+    return max(2, min(10, estimated))
+
+
 def _normalize_characters(raw_names: list[str] | None, limit: int = 4) -> list[str]:
     names: list[str] = []
     for raw in raw_names or []:
@@ -67,7 +78,7 @@ def _normalize_characters(raw_names: list[str] | None, limit: int = 4) -> list[s
 
 
 def _fallback_dialogue_turns(prompt_text: str, characters: list[str], target_duration: float) -> list[dict]:
-    turns_count = max(4, min(8, int(round(target_duration / 2.2))))
+    turns_count = _estimate_turn_count(target_duration)
     topic = re.sub(r"\s+", " ", (prompt_text or "").strip())[:200]
     if not topic:
         topic = "o tema do video"
@@ -102,7 +113,7 @@ async def _generate_dialogue_turns(
     if not settings.openai_api_key:
         return _fallback_dialogue_turns(prompt_text, characters, target_duration)
 
-    turns_count = max(4, min(12, int(round(target_duration / 2.1))))
+    turns_count = _estimate_turn_count(target_duration)
     system_msg = (
         "Voce escreve dialogos curtos para locucao de video. "
         "Responda APENAS JSON valido no formato {\"turns\":[{\"speaker\":\"...\",\"text\":\"...\"}]}. "
@@ -202,18 +213,38 @@ async def _resolve_voice_configs(
             selected_profile = default_profile
 
         if selected_profile:
-            is_custom = selected_profile.voice_type == "custom" and bool(selected_profile.openai_voice_id)
-            config_by_character[character] = {
-                "voice_type": "custom" if is_custom else "builtin",
-                "voice": selected_profile.openai_voice_id if is_custom else (selected_profile.builtin_voice or "onyx"),
-                "tts_instructions": (selected_profile.tts_instructions or "")[:1200],
-            }
+            profile_voice_type = str(selected_profile.voice_type or "builtin").strip().lower()
+            profile_custom_id = str(selected_profile.openai_voice_id or "").strip()
+            fallback_voice = selected_profile.builtin_voice or "onyx"
+
+            if profile_voice_type == "elevenlabs" and profile_custom_id:
+                config_by_character[character] = {
+                    "voice_type": "elevenlabs",
+                    "voice": profile_custom_id,
+                    "fallback_voice": fallback_voice,
+                    "tts_instructions": (selected_profile.tts_instructions or "")[:1200],
+                }
+            elif profile_voice_type == "custom" and profile_custom_id:
+                config_by_character[character] = {
+                    "voice_type": "custom",
+                    "voice": profile_custom_id,
+                    "fallback_voice": fallback_voice,
+                    "tts_instructions": (selected_profile.tts_instructions or "")[:1200],
+                }
+            else:
+                config_by_character[character] = {
+                    "voice_type": "builtin",
+                    "voice": fallback_voice,
+                    "fallback_voice": "onyx",
+                    "tts_instructions": (selected_profile.tts_instructions or "")[:1200],
+                }
             continue
 
         fallback_voice = _DEFAULT_BUILTIN_VOICES[idx % len(_DEFAULT_BUILTIN_VOICES)]
         config_by_character[character] = {
             "voice_type": "builtin",
             "voice": fallback_voice,
+            "fallback_voice": "onyx",
             "tts_instructions": "",
         }
 
@@ -229,6 +260,20 @@ def _pick_music_mood(realistic_style: str, dialogue_tone: str) -> str:
     if tone_key in _VALID_MOODS:
         return tone_key
     return "inspiracional"
+
+
+def _trim_audio_to_duration(input_path: str, output_path: str, target_duration: float) -> str:
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-t", f"{max(0.1, float(target_duration)):.3f}",
+        "-c:a", "libmp3lame", "-b:a", "192k",
+        output_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if result.returncode != 0:
+        raise RuntimeError(f"Dialogue trim failed: {result.stderr[-300:]}")
+    return output_path
 
 
 async def generate_dialogue_audio_bundle(
@@ -273,11 +318,15 @@ async def generate_dialogue_audio_bundle(
     current_start = 0.0
 
     for idx, turn in enumerate(turns):
+        if current_start >= target_duration - 0.05:
+            break
+
         speaker = turn["speaker"]
         text = turn["text"]
         cfg = voice_configs.get(speaker) or {
             "voice_type": "builtin",
             "voice": "onyx",
+            "fallback_voice": "onyx",
             "tts_instructions": "",
         }
 
@@ -298,7 +347,7 @@ async def generate_dialogue_audio_bundle(
             logger.warning(f"Dialogue TTS failed for speaker '{speaker}', retrying with builtin voice: {tts_error}")
             segment_path = await generate_tts_audio(
                 text=text,
-                voice="onyx",
+                voice=cfg.get("fallback_voice", "onyx") or "onyx",
                 project_id=project_id,
                 tts_instructions="",
                 voice_type="builtin",
@@ -314,6 +363,12 @@ async def generate_dialogue_audio_bundle(
         if duration <= 0:
             duration = max(0.8, len(text.split()) / 2.7)
 
+        remaining = target_duration - current_start
+        if idx > 0 and remaining < 0.8:
+            break
+        if idx > 0 and duration > remaining + 0.5:
+            continue
+
         timeline_segments.append({
             "path": segment_path,
             "start": current_start,
@@ -323,12 +378,12 @@ async def generate_dialogue_audio_bundle(
             "speaker": speaker,
             "text": text,
             "start": round(current_start, 3),
-            "end": round(current_start + duration, 3),
+            "end": round(min(current_start + duration, target_duration), 3),
             "audio_path": segment_path,
         })
 
         current_start += duration + 0.12
-        if current_start >= target_duration + 2.0:
+        if current_start >= target_duration - 0.05:
             break
 
     if not timeline_segments:
@@ -336,6 +391,10 @@ async def generate_dialogue_audio_bundle(
 
     dialogue_audio_path = str(audio_dir / "dialogue_mix.mp3")
     dialogue_audio_path = await compose_dialogue_tracks(timeline_segments, dialogue_audio_path)
+    mixed_duration = _get_duration(dialogue_audio_path)
+    if mixed_duration > target_duration + 0.25:
+        trimmed_path = str(audio_dir / "dialogue_mix_trimmed.mp3")
+        dialogue_audio_path = _trim_audio_to_duration(dialogue_audio_path, trimmed_path, target_duration)
 
     mood = _pick_music_mood(realistic_style=realistic_style, dialogue_tone=tone)
     music_path = ""
@@ -343,12 +402,15 @@ async def generate_dialogue_audio_bundle(
         music_output = str(audio_dir / "dialogue_music.mp3")
         music_path = await generate_suno_music(
             output_path=music_output,
-            duration=max(target_duration, current_start) + 2.0,
+            duration=max(target_duration + 1.0, 6.0),
             mood=mood,
             topic=(prompt_text or "")[:120],
         )
 
     script_text = "\n".join([f"{item['speaker']}: {item['text']}" for item in timeline_meta])
+    estimated_duration = _get_duration(dialogue_audio_path)
+    if estimated_duration <= 0:
+        estimated_duration = max(min(current_start - 0.12, target_duration), 0.0)
 
     return {
         "audio_path": dialogue_audio_path,
@@ -356,5 +418,5 @@ async def generate_dialogue_audio_bundle(
         "turns": timeline_meta,
         "script": script_text,
         "characters": normalized_characters,
-        "estimated_duration": round(max(current_start - 0.12, 0.0), 2),
+        "estimated_duration": round(min(estimated_duration, target_duration), 2),
     }

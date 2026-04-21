@@ -814,11 +814,16 @@ async def generate_video(
             )
             default_profile = result.scalar_one_or_none()
             if default_profile:
-                if default_profile.openai_voice_id:
+                profile_voice_type = str(default_profile.voice_type or "builtin").strip().lower()
+                if profile_voice_type == "elevenlabs" and default_profile.openai_voice_id:
+                    voice = default_profile.openai_voice_id
+                    voice_type = "elevenlabs"
+                elif profile_voice_type == "custom" and default_profile.openai_voice_id:
                     voice = default_profile.openai_voice_id
                     voice_type = "custom"
                 elif default_profile.builtin_voice:
                     voice = default_profile.builtin_voice
+                    voice_type = "builtin"
                 tts_instructions = default_profile.tts_instructions or ""
 
             audio_path = await generate_tts_audio(
@@ -1302,11 +1307,16 @@ async def generate_audio_endpoint(
     elif req.voice_profile_id:
         profile = await db.get(VoiceProfile, req.voice_profile_id)
         if profile and profile.user_id == user["id"]:
-            if profile.openai_voice_id:
+            profile_voice_type = str(profile.voice_type or "builtin").strip().lower()
+            if profile_voice_type == "elevenlabs" and profile.openai_voice_id:
+                voice = profile.openai_voice_id
+                voice_type = "elevenlabs"
+            elif profile_voice_type == "custom" and profile.openai_voice_id:
                 voice = profile.openai_voice_id
                 voice_type = "custom"
             elif profile.builtin_voice:
                 voice = profile.builtin_voice
+                voice_type = "builtin"
             tts_instructions = profile.tts_instructions or ""
     elif not req.voice:
         # Try user's default voice profile
@@ -1319,11 +1329,16 @@ async def generate_audio_endpoint(
         )
         default_profile = result.scalar_one_or_none()
         if default_profile:
-            if default_profile.openai_voice_id:
+            profile_voice_type = str(default_profile.voice_type or "builtin").strip().lower()
+            if profile_voice_type == "elevenlabs" and default_profile.openai_voice_id:
+                voice = default_profile.openai_voice_id
+                voice_type = "elevenlabs"
+            elif profile_voice_type == "custom" and default_profile.openai_voice_id:
                 voice = default_profile.openai_voice_id
                 voice_type = "custom"
             elif default_profile.builtin_voice:
                 voice = default_profile.builtin_voice
+                voice_type = "builtin"
             tts_instructions = default_profile.tts_instructions or ""
 
     # Create project first to get an ID for the audio path

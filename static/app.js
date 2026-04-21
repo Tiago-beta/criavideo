@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v169 loaded");
+﻿console.log("[CriaVideo] app.js v170 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -3716,6 +3716,11 @@ function openPersonaVoiceBuilder(profileId) {
         descriptionEl.value = _buildPersonaVoiceDescriptionSeed(profile);
     }
 
+    const providerEl = document.getElementById("persona-voice-builder-provider");
+    if (providerEl) {
+        providerEl.value = "openai";
+    }
+
     const statusEl = document.getElementById("persona-voice-builder-status");
     if (statusEl) {
         statusEl.textContent = "Descreva o estilo da voz (ex: mulher, jovem, alegre).";
@@ -3751,11 +3756,13 @@ async function createPersonaVoiceFromDescription() {
 
     const nameEl = document.getElementById("persona-voice-builder-name");
     const descriptionEl = document.getElementById("persona-voice-builder-description");
+    const providerEl = document.getElementById("persona-voice-builder-provider");
     const statusEl = document.getElementById("persona-voice-builder-status");
     const saveBtn = document.getElementById("persona-voice-builder-save");
 
     const name = String(nameEl?.value || "").trim();
     const description = String(descriptionEl?.value || "").trim();
+    const provider = String(providerEl?.value || "openai").trim().toLowerCase();
 
     if (description.length < 4) {
         alert("Descreva melhor a voz (minimo 4 caracteres).");
@@ -3770,7 +3777,9 @@ async function createPersonaVoiceFromDescription() {
         saveBtn.textContent = "Gerando...";
     }
     if (statusEl) {
-        statusEl.textContent = "Gerando voz por descricao com IA...";
+        statusEl.textContent = provider === "elevenlabs"
+            ? "Gerando voz no ElevenLabs..."
+            : "Gerando voz por descricao com IA...";
     }
 
     try {
@@ -3781,6 +3790,7 @@ async function createPersonaVoiceFromDescription() {
                 description,
                 persona_name: personaName,
                 persona_type: _personaManagerType,
+                provider,
                 is_default: false,
             }),
         });
@@ -3802,8 +3812,11 @@ async function createPersonaVoiceFromDescription() {
         if (!providerInfo.gpt_tts_available) {
             showToast("OpenAI indisponivel: voz criada com perfil base/fallback.", "info");
         }
-        if (!providerInfo.elevenlabs_available) {
+        if (provider === "elevenlabs" && !providerInfo.elevenlabs_available) {
             showToast("ElevenLabs nao configurado neste servidor.", "info");
+        }
+        if (providerInfo.provider_requested && providerInfo.provider_effective && providerInfo.provider_requested !== providerInfo.provider_effective) {
+            showToast(`Provider ajustado automaticamente para ${providerInfo.provider_effective}.`, "info");
         }
 
         closeModal("modal-persona-voice-builder");

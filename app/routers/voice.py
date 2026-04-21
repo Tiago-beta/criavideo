@@ -55,7 +55,18 @@ class CreateVoiceFromDescriptionRequest(BaseModel):
     name: str = ""
     persona_name: str = ""
     persona_type: str = ""
+    provider: str = "openai"
+    provider_voice_id: str = ""
     is_default: bool = False
+
+
+ELEVENLABS_DEFAULT_VOICES = {
+    "female_bright": "EXAVITQu4vr4xnSDxMaL",  # Bella
+    "female_mature": "MF3mGyEYCl7XYWbV9V6O",  # Elli
+    "male_warm": "ErXwobaYiN019PkySvjV",     # Antoni
+    "male_deep": "pNInz6obpgDQGcFmaJgB",     # Adam
+    "narrator": "TxGEqnHWrfWFTfGW9XjX",      # Josh
+}
 
 
 def _available_voice_ids() -> set[str]:
@@ -112,6 +123,33 @@ def _fallback_voice_recipe(description: str, persona_type: str = "") -> dict:
         "suggested_name": "Voz Gerada IA",
         "strategy": "fallback",
     }
+
+
+def _select_elevenlabs_voice_id(description: str, persona_type: str = "", explicit_voice_id: str = "") -> str:
+    explicit = str(explicit_voice_id or "").strip()
+    if explicit:
+        return explicit
+
+    text = f"{description} {persona_type}".lower()
+    is_feminine = any(token in text for token in ["mulher", "femin", "menina", "senhora", "garota"])
+    is_masculine = any(token in text for token in ["homem", "mascul", "menino", "senhor", "garoto"])
+    is_old = any(token in text for token in ["idos", "velh", "madura", "senior"])
+    is_narrative = any(token in text for token in ["narrador", "narrativa", "documentario", "story"])
+    is_cheerful = any(token in text for token in ["alegre", "animad", "energi", "extrovert", "feliz"])
+
+    if is_narrative:
+        return ELEVENLABS_DEFAULT_VOICES["narrator"]
+    if is_feminine:
+        if is_old:
+            return ELEVENLABS_DEFAULT_VOICES["female_mature"]
+        return ELEVENLABS_DEFAULT_VOICES["female_bright"]
+    if is_masculine:
+        if "grave" in text or is_old:
+            return ELEVENLABS_DEFAULT_VOICES["male_deep"]
+        if is_cheerful:
+            return ELEVENLABS_DEFAULT_VOICES["male_warm"]
+        return ELEVENLABS_DEFAULT_VOICES["male_deep"]
+    return ELEVENLABS_DEFAULT_VOICES["narrator"]
 
 
 async def _suggest_voice_recipe(description: str, persona_type: str = "") -> dict:
@@ -193,6 +231,7 @@ async def list_voice_profiles(
             "voice_type": p.voice_type,
             "builtin_voice": p.builtin_voice,
             "has_custom_voice": bool(p.openai_voice_id),
+            "provider_voice_id": p.openai_voice_id or "",
             "has_sample": bool(p.sample_path),
             "sample_url": f"/video/media/voices/{user['id']}/{p.id}/sample.webm" if p.sample_path else None,
             "tts_instructions": p.tts_instructions or "",
@@ -252,6 +291,26 @@ async def create_voice_profile_from_description(
     if builtin_voice not in _available_voice_ids():
         builtin_voice = "alloy"
 
+    provider_requested = str(req.provider or "openai").strip().lower()
+    if provider_requested not in {"openai", "elevenlabs"}:
+        provider_requested = "openai"
+
+    elevenlabs_available = bool(getattr(settings, "elevenlabs_api_key", ""))
+    if provider_requested == "elevenlabs" and not elevenlabs_available:
+        raise HTTPException(status_code=400, detail="ElevenLabs nao configurado neste servidor")
+
+    voice_type = "builtin"
+    provider_voice_id = ""
+    effective_provider = "openai"
+    if provider_requested == "elevenlabs":
+        voice_type = "elevenlabs"
+        provider_voice_id = _select_elevenlabs_voice_id(
+            description=description,
+            persona_type=req.persona_type or "",
+            explicit_voice_id=req.provider_voice_id,
+        )
+        effective_provider = "elevenlabs"
+
     profile_name = (req.name or "").strip() or (req.persona_name or "").strip() or str(recipe.get("suggested_name") or "").strip() or "Voz Gerada IA"
 
     if req.is_default:
@@ -264,8 +323,9 @@ async def create_voice_profile_from_description(
     profile = VoiceProfile(
         user_id=user["id"],
         name=profile_name[:255],
-        voice_type="builtin",
+        voice_type=voice_type,
         builtin_voice=builtin_voice,
+        openai_voice_id=provider_voice_id or None,
         tts_instructions=str(recipe.get("tts_instructions") or "")[:2000],
         is_default=bool(req.is_default),
     )
@@ -280,14 +340,17 @@ async def create_voice_profile_from_description(
             "voice_type": profile.voice_type,
             "builtin_voice": profile.builtin_voice,
             "has_custom_voice": bool(profile.openai_voice_id),
+            "provider_voice_id": profile.openai_voice_id or "",
             "tts_instructions": profile.tts_instructions or "",
             "is_default": profile.is_default,
         },
         "strategy": recipe.get("strategy", "fallback"),
         "provider_info": {
+            "provider_requested": provider_requested,
+            "provider_effective": effective_provider,
             "gpt_tts_available": bool(settings.openai_api_key),
             "fish_requires_sample": True,
-            "elevenlabs_available": bool(getattr(settings, "elevenlabs_api_key", "")),
+            "elevenlabs_available": elevenlabs_available,
         },
     }
 
@@ -383,6 +446,7 @@ async def get_default_voice(
         "voice_type": profile.voice_type,
         "builtin_voice": profile.builtin_voice,
         "has_custom_voice": bool(profile.openai_voice_id),
+        "provider_voice_id": profile.openai_voice_id or "",
         "tts_instructions": profile.tts_instructions or "",
     }
 
@@ -497,6 +561,17 @@ async def preview_voice(
             ok = await generate_tts(preview_text, profile.openai_voice_id, preview_path)
             if not ok:
                 raise Exception("Fish Audio preview generation failed")
+        elif profile.openai_voice_id and profile.voice_type == "elevenlabs":
+            from app.services.elevenlabs_audio import generate_tts
+
+            ok = await generate_tts(
+                preview_text,
+                profile.openai_voice_id,
+                preview_path,
+                tts_instructions=profile.tts_instructions or "",
+            )
+            if not ok:
+                raise Exception("ElevenLabs preview generation failed")
         else:
             # Use OpenAI for builtin voices
             voice_param = profile.builtin_voice or "onyx"

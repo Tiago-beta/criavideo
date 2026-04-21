@@ -258,6 +258,46 @@ def _build_transcribed_realistic_prompt(transcribed_text: str, interaction_perso
     )
 
 
+def _build_dialogue_visual_lock(dialogue_turns: list[dict], interaction_persona: str = "", target_duration: float = 8.0) -> str:
+    valid_lines: list[str] = []
+    for idx, item in enumerate(dialogue_turns or []):
+        if not isinstance(item, dict):
+            continue
+        speaker = str(item.get("speaker") or "Personagem").strip() or "Personagem"
+        text = " ".join(str(item.get("text") or "").split()).strip()
+        if not text:
+            continue
+        try:
+            start = float(item.get("start", 0) or 0)
+        except Exception:
+            start = 0.0
+        try:
+            end = float(item.get("end", start + 1.2) or (start + 1.2))
+        except Exception:
+            end = start + 1.2
+        valid_lines.append(f"- {start:.2f}s ate {max(end, start + 0.2):.2f}s | {speaker}: \"{text[:180]}\"")
+        if idx >= 7:
+            break
+
+    if not valid_lines:
+        return ""
+
+    persona_instruction = _build_interaction_persona_instruction(interaction_persona)
+    persona_suffix = f" {persona_instruction}" if persona_instruction else ""
+    timeline = "\n".join(valid_lines)
+
+    return (
+        "DIALOGUE SYNC LOCK (OBRIGATORIO): o video deve seguir esta linha de dialogo e manter sincronia visual aproximada "
+        "de labios/gestos com as falas na ordem e no tempo indicados. "
+        f"Duracao-alvo: {max(1.0, float(target_duration or 8.0)):.2f}s. "
+        "Mantenha os mesmos personagens durante todo o clipe, alternando foco de camera por falante sem trocar identidade. "
+        "Evite cenas que contradigam o texto falado.\n"
+        "TIMELINE DE FALAS:\n"
+        f"{timeline}"
+        f"{persona_suffix}"
+    )
+
+
 async def _run_custom_video_pipeline(db, project, project_id: int):
     """Pipeline for user-uploaded video: overlay subtitles + optional narration."""
     from app.services.video_composer import compose_overlay_video
@@ -1233,6 +1273,66 @@ async def run_realistic_video_pipeline(project_id: int):
             tags_data = project.tags if isinstance(project.tags, dict) else {}
             prompt_optimized = tags_data.get("prompt_optimized", False)
             realistic_style = tags_data.get("realistic_style", "")
+            add_music = bool(tags_data.get("add_music", False))
+            dialogue_enabled = bool(tags_data.get("dialogue_enabled", False))
+            dialogue_characters = tags_data.get("dialogue_characters", []) if isinstance(tags_data.get("dialogue_characters", []), list) else []
+            dialogue_voice_profile_ids = tags_data.get("dialogue_voice_profile_ids", []) if isinstance(tags_data.get("dialogue_voice_profile_ids", []), list) else []
+            dialogue_tone = str(tags_data.get("dialogue_tone", "informativo") or "informativo").strip() or "informativo"
+            dialogue_duration = float(tags_data.get("dialogue_duration", 0) or 0)
+
+            prebuilt_dialogue_result = None
+            prebuilt_narration_path = ""
+            prebuilt_music_path = ""
+
+            if dialogue_enabled:
+                project.progress = 7
+                await db.commit()
+                try:
+                    from app.services.dialogue_audio import generate_dialogue_audio_bundle
+
+                    target_dialogue_duration = dialogue_duration if dialogue_duration > 0 else float(duration)
+                    prebuilt_dialogue_result = await generate_dialogue_audio_bundle(
+                        db=db,
+                        user_id=int(project.user_id),
+                        project_id=project_id,
+                        prompt_text=user_prompt,
+                        target_duration=target_dialogue_duration,
+                        characters=dialogue_characters,
+                        voice_profile_ids=dialogue_voice_profile_ids,
+                        tone=dialogue_tone,
+                        interaction_persona=interaction_persona,
+                        realistic_style=realistic_style,
+                        add_music=add_music,
+                    )
+
+                    prebuilt_narration_path = (prebuilt_dialogue_result.get("audio_path") or "").strip()
+                    prebuilt_music_path = (prebuilt_dialogue_result.get("music_path") or "").strip() if add_music else ""
+                    dialogue_script = (prebuilt_dialogue_result.get("script") or "").strip()
+                    dialogue_turns = prebuilt_dialogue_result.get("turns") or []
+
+                    if dialogue_script:
+                        tags_data["dialogue_script"] = dialogue_script
+                        if not transcribed_text_for_subtitles:
+                            transcribed_text_for_subtitles = dialogue_script
+                    if isinstance(dialogue_turns, list) and dialogue_turns:
+                        tags_data["dialogue_turns"] = dialogue_turns
+                        dialogue_lock = _build_dialogue_visual_lock(
+                            dialogue_turns=dialogue_turns,
+                            interaction_persona=interaction_persona,
+                            target_duration=target_dialogue_duration,
+                        )
+                        if dialogue_lock:
+                            user_prompt = f"{user_prompt}\n\n{dialogue_lock}"
+
+                    project.tags = tags_data
+                    await db.commit()
+                    logger.info("Dialogue pre-generated before realistic render for project %s", project_id)
+                except Exception as e:
+                    logger.warning(f"Dialogue pre-generation failed for project {project_id}: {e}")
+                    dialogue_enabled = False
+                    tags_data["dialogue_enabled"] = False
+                    project.tags = tags_data
+                    await db.commit()
 
             # If user selected a style, prepend it as context for the optimizer
             if realistic_style and not prompt_optimized:
@@ -1250,6 +1350,10 @@ async def run_realistic_video_pipeline(project_id: int):
             if prompt_optimized:
                 optimized_prompt = user_prompt
                 logger.info(f"Realistic prompt already optimized, using as-is: {optimized_prompt[:200]}...")
+            elif dialogue_enabled and engine in ("wan2", "minimax"):
+                # Keep explicit dialogue timeline cues for Wan/MiniMax instead of Seedance-style rewrite.
+                optimized_prompt = user_prompt
+                logger.info("Dialogue mode active: using direct prompt for %s to preserve sync timeline", engine)
             elif engine == "grok":
                 from app.services.grok_video import optimize_prompt_for_grok
                 optimized_prompt = await optimize_prompt_for_grok(
@@ -1473,47 +1577,52 @@ async def run_realistic_video_pipeline(project_id: int):
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
                 audio_dir.mkdir(parents=True, exist_ok=True)
 
-                narration_path = ""
-                music_path = ""
+                narration_path = prebuilt_narration_path or ""
+                music_path = (prebuilt_music_path or "") if add_music else ""
 
                 # Dialogue mode: generate multi-speaker spoken track (+ optional separate BGM)
                 if dialogue_enabled:
-                    project.progress = 82
-                    await db.commit()
-                    try:
-                        from app.services.dialogue_audio import generate_dialogue_audio_bundle
-
-                        dialogue_result = await generate_dialogue_audio_bundle(
-                            db=db,
-                            user_id=int(project.user_id),
-                            project_id=project_id,
-                            prompt_text=user_prompt,
-                            target_duration=(dialogue_duration if dialogue_duration > 0 else video_duration),
-                            characters=dialogue_characters,
-                            voice_profile_ids=dialogue_voice_profile_ids,
-                            tone=dialogue_tone,
-                            interaction_persona=interaction_persona,
-                            realistic_style=realistic_style,
-                            add_music=bool(add_music),
-                        )
-                        narration_path = (dialogue_result.get("audio_path") or "").strip()
-                        if add_music:
-                            music_path = (dialogue_result.get("music_path") or "").strip()
-
-                        dialogue_script = (dialogue_result.get("script") or "").strip()
-                        dialogue_turns = dialogue_result.get("turns") or []
-                        if dialogue_script:
-                            tags["dialogue_script"] = dialogue_script
-                            if not transcribed_text_for_subtitles:
-                                transcribed_text_for_subtitles = dialogue_script
-                        if isinstance(dialogue_turns, list) and dialogue_turns:
-                            tags["dialogue_turns"] = dialogue_turns
-                        project.tags = tags
+                    if narration_path and os.path.exists(narration_path):
+                        if music_path and not os.path.exists(music_path):
+                            music_path = ""
+                        logger.info("Using pre-generated dialogue audio bundle for realistic project %s", project_id)
+                    else:
+                        project.progress = 82
                         await db.commit()
-                        logger.info("Dialogue audio generated for realistic project %s", project_id)
-                    except Exception as e:
-                        logger.warning(f"Dialogue generation failed, falling back to regular narration/music: {e}")
-                        dialogue_enabled = False
+                        try:
+                            from app.services.dialogue_audio import generate_dialogue_audio_bundle
+
+                            dialogue_result = await generate_dialogue_audio_bundle(
+                                db=db,
+                                user_id=int(project.user_id),
+                                project_id=project_id,
+                                prompt_text=user_prompt,
+                                target_duration=(dialogue_duration if dialogue_duration > 0 else video_duration),
+                                characters=dialogue_characters,
+                                voice_profile_ids=dialogue_voice_profile_ids,
+                                tone=dialogue_tone,
+                                interaction_persona=interaction_persona,
+                                realistic_style=realistic_style,
+                                add_music=bool(add_music),
+                            )
+                            narration_path = (dialogue_result.get("audio_path") or "").strip()
+                            if add_music:
+                                music_path = (dialogue_result.get("music_path") or "").strip()
+
+                            dialogue_script = (dialogue_result.get("script") or "").strip()
+                            dialogue_turns = dialogue_result.get("turns") or []
+                            if dialogue_script:
+                                tags["dialogue_script"] = dialogue_script
+                                if not transcribed_text_for_subtitles:
+                                    transcribed_text_for_subtitles = dialogue_script
+                            if isinstance(dialogue_turns, list) and dialogue_turns:
+                                tags["dialogue_turns"] = dialogue_turns
+                            project.tags = tags
+                            await db.commit()
+                            logger.info("Dialogue audio generated for realistic project %s", project_id)
+                        except Exception as e:
+                            logger.warning(f"Dialogue generation failed, falling back to regular narration/music: {e}")
+                            dialogue_enabled = False
 
                 # Generate narration via TTS
                 if not dialogue_enabled and add_narration and narration_text:

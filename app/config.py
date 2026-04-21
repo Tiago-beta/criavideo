@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     suno_api_key: str = ""
     fish_audio_api_key: str = ""
+    elevenlabs_api_key: str = ""
     replicate_api_token: str = ""
     minimax_api_key: str = ""
     runpod_api_key: str = ""
