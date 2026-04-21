@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v154 loaded");
+console.log("[CriaVideo] app.js v155 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1751,6 +1751,10 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     try {
         personaProfileId = await _ensurePersonaSelection(prefix === "wizard" ? "wizard" : "script", interactionPersona);
 
+        if (!wantsReferenceImage && !personaProfileId) {
+            throw new Error("Crie uma persona primeiro e preencha idade, cor da pele e cor do cabelo.");
+        }
+
         // Upload reference image if available
         let imageUploadId = "";
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
@@ -2934,7 +2938,7 @@ function _getPersonaProfiles(personaType) {
     return _personaProfilesByType[_normalizeRealisticPersonaType(personaType)] || [];
 }
 
-async function _loadPersonaProfiles(personaType, ensureDefault = true) {
+async function _loadPersonaProfiles(personaType, ensureDefault = false) {
     const type = _normalizeRealisticPersonaType(personaType);
     const query = new URLSearchParams({
         persona_type: type,
@@ -3004,7 +3008,7 @@ function _renderPersonaPreview(context) {
 async function _refreshPersonaContext(context, forcedPersonaType = "") {
     const type = _normalizeRealisticPersonaType(forcedPersonaType || _getRealisticPersonaTypeByContext(context));
     try {
-        await _loadPersonaProfiles(type, true);
+        await _loadPersonaProfiles(type, false);
     } catch (error) {
         const previewEl = _getRealisticPersonaPreviewElement(context);
         if (previewEl) {
@@ -3033,7 +3037,7 @@ function _refreshAllPersonaPreviews() {
 async function _ensurePersonaSelection(context, personaType) {
     const type = _normalizeRealisticPersonaType(personaType);
     if (!_getPersonaProfiles(type).length) {
-        await _loadPersonaProfiles(type, true);
+        await _loadPersonaProfiles(type, false);
     }
     const selected = _getSelectedPersonaProfile(context, type);
     return selected ? (parseInt(selected.id, 10) || 0) : 0;
@@ -3041,9 +3045,11 @@ async function _ensurePersonaSelection(context, personaType) {
 
 function _updatePersonaManagerFormByType() {
     const isNature = _personaManagerType === "natureza";
+    const humanFields = document.getElementById("persona-manager-human-fields");
     const subtypeGroup = document.getElementById("persona-manager-nature-subtype-group");
     const otherGroup = document.getElementById("persona-manager-nature-other-group");
     const subtypeEl = document.getElementById("persona-manager-nature-subtype");
+    if (humanFields) humanFields.hidden = isNature;
     if (subtypeGroup) subtypeGroup.hidden = !isNature;
     if (otherGroup) {
         const isOther = isNature && subtypeEl && subtypeEl.value === "outros";
@@ -3092,7 +3098,7 @@ async function _refreshPersonaManagerList() {
     const listEl = document.getElementById("persona-manager-list");
     if (listEl) listEl.innerHTML = '<p class="muted">Carregando personas...</p>';
     try {
-        await _loadPersonaProfiles(_personaManagerType, true);
+        await _loadPersonaProfiles(_personaManagerType, false);
         _renderPersonaManagerList();
         _refreshAllPersonaPreviews();
     } catch (error) {
@@ -3112,6 +3118,12 @@ async function openPersonaManager(context = "script") {
 
     const nameEl = document.getElementById("persona-manager-name");
     if (nameEl) nameEl.value = "";
+    const ageEl = document.getElementById("persona-manager-age");
+    if (ageEl) ageEl.value = "";
+    const skinEl = document.getElementById("persona-manager-skin");
+    if (skinEl) skinEl.value = "";
+    const hairEl = document.getElementById("persona-manager-hair");
+    if (hairEl) hairEl.value = "";
     const extraEl = document.getElementById("persona-manager-extra");
     if (extraEl) extraEl.value = "";
     const setDefaultEl = document.getElementById("persona-manager-set-default");
@@ -3135,6 +3147,9 @@ async function createPersonaFromManager() {
 
     try {
         const name = (document.getElementById("persona-manager-name")?.value || "").trim();
+        const age = (document.getElementById("persona-manager-age")?.value || "").trim();
+        const skin = (document.getElementById("persona-manager-skin")?.value || "").trim();
+        const hair = (document.getElementById("persona-manager-hair")?.value || "").trim();
         const extra = (document.getElementById("persona-manager-extra")?.value || "").trim();
         const setDefault = !!document.getElementById("persona-manager-set-default")?.checked;
 
@@ -3145,6 +3160,20 @@ async function createPersonaFromManager() {
             if (subtype === "outros") {
                 const other = (document.getElementById("persona-manager-nature-other")?.value || "").trim();
                 if (other) attributes.outros_texto = other;
+            }
+        } else {
+            if (!age || !skin || !hair) {
+                alert("Preencha idade, cor da pele e cor do cabelo antes de gerar a persona.");
+                return;
+            }
+            if (_personaManagerType === "familia") {
+                attributes.faixa_etaria = age;
+                attributes.cor_pele = skin;
+                attributes.cabelo = hair;
+            } else {
+                attributes.idade_aparente = age;
+                attributes.cor_pele = skin;
+                attributes.cabelo = hair;
             }
         }
         if (extra) {
@@ -6160,6 +6189,10 @@ async function createAutoSchedule() {
             personaProfileId = await _ensurePersonaSelection("auto", interactionPersona);
         } catch (error) {
             alert(`Erro ao carregar persona: ${error.message}`);
+            return;
+        }
+        if (!personaProfileId) {
+            alert("Crie uma persona (com idade, cor da pele e cor do cabelo) antes de salvar a automacao realista.");
             return;
         }
         const selectedEngine = document.querySelector("#auto-realistic-engine .engine-option.selected");

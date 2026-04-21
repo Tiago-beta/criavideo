@@ -1777,13 +1777,13 @@ async def generate_realistic_endpoint(
                 user_id=user["id"],
                 persona_type=interaction_persona,
                 persona_profile_id=selected_persona_profile_id,
-                ensure_default=True,
+                ensure_default=False,
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc))
 
         if not persona_image_path:
-            raise HTTPException(status_code=400, detail="Video realista exige imagem de referencia de persona.")
+            raise HTTPException(status_code=400, detail="Crie uma persona e preencha idade, cor da pele e cor do cabelo antes de gerar o video realista.")
 
         image_path_str = str(persona_image_path)
         if resolved_persona:

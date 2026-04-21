@@ -49,6 +49,7 @@ def default_persona_attributes(persona_type: str) -> dict:
     if persona_type == "homem":
         return {
             "idade_aparente": "adulto jovem",
+            "cor_pele": "morena",
             "etnia": "latino",
             "cabelo": "castanho curto",
             "roupa": "camisa casual neutra",
@@ -58,6 +59,7 @@ def default_persona_attributes(persona_type: str) -> dict:
     if persona_type == "mulher":
         return {
             "idade_aparente": "adulta jovem",
+            "cor_pele": "morena clara",
             "etnia": "latina",
             "cabelo": "castanho medio",
             "roupa": "blusa casual neutra",
@@ -67,6 +69,7 @@ def default_persona_attributes(persona_type: str) -> dict:
     if persona_type == "crianca":
         return {
             "idade_aparente": "8 a 10 anos",
+            "cor_pele": "morena clara",
             "etnia": "latina",
             "cabelo": "castanho",
             "roupa": "roupa casual confortavel",
@@ -77,7 +80,9 @@ def default_persona_attributes(persona_type: str) -> dict:
         return {
             "composicao": "casal com uma crianca",
             "faixa_etaria": "adultos jovens",
+            "cor_pele": "morena clara",
             "etnia": "latina",
+            "cabelo": "castanho",
             "roupa": "casual harmonizada",
             "expressao": "afeto e unidade",
             "cenario": "ambiente externo natural",
@@ -99,6 +104,7 @@ def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> 
     if persona_type in ("homem", "mulher", "crianca"):
         keys = [
             "idade_aparente",
+            "cor_pele",
             "etnia",
             "cabelo",
             "roupa",
@@ -110,7 +116,9 @@ def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> 
         keys = [
             "composicao",
             "faixa_etaria",
+            "cor_pele",
             "etnia",
+            "cabelo",
             "roupa",
             "expressao",
             "cenario",
@@ -169,6 +177,7 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
     if persona_type == "homem":
         details = (
             f"Subject: adult man. Age appearance: {attributes.get('idade_aparente', 'adulto jovem')}. "
+            f"Skin tone: {attributes.get('cor_pele', 'morena')}. "
             f"Ethnicity: {attributes.get('etnia', 'latino')}. Hair: {attributes.get('cabelo', 'castanho curto')}. "
             f"Clothing: {attributes.get('roupa', 'casual neutra')}. Expression: {attributes.get('expressao', 'calma e confiante')}. "
             f"Environment mood: {attributes.get('cenario', 'ambiente externo natural')}."
@@ -176,6 +185,7 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
     elif persona_type == "mulher":
         details = (
             f"Subject: adult woman. Age appearance: {attributes.get('idade_aparente', 'adulta jovem')}. "
+            f"Skin tone: {attributes.get('cor_pele', 'morena clara')}. "
             f"Ethnicity: {attributes.get('etnia', 'latina')}. Hair: {attributes.get('cabelo', 'castanho medio')}. "
             f"Clothing: {attributes.get('roupa', 'casual neutra')}. Expression: {attributes.get('expressao', 'calma e acolhedora')}. "
             f"Environment mood: {attributes.get('cenario', 'ambiente externo natural')}."
@@ -183,6 +193,7 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
     elif persona_type == "crianca":
         details = (
             f"Subject: child. Age appearance: {attributes.get('idade_aparente', '8 a 10 anos')}. "
+            f"Skin tone: {attributes.get('cor_pele', 'morena clara')}. "
             f"Ethnicity: {attributes.get('etnia', 'latina')}. Hair: {attributes.get('cabelo', 'castanho')}. "
             f"Clothing: {attributes.get('roupa', 'casual confortavel')}. Expression: {attributes.get('expressao', 'alegre e curiosa')}. "
             f"Environment mood: {attributes.get('cenario', 'parque ao ar livre')}."
@@ -190,7 +201,8 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
     elif persona_type == "familia":
         details = (
             f"Subject: family group in one frame. Composition: {attributes.get('composicao', 'casal com uma crianca')}. "
-            f"Age range: {attributes.get('faixa_etaria', 'adultos jovens')}. Ethnicity: {attributes.get('etnia', 'latina')}. "
+            f"Age range: {attributes.get('faixa_etaria', 'adultos jovens')}. Skin tone: {attributes.get('cor_pele', 'morena clara')}. "
+            f"Ethnicity: {attributes.get('etnia', 'latina')}. Hair: {attributes.get('cabelo', 'castanho')}. "
             f"Clothing style: {attributes.get('roupa', 'casual harmonizada')}. Expression: {attributes.get('expressao', 'afeto e unidade')}. "
             f"Environment mood: {attributes.get('cenario', 'ambiente externo natural')}."
         )

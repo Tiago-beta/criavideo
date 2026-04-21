@@ -796,12 +796,12 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
                 user_id=user_id,
                 persona_type=interaction_persona,
                 persona_profile_id=requested_persona_profile_id,
-                ensure_default=True,
+                ensure_default=False,
             )
         except RuntimeError as exc:
             raise RuntimeError(str(exc))
         if not reference_image_path:
-            raise RuntimeError("Video realista da automacao exige imagem de referencia de persona")
+            raise RuntimeError("Crie uma persona com idade, cor da pele e cor do cabelo antes de rodar automacao realista")
         if resolved_persona:
             resolved_persona_profile_id = int(resolved_persona.id)
 
@@ -1011,12 +1011,12 @@ async def _create_musical_short(
                 user_id=user_id,
                 persona_type=interaction_persona,
                 persona_profile_id=requested_persona_profile_id,
-                ensure_default=True,
+                ensure_default=False,
             )
         except RuntimeError as exc:
             raise RuntimeError(str(exc))
         if not reference_image_path:
-            raise RuntimeError("Short realista exige imagem de referencia de persona")
+            raise RuntimeError("Crie uma persona com idade, cor da pele e cor do cabelo antes de gerar short realista")
         if resolved_persona:
             resolved_persona_profile_id = int(resolved_persona.id)
 
