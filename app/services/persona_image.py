@@ -3,6 +3,7 @@ Persona image generation service.
 Creates realistic persona portraits using OpenAI gpt-image-1.
 """
 
+import asyncio
 import base64
 import json
 import logging
@@ -12,6 +13,13 @@ from pathlib import Path
 
 import httpx
 import openai
+
+try:
+    from google import genai
+    from google.genai import types as genai_types
+except Exception:
+    genai = None
+    genai_types = None
 
 from app.config import get_settings
 
@@ -41,6 +49,43 @@ DRAWING_STYLES = {
     "outros",
 }
 
+_LONG_TEXT_MAX_LEN_BY_KEY = {
+    "descricao_extra": 1800,
+    "descricao_persona": 1000,
+    "personagem_base": 420,
+    "estilo_desenho_custom": 260,
+    "outros_texto": 260,
+    "referencia_visual": 1400,
+}
+
+_FULL_BODY_HINTS = (
+    "corpo inteiro",
+    "full body",
+    "head to toe",
+    "da cabeca aos pes",
+    "dos pes a cabeca",
+    "roupa",
+    "calca",
+    "tenis",
+    "sapato",
+    "vestido",
+    "jaqueta",
+)
+
+_DRAWING_STYLE_GUIDANCE = {
+    "3d": (
+        "Render style: hyper-detailed cinematic 3D character, realistic materials, physically based rendering, "
+        "sharp micro-details, dramatic studio lighting."
+    ),
+    "anime": "Render style: premium anime illustration, clean linework, expressive eyes, dynamic shading.",
+    "comic": "Render style: high-end comic art, bold forms, strong contrast, dynamic posing.",
+    "manga": "Render style: manga quality, crisp lines, controlled screentone shading, expressive features.",
+    "pixar": "Render style: stylized 3D family-film look, polished materials, cinematic lighting.",
+    "pixel_art": "Render style: high-quality pixel art with intentional palette and readable silhouette.",
+    "aquarela": "Render style: watercolor illustration, textured brushwork, soft tonal transitions.",
+    "cartoon": "Render style: premium cartoon illustration with clear silhouette and rich color harmony.",
+}
+
 
 def normalize_persona_type(value: str) -> str:
     raw = str(value or "").strip().lower()
@@ -61,6 +106,43 @@ def normalize_persona_type(value: str) -> str:
 def _clean_text(value: object, max_len: int = 140) -> str:
     text = " ".join(str(value or "").split())
     return text[:max_len].strip()
+
+
+def _attribute_max_len(key: str) -> int:
+    return _LONG_TEXT_MAX_LEN_BY_KEY.get(key, 140)
+
+
+def _attributes_joined_text(attributes: dict) -> str:
+    if not isinstance(attributes, dict):
+        return ""
+    values = [str(v or "") for v in attributes.values()]
+    return " ".join(values)
+
+
+def _should_use_full_body_composition(persona_type: str, attributes: dict) -> bool:
+    normalized_type = normalize_persona_type(persona_type)
+    if normalized_type in {"desenho", "personalizado"}:
+        return True
+
+    joined = _clean_text(_attributes_joined_text(attributes), max_len=2400).lower()
+    return any(hint in joined for hint in _FULL_BODY_HINTS)
+
+
+def _pick_persona_image_size(persona_type: str, attributes: dict) -> str:
+    if _should_use_full_body_composition(persona_type, attributes):
+        return "1024x1536"
+    return "1024x1024"
+
+
+def _mime_to_extension(mime_type: str, fallback: str = ".png") -> str:
+    normalized = str(mime_type or "").lower().strip()
+    mapping = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/webp": ".webp",
+    }
+    return mapping.get(normalized, fallback)
 
 
 def default_persona_attributes(persona_type: str) -> dict:
@@ -188,7 +270,7 @@ def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> 
         ]
 
     for key in keys:
-        value = _clean_text(raw.get(key, ""))
+        value = _clean_text(raw.get(key, ""), max_len=_attribute_max_len(key))
         if value:
             normalized[key] = value
 
@@ -232,7 +314,7 @@ def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> 
     if not normalized:
         normalized = default_persona_attributes(persona_type)
 
-    reference_visual = _clean_text(raw.get("referencia_visual", ""), max_len=1400)
+    reference_visual = _clean_text(raw.get("referencia_visual", ""), max_len=_attribute_max_len("referencia_visual"))
     if reference_visual:
         normalized["referencia_visual"] = reference_visual
 
@@ -246,26 +328,39 @@ def build_default_persona_name(persona_type: str) -> str:
 
 def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
     persona_type = normalize_persona_type(persona_type)
+    full_body = _should_use_full_body_composition(persona_type, attributes)
+    framing_rule = (
+        "full-body framing from head to toe, shoes visible, centered single subject"
+        if full_body
+        else "chest-up framing, centered single subject"
+    )
+    strict_adherence = (
+        "Strict prompt adherence is mandatory: preserve every explicit attribute from the brief, including "
+        "subject design, body texture/material, outfit pieces, colors, accessories, facial expression, and mood. "
+        "Do not simplify details. Do not add random logos, text, capes, or superhero emblems unless explicitly requested."
+    )
 
     if persona_type == "desenho":
         base_rules = (
             "Create one high-quality illustrated character reference image for video continuity. "
-            "No text, no watermark, no logo, no collage. Keep one clear subject centered, chest-up framing, "
-            "clean silhouette and consistent facial traits."
+            "No text, no watermark, no logo, no collage. Keep one clear subject centered, "
+            f"{framing_rule}. Maintain consistent facial traits, body proportions, and outfit details."
         )
     elif persona_type == "personalizado":
         base_rules = (
             "Create one high-quality character reference portrait for video continuity. "
-            "No text, no watermark, no logo, no collage. Keep one clear subject centered, chest-up framing, "
-            "strong identity consistency and coherent style."
+            "No text, no watermark, no logo, no collage. Keep one clear subject centered, "
+            f"{framing_rule}. Keep strong identity consistency and coherent style."
         )
     else:
         base_rules = (
             "Create one ultra-realistic portrait photo for a video reference persona. "
             "The image must look like a high-quality real camera photo, sharp focus, natural skin textures, "
             "balanced cinematic lighting, neutral background depth, no text, no watermark, no logo, no collage. "
-            "Keep only one clear main subject, centered, from chest-up framing, facing camera with slight natural pose."
+            f"Keep only one clear main subject, centered, {framing_rule}, facing camera with slight natural pose."
         )
+
+    handled_extra_as_primary = False
 
     if persona_type == "homem":
         details = (
@@ -314,13 +409,26 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
         drawing_style = attributes.get("estilo_desenho", "cartoon")
         if drawing_style == "outros":
             drawing_style = attributes.get("estilo_desenho_custom", "estilo autoral")
-        details = (
-            f"Subject: illustrated character. Drawing style: {drawing_style}. "
-            f"Character concept: {attributes.get('personagem_base', 'heroina simpatica')}. "
-            f"Color palette: {attributes.get('paleta', 'cores vivas e harmonicas')}. "
-            f"Expression: {attributes.get('expressao', 'confiante e amigavel')}. "
-            f"Environment mood: {attributes.get('cenario', 'fundo simples com profundidade')}."
+        style_guidance = _DRAWING_STYLE_GUIDANCE.get(
+            drawing_style,
+            "Render style: polished illustration with strong material and lighting definition.",
         )
+        extra_brief = attributes.get("descricao_extra", "")
+        if extra_brief:
+            handled_extra_as_primary = True
+            details = (
+                f"Primary character brief (mandatory): {extra_brief}. "
+                f"Drawing style: {drawing_style}. {style_guidance} "
+                "Interpret the brief literally and preserve all requested elements without omission."
+            )
+        else:
+            details = (
+                f"Subject: illustrated character. Drawing style: {drawing_style}. {style_guidance} "
+                f"Character concept: {attributes.get('personagem_base', 'heroina simpatica')}. "
+                f"Color palette: {attributes.get('paleta', 'cores vivas e harmonicas')}. "
+                f"Expression: {attributes.get('expressao', 'confiante e amigavel')}. "
+                f"Environment mood: {attributes.get('cenario', 'fundo simples com profundidade')}."
+            )
     else:
         details = (
             f"Subject concept: {attributes.get('descricao_persona', 'personagem autoral com identidade visual unica')}. "
@@ -330,8 +438,8 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
         )
 
     extra = attributes.get("descricao_extra", "")
-    if extra:
-        details = f"{details} Extra details: {extra}."
+    if extra and not handled_extra_as_primary:
+        details = f"{details} Extra details (mandatory, do not omit): {extra}."
 
     reference_visual = attributes.get("referencia_visual", "")
     if reference_visual:
@@ -342,7 +450,7 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
             "Do not include logos, text overlays, or exact copyrighted character replicas."
         )
 
-    return f"{base_rules} {details}"
+    return f"{base_rules} {details} {strict_adherence}"
 
 
 def _persona_storage_dir(user_id: int, persona_type: str) -> Path:
@@ -528,6 +636,7 @@ async def _generate_with_reference_image_edit(
     client: openai.AsyncOpenAI,
     reference_image_path: str,
     prompt: str,
+    image_size: str,
 ):
     reference_path = Path(str(reference_image_path or "")).expanduser()
     if not reference_path.exists():
@@ -535,11 +644,81 @@ async def _generate_with_reference_image_edit(
 
     with reference_path.open("rb") as image_file:
         return await client.images.edit(
-            model="gpt-image-1",
+            model=(settings.persona_image_openai_model or "gpt-image-1"),
             image=image_file,
             prompt=prompt[:3800],
-            size="1024x1024",
+            size=image_size,
         )
+
+
+def _google_aspect_ratio_from_size(image_size: str) -> str:
+    if image_size == "1024x1536":
+        return "9:16"
+    if image_size == "1536x1024":
+        return "16:9"
+    return "1:1"
+
+
+def _extract_google_image_payload(response: object) -> tuple[bytes, str]:
+    parts = []
+
+    direct_parts = getattr(response, "parts", None)
+    if isinstance(direct_parts, list):
+        parts.extend(direct_parts)
+
+    candidates = getattr(response, "candidates", None) or []
+    for cand in candidates:
+        content = getattr(cand, "content", None)
+        cand_parts = getattr(content, "parts", None) if content is not None else None
+        if isinstance(cand_parts, list):
+            parts.extend(cand_parts)
+
+    for part in parts:
+        inline_data = getattr(part, "inline_data", None)
+        if inline_data is None:
+            continue
+
+        data = getattr(inline_data, "data", None)
+        mime_type = str(getattr(inline_data, "mime_type", "") or "").strip().lower()
+        if not data:
+            continue
+
+        try:
+            if isinstance(data, str):
+                raw = base64.b64decode(data)
+            else:
+                raw = bytes(data)
+        except Exception:
+            continue
+
+        if raw:
+            return raw, mime_type
+
+    return b"", ""
+
+
+def _generate_with_google_image(prompt: str, image_size: str) -> tuple[bytes, str]:
+    if genai is None or genai_types is None:
+        raise RuntimeError("google-genai indisponivel")
+    if not (settings.google_ai_api_key or "").strip():
+        raise RuntimeError("Google AI API key nao configurada")
+
+    client = genai.Client(api_key=settings.google_ai_api_key)
+    response = client.models.generate_content(
+        model=(settings.persona_image_google_model or "gemini-2.5-flash-image"),
+        contents=[prompt],
+        config=genai_types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+            image_config=genai_types.ImageConfig(
+                aspect_ratio=_google_aspect_ratio_from_size(image_size),
+            ),
+        ),
+    )
+
+    raw, mime_type = _extract_google_image_payload(response)
+    if not raw:
+        raise RuntimeError("Gemini image response without inline image")
+    return raw, mime_type
 
 
 async def generate_persona_image(
@@ -558,13 +737,51 @@ async def generate_persona_image(
 
     prompt = _build_persona_prompt(normalized_type, normalized_attrs)
 
-    if not (settings.openai_api_key or "").strip():
-        raise RuntimeError("OpenAI API key nao configurada para gerar imagem de persona")
+    has_openai_key = bool((settings.openai_api_key or "").strip())
+    has_google_key = bool((settings.google_ai_api_key or "").strip())
+    prefers_google_for_drawing = bool(getattr(settings, "persona_image_prefer_google_for_drawing", True))
+
+    if not has_openai_key and not (normalized_type == "desenho" and has_google_key):
+        raise RuntimeError("Nenhuma chave de IA configurada para gerar imagem de persona")
 
     output_dir = _persona_storage_dir(user_id, normalized_type)
-    output_path = output_dir / f"{uuid.uuid4().hex}.png"
+    output_stem = output_dir / uuid.uuid4().hex
+    output_path = output_stem.with_suffix(".png")
+    image_size = _pick_persona_image_size(normalized_type, normalized_attrs)
 
     try:
+        used_google = False
+
+        # For stylized personas (e.g. 3D drawing), Gemini tends to follow dense art direction better.
+        if normalized_type == "desenho" and prefers_google_for_drawing and has_google_key:
+            try:
+                google_bytes, google_mime = await asyncio.to_thread(
+                    _generate_with_google_image,
+                    prompt,
+                    image_size,
+                )
+                output_path = output_stem.with_suffix(_mime_to_extension(google_mime, fallback=".png"))
+                output_path.write_bytes(google_bytes)
+                used_google = output_path.exists() and output_path.stat().st_size > 0
+            except Exception as exc:
+                logger.info(
+                    "Google persona generation unavailable for user=%s type=%s, falling back to OpenAI: %s",
+                    user_id,
+                    normalized_type,
+                    exc,
+                )
+
+        if used_google:
+            return {
+                "persona_type": normalized_type,
+                "attributes": normalized_attrs,
+                "prompt_text": prompt,
+                "image_path": str(output_path),
+            }
+
+        if not has_openai_key:
+            raise RuntimeError("OpenAI API key nao configurada para fallback de persona")
+
         client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
         image_response = None
 
@@ -574,6 +791,7 @@ async def generate_persona_image(
                     client=client,
                     reference_image_path=reference_image_path,
                     prompt=prompt,
+                    image_size=image_size,
                 )
             except Exception as exc:
                 logger.warning(
@@ -585,9 +803,9 @@ async def generate_persona_image(
 
         if image_response is None:
             image_response = await client.images.generate(
-                model="gpt-image-1",
+                model=(settings.persona_image_openai_model or "gpt-image-1"),
                 prompt=prompt[:3800],
-                size="1024x1024",
+                size=image_size,
             )
     except Exception as exc:
         logger.error("Persona image generation failed for user=%s type=%s: %s", user_id, normalized_type, exc)
