@@ -390,7 +390,10 @@ async def upload_music(
         if len(content) > 50 * 1024 * 1024:
             raise HTTPException(400, "Arquivo muito grande (max 50MB)")
         f.write(content)
-    return {"path": str(dest)}
+    return {
+        "path": str(dest),
+        "media_url": _to_media_url(str(dest)),
+    }
 
 
 @router.post("/upload-video-audio")
@@ -458,7 +461,10 @@ async def upload_video_audio(
             out_audio.unlink(missing_ok=True)
             raise HTTPException(500, "Falha ao extrair audio do video")
 
-        return {"path": str(out_audio)}
+        return {
+            "path": str(out_audio),
+            "media_url": _to_media_url(str(out_audio)),
+        }
     except subprocess.TimeoutExpired:
         out_audio.unlink(missing_ok=True)
         raise HTTPException(500, "Timeout ao extrair audio do video")

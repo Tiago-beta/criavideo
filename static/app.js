@@ -6884,6 +6884,7 @@ const _editor = {
     trimEnd: 0,
     musicUrl: "",
     _musicFile: null,
+    _musicServerPath: "",
     _musicSource: "audio", // audio | video
     musicVolume: 80,
     originalVolume: 100,
@@ -6940,6 +6941,8 @@ function _editorSaveState() {
         trimEnd: _editor.trimEnd,
         outputAspectRatio: _editor.outputAspectRatio,
         musicUrl: _editor.musicUrl,
+        _musicSource: _editor._musicSource,
+        _musicServerPath: _editor._musicServerPath,
         musicVolume: _editor.musicVolume,
         originalVolume: _editor.originalVolume,
         filter: _editor.filter,
@@ -6961,7 +6964,10 @@ function _editorUndo() {
         audioSegments: _editor.audioSegments,
         selectedTracks: _editor.selectedTracks,
         trimEnd: _editor.trimEnd, outputAspectRatio: _editor.outputAspectRatio,
-        musicUrl: _editor.musicUrl, musicVolume: _editor.musicVolume,
+        musicUrl: _editor.musicUrl,
+        _musicSource: _editor._musicSource,
+        _musicServerPath: _editor._musicServerPath,
+        musicVolume: _editor.musicVolume,
         originalVolume: _editor.originalVolume, filter: _editor.filter, stickers: _editor.stickers, mediaLayers: _editor.mediaLayers, quality: _editor.quality,
     });
     _editor.redoStack.push(current);
@@ -6986,7 +6992,10 @@ function _editorRedo() {
         audioSegments: _editor.audioSegments,
         selectedTracks: _editor.selectedTracks,
         trimEnd: _editor.trimEnd, outputAspectRatio: _editor.outputAspectRatio,
-        musicUrl: _editor.musicUrl, musicVolume: _editor.musicVolume,
+        musicUrl: _editor.musicUrl,
+        _musicSource: _editor._musicSource,
+        _musicServerPath: _editor._musicServerPath,
+        musicVolume: _editor.musicVolume,
         originalVolume: _editor.originalVolume, filter: _editor.filter, stickers: _editor.stickers, mediaLayers: _editor.mediaLayers, quality: _editor.quality,
     });
     _editor.undoStack.push(current);
@@ -7082,7 +7091,7 @@ function _editorFindVideoSegment(id) {
 }
 
 function _editorShouldShowAudioTrack() {
-    return Boolean(_editor.musicUrl || _editor._musicFile);
+    return Boolean(_editor.musicUrl || _editor._musicFile || _editor._musicServerPath);
 }
 
 function _editorGetMusicPreviewAudio() {
@@ -7809,6 +7818,7 @@ async function openEditor(projectId) {
         _editor.trimEnd = 0;
         _editor.musicUrl = "";
         _editor._musicFile = null;
+        _editor._musicServerPath = "";
         _editor._musicSource = "audio";
         _editorSetMusicPreviewSource("");
         _editor.musicVolume = 80;
@@ -9007,6 +9017,7 @@ function _editorUploadMusic(input) {
     _editorSaveState();
     _editor.musicUrl = URL.createObjectURL(file);
     _editor._musicFile = file;
+    _editor._musicServerPath = "";
     _editor._musicSource = "audio";
     _editorSetMusicPreviewSource(_editor.musicUrl);
     if (!_editor.audioSegments.length) {
@@ -9020,22 +9031,46 @@ function _editorUploadMusic(input) {
 }
 window._editorUploadMusic = _editorUploadMusic;
 
-function _editorUploadVideoForMusic(input) {
+async function _editorUploadVideoForMusic(input) {
     const file = input.files?.[0];
     if (!file) return;
-    _editorSaveState();
-    _editor.musicUrl = URL.createObjectURL(file);
-    _editor._musicFile = file;
-    _editor._musicSource = "video";
-    _editorSetMusicPreviewSource(_editor.musicUrl);
-    if (!_editor.audioSegments.length) {
-        _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
+    try {
+        _editorSaveState();
+        showToast("Extraindo audio do video...");
+
+        const formData = new FormData();
+        formData.append("file", file);
+        const payload = await apiForm("/video/editor/upload-video-audio", formData, { method: "POST" });
+
+        const serverPath = String(payload?.path || "").trim();
+        const mediaUrlRaw = String(payload?.media_url || "").trim();
+        const mediaUrl = mediaUrlRaw.startsWith("/")
+            ? `${API.replace("/api", "")}${mediaUrlRaw}`
+            : mediaUrlRaw;
+        if (!serverPath) {
+            throw new Error("Falha ao extrair audio do video");
+        }
+
+        _editor._musicSource = "video";
+        _editor._musicFile = null;
+        _editor._musicServerPath = serverPath;
+        _editor.musicUrl = mediaUrl;
+        _editorSetMusicPreviewSource(_editor.musicUrl || "");
+
+        if (!_editor.audioSegments.length) {
+            _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
+        }
+        _editor.selectedTracks = ["video", "audio"];
+        _editor.selectedClip = { kind: "music", id: "music" };
+        _editorRefreshQuickActions();
+        _editorRenderProps();
+        _editorRenderTimeline();
+        showToast("Audio extraido do video com sucesso!", "success");
+    } catch (err) {
+        showToast("Erro ao extrair audio do video: " + (err?.message || "erro desconhecido"), "error");
+    } finally {
+        if (input) input.value = "";
     }
-    _editor.selectedTracks = ["video", "audio"];
-    _editor.selectedClip = { kind: "music", id: "music" };
-    _editorRefreshQuickActions();
-    _editorRenderProps();
-    _editorRenderTimeline();
 }
 window._editorUploadVideoForMusic = _editorUploadVideoForMusic;
 
@@ -9043,6 +9078,7 @@ function _editorRemoveMusic() {
     _editorSaveState();
     _editor.musicUrl = "";
     _editor._musicFile = null;
+    _editor._musicServerPath = "";
     _editor._musicSource = "audio";
     _editorSetMusicPreviewSource("");
     _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
@@ -9479,6 +9515,7 @@ function _editorDeleteSelectedClip() {
     } else if (selKind === "music") {
         _editor.musicUrl = "";
         _editor._musicFile = null;
+        _editor._musicServerPath = "";
         _editor._musicSource = "audio";
         _editorSetMusicPreviewSource("");
         _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
@@ -9818,8 +9855,8 @@ async function _editorExport() {
 
     try {
         // Upload music file if any
-        let musicPath = "";
-        if (_editor._musicFile) {
+        let musicPath = String(_editor._musicServerPath || "").trim();
+        if (!musicPath && _editor._musicFile) {
             const formData = new FormData();
             formData.append("file", _editor._musicFile);
             const musicUploadEndpoint = _editor._musicSource === "video"
@@ -9840,7 +9877,15 @@ async function _editorExport() {
                 throw new Error(errPayload.detail || "Falha ao enviar audio");
             }
             const uploadData = await uploadRes.json();
-            musicPath = uploadData.path;
+            musicPath = String(uploadData?.path || "").trim();
+            _editor._musicServerPath = musicPath;
+            if (!_editor.musicUrl && uploadData?.media_url) {
+                const mediaUrlRaw = String(uploadData.media_url);
+                _editor.musicUrl = mediaUrlRaw.startsWith("/")
+                    ? `${API.replace("/api", "")}${mediaUrlRaw}`
+                    : mediaUrlRaw;
+                _editorSetMusicPreviewSource(_editor.musicUrl);
+            }
         }
         edits.music_path = musicPath;
 
