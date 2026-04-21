@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v155 loaded");
+console.log("[CriaVideo] app.js v156 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -33,6 +33,7 @@ let _personaProfilesByType = {};
 let _personaSelectionByContext = {
     wizard: {},
     script: {},
+    ai: {},
     auto: {},
 };
 let _personaManagerContext = "script";
@@ -696,6 +697,7 @@ function initDashboard() {
     handleSocialCallbackResult();
     _refreshPersonaContext("wizard", "natureza");
     _refreshPersonaContext("script", "natureza");
+    _refreshPersonaContext("ai", "natureza");
     _refreshPersonaContext("auto", "natureza");
 
     const hashValue = String(window.location.hash || "").toLowerCase();
@@ -1999,8 +2001,10 @@ function resetCreateWizard() {
 
     _personaSelectionByContext.wizard = {};
     _personaSelectionByContext.script = {};
+    _personaSelectionByContext.ai = {};
     _refreshPersonaContext("wizard", "natureza");
     _refreshPersonaContext("script", "natureza");
+    _refreshPersonaContext("ai", "natureza");
 
     // Load voice profiles into selectors
     loadVoiceProfiles();
@@ -2923,6 +2927,7 @@ function _getRealisticPersonaTypeByContext(context) {
     const key = String(context || "script").toLowerCase();
     let selector = "#script-realistic-persona-tags .style-tag.selected";
     if (key === "wizard") selector = "#wizard-realistic-persona-tags .style-tag.selected";
+    if (key === "ai") selector = "#ai-suggest-persona-tags .style-tag.selected";
     if (key === "auto") selector = "#auto-realistic-persona-tags .style-tag.selected";
     const selected = document.querySelector(selector);
     return _normalizeRealisticPersonaType(selected ? selected.dataset.persona : "natureza");
@@ -2930,6 +2935,7 @@ function _getRealisticPersonaTypeByContext(context) {
 
 function _getRealisticPersonaPreviewElement(context) {
     if (context === "wizard") return document.getElementById("wizard-realistic-persona-preview");
+    if (context === "ai") return document.getElementById("ai-suggest-persona-preview");
     if (context === "auto") return document.getElementById("auto-realistic-persona-preview");
     return document.getElementById("script-realistic-persona-preview");
 }
@@ -3031,6 +3037,7 @@ async function _refreshPersonaContext(context, forcedPersonaType = "") {
 function _refreshAllPersonaPreviews() {
     _renderPersonaPreview("wizard");
     _renderPersonaPreview("script");
+    _renderPersonaPreview("ai");
     _renderPersonaPreview("auto");
 }
 
@@ -3107,7 +3114,7 @@ async function _refreshPersonaManagerList() {
 }
 
 async function openPersonaManager(context = "script") {
-    _personaManagerContext = ["wizard", "script", "auto"].includes(context) ? context : "script";
+    _personaManagerContext = ["wizard", "script", "ai", "auto"].includes(context) ? context : "script";
     _personaManagerType = _getRealisticPersonaTypeByContext(_personaManagerContext);
 
     const titleEl = document.getElementById("persona-manager-title");
@@ -3238,7 +3245,7 @@ async function deletePersonaFromManager(profileId) {
     try {
         await api(`/persona/profiles/${pid}`, { method: "DELETE" });
 
-        ["wizard", "script", "auto"].forEach((ctx) => {
+        ["wizard", "script", "ai", "auto"].forEach((ctx) => {
             const selectedId = _getSelectedPersonaProfileId(ctx, _personaManagerType);
             if (selectedId === pid) {
                 _setSelectedPersonaProfileId(ctx, _personaManagerType, 0);
@@ -3269,12 +3276,15 @@ function setSelectedRealisticPersona(persona) {
 
     _refreshPersonaContext("script", normalized);
     _refreshPersonaContext("wizard", normalized);
+    _refreshPersonaContext("ai", normalized);
 }
 
 function showAiSuggestPanel() {
     const isRealistic = scriptData.videoType === "realista";
     if (isRealistic) {
-        setSelectedRealisticPersona(getSelectedRealisticPersona());
+        const selectedPersona = getSelectedRealisticPersona();
+        setSelectedRealisticPersona(selectedPersona);
+        _refreshPersonaContext("ai", selectedPersona);
     }
     // Adapt AI suggest panel for mode
     document.getElementById("ai-suggest-title").textContent = isRealistic ? "Gerar prompt com IA" : "Gerar roteiro com IA";

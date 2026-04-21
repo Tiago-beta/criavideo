@@ -1243,6 +1243,7 @@ async def run_realistic_video_pipeline(project_id: int):
 
             aspect_ratio = project.aspect_ratio or "16:9"
             generate_audio = not getattr(project, "no_background_music", False)
+            scene_reference_path = image_path
 
             async def _on_progress(pct, msg):
                 nonlocal project
@@ -1251,6 +1252,38 @@ async def run_realistic_video_pipeline(project_id: int):
                     await db.commit()
                 except Exception:
                     pass
+
+            # Build a scene-locked reference frame with Nano Banana using the exact persona image.
+            if has_reference_image and image_path:
+                from app.services.scene_generator import generate_scene_image
+
+                try:
+                    await _on_progress(16, "Montando cena base com Nano Banana...")
+                    scene_ref_dir = render_dir / "scene_ref"
+                    scene_ref_dir.mkdir(parents=True, exist_ok=True)
+                    scene_reference_path = str(scene_ref_dir / "persona_scene.png")
+                    nano_prompt = optimized_prompt[:800]
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        None,
+                        generate_scene_image,
+                        nano_prompt,
+                        aspect_ratio,
+                        scene_reference_path,
+                        True,
+                        image_path,
+                    )
+                    if os.path.exists(scene_reference_path):
+                        logger.info(
+                            "Realistic video: Nano Banana scene anchor created from persona image (%s)",
+                            scene_reference_path,
+                        )
+                    else:
+                        scene_reference_path = image_path
+                        logger.warning("Realistic video: Nano Banana scene anchor missing; falling back to original persona image")
+                except Exception as e:
+                    scene_reference_path = image_path
+                    logger.warning("Realistic video: Nano Banana scene anchor failed; using original persona image: %s", e)
 
             if engine == "grok":
                 if duration > 15:
@@ -1263,7 +1296,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         optimized_prompt=optimized_prompt,
                         total_duration=duration,
                         aspect_ratio=aspect_ratio,
-                        image_path=image_path,
+                        image_path=scene_reference_path,
                         render_dir=render_dir,
                         on_progress=_on_progress,
                     )
@@ -1273,7 +1306,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     from app.services.scene_generator import generate_scene_image
 
                     await _on_progress(16, "Gerando imagem de referencia...")
-                    grok_image_path = image_path
+                    grok_image_path = scene_reference_path
                     if not grok_image_path:
                         img_dir = render_dir / "grok_ref"
                         img_dir.mkdir(parents=True, exist_ok=True)
@@ -1305,7 +1338,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     duration=duration,
                     aspect_ratio=aspect_ratio,
                     output_path=output_path,
-                    image_path=image_path,
+                    image_path=scene_reference_path,
                     on_progress=_on_progress,
                 )
             elif engine == "wan2":
@@ -1316,7 +1349,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     duration=duration,
                     aspect_ratio=aspect_ratio,
                     output_path=output_path,
-                    image_path=image_path,
+                    image_path=scene_reference_path,
                     on_progress=_on_progress,
                 )
             else:
@@ -1331,7 +1364,7 @@ async def run_realistic_video_pipeline(project_id: int):
                             aspect_ratio=aspect_ratio,
                             output_path=output_path,
                             generate_audio=generate_audio,
-                            image_path=image_path,
+                            image_path=scene_reference_path,
                             on_progress=_on_progress,
                         )
                         break  # Success

@@ -8,6 +8,7 @@ import shutil
 import asyncio
 import logging
 import uuid
+import mimetypes
 from pathlib import Path
 from google import genai
 from google.genai import types
@@ -73,9 +74,16 @@ Respond ONLY with a JSON array. No markdown, no explanation."""
     return scenes
 
 
-def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: str = "", allow_faces: bool = False) -> str:
+def generate_scene_image(
+    prompt: str,
+    aspect_ratio: str = "16:9",
+    output_path: str = "",
+    allow_faces: bool = False,
+    reference_image_path: str = "",
+) -> str:
     """Generate a single scene image using Nano Banana. Synchronous (runs in thread).
-    Set allow_faces=True for realistic/multi-clip videos that need character consistency."""
+    Set allow_faces=True for realistic/multi-clip videos that need character consistency.
+    If reference_image_path is provided, Nano Banana receives that exact image as identity anchor."""
     if allow_faces:
         style_prefix = (
             "Cinematic, high quality, professional lighting, photorealistic. "
@@ -109,6 +117,14 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
                 "No text or words in the image. No human faces. No religious symbols or objects. "
             )
     full_prompt = style_prefix + prompt
+    has_reference_image = bool(reference_image_path and os.path.exists(reference_image_path))
+    if has_reference_image:
+        full_prompt = (
+            f"{style_prefix}{prompt}\n\n"
+            "REFERENCE IMAGE LOCK (MANDATORY): Use the attached reference image as the exact subject identity anchor. "
+            "Preserve the same face, skin tone, hair color/style, age appearance, and overall likeness. "
+            "Only change scene composition, camera movement, and environment requested by the prompt."
+        )
 
     def _extract_parts(resp):
         parts = []
@@ -162,6 +178,21 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
                 return os.path.exists(output_path) and os.path.getsize(output_path) > 0
             except Exception:
                 return False
+
+    def _build_reference_part() -> types.Part | None:
+        if not has_reference_image:
+            return None
+
+        mime_type = mimetypes.guess_type(reference_image_path)[0] or "image/png"
+        try:
+            with open(reference_image_path, "rb") as ref_file:
+                ref_bytes = ref_file.read()
+            if not ref_bytes:
+                return None
+            return types.Part.from_bytes(data=ref_bytes, mime_type=mime_type)
+        except Exception as e:
+            logger.warning("Failed to load reference image for Nano Banana (%s): %s", reference_image_path, e)
+            return None
 
     def _openai_image_size(ar: str) -> str:
         if ar == "9:16":
@@ -217,6 +248,17 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
 
         return False
 
+    def _save_reference_passthrough_image() -> bool:
+        if not has_reference_image:
+            return False
+        try:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            shutil.copy2(reference_image_path, output_path)
+            return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+        except Exception as e:
+            logger.warning(f"Reference passthrough fallback failed: {e}")
+            return False
+
     def _save_local_placeholder_image() -> bool:
         try:
             from PIL import Image, ImageDraw
@@ -259,18 +301,38 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
         style_prefix + "Single clear cinematic composition, one focal subject, no text, no overlays.",
     ]
     last_response_text = ""
+    reference_part = _build_reference_part()
 
     for idx, attempt_prompt in enumerate(prompt_attempts, start=1):
-        response = google_client.models.generate_content(
-            model="gemini-2.5-flash-image",
-            contents=[attempt_prompt],
-            config=types.GenerateContentConfig(
-                response_modalities=["IMAGE"],
-                image_config=types.ImageConfig(
-                    aspect_ratio=aspect_ratio,
-                ),
+        contents_payload = [attempt_prompt]
+        if reference_part is not None:
+            contents_payload = [reference_part, attempt_prompt]
+
+        try:
+            response = google_client.models.generate_content(
+                model="gemini-2.5-flash-image",
+                contents=contents_payload,
+                config=types.GenerateContentConfig(
+                    response_modalities=["IMAGE"],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=aspect_ratio,
+                    ),
+                )
             )
-        )
+        except Exception as e:
+            if reference_part is None:
+                raise
+            logger.warning("Nano Banana reference-image call failed, retrying without image: %s", e)
+            response = google_client.models.generate_content(
+                model="gemini-2.5-flash-image",
+                contents=[attempt_prompt],
+                config=types.GenerateContentConfig(
+                    response_modalities=["IMAGE"],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=aspect_ratio,
+                    ),
+                )
+            )
 
         parts = _extract_parts(response)
         for part in parts:
@@ -294,11 +356,16 @@ def generate_scene_image(prompt: str, aspect_ratio: str = "16:9", output_path: s
         )
 
     # Fallback 1: OpenAI image generation if Gemini image returns empty payload.
+    if _save_reference_passthrough_image():
+        logger.warning(f"Scene image saved via reference passthrough fallback: {output_path}")
+        return output_path
+
+    # Fallback 2: OpenAI image generation if Gemini image returns empty payload.
     if _save_openai_fallback_image(full_prompt):
         logger.info(f"Scene image saved via OpenAI fallback: {output_path}")
         return output_path
 
-    # Fallback 2: Local generated placeholder so the render pipeline can continue.
+    # Fallback 3: Local generated placeholder so the render pipeline can continue.
     if _save_local_placeholder_image():
         logger.warning(f"Scene image saved via local placeholder fallback: {output_path}")
         return output_path

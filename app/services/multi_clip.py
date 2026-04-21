@@ -293,18 +293,26 @@ async def generate_multi_clip_video(
     # This ensures character/setting consistency across the entire video
     img_dir = clips_dir / "ref_images"
     img_dir.mkdir(parents=True, exist_ok=True)
+    base_reference_image = image_path if (image_path and os.path.exists(image_path)) else ""
 
     ref_images = []
     for i in range(num_segments):
-        if i == 0 and image_path:
-            # User provided a reference image for the first scene
-            ref_images.append(image_path)
+        if i == 0 and base_reference_image:
+            # First scene uses the prepared anchor frame from the persona image.
+            ref_images.append(base_reference_image)
+            logger.info(f"Reference image {i+1}/{num_segments} reusing base scene anchor: {base_reference_image}")
         else:
             ref_path = str(img_dir / f"reference_{i}.png")
             img_prompt = optimized_scenes[i][:500]
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
-                None, generate_scene_image, img_prompt, aspect_ratio, ref_path, True
+                None,
+                generate_scene_image,
+                img_prompt,
+                aspect_ratio,
+                ref_path,
+                True,
+                base_reference_image,
             )
             ref_images.append(ref_path)
             logger.info(f"Reference image {i+1}/{num_segments} generated: {ref_path}")
