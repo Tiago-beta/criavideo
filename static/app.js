@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v164 loaded");
+﻿console.log("[CriaVideo] app.js v165 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1148,6 +1148,8 @@ let scriptData = {
     imageDisplaySeconds: 0,
     promptOptimized: false,
 };
+let _scriptTevoxiSongs = []; // cached Tevoxi songs for script realistic mode
+let _scriptSelectedSong = null; // selected Tevoxi song for script realistic mode
 // Step flow arrays for each video type
 const WIZARD_FLOW_NORMAL = [2, 1, 3, 4, 5, 6]; // type, topic, tone, voice, style, details
 const WIZARD_FLOW_REALISTIC = [2, 1, 7]; // type, topic, realistic settings
@@ -1619,7 +1621,11 @@ function initCreateWizard() {
                 // Auto-toggle music checkbox: engines with native audio → uncheck
                 const hasNativeAudio = (engineVal === "grok" || engineVal === "seedance");
                 const musicCb = container.querySelector("[id$='-realistic-music']");
-                if (musicCb) musicCb.checked = !hasNativeAudio;
+                if (musicCb) {
+                    const useScriptTevoxi = musicCb.id === "script-realistic-music"
+                        && (document.getElementById("script-realistic-tevoxi")?.checked || false);
+                    musicCb.checked = useScriptTevoxi ? false : !hasNativeAudio;
+                }
             }
         }
         const vbtn = e.target.closest(".voice-btn");
@@ -1733,6 +1739,13 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const aspect = aspectEl ? aspectEl.value : "16:9";
     const musicEl = document.getElementById(musicCheckboxId);
     const addMusic = musicEl ? musicEl.checked : true;
+    const useTevoxi = prefix === "script" && (document.getElementById("script-realistic-tevoxi")?.checked || false);
+    const selectedTevoxiSong = useTevoxi ? _scriptSelectedSong : null;
+    if (useTevoxi && !selectedTevoxiSong) {
+        alert("Selecione uma música do Tevoxi.");
+        return;
+    }
+    const addMusicRequested = useTevoxi ? false : addMusic;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
     let engine = engineBtn ? engineBtn.dataset.value : "wan2";
     if (duration > 10 && engine !== "grok") {
@@ -1809,8 +1822,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 prompt,
                 duration,
                 aspect_ratio: aspect,
-                generate_audio: addMusic || addNarration,
-                add_music: addMusic,
+                generate_audio: addMusicRequested || addNarration || !!selectedTevoxiSong,
+                add_music: addMusicRequested,
                 add_narration: addNarration,
                 narration_text: narrationText,
                 narration_voice: narrationVoice,
@@ -1818,6 +1831,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 image_upload_id: imageUploadId,
                 image_upload_ids: imageUploadIds,
                 engine: engine,
+                audio_url: selectedTevoxiSong ? (selectedTevoxiSong.audio_url || "") : "",
+                lyrics: selectedTevoxiSong ? (selectedTevoxiSong.lyrics || "") : "",
                 prompt_optimized: scriptData.promptOptimized || false,
                 realistic_style: realisticStyle || "",
                 interaction_persona: interactionPersona,
@@ -1950,6 +1965,12 @@ function resetCreateWizard() {
     if (bgmToggle) bgmToggle.checked = true;
     const bgmUploadArea = document.getElementById("script-bgm-upload-area");
     if (bgmUploadArea) bgmUploadArea.hidden = false;
+    _scriptSelectedSong = null;
+    const scriptTevoxiCb = document.getElementById("script-realistic-tevoxi");
+    if (scriptTevoxiCb) scriptTevoxiCb.checked = false;
+    const scriptTevoxiPanel = document.getElementById("script-tevoxi-panel");
+    if (scriptTevoxiPanel) scriptTevoxiPanel.hidden = true;
+    _renderScriptTevoxiSongs();
 
     // Reset photo upload
     scriptPhotos = [];
@@ -5750,6 +5771,63 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /* ── Tevoxi Song Selection (for Realistic + Tevoxi music) ── */
+
+function toggleScriptTevoxiSongs() {
+    const checked = document.getElementById("script-realistic-tevoxi")?.checked;
+    const panel = document.getElementById("script-tevoxi-panel");
+    if (panel) panel.hidden = !checked;
+    if (checked) _loadScriptTevoxiSongsIfNeeded();
+    if (checked) {
+        const musicCb = document.getElementById("script-realistic-music");
+        if (musicCb) musicCb.checked = false;
+    }
+}
+
+async function _loadScriptTevoxiSongsIfNeeded() {
+    const list = document.getElementById("script-song-list");
+    if (!list) return;
+    if (_scriptTevoxiSongs.length > 0) {
+        _renderScriptTevoxiSongs();
+        return;
+    }
+    list.innerHTML = '<p class="loading">Carregando músicas do Tevoxi...</p>';
+    try {
+        _scriptTevoxiSongs = await api("/automation/tevoxi-songs");
+        _renderScriptTevoxiSongs();
+    } catch (e) {
+        list.innerHTML = `<p class="loading">Erro: ${esc(e.message)}</p>`;
+    }
+}
+
+function _renderScriptTevoxiSongs() {
+    const list = document.getElementById("script-song-list");
+    if (!list) return;
+    if (!_scriptTevoxiSongs.length) {
+        list.innerHTML = '<p class="loading">Nenhuma música encontrada no Tevoxi.</p>';
+        return;
+    }
+    list.innerHTML = _scriptTevoxiSongs.map((s, i) => {
+        const dur = Number(s.duration) > 0 ? _formatDuration(Number(s.duration)) : "";
+        const genres = (Array.isArray(s.genres) ? s.genres : [])
+            .map(g => String(g || "").trim())
+            .filter(Boolean)
+            .join(", ");
+        const meta = [genres, dur].filter(Boolean).join(" · ");
+        const selected = _scriptSelectedSong && _scriptSelectedSong.job_id === s.job_id;
+        return `<button class="auto-song-item${selected ? ' active' : ''}" type="button" onclick="selectScriptTevoxiSong(${i})">
+            <div class="song-info">
+                <strong>${esc(s.title || 'Sem título')}</strong>
+                <span class="muted">${esc(meta || 'Sem detalhes')}</span>
+            </div>
+            <span class="song-check">${selected ? '✓' : ''}</span>
+        </button>`;
+    }).join("");
+}
+
+function selectScriptTevoxiSong(index) {
+    _scriptSelectedSong = _scriptTevoxiSongs[index] || null;
+    _renderScriptTevoxiSongs();
+}
 
 function toggleAutoTevoxiSongs() {
     const checked = document.getElementById("auto-realistic-tevoxi")?.checked;

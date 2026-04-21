@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 180;
+        var REQUIRED_VER = 181;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1261,6 +1261,18 @@
 
                         <div class="form-group realistic-audio-toggle">
                             <label class="toggle-label">
+                                <input type="checkbox" id="script-realistic-tevoxi" onchange="toggleScriptTevoxiSongs()">
+                                <span>Usar música do Tevoxi</span>
+                            </label>
+                        </div>
+                        <div id="script-tevoxi-panel" hidden>
+                            <div id="script-song-list" class="auto-song-list">
+                                <p class="loading">Carregando músicas...</p>
+                            </div>
+                        </div>
+
+                        <div class="form-group realistic-audio-toggle">
+                            <label class="toggle-label">
                                 <input type="checkbox" id="script-realistic-narration">
                                 <span>Adicionar narração</span>
                             </label>
@@ -2273,8 +2285,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-11"></script>
-    <script src="/video/static/pwa.js?v=20260421-11"></script>
+    <script src="/video/static/app.js?v=20260421-12"></script>
+    <script src="/video/static/pwa.js?v=20260421-12"></script>
 </body>
 </html>
 
