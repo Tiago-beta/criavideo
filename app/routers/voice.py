@@ -2,6 +2,7 @@
 Voice Router — Manage voice profiles: built-in voices, custom voice cloning via Fish Audio,
 record/upload samples, set default voice.
 """
+import json
 import os
 import logging
 from pathlib import Path
@@ -47,6 +48,124 @@ class UpdateVoiceProfileRequest(BaseModel):
     name: Optional[str] = None
     tts_instructions: Optional[str] = None
     is_default: Optional[bool] = None
+
+
+class CreateVoiceFromDescriptionRequest(BaseModel):
+    description: str
+    name: str = ""
+    persona_name: str = ""
+    persona_type: str = ""
+    is_default: bool = False
+
+
+def _available_voice_ids() -> set[str]:
+    return {voice["id"] for voice in BUILTIN_VOICES}
+
+
+def _fallback_voice_recipe(description: str, persona_type: str = "") -> dict:
+    text = f"{description} {persona_type}".lower()
+
+    is_feminine = any(token in text for token in ["mulher", "femin", "menina", "senhora", "garota"])
+    is_masculine = any(token in text for token in ["homem", "mascul", "menino", "senhor", "garoto"])
+    is_old = any(token in text for token in ["idos", "velh", "madura", "senior"])
+    is_young = any(token in text for token in ["jovem", "teen", "adolesc", "novo"])
+    is_cheerful = any(token in text for token in ["alegre", "animad", "energi", "extrovert", "feliz"])
+    is_antipathic = any(token in text for token in ["antipatic", "seca", "fria", "ranzinza", "acida", "hostil"])
+    is_narrative = any(token in text for token in ["narrador", "narrativa", "documentario", "story"])
+    is_calm = any(token in text for token in ["calma", "tranquila", "serena", "suave"])
+
+    voice_id = "alloy"
+    if is_narrative:
+        voice_id = "fable"
+    elif is_feminine:
+        if is_cheerful and is_young:
+            voice_id = "shimmer"
+        elif is_old or is_antipathic:
+            voice_id = "coral"
+        else:
+            voice_id = "nova"
+    elif is_masculine:
+        if "grave" in text or is_old:
+            voice_id = "onyx"
+        elif is_cheerful and is_young:
+            voice_id = "echo"
+        else:
+            voice_id = "ash"
+    elif is_calm:
+        voice_id = "sage"
+
+    style_parts = ["Fale em portugues do Brasil com diccao clara e natural."]
+    if is_cheerful:
+        style_parts.append("Tom mais alegre e expressivo, com ritmo dinamico.")
+    if is_antipathic:
+        style_parts.append("Tom mais seco e direto, com pouca simpatia.")
+    if is_old:
+        style_parts.append("Voz madura, ritmo um pouco mais lento e articulacao firme.")
+    if is_young:
+        style_parts.append("Voz mais jovem, leve e energetica.")
+    if "desenho" in text or "cartoon" in text or "anime" in text:
+        style_parts.append("Interpretacao levemente estilizada para personagem de animacao.")
+
+    return {
+        "builtin_voice": voice_id,
+        "tts_instructions": " ".join(style_parts)[:900],
+        "suggested_name": "Voz Gerada IA",
+        "strategy": "fallback",
+    }
+
+
+async def _suggest_voice_recipe(description: str, persona_type: str = "") -> dict:
+    fallback = _fallback_voice_recipe(description, persona_type)
+    if not settings.openai_api_key:
+        return fallback
+
+    allowed_voice_ids = sorted(_available_voice_ids())
+    system_prompt = (
+        "Voce e um diretor de voz para TTS em portugues do Brasil. "
+        "Responda APENAS JSON valido com as chaves: builtin_voice, tts_instructions, suggested_name. "
+        "builtin_voice deve ser uma das opcoes permitidas. "
+        "tts_instructions deve ter no maximo 700 caracteres, objetivo e pratico para dirigir a interpretacao."
+    )
+    user_prompt = (
+        f"Descricao da voz desejada: {description}\n"
+        f"Tipo de persona: {persona_type or 'nao informado'}\n"
+        f"Opcoes de builtin_voice: {', '.join(allowed_voice_ids)}\n"
+        "Escolha a melhor voz base e escreva instrucoes de expressividade coerentes com a descricao."
+    )
+
+    try:
+        response = await _openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.4,
+            max_tokens=500,
+        )
+        payload_raw = (response.choices[0].message.content or "{}").strip()
+        payload = json.loads(payload_raw)
+
+        chosen_voice = str(payload.get("builtin_voice") or "").strip().lower()
+        if chosen_voice not in _available_voice_ids():
+            chosen_voice = fallback["builtin_voice"]
+
+        instructions = str(payload.get("tts_instructions") or "").strip()
+        if not instructions:
+            instructions = fallback["tts_instructions"]
+
+        suggested_name = str(payload.get("suggested_name") or "").strip() or fallback["suggested_name"]
+
+        return {
+            "builtin_voice": chosen_voice,
+            "tts_instructions": instructions[:900],
+            "suggested_name": suggested_name[:80],
+            "strategy": "openai",
+        }
+    except Exception as exc:
+        logger.warning(f"Voice recipe suggestion failed, using fallback: {exc}")
+        return fallback
 
 
 @router.get("/builtin")
@@ -114,6 +233,63 @@ async def create_voice_profile(
     await db.commit()
     await db.refresh(profile)
     return {"id": profile.id, "name": profile.name, "voice_type": profile.voice_type}
+
+
+@router.post("/profiles/from-description")
+async def create_voice_profile_from_description(
+    req: CreateVoiceFromDescriptionRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    description = (req.description or "").strip()
+    if len(description) < 4:
+        raise HTTPException(status_code=400, detail="Descreva melhor a voz (minimo 4 caracteres)")
+    if len(description) > 1800:
+        raise HTTPException(status_code=400, detail="Descricao muito longa (maximo 1800 caracteres)")
+
+    recipe = await _suggest_voice_recipe(description, req.persona_type or "")
+    builtin_voice = str(recipe.get("builtin_voice") or "").strip().lower()
+    if builtin_voice not in _available_voice_ids():
+        builtin_voice = "alloy"
+
+    profile_name = (req.name or "").strip() or (req.persona_name or "").strip() or str(recipe.get("suggested_name") or "").strip() or "Voz Gerada IA"
+
+    if req.is_default:
+        await db.execute(
+            update(VoiceProfile)
+            .where(VoiceProfile.user_id == user["id"])
+            .values(is_default=False)
+        )
+
+    profile = VoiceProfile(
+        user_id=user["id"],
+        name=profile_name[:255],
+        voice_type="builtin",
+        builtin_voice=builtin_voice,
+        tts_instructions=str(recipe.get("tts_instructions") or "")[:2000],
+        is_default=bool(req.is_default),
+    )
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+
+    return {
+        "profile": {
+            "id": profile.id,
+            "name": profile.name,
+            "voice_type": profile.voice_type,
+            "builtin_voice": profile.builtin_voice,
+            "has_custom_voice": bool(profile.openai_voice_id),
+            "tts_instructions": profile.tts_instructions or "",
+            "is_default": profile.is_default,
+        },
+        "strategy": recipe.get("strategy", "fallback"),
+        "provider_info": {
+            "gpt_tts_available": bool(settings.openai_api_key),
+            "fish_requires_sample": True,
+            "elevenlabs_available": bool(getattr(settings, "elevenlabs_api_key", "")),
+        },
+    }
 
 
 @router.put("/profiles/{profile_id}")

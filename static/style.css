@@ -5013,6 +5013,14 @@ th,
     cursor: not-allowed;
 }
 
+.persona-manager-voice-link-row {
+    padding: 0 10px 10px;
+}
+
+.persona-manager-voice-link {
+    width: 100%;
+}
+
 .persona-manager-actions {
     display: flex;
     gap: 6px;
@@ -5044,6 +5052,21 @@ th,
 
 .persona-manager-voice-create-row .input {
     flex: 1;
+}
+
+.persona-voice-builder-body .form-group {
+    margin-bottom: 10px;
+}
+
+.persona-voice-builder-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.persona-voice-builder-tags .btn {
+    border-radius: 999px;
+    padding: 5px 10px;
 }
 
 .persona-reference-preview {

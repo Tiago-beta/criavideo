@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v168 loaded");
+﻿console.log("[CriaVideo] app.js v169 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -48,6 +48,7 @@ let _personaManagerContext = "script";
 let _personaManagerType = "natureza";
 let _personaManagerMulti = false;
 let personaManagerReferenceImageFile = null;
+let _personaVoiceBuilderProfileId = 0;
 const PERSONA_REFERENCE_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const PERSONA_REFERENCE_MAX_SIZE = 10 * 1024 * 1024;
 
@@ -3481,6 +3482,36 @@ function _getPersonaVoiceProfileId(profile) {
     return fromAttrs > 0 ? fromAttrs : 0;
 }
 
+function _getPersonaProfileById(profileId, personaType = "") {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return null;
+    const type = _normalizeRealisticPersonaType(personaType || _personaManagerType);
+    const profiles = _getPersonaProfiles(type);
+    return profiles.find((item) => (parseInt(item?.id || "0", 10) || 0) === pid) || null;
+}
+
+function _buildPersonaVoiceDescriptionSeed(profile) {
+    if (!profile || typeof profile !== "object") return "";
+    const type = _normalizeRealisticPersonaType(profile.persona_type || _personaManagerType);
+    const attrs = (profile.attributes && typeof profile.attributes === "object") ? profile.attributes : {};
+    const hints = [];
+
+    if (type === "homem") hints.push("homem adulto");
+    else if (type === "mulher") hints.push("mulher adulta");
+    else if (type === "crianca") hints.push("crianca");
+    else if (type === "familia") hints.push("personagem familiar");
+    else if (type === "natureza") hints.push(`personagem natureza ${attrs.subtipo || ""}`.trim());
+    else if (type === "desenho") hints.push(`personagem desenho ${_formatDrawingStyleLabel(attrs.estilo_desenho, attrs.estilo_desenho_custom)}`.trim());
+    else if (type === "personalizado") hints.push("personagem personalizado");
+
+    [attrs.idade_aparente, attrs.expressao, attrs.descricao_persona, attrs.descricao_extra]
+        .map((value) => String(value || "").trim())
+        .filter((value) => !!value)
+        .forEach((value) => hints.push(value));
+
+    return hints.filter(Boolean).slice(0, 6).join(", ");
+}
+
 function _getVoiceProfileNameById(voiceProfileId) {
     const pid = parseInt(voiceProfileId || "0", 10) || 0;
     if (!pid) return "Sem voz";
@@ -3589,6 +3620,9 @@ function _renderPersonaManagerList() {
                         title="Ouvir prévia da voz"
                         ${voicePlayDisabled ? "disabled" : ""}>▶</button>
                 </div>
+                <div class="persona-manager-voice-link-row">
+                    <button class="btn btn-secondary btn-sm persona-manager-voice-link" type="button" onclick="openPersonaVoiceBuilder(${pid})">Vincular voz por descrição</button>
+                </div>
                 <div class="persona-manager-actions">
                     <button class="btn btn-secondary btn-sm" type="button" onclick="${useActionHandler}">${useActionLabel}</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="setDefaultPersonaFromManager(${pid})">Padrao</button>
@@ -3650,6 +3684,142 @@ async function previewPersonaCreateVoice() {
         return;
     }
     await previewVoice(voiceProfileId);
+}
+
+function openPersonaVoiceBuilder(profileId) {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return;
+
+    const profile = _getPersonaProfileById(pid, _personaManagerType);
+    if (!profile) {
+        alert("Persona nao encontrada.");
+        return;
+    }
+
+    _personaVoiceBuilderProfileId = pid;
+    const titleEl = document.getElementById("persona-voice-builder-title");
+    if (titleEl) {
+        titleEl.textContent = `Criar voz para ${profile.name || "persona"}`;
+    }
+
+    const hiddenProfileId = document.getElementById("persona-voice-builder-profile-id");
+    if (hiddenProfileId) hiddenProfileId.value = String(pid);
+
+    const nameEl = document.getElementById("persona-voice-builder-name");
+    if (nameEl) {
+        const suggestedName = `Voz ${profile.name || "Persona"}`;
+        nameEl.value = suggestedName.slice(0, 80);
+    }
+
+    const descriptionEl = document.getElementById("persona-voice-builder-description");
+    if (descriptionEl) {
+        descriptionEl.value = _buildPersonaVoiceDescriptionSeed(profile);
+    }
+
+    const statusEl = document.getElementById("persona-voice-builder-status");
+    if (statusEl) {
+        statusEl.textContent = "Descreva o estilo da voz (ex: mulher, jovem, alegre).";
+    }
+
+    openModal("modal-persona-voice-builder");
+}
+
+function addPersonaVoiceTrait(trait) {
+    const value = String(trait || "").trim();
+    if (!value) return;
+
+    const descriptionEl = document.getElementById("persona-voice-builder-description");
+    if (!descriptionEl) return;
+
+    const current = String(descriptionEl.value || "").trim();
+    const parts = current ? current.split(",").map((item) => item.trim()).filter(Boolean) : [];
+    const exists = parts.some((item) => item.toLowerCase() === value.toLowerCase());
+    if (!exists) {
+        parts.push(value);
+        descriptionEl.value = parts.join(", ");
+    }
+    descriptionEl.focus();
+}
+
+async function createPersonaVoiceFromDescription() {
+    const profileIdInput = document.getElementById("persona-voice-builder-profile-id");
+    const pid = parseInt(profileIdInput?.value || _personaVoiceBuilderProfileId || "0", 10) || 0;
+    if (!pid) {
+        alert("Persona invalida para vincular voz.");
+        return;
+    }
+
+    const nameEl = document.getElementById("persona-voice-builder-name");
+    const descriptionEl = document.getElementById("persona-voice-builder-description");
+    const statusEl = document.getElementById("persona-voice-builder-status");
+    const saveBtn = document.getElementById("persona-voice-builder-save");
+
+    const name = String(nameEl?.value || "").trim();
+    const description = String(descriptionEl?.value || "").trim();
+
+    if (description.length < 4) {
+        alert("Descreva melhor a voz (minimo 4 caracteres).");
+        return;
+    }
+
+    const personaProfile = _getPersonaProfileById(pid, _personaManagerType);
+    const personaName = String(personaProfile?.name || "").trim();
+
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Gerando...";
+    }
+    if (statusEl) {
+        statusEl.textContent = "Gerando voz por descricao com IA...";
+    }
+
+    try {
+        const response = await api("/voice/profiles/from-description", {
+            method: "POST",
+            body: JSON.stringify({
+                name,
+                description,
+                persona_name: personaName,
+                persona_type: _personaManagerType,
+                is_default: false,
+            }),
+        });
+
+        const voiceProfileId = parseInt(response?.profile?.id || "0", 10) || 0;
+        if (!voiceProfileId) {
+            throw new Error("Nao foi possivel criar o perfil de voz.");
+        }
+
+        await api(`/persona/profiles/${pid}/voice`, {
+            method: "PUT",
+            body: JSON.stringify({ voice_profile_id: voiceProfileId }),
+        });
+
+        await loadVoiceProfiles();
+        await _refreshPersonaManagerList();
+
+        const providerInfo = response?.provider_info || {};
+        if (!providerInfo.gpt_tts_available) {
+            showToast("OpenAI indisponivel: voz criada com perfil base/fallback.", "info");
+        }
+        if (!providerInfo.elevenlabs_available) {
+            showToast("ElevenLabs nao configurado neste servidor.", "info");
+        }
+
+        closeModal("modal-persona-voice-builder");
+        showToast("Voz criada e vinculada a persona.", "success");
+        await previewVoice(voiceProfileId);
+    } catch (error) {
+        if (statusEl) {
+            statusEl.textContent = `Falha: ${error.message}`;
+        }
+        alert(`Erro ao criar voz da persona: ${error.message}`);
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = "Gerar e vincular";
+        }
+    }
 }
 
 function removePersonaReferenceImage() {
@@ -8211,6 +8381,9 @@ window.selectPersonaFromManager = selectPersonaFromManager;
 window.setPersonaVoiceFromManager = setPersonaVoiceFromManager;
 window.previewPersonaVoiceFromManager = previewPersonaVoiceFromManager;
 window.previewPersonaCreateVoice = previewPersonaCreateVoice;
+window.openPersonaVoiceBuilder = openPersonaVoiceBuilder;
+window.addPersonaVoiceTrait = addPersonaVoiceTrait;
+window.createPersonaVoiceFromDescription = createPersonaVoiceFromDescription;
 window.setDefaultPersonaFromManager = setDefaultPersonaFromManager;
 window.deletePersonaFromManager = deletePersonaFromManager;
 window.openVoiceManager = openVoiceManager;
