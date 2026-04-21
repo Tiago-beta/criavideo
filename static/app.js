@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v167 loaded");
+﻿console.log("[CriaVideo] app.js v168 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1150,6 +1150,10 @@ let scriptData = {
 };
 let _scriptTevoxiSongs = []; // cached Tevoxi songs for script realistic mode
 let _scriptSelectedSong = null; // selected Tevoxi song for script realistic mode
+let _scriptSelectedClip = null; // selected clip/full metadata for script mode
+let _wizardTevoxiSongs = []; // cached Tevoxi songs for wizard realistic mode
+let _wizardSelectedSong = null; // selected Tevoxi song for wizard realistic mode
+let _wizardSelectedClip = null; // selected clip/full metadata for wizard mode
 // Step flow arrays for each video type
 const WIZARD_FLOW_NORMAL = [2, 1, 3, 4, 5, 6]; // type, topic, tone, voice, style, details
 const WIZARD_FLOW_REALISTIC = [2, 1, 7]; // type, topic, realistic settings
@@ -1624,7 +1628,9 @@ function initCreateWizard() {
                 if (musicCb) {
                     const useScriptTevoxi = musicCb.id === "script-realistic-music"
                         && (document.getElementById("script-realistic-tevoxi")?.checked || false);
-                    musicCb.checked = useScriptTevoxi ? false : !hasNativeAudio;
+                    const useWizardTevoxi = musicCb.id === "wizard-realistic-music"
+                        && (document.getElementById("wizard-realistic-tevoxi")?.checked || false);
+                    musicCb.checked = (useScriptTevoxi || useWizardTevoxi) ? false : !hasNativeAudio;
                 }
             }
         }
@@ -1716,9 +1722,41 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         prefix = durationSelectorId.startsWith("wizard") ? "wizard" : "script";
     }
 
-    if (!prompt) {
+    const useTevoxi = !!(document.getElementById(`${prefix}-realistic-tevoxi`)?.checked);
+    const selectedTevoxiSong = !useTevoxi
+        ? null
+        : (prefix === "wizard" ? _wizardSelectedSong : _scriptSelectedSong);
+    const selectedTevoxiClip = !useTevoxi
+        ? null
+        : (prefix === "wizard" ? _wizardSelectedClip : _scriptSelectedClip);
+
+    if (useTevoxi && !selectedTevoxiSong) {
+        alert("Selecione uma música do Tevoxi.");
+        return;
+    }
+    if (useTevoxi && !selectedTevoxiClip) {
+        alert("Escolha o trecho da música ou a música inteira.");
+        return;
+    }
+
+    let finalPrompt = String(prompt || "").trim();
+    if (useTevoxi && selectedTevoxiSong && selectedTevoxiClip) {
+        const tevoxiContext = _buildTevoxiPromptContext(selectedTevoxiSong, selectedTevoxiClip);
+        if (prefix === "wizard") {
+            finalPrompt = finalPrompt ? `${finalPrompt}\n\n${tevoxiContext}` : tevoxiContext;
+        } else if (!finalPrompt) {
+            finalPrompt = tevoxiContext;
+        }
+    }
+
+    if (!finalPrompt) {
         alert("Descreva a cena que você quer ver no vídeo.");
         return;
+    }
+
+    let finalTitle = String(title || "").trim();
+    if (!finalTitle && selectedTevoxiSong) {
+        finalTitle = String(selectedTevoxiSong.title || "").trim();
     }
 
     const useScriptPhotosToggle = prefix === "script"
@@ -1739,12 +1777,6 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const aspect = aspectEl ? aspectEl.value : "16:9";
     const musicEl = document.getElementById(musicCheckboxId);
     const addMusic = musicEl ? musicEl.checked : true;
-    const useTevoxi = prefix === "script" && (document.getElementById("script-realistic-tevoxi")?.checked || false);
-    const selectedTevoxiSong = useTevoxi ? _scriptSelectedSong : null;
-    if (useTevoxi && !selectedTevoxiSong) {
-        alert("Selecione uma música do Tevoxi.");
-        return;
-    }
     const addMusicRequested = useTevoxi ? false : addMusic;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
     let engine = engineBtn ? engineBtn.dataset.value : "wan2";
@@ -1838,7 +1870,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         const resp = await api("/video/generate-realistic", {
             method: "POST",
             body: JSON.stringify({
-                prompt,
+                prompt: finalPrompt,
                 duration,
                 aspect_ratio: aspect,
                 generate_audio: addMusicRequested || addNarration || !!selectedTevoxiSong,
@@ -1851,12 +1883,16 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 dialogue_voice_profile_ids: dialogueEnabled ? dialogueVoiceProfileIds : [],
                 dialogue_tone: "informativo",
                 dialogue_duration: dialogueEnabled ? duration : 0,
-                title: title || "",
+                title: finalTitle || "",
                 image_upload_id: imageUploadId,
                 image_upload_ids: imageUploadIds,
                 engine: engine,
                 audio_url: selectedTevoxiSong ? (selectedTevoxiSong.audio_url || "") : "",
-                lyrics: selectedTevoxiSong ? (selectedTevoxiSong.lyrics || "") : "",
+                lyrics: selectedTevoxiSong
+                    ? (selectedTevoxiClip?.lyrics_excerpt || selectedTevoxiSong.lyrics || "")
+                    : "",
+                clip_start: selectedTevoxiClip ? Number(selectedTevoxiClip.clip_start || 0) : 0,
+                clip_duration: selectedTevoxiClip ? Number(selectedTevoxiClip.clip_duration || 0) : 0,
                 prompt_optimized: scriptData.promptOptimized || false,
                 realistic_style: realisticStyle || "",
                 interaction_persona: interactionPersona,
@@ -1990,11 +2026,21 @@ function resetCreateWizard() {
     const bgmUploadArea = document.getElementById("script-bgm-upload-area");
     if (bgmUploadArea) bgmUploadArea.hidden = false;
     _scriptSelectedSong = null;
+    _scriptSelectedClip = null;
+    _wizardSelectedSong = null;
+    _wizardSelectedClip = null;
     const scriptTevoxiCb = document.getElementById("script-realistic-tevoxi");
     if (scriptTevoxiCb) scriptTevoxiCb.checked = false;
     const scriptTevoxiPanel = document.getElementById("script-tevoxi-panel");
     if (scriptTevoxiPanel) scriptTevoxiPanel.hidden = true;
+    const wizardTevoxiCb = document.getElementById("wizard-realistic-tevoxi");
+    if (wizardTevoxiCb) wizardTevoxiCb.checked = false;
+    const wizardTevoxiPanel = document.getElementById("wizard-tevoxi-panel");
+    if (wizardTevoxiPanel) wizardTevoxiPanel.hidden = true;
     _renderScriptTevoxiSongs();
+    _renderWizardTevoxiSongs();
+    _updateScriptTevoxiSelectionUI();
+    _updateWizardTevoxiSelectionUI();
 
     // Reset photo upload
     scriptPhotos = [];
@@ -3953,14 +3999,28 @@ function showAiSuggestPanel() {
         setSelectedRealisticPersona(selectedPersona);
         _refreshPersonaContext("ai", selectedPersona);
     }
+    const hasScriptTevoxiClip = isRealistic
+        && (document.getElementById("script-realistic-tevoxi")?.checked || false)
+        && !!_scriptSelectedSong
+        && !!_scriptSelectedClip;
+
+    const aiHintEl = document.getElementById("ai-suggest-hint");
+    const aiTopicEl = document.getElementById("ai-suggest-topic");
+
     // Adapt AI suggest panel for mode
     document.getElementById("ai-suggest-title").textContent = isRealistic ? "Gerar prompt com IA" : "Gerar roteiro com IA";
-    document.getElementById("ai-suggest-hint").textContent = isRealistic
+    aiHintEl.textContent = isRealistic
         ? "Descreva a cena e escolha a duração para a IA criar um prompt cinematográfico profissional"
         : "Descreva o tema e a IA criara um roteiro completo";
-    document.getElementById("ai-suggest-topic").placeholder = isRealistic
+    aiTopicEl.placeholder = isRealistic
         ? "Ex: uma cachorra adotou um gatinho, produto girando..."
         : "Ex: beneficios da meditacao, como fazer pao caseiro...";
+    if (hasScriptTevoxiClip) {
+        aiHintEl.textContent = "A IA vai analisar o trecho selecionado do Tevoxi para sugerir o roteiro visual.";
+        if (!aiTopicEl.value.trim()) {
+            aiTopicEl.value = _buildTevoxiAiTopicSeed(_scriptSelectedSong, _scriptSelectedClip);
+        }
+    }
     document.getElementById("ai-suggest-tone-group").hidden = isRealistic;
     document.getElementById("ai-suggest-style-group").hidden = !isRealistic;
     document.getElementById("ai-suggest-persona-group").hidden = !isRealistic;
@@ -3977,9 +4037,16 @@ function hideAiSuggestPanel() {
 }
 
 async function generateAiScript() {
-    const topic = document.getElementById("ai-suggest-topic").value.trim();
-    if (!topic) { alert("Digite o tema do vídeo."); return; }
     const isRealistic = scriptData.videoType === "realista";
+    const hasScriptTevoxiClip = isRealistic
+        && (document.getElementById("script-realistic-tevoxi")?.checked || false)
+        && !!_scriptSelectedSong
+        && !!_scriptSelectedClip;
+    let topic = document.getElementById("ai-suggest-topic").value.trim();
+    if (!topic && hasScriptTevoxiClip) {
+        topic = _buildTevoxiAiTopicSeed(_scriptSelectedSong, _scriptSelectedClip);
+    }
+    if (!topic) { alert("Digite o tema do vídeo."); return; }
 
     if (isRealistic) {
         // Generate optimized prompt for the selected engine
@@ -4022,10 +4089,14 @@ async function generateAiScript() {
             stage: `Otimizando prompt ${engineLabel}...`,
         });
         try {
+            const tevoxiContext = hasScriptTevoxiClip
+                ? _buildTevoxiPromptContext(_scriptSelectedSong, _scriptSelectedClip)
+                : "";
+            const topicWithContext = tevoxiContext ? `${topic}\n\n${tevoxiContext}` : topic;
             const result = await api("/video/generate-realistic-prompt", {
                 method: "POST",
                 body: JSON.stringify({
-                    topic,
+                    topic: topicWithContext,
                     style,
                     engine,
                     duration: realisticDuration,
@@ -5942,6 +6013,123 @@ function toggleScriptTevoxiSongs() {
         const musicCb = document.getElementById("script-realistic-music");
         if (musicCb) musicCb.checked = false;
     }
+    _updateScriptTevoxiSelectionUI();
+}
+
+function toggleWizardTevoxiSongs() {
+    const checked = document.getElementById("wizard-realistic-tevoxi")?.checked;
+    const panel = document.getElementById("wizard-tevoxi-panel");
+    if (panel) panel.hidden = !checked;
+    if (checked) _loadWizardTevoxiSongsIfNeeded();
+    if (checked) {
+        const musicCb = document.getElementById("wizard-realistic-music");
+        if (musicCb) musicCb.checked = false;
+    }
+    _updateWizardTevoxiSelectionUI();
+}
+
+function _formatTevoxiClipLabel(song, clip) {
+    if (!song || !clip) return "";
+    const songTitle = String(song.title || "Música").trim() || "Música";
+    const clipDuration = Number(clip.clip_duration || 0);
+    if (clipDuration <= 0) {
+        return `🎵 ${songTitle} · música inteira`;
+    }
+    const clipStart = Math.max(0, Number(clip.clip_start || 0));
+    const clipEnd = clipStart + clipDuration;
+    return `🎵 ${songTitle} · ${_formatDuration(clipStart)} - ${_formatDuration(clipEnd)}`;
+}
+
+function _extractLyricsExcerptForClip(song, clipStart, clipDuration, totalDuration) {
+    const raw = String(song?.lyrics || "").replace(/\s+/g, " ").trim();
+    if (!raw) return "";
+
+    const total = Number(totalDuration || song?.duration || 0);
+    if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(clipDuration) || clipDuration <= 0 || clipDuration >= (total - 0.2)) {
+        return raw.slice(0, 1200);
+    }
+
+    const startRatio = Math.max(0, Math.min(1, Number(clipStart || 0) / total));
+    const endRatio = Math.max(startRatio, Math.min(1, (Number(clipStart || 0) + Number(clipDuration || 0)) / total));
+    let from = Math.max(0, Math.floor(raw.length * startRatio) - 140);
+    let to = Math.min(raw.length, Math.ceil(raw.length * endRatio) + 140);
+
+    if (to <= from) {
+        from = 0;
+        to = Math.min(raw.length, 700);
+    }
+
+    const excerpt = raw.slice(from, to).trim();
+    return excerpt || raw.slice(0, 700);
+}
+
+function _buildTevoxiSelectionPayload(song, clipStart, clipDuration, totalDuration) {
+    const total = Math.max(1, Number(totalDuration || song?.duration || 120));
+    let normalizedStart = Math.max(0, Math.round(Number(clipStart || 0) * 10) / 10);
+    let normalizedDuration = Math.max(0, Math.round(Number(clipDuration || 0) * 10) / 10);
+    const isFull = normalizedDuration <= 0 || normalizedDuration >= (total - 0.2);
+    if (isFull) {
+        normalizedStart = 0;
+        normalizedDuration = 0;
+    }
+
+    return {
+        clip_start: normalizedStart,
+        clip_duration: normalizedDuration,
+        song_duration: Math.round(total * 10) / 10,
+        lyrics_excerpt: _extractLyricsExcerptForClip(song, normalizedStart, isFull ? total : normalizedDuration, total),
+    };
+}
+
+function _buildTevoxiPromptContext(song, clip) {
+    if (!song) return "";
+    const songTitle = String(song.title || "Música").trim() || "Música";
+    const clipDuration = Number(clip?.clip_duration || 0);
+    const clipStart = Math.max(0, Number(clip?.clip_start || 0));
+    const clipInfo = clipDuration > 0
+        ? `Use como referência principal o trecho entre ${_formatDuration(clipStart)} e ${_formatDuration(clipStart + clipDuration)} da música \"${songTitle}\".`
+        : `Use como referência principal a música inteira \"${songTitle}\".`;
+    const excerpt = String(clip?.lyrics_excerpt || "").trim();
+    if (!excerpt) {
+        return clipInfo;
+    }
+    return `${clipInfo} Letra de referência: ${excerpt}`;
+}
+
+function _buildTevoxiAiTopicSeed(song, clip) {
+    if (!song) return "";
+    const baseLabel = _formatTevoxiClipLabel(song, clip).replace(/^🎵\s*/, "").trim();
+    const excerpt = String(clip?.lyrics_excerpt || "").trim();
+    if (excerpt) {
+        return `${baseLabel}. Analise este trecho e sugira um roteiro visual coerente com a letra: ${excerpt.slice(0, 260)}`;
+    }
+    return `${baseLabel}. Sugira um roteiro visual coerente com o ritmo e a emoção da música.`;
+}
+
+function _updateScriptTevoxiSelectionUI() {
+    const summaryEl = document.getElementById("script-tevoxi-selection");
+    if (!summaryEl) return;
+    const enabled = document.getElementById("script-realistic-tevoxi")?.checked || false;
+    if (!enabled || !_scriptSelectedSong || !_scriptSelectedClip) {
+        summaryEl.hidden = true;
+        summaryEl.textContent = "";
+        return;
+    }
+    summaryEl.hidden = false;
+    summaryEl.textContent = _formatTevoxiClipLabel(_scriptSelectedSong, _scriptSelectedClip);
+}
+
+function _updateWizardTevoxiSelectionUI() {
+    const summaryEl = document.getElementById("wizard-tevoxi-selection");
+    if (!summaryEl) return;
+    const enabled = document.getElementById("wizard-realistic-tevoxi")?.checked || false;
+    if (!enabled || !_wizardSelectedSong || !_wizardSelectedClip) {
+        summaryEl.hidden = true;
+        summaryEl.textContent = "";
+        return;
+    }
+    summaryEl.hidden = false;
+    summaryEl.textContent = _formatTevoxiClipLabel(_wizardSelectedSong, _wizardSelectedClip);
 }
 
 async function _loadScriptTevoxiSongsIfNeeded() {
@@ -5987,7 +6175,63 @@ function _renderScriptTevoxiSongs() {
 
 function selectScriptTevoxiSong(index) {
     _scriptSelectedSong = _scriptTevoxiSongs[index] || null;
+    _scriptSelectedClip = null;
     _renderScriptTevoxiSongs();
+    _updateScriptTevoxiSelectionUI();
+    if (_scriptSelectedSong) {
+        openClipSelector("script", _scriptSelectedSong);
+    }
+}
+
+async function _loadWizardTevoxiSongsIfNeeded() {
+    const list = document.getElementById("wizard-song-list");
+    if (!list) return;
+    if (_wizardTevoxiSongs.length > 0) {
+        _renderWizardTevoxiSongs();
+        return;
+    }
+    list.innerHTML = '<p class="loading">Carregando músicas do Tevoxi...</p>';
+    try {
+        _wizardTevoxiSongs = await api("/automation/tevoxi-songs");
+        _renderWizardTevoxiSongs();
+    } catch (e) {
+        list.innerHTML = `<p class="loading">Erro: ${esc(e.message)}</p>`;
+    }
+}
+
+function _renderWizardTevoxiSongs() {
+    const list = document.getElementById("wizard-song-list");
+    if (!list) return;
+    if (!_wizardTevoxiSongs.length) {
+        list.innerHTML = '<p class="loading">Nenhuma música encontrada no Tevoxi.</p>';
+        return;
+    }
+    list.innerHTML = _wizardTevoxiSongs.map((s, i) => {
+        const dur = Number(s.duration) > 0 ? _formatDuration(Number(s.duration)) : "";
+        const genres = (Array.isArray(s.genres) ? s.genres : [])
+            .map(g => String(g || "").trim())
+            .filter(Boolean)
+            .join(", ");
+        const meta = [genres, dur].filter(Boolean).join(" · ");
+        const selected = _wizardSelectedSong && _wizardSelectedSong.job_id === s.job_id;
+        return `<button class="auto-song-item${selected ? ' active' : ''}" type="button" onclick="selectWizardTevoxiSong(${i})">
+            <div class="song-info">
+                <strong>${esc(s.title || 'Sem título')}</strong>
+                <span class="muted">${esc(meta || 'Sem detalhes')}</span>
+            </div>
+            <span class="song-check">${selected ? '✓' : ''}</span>
+        </button>`;
+    }).join("");
+}
+
+function selectWizardTevoxiSong(index) {
+    _wizardSelectedSong = _wizardTevoxiSongs[index] || null;
+    _wizardSelectedClip = null;
+    _renderWizardTevoxiSongs();
+    _updateWizardTevoxiSelectionUI();
+    if (_wizardSelectedSong) {
+        openClipSelector("wizard", _wizardSelectedSong);
+    }
 }
 
 function toggleAutoTevoxiSongs() {
@@ -6072,6 +6316,8 @@ let _clipPreviewRaf = null;
 let _clipPlaying = false;
 let _clipWaveformLoading = false;
 let _clipAudioObjectUrl = "";
+let _clipSelectorContext = "auto";
+let _clipSelectedSong = null;
 
 function _getClipAudioUrl(song) {
     if (!song) return "";
@@ -6201,15 +6447,53 @@ function _stopClipPreview() {
     if (playhead) playhead.style.display = "none";
 }
 
-function openClipSelector() {
-    if (!_autoSelectedSong) {
+function _resolveClipSong(context, songOverride = null) {
+    if (songOverride) return songOverride;
+    if (context === "script") return _scriptSelectedSong;
+    if (context === "wizard") return _wizardSelectedSong;
+    return _autoSelectedSong;
+}
+
+function _getStoredClipSelection(context) {
+    if (context === "script") return _scriptSelectedClip;
+    if (context === "wizard") return _wizardSelectedClip;
+    return null;
+}
+
+function _setClipApplyButtonLabel(context) {
+    const btn = document.getElementById("clip-apply-btn");
+    if (!btn) return;
+    btn.textContent = context === "auto" ? "Adicionar trecho" : "Usar no vídeo";
+}
+
+function openClipSelector(context = "auto", songOverride = null) {
+    const normalizedContext = ["auto", "script", "wizard"].includes(context) ? context : "auto";
+    const song = _resolveClipSong(normalizedContext, songOverride);
+    if (!song) {
         alert("Selecione uma música primeiro.");
         return;
     }
-    const song = _autoSelectedSong;
+
+    _clipSelectorContext = normalizedContext;
+    _clipSelectedSong = song;
+
     _clipSongDuration = Math.max(1, Number(song.duration || 120));
-    _clipStart = 0;
-    _clipDuration = Math.min(20, _clipSongDuration || 20);
+    const stored = _getStoredClipSelection(normalizedContext);
+    if (stored) {
+        _clipStart = Math.max(0, Number(stored.clip_start || 0));
+        const storedDuration = Number(stored.clip_duration || 0);
+        _clipDuration = storedDuration > 0 ? storedDuration : _clipSongDuration;
+    } else {
+        _clipStart = 0;
+        _clipDuration = Math.min(20, _clipSongDuration || 20);
+    }
+    if (_clipDuration > _clipSongDuration) {
+        _clipDuration = _clipSongDuration;
+    }
+    if (_clipStart + _clipDuration > _clipSongDuration) {
+        _clipStart = Math.max(0, _clipSongDuration - _clipDuration);
+    }
+
     _clipPlaying = false;
     _clipAudioBuffer = null;
     _clipWaveformPeaks = [];
@@ -6218,12 +6502,14 @@ function openClipSelector() {
 
     document.getElementById("clip-song-title").textContent = song.title || "Música";
     _updateClipDurationButtons();
+    _setClipApplyButtonLabel(normalizedContext);
     _setClipPlayButton(false);
     openModal("modal-clip-selector");
 
     // Reset duration selection
+    const quickDuration = (_clipDuration >= (_clipSongDuration - 0.2)) ? 0 : Math.round(_clipDuration);
     document.querySelectorAll("#clip-duration-options .duration-option").forEach(b => {
-        b.classList.toggle("selected", b.dataset.value === "20");
+        b.classList.toggle("selected", parseInt(b.dataset.value, 10) === quickDuration);
     });
 
     const audioUrl = _getClipAudioUrl(song);
@@ -6242,6 +6528,8 @@ function closeClipSelector() {
     const audio = document.getElementById("clip-audio");
     if (audio) audio.currentTime = 0;
     _clearClipAudioElementSource();
+    _clipSelectedSong = null;
+    _clipSelectorContext = "auto";
     closeModal("modal-clip-selector");
 }
 
@@ -6388,7 +6676,8 @@ function _drawClipFallbackPeaks() {
     _syncClipCanvasSize();
 
     const numBars = Math.floor(canvas.width / 2);
-    const seedSource = String((_autoSelectedSong && (_autoSelectedSong.job_id || _autoSelectedSong.title)) || "clip");
+    const seedSong = _clipSelectedSong || _resolveClipSong(_clipSelectorContext);
+    const seedSource = String((seedSong && (seedSong.job_id || seedSong.title)) || "clip");
     let seed = 0;
     for (let i = 0; i < seedSource.length; i++) {
         seed += seedSource.charCodeAt(i) * (i + 1);
@@ -6729,9 +7018,46 @@ function toggleClipPreview() {
 }
 
 function addClipToThemes() {
-    if (!_autoSelectedSong) return;
-    const end = Math.min(_clipStart + _clipDuration, _clipSongDuration);
-    const label = `🎵 ${_autoSelectedSong.title} (${_formatDuration(_clipStart)} - ${_formatDuration(end)})`;
+    const song = _clipSelectedSong || _resolveClipSong(_clipSelectorContext);
+    if (!song) return;
+
+    const payload = _buildTevoxiSelectionPayload(song, _clipStart, _clipDuration, _clipSongDuration);
+
+    if (_clipSelectorContext === "script") {
+        _scriptSelectedSong = song;
+        _scriptSelectedClip = payload;
+        _renderScriptTevoxiSongs();
+        _updateScriptTevoxiSelectionUI();
+        closeClipSelector();
+        return;
+    }
+
+    if (_clipSelectorContext === "wizard") {
+        _wizardSelectedSong = song;
+        _wizardSelectedClip = payload;
+        if (!String(wizardData.topic || "").trim()) {
+            const autoTopic = _buildTevoxiAiTopicSeed(song, payload);
+            wizardData.topic = autoTopic;
+            const wizardTopicEl = document.getElementById("wizard-topic");
+            if (wizardTopicEl && !wizardTopicEl.value.trim()) {
+                wizardTopicEl.value = autoTopic;
+            }
+        }
+        _renderWizardTevoxiSongs();
+        _updateWizardTevoxiSelectionUI();
+        closeClipSelector();
+        return;
+    }
+
+    const end = payload.clip_duration > 0
+        ? (payload.clip_start + payload.clip_duration)
+        : Number(song.duration || _clipSongDuration || 0);
+    const label = payload.clip_duration > 0
+        ? `🎵 ${song.title} (${_formatDuration(payload.clip_start)} - ${_formatDuration(end)})`
+        : `🎵 ${song.title} (música inteira)`;
+    const autoClipDuration = payload.clip_duration > 0
+        ? payload.clip_duration
+        : Math.max(1, Number(song.duration || payload.song_duration || 120));
     const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
     const interactionPersona = _normalizeRealisticPersonaType(selectedPersona ? selectedPersona.dataset.persona : "natureza");
     const personaProfileId = _getSelectedPersonaProfileId("auto", interactionPersona);
@@ -6740,13 +7066,13 @@ function addClipToThemes() {
     _autoWizardThemes.push({
         text: label,
         custom_settings: {
-            tevoxi_job_id: _autoSelectedSong.job_id,
-            tevoxi_title: _autoSelectedSong.title,
-            tevoxi_audio_url: _autoSelectedSong.audio_url,
-            tevoxi_lyrics: _autoSelectedSong.lyrics || "",
-            tevoxi_duration: _autoSelectedSong.duration || 120,
-            clip_start: Math.round(_clipStart * 10) / 10,
-            clip_duration: Math.round(_clipDuration * 10) / 10,
+            tevoxi_job_id: song.job_id,
+            tevoxi_title: song.title,
+            tevoxi_audio_url: song.audio_url,
+            tevoxi_lyrics: song.lyrics || "",
+            tevoxi_duration: song.duration || 120,
+            clip_start: payload.clip_start,
+            clip_duration: autoClipDuration,
             interaction_persona: interactionPersona,
             persona_profile_id: personaProfileId,
         },

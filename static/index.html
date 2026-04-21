@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 183;
+        var REQUIRED_VER = 184;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -810,6 +810,18 @@
                                 <span>Adicionar música de fundo</span>
                             </label>
                         </div>
+                        <div class="form-group realistic-audio-toggle">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="wizard-realistic-tevoxi" onchange="toggleWizardTevoxiSongs()">
+                                <span>Usar música do Tevoxi</span>
+                            </label>
+                        </div>
+                        <div id="wizard-tevoxi-panel" class="photo-upload-area" hidden>
+                            <div id="wizard-song-list" class="auto-song-list">
+                                <p class="loading">Carregando músicas...</p>
+                            </div>
+                            <div id="wizard-tevoxi-selection" class="photo-count" hidden></div>
+                        </div>
 
                         <div class="form-group realistic-audio-toggle">
                             <label class="toggle-label">
@@ -979,6 +991,7 @@
                                 <div id="script-song-list" class="auto-song-list">
                                     <p class="loading">Carregando músicas...</p>
                                 </div>
+                                <div id="script-tevoxi-selection" class="photo-count" hidden></div>
                             </div>
                         </div>
 
@@ -2033,7 +2046,7 @@
                 <button class="btn btn-secondary btn-back-icon" type="button" onclick="closeClipSelector()" title="Voltar" aria-label="Voltar">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
                 </button>
-                <button class="btn btn-accent" type="button" onclick="addClipToThemes()">Adicionar trecho</button>
+                <button id="clip-apply-btn" class="btn btn-accent" type="button" onclick="addClipToThemes()">Adicionar trecho</button>
             </div>
         </div>
     </div>
@@ -2298,8 +2311,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-14"></script>
-    <script src="/video/static/pwa.js?v=20260421-14"></script>
+    <script src="/video/static/app.js?v=20260421-15"></script>
+    <script src="/video/static/pwa.js?v=20260421-15"></script>
 </body>
 </html>
 
