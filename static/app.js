@@ -1527,7 +1527,7 @@ function initCreateWizard() {
 
     // Wizard option clicks (event delegation)
     document.getElementById("modal-new-project").addEventListener("click", (e) => {
-        const personaTag = e.target.closest("#wizard-realistic-persona-tags .style-tag, #script-realistic-persona-tags .style-tag");
+        const personaTag = e.target.closest("#wizard-realistic-persona-tags .style-tag, #script-realistic-persona-tags .style-tag, #ai-suggest-persona-tags .style-tag");
         if (personaTag) {
             const group = personaTag.closest(".realistic-inspiration-tags");
             if (group) {
@@ -1954,6 +1954,11 @@ function resetCreateWizard() {
     if (defWizardPersona) defWizardPersona.classList.add("selected");
     const defScriptPersona = document.querySelector('#script-realistic-persona-tags [data-persona="natureza"]');
     if (defScriptPersona) defScriptPersona.classList.add("selected");
+    const defAiPersona = document.querySelector('#ai-suggest-persona-tags [data-persona="natureza"]');
+    if (defAiPersona) {
+        document.querySelectorAll("#ai-suggest-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
+        defAiPersona.classList.add("selected");
+    }
 
     // Load voice profiles into selectors
     loadVoiceProfiles();
@@ -2857,8 +2862,28 @@ function adaptScriptStepForVideoType(videoType) {
     }
 }
 
+function getSelectedRealisticPersona() {
+    const sel = document.querySelector("#script-realistic-persona-tags .style-tag.selected")
+        || document.querySelector("#wizard-realistic-persona-tags .style-tag.selected");
+    return sel ? (sel.dataset.persona || "natureza") : "natureza";
+}
+
+function setSelectedRealisticPersona(persona) {
+    const normalized = persona || "natureza";
+    ["script-realistic-persona-tags", "wizard-realistic-persona-tags", "ai-suggest-persona-tags"].forEach((id) => {
+        const container = document.getElementById(id);
+        if (!container) return;
+        container.querySelectorAll(".style-tag").forEach((tag) => {
+            tag.classList.toggle("selected", tag.dataset.persona === normalized);
+        });
+    });
+}
+
 function showAiSuggestPanel() {
     const isRealistic = scriptData.videoType === "realista";
+    if (isRealistic) {
+        setSelectedRealisticPersona(getSelectedRealisticPersona());
+    }
     // Adapt AI suggest panel for mode
     document.getElementById("ai-suggest-title").textContent = isRealistic ? "Gerar prompt com IA" : "Gerar roteiro com IA";
     document.getElementById("ai-suggest-hint").textContent = isRealistic
@@ -2869,6 +2894,7 @@ function showAiSuggestPanel() {
         : "Ex: beneficios da meditacao, como fazer pao caseiro...";
     document.getElementById("ai-suggest-tone-group").hidden = isRealistic;
     document.getElementById("ai-suggest-style-group").hidden = !isRealistic;
+    document.getElementById("ai-suggest-persona-group").hidden = !isRealistic;
     document.getElementById("ai-suggest-realistic-duration-group").hidden = !isRealistic;
     document.getElementById("ai-suggest-duration-group").hidden = isRealistic;
     document.getElementById("ai-suggest-generate-text").textContent = isRealistic ? "Gerar Prompt" : "Gerar Roteiro";
@@ -2889,6 +2915,9 @@ async function generateAiScript() {
     if (isRealistic) {
         // Generate optimized prompt for the selected engine
         const style = document.getElementById("ai-suggest-style").value;
+        const selectedPersonaBtn = document.querySelector("#ai-suggest-persona-tags .style-tag.selected");
+        const interactionPersona = selectedPersonaBtn ? (selectedPersonaBtn.dataset.persona || "natureza") : "natureza";
+        setSelectedRealisticPersona(interactionPersona);
         const realisticDurationBtn = document.querySelector("#ai-suggest-realistic-duration .duration-option.selected");
         const realisticDuration = realisticDurationBtn ? parseInt(realisticDurationBtn.dataset.value, 10) : 10;
         let engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected") || document.querySelector("#wizard-realistic-engine .engine-option.selected");
@@ -2919,6 +2948,7 @@ async function generateAiScript() {
                     style,
                     engine,
                     duration: realisticDuration,
+                    interaction_persona: interactionPersona,
                     has_reference_image: hasReferenceImage,
                 }),
             });
@@ -6872,6 +6902,8 @@ const _editor = {
 let _editorTimelineDrag = null;
 let _editorTimelineScrub = null;
 let _editorMediaLayerDrag = null;
+let _editorMusicPreviewAudio = null;
+let _editorMusicPreviewWarned = false;
 
 function _editorGenId() { return _editor._nextId++; }
 
@@ -6935,6 +6967,7 @@ function _editorUndo() {
     _editor.redoStack.push(current);
     const snap = JSON.parse(_editor.undoStack.pop());
     Object.assign(_editor, snap);
+    _editorSetMusicPreviewSource(_editor.musicUrl || "");
     _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     _editor.selectedClip = { kind: "", id: "", track: "" };
     _updateUndoRedoBtns();
@@ -6959,6 +6992,7 @@ function _editorRedo() {
     _editor.undoStack.push(current);
     const snap = JSON.parse(_editor.redoStack.pop());
     Object.assign(_editor, snap);
+    _editorSetMusicPreviewSource(_editor.musicUrl || "");
     _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     _editor.selectedClip = { kind: "", id: "", track: "" };
     _updateUndoRedoBtns();
@@ -7051,6 +7085,82 @@ function _editorShouldShowAudioTrack() {
     return Boolean(_editor.musicUrl || _editor._musicFile);
 }
 
+function _editorGetMusicPreviewAudio() {
+    if (!_editorMusicPreviewAudio) {
+        _editorMusicPreviewAudio = new Audio();
+        _editorMusicPreviewAudio.preload = "auto";
+        _editorMusicPreviewAudio.loop = true;
+    }
+    return _editorMusicPreviewAudio;
+}
+
+function _editorSetMusicPreviewSource(url) {
+    const audio = _editorGetMusicPreviewAudio();
+    if (!url) {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+        _editorMusicPreviewWarned = false;
+        return;
+    }
+
+    if (audio.src !== url) {
+        audio.pause();
+        audio.src = url;
+        audio.load();
+    }
+
+    audio.volume = Math.max(0, Math.min(1, (_editor.musicVolume || 0) / 100));
+    _editorMusicPreviewWarned = false;
+}
+
+function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
+    if (!_editorShouldShowAudioTrack() || !_editor.musicUrl) {
+        _editorSetMusicPreviewSource("");
+        return;
+    }
+
+    const audio = _editorGetMusicPreviewAudio();
+    if (!audio.src) {
+        _editorSetMusicPreviewSource(_editor.musicUrl);
+    }
+
+    audio.volume = Math.max(0, Math.min(1, (_editor.musicVolume || 0) / 100));
+
+    let targetTime = Math.max(0, Number(videoTime || 0));
+    const duration = Number(audio.duration || 0);
+    if (Number.isFinite(duration) && duration > 0.05) {
+        targetTime = targetTime % duration;
+    }
+
+    if (Math.abs(Number(audio.currentTime || 0) - targetTime) > 0.25) {
+        try {
+            audio.currentTime = targetTime;
+        } catch (_) {
+            // Ignore seek errors while metadata is not ready.
+        }
+    }
+
+    if (shouldPlay) {
+        if (audio.paused) {
+            const playPromise = audio.play();
+            if (playPromise && typeof playPromise.catch === "function") {
+                playPromise.catch(() => {
+                    if (!_editorMusicPreviewWarned) {
+                        _editorMusicPreviewWarned = true;
+                        showToast("Nao foi possivel tocar a previa do audio externo. O audio sera aplicado na exportacao.", "error");
+                    }
+                });
+            }
+        }
+        return;
+    }
+
+    if (!audio.paused) {
+        audio.pause();
+    }
+}
+
 function _editorCloneVideoSegmentsForAudio() {
     return _editor.videoSegments.map((seg, idx) => ({
         id: `auto-audio-${idx + 1}`,
@@ -7061,6 +7171,7 @@ function _editorCloneVideoSegmentsForAudio() {
 
 function _editorSyncAudioSegmentsWithVideoIfNoExternalAudio() {
     if (_editorShouldShowAudioTrack()) return;
+    _editorSetMusicPreviewSource("");
     _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
     _editor.selectedTracks = ["video"];
     if (_editor.selectedClip.track === "audio" || _editor.selectedClip.kind === "music") {
@@ -7699,6 +7810,7 @@ async function openEditor(projectId) {
         _editor.musicUrl = "";
         _editor._musicFile = null;
         _editor._musicSource = "audio";
+        _editorSetMusicPreviewSource("");
         _editor.musicVolume = 80;
         _editor.originalVolume = 100;
         _editor.filter = "none";
@@ -7743,6 +7855,7 @@ function closeEditor() {
     const video = document.getElementById("editor-video");
     video.pause();
     video.removeAttribute("src");
+    _editorSetMusicPreviewSource("");
     const pp = document.getElementById("editor-props-panel");
     if (pp) {
         pp.classList.remove("open");
@@ -7783,12 +7896,15 @@ function _editorTogglePlay() {
                 video.currentTime = (next || sorted[0]).start;
             }
         }
+        _editorSetMusicPreviewSource(_editor.musicUrl || "");
         video.play();
         _editor.playing = true;
+        _editorSyncMusicPreviewPlayback(video.currentTime, true);
         _editorSyncMediaLayersWithTime(video.currentTime);
     } else {
         video.pause();
         _editor.playing = false;
+        _editorSyncMusicPreviewPlayback(video.currentTime, false);
         _editorSyncMediaLayersWithTime(video.currentTime);
     }
     _updatePlayIcon();
@@ -7810,6 +7926,7 @@ function _editorResetPlaybackToStart() {
     video.pause();
     video.currentTime = 0;
     _editor.playing = false;
+    _editorSyncMusicPreviewPlayback(0, false);
     _updatePlayIcon();
 
     document.getElementById("editor-time-current").textContent = _fmtTime(0);
@@ -7839,6 +7956,7 @@ function _editorTimeUpdate() {
                 const next = sorted.find(seg => seg.start > t);
                 if (next) {
                     video.currentTime = next.start;
+                    _editorSyncMusicPreviewPlayback(next.start, true);
                     return;
                 }
             }
@@ -7851,6 +7969,7 @@ function _editorTimeUpdate() {
     _editorMovePlayhead(t);
     // Draw overlays
     _editorDrawOverlays(t);
+    _editorSyncMusicPreviewPlayback(t, _editor.playing && !video.paused);
     _editorSyncMediaLayersWithTime(t);
 }
 
@@ -7892,6 +8011,7 @@ function _editorSeekByClientX(clientX) {
     document.getElementById("editor-time-current").textContent = _fmtTime(nextTime);
     _editorMovePlayhead(nextTime);
     _editorDrawOverlays(nextTime);
+    _editorSyncMusicPreviewPlayback(nextTime, _editor.playing && !video.paused);
     _editorSyncMediaLayersWithTime(nextTime);
 }
 
@@ -8888,6 +9008,7 @@ function _editorUploadMusic(input) {
     _editor.musicUrl = URL.createObjectURL(file);
     _editor._musicFile = file;
     _editor._musicSource = "audio";
+    _editorSetMusicPreviewSource(_editor.musicUrl);
     if (!_editor.audioSegments.length) {
         _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
     }
@@ -8906,6 +9027,7 @@ function _editorUploadVideoForMusic(input) {
     _editor.musicUrl = URL.createObjectURL(file);
     _editor._musicFile = file;
     _editor._musicSource = "video";
+    _editorSetMusicPreviewSource(_editor.musicUrl);
     if (!_editor.audioSegments.length) {
         _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
     }
@@ -8922,6 +9044,7 @@ function _editorRemoveMusic() {
     _editor.musicUrl = "";
     _editor._musicFile = null;
     _editor._musicSource = "audio";
+    _editorSetMusicPreviewSource("");
     _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     if (_editor.selectedClip.kind === "music") {
         _editor.selectedClip = { kind: "", id: "" };
@@ -8939,6 +9062,8 @@ function _editorSetMusicVolume(val) {
     if (label) label.textContent = _editor.musicVolume + "%";
     const trimLabel = document.getElementById("editor-track-vol-label-audio");
     if (trimLabel) trimLabel.textContent = _editor.musicVolume + "%";
+    const video = document.getElementById("editor-video");
+    _editorSyncMusicPreviewPlayback(Number(video?.currentTime || 0), _editor.playing && !!video && !video.paused);
 }
 window._editorSetMusicVolume = _editorSetMusicVolume;
 
@@ -9355,6 +9480,7 @@ function _editorDeleteSelectedClip() {
         _editor.musicUrl = "";
         _editor._musicFile = null;
         _editor._musicSource = "audio";
+        _editorSetMusicPreviewSource("");
         _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     } else if (selKind === "audio") {
         _editorSetOriginalVolume(0);

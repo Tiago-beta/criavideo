@@ -89,6 +89,49 @@ def _normalize_interaction_persona(value: str) -> str:
     return "natureza"
 
 
+def _build_interaction_persona_instruction(interaction_persona: str) -> str:
+    persona = _normalize_interaction_persona(interaction_persona)
+    if persona == "homem":
+        return (
+            "Inclua um homem em cena interagindo com o ambiente e com a emocao do tema, "
+            "mantendo coerencia narrativa e visual cinematografica."
+        )
+    if persona == "mulher":
+        return (
+            "Inclua uma mulher em cena interagindo com o ambiente e com a emocao do tema, "
+            "mantendo coerencia narrativa e visual cinematografica."
+        )
+    if persona == "crianca":
+        return (
+            "Inclua uma crianca em cena interagindo com o ambiente e com a emocao do tema, "
+            "com linguagem visual sensivel e respeitosa."
+        )
+    if persona == "familia":
+        return (
+            "Inclua uma familia (duas ou mais pessoas) interagindo de forma natural com o ambiente "
+            "e com a emocao do tema."
+        )
+    return (
+        "Priorize natureza viva e inclua obrigatoriamente pelo menos um elemento visual de conexao "
+        "(animal, flor, ave, borboleta ou outro ser vivo natural) em destaque e coerente com o tema."
+    )
+
+
+def _inject_interaction_persona_instruction(prompt: str, interaction_persona: str) -> str:
+    base_prompt = (prompt or "").strip()
+    if not base_prompt:
+        return base_prompt
+
+    instruction = _build_interaction_persona_instruction(interaction_persona)
+    if not instruction:
+        return base_prompt
+
+    if instruction.lower() in base_prompt.lower():
+        return base_prompt
+
+    return f"{base_prompt}\n\n{instruction}"
+
+
 def _cleanup_karaoke_progress_store() -> None:
     if not _karaoke_progress_store:
         return
@@ -1626,6 +1669,7 @@ class GenerateRealisticPromptRequest(BaseModel):
     style: str = "cinematic"
     engine: str = "seedance"
     duration: int = 10
+    interaction_persona: str = "natureza"
     has_reference_image: bool = False
 
 
@@ -1644,7 +1688,9 @@ async def generate_realistic_prompt_endpoint(
     engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "seedance"
     max_dur = 60 if engine == "grok" else 10
     duration = max(1, min(int(req.duration or 10), max_dur))
+    interaction_persona = _normalize_interaction_persona(req.interaction_persona)
     prompt_for_optimizer = _ensure_reference_image_instruction(topic) if req.has_reference_image else topic
+    prompt_for_optimizer = _inject_interaction_persona_instruction(prompt_for_optimizer, interaction_persona)
 
     if engine == "grok":
         from app.services.grok_video import optimize_prompt_for_grok

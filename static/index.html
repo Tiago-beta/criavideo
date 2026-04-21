@@ -1389,6 +1389,17 @@
                             <option value="desenho">Desenho / Sketch</option>
                         </select>
                     </div>
+                    <div class="form-group" id="ai-suggest-persona-group" hidden>
+                        <label>Persona de interacao</label>
+                        <div class="realistic-inspiration-tags" id="ai-suggest-persona-tags">
+                            <button class="style-tag" type="button" data-persona="homem">Homem</button>
+                            <button class="style-tag" type="button" data-persona="mulher">Mulher</button>
+                            <button class="style-tag" type="button" data-persona="crianca">Crianca</button>
+                            <button class="style-tag" type="button" data-persona="familia">Familia</button>
+                            <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
+                        </div>
+                        <small class="pause-hint">A IA vai manter essa persona no contexto da cena.</small>
+                    </div>
                     <div class="form-group" id="ai-suggest-realistic-duration-group" hidden>
                         <label>Duracao do video para o prompt</label>
                         <div class="duration-options" id="ai-suggest-realistic-duration">
@@ -2119,7 +2130,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260420-11"></script>
-    <script src="/video/static/pwa.js?v=20260420-11"></script>
+    <script src="/video/static/app.js?v=20260420-12"></script>
+    <script src="/video/static/pwa.js?v=20260420-12"></script>
 </body>
 </html>
