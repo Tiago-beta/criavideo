@@ -739,7 +739,6 @@ async def generate_persona_image(
 
     has_openai_key = bool((settings.openai_api_key or "").strip())
     has_google_key = bool((settings.google_ai_api_key or "").strip())
-    prefers_google_for_drawing = bool(getattr(settings, "persona_image_prefer_google_for_drawing", True))
 
     if not has_openai_key and not (normalized_type == "desenho" and has_google_key):
         raise RuntimeError("Nenhuma chave de IA configurada para gerar imagem de persona")
@@ -750,28 +749,54 @@ async def generate_persona_image(
     image_size = _pick_persona_image_size(normalized_type, normalized_attrs)
 
     try:
-        used_google = False
+        image_response = None
 
-        # For stylized personas (e.g. 3D drawing), Gemini tends to follow dense art direction better.
-        if normalized_type == "desenho" and prefers_google_for_drawing and has_google_key:
+        if has_openai_key:
             try:
-                google_bytes, google_mime = await asyncio.to_thread(
-                    _generate_with_google_image,
-                    prompt,
-                    image_size,
-                )
-                output_path = output_stem.with_suffix(_mime_to_extension(google_mime, fallback=".png"))
-                output_path.write_bytes(google_bytes)
-                used_google = output_path.exists() and output_path.stat().st_size > 0
+                client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+
+                if reference_image_path:
+                    try:
+                        image_response = await _generate_with_reference_image_edit(
+                            client=client,
+                            reference_image_path=reference_image_path,
+                            prompt=prompt,
+                            image_size=image_size,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Reference-conditioned persona edit failed for user=%s type=%s, using text fallback: %s",
+                            user_id,
+                            normalized_type,
+                            exc,
+                        )
+
+                if image_response is None:
+                    image_response = await client.images.generate(
+                        model=(settings.persona_image_openai_model or "gpt-image-1"),
+                        prompt=prompt[:3800],
+                        size=image_size,
+                    )
             except Exception as exc:
                 logger.info(
-                    "Google persona generation unavailable for user=%s type=%s, falling back to OpenAI: %s",
+                    "OpenAI persona generation failed for user=%s type=%s; trying Google fallback when available: %s",
                     user_id,
                     normalized_type,
                     exc,
                 )
+                image_response = None
 
-        if used_google:
+        if image_response is None and normalized_type == "desenho" and has_google_key:
+            google_bytes, google_mime = await asyncio.to_thread(
+                _generate_with_google_image,
+                prompt,
+                image_size,
+            )
+            output_path = output_stem.with_suffix(_mime_to_extension(google_mime, fallback=".png"))
+            output_path.write_bytes(google_bytes)
+            if not output_path.exists() or output_path.stat().st_size <= 0:
+                raise RuntimeError("Falha ao salvar imagem de persona (fallback Google)")
+
             return {
                 "persona_type": normalized_type,
                 "attributes": normalized_attrs,
@@ -779,34 +804,8 @@ async def generate_persona_image(
                 "image_path": str(output_path),
             }
 
-        if not has_openai_key:
-            raise RuntimeError("OpenAI API key nao configurada para fallback de persona")
-
-        client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
-        image_response = None
-
-        if reference_image_path:
-            try:
-                image_response = await _generate_with_reference_image_edit(
-                    client=client,
-                    reference_image_path=reference_image_path,
-                    prompt=prompt,
-                    image_size=image_size,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Reference-conditioned persona edit failed for user=%s type=%s, using text fallback: %s",
-                    user_id,
-                    normalized_type,
-                    exc,
-                )
-
         if image_response is None:
-            image_response = await client.images.generate(
-                model=(settings.persona_image_openai_model or "gpt-image-1"),
-                prompt=prompt[:3800],
-                size=image_size,
-            )
+            raise RuntimeError("Nao foi possivel gerar a imagem da persona agora")
     except Exception as exc:
         logger.error("Persona image generation failed for user=%s type=%s: %s", user_id, normalized_type, exc)
         raise RuntimeError("Nao foi possivel gerar a imagem da persona agora")
