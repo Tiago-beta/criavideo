@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 187;
+        var REQUIRED_VER = 188;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2343,6 +2343,17 @@
                     <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('antipatica')">antipatica</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('calma')">calma</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('narrativa')">narrativa</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('grave')">grave</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('aguda')">aguda</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('energetica')">energetica</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('seria')">seria</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('carismatica')">carismatica</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('misteriosa')">misteriosa</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('ritmo rapido')">ritmo rapido</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('ritmo lento')">ritmo lento</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('heroi')">heroi</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('vilao')">vilao</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="addPersonaVoiceTrait('sotaque brasileiro')">sotaque brasileiro</button>
                 </div>
                 <p id="persona-voice-builder-status" class="muted" style="margin-top:10px;">Fish Audio exige amostra de voz. Este modal gera voz por descricao usando OpenAI ou ElevenLabs.</p>
             </div>
@@ -2353,8 +2364,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-18"></script>
-    <script src="/video/static/pwa.js?v=20260421-18"></script>
+    <script src="/video/static/app.js?v=20260421-19"></script>
+    <script src="/video/static/pwa.js?v=20260421-19"></script>
 </body>
 </html>
 

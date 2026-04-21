@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v171 loaded");
+﻿console.log("[CriaVideo] app.js v172 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -3817,6 +3817,9 @@ async function createPersonaVoiceFromDescription() {
         }
         if (providerInfo.provider_requested && providerInfo.provider_effective && providerInfo.provider_requested !== providerInfo.provider_effective) {
             showToast(`Provider ajustado automaticamente para ${providerInfo.provider_effective}.`, "info");
+        }
+        if (provider === "elevenlabs" && providerInfo.selected_voice_id && statusEl) {
+            statusEl.textContent = `Voice ID selecionado: ${providerInfo.selected_voice_id}`;
         }
 
         closeModal("modal-persona-voice-builder");

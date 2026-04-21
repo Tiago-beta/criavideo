@@ -5,6 +5,8 @@ record/upload samples, set default voice.
 import json
 import os
 import logging
+import hashlib
+import time
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +14,7 @@ from sqlalchemy import select, update
 from pydantic import BaseModel
 from typing import Optional
 import openai
+import httpx
 
 from app.auth import get_current_user
 from app.database import get_db
@@ -61,12 +64,50 @@ class CreateVoiceFromDescriptionRequest(BaseModel):
 
 
 ELEVENLABS_DEFAULT_VOICES = {
-    "female_bright": "EXAVITQu4vr4xnSDxMaL",  # Bella
-    "female_mature": "MF3mGyEYCl7XYWbV9V6O",  # Elli
-    "male_warm": "ErXwobaYiN019PkySvjV",     # Antoni
-    "male_deep": "pNInz6obpgDQGcFmaJgB",     # Adam
-    "narrator": "TxGEqnHWrfWFTfGW9XjX",      # Josh
+    "female_bright": "EXAVITQu4vr4xnSDxMaL",   # Bella
+    "female_mature": "MF3mGyEYCl7XYWbV9V6O",   # Elli
+    "male_warm": "ErXwobaYiN019PkySvjV",       # Antoni
+    "male_deep": "pNInz6obpgDQGcFmaJgB",       # Adam
+    "narrator": "TxGEqnHWrfWFTfGW9XjX",        # Josh
 }
+
+ELEVENLABS_VOICE_POOLS = {
+    "female_bright": [
+        "EXAVITQu4vr4xnSDxMaL",  # Bella
+        "21m00Tcm4TlvDq8ikWAM",  # Rachel
+        "AZnzlk1XvdvUeBnXmlld",  # Domi
+        "pMsXgVXv3BLzUgSXRplE",  # Serena
+    ],
+    "female_mature": [
+        "MF3mGyEYCl7XYWbV9V6O",  # Elli
+        "21m00Tcm4TlvDq8ikWAM",  # Rachel
+        "AZnzlk1XvdvUeBnXmlld",  # Domi
+    ],
+    "male_warm": [
+        "ErXwobaYiN019PkySvjV",  # Antoni
+        "N2lVS1w4EtoT3dr4eOWO",  # Callum
+        "yoZ06aMxZJJ28mfd3POQ",  # Sam
+        "TxGEqnHWrfWFTfGW9XjX",  # Josh
+    ],
+    "male_deep": [
+        "pNInz6obpgDQGcFmaJgB",  # Adam
+        "VR6AewLTigWG4xSOuka",  # Arnold
+        "2EiwWnXFnvU5JabPnv8n",  # Clyde
+        "JBFqnCBsd6RMkjVDRZzb",  # George
+    ],
+    "narrator": [
+        "TxGEqnHWrfWFTfGW9XjX",  # Josh
+        "JBFqnCBsd6RMkjVDRZzb",  # George
+        "N2lVS1w4EtoT3dr4eOWO",  # Callum
+        "21m00Tcm4TlvDq8ikWAM",  # Rachel
+    ],
+}
+
+_ELEVENLABS_VOICE_CACHE = {
+    "ids": set(),
+    "expires_at": 0.0,
+}
+_ELEVENLABS_VOICE_CACHE_TTL_SECONDS = 300
 
 
 def _available_voice_ids() -> set[str]:
@@ -125,31 +166,124 @@ def _fallback_voice_recipe(description: str, persona_type: str = "") -> dict:
     }
 
 
-def _select_elevenlabs_voice_id(description: str, persona_type: str = "", explicit_voice_id: str = "") -> str:
+def _stable_pick_index(seed_text: str, size: int) -> int:
+    if size <= 1:
+        return 0
+    digest = hashlib.sha256(seed_text.encode("utf-8", errors="ignore")).hexdigest()
+    return int(digest[:8], 16) % size
+
+
+def _dedupe_keep_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        value = str(item or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+async def _list_available_elevenlabs_voice_ids() -> set[str]:
+    api_key = str(getattr(settings, "elevenlabs_api_key", "") or "").strip()
+    if not api_key:
+        return set()
+
+    now = time.time()
+    if _ELEVENLABS_VOICE_CACHE["ids"] and now < float(_ELEVENLABS_VOICE_CACHE["expires_at"]):
+        return set(_ELEVENLABS_VOICE_CACHE["ids"])
+
+    headers = {"xi-api-key": api_key}
+    url = "https://api.elevenlabs.io/v2/voices"
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.get(url, headers=headers, params={"page_size": 100})
+            if response.status_code >= 400:
+                logger.warning("ElevenLabs voices catalog unavailable (%s)", response.status_code)
+                return set()
+            payload = response.json()
+    except Exception as exc:
+        logger.warning("Failed to list ElevenLabs voices: %s", exc)
+        return set()
+
+    voices = payload.get("voices") if isinstance(payload, dict) else []
+    ids: set[str] = set()
+    if isinstance(voices, list):
+        for voice in voices:
+            if not isinstance(voice, dict):
+                continue
+            voice_id = str(voice.get("voice_id") or "").strip()
+            if voice_id:
+                ids.add(voice_id)
+
+    if ids:
+        _ELEVENLABS_VOICE_CACHE["ids"] = set(ids)
+        _ELEVENLABS_VOICE_CACHE["expires_at"] = now + _ELEVENLABS_VOICE_CACHE_TTL_SECONDS
+    return ids
+
+
+def _select_elevenlabs_voice_id(
+    description: str,
+    persona_type: str = "",
+    persona_name: str = "",
+    explicit_voice_id: str = "",
+    available_voice_ids: set[str] | None = None,
+    used_voice_ids: set[str] | None = None,
+) -> str:
     explicit = str(explicit_voice_id or "").strip()
     if explicit:
         return explicit
 
-    text = f"{description} {persona_type}".lower()
+    text = f"{description} {persona_type} {persona_name}".lower()
     is_feminine = any(token in text for token in ["mulher", "femin", "menina", "senhora", "garota"])
     is_masculine = any(token in text for token in ["homem", "mascul", "menino", "senhor", "garoto"])
     is_old = any(token in text for token in ["idos", "velh", "madura", "senior"])
+    is_young = any(token in text for token in ["jovem", "teen", "adolesc", "novo", "nova"])
     is_narrative = any(token in text for token in ["narrador", "narrativa", "documentario", "story"])
     is_cheerful = any(token in text for token in ["alegre", "animad", "energi", "extrovert", "feliz"])
 
     if is_narrative:
-        return ELEVENLABS_DEFAULT_VOICES["narrator"]
-    if is_feminine:
+        pool_key = "narrator"
+    elif is_feminine:
         if is_old:
-            return ELEVENLABS_DEFAULT_VOICES["female_mature"]
-        return ELEVENLABS_DEFAULT_VOICES["female_bright"]
-    if is_masculine:
+            pool_key = "female_mature"
+        elif is_young or is_cheerful:
+            pool_key = "female_bright"
+        else:
+            pool_key = "female_mature"
+    elif is_masculine:
         if "grave" in text or is_old:
-            return ELEVENLABS_DEFAULT_VOICES["male_deep"]
-        if is_cheerful:
-            return ELEVENLABS_DEFAULT_VOICES["male_warm"]
-        return ELEVENLABS_DEFAULT_VOICES["male_deep"]
-    return ELEVENLABS_DEFAULT_VOICES["narrator"]
+            pool_key = "male_deep"
+        elif is_young or is_cheerful:
+            pool_key = "male_warm"
+        else:
+            pool_key = "male_deep"
+    else:
+        pool_key = "narrator"
+
+    candidates = _dedupe_keep_order(ELEVENLABS_VOICE_POOLS.get(pool_key, []))
+    available = set(available_voice_ids or set())
+    if available:
+        filtered = [voice_id for voice_id in candidates if voice_id in available]
+        if filtered:
+            candidates = filtered
+
+    used = set(used_voice_ids or set())
+    unused_candidates = [voice_id for voice_id in candidates if voice_id not in used]
+    effective_candidates = unused_candidates or candidates
+
+    if effective_candidates:
+        seed_text = f"{persona_name}|{description}|{persona_type}|{pool_key}"
+        idx = _stable_pick_index(seed_text, len(effective_candidates))
+        return effective_candidates[idx]
+
+    if available:
+        available_list = sorted(list(available))
+        idx = _stable_pick_index(f"{persona_name}|{description}|{persona_type}", len(available_list))
+        return available_list[idx]
+
+    return ELEVENLABS_DEFAULT_VOICES.get(pool_key, ELEVENLABS_DEFAULT_VOICES["narrator"])
 
 
 async def _suggest_voice_recipe(description: str, persona_type: str = "") -> dict:
@@ -293,7 +427,7 @@ async def create_voice_profile_from_description(
 
     provider_requested = str(req.provider or "elevenlabs").strip().lower()
     if provider_requested not in {"openai", "elevenlabs"}:
-        provider_requested = "openai"
+        provider_requested = "elevenlabs"
 
     elevenlabs_available = bool(getattr(settings, "elevenlabs_api_key", ""))
     if provider_requested == "elevenlabs" and not elevenlabs_available:
@@ -303,12 +437,35 @@ async def create_voice_profile_from_description(
     provider_voice_id = ""
     effective_provider = "openai"
     if provider_requested == "elevenlabs":
+        available_voice_ids = await _list_available_elevenlabs_voice_ids()
+        used_voice_ids: set[str] = set()
+        try:
+            used_result = await db.execute(
+                select(VoiceProfile.openai_voice_id).where(
+                    VoiceProfile.user_id == user["id"],
+                    VoiceProfile.voice_type == "elevenlabs",
+                )
+            )
+            used_rows = used_result.all()
+            used_voice_ids = {
+                str(row[0]).strip()
+                for row in used_rows
+                if row and row[0] and str(row[0]).strip()
+            }
+        except Exception as exc:
+            logger.warning("Could not load used ElevenLabs voices for user %s: %s", user["id"], exc)
+
         voice_type = "elevenlabs"
         provider_voice_id = _select_elevenlabs_voice_id(
             description=description,
             persona_type=req.persona_type or "",
+            persona_name=req.persona_name or req.name or "",
             explicit_voice_id=req.provider_voice_id,
+            available_voice_ids=available_voice_ids,
+            used_voice_ids=used_voice_ids,
         )
+        if available_voice_ids and provider_voice_id not in available_voice_ids:
+            provider_voice_id = sorted(list(available_voice_ids))[0]
         effective_provider = "elevenlabs"
 
     profile_name = (req.name or "").strip() or (req.persona_name or "").strip() or str(recipe.get("suggested_name") or "").strip() or "Voz Gerada IA"
@@ -348,6 +505,7 @@ async def create_voice_profile_from_description(
         "provider_info": {
             "provider_requested": provider_requested,
             "provider_effective": effective_provider,
+            "selected_voice_id": provider_voice_id,
             "gpt_tts_available": bool(settings.openai_api_key),
             "fish_requires_sample": True,
             "elevenlabs_available": elevenlabs_available,
