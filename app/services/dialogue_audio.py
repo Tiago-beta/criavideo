@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import subprocess
+import hashlib
 from pathlib import Path
 
 import openai
@@ -50,6 +51,17 @@ _STYLE_TO_MOOD = {
     "reflective": "reflexivo",
 }
 
+_ELEVENLABS_DIVERSE_VOICES = [
+    "pNInz6obpgDQGcFmaJgB",  # Adam
+    "ErXwobaYiN019PkySvjV",  # Antoni
+    "TxGEqnHWrfWFTfGW9XjX",  # Josh
+    "N2lVS1w4EtoT3dr4eOWO",  # Callum
+    "VR6AewLTigWG4xSOuka",  # Arnold
+    "EXAVITQu4vr4xnSDxMaL",  # Bella
+    "MF3mGyEYCl7XYWbV9V6O",  # Elli
+    "21m00Tcm4TlvDq8ikWAM",  # Rachel
+]
+
 
 def _estimate_turn_count(target_duration: float) -> int:
     duration = max(3.0, float(target_duration or 0.0))
@@ -59,6 +71,37 @@ def _estimate_turn_count(target_duration: float) -> int:
         return 2
     estimated = int(round(duration / 2.6))
     return max(2, min(10, estimated))
+
+
+def _stable_index(seed_text: str, size: int) -> int:
+    if size <= 1:
+        return 0
+    digest = hashlib.sha256(seed_text.encode("utf-8", errors="ignore")).hexdigest()
+    return int(digest[:8], 16) % size
+
+
+def _diversify_elevenlabs_voices(config_by_character: dict[str, dict]) -> None:
+    used_voice_ids: set[str] = set()
+    for character, cfg in config_by_character.items():
+        if str(cfg.get("voice_type") or "") != "elevenlabs":
+            continue
+
+        current_voice = str(cfg.get("voice") or "").strip()
+        if not current_voice:
+            continue
+        if current_voice not in used_voice_ids:
+            used_voice_ids.add(current_voice)
+            continue
+
+        candidates = [voice_id for voice_id in _ELEVENLABS_DIVERSE_VOICES if voice_id not in used_voice_ids]
+        if not candidates:
+            continue
+
+        idx = _stable_index(f"{character}|{current_voice}", len(candidates))
+        replacement = candidates[idx]
+        cfg["voice"] = replacement
+        used_voice_ids.add(replacement)
+        logger.info("Dialogue voice diversified for character '%s': %s -> %s", character, current_voice, replacement)
 
 
 def _normalize_characters(raw_names: list[str] | None, limit: int = 4) -> list[str]:
@@ -248,6 +291,7 @@ async def _resolve_voice_configs(
             "tts_instructions": "",
         }
 
+    _diversify_elevenlabs_voices(config_by_character)
     return config_by_character
 
 
