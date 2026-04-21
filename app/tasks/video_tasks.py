@@ -109,6 +109,10 @@ _REFERENCE_IMAGE_HINT_MARKERS = (
     "foto enviada",
 )
 _INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza"}
+_GROK_IDENTITY_HINT_MARKERS = (
+    "grok identity lock",
+    "close-up identity lock",
+)
 
 
 def _ensure_reference_image_instruction(prompt: str) -> str:
@@ -126,6 +130,25 @@ def _ensure_reference_image_instruction(prompt: str) -> str:
         "Keep the same main subject identity, face traits, hair, colors, and overall visual style from that reference image."
     )
     return f"{base_prompt}\n\n{reference_rule}"
+
+
+def _ensure_grok_identity_lock(prompt: str) -> str:
+    """Add a strict identity lock optimized for Grok close-up fidelity."""
+    base_prompt = (prompt or "").strip()
+    if not base_prompt:
+        return base_prompt
+
+    lowered = base_prompt.lower()
+    if any(marker in lowered for marker in _GROK_IDENTITY_HINT_MARKERS):
+        return base_prompt
+
+    identity_lock = (
+        "GROK IDENTITY LOCK (MANDATORY): Use the reference image as the exact protagonist identity. "
+        "Preserve the same face geometry, eyes, nose, lips, jawline, skin tone, hairline, hair color/style, and age appearance. "
+        "CLOSE-UP IDENTITY LOCK: for close-up shots, keep the exact same face identity with no face swap, no new protagonist, and no major morphing. "
+        "Camera, lighting, action, and environment may change, but identity must remain identical to the reference image."
+    )
+    return f"{base_prompt}\n\n{identity_lock}"
 
 
 def _normalize_interaction_persona(value: str) -> str:
@@ -1183,6 +1206,8 @@ async def run_realistic_video_pipeline(project_id: int):
 
             if has_reference_image:
                 user_prompt = _ensure_reference_image_instruction(user_prompt)
+                if engine == "grok":
+                    user_prompt = _ensure_grok_identity_lock(user_prompt)
                 logger.info("Realistic video: reference-image rule injected into prompt")
 
             duration = int(project.track_duration or 7)
@@ -1228,6 +1253,8 @@ async def run_realistic_video_pipeline(project_id: int):
 
             if has_reference_image:
                 optimized_prompt = _ensure_reference_image_instruction(optimized_prompt)
+                if engine == "grok":
+                    optimized_prompt = _ensure_grok_identity_lock(optimized_prompt)
 
             project.progress = 10
             await db.commit()
@@ -1244,6 +1271,7 @@ async def run_realistic_video_pipeline(project_id: int):
             aspect_ratio = project.aspect_ratio or "16:9"
             generate_audio = not getattr(project, "no_background_music", False)
             scene_reference_path = image_path
+            grok_direct_reference_path = image_path if (image_path and os.path.exists(image_path)) else ""
 
             async def _on_progress(pct, msg):
                 nonlocal project
@@ -1253,8 +1281,9 @@ async def run_realistic_video_pipeline(project_id: int):
                 except Exception:
                     pass
 
-            # Build a scene-locked reference frame with Nano Banana using the exact persona image.
-            if has_reference_image and image_path:
+            # Build a scene-locked reference frame with Nano Banana for engines other than Grok.
+            # Grok max-fidelity mode uses the original persona image directly.
+            if has_reference_image and image_path and engine != "grok":
                 from app.services.scene_generator import generate_scene_image
 
                 try:
@@ -1284,8 +1313,14 @@ async def run_realistic_video_pipeline(project_id: int):
                 except Exception as e:
                     scene_reference_path = image_path
                     logger.warning("Realistic video: Nano Banana scene anchor failed; using original persona image: %s", e)
+            elif engine == "grok" and grok_direct_reference_path:
+                logger.info(
+                    "Realistic video: Grok max-fidelity enabled, using direct persona reference image (%s)",
+                    grok_direct_reference_path,
+                )
 
             if engine == "grok":
+                grok_base_image_path = grok_direct_reference_path or scene_reference_path
                 if duration > 15:
                     # — Grok multi-clip: chain multiple 15s clips for longer videos —
                     from app.services.multi_clip import generate_multi_clip_video
@@ -1296,7 +1331,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         optimized_prompt=optimized_prompt,
                         total_duration=duration,
                         aspect_ratio=aspect_ratio,
-                        image_path=scene_reference_path,
+                        image_path=grok_base_image_path,
                         render_dir=render_dir,
                         on_progress=_on_progress,
                     )
@@ -1306,7 +1341,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     from app.services.scene_generator import generate_scene_image
 
                     await _on_progress(16, "Gerando imagem de referencia...")
-                    grok_image_path = scene_reference_path
+                    grok_image_path = grok_base_image_path
                     if not grok_image_path:
                         img_dir = render_dir / "grok_ref"
                         img_dir.mkdir(parents=True, exist_ok=True)
@@ -1318,7 +1353,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         )
                         logger.info(f"Grok reference image generated: {grok_image_path}")
                     else:
-                        logger.info(f"Grok using uploaded reference image: {grok_image_path}")
+                        logger.info(f"Grok using direct reference image: {grok_image_path}")
 
                     await _on_progress(18, "Iniciando geracao de video Grok...")
                     await generate_video_clip(

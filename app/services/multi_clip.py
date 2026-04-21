@@ -263,6 +263,7 @@ async def generate_multi_clip_video(
         last_clip_dur += max_per_clip
 
     logger.info(f"Multi-clip: {total_duration}s -> {num_segments} segments (last={last_clip_dur}s)")
+    base_reference_image = image_path if (image_path and os.path.exists(image_path)) else ""
 
     if on_progress:
         await on_progress(16, f"Planejando {num_segments} cenas...")
@@ -279,10 +280,15 @@ async def generate_multi_clip_video(
     continuity_lock = (
         "\n\nCONTINUITY LOCK: Keep EXACTLY the same main characters, face traits, wardrobe colors, "
         "body type, age, and relationship context across every scene. Do not introduce a new protagonist."
+        "\nCLOSE-UP IDENTITY LOCK: keep the exact same face identity in close-up shots with no face swap and no facial morphing."
     )
     for i, sp in enumerate(scene_prompts):
         dur = last_clip_dur if i == num_segments - 1 else max_per_clip
-        opt = await optimize_prompt_for_grok(user_description=f"{sp}{continuity_lock}", duration=dur)
+        opt = await optimize_prompt_for_grok(
+            user_description=f"{sp}{continuity_lock}",
+            duration=dur,
+            has_reference_image=bool(base_reference_image),
+        )
         optimized_scenes.append(opt)
         logger.info(f"Scene {i+1}/{num_segments} prompt optimized ({len(opt)} chars)")
 
@@ -293,7 +299,6 @@ async def generate_multi_clip_video(
     # This ensures character/setting consistency across the entire video
     img_dir = clips_dir / "ref_images"
     img_dir.mkdir(parents=True, exist_ok=True)
-    base_reference_image = image_path if (image_path and os.path.exists(image_path)) else ""
 
     ref_images = []
     for i in range(num_segments):
