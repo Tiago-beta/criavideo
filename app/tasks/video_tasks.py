@@ -106,12 +106,15 @@ _REFERENCE_IMAGE_HINT_MARKERS = (
     "user-provided image",
     "first frame",
     "imagem de referencia",
+    "regra obrigatoria de imagem de referencia",
     "foto enviada",
 )
 _INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"}
 _GROK_IDENTITY_HINT_MARKERS = (
     "grok identity lock",
     "close-up identity lock",
+    "trava de identidade grok",
+    "trava de close-up",
 )
 
 
@@ -126,8 +129,8 @@ def _ensure_reference_image_instruction(prompt: str) -> str:
         return base_prompt
 
     reference_rule = (
-        "Mandatory reference image rule: use the uploaded user image as the primary visual anchor. "
-        "Keep the same main subject identity, face traits, hair, colors, and overall visual style from that reference image."
+        "REGRA OBRIGATORIA DE IMAGEM DE REFERENCIA: use a imagem enviada como ancora visual principal. "
+        "Mantenha a mesma identidade do sujeito, tracos de rosto, cabelo, paleta de cores e estilo visual geral da referencia."
     )
     return f"{base_prompt}\n\n{reference_rule}"
 
@@ -143,10 +146,10 @@ def _ensure_grok_identity_lock(prompt: str) -> str:
         return base_prompt
 
     identity_lock = (
-        "GROK IDENTITY LOCK (MANDATORY): Use the reference image as the exact protagonist identity. "
-        "Preserve the same face geometry, eyes, nose, lips, jawline, skin tone, hairline, hair color/style, and age appearance. "
-        "CLOSE-UP IDENTITY LOCK: for close-up shots, keep the exact same face identity with no face swap, no new protagonist, and no major morphing. "
-        "Camera, lighting, action, and environment may change, but identity must remain identical to the reference image."
+        "TRAVA DE IDENTIDADE GROK (OBRIGATORIA): use a imagem de referencia como identidade exata do protagonista. "
+        "Preserve a mesma geometria facial, olhos, nariz, labios, mandibula, tom de pele, linha e cor do cabelo e idade aparente. "
+        "TRAVA DE CLOSE-UP: em planos fechados, mantenha exatamente o mesmo rosto, sem face swap, sem novo protagonista e sem morphing relevante. "
+        "Camera, iluminacao, acao e ambiente podem mudar, mas a identidade deve permanecer identica a referencia."
     )
     return f"{base_prompt}\n\n{identity_lock}"
 
@@ -1253,6 +1256,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     user_description=user_prompt,
                     duration=duration,
                     has_reference_image=has_reference_image,
+                    tone=realistic_style,
                 )
                 logger.info(f"Grok prompt optimized: {optimized_prompt[:200]}...")
             else:

@@ -14,46 +14,85 @@ settings = get_settings()
 
 XAI_BASE_URL = "https://api.x.ai/v1"
 
-_GROK_SYSTEM_PROMPT = """You are an expert prompt engineer for xAI's grok-imagine-video model.
+_GROK_SYSTEM_PROMPT = """Voce e um engenheiro de prompt especialista no modelo xAI grok-imagine-video.
 
-Your job: convert the user's video description (usually in Brazilian Portuguese) into an optimized prompt for Grok video generation.
+Sua tarefa: converter a descricao do usuario em um prompt otimizado para gerar video no Grok.
 
-RULES:
-1. Output ONLY the final prompt. No explanations, no markdown.
-2. The video is {duration} seconds long.
-3. Describe the visual scene in vivid, cinematic detail: camera movements, lighting, mood, specific actions.
-4. CRITICAL — LANGUAGE: If the scene involves people speaking, narration, dialogue, or any audio with words, ALL speech MUST be in Brazilian Portuguese (pt-BR). Write the dialogue in Portuguese using double quotes.
-   Example: A mulher olha para a camera e diz: "Que dia lindo para passear!"
-5. For sound effects and ambient audio, describe them naturally (birds singing, city noise, rain, etc).
-6. Focus on concrete visual details: colors, textures, motion, physics.
-7. Include camera direction: slow push in, pan, dolly, tracking shot, crane, etc.
-8. Keep the prompt concise but detailed — under 500 words.
-9. Preserve the user's creative intent while enhancing with cinematic quality.
-10. CONTENT SAFETY: Avoid violent, sexual, or controversial content.
-11. If the user says there is a reference image, explicitly anchor the scene to that image and preserve the same subject identity and key visual traits.
-12. CHARACTER CONTINUITY: if the input includes continuation cues (e.g. "Continue from previous scene", "CHARACTER_LOCK", "WORLD_LOCK"), keep those continuity details unchanged and do not alter the main characters.
-13. FACE IDENTITY LOCK: when reference image is provided, preserve exact face identity in close-ups: same facial structure, eye shape, nose, lips, jawline, skin tone, hairline and hair color/style. No face swap or new protagonist."""
+REGRAS:
+1. Responda SOMENTE com o prompt final. Sem explicacoes e sem markdown.
+2. O prompt final deve estar 100% em portugues do Brasil (pt-BR).
+3. Nao use rotulos em ingles como "Style:", "Shot", "Scene", "Lighting" ou "Duration".
+4. O video tem {duration} segundos.
+5. Descreva a cena com riqueza visual cinematografica: camera, luz, ambiente, textura, movimento e acao.
+6. Se houver fala, narracao ou qualquer audio com palavras, todo texto falado deve estar em pt-BR entre aspas duplas.
+7. Sons ambientes e efeitos sonoros devem ser descritos naturalmente (vento, chuva, cidade, natureza etc).
+8. Preserve a intencao criativa do usuario sem mudar o assunto principal.
+9. Mantenha o prompt objetivo e detalhado (ate 500 palavras).
+10. Se houver imagem de referencia, ela e obrigatoria como ancora visual principal. Preserve identidade, rosto, cabelo, tons de pele, idade aparente e estilo geral.
+11. Nao crie um protagonista novo, nao troque rosto e nao faca morphing de identidade.
+12. Se houver sinais de continuidade (ex.: "Continue from previous scene", "CHARACTER_LOCK", "WORLD_LOCK"), preserve esses locks sem alterar os personagens.
+13. Priorize consistencia visual e de identidade em close-up quando houver referencia.
+14. Seguranca de conteudo: evite conteudo sexual, violento ou controverso."""
+
+_PT_BR_REWRITE_SYSTEM_PROMPT = """Reescreva o prompt abaixo para portugues do Brasil (pt-BR) mantendo o mesmo significado visual.
+
+REGRAS:
+1. Responda somente com o prompt final.
+2. Nao use rotulos em ingles (Style, Shot, Scene, Lighting, Duration).
+3. Preserve integralmente locks de identidade/continuidade e restricoes de imagem de referencia.
+4. Nao adicione personagens, objetos centrais ou eventos que nao existam no texto original.
+5. Se houver fala, mantenha as falas em pt-BR entre aspas duplas."""
+
+
+def _looks_like_english_template(prompt: str) -> bool:
+    lower = (prompt or "").lower()
+    english_markers = (
+        "style:",
+        "shot ",
+        "scene ",
+        "lighting",
+        "duration:",
+        "[00:",
+    )
+    return any(marker in lower for marker in english_markers)
 
 
 async def optimize_prompt_for_grok(
     user_description: str,
     duration: int = 7,
     has_reference_image: bool = False,
+    tone: str = "",
 ) -> str:
     """Convert user's description into an optimized Grok video prompt with PT-BR audio."""
     client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
     system = _GROK_SYSTEM_PROMPT.replace("{duration}", str(duration))
     user_msg = user_description
+    style_map = {
+        "cinematic": "cinematografico epico",
+        "commercial": "comercial premium de produto",
+        "meme": "meme viral engracado",
+        "anime": "anime japones",
+        "drama": "drama emotivo",
+        "vfx": "efeitos visuais surrealistas",
+    }
+    normalized_tone = str(tone or "").strip().lower()
+    if normalized_tone:
+        tone_hint = style_map.get(normalized_tone, normalized_tone)
+        user_msg += (
+            "\n\nESTILO VISUAL OBRIGATORIO: "
+            f"{tone_hint}. Preserve este estilo durante todo o prompt."
+        )
+
     if has_reference_image:
         user_msg += (
-            "\n\nMANDATORY REFERENCE IMAGE RULE: The user uploaded a reference image. "
-            "The prompt must preserve the same subject identity and key visual traits from that image. "
-            "CLOSE-UP IDENTITY LOCK: keep exact same face geometry, eyes, nose, lips, jawline, skin tone, hairline, hair color and age appearance. "
-            "Do not introduce a different person or morph the face."
+            "\n\nREGRA OBRIGATORIA DE REFERENCIA: o usuario enviou imagem de referencia. "
+            "O prompt deve preservar a mesma identidade e os mesmos tracos visuais principais dessa imagem. "
+            "TRAVA DE CLOSE-UP: manter exatamente geometria facial, olhos, nariz, labios, mandibula, tom de pele, linha e cor do cabelo e idade aparente. "
+            "Nao introduza protagonista diferente e nao faca morphing de rosto."
         )
 
     # Lower creativity when identity lock is required, so prompt drift is reduced.
-    temperature = 0.35 if has_reference_image else 0.7
+    temperature = 0.20 if has_reference_image else 0.55
 
     try:
         resp = await client.chat.completions.create(
@@ -66,6 +105,20 @@ async def optimize_prompt_for_grok(
             max_tokens=800,
         )
         optimized = resp.choices[0].message.content.strip()
+        if _looks_like_english_template(optimized):
+            rewrite = await client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": _PT_BR_REWRITE_SYSTEM_PROMPT},
+                    {"role": "user", "content": optimized},
+                ],
+                temperature=0.1,
+                max_tokens=900,
+            )
+            rewritten = (rewrite.choices[0].message.content or "").strip()
+            if rewritten:
+                optimized = rewritten
+
         logger.info(f"Grok prompt optimized: {len(optimized)} chars")
         return optimized
     except Exception as e:

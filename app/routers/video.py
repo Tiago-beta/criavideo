@@ -59,6 +59,7 @@ _REFERENCE_IMAGE_HINT_MARKERS = (
     "user-provided image",
     "first frame",
     "imagem de referencia",
+    "regra obrigatoria de imagem de referencia",
     "foto enviada",
 )
 _INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"}
@@ -74,8 +75,8 @@ def _ensure_reference_image_instruction(prompt: str) -> str:
         return base_prompt
 
     reference_rule = (
-        "Mandatory reference image rule: use the uploaded user image as the primary visual anchor. "
-        "Keep the same main subject identity, face traits, hair, colors, and overall visual style from that reference image."
+        "REGRA OBRIGATORIA DE IMAGEM DE REFERENCIA: use a imagem enviada como ancora visual principal. "
+        "Mantenha a mesma identidade do sujeito, tracos de rosto, cabelo, paleta de cores e estilo visual geral da referencia."
     )
     return f"{base_prompt}\n\n{reference_rule}"
 
@@ -1716,6 +1717,7 @@ async def generate_realistic_prompt_endpoint(
             user_description=prompt_for_optimizer,
             duration=duration,
             has_reference_image=req.has_reference_image,
+            tone=req.style,
         )
     else:
         from app.services.seedance_video import optimize_prompt_for_seedance

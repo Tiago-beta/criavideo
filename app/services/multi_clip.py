@@ -16,25 +16,25 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-_SCENE_SPLIT_SYSTEM = """You are a video scene planner for a cinematic video.
+_SCENE_SPLIT_SYSTEM = """Voce e um planejador de cenas para video cinematografico.
 
-Given a video description and the number of segments needed, split it into sequential scene descriptions.
-Each scene must:
-1. Be visually distinct but maintain narrative/visual continuity with the previous scene
-2. Include specific camera movements, lighting, and actions
-3. ALWAYS describe the SAME characters with IDENTICAL physical features (hair color, clothing, body type, age, gender) in EVERY scene — copy the character description verbatim across scenes
-4. Reference the SAME setting/location details when appropriate for continuity
-5. Be written in English (optimized for AI video generation)
-6. Include a note like "Continue from previous scene..." for scenes 2+
-7. Add two continuity lines in every scene:
-    - CHARACTER_LOCK: full cast identity (names, age, hair, clothing, body type) copied verbatim across all scenes
-    - WORLD_LOCK: location, time of day, weather, and mood copied verbatim across all scenes
-8. Be concise but vivid (under 200 words each)
+Dada a descricao do video e o numero de segmentos, divida em descricoes de cena sequenciais.
+Cada cena deve:
+1. Ser visualmente distinta, mas manter continuidade narrativa e visual com a cena anterior
+2. Incluir movimentos de camera, iluminacao e acoes especificas
+3. SEMPRE descrever os MESMOS personagens com tracos fisicos IDENTICOS (cabelo, roupa, biotipo, idade, genero) em TODAS as cenas
+4. Reutilizar os mesmos detalhes de local/ambiente quando fizer sentido para continuidade
+5. Ser escrita em portugues do Brasil (pt-BR)
+6. Incluir nota de continuidade para cenas 2+ (ex.: "Continuacao direta da cena anterior...")
+7. Incluir duas linhas de continuidade em toda cena:
+    - CHARACTER_LOCK: identidade completa do elenco (nome, idade, cabelo, roupa, biotipo) copiada literalmente em todas as cenas
+    - WORLD_LOCK: local, horario, clima e humor copiados literalmente em todas as cenas
+8. Ser concisa e viva (ate 200 palavras por cena)
 
-CRITICAL: The scenes form a continuous story. Every scene MUST keep the same protagonists, same wardrobe colors, and same relationship dynamics. Scene 2+ should feel like a natural continuation of scene 1 with no character drift.
+CRITICO: As cenas formam uma historia continua. Toda cena deve manter os mesmos protagonistas, mesmas cores de figurino e mesma dinamica de relacao, sem drift de personagens.
 
-Output ONLY a JSON array of strings, one per scene. No markdown, no explanation.
-Example for 3 scenes: ["scene 1 description", "scene 2 description", "scene 3 description"]"""
+Saida SOMENTE em JSON array de strings, uma por cena. Sem markdown e sem explicacao.
+Exemplo para 3 cenas: ["descricao da cena 1", "descricao da cena 2", "descricao da cena 3"]"""
 
 
 async def generate_scene_prompts(
@@ -46,12 +46,13 @@ async def generate_scene_prompts(
     client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
 
     user_msg = (
-        f"Total video: {num_segments * duration_per_segment}s split into {num_segments} segments "
-        f"of {duration_per_segment}s each.\n\n"
-        f"Base description:\n{base_prompt}\n\n"
-        "Do not replace or mutate the main characters across scenes. "
-        "Keep a single coherent storyline and preserve context continuity from start to end.\n\n"
-        f"Generate {num_segments} scene descriptions as a JSON array."
+        f"Video total: {num_segments * duration_per_segment}s dividido em {num_segments} segmentos "
+        f"de {duration_per_segment}s cada.\n\n"
+        f"Descricao base:\n{base_prompt}\n\n"
+        "Nao substitua nem altere os personagens principais entre as cenas. "
+        "Mantenha uma unica historia coerente e continuidade de contexto do inicio ao fim.\n\n"
+        "Todas as descricoes e falas devem estar em portugues do Brasil (pt-BR).\n\n"
+        f"Gere {num_segments} descricoes de cena em JSON array."
     )
 
     try:
@@ -61,7 +62,7 @@ async def generate_scene_prompts(
                 {"role": "system", "content": _SCENE_SPLIT_SYSTEM},
                 {"role": "user", "content": user_msg},
             ],
-            temperature=0.7,
+            temperature=0.45,
             max_tokens=2000,
         )
         raw = resp.choices[0].message.content.strip()
@@ -278,9 +279,9 @@ async def generate_multi_clip_video(
     # Optimize each scene prompt for Grok
     optimized_scenes = []
     continuity_lock = (
-        "\n\nCONTINUITY LOCK: Keep EXACTLY the same main characters, face traits, wardrobe colors, "
-        "body type, age, and relationship context across every scene. Do not introduce a new protagonist."
-        "\nCLOSE-UP IDENTITY LOCK: keep the exact same face identity in close-up shots with no face swap and no facial morphing."
+        "\n\nTRAVA DE CONTINUIDADE: mantenha EXATAMENTE os mesmos personagens principais, tracos faciais, "
+        "cores de figurino, biotipo, idade e contexto relacional em todas as cenas. Nao introduza novo protagonista."
+        "\nTRAVA DE CLOSE-UP: mantenha exatamente a mesma identidade facial em planos fechados, sem face swap e sem morphing facial."
     )
     for i, sp in enumerate(scene_prompts):
         dur = last_clip_dur if i == num_segments - 1 else max_per_clip
