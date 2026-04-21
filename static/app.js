@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v162 loaded");
+console.log("[CriaVideo] app.js v163 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -48,6 +48,8 @@ let _personaManagerContext = "script";
 let _personaManagerType = "natureza";
 let _personaManagerMulti = false;
 let personaManagerReferenceImageFile = null;
+const PERSONA_REFERENCE_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const PERSONA_REFERENCE_MAX_SIZE = 10 * 1024 * 1024;
 
 // Simple toast notification
 function showToast(msg, type = "info") {
@@ -3423,24 +3425,22 @@ function removePersonaReferenceImage() {
     personaManagerReferenceImageFile = null;
 }
 
-function handlePersonaReferenceImageSelect(event) {
-    const file = event?.target?.files?.[0] || null;
+function _setPersonaReferenceImage(file) {
     if (!file) {
         removePersonaReferenceImage();
-        return;
+        return false;
     }
 
-    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
-    if (file.type && !allowedTypes.includes(file.type)) {
+    if (file.type && !PERSONA_REFERENCE_ALLOWED_TYPES.includes(file.type)) {
         alert("Formato de imagem nao suportado. Use JPG, PNG ou WEBP.");
         removePersonaReferenceImage();
-        return;
+        return false;
     }
 
-    if ((file.size || 0) > 10 * 1024 * 1024) {
+    if ((file.size || 0) > PERSONA_REFERENCE_MAX_SIZE) {
         alert("Imagem muito grande (max 10MB).");
         removePersonaReferenceImage();
-        return;
+        return false;
     }
 
     personaManagerReferenceImageFile = file;
@@ -3463,6 +3463,29 @@ function handlePersonaReferenceImageSelect(event) {
     if (removeBtn) {
         removeBtn.hidden = false;
     }
+
+    return true;
+}
+
+function handlePersonaReferenceImageSelect(event) {
+    const file = event?.target?.files?.[0] || null;
+    _setPersonaReferenceImage(file);
+}
+
+function handlePersonaReferenceImagePaste(event) {
+    const items = Array.from(event?.clipboardData?.items || []);
+    const imageItem = items.find((item) => item.kind === "file" && (item.type || "").startsWith("image/"));
+    if (!imageItem) {
+        return;
+    }
+
+    const file = imageItem.getAsFile();
+    if (!file) {
+        return;
+    }
+
+    event.preventDefault();
+    _setPersonaReferenceImage(file);
 }
 
 async function openPersonaManager(context = "script") {
@@ -3490,8 +3513,6 @@ async function openPersonaManager(context = "script") {
     if (hairEl) hairEl.value = "";
     const extraEl = document.getElementById("persona-manager-extra");
     if (extraEl) extraEl.value = "";
-    const setDefaultEl = document.getElementById("persona-manager-set-default");
-    if (setDefaultEl) setDefaultEl.checked = false;
     const subtypeEl = document.getElementById("persona-manager-nature-subtype");
     if (subtypeEl) subtypeEl.value = "gato";
     const otherEl = document.getElementById("persona-manager-nature-other");
@@ -3525,7 +3546,6 @@ async function createPersonaFromManager() {
         const drawingOther = (document.getElementById("persona-manager-drawing-other")?.value || "").trim();
         const customDesc = (document.getElementById("persona-manager-custom-desc")?.value || "").trim();
         const extra = (document.getElementById("persona-manager-extra")?.value || "").trim();
-        const setDefault = !!document.getElementById("persona-manager-set-default")?.checked;
 
         const attributes = {};
         if (_personaManagerType === "natureza") {
@@ -3575,7 +3595,6 @@ async function createPersonaFromManager() {
             formData.append("persona_type", _personaManagerType);
             formData.append("name", name);
             formData.append("attributes_json", JSON.stringify(attributes));
-            formData.append("set_default", setDefault ? "true" : "false");
             formData.append("reference_image", personaManagerReferenceImageFile, personaManagerReferenceImageFile.name || "reference.png");
             response = await apiForm("/persona/profiles/from-reference", formData);
         } else {
@@ -3585,7 +3604,6 @@ async function createPersonaFromManager() {
                     persona_type: _personaManagerType,
                     name,
                     attributes,
-                    set_default: setDefault,
                 }),
             });
         }
@@ -7580,6 +7598,7 @@ window.savePersonaVoice = savePersonaVoice;
 window.cancelPersonaPreview = cancelPersonaPreview;
 window.openPersonaManager = openPersonaManager;
 window.handlePersonaReferenceImageSelect = handlePersonaReferenceImageSelect;
+window.handlePersonaReferenceImagePaste = handlePersonaReferenceImagePaste;
 window.removePersonaReferenceImage = removePersonaReferenceImage;
 window.createPersonaFromManager = createPersonaFromManager;
 window.selectPersonaFromManager = selectPersonaFromManager;

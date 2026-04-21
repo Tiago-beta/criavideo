@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260421-09">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260421-10">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 178;
+        var REQUIRED_VER = 179;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2244,7 +2244,7 @@
                 </div>
                 <div class="form-group">
                     <label>Descricao extra (opcional)</label>
-                    <textarea id="persona-manager-extra" class="input" rows="2" placeholder="Ex: luz dourada no fim da tarde, expressao tranquila"></textarea>
+                    <textarea id="persona-manager-extra" class="input" rows="2" placeholder="Ex: luz dourada no fim da tarde, expressao tranquila" onpaste="handlePersonaReferenceImagePaste(event)"></textarea>
                 </div>
                 <div class="form-group">
                     <label>Imagem de referencia (opcional)</label>
@@ -2265,11 +2265,6 @@
                         <button id="persona-manager-reference-remove" class="btn btn-secondary btn-sm" type="button" onclick="removePersonaReferenceImage()" hidden>Remover</button>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>
-                        <input id="persona-manager-set-default" type="checkbox"> Definir como persona padrao
-                    </label>
-                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" type="button" onclick="closeModal('modal-persona-manager')">Fechar</button>
@@ -2278,7 +2273,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-09"></script>
-    <script src="/video/static/pwa.js?v=20260421-09"></script>
+    <script src="/video/static/app.js?v=20260421-10"></script>
+    <script src="/video/static/pwa.js?v=20260421-10"></script>
 </body>
 </html>
