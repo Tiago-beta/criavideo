@@ -827,6 +827,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 color = sub.font_color.lstrip("#") if sub.font_color else "FFFFFF"
                 base_fontsize = max(8, int(sub.font_size or 28))
                 fontsize_expr = f"h*{base_fontsize}/720"
+                outline_width_expr = f"max(2,h*{base_fontsize}*0.08/720)"
+                box_padding_expr = "h*8/720"
                 x_expr = f"(w*{sub.x/100})-tw/2" if sub.x else "(w-tw)/2"
                 y_expr = f"(h*{sub.y/100})-th/2" if sub.y else "h-80"
                 escaped_text = sub.text.replace("'", "'\\\\\\\\''").replace(":", "\\:")
@@ -844,10 +846,10 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 ]
                 if sub.bg_color:
                     bg = sub.bg_color.lstrip("#")[:6] if sub.bg_color.startswith("#") else "000000"
-                    dt_parts.append(f"box=1:boxcolor=0x{bg}@0.6:boxborderw=8")
+                    dt_parts.append(f"box=1:boxcolor=0x{bg}@0.6:boxborderw={box_padding_expr}")
                 if sub.outline_color:
                     border_c = sub.outline_color.lstrip("#")[:6]
-                    dt_parts.append(f"borderw=2:bordercolor=0x{border_c}")
+                    dt_parts.append(f"borderw='{outline_width_expr}':bordercolor=0x{border_c}")
                 dt = ":".join(dt_parts)
                 vfilters.append(dt)
 
