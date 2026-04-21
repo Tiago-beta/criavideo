@@ -20,6 +20,7 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.models import VideoProject, VideoScene, VideoRender, VideoStatus
 from app.config import get_settings
+from app.services.persona_registry import resolve_persona_reference_image
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/video", tags=["video"])
@@ -1735,6 +1736,7 @@ class GenerateRealisticRequest(BaseModel):
     prompt_optimized: bool = False
     realistic_style: str = ""
     interaction_persona: str = "natureza"
+    persona_profile_id: int = 0
 
 
 @router.post("/generate-realistic")
@@ -1758,16 +1760,40 @@ async def generate_realistic_endpoint(
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
         raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1.")
 
-    # Resolve reference image if provided
+    interaction_persona = _normalize_interaction_persona(req.interaction_persona)
+    selected_persona_profile_id = int(req.persona_profile_id or 0)
+
+    # Resolve reference image with precedence: uploaded image > selected persona > default persona
     image_path_str = ""
     if req.image_upload_id:
         resolved = _resolve_temp_file(user["id"], req.image_upload_id, IMAGE_EXTS)
         if not resolved:
             raise HTTPException(status_code=400, detail="Imagem de referencia nao encontrada. Envie a foto novamente.")
         image_path_str = str(resolved)
+    else:
+        try:
+            resolved_persona, persona_image_path = await resolve_persona_reference_image(
+                db=db,
+                user_id=user["id"],
+                persona_type=interaction_persona,
+                persona_profile_id=selected_persona_profile_id,
+                ensure_default=True,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+
+        if not persona_image_path:
+            raise HTTPException(status_code=400, detail="Video realista exige imagem de referencia de persona.")
+
+        image_path_str = str(persona_image_path)
+        if resolved_persona:
+            selected_persona_profile_id = int(resolved_persona.id)
+
     has_reference_image = bool(image_path_str)
-    if has_reference_image:
-        prompt = _ensure_reference_image_instruction(prompt)
+    if not has_reference_image:
+        raise HTTPException(status_code=400, detail="Video realista exige imagem de referencia.")
+
+    prompt = _ensure_reference_image_instruction(prompt)
 
     # Credit check — multi-clip costs more (1 credit per 15s segment)
     from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
@@ -1786,19 +1812,20 @@ async def generate_realistic_endpoint(
     # Narration config stored in tags JSON
     narration_text = (req.narration_text or "").strip() if req.add_narration else ""
     narration_voice = req.narration_voice or "onyx"
-    interaction_persona = _normalize_interaction_persona(req.interaction_persona)
     external_audio_url = (req.audio_url or "").strip()
     external_lyrics = (req.lyrics or "").strip()
     tags_data = {
         "type": "realista",
         "engine": engine,
         "has_reference_image": has_reference_image,
+        "reference_source": "upload" if req.image_upload_id else "persona",
         "add_music": req.add_music or bool(external_audio_url),
         "add_narration": req.add_narration and bool(narration_text),
         "narration_voice": narration_voice,
         "prompt_optimized": bool(req.prompt_optimized),
         "realistic_style": (req.realistic_style or "").strip(),
         "interaction_persona": interaction_persona,
+        "persona_profile_id": 0 if req.image_upload_id else selected_persona_profile_id,
     }
     if external_audio_url:
         tags_data["audio_url"] = external_audio_url

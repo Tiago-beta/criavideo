@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v153 loaded");
+console.log("[CriaVideo] app.js v154 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -20,6 +20,23 @@ let _publishRenderOptions = {};
 let _pendingConnectPlatform = "";
 let _editingSocialAccountId = 0;
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
+
+const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza"];
+const REALISTIC_PERSONA_LABELS = {
+    homem: "Homem",
+    mulher: "Mulher",
+    crianca: "Crianca",
+    familia: "Familia",
+    natureza: "Natureza",
+};
+let _personaProfilesByType = {};
+let _personaSelectionByContext = {
+    wizard: {},
+    script: {},
+    auto: {},
+};
+let _personaManagerContext = "script";
+let _personaManagerType = "natureza";
 
 // Simple toast notification
 function showToast(msg, type = "info") {
@@ -677,6 +694,9 @@ function initDashboard() {
     }
 
     handleSocialCallbackResult();
+    _refreshPersonaContext("wizard", "natureza");
+    _refreshPersonaContext("script", "natureza");
+    _refreshPersonaContext("auto", "natureza");
 
     const hashValue = String(window.location.hash || "").toLowerCase();
     if (hashValue.includes("/social")) {
@@ -1533,6 +1553,15 @@ function initCreateWizard() {
             if (group) {
                 group.querySelectorAll(".style-tag").forEach((t) => t.classList.remove("selected"));
                 personaTag.classList.add("selected");
+
+                const selectedPersona = _normalizeRealisticPersonaType(personaTag.dataset.persona || "natureza");
+                if (group.id === "wizard-realistic-persona-tags") {
+                    _refreshPersonaContext("wizard", selectedPersona);
+                } else if (group.id === "script-realistic-persona-tags") {
+                    _refreshPersonaContext("script", selectedPersona);
+                } else if (group.id === "ai-suggest-persona-tags") {
+                    setSelectedRealisticPersona(selectedPersona);
+                }
             }
         }
 
@@ -1697,7 +1726,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     }
     const engineLabel = engine === "minimax" ? "MiniMax Hailuo" : engine === "wan2" ? "Wan 2.2" : engine === "grok" ? "Grok" : "Seedance 2.0";
     const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
-    const interactionPersona = personaBtn ? (personaBtn.dataset.persona || "") : "natureza";
+    const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
+    let personaProfileId = 0;
 
     // Narration fields
     const narrationEl = document.getElementById(`${prefix}-realistic-narration`);
@@ -1719,6 +1749,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     _startSmoothProgress();
 
     try {
+        personaProfileId = await _ensurePersonaSelection(prefix === "wizard" ? "wizard" : "script", interactionPersona);
+
         // Upload reference image if available
         let imageUploadId = "";
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
@@ -1749,6 +1781,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 prompt_optimized: scriptData.promptOptimized || false,
                 realistic_style: realisticStyle || "",
                 interaction_persona: interactionPersona,
+                persona_profile_id: personaProfileId,
             }),
         });
 
@@ -1959,6 +1992,11 @@ function resetCreateWizard() {
         document.querySelectorAll("#ai-suggest-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
         defAiPersona.classList.add("selected");
     }
+
+    _personaSelectionByContext.wizard = {};
+    _personaSelectionByContext.script = {};
+    _refreshPersonaContext("wizard", "natureza");
+    _refreshPersonaContext("script", "natureza");
 
     // Load voice profiles into selectors
     loadVoiceProfiles();
@@ -2840,6 +2878,11 @@ document.addEventListener("DOMContentLoaded", () => {
             handleUserVideoSelect({ target: { files: [file] } });
         });
     }
+
+    const personaSubtype = document.getElementById("persona-manager-nature-subtype");
+    if (personaSubtype) {
+        personaSubtype.addEventListener("change", _updatePersonaManagerFormByType);
+    }
 });
 
 function adaptScriptStepForVideoType(videoType) {
@@ -2862,6 +2905,323 @@ function adaptScriptStepForVideoType(videoType) {
     }
 }
 
+function _normalizeRealisticPersonaType(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    const mapping = {
+        crianca: "crianca",
+        familia: "familia",
+    };
+    const normalized = mapping[raw] || raw;
+    return REALISTIC_PERSONA_TYPES.includes(normalized) ? normalized : "natureza";
+}
+
+function _getRealisticPersonaTypeByContext(context) {
+    const key = String(context || "script").toLowerCase();
+    let selector = "#script-realistic-persona-tags .style-tag.selected";
+    if (key === "wizard") selector = "#wizard-realistic-persona-tags .style-tag.selected";
+    if (key === "auto") selector = "#auto-realistic-persona-tags .style-tag.selected";
+    const selected = document.querySelector(selector);
+    return _normalizeRealisticPersonaType(selected ? selected.dataset.persona : "natureza");
+}
+
+function _getRealisticPersonaPreviewElement(context) {
+    if (context === "wizard") return document.getElementById("wizard-realistic-persona-preview");
+    if (context === "auto") return document.getElementById("auto-realistic-persona-preview");
+    return document.getElementById("script-realistic-persona-preview");
+}
+
+function _getPersonaProfiles(personaType) {
+    return _personaProfilesByType[_normalizeRealisticPersonaType(personaType)] || [];
+}
+
+async function _loadPersonaProfiles(personaType, ensureDefault = true) {
+    const type = _normalizeRealisticPersonaType(personaType);
+    const query = new URLSearchParams({
+        persona_type: type,
+        ensure_default: ensureDefault ? "true" : "false",
+    });
+    const result = await api(`/persona/profiles?${query.toString()}`);
+    const profiles = Array.isArray(result?.profiles) ? result.profiles : [];
+    _personaProfilesByType[type] = profiles;
+    return profiles;
+}
+
+function _getSelectedPersonaProfileId(context, personaType) {
+    const type = _normalizeRealisticPersonaType(personaType);
+    const ctx = _personaSelectionByContext[context] || {};
+    return parseInt(ctx[type] || "0", 10) || 0;
+}
+
+function _setSelectedPersonaProfileId(context, personaType, profileId) {
+    const type = _normalizeRealisticPersonaType(personaType);
+    if (!_personaSelectionByContext[context]) {
+        _personaSelectionByContext[context] = {};
+    }
+    _personaSelectionByContext[context][type] = parseInt(profileId || "0", 10) || 0;
+}
+
+function _getSelectedPersonaProfile(context, personaType) {
+    const type = _normalizeRealisticPersonaType(personaType);
+    const profiles = _getPersonaProfiles(type);
+    const selectedId = _getSelectedPersonaProfileId(context, type);
+    let selected = profiles.find((profile) => parseInt(profile.id, 10) === selectedId);
+    if (!selected) {
+        selected = profiles.find((profile) => !!profile.is_default) || profiles[0] || null;
+        if (selected) {
+            _setSelectedPersonaProfileId(context, type, selected.id);
+        }
+    }
+    return selected;
+}
+
+function _renderPersonaPreview(context) {
+    const el = _getRealisticPersonaPreviewElement(context);
+    if (!el) return;
+
+    const type = _getRealisticPersonaTypeByContext(context);
+    const profile = _getSelectedPersonaProfile(context, type);
+    if (!profile) {
+        el.innerHTML = '<div class="realistic-persona-empty">Nenhuma persona disponivel para este tipo ainda.</div>';
+        return;
+    }
+
+    const imageHtml = profile.image_url
+        ? `<img class="realistic-persona-thumb" src="${profile.image_url}" alt="Persona ${esc(profile.name || "")}">`
+        : '<div class="realistic-persona-thumb"></div>';
+    const subtitle = profile.is_default ? "Padrao deste tipo" : "Persona personalizada";
+
+    el.innerHTML = `
+        <div class="realistic-persona-card">
+            ${imageHtml}
+            <div class="realistic-persona-meta">
+                <div class="realistic-persona-name">${esc(profile.name || `Persona ${profile.id}`)}</div>
+                <div class="realistic-persona-sub">${esc(subtitle)} - ${esc(REALISTIC_PERSONA_LABELS[type] || type)}</div>
+            </div>
+        </div>
+    `;
+}
+
+async function _refreshPersonaContext(context, forcedPersonaType = "") {
+    const type = _normalizeRealisticPersonaType(forcedPersonaType || _getRealisticPersonaTypeByContext(context));
+    try {
+        await _loadPersonaProfiles(type, true);
+    } catch (error) {
+        const previewEl = _getRealisticPersonaPreviewElement(context);
+        if (previewEl) {
+            previewEl.innerHTML = `<div class="realistic-persona-empty">${esc(error.message || "Falha ao carregar personas")}</div>`;
+        }
+        return;
+    }
+
+    const profiles = _getPersonaProfiles(type);
+    const selectedId = _getSelectedPersonaProfileId(context, type);
+    const hasSelected = profiles.some((profile) => parseInt(profile.id, 10) === selectedId);
+    if (!hasSelected) {
+        const fallback = profiles.find((profile) => !!profile.is_default) || profiles[0] || null;
+        _setSelectedPersonaProfileId(context, type, fallback ? fallback.id : 0);
+    }
+
+    _renderPersonaPreview(context);
+}
+
+function _refreshAllPersonaPreviews() {
+    _renderPersonaPreview("wizard");
+    _renderPersonaPreview("script");
+    _renderPersonaPreview("auto");
+}
+
+async function _ensurePersonaSelection(context, personaType) {
+    const type = _normalizeRealisticPersonaType(personaType);
+    if (!_getPersonaProfiles(type).length) {
+        await _loadPersonaProfiles(type, true);
+    }
+    const selected = _getSelectedPersonaProfile(context, type);
+    return selected ? (parseInt(selected.id, 10) || 0) : 0;
+}
+
+function _updatePersonaManagerFormByType() {
+    const isNature = _personaManagerType === "natureza";
+    const subtypeGroup = document.getElementById("persona-manager-nature-subtype-group");
+    const otherGroup = document.getElementById("persona-manager-nature-other-group");
+    const subtypeEl = document.getElementById("persona-manager-nature-subtype");
+    if (subtypeGroup) subtypeGroup.hidden = !isNature;
+    if (otherGroup) {
+        const isOther = isNature && subtypeEl && subtypeEl.value === "outros";
+        otherGroup.hidden = !isOther;
+    }
+}
+
+function _renderPersonaManagerList() {
+    const listEl = document.getElementById("persona-manager-list");
+    if (!listEl) return;
+
+    const profiles = _getPersonaProfiles(_personaManagerType);
+    if (!profiles.length) {
+        listEl.innerHTML = '<p class="muted">Nenhuma persona criada ainda para este tipo.</p>';
+        return;
+    }
+
+    const selectedId = _getSelectedPersonaProfileId(_personaManagerContext, _personaManagerType);
+    listEl.innerHTML = profiles.map((profile) => {
+        const pid = parseInt(profile.id, 10) || 0;
+        const selectedClass = pid === selectedId ? " selected" : "";
+        const defaultBadge = profile.is_default ? " - Padrao" : "";
+        const imageUrl = profile.image_url || "";
+        const image = imageUrl
+            ? `<img class="persona-manager-photo" src="${imageUrl}" alt="${esc(profile.name || "Persona")}">`
+            : '<div class="persona-manager-photo"></div>';
+
+        return `
+            <div class="persona-manager-card${selectedClass}">
+                ${image}
+                <div class="persona-manager-info">
+                    <div class="persona-manager-name">${esc(profile.name || `Persona ${pid}`)}</div>
+                    <div class="persona-manager-meta">${esc(REALISTIC_PERSONA_LABELS[_personaManagerType] || _personaManagerType)}${esc(defaultBadge)}</div>
+                </div>
+                <div class="persona-manager-actions">
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="selectPersonaFromManager(${pid})">Usar</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="setDefaultPersonaFromManager(${pid})">Padrao</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="deletePersonaFromManager(${pid})">Excluir</button>
+                </div>
+            </div>
+        `;
+    }).join("");
+}
+
+async function _refreshPersonaManagerList() {
+    const listEl = document.getElementById("persona-manager-list");
+    if (listEl) listEl.innerHTML = '<p class="muted">Carregando personas...</p>';
+    try {
+        await _loadPersonaProfiles(_personaManagerType, true);
+        _renderPersonaManagerList();
+        _refreshAllPersonaPreviews();
+    } catch (error) {
+        if (listEl) listEl.innerHTML = `<p class="muted">${esc(error.message || "Falha ao carregar personas")}</p>`;
+    }
+}
+
+async function openPersonaManager(context = "script") {
+    _personaManagerContext = ["wizard", "script", "auto"].includes(context) ? context : "script";
+    _personaManagerType = _getRealisticPersonaTypeByContext(_personaManagerContext);
+
+    const titleEl = document.getElementById("persona-manager-title");
+    if (titleEl) titleEl.textContent = `Gerenciar personas (${REALISTIC_PERSONA_LABELS[_personaManagerType] || _personaManagerType})`;
+
+    const subtitleEl = document.getElementById("persona-manager-subtitle");
+    if (subtitleEl) subtitleEl.textContent = "Escolha ou gere personas para manter o mesmo personagem nos videos realistas.";
+
+    const nameEl = document.getElementById("persona-manager-name");
+    if (nameEl) nameEl.value = "";
+    const extraEl = document.getElementById("persona-manager-extra");
+    if (extraEl) extraEl.value = "";
+    const setDefaultEl = document.getElementById("persona-manager-set-default");
+    if (setDefaultEl) setDefaultEl.checked = false;
+    const subtypeEl = document.getElementById("persona-manager-nature-subtype");
+    if (subtypeEl) subtypeEl.value = "gato";
+    const otherEl = document.getElementById("persona-manager-nature-other");
+    if (otherEl) otherEl.value = "";
+
+    _updatePersonaManagerFormByType();
+    openModal("modal-persona-manager");
+    await _refreshPersonaManagerList();
+}
+
+async function createPersonaFromManager() {
+    const button = document.getElementById("persona-manager-create-btn");
+    if (button) {
+        button.disabled = true;
+        button.textContent = "Gerando...";
+    }
+
+    try {
+        const name = (document.getElementById("persona-manager-name")?.value || "").trim();
+        const extra = (document.getElementById("persona-manager-extra")?.value || "").trim();
+        const setDefault = !!document.getElementById("persona-manager-set-default")?.checked;
+
+        const attributes = {};
+        if (_personaManagerType === "natureza") {
+            const subtype = document.getElementById("persona-manager-nature-subtype")?.value || "gato";
+            attributes.subtipo = subtype;
+            if (subtype === "outros") {
+                const other = (document.getElementById("persona-manager-nature-other")?.value || "").trim();
+                if (other) attributes.outros_texto = other;
+            }
+        }
+        if (extra) {
+            attributes.descricao_extra = extra;
+        }
+
+        const response = await api("/persona/profiles", {
+            method: "POST",
+            body: JSON.stringify({
+                persona_type: _personaManagerType,
+                name,
+                attributes,
+                set_default: setDefault,
+            }),
+        });
+
+        const createdId = parseInt(response?.profile?.id || "0", 10) || 0;
+        if (createdId) {
+            _setSelectedPersonaProfileId(_personaManagerContext, _personaManagerType, createdId);
+        }
+
+        await _refreshPersonaManagerList();
+    } catch (error) {
+        alert(`Erro ao criar persona: ${error.message}`);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = "Gerar nova persona";
+        }
+    }
+}
+
+async function selectPersonaFromManager(profileId) {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return;
+    _setSelectedPersonaProfileId(_personaManagerContext, _personaManagerType, pid);
+    _renderPersonaManagerList();
+    _refreshAllPersonaPreviews();
+}
+
+async function setDefaultPersonaFromManager(profileId) {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return;
+
+    try {
+        await api("/persona/profiles/default", {
+            method: "POST",
+            body: JSON.stringify({ profile_id: pid }),
+        });
+        await _refreshPersonaManagerList();
+        showToast("Persona padrao atualizada.", "success");
+    } catch (error) {
+        alert(`Erro ao definir padrao: ${error.message}`);
+    }
+}
+
+async function deletePersonaFromManager(profileId) {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return;
+    if (!confirm("Excluir esta persona?")) return;
+
+    try {
+        await api(`/persona/profiles/${pid}`, { method: "DELETE" });
+
+        ["wizard", "script", "auto"].forEach((ctx) => {
+            const selectedId = _getSelectedPersonaProfileId(ctx, _personaManagerType);
+            if (selectedId === pid) {
+                _setSelectedPersonaProfileId(ctx, _personaManagerType, 0);
+            }
+        });
+
+        await _refreshPersonaManagerList();
+    } catch (error) {
+        alert(`Erro ao excluir persona: ${error.message}`);
+    }
+}
+
 function getSelectedRealisticPersona() {
     const sel = document.querySelector("#script-realistic-persona-tags .style-tag.selected")
         || document.querySelector("#wizard-realistic-persona-tags .style-tag.selected");
@@ -2869,7 +3229,7 @@ function getSelectedRealisticPersona() {
 }
 
 function setSelectedRealisticPersona(persona) {
-    const normalized = persona || "natureza";
+    const normalized = _normalizeRealisticPersonaType(persona || "natureza");
     ["script-realistic-persona-tags", "wizard-realistic-persona-tags", "ai-suggest-persona-tags"].forEach((id) => {
         const container = document.getElementById(id);
         if (!container) return;
@@ -2877,6 +3237,9 @@ function setSelectedRealisticPersona(persona) {
             tag.classList.toggle("selected", tag.dataset.persona === normalized);
         });
     });
+
+    _refreshPersonaContext("script", normalized);
+    _refreshPersonaContext("wizard", normalized);
 }
 
 function showAiSuggestPanel() {
@@ -4656,6 +5019,8 @@ function openNewAutomationModal() {
     document.querySelectorAll("#auto-realistic-persona-tags .style-tag").forEach(t => t.classList.remove("selected"));
     const defPersona = document.querySelector('#auto-realistic-persona-tags [data-persona="natureza"]');
     if (defPersona) defPersona.classList.add("selected");
+    _personaSelectionByContext.auto = {};
+    _refreshPersonaContext("auto", "natureza");
 
     // reset engine selection
     _setAutoRealisticEngine("minimax");
@@ -4825,6 +5190,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (persona) {
             document.querySelectorAll("#auto-realistic-persona-tags .style-tag").forEach(t => t.classList.remove("selected"));
             persona.classList.add("selected");
+            _refreshPersonaContext("auto", persona.dataset.persona || "natureza");
         }
         // Engine option click
         const eng = e.target.closest("#auto-realistic-engine .engine-option");
@@ -5588,6 +5954,9 @@ function addClipToThemes() {
     if (!_autoSelectedSong) return;
     const end = Math.min(_clipStart + _clipDuration, _clipSongDuration);
     const label = `🎵 ${_autoSelectedSong.title} (${_formatDuration(_clipStart)} - ${_formatDuration(end)})`;
+    const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
+    const interactionPersona = _normalizeRealisticPersonaType(selectedPersona ? selectedPersona.dataset.persona : "natureza");
+    const personaProfileId = _getSelectedPersonaProfileId("auto", interactionPersona);
 
     // Store as object with clip metadata
     _autoWizardThemes.push({
@@ -5600,6 +5969,8 @@ function addClipToThemes() {
             tevoxi_duration: _autoSelectedSong.duration || 120,
             clip_start: Math.round(_clipStart * 10) / 10,
             clip_duration: Math.round(_clipDuration * 10) / 10,
+            interaction_persona: interactionPersona,
+            persona_profile_id: personaProfileId,
         },
     });
     renderAutoWizardThemes();
@@ -5783,6 +6154,14 @@ async function createAutoSchedule() {
         // Collect realistic settings
         const selectedStyle = document.querySelector("#auto-realistic-style-tags .style-tag.selected");
         const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
+        const interactionPersona = _normalizeRealisticPersonaType(selectedPersona ? selectedPersona.dataset.persona : "natureza");
+        let personaProfileId = 0;
+        try {
+            personaProfileId = await _ensurePersonaSelection("auto", interactionPersona);
+        } catch (error) {
+            alert(`Erro ao carregar persona: ${error.message}`);
+            return;
+        }
         const selectedEngine = document.querySelector("#auto-realistic-engine .engine-option.selected");
         const selectedDur = document.querySelector("#auto-realistic-duration .duration-option.selected");
         const useTevoxi = document.getElementById("auto-realistic-tevoxi")?.checked || false;
@@ -5791,7 +6170,8 @@ async function createAutoSchedule() {
 
         defaultSettings = {
             realistic_style: selectedStyle ? selectedStyle.dataset.style : "cinematic",
-            interaction_persona: selectedPersona ? selectedPersona.dataset.persona : "natureza",
+            interaction_persona: interactionPersona,
+            persona_profile_id: personaProfileId,
             engine: useTevoxi ? "grok" : (selectedEngine ? selectedEngine.dataset.value : "minimax"),
             duration: selectedDur ? parseInt(selectedDur.dataset.value) : 7,
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",
@@ -6711,6 +7091,11 @@ window.stopPersonaRecording = stopPersonaRecording;
 window.handlePersonaUpload = handlePersonaUpload;
 window.savePersonaVoice = savePersonaVoice;
 window.cancelPersonaPreview = cancelPersonaPreview;
+window.openPersonaManager = openPersonaManager;
+window.createPersonaFromManager = createPersonaFromManager;
+window.selectPersonaFromManager = selectPersonaFromManager;
+window.setDefaultPersonaFromManager = setDefaultPersonaFromManager;
+window.deletePersonaFromManager = deletePersonaFromManager;
 window.openVoiceManager = openVoiceManager;
 window.showCreateVoiceProfile = showCreateVoiceProfile;
 window.cancelCreateVoiceProfile = cancelCreateVoiceProfile;

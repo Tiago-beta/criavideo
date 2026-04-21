@@ -233,6 +233,22 @@ class VoiceProfile(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class PersonaProfile(Base):
+    __tablename__ = "persona_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    persona_type = Column(String(20), nullable=False, index=True)  # homem|mulher|crianca|familia|natureza
+    name = Column(String(255), nullable=False)
+    attributes = Column(JSON, default=dict)
+    prompt_text = Column(Text, default="")
+    image_path = Column(Text, nullable=False)
+    is_default = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class AutoSchedule(Base):
     __tablename__ = "auto_schedules"
 

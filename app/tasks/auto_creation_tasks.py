@@ -18,6 +18,7 @@ from app.models import (
     AutoSchedule, AutoScheduleTheme, VideoProject, VideoStatus,
     PublishJob, PublishStatus, SocialAccount, VideoRender,
 )
+from app.services.persona_registry import resolve_persona_reference_image
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -779,11 +780,30 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     aspect_ratio = cfg.get("aspect_ratio", "9:16")
     realistic_style = cfg.get("realistic_style", "cinematic")
     interaction_persona = _normalize_interaction_persona(cfg.get("interaction_persona", "natureza"))
+    requested_persona_profile_id = int(cfg.get("persona_profile_id", 0) or 0)
     add_music = cfg.get("add_music", False)
     use_tevoxi = cfg.get("use_tevoxi", False)
     enable_subtitles = cfg.get("enable_subtitles", False)
     subtitle_settings = cfg.get("subtitle_settings") if isinstance(cfg.get("subtitle_settings"), dict) else {}
     tevoxi_lyrics = str(cfg.get("tevoxi_lyrics", "") or "").strip()
+
+    reference_image_path = ""
+    resolved_persona_profile_id = 0
+    async with async_session() as db:
+        try:
+            resolved_persona, reference_image_path = await resolve_persona_reference_image(
+                db=db,
+                user_id=user_id,
+                persona_type=interaction_persona,
+                persona_profile_id=requested_persona_profile_id,
+                ensure_default=True,
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(str(exc))
+        if not reference_image_path:
+            raise RuntimeError("Video realista da automacao exige imagem de referencia de persona")
+        if resolved_persona:
+            resolved_persona_profile_id = int(resolved_persona.id)
 
     # Backend guardrail: Tevoxi realistic automation always uses Grok.
     if use_tevoxi:
@@ -799,6 +819,9 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     tags = {
         "realistic_style": realistic_style,
         "interaction_persona": interaction_persona,
+        "reference_source": "persona",
+        "has_reference_image": True,
+        "persona_profile_id": resolved_persona_profile_id,
     }
     if enable_subtitles and subtitle_settings:
         tags["subtitle_settings"] = subtitle_settings
@@ -850,7 +873,7 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
             title=theme_text[:100],
             description=f"Auto-generated realistic video: {prompt_seed}",
             tags=tags,
-            style_prompt="",
+            style_prompt=reference_image_path,
             aspect_ratio=aspect_ratio,
             track_title=theme_text[:100],
             track_artist="",
@@ -972,7 +995,30 @@ async def _create_musical_short(
     interaction_persona = _normalize_interaction_persona(
         custom_settings.get("interaction_persona") or cfg.get("interaction_persona", "natureza")
     )
+    requested_persona_profile_id = int(
+        custom_settings.get("persona_profile_id")
+        or cfg.get("persona_profile_id")
+        or 0
+    )
     engine = "grok"  # musical shorts are Grok-only
+
+    reference_image_path = ""
+    resolved_persona_profile_id = 0
+    async with async_session() as db:
+        try:
+            resolved_persona, reference_image_path = await resolve_persona_reference_image(
+                db=db,
+                user_id=user_id,
+                persona_type=interaction_persona,
+                persona_profile_id=requested_persona_profile_id,
+                ensure_default=True,
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(str(exc))
+        if not reference_image_path:
+            raise RuntimeError("Short realista exige imagem de referencia de persona")
+        if resolved_persona:
+            resolved_persona_profile_id = int(resolved_persona.id)
 
     if not tevoxi_audio_url:
         raise RuntimeError("URL do audio Tevoxi nao configurada.")
@@ -1106,8 +1152,11 @@ async def _create_musical_short(
                 "segment_audio_path": segment_audio_path,
                 "segment_transcription": segment_transcription,
                 "interaction_persona": interaction_persona,
+                "reference_source": "persona",
+                "has_reference_image": True,
+                "persona_profile_id": resolved_persona_profile_id,
             },
-            style_prompt="",
+            style_prompt=reference_image_path,
             aspect_ratio="9:16",
             track_title=tevoxi_title,
             track_artist="",

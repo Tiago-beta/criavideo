@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260420-09">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260421-01">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 169;
+        var REQUIRED_VER = 170;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -755,6 +755,10 @@
                                 <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
                             </div>
                             <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interacao.</small>
+                            <div id="wizard-realistic-persona-preview" class="realistic-persona-preview"></div>
+                            <div class="realistic-persona-actions">
+                                <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaManager('wizard')">Gerenciar personas</button>
+                            </div>
                         </div>
 
                         <div class="form-group" id="wizard-realistic-engine-group">
@@ -1193,6 +1197,10 @@
                                 <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
                             </div>
                             <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interacao.</small>
+                            <div id="script-realistic-persona-preview" class="realistic-persona-preview"></div>
+                            <div class="realistic-persona-actions">
+                                <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaManager('script')">Gerenciar personas</button>
+                            </div>
                         </div>
 
                         <div class="form-group" id="script-realistic-engine-group">
@@ -1799,6 +1807,10 @@
                                 <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
                             </div>
                             <small class="pause-hint">A cena segue o trecho e inclui essa persona em interacao.</small>
+                            <div id="auto-realistic-persona-preview" class="realistic-persona-preview"></div>
+                            <div class="realistic-persona-actions">
+                                <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaManager('auto')">Gerenciar personas</button>
+                            </div>
                         </div>
                         <div class="form-group" id="auto-realistic-engine-group">
                             <label>Motor de IA</label>
@@ -2130,7 +2142,58 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260420-13"></script>
-    <script src="/video/static/pwa.js?v=20260420-13"></script>
+    <!-- Persona Manager Modal -->
+    <div id="modal-persona-manager" class="modal">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h3 id="persona-manager-title">Gerenciar personas</h3>
+                <button class="modal-close" onclick="closeModal('modal-persona-manager')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="wizard-hint" id="persona-manager-subtitle">Escolha uma imagem de persona para os videos realistas.</p>
+
+                <div id="persona-manager-list" class="persona-manager-list">
+                    <p class="muted">Carregando personas...</p>
+                </div>
+
+                <div class="persona-manager-divider"></div>
+
+                <h4 style="margin-bottom:0.6rem">Criar nova persona</h4>
+                <div class="form-group">
+                    <label>Nome (opcional)</label>
+                    <input id="persona-manager-name" class="input" type="text" maxlength="80" placeholder="Ex: Minha personagem principal">
+                </div>
+                <div class="form-group" id="persona-manager-nature-subtype-group" hidden>
+                    <label>Tipo de natureza</label>
+                    <select id="persona-manager-nature-subtype" class="input">
+                        <option value="gato">Gato</option>
+                        <option value="cachorro">Cachorro</option>
+                        <option value="papagaio">Papagaio</option>
+                        <option value="outros">Outros</option>
+                    </select>
+                </div>
+                <div class="form-group" id="persona-manager-nature-other-group" hidden>
+                    <label>Descreva "outros"</label>
+                    <input id="persona-manager-nature-other" class="input" type="text" maxlength="80" placeholder="Ex: tartaruga marinha">
+                </div>
+                <div class="form-group">
+                    <label>Descricao extra (opcional)</label>
+                    <textarea id="persona-manager-extra" class="input" rows="2" placeholder="Ex: luz dourada no fim da tarde, expressao tranquila"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input id="persona-manager-set-default" type="checkbox"> Definir como persona padrao
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" type="button" onclick="closeModal('modal-persona-manager')">Fechar</button>
+                <button class="btn btn-primary" id="persona-manager-create-btn" type="button" onclick="createPersonaFromManager()">Gerar nova persona</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/video/static/app.js?v=20260421-01"></script>
+    <script src="/video/static/pwa.js?v=20260421-01"></script>
 </body>
 </html>
