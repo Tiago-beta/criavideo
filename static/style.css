@@ -4912,6 +4912,34 @@ th,
     padding: 0;
 }
 
+.btn-back-icon {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Clean UI mode: remove explanatory helper copy across pages */
+.wizard-hint,
+.pause-hint,
+.field-hint,
+.suno-voice-hint,
+.realistic-inspiration-label,
+.section-subtitle,
+#auto-step3-desc,
+.auto-type-card .muted {
+    display: none !important;
+}
+
+#modal-publish-schedule .modal-body > .muted,
+#modal-clip-selector .form-group > .muted,
+#modal-auto-subtitle .modal-header .muted,
+#modal-auto-subtitle .auto-subtitle-modal-note {
+    display: none !important;
+}
+
 .persona-manager-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260421-07">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260421-08">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 176;
+        var REQUIRED_VER = 177;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -838,7 +838,9 @@
 
                     <!-- Wizard Navigation -->
                     <div class="wizard-nav">
-                        <button class="btn btn-secondary btn-sm wizard-back-btn" id="wizard-back" type="button" hidden>Voltar</button>
+                        <button class="btn btn-secondary btn-sm wizard-back-btn btn-back-icon" id="wizard-back" type="button" hidden title="Voltar" aria-label="Voltar">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                        </button>
                         <div class="wizard-dots" id="wizard-dots-container">
                             <span class="wizard-dot active"></span>
                             <span class="wizard-dot"></span>
@@ -1284,7 +1286,9 @@
 
                     <!-- Script Wizard Navigation -->
                     <div class="wizard-nav">
-                        <button class="btn btn-secondary btn-sm wizard-back-btn" id="script-back" type="button" hidden>Voltar</button>
+                        <button class="btn btn-secondary btn-sm wizard-back-btn btn-back-icon" id="script-back" type="button" hidden title="Voltar" aria-label="Voltar">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                        </button>
                         <div class="wizard-dots" id="script-dots-container">
                             <span class="wizard-dot active"></span>
                             <span class="wizard-dot"></span>
@@ -1450,7 +1454,9 @@
                         </select>
                     </div>
                     <div class="wizard-nav">
-                        <button class="btn btn-secondary btn-sm" id="ai-suggest-cancel" type="button">Voltar</button>
+                        <button class="btn btn-secondary btn-sm btn-back-icon" id="ai-suggest-cancel" type="button" title="Voltar" aria-label="Voltar">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                        </button>
                         <div></div>
                         <button class="btn btn-primary btn-sm" id="ai-suggest-generate" type="button">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
@@ -1946,7 +1952,9 @@
 
             </div>
             <div class="modal-footer modal-footer-space">
-                <button id="auto-btn-back" class="btn btn-secondary" type="button" onclick="autoStepBack()" hidden>Voltar</button>
+                <button id="auto-btn-back" class="btn btn-secondary btn-back-icon" type="button" onclick="autoStepBack()" hidden title="Voltar" aria-label="Voltar">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
                 <div style="flex:1"></div>
                 <button id="auto-btn-next" class="btn btn-primary" type="button" onclick="autoStepNext()">Proximo</button>
                 <button id="auto-btn-create" class="btn btn-accent" type="button" onclick="createAutoSchedule()" hidden>Ativar Automacao</button>
@@ -2004,7 +2012,9 @@
                 <audio id="clip-audio" preload="auto"></audio>
             </div>
             <div class="modal-footer modal-footer-space">
-                <button class="btn btn-secondary" type="button" onclick="closeClipSelector()">Voltar</button>
+                <button class="btn btn-secondary btn-back-icon" type="button" onclick="closeClipSelector()" title="Voltar" aria-label="Voltar">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
                 <button class="btn btn-accent" type="button" onclick="addClipToThemes()">Adicionar trecho</button>
             </div>
         </div>
@@ -2249,7 +2259,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-07"></script>
-    <script src="/video/static/pwa.js?v=20260421-07"></script>
+    <script src="/video/static/app.js?v=20260421-08"></script>
+    <script src="/video/static/pwa.js?v=20260421-08"></script>
 </body>
 </html>
