@@ -29,6 +29,9 @@ settings = get_settings()
 
 # In-memory export jobs
 _export_jobs: dict[str, dict] = {}
+_EDITOR_EXPORT_PRESET = "veryfast"
+_EDITOR_EXPORT_CRF = "23"
+_EDITOR_EXPORT_AUDIO_BITRATE = "160k"
 
 
 def _resolve_render_video_path(render: VideoRender) -> str | None:
@@ -921,16 +924,16 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
         cmd += [
             "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", "23",
+            "-preset", _EDITOR_EXPORT_PRESET,
+            "-crf", _EDITOR_EXPORT_CRF,
             "-c:a", "aac",
-            "-b:a", "192k",
+            "-b:a", _EDITOR_EXPORT_AUDIO_BITRATE,
             "-movflags", "+faststart",
             out_file,
         ]
 
         job["progress"] = 30
-        job["message"] = "Processando com FFmpeg..."
+        job["message"] = "Processando..."
 
         logger.info(f"[editor] Export cmd: {' '.join(cmd)}")
 
@@ -945,7 +948,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             time.sleep(2)
             progress = min(progress + 5, 90)
             job["progress"] = progress
-            job["message"] = "Processando com FFmpeg..."
+            job["message"] = "Processando..."
 
         stdout, stderr = proc.communicate()
         if proc.returncode != 0:
@@ -1005,10 +1008,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
             filter_parts = list(overlay_parts)
             base_has_audio = _probe_has_audio_stream(out_file)
-            audio_labels: list[str] = []
-            if base_has_audio:
-                filter_parts.append("[0:a]anull[a_base]")
-                audio_labels.append("[a_base]")
+            layer_audio_labels: list[str] = []
 
             for audio_idx, layer in enumerate(audio_layers):
                 layer_path = layer["path"]
@@ -1041,49 +1041,74 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     f"[{src_label}]atrim=0:{clip_duration:.6f},adelay={delay_ms}|{delay_ms},"
                     f"volume={volume_factor:.4f}[{out_label}]"
                 )
-                audio_labels.append(f"[{out_label}]")
+                layer_audio_labels.append(f"[{out_label}]")
 
             audio_map = "0:a?"
-            if audio_labels:
-                if len(audio_labels) > 1:
+            audio_filtering_applied = False
+            if layer_audio_labels:
+                mix_inputs: list[str] = []
+                if base_has_audio:
+                    filter_parts.append("[0:a]anull[a_base]")
+                    mix_inputs.append("[a_base]")
+                mix_inputs.extend(layer_audio_labels)
+
+                if len(mix_inputs) > 1:
                     filter_parts.append(
-                        f"{''.join(audio_labels)}amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0[a_mix]"
+                        f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=longest:dropout_transition=0[a_mix]"
                     )
                     current_audio = "[a_mix]"
                 else:
-                    current_audio = audio_labels[0]
+                    current_audio = mix_inputs[0]
 
                 if output_video_duration > 0:
                     filter_parts.append(f"{current_audio}atrim=0:{output_video_duration:.6f}[a_out]")
                     audio_map = "[a_out]"
                 else:
                     audio_map = current_audio
+                audio_filtering_applied = True
 
             video_map = current_video_label if overlay_parts else "0:v"
+            visual_filtering_applied = bool(overlay_parts)
 
-            if filter_parts:
-                layer_cmd += ["-filter_complex", ";".join(filter_parts)]
-            layer_cmd += [
-                "-map", video_map,
-                "-map", audio_map,
-                "-c:v", "libx264",
-                "-preset", "medium",
-                "-crf", "23",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-movflags", "+faststart",
-                layered_out_file,
-            ]
+            if not visual_filtering_applied and not audio_filtering_applied:
+                # Nothing effectively changed in this second pass.
+                final_out_file = out_file
+            else:
+                if filter_parts:
+                    layer_cmd += ["-filter_complex", ";".join(filter_parts)]
+                layer_cmd += [
+                    "-map", video_map,
+                    "-map", audio_map,
+                ]
 
-            logger.info(f"[editor] Layer export cmd: {' '.join(layer_cmd)}")
-            layer_proc = subprocess.run(layer_cmd, capture_output=True)
-            if layer_proc.returncode != 0:
-                logger.error("[editor] Layer overlay FFmpeg failed: %s", (layer_proc.stderr or b"")[:600])
-                job["status"] = "failed"
-                job["error"] = "Falha ao compor camadas de video/imagem"
-                return
+                if visual_filtering_applied:
+                    layer_cmd += [
+                        "-c:v", "libx264",
+                        "-preset", _EDITOR_EXPORT_PRESET,
+                        "-crf", _EDITOR_EXPORT_CRF,
+                    ]
+                else:
+                    layer_cmd += ["-c:v", "copy"]
 
-            final_out_file = layered_out_file
+                if audio_filtering_applied:
+                    layer_cmd += ["-c:a", "aac", "-b:a", _EDITOR_EXPORT_AUDIO_BITRATE]
+                else:
+                    layer_cmd += ["-c:a", "copy"]
+
+                layer_cmd += [
+                    "-movflags", "+faststart",
+                    layered_out_file,
+                ]
+
+                logger.info(f"[editor] Layer export cmd: {' '.join(layer_cmd)}")
+                layer_proc = subprocess.run(layer_cmd, capture_output=True)
+                if layer_proc.returncode != 0:
+                    logger.error("[editor] Layer overlay FFmpeg failed: %s", (layer_proc.stderr or b"")[:600])
+                    job["status"] = "failed"
+                    job["error"] = "Falha ao compor camadas de video/imagem"
+                    return
+
+                final_out_file = layered_out_file
 
         job["progress"] = 95
         job["message"] = "Finalizando..."
