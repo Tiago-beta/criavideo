@@ -811,12 +811,13 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         for txt in req.texts:
             mapped_ranges = _map_source_interval_to_output(txt.start_time, txt.end_time, video_segments)
             for st, et in mapped_ranges:
-                fontsize = txt.font_size
+                base_fontsize = max(8, int(txt.font_size or 36))
+                fontsize_expr = f"h*{base_fontsize}/720"
                 color = txt.color.lstrip("#")
                 x_expr = f"(w*{txt.x/100})"
                 y_expr = f"(h*{txt.y/100})"
                 escaped_text = txt.content.replace("'", "'\\\\\\''").replace(":", "\\:")
-                dt = f"drawtext=text='{escaped_text}':fontsize={fontsize}:fontcolor=0x{color}:x={x_expr}-tw/2:y={y_expr}-th/2:enable='between(t,{st},{et})':shadowcolor=black:shadowx=2:shadowy=2"
+                dt = f"drawtext=text='{escaped_text}':fontsize={fontsize_expr}:fontcolor=0x{color}:x={x_expr}-tw/2:y={y_expr}-th/2:enable='between(t,{st},{et})':shadowcolor=black:shadowx=2:shadowy=2"
                 vfilters.append(dt)
 
         # Subtitle overlays
@@ -824,14 +825,15 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             mapped_ranges = _map_source_interval_to_output(sub.start_time, sub.end_time, video_segments)
             for st, et in mapped_ranges:
                 color = sub.font_color.lstrip("#") if sub.font_color else "FFFFFF"
-                fsize = sub.font_size or 28
+                base_fontsize = max(8, int(sub.font_size or 28))
+                fontsize_expr = f"h*{base_fontsize}/720"
                 x_expr = f"(w*{sub.x/100})-tw/2" if sub.x else "(w-tw)/2"
                 y_expr = f"(h*{sub.y/100})-th/2" if sub.y else "h-80"
                 escaped_text = sub.text.replace("'", "'\\\\\\\\''").replace(":", "\\:")
                 font_family = (sub.font_family or "Arial").split(",")[0].strip()
                 dt_parts = [
                     f"drawtext=text='{escaped_text}'",
-                    f"fontsize={fsize}",
+                    f"fontsize={fontsize_expr}",
                     f"fontcolor=0x{color}",
                     f"x={x_expr}",
                     f"y={y_expr}",
