@@ -26,9 +26,12 @@ Each scene must:
 4. Reference the SAME setting/location details when appropriate for continuity
 5. Be written in English (optimized for AI video generation)
 6. Include a note like "Continue from previous scene..." for scenes 2+
-7. Be concise but vivid (under 200 words each)
+7. Add two continuity lines in every scene:
+    - CHARACTER_LOCK: full cast identity (names, age, hair, clothing, body type) copied verbatim across all scenes
+    - WORLD_LOCK: location, time of day, weather, and mood copied verbatim across all scenes
+8. Be concise but vivid (under 200 words each)
 
-CRITICAL: The scenes form a continuous story. Every scene MUST repeat the full character description so each scene can be generated independently while looking consistent. Scene 2 should feel like a natural continuation of scene 1, etc.
+CRITICAL: The scenes form a continuous story. Every scene MUST keep the same protagonists, same wardrobe colors, and same relationship dynamics. Scene 2+ should feel like a natural continuation of scene 1 with no character drift.
 
 Output ONLY a JSON array of strings, one per scene. No markdown, no explanation.
 Example for 3 scenes: ["scene 1 description", "scene 2 description", "scene 3 description"]"""
@@ -46,6 +49,8 @@ async def generate_scene_prompts(
         f"Total video: {num_segments * duration_per_segment}s split into {num_segments} segments "
         f"of {duration_per_segment}s each.\n\n"
         f"Base description:\n{base_prompt}\n\n"
+        "Do not replace or mutate the main characters across scenes. "
+        "Keep a single coherent storyline and preserve context continuity from start to end.\n\n"
         f"Generate {num_segments} scene descriptions as a JSON array."
     )
 
@@ -271,9 +276,13 @@ async def generate_multi_clip_video(
 
     # Optimize each scene prompt for Grok
     optimized_scenes = []
+    continuity_lock = (
+        "\n\nCONTINUITY LOCK: Keep EXACTLY the same main characters, face traits, wardrobe colors, "
+        "body type, age, and relationship context across every scene. Do not introduce a new protagonist."
+    )
     for i, sp in enumerate(scene_prompts):
         dur = last_clip_dur if i == num_segments - 1 else max_per_clip
-        opt = await optimize_prompt_for_grok(user_description=sp, duration=dur)
+        opt = await optimize_prompt_for_grok(user_description=f"{sp}{continuity_lock}", duration=dur)
         optimized_scenes.append(opt)
         logger.info(f"Scene {i+1}/{num_segments} prompt optimized ({len(opt)} chars)")
 

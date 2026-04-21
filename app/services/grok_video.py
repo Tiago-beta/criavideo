@@ -30,7 +30,8 @@ RULES:
 8. Keep the prompt concise but detailed — under 500 words.
 9. Preserve the user's creative intent while enhancing with cinematic quality.
 10. CONTENT SAFETY: Avoid violent, sexual, or controversial content.
-11. If the user says there is a reference image, explicitly anchor the scene to that image and preserve the same subject identity and key visual traits."""
+11. If the user says there is a reference image, explicitly anchor the scene to that image and preserve the same subject identity and key visual traits.
+12. CHARACTER CONTINUITY: if the input includes continuation cues (e.g. "Continue from previous scene", "CHARACTER_LOCK", "WORLD_LOCK"), keep those continuity details unchanged and do not alter the main characters."""
 
 
 async def optimize_prompt_for_grok(

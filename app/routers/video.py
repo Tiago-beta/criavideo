@@ -1625,6 +1625,7 @@ class GenerateRealisticPromptRequest(BaseModel):
     topic: str
     style: str = "cinematic"
     engine: str = "seedance"
+    duration: int = 10
     has_reference_image: bool = False
 
 
@@ -1641,6 +1642,8 @@ async def generate_realistic_prompt_endpoint(
         raise HTTPException(status_code=400, detail="Tema muito longo (maximo 2000 caracteres).")
 
     engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "seedance"
+    max_dur = 60 if engine == "grok" else 10
+    duration = max(1, min(int(req.duration or 10), max_dur))
     prompt_for_optimizer = _ensure_reference_image_instruction(topic) if req.has_reference_image else topic
 
     if engine == "grok":
@@ -1648,7 +1651,7 @@ async def generate_realistic_prompt_endpoint(
 
         optimized = await optimize_prompt_for_grok(
             user_description=prompt_for_optimizer,
-            duration=7,
+            duration=duration,
             has_reference_image=req.has_reference_image,
         )
     else:
@@ -1656,7 +1659,7 @@ async def generate_realistic_prompt_endpoint(
 
         optimized = await optimize_prompt_for_seedance(
             user_description=prompt_for_optimizer,
-            duration=7,
+            duration=duration,
             tone=req.style,
             has_reference_image=req.has_reference_image,
         )

@@ -393,6 +393,79 @@ async def upload_music(
     return {"path": str(dest)}
 
 
+@router.post("/upload-video-audio")
+async def upload_video_audio(
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    allowed_video_exts = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+    file_ext = Path(file.filename or "").suffix.lower()
+    has_video_mime = bool(file.content_type and file.content_type.startswith("video"))
+    if not has_video_mime and file_ext not in allowed_video_exts:
+        raise HTTPException(400, "Arquivo deve ser de video")
+
+    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"])
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    src_ext = file_ext or ".mp4"
+    src_video = upload_dir / f"music_src_{uuid.uuid4().hex[:8]}{src_ext}"
+    out_audio = upload_dir / f"music_from_video_{uuid.uuid4().hex[:8]}.m4a"
+
+    max_size = 500 * 1024 * 1024  # 500MB
+    written = 0
+    with open(src_video, "wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > max_size:
+                out.close()
+                src_video.unlink(missing_ok=True)
+                raise HTTPException(400, "Arquivo muito grande (max 500MB)")
+            out.write(chunk)
+
+    if written <= 0:
+        src_video.unlink(missing_ok=True)
+        raise HTTPException(400, "Arquivo vazio")
+
+    if not _probe_has_audio_stream(str(src_video)):
+        src_video.unlink(missing_ok=True)
+        raise HTTPException(400, "Este video nao possui faixa de audio")
+
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", str(src_video),
+                "-map", "0:a:0",
+                "-vn",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-movflags", "+faststart",
+                str(out_audio),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if proc.returncode != 0:
+            logger.error("[editor] Failed to extract audio from uploaded video: %s", (proc.stderr or "")[-1200:])
+            out_audio.unlink(missing_ok=True)
+            raise HTTPException(500, "Falha ao extrair audio do video")
+
+        if not out_audio.exists() or out_audio.stat().st_size <= 0:
+            out_audio.unlink(missing_ok=True)
+            raise HTTPException(500, "Falha ao extrair audio do video")
+
+        return {"path": str(out_audio)}
+    except subprocess.TimeoutExpired:
+        out_audio.unlink(missing_ok=True)
+        raise HTTPException(500, "Timeout ao extrair audio do video")
+    finally:
+        src_video.unlink(missing_ok=True)
+
+
 @router.post("/upload-video")
 async def upload_video(
     file: UploadFile = File(...),

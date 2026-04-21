@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v152 loaded");
+console.log("[CriaVideo] app.js v153 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1564,21 +1564,8 @@ function initCreateWizard() {
             eng.closest(".engine-options").querySelectorAll(".engine-option").forEach((d) => d.classList.remove("selected"));
             eng.classList.add("selected");
             const engineVal = eng.dataset.value;
-            // Show/hide Grok-only duration buttons (12s, 15s)
-            const isGrok = engineVal === "grok";
             const container = eng.closest(".form-group")?.parentElement;
             if (container) {
-                container.querySelectorAll(".grok-only").forEach((btn) => {
-                    btn.hidden = !isGrok;
-                });
-                // If a hidden button was selected, reset to 7s
-                if (!isGrok) {
-                    container.querySelectorAll(".duration-option.grok-only.selected").forEach((btn) => {
-                        btn.classList.remove("selected");
-                        const def7 = btn.closest(".duration-options")?.querySelector('[data-value="7"]');
-                        if (def7) def7.classList.add("selected");
-                    });
-                }
                 // Auto-toggle music checkbox: engines with native audio → uncheck
                 const hasNativeAudio = (engineVal === "grok" || engineVal === "seedance");
                 const musicCb = container.querySelector("[id$='-realistic-music']");
@@ -1691,13 +1678,23 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     }
 
     const durBtn = document.querySelector(`#${durationSelectorId} .duration-option.selected`);
-    const duration = durBtn ? parseInt(durBtn.dataset.value) : 7;
+    const duration = durBtn ? parseInt(durBtn.dataset.value, 10) : 10;
     const aspectEl = document.getElementById(aspectSelectorId);
     const aspect = aspectEl ? aspectEl.value : "16:9";
     const musicEl = document.getElementById(musicCheckboxId);
     const addMusic = musicEl ? musicEl.checked : true;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
-    const engine = engineBtn ? engineBtn.dataset.value : "minimax";
+    let engine = engineBtn ? engineBtn.dataset.value : "minimax";
+    if (duration > 10 && engine !== "grok") {
+        const engineSelector = document.getElementById(engineSelectorId);
+        const grokBtn = engineSelector?.querySelector('.engine-option[data-value="grok"]');
+        if (grokBtn) {
+            engineSelector.querySelectorAll(".engine-option").forEach((d) => d.classList.remove("selected"));
+            grokBtn.classList.add("selected");
+        }
+        engine = "grok";
+        showToast("Duracoes acima de 10s usam Grok automaticamente.");
+    }
     const engineLabel = engine === "minimax" ? "MiniMax Hailuo" : engine === "wan2" ? "Wan 2.2" : engine === "grok" ? "Grok" : "Seedance 2.0";
     const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
     const interactionPersona = personaBtn ? (personaBtn.dataset.persona || "") : "natureza";
@@ -1973,8 +1970,11 @@ function resetCreateWizard() {
     // Reset realistic settings in both panels
     ["wizard-realistic-duration", "script-realistic-duration"].forEach(id => {
         document.querySelectorAll(`#${id} .duration-option`).forEach(d => {
-            d.classList.toggle("selected", d.dataset.value === "7");
+            d.classList.toggle("selected", d.dataset.value === "10");
         });
+    });
+    document.querySelectorAll("#ai-suggest-realistic-duration .duration-option").forEach((d) => {
+        d.classList.toggle("selected", d.dataset.value === "10");
     });
     ["wizard-realistic-aspect", "script-realistic-aspect"].forEach(id => {
         const el = document.getElementById(id);
@@ -2862,13 +2862,14 @@ function showAiSuggestPanel() {
     // Adapt AI suggest panel for mode
     document.getElementById("ai-suggest-title").textContent = isRealistic ? "Gerar prompt com IA" : "Gerar roteiro com IA";
     document.getElementById("ai-suggest-hint").textContent = isRealistic
-        ? "Descreva a cena e a IA criara um prompt cinematografico profissional"
+        ? "Descreva a cena e escolha a duracao para a IA criar um prompt cinematografico profissional"
         : "Descreva o tema e a IA criara um roteiro completo";
     document.getElementById("ai-suggest-topic").placeholder = isRealistic
         ? "Ex: uma cachorra adotou um gatinho, produto girando..."
         : "Ex: beneficios da meditacao, como fazer pao caseiro...";
     document.getElementById("ai-suggest-tone-group").hidden = isRealistic;
     document.getElementById("ai-suggest-style-group").hidden = !isRealistic;
+    document.getElementById("ai-suggest-realistic-duration-group").hidden = !isRealistic;
     document.getElementById("ai-suggest-duration-group").hidden = isRealistic;
     document.getElementById("ai-suggest-generate-text").textContent = isRealistic ? "Gerar Prompt" : "Gerar Roteiro";
     document.getElementById("create-panel-script").hidden = true;
@@ -2888,8 +2889,21 @@ async function generateAiScript() {
     if (isRealistic) {
         // Generate optimized prompt for the selected engine
         const style = document.getElementById("ai-suggest-style").value;
-        const engineBtn = document.querySelector("#wizard-realistic-engine .engine-option.selected") || document.querySelector("#script-realistic-engine .engine-option.selected");
-        const engine = engineBtn ? engineBtn.dataset.value : "minimax";
+        const realisticDurationBtn = document.querySelector("#ai-suggest-realistic-duration .duration-option.selected");
+        const realisticDuration = realisticDurationBtn ? parseInt(realisticDurationBtn.dataset.value, 10) : 10;
+        let engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected") || document.querySelector("#wizard-realistic-engine .engine-option.selected");
+        let engine = engineBtn ? engineBtn.dataset.value : "minimax";
+        if (realisticDuration > 10 && engine !== "grok") {
+            const engineSelector = document.getElementById("script-realistic-engine") || document.getElementById("wizard-realistic-engine");
+            const grokBtn = engineSelector?.querySelector('.engine-option[data-value="grok"]');
+            if (grokBtn && engineSelector) {
+                engineSelector.querySelectorAll(".engine-option").forEach((d) => d.classList.remove("selected"));
+                grokBtn.classList.add("selected");
+                engineBtn = grokBtn;
+            }
+            engine = "grok";
+            showToast("Duracoes acima de 10s usam Grok automaticamente.");
+        }
         const usePhotosToggle = document.getElementById("script-use-photos");
         const hasReferenceImage = scriptPhotos.length > 0 && (!usePhotosToggle || usePhotosToggle.checked);
         const engineLabel = engine === "grok" ? "Grok" : engine === "minimax" ? "MiniMax" : engine === "wan2" ? "Wan 2.2" : "Seedance";
@@ -2900,7 +2914,13 @@ async function generateAiScript() {
         try {
             const result = await api("/video/generate-realistic-prompt", {
                 method: "POST",
-                body: JSON.stringify({ topic, style, engine, has_reference_image: hasReferenceImage }),
+                body: JSON.stringify({
+                    topic,
+                    style,
+                    engine,
+                    duration: realisticDuration,
+                    has_reference_image: hasReferenceImage,
+                }),
             });
             hideCreateProgress();
             document.getElementById("script-text").value = result.prompt;
@@ -2948,7 +2968,7 @@ async function generateAiScript() {
             body: JSON.stringify({
                 topic,
                 tone: document.getElementById("ai-suggest-tone").value,
-                duration_seconds: parseInt(document.getElementById("ai-suggest-duration").value),
+                duration_seconds: parseInt(document.getElementById("ai-suggest-duration").value, 10),
                 custom_image_ids: uploadedImageIds,
             }),
         });
@@ -6834,6 +6854,7 @@ const _editor = {
     trimEnd: 0,
     musicUrl: "",
     _musicFile: null,
+    _musicSource: "audio", // audio | video
     musicVolume: 80,
     originalVolume: 100,
     _lastMusicVolume: 80,
@@ -7677,6 +7698,7 @@ async function openEditor(projectId) {
         _editor.trimEnd = 0;
         _editor.musicUrl = "";
         _editor._musicFile = null;
+        _editor._musicSource = "audio";
         _editor.musicVolume = 80;
         _editor.originalVolume = 100;
         _editor.filter = "none";
@@ -8268,10 +8290,15 @@ function _editorRenderProps() {
                     Enviar arquivo de audio
                 </button>
                 <input type="file" id="editor-music-upload" accept="audio/*" hidden onchange="_editorUploadMusic(this)">
+                <button class="editor-add-btn" style="margin-top:8px" onclick="document.getElementById('editor-music-video-upload').click()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="15" height="14" rx="2"/><polygon points="22 7 16 12 22 17 22 7"/></svg>
+                    Extrair audio de video
+                </button>
+                <input type="file" id="editor-music-video-upload" accept="video/*" hidden onchange="_editorUploadVideoForMusic(this)">
                 ${_editor.musicUrl ? `
                     <div class="editor-music-current">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                        <div class="editor-music-info">Audio adicionado<small>Arquivo carregado</small></div>
+                        <div class="editor-music-info">Audio adicionado<small>${_editor._musicSource === "video" ? "Extraido de video enviado" : "Arquivo de audio carregado"}</small></div>
                         <button class="sub-delete" onclick="_editorRemoveMusic()">✕</button>
                     </div>
                     <label>Volume do audio</label>
@@ -8860,6 +8887,7 @@ function _editorUploadMusic(input) {
     _editorSaveState();
     _editor.musicUrl = URL.createObjectURL(file);
     _editor._musicFile = file;
+    _editor._musicSource = "audio";
     if (!_editor.audioSegments.length) {
         _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
     }
@@ -8871,10 +8899,29 @@ function _editorUploadMusic(input) {
 }
 window._editorUploadMusic = _editorUploadMusic;
 
+function _editorUploadVideoForMusic(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+    _editorSaveState();
+    _editor.musicUrl = URL.createObjectURL(file);
+    _editor._musicFile = file;
+    _editor._musicSource = "video";
+    if (!_editor.audioSegments.length) {
+        _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
+    }
+    _editor.selectedTracks = ["video", "audio"];
+    _editor.selectedClip = { kind: "music", id: "music" };
+    _editorRefreshQuickActions();
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+window._editorUploadVideoForMusic = _editorUploadVideoForMusic;
+
 function _editorRemoveMusic() {
     _editorSaveState();
     _editor.musicUrl = "";
     _editor._musicFile = null;
+    _editor._musicSource = "audio";
     _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     if (_editor.selectedClip.kind === "music") {
         _editor.selectedClip = { kind: "", id: "" };
@@ -9307,6 +9354,7 @@ function _editorDeleteSelectedClip() {
     } else if (selKind === "music") {
         _editor.musicUrl = "";
         _editor._musicFile = null;
+        _editor._musicSource = "audio";
         _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     } else if (selKind === "audio") {
         _editorSetOriginalVolume(0);
@@ -9648,12 +9696,23 @@ async function _editorExport() {
         if (_editor._musicFile) {
             const formData = new FormData();
             formData.append("file", _editor._musicFile);
-            const uploadRes = await fetch(API.replace("/api", "") + "/api/video/editor/upload-music", {
+            const musicUploadEndpoint = _editor._musicSource === "video"
+                ? "/api/video/editor/upload-video-audio"
+                : "/api/video/editor/upload-music";
+            if (status) {
+                status.textContent = _editor._musicSource === "video"
+                    ? "Extraindo audio do video enviado..."
+                    : "Enviando audio para o servidor...";
+            }
+            const uploadRes = await fetch(API.replace("/api", "") + musicUploadEndpoint, {
                 method: "POST",
                 headers: { Authorization: "Bearer " + token },
                 body: formData,
             });
-            if (!uploadRes.ok) throw new Error("Falha ao enviar musica");
+            if (!uploadRes.ok) {
+                const errPayload = await uploadRes.json().catch(() => ({}));
+                throw new Error(errPayload.detail || "Falha ao enviar audio");
+            }
             const uploadData = await uploadRes.json();
             musicPath = uploadData.path;
         }

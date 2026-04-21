@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 168;
+        var REQUIRED_VER = 169;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -593,7 +593,7 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Video realista ate 10s com as melhores tecnologias</small>
+                                <small>Video realista ate 60s com Grok e as melhores tecnologias</small>
                                 <span class="credit-badge credit-high">Creditos: Alto</span>
                             </div>
                         </div>
@@ -779,14 +779,11 @@
                             <label>Duracao</label>
                             <div class="duration-options" id="wizard-realistic-duration">
                                 <button class="duration-option" data-value="5" type="button">5s</button>
-                                <button class="duration-option selected" data-value="7" type="button">7s</button>
-                                <button class="duration-option" data-value="10" type="button">10s</button>
-                                <button class="duration-option grok-only" data-value="12" type="button" hidden>12s</button>
-                                <button class="duration-option grok-only" data-value="15" type="button" hidden>15s</button>
-                                <button class="duration-option grok-only" data-value="20" type="button" hidden>20s</button>
-                                <button class="duration-option grok-only" data-value="30" type="button" hidden>30s</button>
-                                <button class="duration-option grok-only" data-value="45" type="button" hidden>45s</button>
-                                <button class="duration-option grok-only" data-value="60" type="button" hidden>60s</button>
+                                <button class="duration-option selected" data-value="10" type="button">10s</button>
+                                <button class="duration-option" data-value="15" type="button">15s</button>
+                                <button class="duration-option" data-value="20" type="button">20s</button>
+                                <button class="duration-option" data-value="45" type="button">45s</button>
+                                <button class="duration-option" data-value="60" type="button">60s</button>
                             </div>
                         </div>
 
@@ -1000,7 +997,7 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Video realista ate 10s com as melhores tecnologias</small>
+                                <small>Video realista ate 60s com Grok e as melhores tecnologias</small>
                                 <span class="credit-badge credit-high">Creditos: Alto</span>
                             </div>
                         </div>
@@ -1220,14 +1217,11 @@
                             <label>Duracao</label>
                             <div class="duration-options" id="script-realistic-duration">
                                 <button class="duration-option" data-value="5" type="button">5s</button>
-                                <button class="duration-option selected" data-value="7" type="button">7s</button>
-                                <button class="duration-option" data-value="10" type="button">10s</button>
-                                <button class="duration-option grok-only" data-value="12" type="button" hidden>12s</button>
-                                <button class="duration-option grok-only" data-value="15" type="button" hidden>15s</button>
-                                <button class="duration-option grok-only" data-value="20" type="button" hidden>20s</button>
-                                <button class="duration-option grok-only" data-value="30" type="button" hidden>30s</button>
-                                <button class="duration-option grok-only" data-value="45" type="button" hidden>45s</button>
-                                <button class="duration-option grok-only" data-value="60" type="button" hidden>60s</button>
+                                <button class="duration-option selected" data-value="10" type="button">10s</button>
+                                <button class="duration-option" data-value="15" type="button">15s</button>
+                                <button class="duration-option" data-value="20" type="button">20s</button>
+                                <button class="duration-option" data-value="45" type="button">45s</button>
+                                <button class="duration-option" data-value="60" type="button">60s</button>
                             </div>
                         </div>
 
@@ -1394,6 +1388,18 @@
                             <option value="nature">Natureza / Paisagem</option>
                             <option value="desenho">Desenho / Sketch</option>
                         </select>
+                    </div>
+                    <div class="form-group" id="ai-suggest-realistic-duration-group" hidden>
+                        <label>Duracao do video para o prompt</label>
+                        <div class="duration-options" id="ai-suggest-realistic-duration">
+                            <button class="duration-option" data-value="5" type="button">5s</button>
+                            <button class="duration-option selected" data-value="10" type="button">10s</button>
+                            <button class="duration-option" data-value="15" type="button">15s</button>
+                            <button class="duration-option" data-value="20" type="button">20s</button>
+                            <button class="duration-option" data-value="45" type="button">45s</button>
+                            <button class="duration-option" data-value="60" type="button">60s</button>
+                        </div>
+                        <small class="field-hint">Esse tempo orienta a IA a montar um prompt coerente com a duracao final.</small>
                     </div>
                     <div class="form-group" id="ai-suggest-duration-group">
                         <label>Duracao aproximada</label>
@@ -2113,7 +2119,7 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260420-09"></script>
-    <script src="/video/static/pwa.js?v=20260420-09"></script>
+    <script src="/video/static/app.js?v=20260420-10"></script>
+    <script src="/video/static/pwa.js?v=20260420-10"></script>
 </body>
 </html>
