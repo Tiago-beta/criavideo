@@ -55,7 +55,7 @@ class CreateVoiceFromDescriptionRequest(BaseModel):
     name: str = ""
     persona_name: str = ""
     persona_type: str = ""
-    provider: str = "openai"
+    provider: str = "elevenlabs"
     provider_voice_id: str = ""
     is_default: bool = False
 
@@ -291,7 +291,7 @@ async def create_voice_profile_from_description(
     if builtin_voice not in _available_voice_ids():
         builtin_voice = "alloy"
 
-    provider_requested = str(req.provider or "openai").strip().lower()
+    provider_requested = str(req.provider or "elevenlabs").strip().lower()
     if provider_requested not in {"openai", "elevenlabs"}:
         provider_requested = "openai"
 

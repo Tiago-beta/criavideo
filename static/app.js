@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v170 loaded");
+﻿console.log("[CriaVideo] app.js v171 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -3718,7 +3718,7 @@ function openPersonaVoiceBuilder(profileId) {
 
     const providerEl = document.getElementById("persona-voice-builder-provider");
     if (providerEl) {
-        providerEl.value = "openai";
+        providerEl.value = "elevenlabs";
     }
 
     const statusEl = document.getElementById("persona-voice-builder-status");
@@ -3762,7 +3762,7 @@ async function createPersonaVoiceFromDescription() {
 
     const name = String(nameEl?.value || "").trim();
     const description = String(descriptionEl?.value || "").trim();
-    const provider = String(providerEl?.value || "openai").trim().toLowerCase();
+    const provider = String(providerEl?.value || "elevenlabs").trim().toLowerCase();
 
     if (description.length < 4) {
         alert("Descreva melhor a voz (minimo 4 caracteres).");

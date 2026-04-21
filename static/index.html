@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 186;
+        var REQUIRED_VER = 187;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2326,8 +2326,8 @@
                 <div class="form-group">
                     <label>Provider de voz</label>
                     <select id="persona-voice-builder-provider" class="input">
-                        <option value="openai">OpenAI GPT TTS (recomendado)</option>
-                        <option value="elevenlabs">ElevenLabs</option>
+                        <option value="elevenlabs">ElevenLabs (principal)</option>
+                        <option value="openai">OpenAI GPT TTS (fallback)</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -2353,8 +2353,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-17"></script>
-    <script src="/video/static/pwa.js?v=20260421-17"></script>
+    <script src="/video/static/app.js?v=20260421-18"></script>
+    <script src="/video/static/pwa.js?v=20260421-18"></script>
 </body>
 </html>
 
