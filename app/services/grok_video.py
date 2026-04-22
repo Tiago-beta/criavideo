@@ -5,6 +5,7 @@ from images (image-to-video) for realistic AI video generation.
 import os
 import time
 import logging
+import hashlib
 import httpx
 import openai
 from app.config import get_settings
@@ -46,6 +47,13 @@ REGRAS:
 4. Nao adicione personagens, objetos centrais ou eventos que nao existam no texto original.
 5. Se houver fala, mantenha as falas em pt-BR entre aspas duplas."""
 
+_SUPPORTED_VIDEO_ASPECT_RATIOS = {"1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"}
+_RUNTIME_REFERENCE_LOCK_MARKERS = (
+    "trava de fidelidade de referencia",
+    "first frame lock",
+    "primeiro frame",
+)
+
 
 def _looks_like_english_template(prompt: str) -> bool:
     lower = (prompt or "").lower()
@@ -58,6 +66,103 @@ def _looks_like_english_template(prompt: str) -> bool:
         "[00:",
     )
     return any(marker in lower for marker in english_markers)
+
+
+def _normalize_grok_aspect_ratio(value: str) -> str:
+    raw = str(value or "").strip()
+    if raw in _SUPPORTED_VIDEO_ASPECT_RATIOS:
+        return raw
+    if raw:
+        logger.warning("Grok aspect_ratio '%s' not supported; falling back to 16:9", raw)
+    return "16:9"
+
+
+def _ensure_runtime_reference_lock(prompt: str) -> str:
+    base_prompt = (prompt or "").strip()
+    lowered = base_prompt.lower()
+    if base_prompt and any(marker in lowered for marker in _RUNTIME_REFERENCE_LOCK_MARKERS):
+        return base_prompt
+
+    lock = (
+        "TRAVA DE FIDELIDADE DE REFERENCIA (OBRIGATORIA): use a imagem enviada como PRIMEIRO FRAME e ancora visual absoluta. "
+        "Mantenha exatamente os mesmos personagens, rostos, roupas, cores e proporcoes da cena de referencia. "
+        "Nao adicionar, remover, trocar ou mesclar personagens. Nao alterar figurino principal nem objetos centrais. "
+        "Nao recriar outra cena. Apenas anime a cena existente com movimentos naturais (olhos, respiracao, microgestos, cabelo/roupa e camera suave)."
+    )
+    return f"{base_prompt}\n\n{lock}" if base_prompt else lock
+
+
+def _build_payload_variants(
+    prompt: str,
+    image_url: str,
+    duration: int,
+    aspect_ratio: str,
+) -> list[tuple[str, dict]]:
+    """Build canonical and compatibility payload variants for xAI video API."""
+    canonical_prompt = _ensure_runtime_reference_lock(prompt)
+
+    base_payload = {
+        "model": "grok-imagine-video",
+        "prompt": canonical_prompt,
+        "duration": duration,
+        "aspect_ratio": aspect_ratio,
+    }
+
+    return [
+        (
+            "canonical-image-and-reference",
+            {
+                **base_payload,
+                "image": {"url": image_url},
+                # Reuse same image as explicit reference to reduce character/costume drift.
+                "reference_images": [{"url": image_url}],
+            },
+        ),
+        (
+            "canonical-image-only",
+            {
+                **base_payload,
+                "image": {"url": image_url},
+            },
+        ),
+        (
+            "compat-input-reference",
+            {
+                **base_payload,
+                "input_reference": {"url": image_url},
+            },
+        ),
+        (
+            "legacy-image-url",
+            {
+                **base_payload,
+                "image_url": image_url,
+            },
+        ),
+    ]
+
+
+def _extract_error_message(resp: httpx.Response) -> str:
+    try:
+        payload = resp.json()
+    except Exception:
+        return (resp.text or "").strip()[:500]
+
+    if isinstance(payload, dict):
+        detail = payload.get("detail")
+        error = payload.get("error")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+        if isinstance(error, dict):
+            msg = error.get("message") or error.get("detail")
+            if isinstance(msg, str) and msg.strip():
+                return msg.strip()
+            return str(error)[:500]
+        if isinstance(error, str) and error.strip():
+            return error.strip()
+        return str(payload)[:500]
+
+    return str(payload)[:500]
 
 
 async def optimize_prompt_for_grok(
@@ -150,29 +255,74 @@ async def generate_video_clip(
     # Read image and encode as base64 data URI
     import base64
     with open(image_path, "rb") as f:
-        image_data = base64.b64encode(f.read()).decode("utf-8")
+        raw_image = f.read()
+    image_data = base64.b64encode(raw_image).decode("utf-8")
 
     # Detect mime type
     ext = os.path.splitext(image_path)[1].lower()
     mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
     mime_type = mime_map.get(ext, "image/png")
     image_url = f"data:{mime_type};base64,{image_data}"
+    safe_aspect_ratio = _normalize_grok_aspect_ratio(aspect_ratio)
+    safe_duration = max(1, min(duration, 15))
+    image_sha = hashlib.sha256(raw_image).hexdigest()[:16]
+
+    logger.info(
+        "Grok input image prepared (path=%s bytes=%s sha=%s aspect=%s duration=%s)",
+        image_path,
+        len(raw_image),
+        image_sha,
+        safe_aspect_ratio,
+        safe_duration,
+    )
 
     if on_progress:
         await on_progress(20, "Iniciando geracao Grok...")
 
-    # Step 1: Start generation
-    payload = {
-        "model": "grok-imagine-video",
-        "prompt": prompt,
-        "image_url": image_url,
-        "duration": max(1, min(duration, 15)),
-    }
+    # Step 1: Start generation (try canonical schema first; fallback for compatibility)
+    request_id = ""
+    last_error = ""
+    payload_variants = _build_payload_variants(
+        prompt=prompt,
+        image_url=image_url,
+        duration=safe_duration,
+        aspect_ratio=safe_aspect_ratio,
+    )
 
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(f"{XAI_BASE_URL}/videos/generations", headers=headers, json=payload)
-        resp.raise_for_status()
-        request_id = resp.json()["request_id"]
+        for variant_name, payload in payload_variants:
+            try:
+                resp = await client.post(f"{XAI_BASE_URL}/videos/generations", headers=headers, json=payload)
+            except Exception as e:
+                last_error = str(e)
+                logger.warning("Grok payload variant '%s' request failed: %s", variant_name, e)
+                continue
+
+            if resp.status_code < 400:
+                data = resp.json() if resp.content else {}
+                request_id = str(data.get("request_id") or "").strip()
+                if request_id:
+                    logger.info("Grok payload variant accepted: %s", variant_name)
+                    break
+                last_error = f"{variant_name}: resposta sem request_id"
+                logger.warning("Grok payload variant '%s' returned no request_id", variant_name)
+                continue
+
+            error_detail = _extract_error_message(resp)
+            last_error = f"HTTP {resp.status_code}: {error_detail}"
+            logger.warning(
+                "Grok payload variant '%s' rejected (%s): %s",
+                variant_name,
+                resp.status_code,
+                error_detail,
+            )
+
+            # Only continue fallback chain on client-side validation errors.
+            if resp.status_code not in (400, 404, 415, 422):
+                resp.raise_for_status()
+
+    if not request_id:
+        raise RuntimeError(f"Falha ao iniciar geracao Grok com imagem de referencia: {last_error or 'sem detalhe'}")
 
     logger.info(f"Grok video generation started: {request_id}")
 
@@ -190,7 +340,17 @@ async def generate_video_clip(
 
             status = data.get("status")
             if status == "done":
-                video_url = data["video"]["url"]
+                video = data.get("video") or {}
+                video_url = str(video.get("url") or "").strip()
+                if not video_url:
+                    raise RuntimeError(f"Grok retornou status=done sem URL do video: {data}")
+
+                logger.info(
+                    "Grok video generation done (request_id=%s model=%s progress=%s)",
+                    request_id,
+                    data.get("model"),
+                    data.get("progress"),
+                )
                 break
             elif status in ("failed", "expired"):
                 raise RuntimeError(f"Grok video generation {status}: {data}")

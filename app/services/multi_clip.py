@@ -271,11 +271,19 @@ async def generate_multi_clip_video(
         await on_progress(16, f"Planejando {num_segments} cenas...")
 
     # Step 1: Generate scene prompts
-    scene_prompts = await generate_scene_prompts(
-        base_prompt=optimized_prompt,
-        num_segments=num_segments,
-        duration_per_segment=max_per_clip,
-    )
+    if reuse_base_reference_for_all_clips:
+        # In strict persona-anchor mode, avoid scene rewrites to keep the same composition.
+        scene_prompts = [optimized_prompt] * num_segments
+        logger.info(
+            "Multi-clip strict reference mode enabled: reusing base prompt for all %s segments",
+            num_segments,
+        )
+    else:
+        scene_prompts = await generate_scene_prompts(
+            base_prompt=optimized_prompt,
+            num_segments=num_segments,
+            duration_per_segment=max_per_clip,
+        )
 
     # Optimize each scene prompt for Grok
     optimized_scenes = []
