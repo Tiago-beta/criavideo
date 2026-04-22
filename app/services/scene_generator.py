@@ -26,16 +26,32 @@ openai_client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
 
 async def analyze_lyrics_for_scenes(lyrics_text: str, lyrics_words: list, duration: float, style_hint: str = "") -> list[dict]:
     """Use GPT-4o-mini to split lyrics into scenes with visual descriptions."""
-    # Scale scene count based on duration — cap at 25 unique scenes to limit API cost
-    if duration <= 300:
+    # Scale scene count based on duration.
+    # Short videos must not explode into many images (e.g. 10s => 1 image).
+    if duration <= 12:
+        scene_min, scene_max = 1, 1
+    elif duration <= 20:
+        scene_min, scene_max = 2, 2
+    elif duration <= 45:
+        scene_min, scene_max = 3, 4
+    elif duration <= 120:
+        scene_min, scene_max = 5, 8
+    elif duration <= 300:
         scene_min, scene_max = 10, 14
     elif duration <= 900:
         scene_min, scene_max = 14, 20
     else:
         scene_min, scene_max = 20, 25
 
+    if duration <= 12:
+        per_scene_rule = "Use EXACTLY 1 scene that covers the full duration."
+    elif duration <= 45:
+        per_scene_rule = "Each scene should last between 6-15 seconds."
+    else:
+        per_scene_rule = "Each scene should last between 12-22 seconds."
+
     prompt = f"""You are a music video director. Given these song lyrics and total duration ({duration:.1f} seconds),
-split the song into {scene_min}-{scene_max} visual scenes for a music video. Each scene should last between 12-22 seconds.
+split the song into {scene_min}-{scene_max} visual scenes for a music video. {per_scene_rule}
 {"NOTE: The video is very long. Focus on creating diverse, visually distinct scenes. They will be cycled/repeated throughout the video, so variety is key." if duration > 300 else ""}
 {f"STYLE DIRECTION: {style_hint}. All visual_prompt descriptions MUST follow this style." if style_hint else ""}
 
@@ -71,6 +87,42 @@ Respond ONLY with a JSON array. No markdown, no explanation."""
     import json
     result = json.loads(response.choices[0].message.content)
     scenes = result if isinstance(result, list) else result.get("scenes", [])
+
+    normalized = [s for s in scenes if isinstance(s, dict)]
+    if not normalized:
+        normalized = [{
+            "scene_index": 0,
+            "start_time": 0,
+            "end_time": max(float(duration or 1), 1.0),
+            "lyrics_segment": (lyrics_text or "").strip()[:500],
+            "visual_prompt": "Cinematic scene inspired by the song mood, colors and emotional arc.",
+            "tags": ["cinematic", "music", "mood", "dynamic", "atmospheric"],
+            "is_chorus": True,
+        }]
+
+    if len(normalized) > scene_max:
+        normalized = normalized[:scene_max]
+
+    # Deterministic fix for short videos: keep exactly one image for ~10s clips.
+    if duration <= 12 and normalized:
+        normalized = [normalized[0]]
+
+    total_duration = max(float(duration or 1), 1.0)
+    block = total_duration / max(len(normalized), 1)
+    for idx, scene in enumerate(normalized):
+        scene["scene_index"] = idx
+        scene["start_time"] = round(idx * block, 3)
+        scene["end_time"] = round(total_duration if idx == len(normalized) - 1 else (idx + 1) * block, 3)
+
+        if not str(scene.get("lyrics_segment", "")).strip():
+            scene["lyrics_segment"] = (lyrics_text or "").strip()[:500]
+        if not str(scene.get("visual_prompt", "")).strip():
+            scene["visual_prompt"] = "Cinematic scene inspired by the song mood, colors and emotional arc."
+        tags = scene.get("tags", [])
+        if not isinstance(tags, list):
+            scene["tags"] = ["cinematic", "music", "mood", "atmospheric"]
+
+    scenes = normalized
     return scenes
 
 

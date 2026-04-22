@@ -158,18 +158,27 @@ def compose_video(
     video_output = "[slideshow]"
 
     if enable_audio_spectrum:
-        spectrum_height = max(150, int(height * 0.22))
-        spectrum_y = max(height - spectrum_height - 20, 0)
+        panel_height = max(130, int(height * 0.16))
+        panel_y = max(height - panel_height, 0)
+        spectrum_height = max(88, panel_height - 24)
+        spectrum_width = max(320, width - 32)
+        spectrum_x = max((width - spectrum_width) // 2, 0)
+        spectrum_y = panel_y + max((panel_height - spectrum_height) // 2, 0)
         filter_complex += (
             f";\n[{audio_idx}:a]aformat=channel_layouts=mono,"
-            f"showwaves=s={width}x{spectrum_height}:mode=p2p:scale=sqrt:colors=0xF6A52F,"
-            f"format=rgba,colorchannelmixer=aa=0.92[spectrum];"
-            f"{video_output}drawbox=x=0:y={spectrum_y}:w={width}:h={spectrum_height}:"
-            f"color=0x061a2c@0.38:t=fill[spectrum_bg];"
-            f"[spectrum_bg][spectrum]overlay=0:{spectrum_y}:shortest=1:eof_action=pass[with_spectrum]"
+            f"showfreqs=s={spectrum_width}x{spectrum_height}:mode=bar:fscale=log:ascale=sqrt:"
+            f"win_size=2048:overlap=0.72:"
+            f"colors=0xff00ff|0x7a00ff|0x0058ff|0x00d8ff|0x00ff66|0xc8ff00|0xffa000|0xff3300,"
+            f"format=rgba,colorchannelmixer=aa=0.95[spectrum];"
+            f"{video_output}drawbox=x=0:y={panel_y}:w={width}:h={panel_height}:"
+            f"color=0x000000@0.82:t=fill[spectrum_bg];"
+            f"[spectrum_bg][spectrum]overlay={spectrum_x}:{spectrum_y}:shortest=1:eof_action=pass[with_spectrum]"
         )
         video_output = "[with_spectrum]"
-        logger.info(f"Audio spectrum overlay enabled (y={spectrum_y}, h={spectrum_height})")
+        logger.info(
+            f"Audio spectrum overlay enabled (panel_y={panel_y}, panel_h={panel_height}, "
+            f"bars={spectrum_width}x{spectrum_height})"
+        )
 
     # Add subtitle burn-in if available
     if subtitle_path and os.path.exists(subtitle_path):
