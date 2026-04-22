@@ -1492,6 +1492,52 @@ def _extract_lyrics_excerpt_fallback(
     return re.sub(r"\s+", " ", " ".join(selected)).strip()[:1200]
 
 
+def _extract_text_from_word_window(words: list, window_start: float, window_end: float) -> str:
+    normalized: list[tuple[str, float, float]] = []
+    for item in words or []:
+        if not isinstance(item, dict):
+            continue
+        token = str(item.get("word", "") or "").strip()
+        if not token:
+            continue
+        try:
+            w_start = float(item.get("start", 0.0) or 0.0)
+            w_end = float(item.get("end", w_start) or w_start)
+        except Exception:
+            continue
+        normalized.append((token, w_start, max(w_start, w_end)))
+
+    if not normalized:
+        return ""
+
+    tolerance = 0.25
+    selected = [
+        token
+        for token, w_start, w_end in normalized
+        if (w_end >= (window_start - tolerance) and w_start <= (window_end + tolerance))
+    ]
+
+    if not selected:
+        center = (window_start + window_end) / 2.0
+        best_idx = -1
+        best_dist = 1e9
+        for idx, (_, w_start, w_end) in enumerate(normalized):
+            dist = abs(((w_start + w_end) / 2.0) - center)
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = idx
+        if best_idx >= 0:
+            left = max(0, best_idx - 6)
+            right = min(len(normalized), best_idx + 7)
+            selected = [token for token, _, _ in normalized[left:right]]
+
+    text = " ".join(selected)
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+    text = re.sub(r"\(\s+", "(", text)
+    text = re.sub(r"\s+\)", ")", text)
+    return text.strip()[:1200]
+
+
 @router.post("/transcribe-tevoxi-clip")
 async def transcribe_tevoxi_clip_endpoint(
     req: TranscribeTevoxiClipRequest,
@@ -1508,6 +1554,19 @@ async def transcribe_tevoxi_clip_endpoint(
         raise HTTPException(status_code=400, detail="Selecione um trecho com duração maior que zero.")
 
     clip_duration = min(45.0, clip_duration)
+
+    context_pad_before = 10.0
+    context_pad_after = 10.0
+    context_start = max(0.0, clip_start - context_pad_before)
+    context_end = clip_start + clip_duration + context_pad_after
+    if song_duration > 0:
+        context_end = min(song_duration, context_end)
+    context_duration = max(clip_duration, context_end - context_start)
+    context_duration = min(45.0, context_duration)
+
+    target_local_start = max(0.0, clip_start - context_start)
+    target_local_end = target_local_start + clip_duration
+
     transcribe_dir = Path(settings.media_dir) / "temp_transcribe" / str(user["id"])
     transcribe_dir.mkdir(parents=True, exist_ok=True)
     transcribe_id = uuid.uuid4().hex
@@ -1523,7 +1582,7 @@ async def transcribe_tevoxi_clip_endpoint(
 
     try:
         await _download_external_audio_to_path(audio_url, source_path)
-        _trim_audio_clip(str(source_path), str(clip_path), clip_start, clip_duration)
+        _trim_audio_clip(str(source_path), str(clip_path), context_start, context_duration)
 
         from app.services.transcriber import transcribe_audio
         import asyncio
@@ -1541,6 +1600,10 @@ async def transcribe_tevoxi_clip_endpoint(
         if isinstance(result, dict):
             text = str(result.get("text", "") or "").strip()
             words = result.get("words", []) if isinstance(result.get("words", []), list) else []
+
+        window_text = _extract_text_from_word_window(words, target_local_start, target_local_end)
+        if window_text:
+            text = window_text
 
         if not text and fallback_text:
             return {
