@@ -1150,6 +1150,49 @@ async def _combine_realistic_audio(
         raise RuntimeError(f"FFmpeg audio merge failed: {proc.stderr[:200]}")
 
 
+def _resolve_wan_effective_duration(duration: int) -> int:
+    """Wan 2.2 supports only 5s or 8s clips."""
+    return 5 if int(duration or 0) <= 6 else 8
+
+
+async def _extract_audio_from_video_track(video_path: str, audio_output_path: str) -> str:
+    """Extract first audio stream from a video file into an AAC container."""
+    if not video_path or not os.path.exists(video_path):
+        raise RuntimeError("Video de origem para extracao de audio nao encontrado")
+
+    audio_dir = os.path.dirname(audio_output_path)
+    if audio_dir:
+        os.makedirs(audio_dir, exist_ok=True)
+
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-y",
+        "-i",
+        video_path,
+        "-map",
+        "0:a:0",
+        "-vn",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-movflags",
+        "+faststart",
+        audio_output_path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        details = (stderr or b"").decode(errors="ignore")[-600:]
+        raise RuntimeError(f"Falha ao extrair audio do Grok: {details}")
+
+    if not os.path.exists(audio_output_path) or os.path.getsize(audio_output_path) <= 0:
+        raise RuntimeError("Audio extraido do Grok ficou vazio")
+
+    return audio_output_path
+
+
 async def run_realistic_video_pipeline(project_id: int):
     """Pipeline for realistic video generation via the configured realistic engine.
     Much simpler than the standard pipeline: optimize prompt → generate → thumbnail → done.
@@ -1289,12 +1332,26 @@ async def run_realistic_video_pipeline(project_id: int):
             dialogue_voice_profile_ids = tags_data.get("dialogue_voice_profile_ids", []) if isinstance(tags_data.get("dialogue_voice_profile_ids", []), list) else []
             dialogue_tone = str(tags_data.get("dialogue_tone", "informativo") or "informativo").strip() or "informativo"
             dialogue_duration = float(tags_data.get("dialogue_duration", 0) or 0)
+            shadow_audio_from_grok = engine == "wan2" and bool(tags_data.get("wan_shadow_grok_audio", True))
+            shadow_grok_retry_limit = max(0, int(tags_data.get("wan_shadow_grok_retry_limit", 2) or 2))
+            wan_effective_duration = _resolve_wan_effective_duration(duration) if engine == "wan2" else duration
+            grok_shadow_prompt = ""
+            grok_shadow_video_path = ""
+            grok_shadow_audio_path = ""
+            grok_shadow_duration = 0.0
+
+            if shadow_audio_from_grok:
+                tags_data["wan_shadow_grok_audio"] = True
+                tags_data["wan_shadow_grok_retry_limit"] = shadow_grok_retry_limit
+                tags_data["wan_effective_duration"] = wan_effective_duration
+                project.tags = tags_data
+                await db.commit()
 
             prebuilt_dialogue_result = None
             prebuilt_narration_path = ""
             prebuilt_music_path = ""
 
-            if dialogue_enabled:
+            if dialogue_enabled and not shadow_audio_from_grok:
                 project.progress = 7
                 await db.commit()
                 try:
@@ -1386,6 +1443,24 @@ async def run_realistic_video_pipeline(project_id: int):
                 if engine == "grok":
                     optimized_prompt = _ensure_grok_identity_lock(optimized_prompt)
 
+            if shadow_audio_from_grok:
+                try:
+                    from app.services.grok_video import optimize_prompt_for_grok
+
+                    grok_shadow_prompt = await optimize_prompt_for_grok(
+                        user_description=user_prompt,
+                        duration=wan_effective_duration,
+                        has_reference_image=has_reference_image,
+                        tone=realistic_style,
+                    )
+                except Exception as e:
+                    logger.warning("Grok shadow prompt optimization failed, using base prompt: %s", e)
+                    grok_shadow_prompt = user_prompt
+
+                if has_reference_image:
+                    grok_shadow_prompt = _ensure_reference_image_instruction(grok_shadow_prompt)
+                    grok_shadow_prompt = _ensure_grok_identity_lock(grok_shadow_prompt)
+
             project.progress = 10
             await db.commit()
 
@@ -1397,6 +1472,9 @@ async def run_realistic_video_pipeline(project_id: int):
             render_dir = Path(settings.media_dir) / "renders" / str(project_id)
             render_dir.mkdir(parents=True, exist_ok=True)
             output_path = str(render_dir / "realistic_video.mp4")
+            if shadow_audio_from_grok:
+                output_path = str(render_dir / "realistic_video_wan.mp4")
+                grok_shadow_video_path = str(render_dir / "realistic_video_grok_shadow.mp4")
 
             aspect_ratio = project.aspect_ratio or "16:9"
             generate_audio = not getattr(project, "no_background_music", False)
@@ -1509,14 +1587,88 @@ async def run_realistic_video_pipeline(project_id: int):
             elif engine == "wan2":
                 # ── Wan 2.2 via RunPod ──
                 from app.services.runpod_video import generate_wan_video
-                await generate_wan_video(
-                    prompt=optimized_prompt,
-                    duration=duration,
-                    aspect_ratio=aspect_ratio,
-                    output_path=output_path,
-                    image_path=scene_reference_path,
-                    on_progress=_on_progress,
-                )
+                if shadow_audio_from_grok:
+                    from app.services.grok_video import generate_video_clip
+                    from app.services.scene_generator import generate_scene_image
+
+                    await _on_progress(18, "Gerando WAN 2.2 e Grok em paralelo...")
+                    grok_image_path = grok_direct_reference_path or scene_reference_path
+
+                    if not grok_image_path:
+                        grok_ref_dir = render_dir / "grok_shadow_ref"
+                        grok_ref_dir.mkdir(parents=True, exist_ok=True)
+                        grok_image_path = str(grok_ref_dir / "reference.png")
+                        grok_img_prompt = (grok_shadow_prompt or optimized_prompt)[:500]
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(
+                            None,
+                            generate_scene_image,
+                            grok_img_prompt,
+                            aspect_ratio,
+                            grok_image_path,
+                            True,
+                        )
+
+                    if not grok_image_path or not os.path.exists(grok_image_path):
+                        raise RuntimeError("Nao foi possivel preparar imagem de referencia para o Grok auxiliar")
+
+                    async def _generate_grok_shadow_with_retry() -> None:
+                        last_error = None
+                        max_attempts = shadow_grok_retry_limit + 1
+                        for attempt in range(max_attempts):
+                            try:
+                                if os.path.exists(grok_shadow_video_path):
+                                    os.remove(grok_shadow_video_path)
+
+                                await generate_video_clip(
+                                    image_path=grok_image_path,
+                                    prompt=grok_shadow_prompt or optimized_prompt,
+                                    output_path=grok_shadow_video_path,
+                                    duration=wan_effective_duration,
+                                    aspect_ratio=aspect_ratio,
+                                    on_progress=None,
+                                )
+
+                                if os.path.exists(grok_shadow_video_path) and os.path.getsize(grok_shadow_video_path) > 0:
+                                    return
+                                raise RuntimeError("Grok auxiliar retornou arquivo vazio")
+                            except Exception as exc:
+                                last_error = exc
+                                if attempt >= max_attempts - 1:
+                                    break
+                                wait_seconds = min(15, 4 * (attempt + 1))
+                                logger.warning(
+                                    "Grok auxiliar falhou no projeto %s (tentativa %s/%s): %s",
+                                    project_id,
+                                    attempt + 1,
+                                    max_attempts,
+                                    exc,
+                                )
+                                await _on_progress(22, f"Retentando Grok auxiliar ({attempt + 2}/{max_attempts})...")
+                                await asyncio.sleep(wait_seconds)
+
+                        raise RuntimeError(f"Grok auxiliar falhou apos {max_attempts} tentativas: {last_error}")
+
+                    await asyncio.gather(
+                        generate_wan_video(
+                            prompt=optimized_prompt,
+                            duration=wan_effective_duration,
+                            aspect_ratio=aspect_ratio,
+                            output_path=output_path,
+                            image_path=scene_reference_path,
+                            on_progress=_on_progress,
+                        ),
+                        _generate_grok_shadow_with_retry(),
+                    )
+                else:
+                    await generate_wan_video(
+                        prompt=optimized_prompt,
+                        duration=duration,
+                        aspect_ratio=aspect_ratio,
+                        output_path=output_path,
+                        image_path=scene_reference_path,
+                        on_progress=_on_progress,
+                    )
             else:
                 # ── Seedance 2.0 (with auto-retry on content filter) ──
                 final_prompt = optimized_prompt
@@ -1551,6 +1703,8 @@ async def run_realistic_video_pipeline(project_id: int):
 
             if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
                 raise RuntimeError(f"{engine_label} nao gerou o video ou o arquivo esta vazio.")
+            if shadow_audio_from_grok and (not os.path.exists(grok_shadow_video_path) or os.path.getsize(grok_shadow_video_path) == 0):
+                raise RuntimeError("Grok auxiliar nao gerou video com audio para compor o resultado final.")
 
             # Force final frame geometry to the requested ratio (some providers may ignore aspect settings)
             try:
@@ -1559,6 +1713,22 @@ async def run_realistic_video_pipeline(project_id: int):
                 logger.info(f"Realistic video aspect normalized to {aspect_ratio}: {output_path}")
             except Exception as e:
                 logger.warning(f"Aspect normalization skipped, using provider output: {e}")
+
+            if shadow_audio_from_grok:
+                try:
+                    grok_normalized_path = str(render_dir / "realistic_video_grok_shadow_aspect.mp4")
+                    grok_shadow_video_path = await _normalize_video_aspect(
+                        grok_shadow_video_path,
+                        aspect_ratio,
+                        grok_normalized_path,
+                    )
+                    logger.info(
+                        "Grok shadow video aspect normalized to %s: %s",
+                        aspect_ratio,
+                        grok_shadow_video_path,
+                    )
+                except Exception as e:
+                    logger.warning(f"Grok shadow aspect normalization skipped: {e}")
 
             file_size = os.path.getsize(output_path)
             video_duration = get_duration(output_path) if os.path.exists(output_path) else float(duration)
@@ -1583,7 +1753,59 @@ async def run_realistic_video_pipeline(project_id: int):
             final_video_path = output_path
             has_audio = False
 
-            if engine in ("minimax", "wan2", "grok") and (add_narration or add_music or dialogue_enabled):
+            if shadow_audio_from_grok:
+                audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
+                audio_dir.mkdir(parents=True, exist_ok=True)
+
+                project.progress = 84
+                await db.commit()
+
+                grok_shadow_audio_path = await _extract_audio_from_video_track(
+                    grok_shadow_video_path,
+                    str(audio_dir / "grok_shadow_audio.m4a"),
+                )
+
+                project.progress = 88
+                await db.commit()
+
+                combined_path = str(render_dir / "realistic_video_final.mp4")
+                await _combine_realistic_audio(
+                    video_path=output_path,
+                    narration_path=grok_shadow_audio_path,
+                    music_path="",
+                    output_path=combined_path,
+                    video_duration=video_duration,
+                )
+
+                if not os.path.exists(combined_path) or os.path.getsize(combined_path) <= 0:
+                    raise RuntimeError("Falha ao sincronizar audio do Grok com o video do WAN")
+
+                final_video_path = combined_path
+                file_size = os.path.getsize(combined_path)
+                has_audio = True
+
+                if os.path.exists(grok_shadow_video_path):
+                    try:
+                        grok_shadow_duration = get_duration(grok_shadow_video_path)
+                    except Exception:
+                        grok_shadow_duration = 0.0
+
+                tags["wan_shadow_grok_audio_used"] = True
+                tags["wan_shadow_grok_video_path"] = grok_shadow_video_path
+                tags["wan_shadow_grok_audio_path"] = grok_shadow_audio_path
+                tags["wan_shadow_grok_video_duration"] = grok_shadow_duration
+                tags["wan_shadow_grok_audio_duration"] = get_duration(grok_shadow_audio_path)
+                project.tags = tags
+                await db.commit()
+
+                logger.info(
+                    "WAN dual mode applied for project %s: wan_video=%s grok_audio=%s",
+                    project_id,
+                    output_path,
+                    grok_shadow_audio_path,
+                )
+
+            elif engine in ("minimax", "wan2", "grok") and (add_narration or add_music or dialogue_enabled):
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
                 audio_dir.mkdir(parents=True, exist_ok=True)
 
