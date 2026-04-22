@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260422-32">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260422-33">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 201;
+        var REQUIRED_VER = 202;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -235,6 +235,10 @@
                                     <button class="editor-tool-btn" id="editor-side-upload-video-btn" type="button" title="Enviar vídeo">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                         <span>Vídeo+</span>
+                                    </button>
+                                    <button class="editor-tool-btn" id="editor-side-library-btn" type="button" title="Biblioteca de vídeos">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polygon points="11 11 16 14 11 17 11 11"/></svg>
+                                        <span>Biblioteca</span>
                                     </button>
                                     <button class="editor-tool-btn" id="editor-side-upload-images-btn" type="button" title="Enviar imagens">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
@@ -2528,8 +2532,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260422-32"></script>
-    <script src="/video/static/pwa.js?v=20260422-32"></script>
+    <script src="/video/static/app.js?v=20260422-33"></script>
+    <script src="/video/static/pwa.js?v=20260422-33"></script>
 </body>
 </html>
 

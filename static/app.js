@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v185 loaded");
+﻿console.log("[CriaVideo] app.js v186 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4911,11 +4911,11 @@ async function generateAiScript() {
             const tevoxiContext = hasScriptTevoxiClip
                 ? _buildTevoxiPromptContext(_scriptSelectedSong, _scriptSelectedClip)
                 : "";
-            const topicWithContext = tevoxiContext ? `${topic}\n\n${tevoxiContext}` : topic;
             const result = await api("/video/generate-realistic-prompt", {
                 method: "POST",
                 body: JSON.stringify({
-                    topic: topicWithContext,
+                    topic,
+                    context_hint: tevoxiContext,
                     style,
                     engine,
                     duration: realisticDuration,
@@ -10157,7 +10157,7 @@ function _editorToggleTrackSelection(track) {
 
 function _editorRefreshTrackSelectionUI() {
     const insertTrack = String(_editor.selectedInsertTrack || "");
-    const insertTrackForUi = insertTrack === "layer-video" ? "video" : insertTrack;
+    const insertTrackForUi = _editorResolveInsertTrackForUi(insertTrack);
     document.querySelectorAll(".editor-track").forEach(trackEl => {
         const track = trackEl.dataset.track || "";
         trackEl.classList.remove("track-targeted", "track-not-targeted", "track-insert-selected");
@@ -10264,6 +10264,38 @@ window._editorUploadVideo = _editorUploadVideo;
 
 function _editorGetMediaLayerById(id) {
     return _editor.mediaLayers.find(layer => String(layer.id) === String(id)) || null;
+}
+
+function _editorGetLayerTrackIndex(layer) {
+    const raw = Number(layer?.trackIndex ?? 0);
+    if (!Number.isFinite(raw) || raw < 0) return 0;
+    return Math.max(0, Math.floor(raw));
+}
+
+function _editorParseLayerTrackId(track, fallback = 0) {
+    const rawTrack = String(track || "").trim();
+    if (!rawTrack) return Math.max(0, Number(fallback || 0));
+    if (rawTrack === "layer-video" || rawTrack === "video") return 0;
+    const match = /^layer-video-(\d+)$/i.exec(rawTrack);
+    if (!match) return Math.max(0, Number(fallback || 0));
+    return Math.max(0, parseInt(match[1], 10) || 0);
+}
+
+function _editorGetMaxMediaLayerTrackIndex(ignoreLayerId = "") {
+    return _editor.mediaLayers.reduce((maxTrack, layer) => {
+        if (ignoreLayerId && String(layer?.id) === String(ignoreLayerId)) {
+            return maxTrack;
+        }
+        return Math.max(maxTrack, _editorGetLayerTrackIndex(layer));
+    }, 0);
+}
+
+function _editorResolveInsertTrackForUi(track) {
+    const rawTrack = String(track || "").trim();
+    if (!rawTrack || rawTrack === "layer-video") return "video";
+    const match = /^layer-video-(\d+)$/i.exec(rawTrack);
+    if (!match) return rawTrack;
+    return Number(match[1] || 0) <= 0 ? "video" : rawTrack;
 }
 
 function _editorResetLayerLibraryState() {
@@ -10413,6 +10445,7 @@ window._editorAddLayerVideoFromLibrary = _editorAddLayerVideoFromLibrary;
 
 function _editorNormalizeMediaLayer(layer) {
     const aspect = Math.max(0.2, Number(layer.aspectRatio || 1));
+    const trackIndex = _editorGetLayerTrackIndex(layer);
     return {
         ...layer,
         width: Math.max(8, Math.min(100, Number(layer.width || 100))),
@@ -10424,6 +10457,7 @@ function _editorNormalizeMediaLayer(layer) {
         volume: Math.max(0, Math.min(200, Number(layer.volume ?? 100))),
         audioOnly: Boolean(layer.audioOnly),
         aspectRatio: aspect,
+        trackIndex,
     };
 }
 
@@ -10542,8 +10576,10 @@ function _editorRenderMediaLayers() {
 function _editorSelectMediaLayer(id, renderProps = true) {
     const layer = _editorGetMediaLayerById(id);
     if (!layer) return;
-    _editor.selectedClip = { kind: "media-layer", id: String(layer.id), track: "layer-video" };
-    _editor.selectedInsertTrack = "layer-video";
+    const trackIndex = _editorGetLayerTrackIndex(layer);
+    const layerTrack = `layer-video-${trackIndex}`;
+    _editor.selectedClip = { kind: "media-layer", id: String(layer.id), track: layerTrack };
+    _editor.selectedInsertTrack = _editorResolveInsertTrackForUi(layerTrack);
 
     let switchedTool = false;
     if (renderProps && _editor.activeTool !== "layers") {
@@ -10686,6 +10722,7 @@ function _editorPushMediaLayer(kind, payload, options = {}) {
         aspectRatio,
         volume: 100,
         audioOnly: false,
+        trackIndex: 0,
     };
     _editor.mediaLayers.push(layer);
     _editorSelectMediaLayer(layer.id, true);
@@ -12388,7 +12425,8 @@ function _editorRenderTimeline() {
         return `<div class="editor-track-clip clip-video${selectedClass}" data-kind="segment" data-track="video" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Video ${idx + 1}</div>`;
     }).join("");
 
-    const layerVideoClips = _editor.mediaLayers.map((layer, idx) => {
+    const layerClipsByTrack = new Map();
+    _editor.mediaLayers.forEach((layer, idx) => {
         const start = Math.max(0, Math.min(Number(layer.startTime || 0), dur));
         const maxLayerEnd = layer.kind === "video" && Number(layer.duration || 0) > 0
             ? start + Number(layer.duration || 0)
@@ -12398,17 +12436,38 @@ function _editorRenderTimeline() {
         const left = (start / dur) * 100;
         const width = Math.max(0.5, ((end - start) / dur) * 100);
         const selectedClass = selectedKind === "media-layer" && selectedId === String(layer.id) ? " selected" : "";
-        const label = layer.kind === "video" ? `Video ${idx + 1}` : `Imagem ${idx + 1}`;
-        return `<div class="editor-track-clip clip-media${selectedClass}" data-kind="media-layer" data-track="layer-video" data-id="${layer.id}" style="left:${left}%;width:${width}%">${label}</div>`;
-    }).join("");
+        const labelPrefix = layer.kind === "video" ? "Video" : "Imagem";
+        const label = `${labelPrefix} ${idx + 1}`;
+        const trackIndex = _editorGetLayerTrackIndex(layer);
+        const layerTrack = `layer-video-${trackIndex}`;
+        const clipHtml = `<div class="editor-track-clip clip-media${selectedClass}" data-kind="media-layer" data-track="${layerTrack}" data-id="${layer.id}" style="left:${left}%;width:${width}%">${label}</div>`;
 
-    const videoClips = `${baseVideoClips}${layerVideoClips}`;
+        if (!layerClipsByTrack.has(trackIndex)) {
+            layerClipsByTrack.set(trackIndex, []);
+        }
+        layerClipsByTrack.get(trackIndex).push(clipHtml);
+    });
+
+    const baseLayerClips = (layerClipsByTrack.get(0) || []).join("");
+    const videoClips = `${baseVideoClips}${baseLayerClips}`;
     rows.push({
         track: "video",
         kind: "video",
         label: "Video",
         contentId: "editor-track-video",
         clipsHtml: videoClips,
+    });
+
+    const extraLayerTrackIndexes = [...layerClipsByTrack.keys()]
+        .filter((trackIndex) => Number(trackIndex) > 0)
+        .sort((a, b) => a - b);
+    extraLayerTrackIndexes.forEach((trackIndex) => {
+        rows.push({
+            track: `layer-video-${trackIndex}`,
+            kind: "media-layer",
+            label: `Camada ${Number(trackIndex) + 1}`,
+            clipsHtml: (layerClipsByTrack.get(trackIndex) || []).join(""),
+        });
     });
 
     if (_editorShouldShowAudioTrack()) {
@@ -12598,9 +12657,15 @@ function _editorRefreshQuickActions() {
 
 function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
     const normalizedId = String(id ?? "");
-    _editor.selectedClip = { kind: kind || "", id: normalizedId, track: track || "" };
-    if (track) {
-        _editor.selectedInsertTrack = track;
+    const normalizedTrack = String(track || "");
+    _editor.selectedClip = { kind: kind || "", id: normalizedId, track: normalizedTrack };
+    if (kind === "media-layer") {
+        const layer = _editorGetMediaLayerById(normalizedId);
+        const layerTrack = normalizedTrack || `layer-video-${_editorGetLayerTrackIndex(layer)}`;
+        _editor.selectedClip.track = layerTrack;
+        _editor.selectedInsertTrack = _editorResolveInsertTrackForUi(layerTrack);
+    } else if (normalizedTrack) {
+        _editor.selectedInsertTrack = normalizedTrack;
     }
 
     let switchedTool = false;
@@ -12868,12 +12933,18 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
         }
     }
 
+    const baseTrackIndex = kind === "media-layer"
+        ? _editorParseLayerTrackId(track, _editorGetLayerTrackIndex(_editorGetMediaLayerById(id)))
+        : 0;
+
     _editorTimelineDrag = {
         kind,
         id,
-        track,
+        track: kind === "media-layer" ? `layer-video-${baseTrackIndex}` : track,
         mode,
         startX: event.clientX,
+        startY: event.clientY,
+        baseTrackIndex,
         trackWidth: stableTrackWidth,
         duration: kind === "media-layer" ? extendedLayerDuration : Math.max(_editor.duration, 0.1),
         baseStart: range.start,
@@ -12941,6 +13012,7 @@ function _editorOnTimelineDragMove(event) {
 
     const drag = _editorTimelineDrag;
     const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
     const deltaSec = (dx / drag.trackWidth) * drag.duration;
     const baseSpan = Math.max(0.1, drag.baseEnd - drag.baseStart);
     let nextStart = drag.baseStart;
@@ -12961,10 +13033,28 @@ function _editorOnTimelineDragMove(event) {
             const snapped = _editorSnapMediaLayerMove(drag.id, nextStart, nextEnd, drag.duration);
             nextStart = snapped.start;
             nextEnd = snapped.end;
+
+            if (drag.mode === "move") {
+                const layer = _editorGetMediaLayerById(drag.id);
+                if (layer) {
+                    const rowStepPx = 32;
+                    const rowDelta = Math.round(dy / rowStepPx);
+                    const maxTrackIndex = _editorGetMaxMediaLayerTrackIndex(drag.id) + 1;
+                    const nextTrackIndex = Math.max(0, Math.min(maxTrackIndex, drag.baseTrackIndex + rowDelta));
+                    if (_editorGetLayerTrackIndex(layer) !== nextTrackIndex) {
+                        layer.trackIndex = nextTrackIndex;
+                        drag.track = `layer-video-${nextTrackIndex}`;
+                        if (_editor.selectedClip.kind === "media-layer" && String(_editor.selectedClip.id) === String(drag.id)) {
+                            _editor.selectedClip.track = drag.track;
+                            _editor.selectedInsertTrack = _editorResolveInsertTrackForUi(drag.track);
+                        }
+                    }
+                }
+            }
         }
     }
 
-    if (Math.abs(dx) > 1) {
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
         drag.moved = true;
     }
     if (drag.moved && !drag.saved) {
@@ -13208,6 +13298,14 @@ function _bindEditorEvents() {
             return;
         }
         layerVideoInput.click();
+    });
+    document.getElementById("editor-side-library-btn")?.addEventListener("click", () => {
+        if (!_editor.projectId) {
+            showToast("Abra um projeto no editor antes de usar a biblioteca.", "error");
+            return;
+        }
+        _editorSelectTool("layers");
+        _editorOpenLayerVideoLibrary();
     });
     document.getElementById("editor-side-upload-images-btn")?.addEventListener("click", () => {
         const imageInput = document.getElementById("editor-layer-image-upload-input");
