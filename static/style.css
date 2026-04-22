@@ -4951,11 +4951,16 @@ th,
     border-radius: 12px;
     background: rgba(255, 255, 255, 0.03);
     overflow: hidden;
+    cursor: pointer;
 }
 
 .persona-manager-card.selected {
     border-color: var(--accent);
     box-shadow: 0 0 0 1px rgba(246, 165, 47, 0.3);
+}
+
+.persona-manager-photo-wrap {
+    position: relative;
 }
 
 .persona-manager-photo {
@@ -4965,6 +4970,30 @@ th,
     object-position: center;
     display: block;
     background: rgba(255, 255, 255, 0.05);
+}
+
+.persona-manager-photo-expand {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.persona-manager-photo-expand svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .persona-manager-info {
@@ -5023,13 +5052,42 @@ th,
 
 .persona-manager-actions {
     display: flex;
-    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
     gap: 6px;
     padding: 0 10px 10px;
 }
 
 .persona-manager-actions .btn {
-    flex: 1 1 calc(50% - 3px);
+    flex: 0 0 auto;
+}
+
+.persona-manager-action-icon {
+    width: 36px;
+    min-width: 36px;
+    height: 34px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.persona-manager-action-icon svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.persona-manager-action-danger {
+    border-color: rgba(239, 68, 68, 0.45);
+}
+
+.persona-manager-action-danger:hover {
+    background: rgba(239, 68, 68, 0.12);
 }
 
 .persona-manager-divider {
@@ -5061,6 +5119,29 @@ th,
 
 .persona-prompt-editor-body .form-group {
     margin-bottom: 10px;
+}
+
+.persona-image-viewer-content {
+    width: min(96vw, 1200px);
+}
+
+.persona-image-viewer-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-height: 80vh;
+    overflow: auto;
+}
+
+.persona-image-viewer-img {
+    max-width: 100%;
+    max-height: 76vh;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.03);
 }
 
 .persona-voice-builder-tags {

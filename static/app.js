@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v175 loaded");
+﻿console.log("[CriaVideo] app.js v176 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -3606,15 +3606,32 @@ function _renderPersonaManagerList() {
         const voicePlayDisabled = voiceProfileId <= 0;
         const imageUrl = profile.image_url || "";
         const image = imageUrl
-            ? `<img class="persona-manager-photo" src="${imageUrl}" alt="${esc(profile.name || "Persona")}">`
-            : '<div class="persona-manager-photo"></div>';
-        const useActionLabel = _personaManagerMulti ? (isSelected ? "Remover" : "Selecionar") : "Usar";
-        const useActionHandler = _personaManagerMulti
-            ? `togglePersonaSelectionFromManager(${pid})`
-            : `selectPersonaFromManager(${pid})`;
+            ? `
+                <div class="persona-manager-photo-wrap">
+                    <img class="persona-manager-photo" src="${imageUrl}" alt="${esc(profile.name || "Persona")}">
+                    <button
+                        class="btn btn-secondary btn-sm persona-manager-photo-expand"
+                        type="button"
+                        onclick="openPersonaImagePreview(${pid}, event)"
+                        title="Expandir imagem">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M14 3h7v7"></path>
+                            <path d="M10 21H3v-7"></path>
+                            <path d="M21 3l-8 8"></path>
+                            <path d="M3 21l8-8"></path>
+                        </svg>
+                    </button>
+                </div>
+            `
+            : '<div class="persona-manager-photo-wrap"><div class="persona-manager-photo"></div></div>';
 
         return `
-            <div class="persona-manager-card${selectedClass}">
+            <div
+                class="persona-manager-card${selectedClass}"
+                role="button"
+                tabindex="0"
+                onclick="handlePersonaCardClick(${pid}, event)"
+                onkeydown="handlePersonaCardKeydown(event, ${pid})">
                 ${image}
                 <div class="persona-manager-info">
                     <div class="persona-manager-name">${esc(profile.name || `Persona ${pid}`)}</div>
@@ -3635,14 +3652,97 @@ function _renderPersonaManagerList() {
                     <button class="btn btn-secondary btn-sm persona-manager-voice-link" type="button" onclick="openPersonaVoiceBuilder(${pid})">Vincular voz por descrição</button>
                 </div>
                 <div class="persona-manager-actions">
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaPromptEditor(${pid})" ${canEditPrompt ? "" : "disabled"}>Editar</button>
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="${useActionHandler}">${useActionLabel}</button>
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="setDefaultPersonaFromManager(${pid})">Padrao</button>
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="deletePersonaFromManager(${pid})">Excluir</button>
+                    <button
+                        class="btn btn-secondary btn-sm persona-manager-action-icon"
+                        type="button"
+                        onclick="openPersonaPromptEditor(${pid})"
+                        title="Editar prompt"
+                        ${canEditPrompt ? "" : "disabled"}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 20h9"></path>
+                            <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"></path>
+                        </svg>
+                    </button>
+                    <button
+                        class="btn btn-secondary btn-sm persona-manager-action-icon"
+                        type="button"
+                        onclick="setDefaultPersonaFromManager(${pid})"
+                        title="Definir como padrão">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="m12 3 2.9 5.8 6.4.9-4.6 4.5 1.1 6.4-5.8-3-5.8 3 1.1-6.4L2.7 9.7l6.4-.9Z"></path>
+                        </svg>
+                    </button>
+                    <button
+                        class="btn btn-secondary btn-sm persona-manager-action-icon persona-manager-action-danger"
+                        type="button"
+                        onclick="deletePersonaFromManager(${pid})"
+                        title="Excluir persona">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M3 6h18"></path>
+                            <path d="M8 6V4h8v2"></path>
+                            <path d="M19 6l-1 14H6L5 6"></path>
+                            <path d="M10 11v6"></path>
+                            <path d="M14 11v6"></path>
+                        </svg>
+                    </button>
                 </div>
             </div>
         `;
     }).join("");
+}
+
+function handlePersonaCardClick(profileId, event) {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return;
+
+    const target = event?.target;
+    if (target && target.closest("button,select,input,textarea,label,a")) {
+        return;
+    }
+
+    if (_personaManagerMulti) {
+        togglePersonaSelectionFromManager(pid);
+    } else {
+        selectPersonaFromManager(pid);
+    }
+}
+
+function handlePersonaCardKeydown(event, profileId) {
+    const key = String(event?.key || "");
+    if (key !== "Enter" && key !== " ") {
+        return;
+    }
+    event.preventDefault();
+    handlePersonaCardClick(profileId, event);
+}
+
+function openPersonaImagePreview(profileId, event) {
+    if (event?.stopPropagation) {
+        event.stopPropagation();
+    }
+
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return;
+
+    const profile = _getPersonaProfileById(pid, _personaManagerType);
+    const imageUrl = String(profile?.image_url || "").trim();
+    if (!imageUrl) {
+        showToast("Esta persona não possui imagem disponível.");
+        return;
+    }
+
+    const titleEl = document.getElementById("persona-image-viewer-title");
+    if (titleEl) {
+        titleEl.textContent = profile?.name ? `Imagem - ${profile.name}` : "Imagem da persona";
+    }
+
+    const imageEl = document.getElementById("persona-image-viewer-img");
+    if (imageEl) {
+        imageEl.src = imageUrl;
+        imageEl.alt = profile?.name ? `Imagem da persona ${profile.name}` : "Imagem da persona";
+    }
+
+    openModal("modal-persona-image-viewer");
 }
 
 async function _refreshPersonaManagerList() {

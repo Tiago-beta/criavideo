@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 190;
+        var REQUIRED_VER = 191;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2311,6 +2311,21 @@
         </div>
     </div>
 
+    <div id="modal-persona-image-viewer" class="modal">
+        <div class="modal-content modal-content-wide persona-image-viewer-content">
+            <div class="modal-header">
+                <h3 id="persona-image-viewer-title">Imagem da persona</h3>
+                <button class="modal-close" onclick="closeModal('modal-persona-image-viewer')" type="button">&times;</button>
+            </div>
+            <div class="modal-body persona-image-viewer-body">
+                <img id="persona-image-viewer-img" class="persona-image-viewer-img" src="" alt="Imagem da persona">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" type="button" onclick="closeModal('modal-persona-image-viewer')">Fechar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="modal-persona-prompt-editor" class="modal">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
@@ -2393,8 +2408,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-21"></script>
-    <script src="/video/static/pwa.js?v=20260421-21"></script>
+    <script src="/video/static/app.js?v=20260421-22"></script>
+    <script src="/video/static/pwa.js?v=20260421-22"></script>
 </body>
 </html>
 
