@@ -168,14 +168,15 @@ def compose_video(
     video_output = "[slideshow]"
 
     if enable_audio_spectrum:
-        panel_height = max(130, int(height * 0.16))
+        panel_height = max(110, int(height * 0.14))
         panel_y = max(height - panel_height, 0)
-        spectrum_height = max(88, panel_height - 24)
-        spectrum_width = max(320, width - 32)
-        spectrum_x = max((width - spectrum_width) // 2, 0)
-        spectrum_y = panel_y + max((panel_height - spectrum_height) // 2, 0)
+        spectrum_height = panel_height
+        spectrum_width = width
+        spectrum_x = 0
+        spectrum_y = panel_y
         filter_complex += (
             f";\n[{audio_idx}:a]aformat=channel_layouts=mono,"
+            f"volume=2.2,"
             f"showfreqs=s={spectrum_width}x{spectrum_height}:mode=bar:fscale=log:ascale=sqrt:"
             f"win_size=2048:overlap=0.72:"
             f"colors=0xff00ff|0x7a00ff|0x0058ff|0x00d8ff|0x00ff66|0xc8ff00|0xffa000|0xff3300,"
@@ -387,15 +388,16 @@ def _render_static_fallback(
 
     video_output = "[slideshow]"
     if enable_audio_spectrum:
-        panel_height = max(130, int(height * 0.16))
+        panel_height = max(110, int(height * 0.14))
         panel_y = max(height - panel_height, 0)
-        spectrum_height = max(88, panel_height - 24)
-        spectrum_width = max(320, width - 32)
-        spectrum_x = max((width - spectrum_width) // 2, 0)
-        spectrum_y = panel_y + max((panel_height - spectrum_height) // 2, 0)
+        spectrum_height = panel_height
+        spectrum_width = width
+        spectrum_x = 0
+        spectrum_y = panel_y
 
         filter_complex += (
             f";[{audio_idx}:a]aformat=channel_layouts=mono,"
+            f"volume=2.2,"
             f"showfreqs=s={spectrum_width}x{spectrum_height}:mode=bar:fscale=log:ascale=sqrt:"
             f"win_size=2048:overlap=0.72:"
             f"colors=0xff00ff|0x7a00ff|0x0058ff|0x00d8ff|0x00ff66|0xc8ff00|0xffa000|0xff3300,"
