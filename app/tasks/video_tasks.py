@@ -1494,10 +1494,12 @@ async def run_realistic_video_pipeline(project_id: int):
                 )
                 logger.info(f"Grok prompt optimized: {optimized_prompt[:200]}...")
             else:
+                seedance_optimizer_temperature = 0.2 if engine == "wan2" else None
                 optimized_prompt = await optimize_prompt_for_seedance(
                     user_description=user_prompt,
                     duration=duration,
                     has_reference_image=has_reference_image,
+                    temperature=seedance_optimizer_temperature,
                 )
                 logger.info(f"Seedance prompt optimized: {optimized_prompt[:200]}...")
 

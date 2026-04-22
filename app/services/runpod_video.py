@@ -66,6 +66,7 @@ async def generate_wan_video(
     # Choose endpoint based on whether we have a reference image
     use_i2v = image_path and os.path.exists(image_path)
     endpoint = WAN_I2V_ENDPOINT if use_i2v else WAN_T2V_ENDPOINT
+    wan_temperature = 0.2
 
     input_data = {
         "prompt": prompt,
@@ -74,7 +75,8 @@ async def generate_wan_video(
         "num_inference_steps": 30,
         "guidance_scale": 5,
         "flow_shift": 5,
-        "enable_prompt_optimization": True,
+        "enable_prompt_optimization": False,
+        "temperature": wan_temperature,
     }
 
     # Add reference image for I2V
@@ -88,11 +90,29 @@ async def generate_wan_video(
     endpoint_url = f"{RUNPOD_BASE_URL}/{endpoint}"
 
     async with httpx.AsyncClient(timeout=120) as client:
+        submit_payload = {"input": input_data}
         resp = await client.post(
             f"{endpoint_url}/run",
             headers=headers,
-            json={"input": input_data},
+            json=submit_payload,
         )
+
+        if resp.status_code in (400, 422):
+            details = (resp.text or "")[:300]
+            lowered = details.lower()
+            if "temperature" in lowered:
+                logger.warning(
+                    "Wan endpoint rejected temperature control; retrying without temperature. details=%s",
+                    details,
+                )
+                fallback_input = dict(input_data)
+                fallback_input.pop("temperature", None)
+                resp = await client.post(
+                    f"{endpoint_url}/run",
+                    headers=headers,
+                    json={"input": fallback_input},
+                )
+
         resp.raise_for_status()
         job = resp.json()
 

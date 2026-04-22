@@ -29,6 +29,14 @@ def _retry_delay_from_header(retry_after: str | None, default_seconds: int = 5) 
     except Exception:
         return default_seconds
 
+
+def _clamp_prompt_temperature(value: float | None, default_value: float = 0.7) -> float:
+    try:
+        parsed = float(value)
+    except Exception:
+        return default_value
+    return max(0.0, min(parsed, 1.0))
+
 # Curated Seedance prompt engineering system prompt
 _SEEDANCE_SYSTEM_PROMPT = """You are an expert prompt engineer for Seedance 2.0, ByteDance's state-of-the-art AI video generation model.
 
@@ -108,6 +116,7 @@ async def optimize_prompt_for_seedance(
     duration: int = 7,
     tone: str | None = None,
     has_reference_image: bool = False,
+    temperature: float | None = None,
 ) -> str:
     """Convert user's description (Portuguese) into an optimized English Seedance 2.0 prompt."""
     client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
@@ -122,6 +131,8 @@ async def optimize_prompt_for_seedance(
             "The prompt must preserve the same subject identity and key visual traits from that image."
         )
 
+    prompt_temperature = _clamp_prompt_temperature(temperature, default_value=0.7)
+
     try:
         resp = await client.chat.completions.create(
             model="gpt-4o",
@@ -129,7 +140,7 @@ async def optimize_prompt_for_seedance(
                 {"role": "system", "content": system},
                 {"role": "user", "content": user_msg},
             ],
-            temperature=0.7,
+            temperature=prompt_temperature,
             max_tokens=800,
         )
         optimized = resp.choices[0].message.content.strip()

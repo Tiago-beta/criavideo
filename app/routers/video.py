@@ -2364,11 +2364,14 @@ async def generate_realistic_prompt_endpoint(
     else:
         from app.services.seedance_video import optimize_prompt_for_seedance
 
+        seedance_optimizer_temperature = 0.2 if engine == "wan2" else None
+
         optimized = await optimize_prompt_for_seedance(
             user_description=prompt_for_optimizer,
             duration=duration,
             tone=req.style,
             has_reference_image=req.has_reference_image,
+            temperature=seedance_optimizer_temperature,
         )
 
     temporal_prompt = await _generate_temporal_realistic_prompt(
