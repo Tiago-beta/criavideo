@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v178 loaded");
+﻿console.log("[CriaVideo] app.js v179 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1213,6 +1213,28 @@ async function createSimilar(projectId) {
         return;
     }
 
+    let projectDetail = null;
+    try {
+        projectDetail = await api(`/video/projects/${projectId}`);
+    } catch (error) {
+        console.warn("[createSimilar] Falha ao carregar detalhes do projeto:", error?.message || error);
+    }
+
+    let tagsData = {};
+    const rawTags = projectDetail ? projectDetail.tags : null;
+    if (rawTags && typeof rawTags === "object" && !Array.isArray(rawTags)) {
+        tagsData = rawTags;
+    } else if (typeof rawTags === "string") {
+        try {
+            const parsed = JSON.parse(rawTags);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                tagsData = parsed;
+            }
+        } catch (_) {
+            tagsData = {};
+        }
+    }
+
     const realisticArtists = new Set([
         "MiniMax Hailuo",
         "Wan 2.2",
@@ -1221,12 +1243,42 @@ async function createSimilar(projectId) {
         "Grok",
         "Cria 3.0 speed",
     ]);
+    const tagsType = String(tagsData.type || "").trim().toLowerCase();
     const sourceLooksRealistic = (
         project.video_type === "realista"
         || project.video_type === "realistic"
+        || project.is_realistic === true
+        || projectDetail?.is_realistic === true
+        || tagsType === "realista"
+        || tagsType === "realistic"
+        || !!tagsData.engine
         || realisticArtists.has((project.track_artist || "").trim())
     );
     const inferredVideoType = sourceLooksRealistic ? "realista" : "imagens_ia";
+    const sourceAspect = project.aspect_ratio || projectDetail?.aspect_ratio || "16:9";
+
+    const normalizeEngine = (value) => {
+        const raw = String(value || "").trim().toLowerCase();
+        if (["wan2", "grok", "minimax", "seedance"].includes(raw)) {
+            return raw;
+        }
+        if (raw.includes("minimax")) return "minimax";
+        if (raw.includes("seedance")) return "seedance";
+        if (raw.includes("cria 3.0") || raw.includes("grok")) return "grok";
+        if (raw.includes("wan") || raw.includes("ultra high")) return "wan2";
+        return "wan2";
+    };
+
+    const normalizeAudioUrl = (value) => {
+        const raw = String(value || "").trim();
+        if (!raw) return "";
+        try {
+            const parsed = new URL(raw, window.location.origin);
+            return `${parsed.origin}${parsed.pathname}`.toLowerCase();
+        } catch (_) {
+            return raw.split("?")[0].toLowerCase();
+        }
+    };
 
     // 1. Reset wizard state
     resetCreateWizard();
@@ -1242,12 +1294,147 @@ async function createSimilar(projectId) {
         setSelectedStyles("script-style-tags", project.style_prompt);
     }
     const aspectEl = document.getElementById("script-aspect");
-    if (aspectEl && project.aspect_ratio) aspectEl.value = project.aspect_ratio;
+    if (aspectEl) aspectEl.value = sourceAspect;
     const realisticAspectEl = document.getElementById("script-realistic-aspect");
-    if (realisticAspectEl && project.aspect_ratio) realisticAspectEl.value = project.aspect_ratio;
+    if (realisticAspectEl) realisticAspectEl.value = sourceAspect;
+
+    scriptData.text = project.lyrics_text || "";
+    scriptData.title = project.title || "";
+    scriptData.aspect = sourceAspect;
 
     scriptData.videoType = inferredVideoType;
-    scriptData.promptOptimized = sourceLooksRealistic;
+    scriptData.promptOptimized = sourceLooksRealistic
+        ? (typeof tagsData.prompt_optimized === "boolean" ? tagsData.prompt_optimized : true)
+        : false;
+
+    if (sourceLooksRealistic) {
+        const durationEl = document.getElementById("script-realistic-duration");
+        if (durationEl) {
+            const durationOptions = Array.from(durationEl.querySelectorAll(".duration-option"));
+            const desiredDuration = Math.max(1, Math.round(Number(projectDetail?.track_duration || project.track_duration || tagsData.dialogue_duration || 10)));
+            let targetDurationBtn = durationOptions.find((btn) => (parseInt(btn.dataset.value || "0", 10) || 0) === desiredDuration);
+            if (!targetDurationBtn && durationOptions.length) {
+                targetDurationBtn = durationOptions.reduce((best, btn) => {
+                    const currentVal = parseInt(btn.dataset.value || "0", 10) || 0;
+                    const bestVal = parseInt(best.dataset.value || "0", 10) || 0;
+                    const currentGap = Math.abs(currentVal - desiredDuration);
+                    const bestGap = Math.abs(bestVal - desiredDuration);
+                    return currentGap < bestGap ? btn : best;
+                }, durationOptions[0]);
+            }
+            durationOptions.forEach((btn) => btn.classList.toggle("selected", btn === targetDurationBtn));
+        }
+
+        const selectedEngine = normalizeEngine(tagsData.engine || project.track_artist || projectDetail?.track_artist || "wan2");
+        const engineOptions = Array.from(document.querySelectorAll("#script-realistic-engine .engine-option"));
+        let selectedEngineBtn = engineOptions.find((btn) => (btn.dataset.value || "") === selectedEngine);
+        if (!selectedEngineBtn) {
+            selectedEngineBtn = engineOptions.find((btn) => btn.classList.contains("selected")) || engineOptions[0] || null;
+        }
+        engineOptions.forEach((btn) => btn.classList.toggle("selected", btn === selectedEngineBtn));
+
+        const tevoxiAudioUrl = String(tagsData.audio_url || "").trim();
+        const usesTevoxiAudio = !!tevoxiAudioUrl;
+        const tevoxiCb = document.getElementById("script-realistic-tevoxi");
+        if (tevoxiCb) {
+            tevoxiCb.checked = usesTevoxiAudio;
+            toggleScriptTevoxiSongs();
+        }
+
+        const musicCb = document.getElementById("script-realistic-music");
+        if (musicCb) {
+            if (usesTevoxiAudio) {
+                musicCb.checked = false;
+            } else if (typeof tagsData.add_music === "boolean") {
+                musicCb.checked = tagsData.add_music;
+            }
+        }
+
+        const speechMode = String(tagsData.speech_mode || "").trim().toLowerCase();
+        const narrationEnabled = (
+            speechMode === "dialogue_auto"
+            || speechMode === "narration_manual"
+            || !!tagsData.dialogue_enabled
+            || !!tagsData.add_narration
+        );
+        const narrationCb = document.getElementById("script-realistic-narration");
+        if (narrationCb) narrationCb.checked = narrationEnabled;
+
+        const narrationOptionsEl = document.getElementById("script-realistic-narration-options");
+        if (narrationOptionsEl) narrationOptionsEl.hidden = !narrationEnabled;
+
+        const narrationTextEl = document.getElementById("script-realistic-narration-text");
+        if (narrationTextEl) {
+            const shouldFillText = speechMode === "narration_manual" || (narrationEnabled && !speechMode);
+            narrationTextEl.value = shouldFillText ? String(projectDetail?.description || "").trim() : "";
+        }
+
+        const narrationVoice = String(tagsData.narration_voice || "onyx").trim();
+        const voiceButtons = Array.from(document.querySelectorAll("#script-realistic-voices .voice-btn"));
+        let selectedVoiceBtn = voiceButtons.find((btn) => (btn.dataset.value || "") === narrationVoice);
+        if (!selectedVoiceBtn) {
+            selectedVoiceBtn = voiceButtons.find((btn) => btn.classList.contains("selected")) || voiceButtons[0] || null;
+        }
+        voiceButtons.forEach((btn) => btn.classList.toggle("selected", btn === selectedVoiceBtn));
+
+        const selectedPersona = _normalizeRealisticPersonaType(tagsData.interaction_persona || "natureza");
+        setSelectedRealisticPersona(selectedPersona);
+
+        const personaIds = (Array.isArray(tagsData.persona_profile_ids) ? tagsData.persona_profile_ids : [])
+            .map((id) => parseInt(id || "0", 10) || 0)
+            .filter((id, index, arr) => id > 0 && arr.indexOf(id) === index);
+        if (!personaIds.length) {
+            const singlePersonaId = parseInt(tagsData.persona_profile_id || "0", 10) || 0;
+            if (singlePersonaId > 0) personaIds.push(singlePersonaId);
+        }
+
+        const multiPersonaCb = document.getElementById("script-realistic-multi-persona");
+        if (multiPersonaCb) multiPersonaCb.checked = personaIds.length > 1;
+
+        await _refreshPersonaContext("script", selectedPersona);
+        if (personaIds.length) {
+            _setSelectedPersonaProfileIds("script", selectedPersona, personaIds);
+            _renderPersonaPreview("script");
+        }
+
+        if (usesTevoxiAudio) {
+            try {
+                await _loadScriptTevoxiSongsIfNeeded();
+                const targetAudioUrl = normalizeAudioUrl(tevoxiAudioUrl);
+                const matchedSong = _scriptTevoxiSongs.find((song) => normalizeAudioUrl(song.audio_url) === targetAudioUrl)
+                    || _scriptTevoxiSongs.find((song) => {
+                        const jobId = String(song?.job_id || "").trim();
+                        return jobId && tevoxiAudioUrl.includes(jobId);
+                    })
+                    || null;
+
+                if (matchedSong) {
+                    const clipStart = Number(tagsData.clip_start || 0);
+                    const clipDuration = Number(tagsData.clip_duration || 0);
+                    const clipPayload = _buildTevoxiSelectionPayload(
+                        matchedSong,
+                        clipStart,
+                        clipDuration,
+                        Number(matchedSong.duration || clipDuration || 120),
+                    );
+                    const storedLyrics = String(tagsData.lyrics || "").trim();
+                    if (storedLyrics) {
+                        clipPayload.lyrics_excerpt = storedLyrics;
+                    }
+
+                    _scriptSelectedSong = matchedSong;
+                    _scriptSelectedClip = clipPayload;
+                    _renderScriptTevoxiSongs();
+                    _updateScriptTevoxiSelectionUI();
+                } else {
+                    showToast("Nao foi possivel localizar a musica Tevoxi original. Selecione novamente.", "info");
+                }
+            } catch (error) {
+                console.warn("[createSimilar] Falha ao restaurar selecao Tevoxi:", error?.message || error);
+            }
+        }
+    }
+
     scriptStep = 1;
 
     document.querySelectorAll("#script-video-type-grid .video-type-card").forEach((card) => {
@@ -6981,6 +7168,7 @@ let _clipWaveformLoading = false;
 let _clipAudioObjectUrl = "";
 let _clipSelectorContext = "auto";
 let _clipSelectedSong = null;
+let _clipTranscriptionLoading = false;
 
 function _getClipAudioUrl(song) {
     if (!song) return "";
@@ -7126,7 +7314,59 @@ function _getStoredClipSelection(context) {
 function _setClipApplyButtonLabel(context) {
     const btn = document.getElementById("clip-apply-btn");
     if (!btn) return;
+    if (_clipTranscriptionLoading) return;
     btn.textContent = context === "auto" ? "Adicionar trecho" : "Usar no vídeo";
+}
+
+function _setClipTranscriptionLoading(isLoading, message = "") {
+    _clipTranscriptionLoading = !!isLoading;
+
+    const applyBtn = document.getElementById("clip-apply-btn");
+    const playBtn = document.getElementById("clip-play-btn");
+    const closeBtn = document.getElementById("clip-close-btn");
+    const backBtn = document.getElementById("clip-back-btn");
+    const statusEl = document.getElementById("clip-transcribe-status");
+
+    document.querySelectorAll("#clip-duration-options .duration-option").forEach((btn) => {
+        btn.disabled = _clipTranscriptionLoading;
+    });
+
+    if (applyBtn) {
+        applyBtn.disabled = _clipTranscriptionLoading;
+        if (_clipTranscriptionLoading) {
+            applyBtn.textContent = "Transcrevendo...";
+        } else {
+            _setClipApplyButtonLabel(_clipSelectorContext);
+        }
+    }
+    if (playBtn) playBtn.disabled = _clipTranscriptionLoading;
+    if (closeBtn) closeBtn.disabled = _clipTranscriptionLoading;
+    if (backBtn) backBtn.disabled = _clipTranscriptionLoading;
+
+    if (statusEl) {
+        statusEl.hidden = !_clipTranscriptionLoading;
+        statusEl.textContent = message || "Transcrevendo trecho selecionado...";
+    }
+}
+
+async function _transcribeScriptTevoxiClipText(song, clip) {
+    if (!song || !clip) return "";
+    const clipDuration = Number(clip.clip_duration || 0);
+    if (!Number.isFinite(clipDuration) || clipDuration <= 0) {
+        return String(clip.lyrics_excerpt || "").trim();
+    }
+
+    const result = await api("/video/transcribe-tevoxi-clip", {
+        method: "POST",
+        body: JSON.stringify({
+            audio_url: String(song.audio_url || ""),
+            clip_start: Number(clip.clip_start || 0),
+            clip_duration: clipDuration,
+            lyrics_hint: String(song.lyrics || ""),
+        }),
+    });
+
+    return String(result?.text || "").replace(/\s+/g, " ").trim();
 }
 
 function openClipSelector(context = "auto", songOverride = null) {
@@ -7164,6 +7404,7 @@ function openClipSelector(context = "auto", songOverride = null) {
     _clipDragX = 0;
 
     document.getElementById("clip-song-title").textContent = song.title || "Música";
+    _setClipTranscriptionLoading(false);
     _updateClipDurationButtons();
     _setClipApplyButtonLabel(normalizedContext);
     _setClipPlayButton(false);
@@ -7187,6 +7428,7 @@ function openClipSelector(context = "auto", songOverride = null) {
 }
 
 function closeClipSelector() {
+    if (_clipTranscriptionLoading) return;
     _stopClipPreview();
     const audio = document.getElementById("clip-audio");
     if (audio) audio.currentTime = 0;
@@ -7431,6 +7673,7 @@ function _updateClipDurationButtons() {
 }
 
 function _selectClipDuration(val) {
+    if (_clipTranscriptionLoading) return;
     if (!_clipSongDuration) return;
     _clipDuration = val === 0 ? _clipSongDuration : val;
     _clipDuration = Math.min(_clipDuration, _clipSongDuration);
@@ -7541,6 +7784,7 @@ function _initClipWaveformDrag() {
     }
 
     function onStart(e) {
+        if (_clipTranscriptionLoading) return;
         if (!_clipSongDuration) return;
         if (_clipDuration <= 0 || _clipDuration >= _clipSongDuration) return;
         e.preventDefault();
@@ -7559,6 +7803,7 @@ function _initClipWaveformDrag() {
     }
 
     function onMove(e) {
+        if (_clipTranscriptionLoading) return;
         if (!_clipDragging || !_clipSongDuration) return;
         e.preventDefault();
 
@@ -7609,6 +7854,7 @@ function _initClipWaveformDrag() {
     }
 
     container.addEventListener("mousedown", (e) => {
+        if (_clipTranscriptionLoading) return;
         if (e.target === container || e.target.tagName === "CANVAS") {
             if (_clipDuration <= 0 || !_clipSongDuration) return;
             const time = getTimeFromX(e.clientX);
@@ -7619,6 +7865,7 @@ function _initClipWaveformDrag() {
     });
 
     container.addEventListener("touchstart", (e) => {
+        if (_clipTranscriptionLoading) return;
         if (e.target === container || e.target.tagName === "CANVAS") {
             if (_clipDuration <= 0 || !_clipSongDuration) return;
             const time = getTimeFromX(e.touches[0].clientX);
@@ -7635,6 +7882,7 @@ function _initClipWaveformDrag() {
 }
 
 function toggleClipPreview() {
+    if (_clipTranscriptionLoading) return;
     if (_clipPlaying) {
         _stopClipPreview();
         return;
@@ -7680,13 +7928,34 @@ function toggleClipPreview() {
     }
 }
 
-function addClipToThemes() {
+async function addClipToThemes() {
+    if (_clipTranscriptionLoading) return;
     const song = _clipSelectedSong || _resolveClipSong(_clipSelectorContext);
     if (!song) return;
 
-    const payload = _buildTevoxiSelectionPayload(song, _clipStart, _clipDuration, _clipSongDuration);
+    let payload = _buildTevoxiSelectionPayload(song, _clipStart, _clipDuration, _clipSongDuration);
 
     if (_clipSelectorContext === "script") {
+        const clipDuration = Number(payload.clip_duration || 0);
+        if (Number.isFinite(clipDuration) && clipDuration > 0) {
+            _setClipTranscriptionLoading(true, "Transcrevendo trecho com IA. Aguarde...");
+            try {
+                const transcribedText = await _transcribeScriptTevoxiClipText(song, payload);
+                if (!transcribedText) {
+                    throw new Error("transcription_empty");
+                }
+                payload = {
+                    ...payload,
+                    lyrics_excerpt: transcribedText,
+                };
+            } catch (error) {
+                alert("Nao foi possivel transcrever o trecho agora. Tente novamente em alguns segundos.");
+                return;
+            } finally {
+                _setClipTranscriptionLoading(false);
+            }
+        }
+
         _scriptSelectedSong = song;
         _scriptSelectedClip = payload;
 
@@ -7697,7 +7966,6 @@ function addClipToThemes() {
         _renderScriptTevoxiSongs();
         _updateScriptTevoxiSelectionUI();
         _updateScriptDetailsForTevoxiMode();
-        _refreshScriptTevoxiClipTranscription(song, payload, clipSignature);
         closeClipSelector();
         return;
     }
