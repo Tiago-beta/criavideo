@@ -62,6 +62,33 @@ _ELEVENLABS_DIVERSE_VOICES = [
     "21m00Tcm4TlvDq8ikWAM",  # Rachel
 ]
 
+_SPEECH_HINT_MARKERS = (
+    "fala em pt-br",
+    "fala pt-br",
+    "falas em pt-br",
+    "dialogo",
+    "dialogue",
+)
+
+_TECHNICAL_PROMPT_MARKERS = (
+    "prompt de imagem",
+    "image prompt",
+    "gancho da cena",
+    "midjourney",
+    "dreamworks",
+    "3d pixar",
+    "aspect",
+    "formato",
+    "duracao",
+    "duration",
+    "9:16",
+    "16:9",
+    "1:1",
+    "camera",
+    "lens",
+    "negative prompt",
+)
+
 
 def _estimate_turn_count(target_duration: float) -> int:
     duration = max(3.0, float(target_duration or 0.0))
@@ -120,11 +147,87 @@ def _normalize_characters(raw_names: list[str] | None, limit: int = 4) -> list[s
     return names
 
 
+def _sanitize_prompt_for_speech(prompt_text: str, max_len: int = 520) -> str:
+    raw = str(prompt_text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not raw:
+        return "a situacao principal da cena"
+
+    lines = [line.strip(" \t-*•") for line in raw.split("\n") if line.strip()]
+
+    # Prefer explicit speech sections when present (ex.: "Fala em PT-BR:").
+    captured: list[str] = []
+    capture_mode = False
+    for line in lines:
+        lower = line.lower()
+        if any(marker in lower for marker in _SPEECH_HINT_MARKERS):
+            capture_mode = True
+            tail = line.split(":", 1)[1].strip() if ":" in line else ""
+            if tail:
+                captured.append(tail)
+            continue
+
+        if capture_mode:
+            if any(marker in lower for marker in _TECHNICAL_PROMPT_MARKERS):
+                break
+            if ":" in line:
+                section_key = line.split(":", 1)[0].strip().lower()
+                if len(section_key) <= 30 and any(
+                    key in section_key
+                    for key in ("prompt", "gancho", "scene", "cena", "camera", "estilo", "formato", "duracao")
+                ):
+                    break
+            captured.append(line)
+            if len(" ".join(captured)) >= max_len:
+                break
+
+    candidate = " ".join(captured).strip()
+
+    if not candidate:
+        filtered: list[str] = []
+        for line in lines:
+            lower = line.lower()
+            if any(marker in lower for marker in _TECHNICAL_PROMPT_MARKERS):
+                continue
+
+            cleaned = re.sub(r"^[A-Za-z0-9_ /\\\-]{1,40}:\s*", "", line).strip()
+            cleaned = cleaned.strip(" \"'")
+            if not cleaned:
+                continue
+
+            filtered.append(cleaned)
+            if len(" ".join(filtered)) >= max_len:
+                break
+
+        candidate = " ".join(filtered).strip()
+
+    quoted_chunks = re.findall(r'"([^\"]{6,260})"', candidate)
+    if quoted_chunks:
+        candidate = " ".join(quoted_chunks[:3])
+
+    candidate = re.sub(r"\s+", " ", candidate).strip().strip(" \"'`")
+    if len(candidate) > max_len:
+        candidate = candidate[:max_len].rsplit(" ", 1)[0].strip()
+
+    if len(candidate) < 18:
+        return "a situacao principal da cena"
+    return candidate
+
+
+def _topic_hint(topic: str, max_words: int = 18) -> str:
+    clean = re.sub(r"\s+", " ", str(topic or "").strip())
+    if not clean:
+        return ""
+    words = clean.split(" ")
+    if len(words) > max_words:
+        clean = " ".join(words[:max_words])
+    return clean.strip(" ,.-")
+
+
 def _fallback_dialogue_turns(prompt_text: str, characters: list[str], target_duration: float) -> list[dict]:
     turns_count = _estimate_turn_count(target_duration)
-    topic = re.sub(r"\s+", " ", (prompt_text or "").strip())[:200]
+    topic = _sanitize_prompt_for_speech(prompt_text, max_len=220)
     if not topic:
-        topic = "o tema do video"
+        topic = "a situacao principal da cena"
 
     templates = [
         "Voce viu isso? Parece inacreditavel, mas faz sentido quando observamos melhor.",
@@ -141,7 +244,8 @@ def _fallback_dialogue_turns(prompt_text: str, characters: list[str], target_dur
         base = templates[idx % len(templates)]
         text = base
         if idx == 0:
-            text = f"Sobre {topic}, olha isso: {base}"
+            hint = _topic_hint(topic)
+            text = f"Contexto rapido: {hint}. {base}" if hint else base
         turns.append({"speaker": speaker, "text": text[:220]})
     return turns
 
@@ -153,18 +257,21 @@ async def _generate_dialogue_turns(
     tone: str,
     interaction_persona: str,
 ) -> list[dict]:
+    speech_seed = _sanitize_prompt_for_speech(prompt_text)
+
     if not settings.openai_api_key:
-        return _fallback_dialogue_turns(prompt_text, characters, target_duration)
+        return _fallback_dialogue_turns(speech_seed, characters, target_duration)
 
     turns_count = _estimate_turn_count(target_duration)
     system_msg = (
         "Voce escreve dialogos curtos para locucao de video. "
         "Responda APENAS JSON valido no formato {\"turns\":[{\"speaker\":\"...\",\"text\":\"...\"}]}. "
         "Cada fala deve ser curta (8 a 22 palavras), natural e falada. "
-        "Nao use narracao externa, somente falas dos personagens."
+        "Nao use narracao externa, somente falas dos personagens. "
+        "Nunca leia ou repita metadados tecnicos do briefing (ex.: Prompt de Imagem, Gancho da Cena, formato 9:16/16:9, camera)."
     )
     user_msg = (
-        f"Tema: {prompt_text}\n"
+        f"Tema: {speech_seed}\n"
         f"Personagens permitidos: {', '.join(characters)}\n"
         f"Quantidade alvo de falas: {turns_count}\n"
         f"Tom: {tone}\n"
@@ -187,7 +294,7 @@ async def _generate_dialogue_turns(
         payload = json.loads(payload_raw)
         raw_turns = payload.get("turns") if isinstance(payload, dict) else None
         if not isinstance(raw_turns, list) or not raw_turns:
-            return _fallback_dialogue_turns(prompt_text, characters, target_duration)
+            return _fallback_dialogue_turns(speech_seed, characters, target_duration)
 
         turns: list[dict] = []
         for idx, item in enumerate(raw_turns):
@@ -195,6 +302,11 @@ async def _generate_dialogue_turns(
                 continue
             speaker_raw = str(item.get("speaker") or "").strip()
             text_raw = re.sub(r"\s+", " ", str(item.get("text") or "").strip())
+            text_raw = re.sub(
+                r"(?i)^(?:prompt de imagem|image prompt|gancho da cena|scene prompt)\s*[:\-]\s*",
+                "",
+                text_raw,
+            ).strip()
             if not text_raw:
                 continue
             if speaker_raw not in characters:
@@ -204,11 +316,11 @@ async def _generate_dialogue_turns(
                 break
 
         if len(turns) < 1:
-            return _fallback_dialogue_turns(prompt_text, characters, target_duration)
+            return _fallback_dialogue_turns(speech_seed, characters, target_duration)
         return turns
     except Exception as exc:
         logger.warning(f"Dialogue generation failed, using fallback: {exc}")
-        return _fallback_dialogue_turns(prompt_text, characters, target_duration)
+        return _fallback_dialogue_turns(speech_seed, characters, target_duration)
 
 
 async def _resolve_voice_configs(

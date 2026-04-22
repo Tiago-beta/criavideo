@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 189;
+        var REQUIRED_VER = 190;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1300,7 +1300,7 @@
                         <div id="script-realistic-narration-options" class="realistic-narration-options" hidden>
                             <div class="form-group">
                                 <label>Texto da narração</label>
-                                <textarea id="script-realistic-narration-text" class="input" rows="3" placeholder="Opcional: se deixar em branco, a IA cria falas automáticas usando as vozes das personas selecionadas."></textarea>
+                                <textarea id="script-realistic-narration-text" class="input" rows="3" placeholder="Opcional: se preencher, a IA narra exatamente este texto. Se deixar vazio com narracao ativa, a IA cria dialogo automatico por personagem (sem ler labels tecnicos do prompt)."></textarea>
                             </div>
                             <div class="form-group">
                                 <label>Voz</label>
@@ -2393,8 +2393,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260421-20"></script>
-    <script src="/video/static/pwa.js?v=20260421-20"></script>
+    <script src="/video/static/app.js?v=20260421-21"></script>
+    <script src="/video/static/pwa.js?v=20260421-21"></script>
 </body>
 </html>
 

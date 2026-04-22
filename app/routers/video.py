@@ -1918,6 +1918,10 @@ async def generate_realistic_endpoint(
         selected_persona_profile_ids = [int(profile.id) for profile in resolved_personas]
         selected_persona_profile_id = selected_persona_profile_ids[0] if selected_persona_profile_ids else 0
 
+    auto_dialogue_requested = bool(req.add_narration) and not bool(str(req.narration_text or "").strip())
+    if auto_dialogue_requested and not dialogue_enabled:
+        dialogue_enabled = True
+
     if dialogue_enabled:
         if not dialogue_characters and persona_dialogue_characters:
             dialogue_characters = persona_dialogue_characters[:4]
@@ -1926,6 +1930,8 @@ async def generate_realistic_endpoint(
 
         if not dialogue_voice_profile_ids and persona_dialogue_voice_profile_ids:
             dialogue_voice_profile_ids = persona_dialogue_voice_profile_ids[:4]
+
+    dialogue_duration = max(1, min(duration, int(req.dialogue_duration or duration))) if dialogue_enabled else 0
 
     has_reference_image = bool(image_path_str)
     if not has_reference_image:
@@ -1956,6 +1962,12 @@ async def generate_realistic_endpoint(
     # Narration config stored in tags JSON
     narration_text = (req.narration_text or "").strip() if req.add_narration and not dialogue_enabled else ""
     narration_voice = req.narration_voice or "onyx"
+    speech_mode = "none"
+    if dialogue_enabled:
+        speech_mode = "dialogue_auto"
+    elif req.add_narration and bool(narration_text):
+        speech_mode = "narration_manual"
+
     external_audio_url = (req.audio_url or "").strip()
     external_lyrics = (req.lyrics or "").strip()
     tags_data = {
@@ -1966,6 +1978,8 @@ async def generate_realistic_endpoint(
         "reference_count": max(1, reference_count),
         "add_music": req.add_music or bool(external_audio_url),
         "add_narration": req.add_narration and bool(narration_text) and not dialogue_enabled,
+        "speech_mode": speech_mode,
+        "speech_auto_requested": auto_dialogue_requested,
         "narration_voice": narration_voice,
         "prompt_optimized": bool(req.prompt_optimized),
         "realistic_style": (req.realistic_style or "").strip(),

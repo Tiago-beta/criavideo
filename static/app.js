@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v174 loaded");
+﻿console.log("[CriaVideo] app.js v175 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1847,6 +1847,10 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             .filter((id, idx, arr) => id > 0 && arr.indexOf(id) === idx)
             .slice(0, 4);
 
+        const speechMode = dialogueEnabled
+            ? "dialogue_auto"
+            : (addNarration && narrationText ? "narration_manual" : "none");
+
         if (!wantsReferenceImage && !personaProfileIds.length) {
             throw new Error("Crie uma ou mais personas de interação primeiro para gerar o vídeo realista.");
         }
@@ -1866,7 +1870,12 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             _smoothProgressTarget = 15;
         }
 
-        setCreateProgress(10, "Gerando vídeo realista...", "Otimizando prompt com IA...");
+        const speechStatusLabel = speechMode === "dialogue_auto"
+            ? "Otimizando prompt e preparando falas automaticas por personagem..."
+            : speechMode === "narration_manual"
+                ? "Otimizando prompt e preparando narracao do texto informado..."
+                : "Otimizando prompt com IA...";
+        setCreateProgress(10, "Gerando vídeo realista...", speechStatusLabel);
         _smoothProgressTarget = 15;
 
         const resp = await api("/video/generate-realistic", {
