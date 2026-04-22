@@ -1555,6 +1555,34 @@ a {
     cursor: grabbing;
 }
 
+.clip-transcribe-status {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: var(--accent);
+}
+
+.clip-transcribe-status::before {
+    content: "";
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(246, 165, 47, 0.45);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+#clip-duration-options .duration-option:disabled,
+#clip-play-btn:disabled,
+#clip-close-btn:disabled,
+#clip-back-btn:disabled,
+#clip-apply-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 /* ── Mobile Bottom Nav ── */
 .mobile-bottom-nav {
     display: none;

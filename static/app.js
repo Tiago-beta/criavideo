@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v179 loaded");
+﻿console.log("[CriaVideo] app.js v180 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -7362,6 +7362,7 @@ async function _transcribeScriptTevoxiClipText(song, clip) {
             audio_url: String(song.audio_url || ""),
             clip_start: Number(clip.clip_start || 0),
             clip_duration: clipDuration,
+            song_duration: Number(clip.song_duration || song.duration || 0),
             lyrics_hint: String(song.lyrics || ""),
         }),
     });

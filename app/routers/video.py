@@ -533,10 +533,10 @@ async def _download_external_audio_to_path(audio_url: str, output_path: Path) ->
 
 
 def _trim_audio_clip(input_path: str, output_path: str, clip_start: float, clip_duration: float) -> None:
-    trim_cmd = ["ffmpeg", "-y"]
+    trim_cmd = ["ffmpeg", "-y", "-i", input_path]
     if clip_start > 0:
+        # Place -ss after input for accurate clipping on compressed audio.
         trim_cmd += ["-ss", f"{clip_start:.3f}"]
-    trim_cmd += ["-i", input_path]
     if clip_duration > 0:
         trim_cmd += ["-t", f"{clip_duration:.3f}"]
     trim_cmd += ["-vn", "-c:a", "libmp3lame", "-b:a", "192k", output_path]
@@ -1435,7 +1435,61 @@ class TranscribeTevoxiClipRequest(BaseModel):
     audio_url: str
     clip_start: float = 0
     clip_duration: float = 10
+    song_duration: float = 0
     lyrics_hint: str = ""
+
+
+def _extract_lyrics_excerpt_fallback(
+    lyrics_text: str,
+    clip_start: float,
+    clip_duration: float,
+    song_duration: float,
+) -> str:
+    raw_lines = [line.strip() for line in str(lyrics_text or "").replace("\r", "\n").split("\n") if line.strip()]
+    if not raw_lines:
+        return ""
+
+    marker_pattern = re.compile(r"^\[[^\]]+\]$")
+    content_indexes = [idx for idx, line in enumerate(raw_lines) if not marker_pattern.match(line)]
+    if not content_indexes:
+        return " ".join(raw_lines)[:900]
+
+    total_content = len(content_indexes)
+    total_seconds = float(song_duration or 0)
+    if total_seconds <= 0:
+        total_seconds = max(float(clip_start or 0) + float(clip_duration or 0), 180.0)
+
+    start = max(0.0, float(clip_start or 0))
+    end = start + max(0.0, float(clip_duration or 0))
+
+    start_ratio = max(0.0, min(1.0, start / total_seconds))
+    end_ratio = max(start_ratio, min(1.0, end / total_seconds))
+
+    start_content_idx = int(start_ratio * total_content)
+    end_content_idx = int(end_ratio * total_content + 0.999)
+    start_content_idx = max(0, min(total_content - 1, start_content_idx))
+    end_content_idx = max(start_content_idx + 1, min(total_content, end_content_idx))
+
+    lines_per_second = total_content / max(total_seconds, 1.0)
+    target_lines = max(1, int(round(lines_per_second * max(float(clip_duration or 0), 8.0))))
+    if (end_content_idx - start_content_idx) < target_lines:
+        center = (start_content_idx + end_content_idx) // 2
+        half = max(1, target_lines // 2)
+        start_content_idx = max(0, center - half)
+        end_content_idx = min(total_content, start_content_idx + target_lines)
+
+    raw_start = content_indexes[start_content_idx]
+    raw_end = content_indexes[end_content_idx - 1]
+
+    # Include nearest section marker before selected lines for context.
+    marker_start = raw_start
+    for idx in range(raw_start, -1, -1):
+        if marker_pattern.match(raw_lines[idx]):
+            marker_start = idx
+            break
+
+    selected = raw_lines[marker_start:raw_end + 1]
+    return re.sub(r"\s+", " ", " ".join(selected)).strip()[:1200]
 
 
 @router.post("/transcribe-tevoxi-clip")
@@ -1449,6 +1503,7 @@ async def transcribe_tevoxi_clip_endpoint(
 
     clip_start = max(0.0, float(req.clip_start or 0))
     clip_duration = max(0.0, float(req.clip_duration or 0))
+    song_duration = max(0.0, float(req.song_duration or 0))
     if clip_duration <= 0:
         raise HTTPException(status_code=400, detail="Selecione um trecho com duração maior que zero.")
 
@@ -1458,6 +1513,13 @@ async def transcribe_tevoxi_clip_endpoint(
     transcribe_id = uuid.uuid4().hex
     source_path = transcribe_dir / f"{transcribe_id}_source.mp3"
     clip_path = transcribe_dir / f"{transcribe_id}_clip.mp3"
+
+    fallback_text = _extract_lyrics_excerpt_fallback(
+        req.lyrics_hint,
+        clip_start,
+        clip_duration,
+        song_duration,
+    )
 
     try:
         await _download_external_audio_to_path(audio_url, source_path)
@@ -1480,15 +1542,32 @@ async def transcribe_tevoxi_clip_endpoint(
             text = str(result.get("text", "") or "").strip()
             words = result.get("words", []) if isinstance(result.get("words", []), list) else []
 
+        if not text and fallback_text:
+            return {
+                "text": fallback_text,
+                "duration": clip_duration,
+                "words_count": 0,
+                "fallback": True,
+            }
+
         return {
-            "text": text,
+            "text": text or fallback_text,
             "duration": clip_duration,
             "words_count": len(words),
+            "fallback": False if text else bool(fallback_text),
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.warning(f"Tevoxi clip transcription failed: {e}")
+        if fallback_text:
+            return {
+                "text": fallback_text,
+                "duration": clip_duration,
+                "words_count": 0,
+                "fallback": True,
+                "fallback_reason": str(e),
+            }
         raise HTTPException(status_code=502, detail="Não foi possível transcrever o trecho agora.")
     finally:
         for path in (clip_path, source_path):
