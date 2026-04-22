@@ -26,6 +26,7 @@ def compose_video(
     output_dir: str = "",
     background_music_path: str = "",
     enable_zoom: bool = True,
+    enable_audio_spectrum: bool = False,
 ) -> dict:
     """Compose the final video using FFmpeg.
 
@@ -154,13 +155,24 @@ def compose_video(
     concat = "".join(concat_inputs) + f"concat=n={len(valid_scenes)}:v=1:a=0[slideshow]"
     filter_complex = f"{filter_str};\n{concat}"
 
+    video_output = "[slideshow]"
+
+    if enable_audio_spectrum:
+        spectrum_height = max(120, int(height * 0.18))
+        spectrum_y = max(height - spectrum_height - 28, 0)
+        filter_complex += (
+            f";\n[{audio_idx}:a]aformat=channel_layouts=mono,"
+            f"showwaves=s={width}x{spectrum_height}:mode=cline:colors=0xF6A52F,format=rgba[spectrum];"
+            f"{video_output}[spectrum]overlay=0:{spectrum_y}:shortest=1[with_spectrum]"
+        )
+        video_output = "[with_spectrum]"
+        logger.info("Audio spectrum overlay enabled")
+
     # Add subtitle burn-in if available
     if subtitle_path and os.path.exists(subtitle_path):
         sub_path_escaped = subtitle_path.replace("\\", "/").replace(":", "\\:")
-        filter_complex += f";\n[slideshow]ass='{sub_path_escaped}'[final]"
+        filter_complex += f";\n{video_output}ass='{sub_path_escaped}'[final]"
         video_output = "[final]"
-    else:
-        video_output = "[slideshow]"
 
     # Mix narration with background music if provided
     if music_idx is not None:

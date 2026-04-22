@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v176 loaded");
+﻿console.log("[CriaVideo] app.js v177 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1665,6 +1665,9 @@ function initCreateWizard() {
             if (opts) opts.hidden = !cb.checked;
         });
     });
+
+    _updateScriptSubtitlePositionVisibility();
+    _updateScriptDetailsForTevoxiMode();
 }
 
 function switchCreateMode(mode) {
@@ -1692,6 +1695,9 @@ function switchCreateMode(mode) {
 
     if (mode === "library") {
         populateSongSelector();
+    } else if (mode === "script") {
+        _updateScriptSubtitlePositionVisibility();
+        _updateScriptDetailsForTevoxiMode();
     }
 }
 
@@ -2393,14 +2399,31 @@ function scriptNext() {
             : false;
         const hasUserAudio = useUserAudioToggle && !!scriptUserAudioFile;
         const createNarration = !usePhotos || document.getElementById("script-create-narration").checked;
+        const useTevoxiAudio = _isScriptTevoxiMainAudioMode();
         const videoCreateNarration = hasVideo ? !!document.getElementById("script-video-create-narration")?.checked : false;
         if (!title) { alert("Digite o título do projeto."); return; }
+
+        if (useTevoxiAudio && (!_scriptSelectedSong || !_scriptSelectedClip)) {
+            alert("Selecione uma música e o trecho do Tevoxi para continuar.");
+            return;
+        }
+
+        if (useTevoxiAudio && hasVideo) {
+            alert("Desative o vídeo próprio para usar o áudio principal do Tevoxi.");
+            return;
+        }
+
+        if (useTevoxiAudio && hasUserAudio) {
+            alert("Desative o seu áudio enviado para usar o trecho do Tevoxi como áudio principal.");
+            return;
+        }
 
         if (hasVideo) {
             scriptData.title = title;
             scriptData.useCustomVideo = true;
             scriptData.useCustomImages = false;
             scriptData.useCustomAudio = false;
+            scriptData.useTevoxiAudio = false;
             scriptData.audioIsMusic = false;
             scriptData.removeVocals = false;
             scriptData.createNarration = videoCreateNarration;
@@ -2414,37 +2437,41 @@ function scriptNext() {
                 alert("Envie um áudio para usar no vídeo.");
                 return;
             }
-            if (createNarration && !hasUserAudio && (!text || text.length < 20)) {
+            if (!useTevoxiAudio && createNarration && !hasUserAudio && (!text || text.length < 20)) {
                 alert("Escreva um roteiro com pelo menos 20 caracteres.");
                 return;
             }
-            if (!createNarration && scriptPhotos.length === 0 && !hasUserAudio) {
+            if (!createNarration && scriptPhotos.length === 0 && !hasUserAudio && !useTevoxiAudio) {
                 alert("Envie fotos para criar o vídeo sem narração.");
                 return;
             }
             scriptData.title = title;
             scriptData.useCustomVideo = false;
             scriptData.useCustomImages = usePhotos && scriptPhotos.length > 0;
-            scriptData.useCustomAudio = hasUserAudio;
-            scriptData.audioIsMusic = hasUserAudio ? !!document.getElementById("script-audio-is-music")?.checked : false;
+            scriptData.useCustomAudio = useTevoxiAudio ? false : hasUserAudio;
+            scriptData.useTevoxiAudio = useTevoxiAudio;
+            scriptData.audioIsMusic = useTevoxiAudio
+                ? true
+                : (hasUserAudio ? !!document.getElementById("script-audio-is-music")?.checked : false);
             scriptData.removeVocals = hasUserAudio && scriptData.audioIsMusic;
-            scriptData.createNarration = hasUserAudio ? false : createNarration;
-            scriptData.text = hasUserAudio ? text : (createNarration ? text : "");
+            scriptData.createNarration = useTevoxiAudio ? false : (hasUserAudio ? false : createNarration);
+            scriptData.text = (hasUserAudio || useTevoxiAudio) ? text : (createNarration ? text : "");
 
             const bgmToggle = document.getElementById("script-enable-bgm");
             const bgmUploadArea = document.getElementById("script-bgm-upload-area");
             const bgmInput = document.getElementById("script-bgm-file");
-            if (bgmToggle && scriptData.useCustomAudio && scriptData.audioIsMusic) {
+            if (bgmToggle && (scriptData.useTevoxiAudio || (scriptData.useCustomAudio && scriptData.audioIsMusic))) {
                 bgmToggle.checked = false;
                 if (bgmUploadArea) bgmUploadArea.hidden = true;
                 if (bgmInput) bgmInput.value = "";
             }
         }
+        _updateScriptDetailsForTevoxiMode();
         } // end else (not realistic)
 
         // Narration skip (only for normal flow, not realistic)
         if (scriptData.videoType !== "realista") {
-            const needsNarration = scriptData.createNarration && !scriptData.useCustomAudio;
+            const needsNarration = !scriptData.useTevoxiAudio && scriptData.createNarration && !scriptData.useCustomAudio;
             if (!needsNarration) {
                 scriptStep = 5;
                 updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
@@ -2505,7 +2532,7 @@ function scriptBack() {
     const currentDataStep = flow[scriptStep - 1];
 
     // If at details step (data-step 5) and narration was skipped, go back to script step (position 2)
-    if (currentDataStep === 5 && !scriptData.createNarration) {
+    if (currentDataStep === 5 && (!scriptData.createNarration || scriptData.useTevoxiAudio)) {
         scriptStep = 2;
     } else {
         scriptStep = Math.max(scriptStep - 1, 1);
@@ -2540,14 +2567,26 @@ async function handleScriptCreate() {
     const useAudioSelected = document.getElementById("script-use-user-audio")
         ? document.getElementById("script-use-user-audio").checked
         : false;
+    const useTevoxiAudio = _isScriptTevoxiMainAudioMode();
+    const selectedTevoxiSong = useTevoxiAudio ? _scriptSelectedSong : null;
+    const selectedTevoxiClip = useTevoxiAudio ? _scriptSelectedClip : null;
+
+    if (useTevoxiAudio && (!selectedTevoxiSong || !selectedTevoxiClip)) {
+        alert("Selecione a música e o trecho do Tevoxi antes de criar o vídeo.");
+        return;
+    }
+
     scriptData.zoomImages = true;
     scriptData.imageDisplaySeconds = usePhotosSelected
         ? (parseFloat(document.getElementById("script-image-seconds").value || "0") || 0)
         : 0;
     scriptData.useCustomVideo = useVideoSelected && !!scriptUserVideoFile;
     scriptData.useCustomImages = !scriptData.useCustomVideo && usePhotosSelected && scriptPhotos.length > 0;
-    scriptData.useCustomAudio = !scriptData.useCustomVideo && useAudioSelected && !!scriptUserAudioFile;
-    scriptData.audioIsMusic = scriptData.useCustomAudio ? !!document.getElementById("script-audio-is-music")?.checked : false;
+    scriptData.useCustomAudio = !scriptData.useCustomVideo && !useTevoxiAudio && useAudioSelected && !!scriptUserAudioFile;
+    scriptData.useTevoxiAudio = useTevoxiAudio;
+    scriptData.audioIsMusic = useTevoxiAudio
+        ? true
+        : (scriptData.useCustomAudio ? !!document.getElementById("script-audio-is-music")?.checked : false);
     scriptData.removeVocals = scriptData.useCustomAudio && scriptData.audioIsMusic;
 
     if (scriptData.useCustomVideo) {
@@ -2557,24 +2596,33 @@ async function handleScriptCreate() {
     } else {
         scriptData.createNarration = scriptData.useCustomAudio
             ? false
-            : (!scriptData.useCustomImages || document.getElementById("script-create-narration").checked);
+            : (scriptData.useTevoxiAudio
+                ? false
+                : (!scriptData.useCustomImages || document.getElementById("script-create-narration").checked));
         scriptData.enableSubtitles = document.getElementById("script-enable-subtitles").checked;
     }
 
-    if (!scriptData.createNarration && !scriptData.useCustomAudio && !scriptData.useCustomVideo) {
+    const subtitlePosEl = document.getElementById("script-subtitle-position-y");
+    const parsedSubtitlePos = parseInt(subtitlePosEl ? subtitlePosEl.value : "80", 10);
+    scriptData.subtitlePositionY = [80, 50, 20].includes(parsedSubtitlePos) ? parsedSubtitlePos : 80;
+    scriptData.enableAudioSpectrum = scriptData.useTevoxiAudio && !!document.getElementById("script-enable-audio-spectrum")?.checked;
+
+    if (!scriptData.createNarration && !scriptData.useCustomAudio && !scriptData.useCustomVideo && !scriptData.useTevoxiAudio) {
         scriptData.text = "";
         scriptData.voice = "";
         scriptData.voiceProfileId = 0;
         scriptData.voiceType = "";
     }
-    if (scriptData.useCustomAudio && scriptData.audioIsMusic) {
+    if ((scriptData.useCustomAudio && scriptData.audioIsMusic) || scriptData.useTevoxiAudio) {
         scriptData.enableSubtitles = true;
     }
-    const bgmEnabled = document.getElementById("script-enable-bgm") ? document.getElementById("script-enable-bgm").checked : true;
+    const bgmEnabled = scriptData.useTevoxiAudio
+        ? false
+        : (document.getElementById("script-enable-bgm") ? document.getElementById("script-enable-bgm").checked : true);
     const bgmFileInput = document.getElementById("script-bgm-file");
     const bgmFile = bgmEnabled && bgmFileInput && bgmFileInput.files ? bgmFileInput.files[0] : null;
 
-    if (useAudioSelected && !scriptData.useCustomAudio && !scriptData.useCustomVideo) {
+    if (useAudioSelected && !scriptData.useCustomAudio && !scriptData.useCustomVideo && !scriptData.useTevoxiAudio) {
         alert("Selecione um arquivo de áudio para usar no vídeo.");
         return;
     }
@@ -2584,14 +2632,19 @@ async function handleScriptCreate() {
         return;
     }
 
-    if (!scriptData.text && !scriptData.useCustomImages && !scriptData.useCustomAudio && !scriptData.useCustomVideo) {
+    if (!scriptData.text && !scriptData.useCustomImages && !scriptData.useCustomAudio && !scriptData.useCustomVideo && !scriptData.useTevoxiAudio) {
         alert("Sem narração, envie fotos, vídeo ou áudio para criar um vídeo personalizado.");
         return;
     }
 
     // Credit check: estimate minutes from word count
     const wordCount = scriptData.text ? scriptData.text.split(/\s+/).filter(Boolean).length : 0;
-    const estMinutes = Math.max(1, Math.ceil(wordCount / 150));
+    const tevoxiDurationSeconds = scriptData.useTevoxiAudio
+        ? Math.max(1, Number(selectedTevoxiClip?.clip_duration || selectedTevoxiClip?.song_duration || selectedTevoxiSong?.duration || 60))
+        : 0;
+    const estMinutes = scriptData.useTevoxiAudio
+        ? Math.max(1, Math.ceil(tevoxiDurationSeconds / 60))
+        : Math.max(1, Math.ceil(wordCount / 150));
     const creditsNeeded = estMinutes * _creditsPerMinute;
     if (_userCredits < creditsNeeded) {
         showCreditsPurchaseModal();
@@ -2600,6 +2653,8 @@ async function handleScriptCreate() {
 
     const startMessage = scriptData.useCustomVideo
         ? "Preparando vídeo com legendas..."
+        : scriptData.useTevoxiAudio
+        ? "Preparando vídeo com trecho do Tevoxi..."
         : scriptData.useCustomAudio
         ? "Preparando vídeo a partir do seu áudio..."
         : (scriptData.text ? "Gerando narração com voz IA..." : "Preparando vídeo com fotos (música automática se não enviar)...");
@@ -2669,16 +2724,26 @@ async function handleScriptCreate() {
         formData.append("pause_level", scriptData.pauseLevel || "normal");
         formData.append("tone", scriptData.tone || "informativo");
         formData.append("enable_subtitles", scriptData.enableSubtitles ? "true" : "false");
+        formData.append("subtitle_position_y", String(scriptData.subtitlePositionY || 80));
+        formData.append("enable_audio_spectrum", scriptData.enableAudioSpectrum ? "true" : "false");
         formData.append("zoom_images", scriptData.zoomImages ? "true" : "false");
         formData.append("image_display_seconds", String(scriptData.imageDisplaySeconds > 0 ? scriptData.imageDisplaySeconds : 0));
         formData.append("use_custom_audio", scriptData.useCustomAudio ? "true" : "false");
         formData.append("audio_is_music", scriptData.audioIsMusic ? "true" : "false");
         formData.append("remove_vocals", scriptData.removeVocals ? "true" : "false");
 
-        const disableBackgroundMusic = scriptData.useCustomAudio || !bgmEnabled;
+        const disableBackgroundMusic = scriptData.useCustomAudio || scriptData.useTevoxiAudio || !bgmEnabled;
         formData.append("no_background_music", disableBackgroundMusic ? "true" : "false");
+        formData.append("use_tevoxi_audio", scriptData.useTevoxiAudio ? "true" : "false");
         if (karaokeOperationId) {
             formData.append("karaoke_operation_id", karaokeOperationId);
+        }
+
+        if (scriptData.useTevoxiAudio && selectedTevoxiSong && selectedTevoxiClip) {
+            formData.append("tevoxi_audio_url", String(selectedTevoxiSong.audio_url || ""));
+            formData.append("tevoxi_lyrics", String(selectedTevoxiSong.lyrics || ""));
+            formData.append("tevoxi_clip_start", String(Number(selectedTevoxiClip.clip_start || 0)));
+            formData.append("tevoxi_clip_duration", String(Number(selectedTevoxiClip.clip_duration || 0)));
         }
 
         if (uploadedMainAudioId) {
@@ -2974,7 +3039,7 @@ function _isScriptTevoxiMainAudioMode() {
     const enabled = !!(document.getElementById("script-realistic-tevoxi")?.checked);
     if (!enabled) return false;
     if (scriptData.videoType === "realista") return false;
-    return !!_scriptSelectedSong && !!_scriptSelectedClip;
+    return true;
 }
 
 function _updateScriptSubtitlePositionVisibility() {
@@ -6501,8 +6566,11 @@ function toggleScriptTevoxiSongs() {
     if (checked) {
         const musicCb = document.getElementById("script-realistic-music");
         if (musicCb) musicCb.checked = false;
+    } else {
+        scriptData.useTevoxiAudio = false;
     }
     _updateScriptTevoxiSelectionUI();
+    _updateScriptDetailsForTevoxiMode();
 }
 
 function toggleWizardTevoxiSongs() {
@@ -6538,18 +6606,27 @@ function _extractLyricsExcerptForClip(song, clipStart, clipDuration, totalDurati
         return raw.slice(0, 1200);
     }
 
-    const startRatio = Math.max(0, Math.min(1, Number(clipStart || 0) / total));
-    const endRatio = Math.max(startRatio, Math.min(1, (Number(clipStart || 0) + Number(clipDuration || 0)) / total));
-    let from = Math.max(0, Math.floor(raw.length * startRatio) - 140);
-    let to = Math.min(raw.length, Math.ceil(raw.length * endRatio) + 140);
+    const startSec = Math.max(0, Math.min(total, Number(clipStart || 0)));
+    const endSec = Math.max(startSec, Math.min(total, startSec + Number(clipDuration || 0)));
+    const startRatio = Math.max(0, Math.min(1, startSec / total));
+    const endRatio = Math.max(startRatio, Math.min(1, endSec / total));
+
+    let from = Math.max(0, Math.floor(raw.length * startRatio));
+    let to = Math.min(raw.length, Math.ceil(raw.length * endRatio));
 
     if (to <= from) {
         from = 0;
-        to = Math.min(raw.length, 700);
+        to = Math.min(raw.length, 280);
+    }
+
+    if ((to - from) < 40) {
+        const center = Math.floor((from + to) / 2);
+        from = Math.max(0, center - 20);
+        to = Math.min(raw.length, center + 140);
     }
 
     const excerpt = raw.slice(from, to).trim();
-    return excerpt || raw.slice(0, 700);
+    return excerpt || raw.slice(0, 400);
 }
 
 function _buildTevoxiSelectionPayload(song, clipStart, clipDuration, totalDuration) {
@@ -6627,10 +6704,12 @@ function _updateScriptTevoxiSelectionUI() {
     if (!enabled || !_scriptSelectedSong || !_scriptSelectedClip) {
         summaryEl.hidden = true;
         summaryEl.textContent = "";
+        _updateScriptDetailsForTevoxiMode();
         return;
     }
     summaryEl.hidden = false;
     summaryEl.textContent = _formatTevoxiClipLabel(_scriptSelectedSong, _scriptSelectedClip);
+    _updateScriptDetailsForTevoxiMode();
 }
 
 function _updateWizardTevoxiSelectionUI() {
@@ -7554,6 +7633,7 @@ function addClipToThemes() {
 
         _renderScriptTevoxiSongs();
         _updateScriptTevoxiSelectionUI();
+        _updateScriptDetailsForTevoxiMode();
         closeClipSelector();
         return;
     }

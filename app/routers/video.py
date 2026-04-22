@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -230,6 +231,67 @@ def _resolve_temp_file(user_id: int, upload_id: str, allowed_exts: set[str]) -> 
         return None
     candidate = _temp_user_dir(user_id) / upload_id
     return candidate if candidate.exists() else None
+
+
+def _build_tevoxi_auth_headers(audio_url: str) -> dict:
+    url = (audio_url or "").strip()
+    if "/api/create-music/audio/" not in url:
+        return {}
+
+    token = (getattr(settings, "tevoxi_api_token", "") or "").strip()
+    if not token and getattr(settings, "tevoxi_jwt_secret", ""):
+        try:
+            import time
+            from jose import jwt as jose_jwt
+
+            payload = {
+                "id": settings.tevoxi_jwt_user_id,
+                "email": settings.tevoxi_jwt_email,
+                "role": "admin",
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 3600,
+            }
+            token = jose_jwt.encode(payload, settings.tevoxi_jwt_secret, algorithm="HS256")
+        except Exception as e:
+            logger.warning(f"Failed to create Tevoxi JWT for audio download: {e}")
+            token = ""
+
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+async def _download_external_audio_to_path(audio_url: str, output_path: Path) -> None:
+    import httpx
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    headers = _build_tevoxi_auth_headers(audio_url)
+    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+        response = await client.get(audio_url, headers=headers or None)
+        response.raise_for_status()
+        content = response.content
+
+    if not content:
+        raise RuntimeError("empty_audio_response")
+
+    with open(output_path, "wb") as f:
+        f.write(content)
+
+
+def _trim_audio_clip(input_path: str, output_path: str, clip_start: float, clip_duration: float) -> None:
+    trim_cmd = ["ffmpeg", "-y"]
+    if clip_start > 0:
+        trim_cmd += ["-ss", f"{clip_start:.3f}"]
+    trim_cmd += ["-i", input_path]
+    if clip_duration > 0:
+        trim_cmd += ["-t", f"{clip_duration:.3f}"]
+    trim_cmd += ["-vn", "-c:a", "libmp3lame", "-b:a", "192k", output_path]
+
+    result = subprocess.run(trim_cmd, capture_output=True, text=True, timeout=180)
+    if result.returncode != 0:
+        err_lines = [l for l in (result.stderr or "").split("\n") if l.strip()]
+        err_msg = "\n".join(err_lines[-8:]) if err_lines else "ffmpeg trim failed"
+        raise RuntimeError(err_msg)
+    if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+        raise RuntimeError("trim_output_missing")
 
 
 @router.post("/upload-temp-image")
@@ -1104,6 +1166,13 @@ class GenerateTTSRequest(BaseModel):
     use_custom_audio: bool = False
     audio_is_music: bool = False
     remove_vocals: bool = False
+    subtitle_position_y: int = 80
+    enable_audio_spectrum: bool = False
+    use_tevoxi_audio: bool = False
+    tevoxi_audio_url: str = ""
+    tevoxi_lyrics: str = ""
+    tevoxi_clip_start: float = 0
+    tevoxi_clip_duration: float = 0
 
 
 @router.post("/fix-text")
@@ -1203,6 +1272,13 @@ async def generate_audio_endpoint(
         use_custom_audio_raw = str(form.get("use_custom_audio", "false")).lower()
         audio_is_music_raw = str(form.get("audio_is_music", "false")).lower()
         remove_vocals_raw = str(form.get("remove_vocals", "false")).lower()
+        subtitle_position_raw = form.get("subtitle_position_y", 80)
+        enable_audio_spectrum_raw = str(form.get("enable_audio_spectrum", "false")).lower()
+        use_tevoxi_audio_raw = str(form.get("use_tevoxi_audio", "false")).lower()
+        tevoxi_audio_url_raw = str(form.get("tevoxi_audio_url", "")).strip()
+        tevoxi_lyrics_raw = str(form.get("tevoxi_lyrics", ""))
+        tevoxi_clip_start_raw = form.get("tevoxi_clip_start", 0)
+        tevoxi_clip_duration_raw = form.get("tevoxi_clip_duration", 0)
         req = GenerateTTSRequest(
             script=str(form.get("script", "")),
             voice=str(form.get("voice", "")),
@@ -1220,6 +1296,13 @@ async def generate_audio_endpoint(
             use_custom_audio=use_custom_audio_raw in ("true", "1", "yes"),
             audio_is_music=audio_is_music_raw in ("true", "1", "yes"),
             remove_vocals=remove_vocals_raw in ("true", "1", "yes"),
+            subtitle_position_y=int(subtitle_position_raw or 80),
+            enable_audio_spectrum=enable_audio_spectrum_raw in ("true", "1", "yes"),
+            use_tevoxi_audio=use_tevoxi_audio_raw in ("true", "1", "yes"),
+            tevoxi_audio_url=tevoxi_audio_url_raw,
+            tevoxi_lyrics=tevoxi_lyrics_raw,
+            tevoxi_clip_start=float(tevoxi_clip_start_raw or 0),
+            tevoxi_clip_duration=float(tevoxi_clip_duration_raw or 0),
         )
         raw_upload = form.get("background_music")
         if isinstance(raw_upload, UploadFile) and raw_upload.filename:
@@ -1268,26 +1351,42 @@ async def generate_audio_endpoint(
         )
 
     script_text = (req.script or "").strip()
-    has_custom_audio = bool(custom_audio_id) or bool(custom_audio_upload and custom_audio_upload.filename)
-    if req.use_custom_audio and not has_custom_audio:
+    has_uploaded_custom_audio = bool(custom_audio_id) or bool(custom_audio_upload and custom_audio_upload.filename)
+    use_tevoxi_audio = bool(req.use_tevoxi_audio and (req.tevoxi_audio_url or "").strip())
+
+    if req.use_tevoxi_audio and not use_tevoxi_audio:
+        raise HTTPException(status_code=400, detail="Modo Tevoxi ativo, mas URL do áudio não foi enviada.")
+
+    if req.use_custom_audio and use_tevoxi_audio:
+        raise HTTPException(status_code=400, detail="Escolha apenas uma fonte de áudio principal (Tevoxi ou áudio enviado).")
+
+    if req.use_custom_audio and not has_uploaded_custom_audio:
         raise HTTPException(status_code=400, detail="Usar meu áudio está ativo, mas nenhum arquivo foi enviado.")
 
     if req.use_custom_audio and req.audio_is_music:
         req.remove_vocals = True
         req.enable_subtitles = True
 
-    if not script_text and not custom_image_uploads and not custom_image_ids and not has_custom_audio:
+    if use_tevoxi_audio:
+        req.no_background_music = True
+        req.enable_subtitles = True
+
+    if not script_text and not custom_image_uploads and not custom_image_ids and not has_uploaded_custom_audio and not use_tevoxi_audio:
         raise HTTPException(status_code=400, detail="Sem narração, envie fotos ou áudio para criar um vídeo personalizado.")
 
     # ── Credit check: estimate duration → deduct credits ──
     from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
     import math
-    if has_custom_audio and custom_audio_id:
+    if has_uploaded_custom_audio and custom_audio_id:
         from app.services.video_composer import _get_duration as get_audio_duration
 
         src_audio = _resolve_temp_file(user["id"], custom_audio_id, AUDIO_EXTS)
         audio_seconds = get_audio_duration(str(src_audio)) if src_audio else 0
         est_minutes = max(1, math.ceil(audio_seconds / 60)) if audio_seconds > 0 else 1
+    elif use_tevoxi_audio:
+        clip_duration = max(0.0, float(req.tevoxi_clip_duration or 0))
+        audio_seconds = clip_duration if clip_duration > 0 else 60.0
+        est_minutes = max(1, math.ceil(audio_seconds / 60))
     elif script_text:
         word_count = len(script_text.split())
         est_minutes = max(1, math.ceil(word_count / 150))  # ~150 words/min narration
@@ -1343,8 +1442,9 @@ async def generate_audio_endpoint(
 
     # Create project first to get an ID for the audio path
     has_custom_images = len(custom_image_uploads) > 0 or len(custom_image_ids) > 0
-    has_custom_audio = req.use_custom_audio and has_custom_audio
+    has_custom_audio = req.use_custom_audio and has_uploaded_custom_audio
     has_custom_video = bool(custom_video_id)
+    has_tevoxi_audio = use_tevoxi_audio
     image_display_seconds = req.image_display_seconds if req.image_display_seconds and req.image_display_seconds > 0 else 0
     project = VideoProject(
         user_id=user["id"],
@@ -1354,8 +1454,8 @@ async def generate_audio_endpoint(
         tags=[],
         style_prompt=req.style_prompt or "cinematic, vibrant colors, dynamic lighting",
         aspect_ratio=req.aspect_ratio,
-        track_title=req.title or ("Vídeo enviado" if has_custom_video else "Áudio enviado" if has_custom_audio else "Narração IA"),
-        track_artist="Usuário" if (has_custom_audio or has_custom_video) else "CriaVideo AI",
+        track_title=req.title or ("Vídeo enviado" if has_custom_video else "Áudio Tevoxi" if has_tevoxi_audio else "Áudio enviado" if has_custom_audio else "Narração IA"),
+        track_artist="Tevoxi" if has_tevoxi_audio else ("Usuário" if (has_custom_audio or has_custom_video) else "CriaVideo AI"),
         track_duration=0,
         lyrics_text=req.script,
         lyrics_words=[],
@@ -1365,7 +1465,7 @@ async def generate_audio_endpoint(
         enable_subtitles=req.enable_subtitles,
         zoom_images=req.zoom_images,
         image_display_seconds=image_display_seconds,
-        no_background_music=(req.no_background_music or has_custom_audio or has_custom_video),
+        no_background_music=(req.no_background_music or has_custom_audio or has_custom_video or has_tevoxi_audio),
         is_karaoke=(req.use_custom_audio and req.audio_is_music and req.remove_vocals),
     )
     db.add(project)
@@ -1480,6 +1580,7 @@ async def generate_audio_endpoint(
 
     # Save optional custom main audio. If present, this becomes the primary video track.
     custom_main_audio_path = ""
+    tevoxi_main_audio_path = ""
     if has_custom_audio:
         try:
             audio_dir = Path(settings.media_dir) / "audio" / str(project.id)
@@ -1619,8 +1720,43 @@ async def generate_audio_endpoint(
             logger.warning(f"Failed to save custom main audio for project {project.id}: {e}")
             raise HTTPException(status_code=400, detail=f"Falha ao processar áudio enviado: {e}")
 
+    if use_tevoxi_audio:
+        try:
+            audio_dir = Path(settings.media_dir) / "audio" / str(project.id)
+            audio_dir.mkdir(parents=True, exist_ok=True)
+
+            tevoxi_source_path = audio_dir / "tevoxi_source.mp3"
+            await _download_external_audio_to_path((req.tevoxi_audio_url or "").strip(), tevoxi_source_path)
+
+            clip_start = max(0.0, float(req.tevoxi_clip_start or 0))
+            clip_duration = max(0.0, float(req.tevoxi_clip_duration or 0))
+            if clip_start > 0 or clip_duration > 0:
+                clipped_path = audio_dir / "tevoxi_main_audio.mp3"
+                _trim_audio_clip(str(tevoxi_source_path), str(clipped_path), clip_start, clip_duration)
+                tevoxi_main_audio_path = str(clipped_path)
+            else:
+                tevoxi_main_audio_path = str(tevoxi_source_path)
+
+            project.audio_path = tevoxi_main_audio_path
+
+            from app.services.video_composer import _get_duration as get_audio_duration
+
+            tevoxi_duration = get_audio_duration(tevoxi_main_audio_path)
+            project.track_duration = round(tevoxi_duration) if tevoxi_duration > 0 else 0
+
+            if not script_text and (req.tevoxi_lyrics or "").strip():
+                project.lyrics_text = (req.tevoxi_lyrics or "").strip()
+
+            logger.info(f"Tevoxi main audio ready for project {project.id}: {tevoxi_main_audio_path}")
+        except Exception as e:
+            logger.warning(f"Failed to prepare Tevoxi main audio for project {project.id}: {e}")
+            raise HTTPException(status_code=400, detail=f"Falha ao processar áudio do Tevoxi: {e}")
+
     try:
-        if custom_main_audio_path:
+        primary_main_audio_path = custom_main_audio_path or tevoxi_main_audio_path
+
+        if primary_main_audio_path:
+            project.audio_path = primary_main_audio_path
             if project.track_duration <= 0:
                 from app.services.video_composer import _get_duration as get_audio_duration
 
@@ -1673,8 +1809,17 @@ async def generate_audio_endpoint(
         project.progress = 0
         await db.commit()
 
+        subtitle_y = int(req.subtitle_position_y or 80)
+        if subtitle_y not in (20, 50, 80):
+            subtitle_y = 80
+
+        pipeline_options = {
+            "subtitle_settings": {"y": subtitle_y},
+            "enable_audio_spectrum": bool(use_tevoxi_audio and req.enable_audio_spectrum),
+        }
+
         from app.tasks.video_tasks import run_video_pipeline
-        background_tasks.add_task(run_video_pipeline, project.id)
+        background_tasks.add_task(run_video_pipeline, project.id, pipeline_options)
 
         return {
             "id": project.id,

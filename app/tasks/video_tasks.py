@@ -488,7 +488,7 @@ async def download_audio_if_url(audio_path: str, project_id: int) -> str:
     return local_path
 
 
-async def run_video_pipeline(project_id: int):
+async def run_video_pipeline(project_id: int, pipeline_options: dict | None = None):
     """Full pipeline: scenes → subtitles → render → thumbnail.
     Runs as a background task.
     """
@@ -497,6 +497,12 @@ async def run_video_pipeline(project_id: int):
             project = await db.get(VideoProject, project_id)
             if not project:
                 return
+
+            pipeline_cfg = pipeline_options if isinstance(pipeline_options, dict) else {}
+            subtitle_settings = pipeline_cfg.get("subtitle_settings", {})
+            if not isinstance(subtitle_settings, dict):
+                subtitle_settings = {}
+            enable_audio_spectrum = bool(pipeline_cfg.get("enable_audio_spectrum", False))
 
             # ── Step 0: Download audio if URL ──
             from app.services.video_composer import compose_video
@@ -863,6 +869,7 @@ async def run_video_pipeline(project_id: int):
                         aspect_ratio=project.aspect_ratio,
                         output_path=subtitle_path,
                         narration_mode=is_narration_subtitle,
+                        style_settings=subtitle_settings,
                     )
                 elif project.lyrics_words:
                     generate_ass_subtitles(
@@ -870,6 +877,7 @@ async def run_video_pipeline(project_id: int):
                         aspect_ratio=project.aspect_ratio,
                         output_path=subtitle_path,
                         narration_mode=is_narration_subtitle,
+                        style_settings=subtitle_settings,
                     )
                 elif project.lyrics_text:
                     generate_ass_from_text(
@@ -878,6 +886,7 @@ async def run_video_pipeline(project_id: int):
                         aspect_ratio=project.aspect_ratio,
                         output_path=subtitle_path,
                         narration_mode=is_narration_subtitle,
+                        style_settings=subtitle_settings,
                     )
                 else:
                     subtitle_path = ""
@@ -938,6 +947,7 @@ async def run_video_pipeline(project_id: int):
                     aspect_ratio=project.aspect_ratio,
                     background_music_path=background_music_path,
                     enable_zoom=zoom_images,
+                    enable_audio_spectrum=enable_audio_spectrum,
                 ),
             )
 
