@@ -23,6 +23,7 @@ from app.services.persona_image import (
 )
 from app.services.persona_registry import (
     create_persona_profile,
+    create_persona_profile_from_prompt,
     delete_persona_profile,
     list_all_personas,
     list_persona_profiles,
@@ -58,6 +59,12 @@ class SetDefaultRequest(BaseModel):
 
 class UpdatePersonaVoiceRequest(BaseModel):
     voice_profile_id: int = 0
+
+
+class RemixPersonaProfileRequest(BaseModel):
+    prompt_text: str = Field(min_length=12, max_length=6000)
+    name: str = ""
+    set_default: bool = False
 
 
 def _parse_attributes_json(attributes_json: str) -> dict:
@@ -278,6 +285,46 @@ async def update_profile_voice(
     return {
         "profile": serialize_persona_profile(profile),
         "message": "Voz da persona atualizada",
+    }
+
+
+@router.post("/profiles/{profile_id}/remix")
+async def remix_profile_from_prompt(
+    profile_id: int,
+    payload: RemixPersonaProfileRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    if profile_id <= 0:
+        raise HTTPException(status_code=400, detail="profile_id inválido")
+
+    source_profile = await db.get(PersonaProfile, int(profile_id))
+    if not source_profile or source_profile.user_id != current_user["id"] or not bool(source_profile.is_active):
+        raise HTTPException(status_code=404, detail="Perfil de persona nao encontrado")
+
+    prompt_text = str(payload.prompt_text or "").strip()
+    if len(prompt_text) < 12:
+        raise HTTPException(status_code=400, detail="Prompt muito curto para gerar persona")
+
+    try:
+        profile = await create_persona_profile_from_prompt(
+            db=db,
+            user_id=current_user["id"],
+            source_profile=source_profile,
+            prompt_text=prompt_text,
+            name=payload.name,
+            set_default=payload.set_default,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Falha ao editar prompt da persona: {exc}")
+
+    return {
+        "profile": serialize_persona_profile(profile),
+        "message": "Nova persona criada a partir do prompt",
     }
 
 

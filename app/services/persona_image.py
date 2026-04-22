@@ -721,22 +721,19 @@ def _generate_with_google_image(prompt: str, image_size: str) -> tuple[bytes, st
     return raw, mime_type
 
 
-async def generate_persona_image(
+def _sanitize_prompt_text(prompt_text: str, max_len: int = 3800) -> str:
+    text = str(prompt_text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(text) > max_len:
+        text = text[:max_len].rstrip()
+    return text
+
+
+async def _generate_persona_image_with_prompt(
     user_id: int,
-    persona_type: str,
-    attributes: dict | None,
-    reference_image_path: str = "",
+    normalized_type: str,
+    normalized_attrs: dict,
+    prompt: str,
 ) -> dict:
-    normalized_type = normalize_persona_type(persona_type)
-    normalized_attrs = normalize_persona_attributes(normalized_type, attributes)
-
-    if reference_image_path:
-        reference_visual = await _describe_reference_image(reference_image_path)
-        if reference_visual:
-            normalized_attrs["referencia_visual"] = reference_visual
-
-    prompt = _build_persona_prompt(normalized_type, normalized_attrs)
-
     has_openai_key = bool((settings.openai_api_key or "").strip())
     has_google_key = bool((settings.google_ai_api_key or "").strip())
 
@@ -746,7 +743,8 @@ async def generate_persona_image(
     output_dir = _persona_storage_dir(user_id, normalized_type)
     output_stem = output_dir / uuid.uuid4().hex
     output_path = output_stem.with_suffix(".png")
-    image_size = _pick_persona_image_size(normalized_type, normalized_attrs)
+    size_attrs = normalized_attrs if normalized_attrs else {"descricao_extra": prompt}
+    image_size = _pick_persona_image_size(normalized_type, size_attrs)
 
     try:
         image_response = None
@@ -754,29 +752,11 @@ async def generate_persona_image(
         if has_openai_key:
             try:
                 client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
-
-                if reference_image_path:
-                    try:
-                        image_response = await _generate_with_reference_image_edit(
-                            client=client,
-                            reference_image_path=reference_image_path,
-                            prompt=prompt,
-                            image_size=image_size,
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "Reference-conditioned persona edit failed for user=%s type=%s, using text fallback: %s",
-                            user_id,
-                            normalized_type,
-                            exc,
-                        )
-
-                if image_response is None:
-                    image_response = await client.images.generate(
-                        model=(settings.persona_image_openai_model or "gpt-image-1"),
-                        prompt=prompt[:3800],
-                        size=image_size,
-                    )
+                image_response = await client.images.generate(
+                    model=(settings.persona_image_openai_model or "gpt-image-1"),
+                    prompt=prompt[:3800],
+                    size=image_size,
+                )
             except Exception as exc:
                 logger.info(
                     "OpenAI persona generation failed for user=%s type=%s; trying Google fallback when available: %s",
@@ -843,3 +823,98 @@ async def generate_persona_image(
         "prompt_text": prompt,
         "image_path": str(output_path),
     }
+
+
+async def generate_persona_image(
+    user_id: int,
+    persona_type: str,
+    attributes: dict | None,
+    reference_image_path: str = "",
+) -> dict:
+    normalized_type = normalize_persona_type(persona_type)
+    normalized_attrs = normalize_persona_attributes(normalized_type, attributes)
+
+    if reference_image_path:
+        reference_visual = await _describe_reference_image(reference_image_path)
+        if reference_visual:
+            normalized_attrs["referencia_visual"] = reference_visual
+
+    prompt = _build_persona_prompt(normalized_type, normalized_attrs)
+
+    if reference_image_path:
+        has_openai_key = bool((settings.openai_api_key or "").strip())
+        if has_openai_key:
+            image_size = _pick_persona_image_size(normalized_type, normalized_attrs)
+            output_dir = _persona_storage_dir(user_id, normalized_type)
+            output_stem = output_dir / uuid.uuid4().hex
+            output_path = output_stem.with_suffix(".png")
+
+            try:
+                client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+                image_response = await _generate_with_reference_image_edit(
+                    client=client,
+                    reference_image_path=reference_image_path,
+                    prompt=prompt,
+                    image_size=image_size,
+                )
+
+                data_items = getattr(image_response, "data", None) or []
+                if data_items:
+                    first_item = data_items[0]
+                    b64_data = getattr(first_item, "b64_json", None)
+                    if not b64_data and isinstance(first_item, dict):
+                        b64_data = first_item.get("b64_json")
+
+                    if b64_data:
+                        output_path.write_bytes(base64.b64decode(b64_data))
+                    else:
+                        image_url = getattr(first_item, "url", None)
+                        if not image_url and isinstance(first_item, dict):
+                            image_url = first_item.get("url")
+                        if image_url:
+                            async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client_http:
+                                response = await client_http.get(image_url)
+                                response.raise_for_status()
+                                output_path.write_bytes(response.content)
+
+                    if output_path.exists() and output_path.stat().st_size > 0:
+                        return {
+                            "persona_type": normalized_type,
+                            "attributes": normalized_attrs,
+                            "prompt_text": prompt,
+                            "image_path": str(output_path),
+                        }
+            except Exception as exc:
+                logger.warning(
+                    "Reference-conditioned persona edit failed for user=%s type=%s, using standard generation: %s",
+                    user_id,
+                    normalized_type,
+                    exc,
+                )
+
+    return await _generate_persona_image_with_prompt(
+        user_id=user_id,
+        normalized_type=normalized_type,
+        normalized_attrs=normalized_attrs,
+        prompt=prompt,
+    )
+
+
+async def generate_persona_image_from_prompt(
+    user_id: int,
+    persona_type: str,
+    prompt_text: str,
+    attributes: dict | None = None,
+) -> dict:
+    normalized_type = normalize_persona_type(persona_type)
+    normalized_attrs = normalize_persona_attributes(normalized_type, attributes)
+    prompt = _sanitize_prompt_text(prompt_text, max_len=3800)
+    if len(prompt) < 12:
+        raise RuntimeError("Prompt muito curto para gerar persona")
+
+    return await _generate_persona_image_with_prompt(
+        user_id=user_id,
+        normalized_type=normalized_type,
+        normalized_attrs=normalized_attrs,
+        prompt=prompt,
+    )

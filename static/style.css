@@ -5023,12 +5023,13 @@ th,
 
 .persona-manager-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     padding: 0 10px 10px;
 }
 
 .persona-manager-actions .btn {
-    flex: 1;
+    flex: 1 1 calc(50% - 3px);
 }
 
 .persona-manager-divider {
@@ -5055,6 +5056,10 @@ th,
 }
 
 .persona-voice-builder-body .form-group {
+    margin-bottom: 10px;
+}
+
+.persona-prompt-editor-body .form-group {
     margin-bottom: 10px;
 }
 

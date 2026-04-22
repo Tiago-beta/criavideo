@@ -19,6 +19,7 @@ from app.services.persona_image import (
     build_default_persona_name,
     default_persona_attributes,
     generate_persona_image,
+    generate_persona_image_from_prompt,
     normalize_persona_attributes,
     normalize_persona_type,
 )
@@ -63,6 +64,7 @@ def serialize_persona_profile(profile: PersonaProfile) -> dict:
         "persona_label": PERSONA_LABELS.get(profile.persona_type, profile.persona_type),
         "name": profile.name,
         "attributes": attrs,
+        "prompt_text": str(profile.prompt_text or ""),
         "voice_profile_id": voice_profile_id,
         "image_path": profile.image_path,
         "image_url": _media_url_from_path(profile.image_path),
@@ -128,6 +130,66 @@ async def create_persona_profile(
         persona_type=persona_type,
         name=cleaned_name[:255],
         attributes=generated["attributes"],
+        prompt_text=generated["prompt_text"],
+        image_path=generated["image_path"],
+        is_default=should_be_default,
+        is_active=True,
+    )
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+
+    return profile
+
+
+async def create_persona_profile_from_prompt(
+    db: AsyncSession,
+    user_id: int,
+    source_profile: PersonaProfile,
+    prompt_text: str,
+    name: str = "",
+    set_default: bool = False,
+) -> PersonaProfile:
+    if not source_profile or source_profile.user_id != user_id or not bool(source_profile.is_active):
+        raise ValueError("Perfil de persona nao encontrado")
+
+    persona_type = normalize_persona_type(source_profile.persona_type)
+    source_attrs = source_profile.attributes if isinstance(source_profile.attributes, dict) else {}
+    attrs = normalize_persona_attributes(persona_type, source_attrs)
+
+    generated = await generate_persona_image_from_prompt(
+        user_id=user_id,
+        persona_type=persona_type,
+        prompt_text=prompt_text,
+        attributes=attrs,
+    )
+
+    profiles = await _query_active_profiles(db, user_id, persona_type)
+    has_any = len(profiles) > 0
+    should_be_default = bool(set_default) or not has_any
+
+    if should_be_default:
+        await db.execute(
+            update(PersonaProfile)
+            .where(
+                PersonaProfile.user_id == user_id,
+                PersonaProfile.persona_type == persona_type,
+            )
+            .values(is_default=False)
+        )
+
+    cleaned_name = " ".join(str(name or "").split()).strip()
+    if not cleaned_name:
+        base_name = " ".join(str(source_profile.name or "").split()).strip()
+        if not base_name:
+            base_name = build_default_persona_name(persona_type)
+        cleaned_name = f"{base_name} editada"
+
+    profile = PersonaProfile(
+        user_id=user_id,
+        persona_type=persona_type,
+        name=cleaned_name[:255],
+        attributes=_preserve_persona_metadata(generated["attributes"], source_profile.attributes),
         prompt_text=generated["prompt_text"],
         image_path=generated["image_path"],
         is_default=should_be_default,
