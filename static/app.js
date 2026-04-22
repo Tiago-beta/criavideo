@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v172 loaded");
+﻿console.log("[CriaVideo] app.js v174 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -49,6 +49,7 @@ let _personaManagerType = "natureza";
 let _personaManagerMulti = false;
 let personaManagerReferenceImageFile = null;
 let _personaVoiceBuilderProfileId = 0;
+let _personaPromptEditorProfileId = 0;
 const PERSONA_REFERENCE_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const PERSONA_REFERENCE_MAX_SIZE = 10 * 1024 * 1024;
 
@@ -3590,6 +3591,7 @@ function _renderPersonaManagerList() {
         const isSelected = selectedIds.includes(pid);
         const selectedClass = isSelected ? " selected" : "";
         const metaText = _buildPersonaManagerMeta(profile);
+        const canEditPrompt = String(profile?.prompt_text || "").trim().length >= 12;
         const voiceProfileId = _getPersonaVoiceProfileId(profile);
         const voiceOptions = _buildPersonaVoiceOptions(voiceProfileId);
         const voicePlayDisabled = voiceProfileId <= 0;
@@ -3624,6 +3626,7 @@ function _renderPersonaManagerList() {
                     <button class="btn btn-secondary btn-sm persona-manager-voice-link" type="button" onclick="openPersonaVoiceBuilder(${pid})">Vincular voz por descrição</button>
                 </div>
                 <div class="persona-manager-actions">
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaPromptEditor(${pid})" ${canEditPrompt ? "" : "disabled"}>Editar</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="${useActionHandler}">${useActionLabel}</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="setDefaultPersonaFromManager(${pid})">Padrao</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="deletePersonaFromManager(${pid})">Excluir</button>
@@ -4081,6 +4084,113 @@ async function createPersonaFromManager() {
         if (button) {
             button.disabled = false;
             button.textContent = "Gerar nova persona";
+        }
+    }
+}
+
+function openPersonaPromptEditor(profileId) {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return;
+
+    const profile = _getPersonaProfileById(pid, _personaManagerType);
+    if (!profile) {
+        alert("Persona nao encontrada.");
+        return;
+    }
+
+    const sourcePrompt = String(profile.prompt_text || "").trim();
+    if (sourcePrompt.length < 12) {
+        alert("Esta persona nao possui prompt salvo para edicao.");
+        return;
+    }
+
+    _personaPromptEditorProfileId = pid;
+
+    const titleEl = document.getElementById("persona-prompt-editor-title");
+    if (titleEl) {
+        titleEl.textContent = `Editar prompt de ${profile.name || `Persona ${pid}`}`;
+    }
+
+    const profileIdEl = document.getElementById("persona-prompt-editor-profile-id");
+    if (profileIdEl) {
+        profileIdEl.value = String(pid);
+    }
+
+    const nameEl = document.getElementById("persona-prompt-editor-name");
+    if (nameEl) {
+        const baseName = String(profile.name || `Persona ${pid}`).trim();
+        nameEl.value = `${baseName} editada`.slice(0, 80);
+    }
+
+    const promptEl = document.getElementById("persona-prompt-editor-prompt");
+    if (promptEl) {
+        promptEl.value = sourcePrompt;
+    }
+
+    const defaultEl = document.getElementById("persona-prompt-editor-set-default");
+    if (defaultEl) {
+        defaultEl.checked = false;
+    }
+
+    openModal("modal-persona-prompt-editor");
+    if (promptEl) {
+        promptEl.focus();
+        const end = promptEl.value.length;
+        promptEl.setSelectionRange(end, end);
+    }
+}
+
+async function createPersonaFromPromptEditor() {
+    const profileIdEl = document.getElementById("persona-prompt-editor-profile-id");
+    const pid = parseInt(profileIdEl?.value || _personaPromptEditorProfileId || "0", 10) || 0;
+    if (!pid) {
+        alert("Persona invalida para edicao de prompt.");
+        return;
+    }
+
+    const name = String(document.getElementById("persona-prompt-editor-name")?.value || "").trim();
+    const promptText = String(document.getElementById("persona-prompt-editor-prompt")?.value || "").trim();
+    const setDefault = !!document.getElementById("persona-prompt-editor-set-default")?.checked;
+    if (promptText.length < 12) {
+        alert("Descreva melhor o prompt antes de gerar.");
+        return;
+    }
+
+    const saveBtn = document.getElementById("persona-prompt-editor-save");
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Gerando...";
+    }
+
+    try {
+        const response = await api(`/persona/profiles/${pid}/remix`, {
+            method: "POST",
+            body: JSON.stringify({
+                name,
+                prompt_text: promptText,
+                set_default: setDefault,
+            }),
+        });
+
+        const createdId = parseInt(response?.profile?.id || "0", 10) || 0;
+        if (createdId) {
+            if (_personaManagerMulti) {
+                const selectedIds = _getSelectedPersonaProfileIds(_personaManagerContext, _personaManagerType);
+                _setSelectedPersonaProfileIds(_personaManagerContext, _personaManagerType, [...selectedIds, createdId]);
+            } else {
+                _setSelectedPersonaProfileId(_personaManagerContext, _personaManagerType, createdId);
+            }
+        }
+
+        await _refreshPersonaManagerList();
+        closeModal("modal-persona-prompt-editor");
+        showToast("Nova persona criada a partir do prompt.", "success");
+    } catch (error) {
+        alert(`Erro ao editar prompt da persona: ${error.message}`);
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = "Gerar nova persona";
         }
     }
 }
@@ -6282,6 +6392,31 @@ function _buildTevoxiPromptContext(song, clip) {
     return `${clipInfo} Letra de referência: ${excerpt}`;
 }
 
+function _buildScriptTevoxiPrompt(song, clip) {
+    if (!song) return "";
+
+    const songTitle = String(song.title || "Música").trim() || "Música";
+    const clipDuration = Number(clip?.clip_duration || 0);
+    const clipStart = Math.max(0, Number(clip?.clip_start || 0));
+    const excerpt = String(clip?.lyrics_excerpt || song?.lyrics || "").trim();
+
+    const lines = [
+        `Crie um roteiro de vídeo inspirado na música \"${songTitle}\".`,
+        clipDuration > 0
+            ? `Use como base principal o trecho entre ${_formatDuration(clipStart)} e ${_formatDuration(clipStart + clipDuration)}.`
+            : "Use como base principal a música inteira.",
+        "Mantenha o ritmo, a emoção e a mensagem desse trecho na narrativa visual.",
+    ];
+
+    if (excerpt) {
+        lines.push("", "Trecho transcrito da música:", excerpt);
+    } else {
+        lines.push("", "Transcrição do trecho indisponível. Baseie-se no título e no clima da música.");
+    }
+
+    return lines.join("\n").slice(0, 20000);
+}
+
 function _buildTevoxiAiTopicSeed(song, clip) {
     if (!song) return "";
     const baseLabel = _formatTevoxiClipLabel(song, clip).replace(/^🎵\s*/, "").trim();
@@ -7212,6 +7347,18 @@ function addClipToThemes() {
     if (_clipSelectorContext === "script") {
         _scriptSelectedSong = song;
         _scriptSelectedClip = payload;
+
+        const scriptPrompt = _buildScriptTevoxiPrompt(song, payload);
+        const scriptTextEl = document.getElementById("script-text");
+        if (scriptTextEl) {
+            scriptTextEl.value = scriptPrompt;
+        }
+        scriptData.text = scriptPrompt;
+        const scriptCountEl = document.getElementById("script-char-count");
+        if (scriptCountEl) {
+            scriptCountEl.textContent = scriptPrompt.length.toLocaleString("pt-BR");
+        }
+
         _renderScriptTevoxiSongs();
         _updateScriptTevoxiSelectionUI();
         closeClipSelector();
