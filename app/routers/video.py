@@ -2587,6 +2587,8 @@ class GenerateRealisticPromptRequest(BaseModel):
     engine: str = "wan2"
     duration: int = 8
     interaction_persona: str = "natureza"
+    persona_profile_id: int = 0
+    persona_profile_ids: list[int] = Field(default_factory=list)
     has_reference_image: bool = False
 
 
@@ -2594,6 +2596,7 @@ class GenerateRealisticPromptRequest(BaseModel):
 async def generate_realistic_prompt_endpoint(
     req: GenerateRealisticPromptRequest,
     user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Generate an optimized realistic-video prompt from a simple topic/theme."""
     topic = (req.topic or "").strip()
@@ -2620,9 +2623,78 @@ async def generate_realistic_prompt_endpoint(
         duration = _normalize_wan_duration_seconds(int(req.duration or 8))
     else:
         duration = max(1, min(int(req.duration or 10), 10))
+
     interaction_persona = _normalize_interaction_persona(req.interaction_persona)
-    prompt_for_optimizer = _ensure_reference_image_instruction(topic_for_optimizer) if req.has_reference_image else topic_for_optimizer
+    selected_persona_profile_id = int(req.persona_profile_id or 0)
+    selected_persona_profile_ids: list[int] = []
+    for raw_pid in (req.persona_profile_ids or []):
+        try:
+            parsed_pid = int(raw_pid)
+        except Exception:
+            continue
+        if parsed_pid > 0 and parsed_pid not in selected_persona_profile_ids:
+            selected_persona_profile_ids.append(parsed_pid)
+
+    if selected_persona_profile_id and selected_persona_profile_id not in selected_persona_profile_ids:
+        selected_persona_profile_ids.insert(0, selected_persona_profile_id)
+
+    has_reference_image = bool(req.has_reference_image)
+    prompt_for_optimizer = topic_for_optimizer
     prompt_for_optimizer = _inject_interaction_persona_instruction(prompt_for_optimizer, interaction_persona)
+
+    if selected_persona_profile_ids:
+        try:
+            resolved_personas, persona_image_paths = await resolve_persona_reference_images(
+                db=db,
+                user_id=user["id"],
+                persona_type=interaction_persona,
+                persona_profile_ids=selected_persona_profile_ids,
+                ensure_default=False,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+
+        if not resolved_personas:
+            raise HTTPException(
+                status_code=400,
+                detail="Nao foi possivel localizar as personas selecionadas. Atualize a selecao e tente novamente.",
+            )
+
+        selected_persona_profile_ids = [int(profile.id) for profile in resolved_personas]
+        selected_persona_profile_id = selected_persona_profile_ids[0] if selected_persona_profile_ids else 0
+        has_reference_image = has_reference_image or bool(persona_image_paths)
+
+        persona_lines: list[str] = []
+        for profile in resolved_personas[:4]:
+            persona_name = str(getattr(profile, "name", "") or "").strip() or f"Persona {int(profile.id)}"
+            attrs = getattr(profile, "attributes", {}) if isinstance(getattr(profile, "attributes", {}), dict) else {}
+            persona_brief = str(attrs.get("descricao_extra") or attrs.get("description") or "").strip()
+            if len(persona_brief) > 180:
+                persona_brief = persona_brief[:180].rsplit(" ", 1)[0].strip() or persona_brief[:180]
+
+            if persona_brief:
+                persona_lines.append(f"- {persona_name}: {persona_brief}")
+            else:
+                persona_lines.append(f"- {persona_name}")
+
+        if persona_lines:
+            personas_block = "\n".join(persona_lines)
+            prompt_for_optimizer = (
+                f"{prompt_for_optimizer}\n\n"
+                "PERSONAS CADASTRADAS (OBRIGATORIO): use exatamente as personas selecionadas abaixo na cena, "
+                "sem substituir elenco, sem trocar identidade e sem fundir rostos.\n"
+                f"{personas_block}"
+            )
+
+        if len(selected_persona_profile_ids) > 1:
+            prompt_for_optimizer = (
+                f"{prompt_for_optimizer}\n\n"
+                "MULTI-PERSONA REFERENCE RULE: mantenha todos os personagens selecionados juntos na mesma cena, "
+                "preservando a identidade visual de cada um."
+            )
+
+    if has_reference_image:
+        prompt_for_optimizer = _ensure_reference_image_instruction(prompt_for_optimizer)
 
     if engine == "grok":
         from app.services.grok_video import optimize_prompt_for_grok
@@ -2630,7 +2702,7 @@ async def generate_realistic_prompt_endpoint(
         optimized = await optimize_prompt_for_grok(
             user_description=prompt_for_optimizer,
             duration=duration,
-            has_reference_image=req.has_reference_image,
+            has_reference_image=has_reference_image,
             tone=req.style,
         )
     else:
@@ -2642,7 +2714,7 @@ async def generate_realistic_prompt_endpoint(
             user_description=prompt_for_optimizer,
             duration=duration,
             tone=req.style,
-            has_reference_image=req.has_reference_image,
+            has_reference_image=has_reference_image,
             temperature=seedance_optimizer_temperature,
         )
 
@@ -2653,7 +2725,7 @@ async def generate_realistic_prompt_endpoint(
     )
 
     final_prompt = _inject_interaction_persona_instruction(temporal_prompt, interaction_persona)
-    if req.has_reference_image:
+    if has_reference_image:
         final_prompt = _ensure_reference_image_instruction(final_prompt)
 
     return {"prompt": final_prompt}

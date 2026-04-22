@@ -238,6 +238,7 @@ async def generate_multi_clip_video(
     aspect_ratio: str,
     image_path: str | None,
     render_dir,
+    reuse_base_reference_for_all_clips: bool = False,
     on_progress=None,
 ) -> str:
     """Generate a long Grok video by chaining multiple 15s clips.
@@ -303,10 +304,20 @@ async def generate_multi_clip_video(
 
     ref_images = []
     for i in range(num_segments):
-        if i == 0 and base_reference_image:
-            # First scene uses the prepared anchor frame from the persona image.
+        if base_reference_image and (reuse_base_reference_for_all_clips or i == 0):
+            # Reuse a stable persona anchor when requested to avoid identity drift.
             ref_images.append(base_reference_image)
-            logger.info(f"Reference image {i+1}/{num_segments} reusing base scene anchor: {base_reference_image}")
+            logger.info(
+                "Reference image %s/%s reusing base scene anchor (reuse_all=%s): %s",
+                i + 1,
+                num_segments,
+                reuse_base_reference_for_all_clips,
+                base_reference_image,
+            )
+
+            if on_progress:
+                pct = 20 + int(10 * (i + 1) / num_segments)
+                await on_progress(pct, f"Imagem de referencia {i+1}/{num_segments} preparada...")
         else:
             ref_path = str(img_dir / f"reference_{i}.png")
             img_prompt = optimized_scenes[i][:500]

@@ -9,6 +9,7 @@ import asyncio
 import logging
 import uuid
 import mimetypes
+import httpx
 from pathlib import Path
 from google import genai
 from google.genai import types
@@ -132,6 +133,8 @@ def generate_scene_image(
     output_path: str = "",
     allow_faces: bool = False,
     reference_image_path: str = "",
+    provider_preference: str = "",
+    metadata: dict | None = None,
 ) -> str:
     """Generate a single scene image using Nano Banana. Synchronous (runs in thread).
     Set allow_faces=True for realistic/multi-clip videos that need character consistency.
@@ -177,6 +180,11 @@ def generate_scene_image(
             "Preserve the same face, skin tone, hair color/style, age appearance, and overall likeness. "
             "Only change scene composition, camera movement, and environment requested by the prompt."
         )
+    provider_pref = str(provider_preference or "").strip().lower()
+
+    def _set_provider_meta(provider_name: str) -> None:
+        if isinstance(metadata, dict):
+            metadata["provider"] = provider_name
 
     def _extract_parts(resp):
         parts = []
@@ -212,6 +220,7 @@ def generate_scene_image(
         try:
             image = part.as_image()
             image.save(output_path)
+            _set_provider_meta("gemini")
             return True
         except Exception:
             data = getattr(inline_data, "data", None)
@@ -227,7 +236,10 @@ def generate_scene_image(
 
                 with open(output_path, "wb") as f:
                     f.write(raw)
-                return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+                ok = os.path.exists(output_path) and os.path.getsize(output_path) > 0
+                if ok:
+                    _set_provider_meta("gemini")
+                return ok
             except Exception:
                 return False
 
@@ -252,6 +264,63 @@ def generate_scene_image(
         if ar == "1:1":
             return "1024x1024"
         return "1536x1024"
+
+    def _save_openai_reference_edit_image(source_prompt: str) -> bool:
+        if not has_reference_image:
+            return False
+        if not (settings.openai_api_key or "").strip():
+            return False
+
+        try:
+            client = openai.OpenAI(api_key=settings.openai_api_key)
+            with open(reference_image_path, "rb") as ref_file:
+                img_resp = client.images.edit(
+                    model=(settings.persona_image_openai_model or "gpt-image-1"),
+                    image=ref_file,
+                    prompt=(source_prompt or "")[:3800],
+                    size=_openai_image_size(aspect_ratio),
+                )
+
+            data_items = getattr(img_resp, "data", None) or []
+            if not data_items:
+                return False
+
+            item = data_items[0]
+            b64_data = getattr(item, "b64_json", None)
+            if not b64_data and isinstance(item, dict):
+                b64_data = item.get("b64_json")
+
+            if b64_data:
+                import base64
+
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                raw = base64.b64decode(b64_data)
+                with open(output_path, "wb") as f:
+                    f.write(raw)
+                ok = os.path.exists(output_path) and os.path.getsize(output_path) > 0
+                if ok:
+                    _set_provider_meta("openai-edit")
+                return ok
+
+            img_url = getattr(item, "url", None)
+            if not img_url and isinstance(item, dict):
+                img_url = item.get("url")
+
+            if img_url:
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                with httpx.Client(timeout=120, follow_redirects=True) as client_http:
+                    resp = client_http.get(img_url)
+                    resp.raise_for_status()
+                    with open(output_path, "wb") as f:
+                        f.write(resp.content)
+                ok = os.path.exists(output_path) and os.path.getsize(output_path) > 0
+                if ok:
+                    _set_provider_meta("openai-edit")
+                return ok
+        except Exception as e:
+            logger.warning(f"OpenAI reference edit image generation failed: {e}")
+
+        return False
 
     def _save_openai_fallback_image(source_prompt: str) -> bool:
         if not (settings.openai_api_key or "").strip():
@@ -281,7 +350,10 @@ def generate_scene_image(
                 raw = base64.b64decode(b64_data)
                 with open(output_path, "wb") as f:
                     f.write(raw)
-                return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+                ok = os.path.exists(output_path) and os.path.getsize(output_path) > 0
+                if ok:
+                    _set_provider_meta("openai-generate")
+                return ok
 
             img_url = getattr(item, "url", None)
             if not img_url and isinstance(item, dict):
@@ -294,7 +366,10 @@ def generate_scene_image(
                     resp.raise_for_status()
                     with open(output_path, "wb") as f:
                         f.write(resp.content)
-                return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+                ok = os.path.exists(output_path) and os.path.getsize(output_path) > 0
+                if ok:
+                    _set_provider_meta("openai-generate")
+                return ok
         except Exception as e:
             logger.warning(f"OpenAI fallback image generation failed: {e}")
 
@@ -306,7 +381,10 @@ def generate_scene_image(
         try:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             shutil.copy2(reference_image_path, output_path)
-            return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+            ok = os.path.exists(output_path) and os.path.getsize(output_path) > 0
+            if ok:
+                _set_provider_meta("reference-passthrough")
+            return ok
         except Exception as e:
             logger.warning(f"Reference passthrough fallback failed: {e}")
             return False
@@ -342,10 +420,24 @@ def generate_scene_image(
 
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             img.save(output_path)
-            return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+            ok = os.path.exists(output_path) and os.path.getsize(output_path) > 0
+            if ok:
+                _set_provider_meta("local-placeholder")
+            return ok
         except Exception as e:
             logger.warning(f"Local placeholder image generation failed: {e}")
             return False
+
+    if provider_pref == "openai":
+        if _save_openai_reference_edit_image(full_prompt):
+            logger.info(f"Scene image saved via OpenAI preferred reference-edit: {output_path}")
+            return output_path
+
+        if _save_openai_fallback_image(full_prompt):
+            logger.info(f"Scene image saved via OpenAI preferred generate: {output_path}")
+            return output_path
+
+        logger.warning("OpenAI preferred provider failed; falling back to default provider chain")
 
     # Retry with a simplified prompt when provider returns metadata without inline image.
     prompt_attempts = [

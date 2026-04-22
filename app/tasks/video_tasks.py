@@ -1393,7 +1393,14 @@ async def run_realistic_video_pipeline(project_id: int):
             if project.style_prompt and os.path.exists(project.style_prompt):
                 image_path = project.style_prompt
                 logger.info(f"Realistic video with reference image: {image_path}")
+            elif project.style_prompt:
+                logger.warning("Realistic video reference image path missing on disk: %s", project.style_prompt)
             has_reference_image = bool(image_path)
+
+            if engine == "grok" and str(tags_data_early.get("reference_source", "") or "").strip().lower() == "persona" and not has_reference_image:
+                raise RuntimeError(
+                    "Imagem de referencia da persona nao encontrada. Reabra as personas selecionadas e gere novamente."
+                )
 
             if has_reference_image:
                 user_prompt = _ensure_reference_image_instruction(user_prompt)
@@ -1569,6 +1576,26 @@ async def run_realistic_video_pipeline(project_id: int):
             generate_audio = not getattr(project, "no_background_music", False)
             scene_reference_path = image_path
             grok_direct_reference_path = image_path if (image_path and os.path.exists(image_path)) else ""
+            reference_source = str(tags_data.get("reference_source", "") or "").strip().lower()
+            raw_persona_ids = tags_data.get("persona_profile_ids", []) if isinstance(tags_data.get("persona_profile_ids", []), list) else []
+            has_persona_selection = False
+            for raw_pid in raw_persona_ids:
+                try:
+                    if int(raw_pid) > 0:
+                        has_persona_selection = True
+                        break
+                except Exception:
+                    continue
+            enable_grok_persona_anchor = (
+                engine == "grok"
+                and reference_source == "persona"
+                and has_reference_image
+                and has_persona_selection
+            )
+            grok_persona_anchor_path = ""
+            grok_persona_anchor_provider = ""
+            grok_persona_anchor_retry_count = 0
+            grok_persona_anchor_fallback = False
 
             async def _on_progress(pct, msg):
                 nonlocal project
@@ -1610,6 +1637,86 @@ async def run_realistic_video_pipeline(project_id: int):
                 except Exception as e:
                     scene_reference_path = image_path
                     logger.warning("Realistic video: Nano Banana scene anchor failed; using original persona image: %s", e)
+            elif enable_grok_persona_anchor:
+                from app.services.scene_generator import generate_scene_image
+
+                anchor_source_path = grok_direct_reference_path or scene_reference_path or image_path
+                if not anchor_source_path or not os.path.exists(anchor_source_path):
+                    grok_persona_anchor_fallback = True
+                    logger.warning(
+                        "Grok persona anchor skipped: no valid source image for project %s",
+                        project_id,
+                    )
+                else:
+                    await _on_progress(16, "Montando imagem-base com personas para o Cria 3.0...")
+                    anchor_dir = render_dir / "grok_persona_anchor"
+                    anchor_dir.mkdir(parents=True, exist_ok=True)
+                    candidate_anchor_path = str(anchor_dir / "reference.png")
+                    anchor_prompt = (optimized_prompt or user_prompt)[:800]
+                    max_attempts = 2  # 1 retry before falling back
+                    loop = asyncio.get_event_loop()
+
+                    for attempt in range(1, max_attempts + 1):
+                        try:
+                            if os.path.exists(candidate_anchor_path):
+                                os.remove(candidate_anchor_path)
+
+                            anchor_meta: dict = {}
+                            await loop.run_in_executor(
+                                None,
+                                generate_scene_image,
+                                anchor_prompt,
+                                aspect_ratio,
+                                candidate_anchor_path,
+                                True,
+                                anchor_source_path,
+                                "openai",
+                                anchor_meta,
+                            )
+
+                            if os.path.exists(candidate_anchor_path) and os.path.getsize(candidate_anchor_path) > 0:
+                                grok_persona_anchor_path = candidate_anchor_path
+                                grok_persona_anchor_provider = str(anchor_meta.get("provider") or "unknown")
+                                grok_persona_anchor_retry_count = attempt - 1
+                                grok_persona_anchor_fallback = False
+                                grok_direct_reference_path = candidate_anchor_path
+                                scene_reference_path = candidate_anchor_path
+                                logger.info(
+                                    "Grok persona anchor ready for project %s (provider=%s retries=%s path=%s)",
+                                    project_id,
+                                    grok_persona_anchor_provider,
+                                    grok_persona_anchor_retry_count,
+                                    candidate_anchor_path,
+                                )
+                                break
+
+                            raise RuntimeError("Imagem-base gerada vazia")
+                        except Exception as e:
+                            grok_persona_anchor_retry_count = attempt
+                            if attempt >= max_attempts:
+                                grok_persona_anchor_fallback = True
+                                logger.warning(
+                                    "Grok persona anchor failed after %s attempts for project %s: %s",
+                                    max_attempts,
+                                    project_id,
+                                    e,
+                                )
+                                break
+
+                            logger.warning(
+                                "Grok persona anchor attempt %s/%s failed for project %s: %s",
+                                attempt,
+                                max_attempts,
+                                project_id,
+                                e,
+                            )
+                            await _on_progress(17, f"Retentando imagem-base de personas ({attempt + 1}/{max_attempts})...")
+
+                    if grok_persona_anchor_fallback:
+                        logger.warning(
+                            "Grok persona anchor fallback enabled for project %s; using original reference image.",
+                            project_id,
+                        )
             elif engine == "grok" and grok_direct_reference_path:
                 logger.info(
                     "Realistic video: Grok max-fidelity enabled, using direct persona reference image (%s)",
@@ -1630,6 +1737,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         aspect_ratio=aspect_ratio,
                         image_path=grok_base_image_path,
                         render_dir=render_dir,
+                        reuse_base_reference_for_all_clips=bool(grok_persona_anchor_path),
                         on_progress=_on_progress,
                     )
                 else:
@@ -1661,6 +1769,15 @@ async def run_realistic_video_pipeline(project_id: int):
                         aspect_ratio=aspect_ratio,
                         on_progress=_on_progress,
                     )
+
+                if enable_grok_persona_anchor:
+                    tags_data["grok_persona_anchor_enabled"] = True
+                    tags_data["grok_persona_anchor_path"] = grok_persona_anchor_path
+                    tags_data["grok_persona_anchor_provider"] = grok_persona_anchor_provider
+                    tags_data["grok_persona_anchor_retry_count"] = grok_persona_anchor_retry_count
+                    tags_data["grok_persona_anchor_fallback"] = bool(grok_persona_anchor_fallback or not grok_persona_anchor_path)
+                    project.tags = tags_data
+                    await db.commit()
 
             elif engine == "minimax":
                 # ── MiniMax Hailuo ──

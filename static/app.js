@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v188 loaded");
+﻿console.log("[CriaVideo] app.js v189 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4891,9 +4891,11 @@ async function generateAiScript() {
         let selectedPersonaIds = [];
         try {
             selectedPersonaIds = await _ensurePersonaSelections("ai", interactionPersona);
-        } catch (_) {
-            selectedPersonaIds = [];
+        } catch (error) {
+            alert(`Erro ao carregar persona: ${error.message || "Tente novamente."}`);
+            return;
         }
+        const selectedPersonaId = selectedPersonaIds[0] || 0;
         const usePhotosToggle = document.getElementById("script-use-photos");
         const hasReferenceImage = selectedPersonaIds.length > 0 || (scriptPhotos.length > 0 && (!usePhotosToggle || usePhotosToggle.checked));
         const engineLabel = engine === "grok"
@@ -4920,6 +4922,8 @@ async function generateAiScript() {
                     engine,
                     duration: realisticDuration,
                     interaction_persona: interactionPersona,
+                    persona_profile_id: selectedPersonaId,
+                    persona_profile_ids: selectedPersonaIds,
                     has_reference_image: hasReferenceImage,
                 }),
             });
