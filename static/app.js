@@ -1146,6 +1146,9 @@ let scriptData = {
     removeVocals: false,
     createNarration: true,
     enableSubtitles: true,
+    subtitlePositionY: 80,
+    enableAudioSpectrum: false,
+    useTevoxiAudio: false,
     zoomImages: true,
     imageDisplaySeconds: 0,
     promptOptimized: false,
@@ -1546,12 +1549,23 @@ function initCreateWizard() {
     const bgmToggle = document.getElementById("script-enable-bgm");
     if (bgmToggle) {
         bgmToggle.addEventListener("change", () => {
+            if (bgmToggle.disabled) {
+                bgmToggle.checked = false;
+                return;
+            }
             const area = document.getElementById("script-bgm-upload-area");
             if (area) area.hidden = !bgmToggle.checked;
             if (!bgmToggle.checked) {
                 const fi = document.getElementById("script-bgm-file");
                 if (fi) fi.value = "";
             }
+        });
+    }
+
+    const subtitleToggle = document.getElementById("script-enable-subtitles");
+    if (subtitleToggle) {
+        subtitleToggle.addEventListener("change", () => {
+            _updateScriptSubtitlePositionVisibility();
         });
     }
 
@@ -2000,6 +2014,9 @@ function resetCreateWizard() {
         removeVocals: false,
         createNarration: true,
         enableSubtitles: true,
+        subtitlePositionY: 80,
+        enableAudioSpectrum: false,
+        useTevoxiAudio: false,
         zoomImages: true,
         imageDisplaySeconds: 0,
         promptOptimized: false,
@@ -2033,9 +2050,18 @@ function resetCreateWizard() {
     const bgmInput = document.getElementById("script-bgm-file");
     if (bgmInput) bgmInput.value = "";
     const bgmToggle = document.getElementById("script-enable-bgm");
-    if (bgmToggle) bgmToggle.checked = true;
+    if (bgmToggle) {
+        bgmToggle.checked = true;
+        bgmToggle.disabled = false;
+    }
+    const bgmGroup = document.getElementById("script-bgm-group");
+    if (bgmGroup) bgmGroup.classList.remove("is-locked");
+    const bgmLockHint = document.getElementById("script-bgm-lock-hint");
+    if (bgmLockHint) bgmLockHint.hidden = true;
     const bgmUploadArea = document.getElementById("script-bgm-upload-area");
     if (bgmUploadArea) bgmUploadArea.hidden = false;
+    const bgmFileInput = document.getElementById("script-bgm-file");
+    if (bgmFileInput) bgmFileInput.value = "";
     _scriptSelectedSong = null;
     _scriptSelectedClip = null;
     _wizardSelectedSong = null;
@@ -2114,10 +2140,18 @@ function resetCreateWizard() {
     // Reset subtitle toggle
     const subCb = document.getElementById("script-enable-subtitles");
     if (subCb) subCb.checked = true;
+    const subtitlePos = document.getElementById("script-subtitle-position-y");
+    if (subtitlePos) subtitlePos.value = "80";
+    const audioSpectrumCb = document.getElementById("script-enable-audio-spectrum");
+    if (audioSpectrumCb) audioSpectrumCb.checked = false;
+    const audioSpectrumGroup = document.getElementById("script-audio-spectrum-group");
+    if (audioSpectrumGroup) audioSpectrumGroup.hidden = true;
     const imageSecondsInput = document.getElementById("script-image-seconds");
     if (imageSecondsInput) imageSecondsInput.value = "";
     toggleScriptPhotoDependentFields();
     toggleAudioMusicOptions();
+    _updateScriptSubtitlePositionVisibility();
+    _updateScriptDetailsForTevoxiMode();
 
     // Reset selections
     document.querySelectorAll(".wizard-option.selected").forEach((o) => o.classList.remove("selected"));
@@ -2936,6 +2970,54 @@ function updateNarrationChoiceVisibility() {
     toggleScriptNarration();
 }
 
+function _isScriptTevoxiMainAudioMode() {
+    const enabled = !!(document.getElementById("script-realistic-tevoxi")?.checked);
+    if (!enabled) return false;
+    if (scriptData.videoType === "realista") return false;
+    return !!_scriptSelectedSong && !!_scriptSelectedClip;
+}
+
+function _updateScriptSubtitlePositionVisibility() {
+    const subtitleToggle = document.getElementById("script-enable-subtitles");
+    const subtitlePosGroup = document.getElementById("script-subtitle-position-group");
+    if (!subtitlePosGroup) return;
+    const subtitlesEnabled = subtitleToggle ? subtitleToggle.checked : true;
+    subtitlePosGroup.hidden = !subtitlesEnabled;
+}
+
+function _updateScriptDetailsForTevoxiMode() {
+    const tevoxiMode = _isScriptTevoxiMainAudioMode();
+
+    const bgmGroup = document.getElementById("script-bgm-group");
+    const bgmLockHint = document.getElementById("script-bgm-lock-hint");
+    const bgmToggle = document.getElementById("script-enable-bgm");
+    const bgmUploadArea = document.getElementById("script-bgm-upload-area");
+    const bgmFileInput = document.getElementById("script-bgm-file");
+
+    if (bgmToggle) {
+        if (tevoxiMode) {
+            bgmToggle.checked = false;
+            bgmToggle.disabled = true;
+            if (bgmFileInput) bgmFileInput.value = "";
+            if (bgmUploadArea) bgmUploadArea.hidden = true;
+            if (bgmGroup) bgmGroup.classList.add("is-locked");
+            if (bgmLockHint) bgmLockHint.hidden = false;
+        } else {
+            bgmToggle.disabled = false;
+            if (bgmUploadArea) bgmUploadArea.hidden = !bgmToggle.checked;
+            if (bgmGroup) bgmGroup.classList.remove("is-locked");
+            if (bgmLockHint) bgmLockHint.hidden = true;
+        }
+    }
+
+    const audioSpectrumGroup = document.getElementById("script-audio-spectrum-group");
+    const audioSpectrumCb = document.getElementById("script-enable-audio-spectrum");
+    if (audioSpectrumGroup) audioSpectrumGroup.hidden = !tevoxiMode;
+    if (!tevoxiMode && audioSpectrumCb) audioSpectrumCb.checked = false;
+
+    _updateScriptSubtitlePositionVisibility();
+}
+
 function handlePhotoSelect(event) {
     const files = Array.from(event.target.files || []);
     addPhotos(files);
@@ -3076,6 +3158,8 @@ function adaptScriptStepForVideoType(videoType) {
             toggleVideoUpload();
         }
     }
+    _updateScriptDetailsForTevoxiMode();
+    _updateScriptSubtitlePositionVisibility();
 }
 
 function _normalizeRealisticPersonaType(value) {

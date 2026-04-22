@@ -1158,8 +1158,27 @@
                                     </label>
                                     <span class="subtitle-toggle-label">Exibir legendas no vídeo</span>
                                 </div>
+                                <div id="script-subtitle-position-group" class="script-subtitle-position-group">
+                                    <small class="field-hint" style="margin-bottom:6px;display:block">Posição da legenda</small>
+                                    <select id="script-subtitle-position-y" class="input">
+                                        <option value="80" selected>80% (Parte de baixo)</option>
+                                        <option value="50">50% (Centro)</option>
+                                        <option value="20">20% (Parte de cima)</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div class="form-group">
+                            <div class="form-group" id="script-audio-spectrum-group" hidden>
+                                <label>Espectro de som</label>
+                                <div class="subtitle-toggle-row">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="script-enable-audio-spectrum">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <span class="subtitle-toggle-label">Incluir espectro de som</span>
+                                </div>
+                                <small class="field-hint">Disponível apenas quando usar música do Tevoxi.</small>
+                            </div>
+                            <div class="form-group" id="script-bgm-group">
                                 <label>Fundo musical</label>
                                 <div class="subtitle-toggle-row" style="margin-bottom:10px">
                                     <label class="toggle-switch">
@@ -1168,6 +1187,7 @@
                                     </label>
                                     <span class="subtitle-toggle-label">Ativar fundo musical</span>
                                 </div>
+                                <small id="script-bgm-lock-hint" class="field-hint" hidden>Com Tevoxi ativo, o trecho selecionado vira o áudio principal e o fundo musical fica desativado.</small>
                                 <div id="script-bgm-upload-area">
                                     <small class="field-hint" style="margin-bottom:6px;display:block">Envie seu próprio áudio ou deixe vazio para gerar automaticamente.</small>
                                     <input id="script-bgm-file" type="file" class="input" accept="audio/*">

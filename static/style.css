@@ -3229,6 +3229,30 @@ svg.spin {
     color: var(--text);
 }
 
+.script-subtitle-position-group {
+    margin-top: 10px;
+}
+
+.script-subtitle-position-group .input {
+    max-width: 280px;
+}
+
+#script-audio-spectrum-group {
+    animation: wizardFadeIn 0.2s ease-out;
+}
+
+#script-bgm-group.is-locked {
+    opacity: 0.72;
+}
+
+#script-bgm-group.is-locked .subtitle-toggle-row {
+    pointer-events: none;
+}
+
+#script-bgm-group.is-locked .field-hint {
+    color: var(--accent);
+}
+
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
