@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v181 loaded");
+﻿console.log("[CriaVideo] app.js v182 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -64,6 +64,62 @@ function showToast(msg, type = "info") {
     el.textContent = msg;
     document.body.appendChild(el);
     setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .3s"; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+const WAN_REALISTIC_DURATION_OPTIONS = [8, 16, 24, 32, 40, 48, 56];
+const DEFAULT_REALISTIC_DURATION_OPTIONS = [5, 10, 15, 20, 45, 60];
+const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
+
+function _normalizeWanDurationMultiple(value) {
+    const raw = parseInt(value || 0, 10);
+    if (!raw || raw <= 8) return 8;
+    const capped = Math.min(raw, 56);
+    return Math.max(8, Math.floor(capped / 8) * 8);
+}
+
+function _pickClosestDurationOption(options, targetValue) {
+    if (!Array.isArray(options) || !options.length) return 0;
+    const target = parseInt(targetValue || 0, 10);
+    if (target > 0 && options.includes(target)) return target;
+    if (!(target > 0)) return options[0];
+    return options.reduce((best, current) => {
+        const bestGap = Math.abs(best - target);
+        const curGap = Math.abs(current - target);
+        return curGap < bestGap ? current : best;
+    }, options[0]);
+}
+
+function _renderDurationButtons(containerId, options, preferredValue = null) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const selectedNow = parseInt(container.querySelector(".duration-option.selected")?.dataset.value || "0", 10) || 0;
+    const targetValue = preferredValue != null ? parseInt(preferredValue, 10) : selectedNow;
+    const selectedValue = _pickClosestDurationOption(options, targetValue);
+
+    container.innerHTML = (options || []).map((value) => {
+        const selected = value === selectedValue ? " selected" : "";
+        return `<button class="duration-option${selected}" data-value="${value}" type="button">${value}s</button>`;
+    }).join("");
+}
+
+function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
+    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
+    const options = engine === "wan2" ? WAN_REALISTIC_DURATION_OPTIONS : DEFAULT_REALISTIC_DURATION_OPTIONS;
+    _renderDurationButtons(`${prefix}-realistic-duration`, options, preferredValue);
+}
+
+function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
+    const engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected")
+        || document.querySelector("#wizard-realistic-engine .engine-option.selected");
+    const engine = engineBtn?.dataset.value || "wan2";
+    const options = engine === "wan2" ? WAN_REALISTIC_DURATION_OPTIONS : DEFAULT_REALISTIC_DURATION_OPTIONS;
+    _renderDurationButtons("ai-suggest-realistic-duration", options, preferredValue);
+}
+
+function _syncAutoRealisticDurationOptions(preferredValue = null) {
+    const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "wan2";
+    const options = engine === "grok" ? AUTO_GROK_DURATION_OPTIONS : WAN_REALISTIC_DURATION_OPTIONS;
+    _renderDurationButtons("auto-realistic-duration", options, preferredValue);
 }
 
 function getApiErrorMessage(body, fallback = "Erro inesperado") {
@@ -1162,6 +1218,13 @@ let _wizardSelectedClip = null; // selected clip/full metadata for wizard mode
 let _scriptTevoxiPromptAuto = false;
 let _scriptTevoxiPromptSignature = "";
 let _scriptTevoxiTranscribeTicket = 0;
+let _scriptTevoxiPreviewPlaying = false;
+let _scriptTevoxiPreviewLoading = false;
+let _scriptTevoxiPreviewRaf = null;
+let _scriptTevoxiPreviewEnd = 0;
+let _scriptTevoxiPreviewObjectUrl = "";
+let _scriptTevoxiPreviewSourceKey = "";
+let _scriptTevoxiPreviewSignature = "";
 // Step flow arrays for each video type
 const WIZARD_FLOW_NORMAL = [2, 1, 3, 4, 5, 6]; // type, topic, tone, voice, style, details
 const WIZARD_FLOW_REALISTIC = [2, 1, 7]; // type, topic, realistic settings
@@ -1308,22 +1371,7 @@ async function createSimilar(projectId) {
         : false;
 
     if (sourceLooksRealistic) {
-        const durationEl = document.getElementById("script-realistic-duration");
-        if (durationEl) {
-            const durationOptions = Array.from(durationEl.querySelectorAll(".duration-option"));
-            const desiredDuration = Math.max(1, Math.round(Number(projectDetail?.track_duration || project.track_duration || tagsData.dialogue_duration || 10)));
-            let targetDurationBtn = durationOptions.find((btn) => (parseInt(btn.dataset.value || "0", 10) || 0) === desiredDuration);
-            if (!targetDurationBtn && durationOptions.length) {
-                targetDurationBtn = durationOptions.reduce((best, btn) => {
-                    const currentVal = parseInt(btn.dataset.value || "0", 10) || 0;
-                    const bestVal = parseInt(best.dataset.value || "0", 10) || 0;
-                    const currentGap = Math.abs(currentVal - desiredDuration);
-                    const bestGap = Math.abs(bestVal - desiredDuration);
-                    return currentGap < bestGap ? btn : best;
-                }, durationOptions[0]);
-            }
-            durationOptions.forEach((btn) => btn.classList.toggle("selected", btn === targetDurationBtn));
-        }
+        const desiredDuration = Math.max(1, Math.round(Number(projectDetail?.track_duration || project.track_duration || tagsData.dialogue_duration || 8)));
 
         const selectedEngine = normalizeEngine(tagsData.engine || project.track_artist || projectDetail?.track_artist || "wan2");
         const engineOptions = Array.from(document.querySelectorAll("#script-realistic-engine .engine-option"));
@@ -1332,6 +1380,8 @@ async function createSimilar(projectId) {
             selectedEngineBtn = engineOptions.find((btn) => btn.classList.contains("selected")) || engineOptions[0] || null;
         }
         engineOptions.forEach((btn) => btn.classList.toggle("selected", btn === selectedEngineBtn));
+        _syncCreateRealisticDurationOptions("script", desiredDuration);
+        _syncAiSuggestRealisticDurationOptions(desiredDuration);
 
         const tevoxiAudioUrl = String(tagsData.audio_url || "").trim();
         const usesTevoxiAudio = !!tevoxiAudioUrl;
@@ -1827,6 +1877,7 @@ function initCreateWizard() {
             eng.closest(".engine-options").querySelectorAll(".engine-option").forEach((d) => d.classList.remove("selected"));
             eng.classList.add("selected");
             const engineVal = eng.dataset.value;
+            const engineGroupId = eng.closest(".engine-options")?.id || "";
             const container = eng.closest(".form-group")?.parentElement;
             if (container) {
                 // Auto-toggle music checkbox: engines with native audio → uncheck
@@ -1839,6 +1890,16 @@ function initCreateWizard() {
                         && (document.getElementById("wizard-realistic-tevoxi")?.checked || false);
                     musicCb.checked = (useScriptTevoxi || useWizardTevoxi) ? false : !hasNativeAudio;
                 }
+            }
+
+            if (engineGroupId === "wizard-realistic-engine") {
+                _syncCreateRealisticDurationOptions("wizard");
+                _syncAiSuggestRealisticDurationOptions();
+            } else if (engineGroupId === "script-realistic-engine") {
+                _syncCreateRealisticDurationOptions("script");
+                _syncAiSuggestRealisticDurationOptions();
+            } else if (engineGroupId === "auto-realistic-engine") {
+                _syncAutoRealisticDurationOptions();
             }
         }
         const vbtn = e.target.closest(".voice-btn");
@@ -1856,6 +1917,11 @@ function initCreateWizard() {
             if (opts) opts.hidden = !cb.checked;
         });
     });
+
+    _syncCreateRealisticDurationOptions("wizard", 8);
+    _syncCreateRealisticDurationOptions("script", 8);
+    _syncAiSuggestRealisticDurationOptions(8);
+    _syncAutoRealisticDurationOptions(8);
 
     _updateScriptSubtitlePositionVisibility();
     _updateScriptDetailsForTevoxiMode();
@@ -1985,7 +2051,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     }
 
     const durBtn = document.querySelector(`#${durationSelectorId} .duration-option.selected`);
-    const duration = durBtn ? parseInt(durBtn.dataset.value, 10) : 10;
+    let duration = durBtn ? parseInt(durBtn.dataset.value, 10) : 8;
     const aspectEl = document.getElementById(aspectSelectorId);
     const aspect = aspectEl ? aspectEl.value : "16:9";
     const musicEl = document.getElementById(musicCheckboxId);
@@ -1993,15 +2059,14 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const addMusicRequested = useTevoxi ? false : addMusic;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
     let engine = engineBtn ? engineBtn.dataset.value : "wan2";
-    if (duration > 10 && engine !== "grok") {
-        const engineSelector = document.getElementById(engineSelectorId);
-        const grokBtn = engineSelector?.querySelector('.engine-option[data-value="grok"]');
-        if (grokBtn) {
-            engineSelector.querySelectorAll(".engine-option").forEach((d) => d.classList.remove("selected"));
-            grokBtn.classList.add("selected");
+    if (engine === "wan2") {
+        const normalizedDuration = _normalizeWanDurationMultiple(duration);
+        if (normalizedDuration !== duration) {
+            duration = normalizedDuration;
+            _syncCreateRealisticDurationOptions(prefix, duration);
+            _syncAiSuggestRealisticDurationOptions(duration);
+            showToast("Ultra High 2.2 usa duracao em multiplos de 8 segundos.");
         }
-        engine = "grok";
-        showToast("Duracoes acima de 10s usam Cria 3.0 speed automaticamente.");
     }
     const engineLabel = engine === "minimax"
         ? "MiniMax Hailuo"
@@ -2403,14 +2468,9 @@ function resetCreateWizard() {
         c.classList.toggle("selected", c.dataset.type === "imagens_ia");
     });
     // Reset realistic settings in both panels
-    ["wizard-realistic-duration", "script-realistic-duration"].forEach(id => {
-        document.querySelectorAll(`#${id} .duration-option`).forEach(d => {
-            d.classList.toggle("selected", d.dataset.value === "10");
-        });
-    });
-    document.querySelectorAll("#ai-suggest-realistic-duration .duration-option").forEach((d) => {
-        d.classList.toggle("selected", d.dataset.value === "10");
-    });
+    _syncCreateRealisticDurationOptions("wizard", 8);
+    _syncCreateRealisticDurationOptions("script", 8);
+    _syncAiSuggestRealisticDurationOptions(8);
     ["wizard-realistic-aspect", "script-realistic-aspect"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = "16:9";
@@ -4746,6 +4806,7 @@ function showAiSuggestPanel() {
         const selectedPersona = getSelectedRealisticPersona();
         setSelectedRealisticPersona(selectedPersona);
         _refreshPersonaContext("ai", selectedPersona);
+        _syncAiSuggestRealisticDurationOptions();
     }
     const hasScriptTevoxiClip = isRealistic
         && (document.getElementById("script-realistic-tevoxi")?.checked || false)
@@ -4803,19 +4864,16 @@ async function generateAiScript() {
         const interactionPersona = selectedPersonaBtn ? (selectedPersonaBtn.dataset.persona || "natureza") : "natureza";
         setSelectedRealisticPersona(interactionPersona);
         const realisticDurationBtn = document.querySelector("#ai-suggest-realistic-duration .duration-option.selected");
-        const realisticDuration = realisticDurationBtn ? parseInt(realisticDurationBtn.dataset.value, 10) : 10;
+        let realisticDuration = realisticDurationBtn ? parseInt(realisticDurationBtn.dataset.value, 10) : 8;
         let engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected") || document.querySelector("#wizard-realistic-engine .engine-option.selected");
         let engine = engineBtn ? engineBtn.dataset.value : "wan2";
-        if (realisticDuration > 10 && engine !== "grok") {
-            const engineSelector = document.getElementById("script-realistic-engine") || document.getElementById("wizard-realistic-engine");
-            const grokBtn = engineSelector?.querySelector('.engine-option[data-value="grok"]');
-            if (grokBtn && engineSelector) {
-                engineSelector.querySelectorAll(".engine-option").forEach((d) => d.classList.remove("selected"));
-                grokBtn.classList.add("selected");
-                engineBtn = grokBtn;
+        if (engine === "wan2") {
+            const normalized = _normalizeWanDurationMultiple(realisticDuration);
+            if (normalized !== realisticDuration) {
+                realisticDuration = normalized;
+                _syncAiSuggestRealisticDurationOptions(realisticDuration);
+                showToast("Ultra High 2.2 usa duracao em multiplos de 8 segundos.");
             }
-            engine = "grok";
-            showToast("Duracoes acima de 10s usam Cria 3.0 speed automaticamente.");
         }
         let selectedPersonaIds = [];
         try {
@@ -6566,9 +6624,7 @@ function openNewAutomationModal() {
     _setAutoRealisticEngine("wan2");
 
     // reset duration selection
-    document.querySelectorAll("#auto-realistic-duration .duration-option").forEach(d => d.classList.remove("selected"));
-    const defDur = document.querySelector('#auto-realistic-duration [data-value="7"]');
-    if (defDur) defDur.classList.add("selected");
+    _syncAutoRealisticDurationOptions(8);
 
     document.getElementById("auto-theme-list").innerHTML = "";
     const themeInput = document.getElementById("auto-theme-input");
@@ -6669,15 +6725,7 @@ function _setAutoRealisticEngine(engineValue) {
         if (selected) selected.classList.add("selected");
     }
 
-    const isGrok = selected?.dataset.value === "grok";
-    document.querySelectorAll("#auto-realistic-duration .grok-only").forEach(btn => { btn.hidden = !isGrok; });
-    if (!isGrok) {
-        document.querySelectorAll("#auto-realistic-duration .duration-option.grok-only.selected").forEach(btn => {
-            btn.classList.remove("selected");
-            const def = document.querySelector('#auto-realistic-duration [data-value="7"]');
-            if (def) def.classList.add("selected");
-        });
-    }
+    _syncAutoRealisticDurationOptions();
 }
 
 function _applyAutoRealisticEngineRules() {
@@ -6954,18 +7002,214 @@ function _buildTevoxiAiTopicSeed(song, clip) {
     return `${baseLabel}. Sugira um roteiro visual coerente com o ritmo e a emoção da música.`;
 }
 
+function _setScriptTevoxiPlayButton(isPlaying = false, isDisabled = false) {
+    const btn = document.getElementById("script-tevoxi-play-btn");
+    if (!btn) return;
+
+    btn.disabled = !!isDisabled;
+    btn.classList.toggle("playing", !!isPlaying);
+
+    if (isPlaying) {
+        btn.title = "Pausar trecho";
+        btn.setAttribute("aria-label", "Pausar trecho");
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>';
+    } else {
+        btn.title = "Ouvir trecho";
+        btn.setAttribute("aria-label", "Ouvir trecho");
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>';
+    }
+}
+
+function _clearScriptTevoxiPreviewSource() {
+    const audio = document.getElementById("script-tevoxi-preview-audio");
+    if (audio) {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+    }
+
+    if (_scriptTevoxiPreviewObjectUrl) {
+        URL.revokeObjectURL(_scriptTevoxiPreviewObjectUrl);
+        _scriptTevoxiPreviewObjectUrl = "";
+    }
+
+    _scriptTevoxiPreviewSourceKey = "";
+}
+
+function _stopScriptTevoxiPreview(clearSource = false) {
+    if (_scriptTevoxiPreviewRaf) {
+        cancelAnimationFrame(_scriptTevoxiPreviewRaf);
+        _scriptTevoxiPreviewRaf = null;
+    }
+
+    const audio = document.getElementById("script-tevoxi-preview-audio");
+    if (audio) {
+        audio.pause();
+        audio.onended = null;
+    }
+
+    _scriptTevoxiPreviewPlaying = false;
+    _scriptTevoxiPreviewLoading = false;
+    _scriptTevoxiPreviewEnd = 0;
+    _scriptTevoxiPreviewSignature = "";
+
+    if (clearSource) {
+        _clearScriptTevoxiPreviewSource();
+    }
+
+    const canPlay = !!(_scriptSelectedSong && _scriptSelectedClip);
+    _setScriptTevoxiPlayButton(false, !canPlay);
+}
+
+function _tickScriptTevoxiPreview() {
+    if (!_scriptTevoxiPreviewPlaying) return;
+
+    const audio = document.getElementById("script-tevoxi-preview-audio");
+    if (!audio) {
+        _stopScriptTevoxiPreview(false);
+        return;
+    }
+
+    if (_scriptTevoxiPreviewEnd > 0 && Number(audio.currentTime || 0) >= _scriptTevoxiPreviewEnd) {
+        _stopScriptTevoxiPreview(false);
+        return;
+    }
+
+    _scriptTevoxiPreviewRaf = requestAnimationFrame(_tickScriptTevoxiPreview);
+}
+
+async function _ensureScriptTevoxiPreviewSource(song) {
+    const audio = document.getElementById("script-tevoxi-preview-audio");
+    if (!audio || !song) return false;
+
+    const sourceKey = String(song.job_id || song.audio_url || "").trim();
+    if (sourceKey && _scriptTevoxiPreviewSourceKey === sourceKey && audio.src) {
+        return true;
+    }
+
+    const audioUrl = _getClipAudioUrl(song);
+    if (!audioUrl) return false;
+
+    _clearScriptTevoxiPreviewSource();
+
+    const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+    const resp = await fetch(audioUrl, {
+        method: "GET",
+        headers: authHeaders,
+        cache: "no-store",
+        credentials: "same-origin",
+    });
+
+    if (resp.status === 401) {
+        clearSession();
+        showAuth("Sua sessao expirou. Entre novamente.");
+        return false;
+    }
+    if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+    }
+
+    const arrayBuf = await resp.arrayBuffer();
+    const contentType = resp.headers.get("content-type") || "audio/mpeg";
+    const blob = new Blob([arrayBuf.slice(0)], { type: contentType });
+    _scriptTevoxiPreviewObjectUrl = URL.createObjectURL(blob);
+    _scriptTevoxiPreviewSourceKey = sourceKey;
+    audio.src = _scriptTevoxiPreviewObjectUrl;
+    audio.load();
+    return true;
+}
+
+async function toggleScriptTevoxiPreview() {
+    if (_scriptTevoxiPreviewLoading) return;
+
+    if (_scriptTevoxiPreviewPlaying) {
+        _stopScriptTevoxiPreview(false);
+        return;
+    }
+
+    const song = _scriptSelectedSong;
+    const clip = _scriptSelectedClip;
+    if (!song || !clip) {
+        alert("Selecione um trecho para ouvir.");
+        return;
+    }
+
+    const audio = document.getElementById("script-tevoxi-preview-audio");
+    if (!audio) return;
+
+    const clipStart = Math.max(0, Number(clip.clip_start || 0));
+    const clipDuration = Math.max(0, Number(clip.clip_duration || 0));
+    const clipEnd = clipDuration > 0 ? (clipStart + clipDuration) : 0;
+
+    try {
+        _scriptTevoxiPreviewLoading = true;
+        _setScriptTevoxiPlayButton(false, true);
+
+        const ready = await _ensureScriptTevoxiPreviewSource(song);
+        if (!ready || !audio.src) {
+            throw new Error("preview_source_unavailable");
+        }
+
+        audio.pause();
+        try {
+            audio.currentTime = clipStart;
+        } catch (_) {
+            // Some browsers delay seek until playback starts.
+        }
+
+        _scriptTevoxiPreviewEnd = clipEnd > clipStart ? clipEnd : 0;
+        _scriptTevoxiPreviewSignature = _buildScriptTevoxiClipSignature(song, clip);
+        _scriptTevoxiPreviewPlaying = true;
+        _setScriptTevoxiPlayButton(true, false);
+
+        audio.onended = () => _stopScriptTevoxiPreview(false);
+
+        const playPromise = audio.play();
+        if (playPromise && typeof playPromise.then === "function") {
+            await playPromise;
+        }
+
+        _scriptTevoxiPreviewRaf = requestAnimationFrame(_tickScriptTevoxiPreview);
+    } catch (error) {
+        _stopScriptTevoxiPreview(false);
+        alert("Não foi possível reproduzir o trecho agora.");
+    } finally {
+        _scriptTevoxiPreviewLoading = false;
+        if (!_scriptTevoxiPreviewPlaying) {
+            const canPlay = !!(_scriptSelectedSong && _scriptSelectedClip);
+            _setScriptTevoxiPlayButton(false, !canPlay);
+        }
+    }
+}
+
 function _updateScriptTevoxiSelectionUI() {
+    const rowEl = document.getElementById("script-tevoxi-selection-row");
     const summaryEl = document.getElementById("script-tevoxi-selection");
     if (!summaryEl) return;
+
     const enabled = document.getElementById("script-realistic-tevoxi")?.checked || false;
+
     if (!enabled || !_scriptSelectedSong || !_scriptSelectedClip) {
+        if (rowEl) rowEl.hidden = true;
         summaryEl.hidden = true;
         summaryEl.textContent = "";
+        _stopScriptTevoxiPreview(true);
         _updateScriptDetailsForTevoxiMode();
         return;
     }
+
+    if (rowEl) rowEl.hidden = false;
     summaryEl.hidden = false;
     summaryEl.textContent = _formatTevoxiClipLabel(_scriptSelectedSong, _scriptSelectedClip);
+
+    const activeSignature = _buildScriptTevoxiClipSignature(_scriptSelectedSong, _scriptSelectedClip);
+    if (_scriptTevoxiPreviewPlaying && _scriptTevoxiPreviewSignature !== activeSignature) {
+        _stopScriptTevoxiPreview(false);
+    }
+    if (!_scriptTevoxiPreviewPlaying) {
+        _setScriptTevoxiPlayButton(false, false);
+    }
+
     _updateScriptDetailsForTevoxiMode();
 }
 
@@ -8223,7 +8467,7 @@ async function createAutoSchedule() {
             persona_profile_id: personaProfileId,
             persona_profile_ids: personaProfileIds,
             engine: useTevoxi ? "grok" : (selectedEngine ? selectedEngine.dataset.value : "wan2"),
-            duration: selectedDur ? parseInt(selectedDur.dataset.value) : 7,
+            duration: selectedDur ? parseInt(selectedDur.dataset.value) : 8,
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",
             add_music: useMusic && !useTevoxi,
             use_tevoxi: useTevoxi,

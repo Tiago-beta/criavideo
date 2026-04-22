@@ -3173,6 +3173,53 @@ svg.spin {
     color: var(--text-muted);
 }
 
+.script-tevoxi-selection-row {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.script-tevoxi-selection-row .photo-count {
+    margin-top: 0;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.script-tevoxi-play-btn {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.script-tevoxi-play-btn:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(246, 165, 47, 0.1);
+}
+
+.script-tevoxi-play-btn.playing {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.script-tevoxi-play-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .narration-choice {
     margin-top: 12px;
     padding: 10px 12px;
@@ -4298,7 +4345,8 @@ th,
 .persona-upload-btn,
 .textarea-icon-btn,
 .btn-icon-sm,
-.voice-preview-btn {
+.voice-preview-btn,
+.script-tevoxi-play-btn {
     background: rgba(19, 47, 76, 0.64);
     border-color: rgba(0, 212, 255, 0.24);
 }
@@ -4327,7 +4375,8 @@ th,
 .persona-record-btn:hover,
 .persona-upload-btn:hover,
 .textarea-icon-btn:hover,
-.btn-icon-sm:hover {
+.btn-icon-sm:hover,
+.script-tevoxi-play-btn:hover:not(:disabled) {
     border-color: rgba(0, 212, 255, 0.42);
     box-shadow: 0 0 12px rgba(0, 212, 255, 0.14);
 }

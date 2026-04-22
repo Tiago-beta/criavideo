@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260422-27">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260422-28">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 196;
+        var REQUIRED_VER = 197;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -786,12 +786,13 @@
                         <div class="form-group" id="wizard-realistic-duration-group">
                             <label>Duração</label>
                             <div class="duration-options" id="wizard-realistic-duration">
-                                <button class="duration-option" data-value="5" type="button">5s</button>
-                                <button class="duration-option selected" data-value="10" type="button">10s</button>
-                                <button class="duration-option" data-value="15" type="button">15s</button>
-                                <button class="duration-option" data-value="20" type="button">20s</button>
-                                <button class="duration-option" data-value="45" type="button">45s</button>
-                                <button class="duration-option" data-value="60" type="button">60s</button>
+                                <button class="duration-option selected" data-value="8" type="button">8s</button>
+                                <button class="duration-option" data-value="16" type="button">16s</button>
+                                <button class="duration-option" data-value="24" type="button">24s</button>
+                                <button class="duration-option" data-value="32" type="button">32s</button>
+                                <button class="duration-option" data-value="40" type="button">40s</button>
+                                <button class="duration-option" data-value="48" type="button">48s</button>
+                                <button class="duration-option" data-value="56" type="button">56s</button>
                             </div>
                         </div>
 
@@ -991,7 +992,21 @@
                                 <div id="script-song-list" class="auto-song-list">
                                     <p class="loading">Carregando músicas...</p>
                                 </div>
-                                <div id="script-tevoxi-selection" class="photo-count" hidden></div>
+                                <div id="script-tevoxi-selection-row" class="script-tevoxi-selection-row" hidden>
+                                    <div id="script-tevoxi-selection" class="photo-count" hidden></div>
+                                    <button
+                                        id="script-tevoxi-play-btn"
+                                        class="script-tevoxi-play-btn"
+                                        type="button"
+                                        onclick="toggleScriptTevoxiPreview()"
+                                        title="Ouvir trecho"
+                                        aria-label="Ouvir trecho"
+                                        disabled
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                                    </button>
+                                    <audio id="script-tevoxi-preview-audio" preload="none"></audio>
+                                </div>
                             </div>
                         </div>
 
@@ -1285,12 +1300,13 @@
                         <div class="form-group" id="script-realistic-duration-group">
                             <label>Duração</label>
                             <div class="duration-options" id="script-realistic-duration">
-                                <button class="duration-option" data-value="5" type="button">5s</button>
-                                <button class="duration-option selected" data-value="10" type="button">10s</button>
-                                <button class="duration-option" data-value="15" type="button">15s</button>
-                                <button class="duration-option" data-value="20" type="button">20s</button>
-                                <button class="duration-option" data-value="45" type="button">45s</button>
-                                <button class="duration-option" data-value="60" type="button">60s</button>
+                                <button class="duration-option selected" data-value="8" type="button">8s</button>
+                                <button class="duration-option" data-value="16" type="button">16s</button>
+                                <button class="duration-option" data-value="24" type="button">24s</button>
+                                <button class="duration-option" data-value="32" type="button">32s</button>
+                                <button class="duration-option" data-value="40" type="button">40s</button>
+                                <button class="duration-option" data-value="48" type="button">48s</button>
+                                <button class="duration-option" data-value="56" type="button">56s</button>
                             </div>
                         </div>
 
@@ -1482,12 +1498,13 @@
                     <div class="form-group" id="ai-suggest-realistic-duration-group" hidden>
                         <label>Duração do vídeo para o prompt</label>
                         <div class="duration-options" id="ai-suggest-realistic-duration">
-                            <button class="duration-option" data-value="5" type="button">5s</button>
-                            <button class="duration-option selected" data-value="10" type="button">10s</button>
-                            <button class="duration-option" data-value="15" type="button">15s</button>
-                            <button class="duration-option" data-value="20" type="button">20s</button>
-                            <button class="duration-option" data-value="45" type="button">45s</button>
-                            <button class="duration-option" data-value="60" type="button">60s</button>
+                            <button class="duration-option selected" data-value="8" type="button">8s</button>
+                            <button class="duration-option" data-value="16" type="button">16s</button>
+                            <button class="duration-option" data-value="24" type="button">24s</button>
+                            <button class="duration-option" data-value="32" type="button">32s</button>
+                            <button class="duration-option" data-value="40" type="button">40s</button>
+                            <button class="duration-option" data-value="48" type="button">48s</button>
+                            <button class="duration-option" data-value="56" type="button">56s</button>
                         </div>
                         <small class="field-hint">Esse tempo orienta a IA a montar um prompt coerente com a duração final.</small>
                     </div>
@@ -1900,11 +1917,13 @@
                         <div class="form-group">
                             <label>Duração do vídeo</label>
                             <div class="duration-options" id="auto-realistic-duration">
-                                <button class="duration-option" data-value="5" type="button">5s</button>
-                                <button class="duration-option selected" data-value="7" type="button">7s</button>
-                                <button class="duration-option" data-value="10" type="button">10s</button>
-                                <button class="duration-option grok-only" data-value="12" type="button" hidden>12s</button>
-                                <button class="duration-option grok-only" data-value="15" type="button" hidden>15s</button>
+                                <button class="duration-option selected" data-value="8" type="button">8s</button>
+                                <button class="duration-option" data-value="16" type="button">16s</button>
+                                <button class="duration-option" data-value="24" type="button">24s</button>
+                                <button class="duration-option" data-value="32" type="button">32s</button>
+                                <button class="duration-option" data-value="40" type="button">40s</button>
+                                <button class="duration-option" data-value="48" type="button">48s</button>
+                                <button class="duration-option" data-value="56" type="button">56s</button>
                             </div>
                         </div>
                         <div class="form-group">
@@ -2429,8 +2448,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260422-27"></script>
-    <script src="/video/static/pwa.js?v=20260422-27"></script>
+    <script src="/video/static/app.js?v=20260422-28"></script>
+    <script src="/video/static/pwa.js?v=20260422-28"></script>
 </body>
 </html>
 
