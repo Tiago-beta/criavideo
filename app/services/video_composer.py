@@ -158,15 +158,18 @@ def compose_video(
     video_output = "[slideshow]"
 
     if enable_audio_spectrum:
-        spectrum_height = max(120, int(height * 0.18))
-        spectrum_y = max(height - spectrum_height - 28, 0)
+        spectrum_height = max(150, int(height * 0.22))
+        spectrum_y = max(height - spectrum_height - 20, 0)
         filter_complex += (
             f";\n[{audio_idx}:a]aformat=channel_layouts=mono,"
-            f"showwaves=s={width}x{spectrum_height}:mode=cline:colors=0xF6A52F,format=rgba[spectrum];"
-            f"{video_output}[spectrum]overlay=0:{spectrum_y}:shortest=1[with_spectrum]"
+            f"showwaves=s={width}x{spectrum_height}:mode=p2p:scale=sqrt:colors=0xF6A52F,"
+            f"format=rgba,colorchannelmixer=aa=0.92[spectrum];"
+            f"{video_output}drawbox=x=0:y={spectrum_y}:w={width}:h={spectrum_height}:"
+            f"color=0x061a2c@0.38:t=fill[spectrum_bg];"
+            f"[spectrum_bg][spectrum]overlay=0:{spectrum_y}:shortest=1:eof_action=pass[with_spectrum]"
         )
         video_output = "[with_spectrum]"
-        logger.info("Audio spectrum overlay enabled")
+        logger.info(f"Audio spectrum overlay enabled (y={spectrum_y}, h={spectrum_height})")
 
     # Add subtitle burn-in if available
     if subtitle_path and os.path.exists(subtitle_path):

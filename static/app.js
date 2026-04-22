@@ -1225,6 +1225,7 @@ let _scriptTevoxiPreviewEnd = 0;
 let _scriptTevoxiPreviewObjectUrl = "";
 let _scriptTevoxiPreviewSourceKey = "";
 let _scriptTevoxiPreviewSignature = "";
+let _scriptTevoxiModeActive = false;
 // Step flow arrays for each video type
 const WIZARD_FLOW_NORMAL = [2, 1, 3, 4, 5, 6]; // type, topic, tone, voice, style, details
 const WIZARD_FLOW_REALISTIC = [2, 1, 7]; // type, topic, realistic settings
@@ -3306,6 +3307,7 @@ function _updateScriptSubtitlePositionVisibility() {
 
 function _updateScriptDetailsForTevoxiMode() {
     const tevoxiMode = _isScriptTevoxiMainAudioMode();
+    const enteringTevoxiMode = tevoxiMode && !_scriptTevoxiModeActive;
 
     const bgmGroup = document.getElementById("script-bgm-group");
     const bgmLockHint = document.getElementById("script-bgm-lock-hint");
@@ -3332,7 +3334,16 @@ function _updateScriptDetailsForTevoxiMode() {
     const audioSpectrumGroup = document.getElementById("script-audio-spectrum-group");
     const audioSpectrumCb = document.getElementById("script-enable-audio-spectrum");
     if (audioSpectrumGroup) audioSpectrumGroup.hidden = !tevoxiMode;
-    if (!tevoxiMode && audioSpectrumCb) audioSpectrumCb.checked = false;
+    if (audioSpectrumCb) {
+        if (enteringTevoxiMode && !audioSpectrumCb.checked) {
+            audioSpectrumCb.checked = true;
+        }
+        if (!tevoxiMode) {
+            audioSpectrumCb.checked = false;
+        }
+    }
+
+    _scriptTevoxiModeActive = tevoxiMode;
 
     _updateScriptSubtitlePositionVisibility();
 }
@@ -6965,6 +6976,7 @@ async function _refreshScriptTevoxiClipTranscription(song, clip, signature) {
                 audio_url: String(song.audio_url || ""),
                 clip_start: Number(clip.clip_start || 0),
                 clip_duration: clipDuration,
+                song_duration: Number(clip.song_duration || song.duration || 0),
                 lyrics_hint: String(song.lyrics || ""),
             }),
         });

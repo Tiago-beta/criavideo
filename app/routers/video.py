@@ -545,16 +545,27 @@ async def _download_external_audio_to_path(audio_url: str, output_path: Path) ->
         f.write(content)
 
 
-def _trim_audio_clip(input_path: str, output_path: str, clip_start: float, clip_duration: float) -> None:
+def _trim_audio_clip(
+    input_path: str,
+    output_path: str,
+    clip_start: float,
+    clip_duration: float,
+    *,
+    for_transcription: bool = False,
+) -> None:
     trim_cmd = ["ffmpeg", "-y", "-i", input_path]
     if clip_start > 0:
         # Place -ss after input for accurate clipping on compressed audio.
         trim_cmd += ["-ss", f"{clip_start:.3f}"]
     if clip_duration > 0:
         trim_cmd += ["-t", f"{clip_duration:.3f}"]
-    trim_cmd += ["-vn", "-c:a", "libmp3lame", "-b:a", "192k", output_path]
+    if for_transcription:
+        trim_cmd += ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", output_path]
+    else:
+        trim_cmd += ["-vn", "-c:a", "libmp3lame", "-b:a", "192k", output_path]
 
-    result = subprocess.run(trim_cmd, capture_output=True, text=True, timeout=180)
+    timeout = 240 if for_transcription else 180
+    result = subprocess.run(trim_cmd, capture_output=True, text=True, timeout=timeout)
     if result.returncode != 0:
         err_lines = [l for l in (result.stderr or "").split("\n") if l.strip()]
         err_msg = "\n".join(err_lines[-8:]) if err_lines else "ffmpeg trim failed"
@@ -1523,12 +1534,19 @@ def _extract_text_from_word_window(words: list, window_start: float, window_end:
     if not normalized:
         return ""
 
-    tolerance = 0.25
-    selected = [
-        token
-        for token, w_start, w_end in normalized
+    window_span = max(0.0, float(window_end or 0.0) - float(window_start or 0.0))
+    tolerance = 1.2 if window_span >= 6.0 else 0.6
+    selected_indexes = [
+        idx
+        for idx, (_, w_start, w_end) in enumerate(normalized)
         if (w_end >= (window_start - tolerance) and w_start <= (window_end + tolerance))
     ]
+    selected = [normalized[idx][0] for idx in selected_indexes]
+
+    if 0 < len(selected_indexes) < 4:
+        left = max(0, selected_indexes[0] - 4)
+        right = min(len(normalized), selected_indexes[-1] + 5)
+        selected = [token for token, _, _ in normalized[left:right]]
 
     if not selected:
         center = (window_start + window_end) / 2.0
@@ -1549,6 +1567,18 @@ def _extract_text_from_word_window(words: list, window_start: float, window_end:
     text = re.sub(r"\(\s+", "(", text)
     text = re.sub(r"\s+\)", ")", text)
     return text.strip()[:1200]
+
+
+def _text_word_count(text: str) -> int:
+    return len(re.findall(r"\w+", str(text or ""), flags=re.UNICODE))
+
+
+def _is_clip_transcription_usable(text: str, clip_duration: float) -> bool:
+    clean = str(text or "").strip()
+    if len(clean) < 12:
+        return False
+    min_words = 4 if float(clip_duration or 0) >= 8.0 else 2
+    return _text_word_count(clean) >= min_words
 
 
 @router.post("/transcribe-tevoxi-clip")
@@ -1584,7 +1614,8 @@ async def transcribe_tevoxi_clip_endpoint(
     transcribe_dir.mkdir(parents=True, exist_ok=True)
     transcribe_id = uuid.uuid4().hex
     source_path = transcribe_dir / f"{transcribe_id}_source.mp3"
-    clip_path = transcribe_dir / f"{transcribe_id}_clip.mp3"
+    clip_path = transcribe_dir / f"{transcribe_id}_context.wav"
+    focus_clip_path = transcribe_dir / f"{transcribe_id}_focus.wav"
 
     fallback_text = _extract_lyrics_excerpt_fallback(
         req.lyrics_hint,
@@ -1595,7 +1626,13 @@ async def transcribe_tevoxi_clip_endpoint(
 
     try:
         await _download_external_audio_to_path(audio_url, source_path)
-        _trim_audio_clip(str(source_path), str(clip_path), context_start, context_duration)
+        _trim_audio_clip(
+            str(source_path),
+            str(clip_path),
+            context_start,
+            context_duration,
+            for_transcription=True,
+        )
 
         from app.services.transcriber import transcribe_audio
         import asyncio
@@ -1608,29 +1645,55 @@ async def transcribe_tevoxi_clip_endpoint(
             None,
             lambda: transcribe_audio(str(clip_path), prompt=lyrics_hint),
         )
-        text = ""
+        context_text = ""
         words = []
         if isinstance(result, dict):
-            text = str(result.get("text", "") or "").strip()
+            context_text = str(result.get("text", "") or "").strip()
             words = result.get("words", []) if isinstance(result.get("words", []), list) else []
 
         window_text = _extract_text_from_word_window(words, target_local_start, target_local_end)
-        if window_text:
-            text = window_text
+        text = window_text if _is_clip_transcription_usable(window_text, clip_duration) else ""
+
+        if not text:
+            focused_text = ""
+            try:
+                _trim_audio_clip(
+                    str(source_path),
+                    str(focus_clip_path),
+                    clip_start,
+                    clip_duration,
+                    for_transcription=True,
+                )
+                focused_result = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: transcribe_audio(str(focus_clip_path), prompt=lyrics_hint),
+                )
+                if isinstance(focused_result, dict):
+                    focused_text = str(focused_result.get("text", "") or "").strip()
+            except Exception as focus_error:
+                logger.info(f"Focused Tevoxi clip transcription failed, using context fallback: {focus_error}")
+
+            if _is_clip_transcription_usable(focused_text, clip_duration):
+                text = focused_text
+            elif _is_clip_transcription_usable(context_text, clip_duration):
+                text = context_text
+            elif window_text:
+                text = window_text
+
+        used_fallback = False
+        if not _is_clip_transcription_usable(text, clip_duration) and fallback_text:
+            text = fallback_text
+            used_fallback = True
 
         if not text and fallback_text:
-            return {
-                "text": fallback_text,
-                "duration": clip_duration,
-                "words_count": 0,
-                "fallback": True,
-            }
+            text = fallback_text
+            used_fallback = True
 
         return {
             "text": text or fallback_text,
             "duration": clip_duration,
             "words_count": len(words),
-            "fallback": False if text else bool(fallback_text),
+            "fallback": used_fallback,
         }
     except HTTPException:
         raise
@@ -1646,7 +1709,7 @@ async def transcribe_tevoxi_clip_endpoint(
             }
         raise HTTPException(status_code=502, detail="Não foi possível transcrever o trecho agora.")
     finally:
-        for path in (clip_path, source_path):
+        for path in (focus_clip_path, clip_path, source_path):
             try:
                 path.unlink(missing_ok=True)
             except Exception:
@@ -2293,7 +2356,7 @@ async def generate_audio_endpoint(
 
         pipeline_options = {
             "subtitle_settings": {"y": subtitle_y},
-            "enable_audio_spectrum": bool(use_tevoxi_audio and req.enable_audio_spectrum),
+            "enable_audio_spectrum": bool(req.enable_audio_spectrum),
         }
 
         from app.tasks.video_tasks import run_video_pipeline
