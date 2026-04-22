@@ -835,23 +835,14 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             if kind == "video":
                 layer_duration, _ = _probe_video_metadata(resolved_path)
 
-            if output_video_duration > 0:
-                start_time = min(start_time, max(0.0, output_video_duration - 0.02))
-                end_cap = output_video_duration
-            else:
-                end_cap = max(end_time, start_time + 0.1)
-
             if end_time <= start_time + 0.02:
                 if kind == "video" and layer_duration > 0:
                     end_time = start_time + layer_duration
                 else:
-                    fallback = max(0.1, end_cap - start_time)
-                    end_time = start_time + fallback
+                    end_time = start_time + 0.1
 
             if kind == "video" and layer_duration > 0:
                 end_time = min(end_time, start_time + layer_duration)
-            if output_video_duration > 0:
-                end_time = min(end_time, output_video_duration)
             if end_time <= start_time + 0.02:
                 continue
 
@@ -870,12 +861,23 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 }
             )
 
+        layer_timeline_end = max(
+            (float(layer.get("end_time", 0.0) or 0.0) for layer in valid_media_layers),
+            default=0.0,
+        )
+        final_output_duration = max(output_video_duration, layer_timeline_end)
+        if final_output_duration <= 0 and src_duration > 0:
+            final_output_duration = src_duration
+        final_output_duration = max(0.1, final_output_duration)
+
         logger.info(
-            "[editor] Export video_segments=%s audio_segments=%s use_vf=%s use_af=%s",
+            "[editor] Export video_segments=%s audio_segments=%s use_vf=%s use_af=%s base_dur=%.3f final_dur=%.3f",
             video_segments,
             audio_segments,
             use_video_segment_filter,
             use_audio_segment_filter,
+            output_video_duration,
+            final_output_duration,
         )
 
         # Build FFmpeg command
@@ -983,6 +985,10 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         elif req.quality == "enhance":
             vfilters.append("unsharp=5:5:0.8:5:5:0.4")
 
+        if final_output_duration > output_video_duration + 0.02:
+            extra_tail = max(0.0, final_output_duration - output_video_duration)
+            vfilters.append(f"tpad=stop_mode=clone:stop_duration={extra_tail:.6f}")
+
         job["progress"] = 20
         job["message"] = "Renderizando vídeo..."
 
@@ -1002,9 +1008,9 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     base_audio_label = "[a_src]"
                 audio_chain.append(f"{base_audio_label}volume={orig_vol}[a0]")
                 audio_chain.append(f"[1:a]volume={music_vol}[a1]")
-                audio_chain.append("[a0][a1]amix=inputs=2:duration=shortest[a_mix]")
-                if output_video_duration > 0:
-                    audio_chain.append(f"[a_mix]atrim=0:{output_video_duration:.6f}[aout]")
+                audio_chain.append("[a0][a1]amix=inputs=2:duration=longest[a_mix]")
+                if final_output_duration > 0:
+                    audio_chain.append(f"[a_mix]atrim=0:{final_output_duration:.6f}[aout]")
                 else:
                     audio_chain.append("[a_mix]anull[aout]")
                 cmd += [
@@ -1013,8 +1019,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     "-map", "[aout]",
                 ]
             else:
-                if output_video_duration > 0:
-                    music_chain = f"[1:a]volume={music_vol}[a1];[a1]atrim=0:{output_video_duration:.6f}[aout]"
+                if final_output_duration > 0:
+                    music_chain = f"[1:a]volume={music_vol}[a1];[a1]atrim=0:{final_output_duration:.6f}[aout]"
                 else:
                     music_chain = f"[1:a]volume={music_vol}[aout]"
                 cmd += [
@@ -1029,14 +1035,12 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 afilters.append(f"aselect='{audio_select_expr}',asetpts=N/SR/TB")
             if source_has_audio and orig_vol != 1.0:
                 afilters.append(f"volume={orig_vol}")
-            if source_has_audio and output_video_duration > 0:
-                afilters.append(f"atrim=0:{output_video_duration:.6f}")
+            if source_has_audio and final_output_duration > 0:
+                afilters.append(f"atrim=0:{final_output_duration:.6f}")
             if afilters:
                 cmd += ["-af", ",".join(afilters)]
 
         # Output settings
-        if has_music:
-            cmd += ["-shortest"]
 
         cmd += [
             "-c:v", "libx264",
@@ -1138,11 +1142,11 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
                 clip_duration = max(0.0, configured_end - start_time)
                 if clip_duration <= 0.02:
-                    clip_duration = layer_duration if layer_duration > 0 else max(0.0, output_video_duration - start_time)
+                    clip_duration = layer_duration if layer_duration > 0 else max(0.0, final_output_duration - start_time)
                 if layer_duration > 0:
                     clip_duration = min(clip_duration, layer_duration)
-                if output_video_duration > 0:
-                    clip_duration = min(clip_duration, max(0.0, output_video_duration - start_time))
+                if final_output_duration > 0:
+                    clip_duration = min(clip_duration, max(0.0, final_output_duration - start_time))
                 if clip_duration <= 0.02:
                     continue
 
@@ -1177,8 +1181,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 else:
                     current_audio = mix_inputs[0]
 
-                if output_video_duration > 0:
-                    filter_parts.append(f"{current_audio}atrim=0:{output_video_duration:.6f}[a_out]")
+                if final_output_duration > 0:
+                    filter_parts.append(f"{current_audio}atrim=0:{final_output_duration:.6f}[a_out]")
                     audio_map = "[a_out]"
                 else:
                     audio_map = current_audio
