@@ -181,9 +181,7 @@ def compose_video(
             f"win_size=2048:overlap=0.72:"
             f"colors=0xff00ff|0x7a00ff|0x0058ff|0x00d8ff|0x00ff66|0xc8ff00|0xffa000|0xff3300,"
             f"format=rgba,colorchannelmixer=aa=0.95[spectrum];"
-            f"{video_output}drawbox=x=0:y={panel_y}:w={width}:h={panel_height}:"
-            f"color=0x000000@0.82:t=fill[spectrum_bg];"
-            f"[spectrum_bg][spectrum]overlay={spectrum_x}:{spectrum_y}:shortest=1:eof_action=pass[with_spectrum]"
+            f"{video_output}[spectrum]overlay={spectrum_x}:{spectrum_y}:shortest=1:eof_action=pass[with_spectrum]"
         )
         video_output = "[with_spectrum]"
         logger.info(
@@ -402,9 +400,7 @@ def _render_static_fallback(
             f"win_size=2048:overlap=0.72:"
             f"colors=0xff00ff|0x7a00ff|0x0058ff|0x00d8ff|0x00ff66|0xc8ff00|0xffa000|0xff3300,"
             f"format=rgba,colorchannelmixer=aa=0.95[spectrum];"
-            f"[slideshow]drawbox=x=0:y={panel_y}:w={width}:h={panel_height}:"
-            f"color=0x000000@0.82:t=fill[spectrum_bg];"
-            f"[spectrum_bg][spectrum]overlay={spectrum_x}:{spectrum_y}:shortest=1:eof_action=pass[with_spectrum]"
+            f"[slideshow][spectrum]overlay={spectrum_x}:{spectrum_y}:shortest=1:eof_action=pass[with_spectrum]"
         )
         video_output = "[with_spectrum]"
 
