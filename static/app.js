@@ -9710,7 +9710,10 @@ let _editorLayerLibrary = {
     loading: false,
     error: "",
     items: [],
-    addingProjectId: 0,
+    selectedProjectIds: [],
+    sending: false,
+    sendProgress: 0,
+    sendTotal: 0,
 };
 
 function _editorGenId() { return _editor._nextId++; }
@@ -10304,7 +10307,10 @@ function _editorResetLayerLibraryState() {
         loading: false,
         error: "",
         items: [],
-        addingProjectId: 0,
+        selectedProjectIds: [],
+        sending: false,
+        sendProgress: 0,
+        sendTotal: 0,
     };
 }
 
@@ -10321,6 +10327,12 @@ function _editorRenderLayerVideoLibraryModal() {
         return;
     }
 
+    const selectedIds = Array.isArray(_editorLayerLibrary.selectedProjectIds)
+        ? _editorLayerLibrary.selectedProjectIds
+        : [];
+    const selectedCount = selectedIds.length;
+    const isSending = Boolean(_editorLayerLibrary.sending);
+
     const loadingHtml = '<div class="editor-layer-library-loading">Carregando vídeos da biblioteca...</div>';
     const errorHtml = _editorLayerLibrary.error
         ? `<div class="editor-layer-library-error">${esc(_editorLayerLibrary.error)}</div>`
@@ -10329,27 +10341,27 @@ function _editorRenderLayerVideoLibraryModal() {
 
     const cardsHtml = (_editorLayerLibrary.items || []).map((item) => {
         const pid = Number(item.id || 0);
-        const isAdding = Number(_editorLayerLibrary.addingProjectId || 0) === pid;
+        const isSelected = selectedIds.includes(pid);
         const title = esc(String(item.title || item.track_title || `Projeto ${pid}`));
         const thumb = item.thumbnail_url
             ? `<img class="editor-layer-library-thumb" src="${item.thumbnail_url}" alt="${title}" loading="lazy">`
             : '<div class="editor-layer-library-thumb placeholder">Sem thumbnail</div>';
         return `
-            <div class="editor-layer-library-card">
-                ${thumb}
+            <button
+                class="editor-layer-library-card${isSelected ? " selected" : ""}"
+                type="button"
+                onclick="_editorToggleLayerLibrarySelection(${pid})"
+                ${isSending ? "disabled" : ""}
+            >
+                <div class="editor-layer-library-thumb-wrap">
+                    ${thumb}
+                    <span class="editor-layer-library-check">${isSelected ? "✓" : ""}</span>
+                </div>
                 <div class="editor-layer-library-meta">
                     <strong>${title}</strong>
                     <span>Projeto #${pid}</span>
                 </div>
-                <button
-                    class="editor-add-btn"
-                    type="button"
-                    onclick="_editorAddLayerVideoFromLibrary(${pid})"
-                    ${isAdding ? "disabled" : ""}
-                >
-                    ${isAdding ? "Adicionando..." : "Adicionar"}
-                </button>
-            </div>
+            </button>
         `;
     }).join("");
 
@@ -10357,15 +10369,34 @@ function _editorRenderLayerVideoLibraryModal() {
         ? loadingHtml
         : (_editorLayerLibrary.items.length ? cardsHtml : emptyHtml);
 
+    const sendDisabled = _editorLayerLibrary.loading || isSending || selectedCount <= 0;
+    const sendLabel = isSending
+        ? `Enviando ${_editorLayerLibrary.sendProgress || 0}/${_editorLayerLibrary.sendTotal || selectedCount}...`
+        : `Enviar selecionados (${selectedCount})`;
+    const selectedLabel = selectedCount === 1
+        ? "1 vídeo selecionado"
+        : `${selectedCount} vídeos selecionados`;
+
     const overlayHtml = `
         <div class="editor-layer-library-backdrop" onclick="_editorCloseLayerVideoLibrary()"></div>
         <div class="editor-layer-library-modal" role="dialog" aria-modal="true" aria-label="Biblioteca de vídeos">
             <div class="editor-layer-library-header">
                 <h3>Biblioteca de vídeos</h3>
+                <span class="editor-layer-library-selected-count">${selectedLabel}</span>
                 <button class="editor-layer-library-close" type="button" onclick="_editorCloseLayerVideoLibrary()">×</button>
             </div>
             ${errorHtml}
             <div class="editor-layer-library-list">${bodyHtml}</div>
+            <div class="editor-layer-library-footer">
+                <button
+                    class="editor-add-btn editor-layer-library-send-btn"
+                    type="button"
+                    onclick="_editorAddSelectedLayerVideosFromLibrary()"
+                    ${sendDisabled ? "disabled" : ""}
+                >
+                    ${sendLabel}
+                </button>
+            </div>
         </div>
     `;
 
@@ -10391,7 +10422,10 @@ async function _editorOpenLayerVideoLibrary() {
     _editorLayerLibrary.loading = true;
     _editorLayerLibrary.error = "";
     _editorLayerLibrary.items = [];
-    _editorLayerLibrary.addingProjectId = 0;
+    _editorLayerLibrary.selectedProjectIds = [];
+    _editorLayerLibrary.sending = false;
+    _editorLayerLibrary.sendProgress = 0;
+    _editorLayerLibrary.sendTotal = 0;
     _editorRenderLayerVideoLibraryModal();
 
     try {
@@ -10414,34 +10448,69 @@ async function _editorOpenLayerVideoLibrary() {
 }
 window._editorOpenLayerVideoLibrary = _editorOpenLayerVideoLibrary;
 
-async function _editorAddLayerVideoFromLibrary(projectId) {
+function _editorToggleLayerLibrarySelection(projectId) {
     const pid = Number(projectId || 0);
     if (!pid) return;
-    if (_editorLayerLibrary.addingProjectId) return;
+    if (_editorLayerLibrary.loading || _editorLayerLibrary.sending) return;
+
+    const currentIds = Array.isArray(_editorLayerLibrary.selectedProjectIds)
+        ? _editorLayerLibrary.selectedProjectIds
+        : [];
+    if (currentIds.includes(pid)) {
+        _editorLayerLibrary.selectedProjectIds = currentIds.filter((id) => Number(id) !== pid);
+    } else {
+        _editorLayerLibrary.selectedProjectIds = [...currentIds, pid];
+    }
+    _editorRenderLayerVideoLibraryModal();
+}
+window._editorToggleLayerLibrarySelection = _editorToggleLayerLibrarySelection;
+
+async function _editorAddSelectedLayerVideosFromLibrary() {
+    const selectedIds = Array.isArray(_editorLayerLibrary.selectedProjectIds)
+        ? _editorLayerLibrary.selectedProjectIds.map((id) => Number(id || 0)).filter((id) => id > 0)
+        : [];
+    if (!selectedIds.length) {
+        showToast("Selecione pelo menos um vídeo da biblioteca.", "error");
+        return;
+    }
+    if (_editorLayerLibrary.sending) return;
+
+    _editorLayerLibrary.sending = true;
+    _editorLayerLibrary.error = "";
+    _editorLayerLibrary.sendProgress = 0;
+    _editorLayerLibrary.sendTotal = selectedIds.length;
+    _editorRenderLayerVideoLibraryModal();
 
     try {
-        _editorLayerLibrary.addingProjectId = pid;
-        _editorRenderLayerVideoLibraryModal();
-
         _editorSaveState();
-        const payload = await api("/video/editor/add-layer-video-from-library", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ project_id: pid }),
-        });
+        let addedCount = 0;
+        for (const pid of selectedIds) {
+            const payload = await api("/video/editor/add-layer-video-from-library", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ project_id: pid }),
+            });
+            _editorPushMediaLayer("video", payload, { appendToTrack: true });
+            addedCount += 1;
+            _editorLayerLibrary.sendProgress = addedCount;
+            _editorRenderLayerVideoLibraryModal();
+        }
 
-        _editorPushMediaLayer("video", payload, { appendToTrack: true });
         _editorRenderTimeline();
         _editorRenderMediaLayers();
         _editorCloseLayerVideoLibrary();
-        showToast("Vídeo da biblioteca adicionado no fim da faixa.", "success");
+        const plural = addedCount === 1 ? "" : "s";
+        showToast(`${addedCount} vídeo${plural} adicionado${plural} na faixa.`, "success");
     } catch (err) {
-        _editorLayerLibrary.addingProjectId = 0;
+        _editorLayerLibrary.sending = false;
+        _editorLayerLibrary.sendTotal = 0;
+        _editorLayerLibrary.sendProgress = 0;
+        _editorLayerLibrary.error = err?.message || "Erro ao enviar vídeos selecionados";
         _editorRenderLayerVideoLibraryModal();
-        showToast("Erro ao adicionar vídeo da biblioteca: " + (err?.message || "erro desconhecido"), "error");
+        showToast("Erro ao adicionar vídeos da biblioteca: " + (err?.message || "erro desconhecido"), "error");
     }
 }
-window._editorAddLayerVideoFromLibrary = _editorAddLayerVideoFromLibrary;
+window._editorAddSelectedLayerVideosFromLibrary = _editorAddSelectedLayerVideosFromLibrary;
 
 function _editorNormalizeMediaLayer(layer) {
     const aspect = Math.max(0.2, Number(layer.aspectRatio || 1));
