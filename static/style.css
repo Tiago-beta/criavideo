@@ -5617,6 +5617,27 @@ th,
     font-size: 12px;
 }
 
+.editor-layer-library-top-meta {
+    position: absolute;
+    left: 6px;
+    top: 6px;
+    display: flex;
+    gap: 4px;
+    max-width: calc(100% - 38px);
+}
+
+.editor-layer-library-chip {
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 700;
+    color: #e6f6ff;
+    border: 1px solid rgba(0, 212, 255, 0.45);
+    background: rgba(2, 14, 28, 0.82);
+    padding: 4px 6px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
 .editor-layer-library-check {
     position: absolute;
     right: 8px;

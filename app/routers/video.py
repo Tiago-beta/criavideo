@@ -1108,6 +1108,7 @@ async def list_projects(
                 "lyrics_text": p.lyrics_text or "",
                 "style_prompt": p.style_prompt or "",
                 "thumbnail_url": _to_media_url(display_render.thumbnail_path) if display_render else None,
+                "duration": float(display_render.duration) if display_render and display_render.duration else float(p.track_duration or 0),
             }
         )
 

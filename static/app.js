@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v187 loaded");
+﻿console.log("[CriaVideo] app.js v188 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -9716,6 +9716,169 @@ let _editorLayerLibrary = {
     sendTotal: 0,
 };
 
+const EDITOR_DRAFT_STORAGE_PREFIX = "editor_draft_v1_";
+let _editorDraftPersistTimer = 0;
+
+function _editorGetDraftStorageKey(projectId = 0) {
+    const pid = Number(projectId || _editor.projectId || 0);
+    if (!pid) return "";
+    return `${EDITOR_DRAFT_STORAGE_PREFIX}${pid}`;
+}
+
+function _editorInferNextIdFromState() {
+    const candidates = [];
+    [_editor.videoSegments, _editor.audioSegments, _editor.texts, _editor.subtitles, _editor.stickers, _editor.mediaLayers]
+        .forEach((bucket) => {
+            (bucket || []).forEach((item) => {
+                const parsed = parseInt(String(item?.id ?? ""), 10);
+                if (Number.isFinite(parsed) && parsed > 0) {
+                    candidates.push(parsed);
+                }
+            });
+        });
+    const maxId = candidates.length ? Math.max(...candidates) : 0;
+    return maxId + 1;
+}
+
+function _editorBuildDraftSnapshot() {
+    if (!_editor.projectId || !_editor.videoUrl) return null;
+    return {
+        projectId: Number(_editor.projectId || 0),
+        videoUrl: String(_editor.videoUrl || ""),
+        sourceAspectRatio: String(_editor.sourceAspectRatio || "9:16"),
+        outputAspectRatio: String(_editor.outputAspectRatio || "source"),
+        activeTool: String(_editor.activeTool || "text"),
+        timelineTime: Number(_editor.timelineTime || 0),
+        trimStart: Number(_editor.trimStart || 0),
+        trimEnd: Number(_editor.trimEnd || 0),
+        texts: _editor.texts || [],
+        subtitles: _editor.subtitles || [],
+        stickers: _editor.stickers || [],
+        mediaLayers: _editor.mediaLayers || [],
+        videoSegments: _editor.videoSegments || [],
+        audioSegments: _editor.audioSegments || [],
+        selectedTracks: _editor.selectedTracks || ["video"],
+        selectedInsertTrack: String(_editor.selectedInsertTrack || "video"),
+        selectedClip: _editor.selectedClip || { kind: "", id: "", track: "" },
+        musicUrl: String(_editor.musicUrl || ""),
+        musicVolume: Number(_editor.musicVolume || 0),
+        originalVolume: Number(_editor.originalVolume || 0),
+        musicServerPath: String(_editor._musicServerPath || ""),
+        musicSource: String(_editor._musicSource || "audio"),
+        filter: String(_editor.filter || "none"),
+        quality: String(_editor.quality || "original"),
+        nextId: Number(_editor._nextId || 1),
+        savedAt: new Date().toISOString(),
+    };
+}
+
+function _editorPersistDraftNow() {
+    const key = _editorGetDraftStorageKey();
+    const snapshot = _editorBuildDraftSnapshot();
+    if (!key || !snapshot) return;
+    try {
+        localStorage.setItem(key, JSON.stringify(snapshot));
+    } catch {
+        // Ignore storage quota/availability errors to avoid breaking the editor.
+    }
+}
+
+function _editorScheduleDraftPersist(delayMs = 450) {
+    if (!_editor.projectId || !_editor.videoUrl) return;
+    if (_editorDraftPersistTimer) {
+        clearTimeout(_editorDraftPersistTimer);
+    }
+    _editorDraftPersistTimer = setTimeout(() => {
+        _editorDraftPersistTimer = 0;
+        _editorPersistDraftNow();
+    }, Math.max(120, Number(delayMs || 0)));
+}
+
+function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
+    const key = _editorGetDraftStorageKey(projectId);
+    if (!key) return false;
+
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return false;
+        const draft = JSON.parse(raw);
+        if (!draft || Number(draft.projectId || 0) !== Number(projectId || 0)) {
+            return false;
+        }
+
+        const draftVideoUrl = String(draft.videoUrl || "");
+        const currentVideoUrl = String(expectedVideoUrl || "");
+        if (draftVideoUrl && currentVideoUrl && draftVideoUrl !== currentVideoUrl) {
+            return false;
+        }
+
+        if (["9:16", "16:9", "1:1"].includes(String(draft.sourceAspectRatio || ""))) {
+            _editor.sourceAspectRatio = String(draft.sourceAspectRatio);
+        }
+        _editor.outputAspectRatio = _normalizeAspectValue(String(draft.outputAspectRatio || _editor.outputAspectRatio || "source"));
+        _editor.activeTool = String(draft.activeTool || _editor.activeTool || "text");
+
+        _editor.texts = Array.isArray(draft.texts) ? draft.texts : [];
+        _editor.subtitles = Array.isArray(draft.subtitles) ? draft.subtitles : [];
+        _editor.stickers = Array.isArray(draft.stickers) ? draft.stickers : [];
+        _editor.mediaLayers = Array.isArray(draft.mediaLayers) ? draft.mediaLayers : [];
+        _editor.videoSegments = Array.isArray(draft.videoSegments) ? draft.videoSegments : [];
+        _editor.audioSegments = Array.isArray(draft.audioSegments) ? draft.audioSegments : [];
+
+        _editor.selectedTracks = Array.isArray(draft.selectedTracks) && draft.selectedTracks.length
+            ? draft.selectedTracks
+            : ["video"];
+        _editor.selectedInsertTrack = String(draft.selectedInsertTrack || "video");
+
+        if (draft.selectedClip && typeof draft.selectedClip === "object") {
+            _editor.selectedClip = {
+                kind: String(draft.selectedClip.kind || ""),
+                id: String(draft.selectedClip.id || ""),
+                track: String(draft.selectedClip.track || ""),
+            };
+        } else {
+            _editor.selectedClip = { kind: "", id: "", track: "" };
+        }
+
+        _editor.trimStart = Math.max(0, Number(draft.trimStart || 0));
+        _editor.trimEnd = Math.max(_editor.trimStart, Number(draft.trimEnd || 0));
+
+        _editor.musicUrl = String(draft.musicUrl || "");
+        _editor._musicServerPath = String(draft.musicServerPath || "");
+        _editor._musicSource = String(draft.musicSource || "audio");
+        _editor.musicVolume = Math.max(0, Math.min(100, Number(draft.musicVolume ?? _editor.musicVolume ?? 80)));
+        _editor.originalVolume = Math.max(0, Math.min(100, Number(draft.originalVolume ?? _editor.originalVolume ?? 100)));
+
+        _editor.filter = String(draft.filter || "none");
+        _editor.quality = String(draft.quality || "original");
+
+        if (!_editor.videoSegments.length) {
+            _editorInitVideoSegments();
+        }
+        _editorSortSegments("video");
+        if (_editor.audioSegments.length) {
+            _editorSortSegments("audio");
+        }
+        _editorRecomputeTrimBounds();
+        _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
+
+        _editorSetMusicPreviewSource(_editor.musicUrl || "");
+
+        const nextIdFromDraft = Number(draft.nextId || 0);
+        const inferredNextId = _editorInferNextIdFromState();
+        const safeNextId = Number.isFinite(nextIdFromDraft) && nextIdFromDraft > 0
+            ? Math.floor(nextIdFromDraft)
+            : inferredNextId;
+        _editor._nextId = Math.max(1, safeNextId, inferredNextId);
+
+        const timelineDuration = _editorGetTimelineDuration();
+        _editor.timelineTime = Math.max(0, Math.min(timelineDuration, Number(draft.timelineTime || 0)));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 function _editorGenId() { return _editor._nextId++; }
 
 // ── Subtitle style presets ──
@@ -10343,6 +10506,9 @@ function _editorRenderLayerVideoLibraryModal() {
         const pid = Number(item.id || 0);
         const isSelected = selectedIds.includes(pid);
         const title = esc(String(item.title || item.track_title || `Projeto ${pid}`));
+        const formatLabel = esc(String(item.aspect_ratio || "--").toUpperCase());
+        const durationSec = Math.max(0, Number(item.duration || item.track_duration || 0));
+        const durationLabel = durationSec > 0 ? _fmtTime(durationSec) : "--:--";
         const thumb = item.thumbnail_url
             ? `<img class="editor-layer-library-thumb" src="${item.thumbnail_url}" alt="${title}" loading="lazy">`
             : '<div class="editor-layer-library-thumb placeholder">Sem thumbnail</div>';
@@ -10355,6 +10521,10 @@ function _editorRenderLayerVideoLibraryModal() {
             >
                 <div class="editor-layer-library-thumb-wrap">
                     ${thumb}
+                    <div class="editor-layer-library-top-meta">
+                        <span class="editor-layer-library-chip">${formatLabel}</span>
+                        <span class="editor-layer-library-chip">${durationLabel}</span>
+                    </div>
                     <span class="editor-layer-library-check">${isSelected ? "✓" : ""}</span>
                 </div>
                 <div class="editor-layer-library-meta">
@@ -10955,6 +11125,7 @@ function _editorOnMediaLayerDragEnd() {
     _editorMediaLayerDrag = null;
     _editorRenderMediaLayers();
     _editorRenderProps();
+    _editorScheduleDraftPersist(150);
 }
 
 async function _editorUploadProjectImages(input) {
@@ -11039,17 +11210,23 @@ async function openEditor(projectId) {
         video.onloadedmetadata = () => {
             _editor.duration = video.duration;
             _editorInitVideoSegments();
-            _editor.timelineTime = 0;
+            const restored = _editorRestoreDraft(projectId, _editor.videoUrl);
+            if (!restored) {
+                _editor.timelineTime = 0;
+            }
             if (!["9:16", "16:9", "1:1"].includes(detail.aspect_ratio)) {
                 _editor.sourceAspectRatio = video.videoWidth >= video.videoHeight ? "16:9" : "9:16";
             }
             _editorApplyAspectRatio();
             _editorRenderMediaLayers();
             document.getElementById("editor-time-total").textContent = _fmtTime(_editorGetTimelineDuration());
-            _editorApplyTimelineFrame(0, false);
+            _editorApplyTimelineFrame(Number(_editor.timelineTime || 0), false);
             _editorRefreshQuickActions();
             _editorRenderTimeline();
-            _editorSelectTool("text");
+            _editorSelectTool(restored ? _editor.activeTool : "text");
+            if (restored) {
+                showToast("Edição restaurada de onde você parou.", "success");
+            }
         };
         _updateUndoRedoBtns();
     } catch (err) {
@@ -11060,6 +11237,11 @@ window.openEditor = openEditor;
 
 // ---------- Close editor ----------
 function closeEditor() {
+    _editorPersistDraftNow();
+    if (_editorDraftPersistTimer) {
+        clearTimeout(_editorDraftPersistTimer);
+        _editorDraftPersistTimer = 0;
+    }
     document.getElementById("editor-select-view").hidden = false;
     document.getElementById("editor-workspace").hidden = true;
     _editorCloseLayerVideoLibrary();
@@ -11714,20 +11896,8 @@ function _editorRenderProps() {
         container.innerHTML = `
             <div class="editor-props-title">Camadas</div>
             <div class="editor-props-group" style="margin-top:12px">
-                <div style="display:grid;gap:8px;grid-template-columns:repeat(3,minmax(0,1fr))">
-                    <button class="editor-add-btn" type="button" onclick="document.getElementById('editor-layer-video-upload-input').click()">
-                        + Video
-                    </button>
-                    <button class="editor-add-btn" type="button" onclick="_editorOpenLayerVideoLibrary()">
-                        Biblioteca
-                    </button>
-                    <button class="editor-add-btn" type="button" onclick="document.getElementById('editor-layer-image-upload-input').click()">
-                        + Imagem
-                    </button>
-                </div>
-
                 ${orderedLayers.length ? `
-                    <div class="editor-layer-list" style="margin-top:10px">
+                    <div class="editor-layer-list">
                         ${orderedLayers.map((layer, idx) => `
                             <div class="editor-layer-list-item${selectedLayer && String(selectedLayer.id) === String(layer.id) ? ' active' : ''}" onclick="_editorSelectMediaLayer('${layer.id}')">
                                 <span>${esc(layer.kind === 'video' ? 'Video' : 'Imagem')} ${orderedLayers.length - idx}</span>
@@ -11735,7 +11905,7 @@ function _editorRenderProps() {
                             </div>
                         `).join("")}
                     </div>
-                ` : '<p style="margin-top:8px;font-size:11px;color:var(--text-muted)">Envie vídeo/imagem ou escolha da Biblioteca para adicionar na mesma faixa.</p>'}
+                ` : '<p style="margin-top:4px;font-size:11px;color:var(--text-muted)">Use os botões da barra lateral para adicionar vídeo, biblioteca e imagem.</p>'}
             </div>
 
             ${selectedLayer ? `
@@ -12650,6 +12820,7 @@ function _editorRenderTimeline() {
     if (totalTimeEl) totalTimeEl.textContent = _fmtTime(dur);
 
     _editorRefreshQuickActions();
+    _editorScheduleDraftPersist();
 }
 
 function _editorSelectionCanDelete() {
@@ -13455,6 +13626,15 @@ function _bindEditorEvents() {
         if (started) {
             e.preventDefault();
         }
+    });
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+            _editorPersistDraftNow();
+        }
+    });
+    window.addEventListener("beforeunload", () => {
+        _editorPersistDraftNow();
     });
 
     _editorRefreshQuickActions();
