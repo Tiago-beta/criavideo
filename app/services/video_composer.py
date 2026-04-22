@@ -63,6 +63,16 @@ def compose_video(
     # Get actual audio duration and redistribute scenes to cover it fully
     audio_duration = _get_duration(audio_path)
     if audio_duration > 0:
+        if audio_duration <= 12.0 and len(valid_scenes) > 1:
+            lead_scene = valid_scenes[0]
+            valid_scenes = [{
+                **lead_scene,
+                "start_time": 0.0,
+                "end_time": float(audio_duration),
+                "duration": float(audio_duration),
+            }]
+            logger.info(f"Short video guard in composer: forced 1 image scene for {audio_duration:.2f}s")
+
         total_scene_dur = sum(s["duration"] for s in valid_scenes)
 
         # For long videos: cycle scenes so each image shows ~12s instead of stretching
@@ -239,6 +249,7 @@ def compose_video(
                 duration=audio_duration,
                 subtitle_path=subtitle_path,
                 background_music_path=background_music_path,
+                enable_audio_spectrum=enable_audio_spectrum,
             )
             file_size = os.path.getsize(output_path)
             duration = _get_duration(output_path)
@@ -339,6 +350,7 @@ def _render_static_fallback(
     duration: float,
     subtitle_path: str = "",
     background_music_path: str = "",
+    enable_audio_spectrum: bool = False,
     **_kwargs,
 ) -> None:
     """Safe fallback renderer: static slideshow (all images) + audio, no zoompan."""
@@ -374,9 +386,29 @@ def _render_static_fallback(
     filter_complex = f"{filter_str};\n{concat}"
 
     video_output = "[slideshow]"
+    if enable_audio_spectrum:
+        panel_height = max(130, int(height * 0.16))
+        panel_y = max(height - panel_height, 0)
+        spectrum_height = max(88, panel_height - 24)
+        spectrum_width = max(320, width - 32)
+        spectrum_x = max((width - spectrum_width) // 2, 0)
+        spectrum_y = panel_y + max((panel_height - spectrum_height) // 2, 0)
+
+        filter_complex += (
+            f";[{audio_idx}:a]aformat=channel_layouts=mono,"
+            f"showfreqs=s={spectrum_width}x{spectrum_height}:mode=bar:fscale=log:ascale=sqrt:"
+            f"win_size=2048:overlap=0.72:"
+            f"colors=0xff00ff|0x7a00ff|0x0058ff|0x00d8ff|0x00ff66|0xc8ff00|0xffa000|0xff3300,"
+            f"format=rgba,colorchannelmixer=aa=0.95[spectrum];"
+            f"[slideshow]drawbox=x=0:y={panel_y}:w={width}:h={panel_height}:"
+            f"color=0x000000@0.82:t=fill[spectrum_bg];"
+            f"[spectrum_bg][spectrum]overlay={spectrum_x}:{spectrum_y}:shortest=1:eof_action=pass[with_spectrum]"
+        )
+        video_output = "[with_spectrum]"
+
     if subtitle_path and os.path.exists(subtitle_path):
         sub_path_escaped = subtitle_path.replace("\\", "/").replace(":", "\\:")
-        filter_complex += f";[slideshow]ass='{sub_path_escaped}'[final]"
+        filter_complex += f";{video_output}ass='{sub_path_escaped}'[final]"
         video_output = "[final]"
 
     if music_idx is not None:
