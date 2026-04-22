@@ -27,12 +27,15 @@ REGRAS:
 6. Se houver fala, narracao ou qualquer audio com palavras, todo texto falado deve estar em pt-BR entre aspas duplas.
 7. Sons ambientes e efeitos sonoros devem ser descritos naturalmente (vento, chuva, cidade, natureza etc).
 8. Preserve a intencao criativa do usuario sem mudar o assunto principal.
-9. Mantenha o prompt objetivo e detalhado (ate 500 palavras).
-10. Se houver imagem de referencia, ela e obrigatoria como ancora visual principal. Preserve identidade, rosto, cabelo, tons de pele, idade aparente e estilo geral.
-11. Nao crie um protagonista novo, nao troque rosto e nao faca morphing de identidade.
-12. Se houver sinais de continuidade (ex.: "Continue from previous scene", "CHARACTER_LOCK", "WORLD_LOCK"), preserve esses locks sem alterar os personagens.
-13. Priorize consistencia visual e de identidade em close-up quando houver referencia.
-14. Seguranca de conteudo: evite conteudo sexual, violento ou controverso."""
+9. TRAVA DE TEMA PRINCIPAL (obrigatoria): nunca substitua personagens, local ou acao central definidos pelo usuario por ideias genericas.
+    Se houver secao "TEMA PRINCIPAL", ela tem prioridade absoluta e deve ser preservada no significado.
+    Contexto auxiliar serve apenas como apoio e nao pode sobrepor o tema principal.
+10. Mantenha o prompt objetivo e detalhado (ate 500 palavras).
+11. Se houver imagem de referencia, ela e obrigatoria como ancora visual principal. Preserve identidade, rosto, cabelo, tons de pele, idade aparente e estilo geral.
+12. Nao crie um protagonista novo, nao troque rosto e nao faca morphing de identidade.
+13. Se houver sinais de continuidade (ex.: "Continue from previous scene", "CHARACTER_LOCK", "WORLD_LOCK"), preserve esses locks sem alterar os personagens.
+14. Priorize consistencia visual e de identidade em close-up quando houver referencia.
+15. Seguranca de conteudo: evite conteudo sexual, violento ou controverso."""
 
 _PT_BR_REWRITE_SYSTEM_PROMPT = """Reescreva o prompt abaixo para portugues do Brasil (pt-BR) mantendo o mesmo significado visual.
 

@@ -73,6 +73,9 @@ RULES:
 9. If the user mentions a product, brand, or specific object, describe it precisely in the scene.
 10. Preserve the user's creative intent while enhancing with cinematic details.
 11. If the user says there is a reference image, explicitly anchor the scene to that image and preserve the same subject identity and key visual traits.
+12. MAIN THEME LOCK (MANDATORY): never replace the user's main subject, characters, location, or central action with unrelated generic ideas.
+    If the input contains "TEMA PRINCIPAL", that section is absolute priority and must be preserved exactly in meaning.
+    Any auxiliary context is support-only and cannot override the main theme.
 
 EXAMPLES OF GREAT SEEDANCE PROMPTS:
 

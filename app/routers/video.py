@@ -77,9 +77,35 @@ _NON_VISUAL_BRIEFING_MARKERS = (
     "priorize natureza viva",
     "elemento visual de conexao",
 )
-_SCENE_RANGE_ONLY_RE = re.compile(r"^(?P<start>\d+\.\d)s\s*-\s*(?P<end>\d+\.\d)s$")
+_AUX_CONTEXT_BLOCKLIST_MARKERS = (
+    "ignore previous",
+    "ignore all",
+    "desconsidere",
+    "regra obrigatoria",
+    "output rules",
+    "return only",
+    "responda somente",
+    "system prompt",
+    "assistant:",
+    "user:",
+    "developer:",
+)
+_TEMPORAL_TECHNICAL_PREFIXES = (
+    "style:",
+    "duration:",
+    "shot ",
+    "scene:",
+    "action:",
+    "camera:",
+    "lighting:",
+    "dialogue timing:",
+    "character_lock",
+    "world_lock",
+    "[00:",
+)
+_SCENE_RANGE_ONLY_RE = re.compile(r"^(?P<start>\d+(?:\.\d)?)s\s*-\s*(?P<end>\d+(?:\.\d)?)s$")
 _DIALOGUE_TIMING_LINE_RE = re.compile(
-    r"^(?P<start>\d+\.\d)s\s*-\s*(?P<end>\d+\.\d)s\s*\|\s*Speaker:\s*(?P<speaker>.+)$"
+    r"^(?P<start>\d+(?:\.\d)?)s\s*-\s*(?P<end>\d+(?:\.\d)?)s\s*\|\s*Speaker:\s*(?P<speaker>.+)$"
 )
 
 
@@ -181,6 +207,87 @@ def _inject_interaction_persona_instruction(prompt: str, interaction_persona: st
     return f"{base_prompt}\n\n{instruction}"
 
 
+def _sanitize_aux_context(context_hint: str, max_chars: int = 900) -> str:
+    raw = str(context_hint or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not raw:
+        return ""
+
+    cleaned_lines: list[str] = []
+    char_count = 0
+    for line in raw.split("\n"):
+        candidate = re.sub(r"\s+", " ", line).strip()
+        if not candidate:
+            continue
+
+        lowered = candidate.lower()
+        if any(marker in lowered for marker in _AUX_CONTEXT_BLOCKLIST_MARKERS):
+            continue
+
+        if len(candidate) > 220:
+            shortened = candidate[:220].rsplit(" ", 1)[0].strip()
+            candidate = shortened or candidate[:220]
+
+        projected = char_count + len(candidate) + (1 if cleaned_lines else 0)
+        if projected > max_chars:
+            remaining = max_chars - char_count - (1 if cleaned_lines else 0)
+            if remaining <= 0:
+                break
+            candidate = candidate[:remaining].rsplit(" ", 1)[0].strip() or candidate[:remaining]
+            cleaned_lines.append(candidate)
+            break
+
+        cleaned_lines.append(candidate)
+        char_count = projected
+
+    return "\n".join(cleaned_lines).strip()
+
+
+def _looks_like_temporal_technical_line(line: str) -> bool:
+    lowered = str(line or "").strip().lower()
+    if not lowered:
+        return False
+    if any(lowered.startswith(prefix) for prefix in _TEMPORAL_TECHNICAL_PREFIXES):
+        return True
+    if _SCENE_RANGE_ONLY_RE.match(lowered):
+        return True
+    if _DIALOGUE_TIMING_LINE_RE.match(str(line or "").strip()):
+        return True
+    return False
+
+
+def _extract_thematic_seed(topic_seed: str, briefing: str, max_chars: int = 220) -> str:
+    fallback_seed = "a coherent cinematic scene aligned with the requested theme"
+
+    for source in (topic_seed, briefing):
+        raw = str(source or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not raw:
+            continue
+
+        chunks: list[str] = []
+        for line in raw.split("\n"):
+            candidate = re.sub(r"\s+", " ", line).strip(" -*\t")
+            if not candidate:
+                continue
+            if _looks_like_temporal_technical_line(candidate):
+                continue
+            lowered = candidate.lower()
+            if any(marker in lowered for marker in _NON_VISUAL_BRIEFING_MARKERS):
+                continue
+            if candidate.lower().startswith("tema principal"):
+                candidate = candidate.split(":", 1)[1].strip() if ":" in candidate else candidate
+            chunks.append(candidate)
+            if len(" ".join(chunks)) >= max_chars:
+                break
+
+        merged = re.sub(r"\s+", " ", " ".join(chunks)).strip(" .")
+        if merged:
+            if len(merged) > max_chars:
+                merged = merged[:max_chars].rsplit(" ", 1)[0].strip() or merged[:max_chars]
+            return merged
+
+    return fallback_seed
+
+
 def _strip_non_visual_briefing_directives(briefing: str) -> str:
     raw = (briefing or "").strip()
     if not raw:
@@ -223,23 +330,26 @@ def _build_continuous_time_ranges(total_duration: int, block_count: int) -> list
     return ranges
 
 
-def _build_temporal_prompt_fallback(briefing: str, duration: int) -> str:
+def _build_temporal_prompt_fallback(briefing: str, duration: int, topic_seed: str = "") -> str:
     cleaned_briefing = _strip_non_visual_briefing_directives(briefing)
     scene_count = 4 if duration <= 6 else 5 if duration <= 12 else 6
     scene_ranges = _build_continuous_time_ranges(duration, scene_count)
     dialogue_count = 1 if duration <= 6 else 2
     dialogue_ranges = _build_continuous_time_ranges(duration, dialogue_count)
 
-    visual_seed = re.sub(r"\s+", " ", cleaned_briefing).strip()
-    visual_seed = visual_seed[:240] if visual_seed else "a grounded cinematic scene"
+    visual_seed = _extract_thematic_seed(topic_seed, cleaned_briefing, max_chars=240)
+    dialogue_seed = re.sub(r"\s+", " ", visual_seed).strip()
+    if len(dialogue_seed) > 95:
+        dialogue_seed = dialogue_seed[:95].rsplit(" ", 1)[0].strip() or dialogue_seed[:95]
+    dialogue_seed = dialogue_seed or "o tema principal"
 
     scene_templates = [
-        "Explosive opening frame built around {seed}, with strong subject focus, cinematic depth, and dynamic environmental motion.",
-        "Camera shifts aggressively to reveal character emotion, layered foreground movement, and intensified dramatic atmosphere.",
-        "A tighter framing captures critical action details, reactive body language, and escalating visual tension in real time.",
-        "Sustained confrontation beat with continuous motion, expressive reactions, and coherent scene geography.",
-        "Final push-in emphasizes the emotional peak, preserving continuity in identity, lighting, and environment.",
-        "Closing beat that keeps all elements in motion and lands the sequence with high cinematic impact.",
+        "Establishing shot focused on {seed}, with clear environment details, smooth camera flow, and consistent subject identity.",
+        "The camera tracks the main action around {seed}, showing natural interaction, readable expressions, and coherent movement.",
+        "Mid-sequence framing reinforces continuity of {seed} with layered foreground and stable scene geography.",
+        "A closer composition highlights key details and emotional clarity while preserving location, lighting, and character consistency.",
+        "Transition beat keeps pacing steady and visual logic intact, sustaining the same thematic direction.",
+        "Final cinematic beat resolves {seed} with a clean visual payoff and continuous identity lock.",
     ]
 
     lines: list[str] = []
@@ -255,13 +365,13 @@ def _build_temporal_prompt_fallback(briefing: str, duration: int) -> str:
     lines.append("Dialogue timing:")
 
     fallback_dialogues = [
-        '"Voce mentiu para mim esse tempo todo, e agora tudo veio a tona!"',
-        '"Acabou. Nao tem mais volta depois de tudo que eu descobri."',
-        '"A cena explode em emocao enquanto os personagens reagem em choque."',
+        f'"Estamos vivendo {dialogue_seed}; vamos manter a conversa leve e natural."',
+        '"Perfeito, seguimos no mesmo ritmo com clareza, conexao e energia positiva."',
+        '"Fechamos esse momento mantendo o tema principal e a continuidade da cena."',
     ]
 
     for idx, (start, end) in enumerate(dialogue_ranges):
-        speaker = "Strawberry woman" if idx % 2 == 0 else "Avocado man"
+        speaker = "Personagem 1" if idx % 2 == 0 else "Personagem 2"
         speech = fallback_dialogues[min(idx, len(fallback_dialogues) - 1)]
         lines.append(f"{start:.1f}s - {end:.1f}s | Speaker: {speaker}")
         lines.append(speech)
@@ -271,14 +381,22 @@ def _build_temporal_prompt_fallback(briefing: str, duration: int) -> str:
     return "\n".join(lines).strip()
 
 
-def _is_temporal_prompt_format_valid(prompt_text: str, total_duration: int) -> bool:
+def _is_temporal_prompt_format_valid(
+    prompt_text: str,
+    total_duration: int,
+    *,
+    return_reason: bool = False,
+):
+    def _result(valid: bool, reason: str):
+        return (valid, reason) if return_reason else valid
+
     raw = (prompt_text or "").strip()
     if not raw:
-        return False
+        return _result(False, "empty_output")
     if "```" in raw:
-        return False
+        return _result(False, "contains_markdown_fence")
     if raw.startswith("{") or raw.startswith("["):
-        return False
+        return _result(False, "json_like_output")
 
     lines = [line.rstrip() for line in raw.splitlines()]
     dialogue_idx = -1
@@ -288,29 +406,29 @@ def _is_temporal_prompt_format_valid(prompt_text: str, total_duration: int) -> b
             break
 
     if dialogue_idx <= 0:
-        return False
+        return _result(False, "missing_dialogue_timing_header")
 
     scene_lines = [line.strip() for line in lines[:dialogue_idx] if line.strip()]
     if not scene_lines:
-        return False
+        return _result(False, "missing_scene_blocks")
 
     scene_ranges: list[tuple[float, float]] = []
     i = 0
     while i < len(scene_lines):
         range_match = _SCENE_RANGE_ONLY_RE.match(scene_lines[i])
         if not range_match:
-            return False
+            return _result(False, f"invalid_scene_range_line_{i + 1}")
 
         start = float(range_match.group("start"))
         end = float(range_match.group("end"))
         if end <= start:
-            return False
+            return _result(False, f"scene_range_not_increasing_line_{i + 1}")
 
         scene_ranges.append((start, end))
         i += 1
 
         if i >= len(scene_lines):
-            return False
+            return _result(False, "scene_missing_description_after_range")
 
         has_description = False
         while i < len(scene_lines) and not _SCENE_RANGE_ONLY_RE.match(scene_lines[i]):
@@ -319,50 +437,56 @@ def _is_temporal_prompt_format_valid(prompt_text: str, total_duration: int) -> b
             i += 1
 
         if not has_description:
-            return False
+            return _result(False, "scene_missing_description_text")
 
     if abs(scene_ranges[0][0] - 0.0) > 0.11:
-        return False
+        return _result(False, "timeline_does_not_start_at_zero")
 
     for idx in range(1, len(scene_ranges)):
         if abs(scene_ranges[idx][0] - scene_ranges[idx - 1][1]) > 0.11:
-            return False
+            return _result(False, f"timeline_gap_or_overlap_scene_{idx + 1}")
 
     expected_end = round(float(total_duration or 1), 1)
     if abs(scene_ranges[-1][1] - expected_end) > 0.11:
-        return False
+        return _result(False, "timeline_end_mismatch")
 
     dialogue_lines = [line.strip() for line in lines[dialogue_idx + 1 :] if line.strip()]
     if not dialogue_lines:
-        return False
+        return _result(False, "missing_dialogue_blocks")
 
     dialogue_blocks = 0
     j = 0
     while j < len(dialogue_lines):
         timing_match = _DIALOGUE_TIMING_LINE_RE.match(dialogue_lines[j])
         if not timing_match:
-            return False
+            return _result(False, f"invalid_dialogue_timing_line_{j + 1}")
 
         start = float(timing_match.group("start"))
         end = float(timing_match.group("end"))
         if end <= start:
-            return False
+            return _result(False, f"dialogue_range_not_increasing_line_{j + 1}")
 
         j += 1
         if j >= len(dialogue_lines):
-            return False
+            return _result(False, "dialogue_missing_quote_line")
 
         speech_line = dialogue_lines[j]
         if not (speech_line.startswith('"') and speech_line.endswith('"') and len(speech_line) >= 3):
-            return False
+            return _result(False, f"dialogue_line_not_quoted_line_{j + 1}")
 
         dialogue_blocks += 1
         j += 1
 
-    return dialogue_blocks >= 1
+    if dialogue_blocks < 1:
+        return _result(False, "missing_dialogue_blocks")
+    return _result(True, "ok")
 
 
-async def _generate_temporal_realistic_prompt(optimized_prompt: str, duration: int) -> str:
+async def _generate_temporal_realistic_prompt(
+    optimized_prompt: str,
+    duration: int,
+    topic_seed: str = "",
+) -> str:
     cleaned_briefing = _strip_non_visual_briefing_directives(optimized_prompt)
 
     scene_count = 4 if duration <= 6 else 5 if duration <= 12 else 6 if duration <= 20 else 7
@@ -400,6 +524,9 @@ async def _generate_temporal_realistic_prompt(optimized_prompt: str, duration: i
         f"{dialogue_ranges_text}"
     )
 
+    first_candidate = ""
+    first_reason = "empty_output"
+
     try:
         resp = await _openai.chat.completions.create(
             model="gpt-4o-mini",
@@ -410,14 +537,82 @@ async def _generate_temporal_realistic_prompt(optimized_prompt: str, duration: i
             temperature=0.35,
             max_tokens=1400,
         )
-        candidate = (resp.choices[0].message.content or "").strip()
-        if _is_temporal_prompt_format_valid(candidate, duration):
-            return candidate
-        logger.warning("Temporal prompt returned with invalid format; using fallback template")
+        first_candidate = (resp.choices[0].message.content or "").strip()
     except Exception as e:
-        logger.warning("Temporal prompt generation failed: %s", e)
+        logger.warning("Temporal prompt first pass failed: %s", e)
 
-    return _build_temporal_prompt_fallback(cleaned_briefing, duration)
+    if first_candidate:
+        is_valid, first_reason = _is_temporal_prompt_format_valid(
+            first_candidate,
+            duration,
+            return_reason=True,
+        )
+        if is_valid:
+            logger.info("Temporal prompt accepted on first pass")
+            return first_candidate
+        logger.warning("Temporal prompt first pass invalid (%s); attempting repair pass", first_reason)
+    else:
+        logger.warning("Temporal prompt first pass empty; attempting repair pass")
+
+    main_theme = _extract_thematic_seed(topic_seed, cleaned_briefing, max_chars=220)
+    repair_system = (
+        "You repair temporal prompt blocks into a strict format. "
+        "Return plain text only, never markdown, never JSON. "
+        "Keep the main theme, core characters, location, and action unchanged. "
+        "Scene descriptions must be in English and dialogue must be in PT-BR."
+    )
+    repair_user = (
+        f"Total duration: {duration:.1f}s\n\n"
+        "Main theme (must remain unchanged):\n"
+        f"{main_theme}\n\n"
+        "Visual briefing:\n"
+        f"{cleaned_briefing}\n\n"
+        "Current output to repair (if empty, create from scratch):\n"
+        f"{first_candidate or '(empty)'}\n\n"
+        "Mandatory output format:\n"
+        "1) For each scene block, write exactly:\n"
+        "   X.Xs - Y.Ys\n"
+        "   <One detailed English description for this interval>\n"
+        "2) Use continuous timeline from 0.0s to total duration with no gaps.\n"
+        "3) After scene blocks, write exactly:\n"
+        "   Dialogue timing:\n"
+        "4) Then write at least one dialogue block exactly as:\n"
+        "   X.Xs - Y.Ys | Speaker: Name\n"
+        "   \"<spoken line in PT-BR>\"\n"
+        "5) No markdown and no JSON.\n\n"
+        "Use exactly these scene ranges:\n"
+        f"{scene_ranges_text}\n\n"
+        "Use dialogue inside these ranges:\n"
+        f"{dialogue_ranges_text}"
+    )
+
+    try:
+        repair_resp = await _openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": repair_system},
+                {"role": "user", "content": repair_user},
+            ],
+            temperature=0.15,
+            max_tokens=1400,
+        )
+        repaired_candidate = (repair_resp.choices[0].message.content or "").strip()
+        repaired_valid, repaired_reason = _is_temporal_prompt_format_valid(
+            repaired_candidate,
+            duration,
+            return_reason=True,
+        )
+        if repaired_valid:
+            logger.info("Temporal prompt repair pass succeeded (first pass reason=%s)", first_reason)
+            return repaired_candidate
+        logger.warning(
+            "Temporal prompt repair pass invalid (%s); using thematic fallback",
+            repaired_reason,
+        )
+    except Exception as e:
+        logger.warning("Temporal prompt repair pass failed: %s", e)
+
+    return _build_temporal_prompt_fallback(cleaned_briefing, duration, topic_seed=topic_seed)
 
 
 def _cleanup_karaoke_progress_store() -> None:
@@ -2386,6 +2581,7 @@ async def generate_audio_endpoint(
 
 class GenerateRealisticPromptRequest(BaseModel):
     topic: str
+    context_hint: str = ""
     style: str = "cinematic"
     engine: str = "wan2"
     duration: int = 8
@@ -2405,6 +2601,17 @@ async def generate_realistic_prompt_endpoint(
     if len(topic) > 2000:
         raise HTTPException(status_code=400, detail="Tema muito longo (máximo 2000 caracteres).")
 
+    context_hint = _sanitize_aux_context(req.context_hint)
+    if context_hint:
+        topic_for_optimizer = (
+            "TEMA PRINCIPAL (prioridade absoluta, nunca substituir):\n"
+            f"{topic}\n\n"
+            "CONTEXTO AUXILIAR (apenas apoio, sem mudar personagens, acao ou local principal):\n"
+            f"{context_hint}"
+        )
+    else:
+        topic_for_optimizer = topic
+
     engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
@@ -2413,7 +2620,7 @@ async def generate_realistic_prompt_endpoint(
     else:
         duration = max(1, min(int(req.duration or 10), 10))
     interaction_persona = _normalize_interaction_persona(req.interaction_persona)
-    prompt_for_optimizer = _ensure_reference_image_instruction(topic) if req.has_reference_image else topic
+    prompt_for_optimizer = _ensure_reference_image_instruction(topic_for_optimizer) if req.has_reference_image else topic_for_optimizer
     prompt_for_optimizer = _inject_interaction_persona_instruction(prompt_for_optimizer, interaction_persona)
 
     if engine == "grok":
@@ -2441,6 +2648,7 @@ async def generate_realistic_prompt_endpoint(
     temporal_prompt = await _generate_temporal_realistic_prompt(
         optimized_prompt=optimized,
         duration=duration,
+        topic_seed=topic,
     )
 
     final_prompt = _inject_interaction_persona_instruction(temporal_prompt, interaction_persona)
