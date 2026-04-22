@@ -711,21 +711,25 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
 
     # 2. Create project
     async with async_session() as db:
+        project_tags = {
+            "audio_source": "tevoxi",
+            "force_karaoke_two_line": True,
+        }
         project = VideoProject(
             user_id=user_id,
             track_id=0,
             title=title,
             description=f"Auto-generated music video: {theme_text}",
-            tags=[],
+            tags=project_tags,
             style_prompt=cfg.get("style_prompt", "cinematic, vibrant colors, dynamic lighting"),
             aspect_ratio=cfg.get("aspect_ratio", "16:9"),
             track_title=title,
-            track_artist="",
+            track_artist="Tevoxi",
             track_duration=music_duration,
             lyrics_text=lyrics,
             lyrics_words=[],
             audio_path="",
-            enable_subtitles=bool(lyrics),
+            enable_subtitles=True,
             zoom_images=True,
             no_background_music=True,
             is_karaoke=False,
@@ -743,39 +747,35 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
     if audio_path != str(final_audio_path):
         shutil.move(audio_path, final_audio_path)
 
-    # 4. Transcribe for subtitles if lyrics available
-    if lyrics:
-        try:
-            from app.services.transcriber import transcribe_audio
-            transcribed = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: transcribe_audio(str(final_audio_path)),
-            )
-            words = transcribed.get("words", []) if isinstance(transcribed, dict) else []
-            async with async_session() as db:
-                project = await db.get(VideoProject, project_id)
-                if words:
-                    project.lyrics_words = words
-                project.audio_path = str(final_audio_path)
-                project.status = VideoStatus.GENERATING_SCENES
-                project.progress = 0
-                await db.commit()
-        except Exception as e:
-            logger.warning("Transcription failed for music video %d: %s", project_id, e)
-            async with async_session() as db:
-                project = await db.get(VideoProject, project_id)
-                project.audio_path = str(final_audio_path)
-                project.status = VideoStatus.GENERATING_SCENES
-                project.progress = 0
-                await db.commit()
-    else:
-        async with async_session() as db:
-            project = await db.get(VideoProject, project_id)
-            project.audio_path = str(final_audio_path)
-            project.enable_subtitles = False
-            project.status = VideoStatus.GENERATING_SCENES
-            project.progress = 0
-            await db.commit()
+    # 4. Transcribe audio to improve subtitle timing
+    transcribed_words = []
+    transcribed_text = ""
+    try:
+        from app.services.transcriber import transcribe_audio
+        transcribed = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: transcribe_audio(str(final_audio_path), prompt=lyrics or ""),
+        )
+        if isinstance(transcribed, dict):
+            raw_words = transcribed.get("words", [])
+            if isinstance(raw_words, list):
+                transcribed_words = [w for w in raw_words if isinstance(w, dict) and w.get("word")]
+            transcribed_text = (transcribed.get("text", "") or "").strip()
+    except Exception as e:
+        logger.warning("Transcription failed for music video %d: %s", project_id, e)
+
+    async with async_session() as db:
+        project = await db.get(VideoProject, project_id)
+        project.audio_path = str(final_audio_path)
+        if transcribed_words:
+            project.lyrics_words = transcribed_words
+        if transcribed_text and not (project.lyrics_text or "").strip():
+            project.lyrics_text = transcribed_text
+        has_subtitle_text = bool((project.lyrics_text or "").strip()) or bool(project.lyrics_words)
+        project.enable_subtitles = has_subtitle_text
+        project.status = VideoStatus.GENERATING_SCENES
+        project.progress = 0
+        await db.commit()
 
     # 5. Run video pipeline
     await run_video_pipeline(project_id)

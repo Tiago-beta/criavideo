@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v184 loaded");
+﻿console.log("[CriaVideo] app.js v185 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2860,7 +2860,9 @@ async function handleScriptCreate() {
     const subtitlePosEl = document.getElementById("script-subtitle-position-y");
     const parsedSubtitlePos = parseInt(subtitlePosEl ? subtitlePosEl.value : "80", 10);
     scriptData.subtitlePositionY = [80, 50, 20].includes(parsedSubtitlePos) ? parsedSubtitlePos : 80;
-    scriptData.enableAudioSpectrum = scriptData.useTevoxiAudio && !!document.getElementById("script-enable-audio-spectrum")?.checked;
+    scriptData.enableAudioSpectrum = scriptData.useTevoxiAudio
+        ? true
+        : !!document.getElementById("script-enable-audio-spectrum")?.checked;
 
     if (!scriptData.createNarration && !scriptData.useCustomAudio && !scriptData.useCustomVideo && !scriptData.useTevoxiAudio) {
         scriptData.text = "";
@@ -6218,6 +6220,7 @@ let _autoTevoxiSongs = [];  // cached Tevoxi songs
 let _autoSelectedSong = null; // selected Tevoxi song for shorts
 let _autoShortsCount = 3;  // default shorts count
 let _autoSubtitleCfg = null;
+let _autoImageAudioSource = "narration";
 
 function _buildAutoSubtitleCfg(styleName = "destaque") {
     const st = _getSubStyle(styleName || "destaque");
@@ -6448,9 +6451,12 @@ async function loadAutoSchedules() {
 
 function renderAutoCard(s) {
     const isTestAccount = !s.social_account_id;
-    const typeBadge = s.video_type === "realistic" || s.video_type === "musical_shorts"
-        ? '<span class="badge badge-shorts">Realista</span>'
-        : '<span class="badge badge-completed">Imagens IA</span>';
+    let typeBadge = '<span class="badge badge-completed">Imagens IA</span>';
+    if (s.video_type === "realistic" || s.video_type === "musical_shorts") {
+        typeBadge = '<span class="badge badge-shorts">Realista</span>';
+    } else if (s.video_type === "music") {
+        typeBadge = '<span class="badge badge-queued">Tevoxi Música</span>';
+    }
     const modeBadge = s.creation_mode === "manual"
         ? '<span class="badge">Manual</span>'
         : '<span class="badge badge-queued">Auto</span>';
@@ -6579,6 +6585,7 @@ async function addAutoThemeToSchedule(scheduleId) {
 function openNewAutomationModal() {
     _autoWizardStep = 1;
     _autoWizardThemes = [];
+    _autoImageAudioSource = "narration";
     _autoSelectedSong = null;
     _autoShortsCount = 3;
     _clipAudioBuffer = null;
@@ -6601,6 +6608,30 @@ function openNewAutomationModal() {
     document.querySelectorAll("#modal-new-automation .auto-type-card").forEach(c => c.classList.remove("active"));
     const autoBtn = document.querySelector('#modal-new-automation [data-creation-mode="auto"]');
     if (autoBtn) autoBtn.classList.add("active");
+
+    document.querySelectorAll("#auto-image-audio-source .engine-option").forEach(c => c.classList.remove("selected"));
+    const sourceBtn = document.querySelector('#auto-image-audio-source [data-value="narration"]');
+    if (sourceBtn) sourceBtn.classList.add("selected");
+    const imageTevoxiPanel = document.getElementById("auto-image-tevoxi-settings");
+    if (imageTevoxiPanel) imageTevoxiPanel.hidden = true;
+
+    const musicMode = document.getElementById("auto-music-mode");
+    if (musicMode) musicMode.value = "generate";
+    const musicLyrics = document.getElementById("auto-music-lyrics");
+    if (musicLyrics) musicLyrics.value = "";
+    const musicDuration = document.getElementById("auto-music-duration");
+    if (musicDuration) musicDuration.value = "120";
+    const musicGenre = document.getElementById("auto-music-genre");
+    if (musicGenre) musicGenre.value = "pop";
+    const musicVocal = document.getElementById("auto-music-vocalist");
+    if (musicVocal) musicVocal.value = "female";
+    const musicLang = document.getElementById("auto-music-language");
+    if (musicLang) musicLang.value = "pt-BR";
+    const musicStyle = document.getElementById("auto-music-style");
+    if (musicStyle) musicStyle.value = "cinematic, vibrant colors, dynamic lighting";
+    const musicAspect = document.getElementById("auto-music-aspect");
+    if (musicAspect) musicAspect.value = "16:9";
+    toggleAutoMusicLyrics();
 
     const manual = document.getElementById("auto-manual-settings");
     if (manual) manual.hidden = true;
@@ -6654,6 +6685,7 @@ function openNewAutomationModal() {
     const dowGroup = document.getElementById("auto-dow-group");
     if (dowGroup) dowGroup.hidden = true;
 
+    updateAutoManualPanels();
     _applyAutoRealisticEngineRules();
 
     showAutoStep(1);
@@ -6779,6 +6811,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const autoModal = document.getElementById("modal-new-automation");
     if (!autoModal) return;
     autoModal.addEventListener("click", (e) => {
+        const sourceOpt = e.target.closest("#auto-image-audio-source .engine-option");
+        if (sourceOpt) {
+            selectAutoImageAudioSource(sourceOpt.dataset.value || "narration");
+        }
         // Style tag click
         const tag = e.target.closest("#auto-realistic-style-tags .style-tag");
         if (tag) {
@@ -8308,13 +8344,34 @@ function selectAutoCreationMode(mode) {
     updateAutoManualPanels();
 }
 
+function getSelectedAutoImageAudioSource() {
+    const activeOpt = document.querySelector('#auto-image-audio-source .engine-option.selected');
+    return activeOpt ? activeOpt.dataset.value : "narration";
+}
+
+function selectAutoImageAudioSource(source) {
+    _autoImageAudioSource = source === "tevoxi" ? "tevoxi" : "narration";
+    document.querySelectorAll('#auto-image-audio-source .engine-option').forEach(c => {
+        c.classList.toggle("selected", c.dataset.value === _autoImageAudioSource);
+    });
+    updateAutoManualPanels();
+}
+
 function updateAutoManualPanels() {
     const videoType = getSelectedAutoVideoType();
     const mode = getSelectedAutoCreationMode();
+    const audioSource = getSelectedAutoImageAudioSource();
+    const imageAudioPanel = document.getElementById("auto-image-audio-settings");
+    const imageTevoxiPanel = document.getElementById("auto-image-tevoxi-settings");
     const narrationPanel = document.getElementById("auto-manual-settings");
     const realisticPanel = document.getElementById("auto-realistic-settings");
-    if (narrationPanel) narrationPanel.hidden = !(mode === "manual" && videoType === "imagens_ia");
+    if (imageAudioPanel) imageAudioPanel.hidden = videoType !== "imagens_ia";
+    if (imageTevoxiPanel) imageTevoxiPanel.hidden = !(videoType === "imagens_ia" && audioSource === "tevoxi");
+    if (narrationPanel) narrationPanel.hidden = !(mode === "manual" && videoType === "imagens_ia" && audioSource === "narration");
     if (realisticPanel) realisticPanel.hidden = !(mode === "manual" && videoType === "realista");
+    if (videoType === "imagens_ia" && audioSource === "tevoxi") {
+        toggleAutoMusicLyrics();
+    }
     _applyAutoRealisticEngineRules();
 }
 
@@ -8431,9 +8488,13 @@ async function createAutoSchedule() {
     const timeUtc = document.getElementById("auto-time")?.value || "14:00";
     const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const dayOfWeek = frequency === "weekly" ? parseInt(document.getElementById("auto-dow")?.value || "0", 10) : null;
+    const imageAudioSource = getSelectedAutoImageAudioSource();
 
     let defaultSettings = null;
-    let finalVideoType = videoType === "imagens_ia" ? "narration" : "realistic";
+    let finalVideoType = "realistic";
+    if (videoType === "imagens_ia") {
+        finalVideoType = imageAudioSource === "tevoxi" ? "music" : "narration";
+    }
 
     // Prepare themes: normalize to objects {text, custom_settings?}
     let themes = _autoWizardThemes.map(t => {
@@ -8441,12 +8502,46 @@ async function createAutoSchedule() {
         return t; // already { text, custom_settings }
     });
 
-    if (videoType === "imagens_ia" && creationMode === "manual") {
+    if (videoType === "imagens_ia" && imageAudioSource === "tevoxi") {
+        const musicDuration = parseInt(document.getElementById("auto-music-duration")?.value || "120", 10);
+        const musicMode = document.getElementById("auto-music-mode")?.value || "generate";
+        const musicLyrics = (document.getElementById("auto-music-lyrics")?.value || "").trim();
+
+        if (creationMode === "manual" && musicMode === "lyrics" && !musicLyrics) {
+            alert("No modo com letra personalizada, escreva a letra antes de continuar.");
+            showAutoStep(2);
+            return;
+        }
+
+        defaultSettings = {
+            duration_seconds: musicDuration,
+            music_duration: musicDuration,
+            style_prompt: document.getElementById("auto-music-style")?.value || "cinematic, vibrant colors, dynamic lighting",
+            aspect_ratio: document.getElementById("auto-music-aspect")?.value || "16:9",
+            force_karaoke_two_line: true,
+        };
+
+        if (creationMode === "manual") {
+            defaultSettings.music_mode = musicMode;
+            defaultSettings.music_genre = document.getElementById("auto-music-genre")?.value || "pop";
+            defaultSettings.music_language = document.getElementById("auto-music-language")?.value || "pt-BR";
+            if (musicMode !== "instrumental") {
+                defaultSettings.music_vocalist = document.getElementById("auto-music-vocalist")?.value || "female";
+            }
+            if (musicMode === "lyrics") {
+                defaultSettings.music_lyrics = musicLyrics;
+            }
+        }
+    } else if (videoType === "imagens_ia" && creationMode === "manual") {
+        const styleValue = document.getElementById("auto-style")?.value || "cinematic, vibrant colors, dynamic lighting";
+        const durationValue = parseInt(document.getElementById("auto-duration")?.value || "120", 10);
         defaultSettings = {
             tone: document.getElementById("auto-tone")?.value || "informativo",
             voice: document.getElementById("auto-voice")?.value || "onyx",
-            style: document.getElementById("auto-style")?.value || "cinematic, vibrant colors, dynamic lighting",
-            duration: parseInt(document.getElementById("auto-duration")?.value || "120", 10),
+            style_prompt: styleValue,
+            style: styleValue,
+            duration_seconds: durationValue,
+            duration: durationValue,
             aspect_ratio: document.getElementById("auto-aspect")?.value || "16:9",
         };
     } else if (videoType === "realista") {

@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260422-30">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260422-31">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 199;
+        var REQUIRED_VER = 200;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1786,7 +1786,7 @@
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                             </div>
                             <strong>Imagens IA</strong>
-                            <small>Imagens geradas por inteligência artificial com narração</small>
+                            <small>Imagens geradas por inteligência artificial com narração ou música</small>
                             <span class="credit-badge credit-moderate">Créditos: Moderado</span>
                         </div>
                         <div class="video-type-card" data-video-type="realista" tabindex="0" onclick="selectAutoVideoType('realista')">
@@ -1814,6 +1814,86 @@
                             <strong>Manual</strong>
                             <span class="muted">Você define cada variável</span>
                         </button>
+                    </div>
+                    <div id="auto-image-audio-settings" class="auto-manual-settings" hidden>
+                        <div class="form-group">
+                            <label>Fonte de áudio</label>
+                            <div class="engine-options" id="auto-image-audio-source">
+                                <button class="engine-option selected" data-value="narration" type="button"><strong>Narração IA</strong></button>
+                                <button class="engine-option" data-value="tevoxi" type="button"><strong>Música Tevoxi</strong></button>
+                            </div>
+                            <small class="pause-hint">Escolha entre vídeo narrado ou vídeo musical gerado no Tevoxi.</small>
+                        </div>
+                        <div id="auto-image-tevoxi-settings" hidden>
+                            <div class="form-group">
+                                <label>Duração do vídeo de música</label>
+                                <select id="auto-music-duration" class="input">
+                                    <option value="60">1 minuto</option>
+                                    <option value="120" selected>2 minutos</option>
+                                    <option value="180">3 minutos</option>
+                                    <option value="240">4 minutos</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Modo de música</label>
+                                <select id="auto-music-mode" class="input" onchange="toggleAutoMusicLyrics()">
+                                    <option value="generate">Gerar automaticamente</option>
+                                    <option value="instrumental">Instrumental (sem voz)</option>
+                                    <option value="lyrics">Com letra personalizada</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="auto-music-vocalist-group">
+                                <label>Vocal</label>
+                                <select id="auto-music-vocalist" class="input">
+                                    <option value="female">Feminino</option>
+                                    <option value="male">Masculino</option>
+                                    <option value="duet">Dueto</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="auto-music-lyrics-group" hidden>
+                                <label>Letra personalizada</label>
+                                <textarea id="auto-music-lyrics" class="input" rows="4" placeholder="Escreva a letra da música (opcional no modo automático, obrigatório no modo com letra personalizada)."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Gênero musical</label>
+                                <select id="auto-music-genre" class="input">
+                                    <option value="pop">Pop</option>
+                                    <option value="gospel">Gospel</option>
+                                    <option value="ambient">Ambient</option>
+                                    <option value="electronic">Eletrônica</option>
+                                    <option value="rock">Rock</option>
+                                    <option value="acoustic">Acústico</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Idioma da música</label>
+                                <select id="auto-music-language" class="input">
+                                    <option value="pt-BR">Português (Brasil)</option>
+                                    <option value="en">Inglês</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Estilo visual</label>
+                                <select id="auto-music-style" class="input">
+                                    <option value="cinematic, vibrant colors, dynamic lighting">Cinemático</option>
+                                    <option value="minimalist, clean, modern">Minimalista</option>
+                                    <option value="colorful, playful, energetic">Colorido</option>
+                                    <option value="dark, moody, dramatic">Dark</option>
+                                    <option value="neon, futuristic, glowing">Neon</option>
+                                    <option value="vintage, retro, warm tones">Vintage</option>
+                                    <option value="nature, organic, earthy">Natureza</option>
+                                    <option value="anime, manga, japanese animation">Anime</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Formato</label>
+                                <select id="auto-music-aspect" class="input">
+                                    <option value="16:9">16:9 (YouTube)</option>
+                                    <option value="9:16">9:16 (Shorts/Reels)</option>
+                                    <option value="1:1">1:1 (Instagram)</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                     <!-- Manual settings: Narração (Imagens IA) -->
                     <div id="auto-manual-settings" class="auto-manual-settings" hidden>
@@ -2448,8 +2528,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260422-30"></script>
-    <script src="/video/static/pwa.js?v=20260422-30"></script>
+    <script src="/video/static/app.js?v=20260422-31"></script>
+    <script src="/video/static/pwa.js?v=20260422-31"></script>
 </body>
 </html>
 

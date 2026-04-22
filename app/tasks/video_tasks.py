@@ -655,6 +655,8 @@ async def run_video_pipeline(project_id: int, pipeline_options: dict | None = No
             style_prompt = project.style_prompt or ""
             is_black_screen = "tela_preta" in style_prompt.lower()
             is_karaoke = getattr(project, "is_karaoke", False) or False
+            project_tags = project.tags if isinstance(project.tags, dict) else {}
+            force_karaoke_two_line = bool(project_tags.get("force_karaoke_two_line", False))
 
             # Map style tags to rich English descriptions for better image generation
             _STYLE_DESCRIPTIONS = {
@@ -827,6 +829,28 @@ async def run_video_pipeline(project_id: int, pipeline_options: dict | None = No
                     on_progress=_scene_progress,
                 )
 
+            # Hard guard: very short AI videos should use a single image scene.
+            rendered_duration = float(project.track_duration or 0) or float(get_audio_duration(audio_path) or 0)
+            if (
+                rendered_duration > 0
+                and rendered_duration <= 12.0
+                and not use_custom_images
+                and not is_black_screen
+                and not is_karaoke
+                and isinstance(scenes, list)
+                and len(scenes) > 1
+            ):
+                first_scene = scenes[0] if isinstance(scenes[0], dict) else {}
+                scenes = [{
+                    **first_scene,
+                    "scene_index": 0,
+                    "start_time": 0,
+                    "end_time": rendered_duration,
+                }]
+                logger.info(
+                    f"Short AI video guard active for project {project_id}: duration={rendered_duration:.2f}s, forced 1 scene"
+                )
+
             # Save scenes to DB
             for s in scenes:
                 scene = VideoScene(
@@ -854,7 +878,7 @@ async def run_video_pipeline(project_id: int, pipeline_options: dict | None = No
             if enable_subtitles is None:
                 enable_subtitles = True
             # Narration mode: non-karaoke, non-music projects show only current spoken line
-            is_narration_subtitle = not is_karaoke and not is_music_only_mode
+            is_narration_subtitle = (not is_karaoke and not is_music_only_mode and not force_karaoke_two_line)
             if not is_black_screen and enable_subtitles:
                 from app.services.subtitle_generator import generate_ass_subtitles, generate_ass_from_text
 

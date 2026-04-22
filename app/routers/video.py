@@ -1992,7 +1992,7 @@ async def generate_audio_endpoint(
         track_id=0,
         title=req.title or "Vídeo com IA",
         description="",
-        tags=[],
+        tags={"audio_source": "tevoxi", "force_karaoke_two_line": True} if has_tevoxi_audio else [],
         style_prompt=req.style_prompt or "cinematic, vibrant colors, dynamic lighting",
         aspect_ratio=req.aspect_ratio,
         track_title=req.title or ("Vídeo enviado" if has_custom_video else "Áudio Tevoxi" if has_tevoxi_audio else "Áudio enviado" if has_custom_audio else "Narração IA"),
@@ -2356,7 +2356,8 @@ async def generate_audio_endpoint(
 
         pipeline_options = {
             "subtitle_settings": {"y": subtitle_y},
-            "enable_audio_spectrum": bool(req.enable_audio_spectrum),
+            # Tevoxi mode should always render spectrum even if frontend state is stale.
+            "enable_audio_spectrum": bool(use_tevoxi_audio or req.enable_audio_spectrum),
         }
 
         from app.tasks.video_tasks import run_video_pipeline
