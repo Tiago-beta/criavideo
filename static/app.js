@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v183 loaded");
+﻿console.log("[CriaVideo] app.js v184 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -9587,6 +9587,10 @@ const _editor = {
     undoStack: [],
     redoStack: [],
     _nextId: 1,
+    timelineTime: 0,
+    _virtualPlaybackActive: false,
+    _virtualPlaybackRaf: 0,
+    _virtualPlaybackLastTs: 0,
 };
 
 let _editorTimelineDrag = null;
@@ -9742,11 +9746,7 @@ function _editorApplyAspectRatio() {
     if (sel) sel.value = _normalizeAspectValue(_editor.outputAspectRatio);
 
     const video = document.getElementById("editor-video");
-    if (video && !video.paused) {
-        _editorDrawOverlays(video.currentTime);
-    } else {
-        _editorDrawOverlays(video?.currentTime || 0);
-    }
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
 
     _editorRenderMediaLayers();
 }
@@ -9821,6 +9821,89 @@ function _editorGetLayerVideoAppendStart() {
         return Math.max(maxEnd, end);
     }, 0);
     return Math.max(baseEnd, layerVideoEnd);
+}
+
+function _editorStopVirtualTimelinePlayback() {
+    if (_editor._virtualPlaybackRaf) {
+        cancelAnimationFrame(_editor._virtualPlaybackRaf);
+        _editor._virtualPlaybackRaf = 0;
+    }
+    _editor._virtualPlaybackLastTs = 0;
+}
+
+function _editorGetVideoPlaybackEndTime() {
+    const trackEnd = Math.max(0, Number(_editorGetVideoTrackEndTime() || 0));
+    const mediaDuration = Math.max(0, Number(_editor.duration || 0));
+    if (mediaDuration <= 0) return trackEnd;
+    return Math.max(0, Math.min(trackEnd, mediaDuration));
+}
+
+function _editorGetVideoTailAnchorTime() {
+    const video = document.getElementById("editor-video");
+    const mediaDuration = Math.max(0, Number(video?.duration || _editor.duration || 0));
+    const playbackEnd = _editorGetVideoPlaybackEndTime();
+    const anchor = mediaDuration > 0 ? Math.min(playbackEnd, mediaDuration) : playbackEnd;
+    return Math.max(0, anchor - 0.03);
+}
+
+function _editorApplyTimelineFrame(timeSec, shouldPlay = false) {
+    const timelineDuration = _editorGetTimelineDuration();
+    const safeTime = Math.max(0, Math.min(timelineDuration, Number(timeSec || 0)));
+    _editor.timelineTime = safeTime;
+
+    const timeEl = document.getElementById("editor-time-current");
+    if (timeEl) timeEl.textContent = _fmtTime(safeTime);
+
+    _editorMovePlayhead(safeTime);
+    _editorDrawOverlays(safeTime);
+    _editorSyncMusicPreviewPlayback(safeTime, Boolean(shouldPlay));
+    _editorSyncMediaLayersWithTime(safeTime);
+}
+
+function _editorStartVirtualTimelinePlayback(startTime = 0) {
+    _editorStopVirtualTimelinePlayback();
+    _editor._virtualPlaybackActive = true;
+
+    const video = document.getElementById("editor-video");
+    if (video) {
+        video.pause();
+        const anchor = _editorGetVideoTailAnchorTime();
+        if (Math.abs(Number(video.currentTime || 0) - anchor) > 0.05) {
+            try {
+                video.currentTime = anchor;
+            } catch {
+                // Ignore seek errors while metadata is loading.
+            }
+        }
+    }
+
+    _editorApplyTimelineFrame(startTime, _editor.playing);
+
+    if (!_editor.playing) return;
+
+    _editor._virtualPlaybackLastTs = 0;
+    const tick = (ts) => {
+        if (!_editor.playing || !_editor._virtualPlaybackActive) return;
+
+        if (!_editor._virtualPlaybackLastTs) {
+            _editor._virtualPlaybackLastTs = ts;
+        }
+
+        const deltaSec = Math.max(0, (ts - _editor._virtualPlaybackLastTs) / 1000);
+        _editor._virtualPlaybackLastTs = ts;
+
+        const timelineDuration = _editorGetTimelineDuration();
+        const nextTime = Number(_editor.timelineTime || 0) + deltaSec;
+        if (nextTime >= timelineDuration - 0.02) {
+            _editorResetPlaybackToStart();
+            return;
+        }
+
+        _editorApplyTimelineFrame(nextTime, true);
+        _editor._virtualPlaybackRaf = requestAnimationFrame(tick);
+    };
+
+    _editor._virtualPlaybackRaf = requestAnimationFrame(tick);
 }
 
 function _editorGetMusicPreviewAudio() {
@@ -10192,7 +10275,8 @@ function _editorRenderMediaLayers() {
     }).join("");
 
     const video = document.getElementById("editor-video");
-    _editorSyncMediaLayersWithTime(Number(video?.currentTime || 0));
+    const previewTime = Number(_editor.timelineTime || video?.currentTime || 0);
+    _editorSyncMediaLayersWithTime(previewTime);
 }
 
 function _editorSelectMediaLayer(id, renderProps = true) {
@@ -10253,7 +10337,7 @@ function _editorSetMediaLayerVolume(id, val) {
     }
 
     const video = document.getElementById("editor-video");
-    _editorSyncMediaLayersWithTime(Number(video?.currentTime || 0));
+    _editorSyncMediaLayersWithTime(Number(_editor.timelineTime || video?.currentTime || 0));
 }
 window._editorSetMediaLayerVolume = _editorSetMediaLayerVolume;
 
@@ -10279,7 +10363,7 @@ function _editorSetMediaLayerStart(id, val) {
         layer.endTime = Math.min(maxTimeline, layer.endTime);
     }
     _editorRenderTimeline();
-    _editorSyncMediaLayersWithTime(Number(document.getElementById("editor-video")?.currentTime || 0));
+    _editorSyncMediaLayersWithTime(Number(_editor.timelineTime || document.getElementById("editor-video")?.currentTime || 0));
     _editorRenderProps();
 }
 window._editorSetMediaLayerStart = _editorSetMediaLayerStart;
@@ -10292,7 +10376,7 @@ function _editorSetMediaLayerEnd(id, val) {
     layer.endTime = nextEnd;
     layer.startTime = Math.min(layer.startTime, Math.max(0, nextEnd - 0.1));
     _editorRenderTimeline();
-    _editorSyncMediaLayersWithTime(Number(document.getElementById("editor-video")?.currentTime || 0));
+    _editorSyncMediaLayersWithTime(Number(_editor.timelineTime || document.getElementById("editor-video")?.currentTime || 0));
     _editorRenderProps();
 }
 window._editorSetMediaLayerEnd = _editorSetMediaLayerEnd;
@@ -10575,6 +10659,9 @@ async function openEditor(projectId) {
         _editor.undoStack = [];
         _editor.redoStack = [];
         _editor._nextId = 1;
+        _editor.timelineTime = 0;
+        _editor._virtualPlaybackActive = false;
+        _editorStopVirtualTimelinePlayback();
 
         document.getElementById("editor-select-view").hidden = true;
         document.getElementById("editor-workspace").hidden = false;
@@ -10586,12 +10673,14 @@ async function openEditor(projectId) {
         video.onloadedmetadata = () => {
             _editor.duration = video.duration;
             _editorInitVideoSegments();
+            _editor.timelineTime = 0;
             if (!["9:16", "16:9", "1:1"].includes(detail.aspect_ratio)) {
                 _editor.sourceAspectRatio = video.videoWidth >= video.videoHeight ? "16:9" : "9:16";
             }
             _editorApplyAspectRatio();
             _editorRenderMediaLayers();
-            document.getElementById("editor-time-total").textContent = _fmtTime(video.duration);
+            document.getElementById("editor-time-total").textContent = _fmtTime(_editorGetTimelineDuration());
+            _editorApplyTimelineFrame(0, false);
             _editorRefreshQuickActions();
             _editorRenderTimeline();
             _editorSelectTool("text");
@@ -10608,6 +10697,8 @@ function closeEditor() {
     document.getElementById("editor-select-view").hidden = false;
     document.getElementById("editor-workspace").hidden = true;
     const video = document.getElementById("editor-video");
+    _editorStopVirtualTimelinePlayback();
+    _editor._virtualPlaybackActive = false;
     video.pause();
     video.removeAttribute("src");
     _editorSetMusicPreviewSource("");
@@ -10625,6 +10716,7 @@ function closeEditor() {
     _editorRefreshQuickActions();
     _editorRefreshTrackSelectionUI();
     _editor.playing = false;
+    _editor.timelineTime = 0;
 }
 
 // ---------- Format time ----------
@@ -10639,30 +10731,54 @@ function _fmtTime(sec) {
 function _editorTogglePlay() {
     const video = document.getElementById("editor-video");
     if (!video.src) return;
-    if (video.paused) {
-        const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
-        const first = sorted[0];
-        if (first && video.currentTime < first.start) {
-            video.currentTime = first.start;
-        }
-        if (sorted.length) {
-            const inSegment = sorted.some(seg => video.currentTime >= seg.start && video.currentTime <= seg.end);
-            if (!inSegment) {
-                const next = sorted.find(seg => seg.start > video.currentTime);
-                video.currentTime = (next || sorted[0]).start;
-            }
-        }
-        _editorSetMusicPreviewSource(_editor.musicUrl || "");
-        video.play();
-        _editor.playing = true;
-        _editorSyncMusicPreviewPlayback(video.currentTime, true);
-        _editorSyncMediaLayersWithTime(video.currentTime);
-    } else {
-        video.pause();
+
+    if (_editor.playing) {
         _editor.playing = false;
-        _editorSyncMusicPreviewPlayback(video.currentTime, false);
-        _editorSyncMediaLayersWithTime(video.currentTime);
+        _editorStopVirtualTimelinePlayback();
+        video.pause();
+        _editorApplyTimelineFrame(_editor.timelineTime || video.currentTime || 0, false);
+        _updatePlayIcon();
+        return;
     }
+
+    const timelineDuration = _editorGetTimelineDuration();
+    let startTime = Number(_editor.timelineTime || video.currentTime || 0);
+    if (startTime >= timelineDuration - 0.02) {
+        startTime = 0;
+    }
+
+    const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
+    if (sorted.length && startTime <= _editorGetVideoPlaybackEndTime() + 0.01) {
+        const first = sorted[0];
+        if (first && startTime < first.start) {
+            startTime = first.start;
+        }
+        const inSegment = sorted.some(seg => startTime >= seg.start && startTime <= seg.end);
+        if (!inSegment) {
+            const next = sorted.find(seg => seg.start > startTime);
+            startTime = (next || sorted[0]).start;
+        }
+    }
+
+    _editorSetMusicPreviewSource(_editor.musicUrl || "");
+    _editor.playing = true;
+
+    const videoPlaybackEnd = _editorGetVideoPlaybackEndTime();
+    if (startTime > videoPlaybackEnd + 0.01) {
+        _editorStartVirtualTimelinePlayback(startTime);
+    } else {
+        _editor._virtualPlaybackActive = false;
+        _editorStopVirtualTimelinePlayback();
+        video.currentTime = startTime;
+        const playPromise = video.play();
+        if (playPromise?.catch) {
+            playPromise.catch(() => {
+                // Ignore autoplay interruptions in preview.
+            });
+        }
+        _editorApplyTimelineFrame(startTime, true);
+    }
+
     _updatePlayIcon();
 }
 
@@ -10679,30 +10795,33 @@ function _editorResetPlaybackToStart() {
     const video = document.getElementById("editor-video");
     if (!video) return;
 
+    _editorStopVirtualTimelinePlayback();
+    _editor._virtualPlaybackActive = false;
     video.pause();
     video.currentTime = 0;
     _editor.playing = false;
-    _editorSyncMusicPreviewPlayback(0, false);
+    _editorApplyTimelineFrame(0, false);
     _updatePlayIcon();
-
-    document.getElementById("editor-time-current").textContent = _fmtTime(0);
-    _editorMovePlayhead(0);
-    _editorDrawOverlays(0);
-    _editorSyncMediaLayersWithTime(0);
 }
 
 // ---------- Time update ----------
 function _editorTimeUpdate() {
     const video = document.getElementById("editor-video");
-    const t = video.currentTime;
-    document.getElementById("editor-time-current").textContent = _fmtTime(t);
+    if (!video || _editor._virtualPlaybackActive) return;
+
+    let t = Number(video.currentTime || 0);
 
     // Enforce segment boundaries: skip removed gaps and stop after last segment.
     if (_editor.videoSegments.length) {
         const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
         const last = sorted[sorted.length - 1];
-        if (last && t >= (last.end - 0.02)) {
-            _editorResetPlaybackToStart();
+        if (_editor.playing && last && t >= (last.end - 0.02)) {
+            const timelineDuration = _editorGetTimelineDuration();
+            if (timelineDuration > Number(last.end || 0) + 0.02) {
+                _editorStartVirtualTimelinePlayback(Number(last.end || t));
+            } else {
+                _editorResetPlaybackToStart();
+            }
             return;
         }
 
@@ -10712,21 +10831,23 @@ function _editorTimeUpdate() {
                 const next = sorted.find(seg => seg.start > t);
                 if (next) {
                     video.currentTime = next.start;
-                    _editorSyncMusicPreviewPlayback(next.start, true);
+                    t = next.start;
+                    _editorApplyTimelineFrame(t, true);
                     return;
                 }
             }
         }
-    } else if (_editor.trimEnd > 0 && t >= _editor.trimEnd) {
-        _editorResetPlaybackToStart();
+    } else if (_editor.playing && _editor.trimEnd > 0 && t >= _editor.trimEnd) {
+        const timelineDuration = _editorGetTimelineDuration();
+        if (timelineDuration > _editor.trimEnd + 0.02) {
+            _editorStartVirtualTimelinePlayback(_editor.trimEnd);
+        } else {
+            _editorResetPlaybackToStart();
+        }
         return;
     }
-    // Move playhead
-    _editorMovePlayhead(t);
-    // Draw overlays
-    _editorDrawOverlays(t);
-    _editorSyncMusicPreviewPlayback(t, _editor.playing && !video.paused);
-    _editorSyncMediaLayersWithTime(t);
+
+    _editorApplyTimelineFrame(t, _editor.playing && !video.paused);
 }
 
 function _editorMovePlayhead(t) {
@@ -10763,14 +10884,43 @@ function _editorSeekByClientX(clientX) {
     const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
     const pct = rect.width > 0 ? (x / rect.width) : 0;
     const rawTime = pct * timelineDuration;
-    const nextTime = _editorClampToVideoSegments(rawTime);
+    const videoPlaybackEnd = _editorGetVideoPlaybackEndTime();
 
-    video.currentTime = nextTime;
-    document.getElementById("editor-time-current").textContent = _fmtTime(nextTime);
-    _editorMovePlayhead(nextTime);
-    _editorDrawOverlays(nextTime);
-    _editorSyncMusicPreviewPlayback(nextTime, _editor.playing && !video.paused);
-    _editorSyncMediaLayersWithTime(nextTime);
+    if (rawTime <= videoPlaybackEnd + 0.01) {
+        const nextTime = _editorClampToVideoSegments(rawTime);
+        _editorStopVirtualTimelinePlayback();
+        _editor._virtualPlaybackActive = false;
+        video.currentTime = nextTime;
+        if (_editor.playing && video.paused) {
+            const playPromise = video.play();
+            if (playPromise?.catch) {
+                playPromise.catch(() => {
+                    // Ignore autoplay interruptions in preview.
+                });
+            }
+        }
+        _editorApplyTimelineFrame(nextTime, _editor.playing && !video.paused);
+        return;
+    }
+
+    const nextTime = Math.max(0, Math.min(timelineDuration, rawTime));
+    if (_editor.playing) {
+        _editorStartVirtualTimelinePlayback(nextTime);
+        return;
+    }
+
+    _editorStopVirtualTimelinePlayback();
+    _editor._virtualPlaybackActive = true;
+    video.pause();
+    const anchor = _editorGetVideoTailAnchorTime();
+    if (Math.abs(Number(video.currentTime || 0) - anchor) > 0.05) {
+        try {
+            video.currentTime = anchor;
+        } catch {
+            // Ignore seek errors while metadata is loading.
+        }
+    }
+    _editorApplyTimelineFrame(nextTime, false);
 }
 
 function _editorStartTimelineScrub(event) {
@@ -11405,7 +11555,7 @@ function _editorSubtitleEditForm() {
 function _editorAddText() {
     _editorSaveState();
     const video = document.getElementById("editor-video");
-    const t = video?.currentTime || 0;
+    const t = Number(_editor.timelineTime || video?.currentTime || 0);
     _editor.texts.forEach(x => x._selected = false);
     const newText = {
         id: _editorGenId(), content: "Seu texto aqui", startTime: t, endTime: Math.min(t + 5, _editor.duration),
@@ -11445,7 +11595,7 @@ function _editorUpdateTextProp(id, prop, val) {
     t[prop] = val;
     // Re-render the form parts without full rebuild to avoid losing focus
     const video = document.getElementById("editor-video");
-    if (video) _editorDrawOverlays(video.currentTime);
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
     _editorRenderTimeline();
 }
 window._editorUpdateTextProp = _editorUpdateTextProp;
@@ -11454,7 +11604,7 @@ window._editorUpdateTextProp = _editorUpdateTextProp;
 function _editorAddSubtitle() {
     _editorSaveState();
     const video = document.getElementById("editor-video");
-    const t = video?.currentTime || 0;
+    const t = Number(_editor.timelineTime || video?.currentTime || 0);
     _editor.subtitles.forEach(x => x._selected = false);
     const defStyle = SUBTITLE_STYLES[0];
     const newSub = {
@@ -11635,7 +11785,7 @@ function _editorUpdateSubProp(id, prop, val) {
     if (!s) return;
     s[prop] = val;
     const video = document.getElementById("editor-video");
-    if (video) _editorDrawOverlays(video.currentTime);
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
     _editorRenderTimeline();
 }
 window._editorUpdateSubProp = _editorUpdateSubProp;
@@ -11647,7 +11797,7 @@ function _editorSetSubtitlesY(val, noRender = false) {
     const yLabel = document.getElementById("editor-sub-global-y-value");
     if (yLabel) yLabel.textContent = `${targetY}%`;
     const video = document.getElementById("editor-video");
-    if (video) _editorDrawOverlays(video.currentTime);
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
     _editorRenderTimeline();
     if (!noRender) _editorRenderProps();
 }
@@ -11667,7 +11817,7 @@ function _editorSetSubtitlesFontSize(val, noRender = false) {
     const sizeLabel = document.getElementById("editor-sub-global-size-value");
     if (sizeLabel) sizeLabel.textContent = `${targetSize}px`;
     const video = document.getElementById("editor-video");
-    if (video) _editorDrawOverlays(video.currentTime);
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
     _editorRenderTimeline();
     if (!noRender) _editorRenderProps();
 }
@@ -11847,7 +11997,8 @@ function _editorSetMusicVolume(val) {
     const trimLabel = document.getElementById("editor-track-vol-label-audio");
     if (trimLabel) trimLabel.textContent = _editor.musicVolume + "%";
     const video = document.getElementById("editor-video");
-    _editorSyncMusicPreviewPlayback(Number(video?.currentTime || 0), _editor.playing && !!video && !video.paused);
+    const previewTime = Number(_editor.timelineTime || video?.currentTime || 0);
+    _editorSyncMusicPreviewPlayback(previewTime, _editor.playing && !!video && !video.paused);
 }
 window._editorSetMusicVolume = _editorSetMusicVolume;
 
@@ -11888,7 +12039,7 @@ window._editorSetFilter = _editorSetFilter;
 function _editorAddSticker(emoji) {
     _editorSaveState();
     const video = document.getElementById("editor-video");
-    const t = video?.currentTime || 0;
+    const t = Number(_editor.timelineTime || video?.currentTime || 0);
     const newSticker = {
         id: _editorGenId(), emoji, x: 50, y: 30, startTime: t, endTime: Math.min(t + 4, _editor.duration), size: 48,
     };
@@ -12111,6 +12262,9 @@ function _editorRenderTimeline() {
     }
     ruler.innerHTML = rulerHtml;
 
+    const totalTimeEl = document.getElementById("editor-time-total");
+    if (totalTimeEl) totalTimeEl.textContent = _fmtTime(dur);
+
     _editorRefreshQuickActions();
 }
 
@@ -12285,7 +12439,7 @@ function _editorDeleteSelectedClip() {
     _editorRenderTimeline();
     _editorRenderMediaLayers();
     const video = document.getElementById("editor-video");
-    if (video) _editorDrawOverlays(video.currentTime);
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
 }
 window._editorDeleteSelectedClip = _editorDeleteSelectedClip;
 
@@ -12434,9 +12588,18 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
     const frozenClipRect = clipEl?.getBoundingClientRect?.() || null;
 
     _editorSelectTimelineClip(kind, id, false, track);
-    if (!_editorTimelineCanDrag(kind) || !_editor.duration || !trackEl) return false;
+    if (!_editorTimelineCanDrag(kind) || !trackEl) return false;
+    if (kind !== "media-layer" && !_editor.duration) return false;
     const range = _editorGetTimelineRange(kind, id, track);
     if (!range) return false;
+
+    const baseSpan = Math.max(0.1, range.end - range.start);
+    const timelineDuration = _editorGetTimelineDuration();
+    const extendedLayerDuration = Math.max(
+        timelineDuration,
+        range.end,
+        timelineDuration + baseSpan + 30
+    );
 
     let mode = "move";
     if (_editorTimelineCanResize(kind) && frozenClipRect) {
@@ -12456,7 +12619,7 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
         mode,
         startX: event.clientX,
         trackWidth: stableTrackWidth,
-        duration: kind === "media-layer" ? _editorGetTimelineDuration() : Math.max(_editor.duration, 0.1),
+        duration: kind === "media-layer" ? extendedLayerDuration : Math.max(_editor.duration, 0.1),
         baseStart: range.start,
         baseEnd: range.end,
         minDuration: kind === "sticker" ? 0.5 : 0.2,
@@ -12502,10 +12665,11 @@ function _editorOnTimelineDragMove(event) {
     _editorApplyDraggedRange(drag.kind, drag.id, nextStart, nextEnd, drag.track);
     _editorRenderTimeline();
     const video = document.getElementById("editor-video");
+    const previewTime = Number(_editor.timelineTime || video?.currentTime || 0);
     if (video) {
-        _editorDrawOverlays(video.currentTime);
+        _editorDrawOverlays(previewTime);
         if (drag.kind === "media-layer") {
-            _editorSyncMediaLayersWithTime(video.currentTime);
+            _editorSyncMediaLayersWithTime(previewTime);
         }
     }
 }
@@ -12708,6 +12872,12 @@ function _bindEditorEvents() {
     if (video) {
         video.addEventListener("timeupdate", _editorTimeUpdate);
         video.addEventListener("ended", () => {
+            if (!_editor.playing) return;
+            const videoPlaybackEnd = _editorGetVideoPlaybackEndTime();
+            if (_editorGetTimelineDuration() > videoPlaybackEnd + 0.02) {
+                _editorStartVirtualTimelinePlayback(videoPlaybackEnd);
+                return;
+            }
             _editorResetPlaybackToStart();
         });
     }
