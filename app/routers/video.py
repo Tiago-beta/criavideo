@@ -115,6 +115,19 @@ def _normalize_interaction_persona(value: str) -> str:
     return "natureza"
 
 
+def _normalize_wan_duration_seconds(value: int) -> int:
+    """Ultra High (Wan 2.2) works in 8-second blocks.
+
+    The realistic UI now offers multiples of 8s up to 56s. This helper keeps
+    API behavior consistent for older clients that still send legacy values.
+    """
+    raw = max(1, int(value or 0))
+    if raw <= 8:
+        return 8
+    capped = min(raw, 56)
+    return max(8, (capped // 8) * 8)
+
+
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
     persona = _normalize_interaction_persona(interaction_persona)
     if persona == "homem":
@@ -2311,7 +2324,7 @@ class GenerateRealisticPromptRequest(BaseModel):
     topic: str
     style: str = "cinematic"
     engine: str = "wan2"
-    duration: int = 10
+    duration: int = 8
     interaction_persona: str = "natureza"
     has_reference_image: bool = False
 
@@ -2329,8 +2342,12 @@ async def generate_realistic_prompt_endpoint(
         raise HTTPException(status_code=400, detail="Tema muito longo (máximo 2000 caracteres).")
 
     engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
-    max_dur = 60 if engine == "grok" else 10
-    duration = max(1, min(int(req.duration or 10), max_dur))
+    if engine == "grok":
+        duration = max(1, min(int(req.duration or 10), 60))
+    elif engine == "wan2":
+        duration = _normalize_wan_duration_seconds(int(req.duration or 8))
+    else:
+        duration = max(1, min(int(req.duration or 10), 10))
     interaction_persona = _normalize_interaction_persona(req.interaction_persona)
     prompt_for_optimizer = _ensure_reference_image_instruction(topic) if req.has_reference_image else topic
     prompt_for_optimizer = _inject_interaction_persona_instruction(prompt_for_optimizer, interaction_persona)
@@ -2368,7 +2385,7 @@ async def generate_realistic_prompt_endpoint(
 
 class GenerateRealisticRequest(BaseModel):
     prompt: str
-    duration: int = 7
+    duration: int = 8
     aspect_ratio: str = "16:9"
     generate_audio: bool = True
     add_music: bool = True
@@ -2410,8 +2427,12 @@ async def generate_realistic_endpoint(
         raise HTTPException(status_code=400, detail="Descrição muito longa (máximo 5000 caracteres).")
 
     engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
-    max_dur = 60 if engine == "grok" else 10
-    duration = max(1, min(req.duration, max_dur))
+    if engine == "grok":
+        duration = max(1, min(int(req.duration or 10), 60))
+    elif engine == "wan2":
+        duration = _normalize_wan_duration_seconds(int(req.duration or 8))
+    else:
+        duration = max(1, min(int(req.duration or 10), 10))
 
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
         raise HTTPException(status_code=400, detail="Formato inválido. Use 16:9, 9:16 ou 1:1.")
@@ -2561,9 +2582,14 @@ async def generate_realistic_endpoint(
             "Preserve each face identity and visual traits without merging faces into one person."
         )
 
-    # Credit check — multi-clip costs more (1 credit per 15s segment)
+    # Credit check — multi-clip costs more (Grok=15s blocks, Wan=8s blocks)
     from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
-    num_clips = -(-duration // 15) if engine == "grok" and duration > 15 else 1
+    if engine == "grok" and duration > 15:
+        num_clips = -(-duration // 15)
+    elif engine == "wan2" and duration > 8:
+        num_clips = -(-duration // 8)
+    else:
+        num_clips = 1
     credits_needed = CREDITS_PER_MINUTE * num_clips
     await deduct_credits(db, user["id"], credits_needed)
 
