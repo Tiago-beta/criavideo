@@ -372,6 +372,10 @@ class ExportRequest(BaseModel):
     media_layers: list[MediaLayerEntry] = []
 
 
+class AddLayerVideoFromLibraryRequest(BaseModel):
+    project_id: int
+
+
 # ── Upload music ──────────────────────────────────────
 @router.post("/upload-music")
 async def upload_music(
@@ -590,6 +594,65 @@ async def upload_layer_video(
         "width": width,
         "height": height,
         "name": Path(file.filename or "Camada vídeo").stem,
+    }
+
+
+@router.post("/add-layer-video-from-library")
+async def add_layer_video_from_library(
+    req: AddLayerVideoFromLibraryRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(VideoProject)
+        .options(selectinload(VideoProject.renders))
+        .where(VideoProject.id == req.project_id, VideoProject.user_id == user["id"])
+    )
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(404, "Vídeo não encontrado na sua biblioteca")
+
+    ordered_renders = sorted(
+        list(project.renders or []),
+        key=lambda render: (render.id or 0),
+        reverse=True,
+    )
+    latest_render = next((render for render in ordered_renders if render.file_path), None)
+    if not latest_render:
+        raise HTTPException(400, "Este projeto não possui render disponível")
+
+    src_video = _resolve_render_video_path(latest_render)
+    if not src_video or not os.path.exists(src_video):
+        src_video = _fallback_project_video_path(project.id)
+    if not src_video or not os.path.exists(src_video):
+        raise HTTPException(400, "Arquivo do vídeo original não foi encontrado")
+
+    max_size = 500 * 1024 * 1024
+    src_size = os.path.getsize(src_video)
+    if src_size <= 0:
+        raise HTTPException(400, "Arquivo de vídeo da biblioteca está vazio")
+    if src_size > max_size:
+        raise HTTPException(400, "Vídeo da biblioteca muito grande (max 500MB)")
+
+    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "layers" / "videos"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = Path(src_video).suffix.lower() or ".mp4"
+    filename = f"layer_video_lib_{project.id}_{uuid.uuid4().hex[:10]}{ext}"
+    dest = upload_dir / filename
+    shutil.copy2(src_video, dest)
+
+    duration, _ = _probe_video_metadata(str(dest))
+    width, height = _probe_media_dimensions(str(dest))
+    title = (project.title or project.track_title or f"Projeto {project.id}").strip()
+
+    return {
+        "path": str(dest),
+        "media_url": _to_media_url(str(dest)),
+        "duration": duration,
+        "width": width,
+        "height": height,
+        "name": title[:120] if title else "Vídeo da biblioteca",
     }
 
 

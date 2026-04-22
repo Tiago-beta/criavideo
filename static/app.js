@@ -9705,6 +9705,13 @@ let _editorTimelineScrub = null;
 let _editorMediaLayerDrag = null;
 let _editorMusicPreviewAudio = null;
 let _editorMusicPreviewWarned = false;
+let _editorLayerLibrary = {
+    open: false,
+    loading: false,
+    error: "",
+    items: [],
+    addingProjectId: 0,
+};
 
 function _editorGenId() { return _editor._nextId++; }
 
@@ -10150,6 +10157,7 @@ function _editorToggleTrackSelection(track) {
 
 function _editorRefreshTrackSelectionUI() {
     const insertTrack = String(_editor.selectedInsertTrack || "");
+    const insertTrackForUi = insertTrack === "layer-video" ? "video" : insertTrack;
     document.querySelectorAll(".editor-track").forEach(trackEl => {
         const track = trackEl.dataset.track || "";
         trackEl.classList.remove("track-targeted", "track-not-targeted", "track-insert-selected");
@@ -10162,7 +10170,7 @@ function _editorRefreshTrackSelectionUI() {
             }
         }
 
-        if (track && insertTrack && track === insertTrack) {
+        if (track && insertTrackForUi && track === insertTrackForUi) {
             trackEl.classList.add("track-insert-selected");
         }
     });
@@ -10257,6 +10265,151 @@ window._editorUploadVideo = _editorUploadVideo;
 function _editorGetMediaLayerById(id) {
     return _editor.mediaLayers.find(layer => String(layer.id) === String(id)) || null;
 }
+
+function _editorResetLayerLibraryState() {
+    _editorLayerLibrary = {
+        open: false,
+        loading: false,
+        error: "",
+        items: [],
+        addingProjectId: 0,
+    };
+}
+
+function _editorCloseLayerVideoLibrary() {
+    _editorResetLayerLibraryState();
+    document.getElementById("editor-layer-library-overlay")?.remove();
+}
+window._editorCloseLayerVideoLibrary = _editorCloseLayerVideoLibrary;
+
+function _editorRenderLayerVideoLibraryModal() {
+    const existing = document.getElementById("editor-layer-library-overlay");
+    if (!_editorLayerLibrary.open) {
+        if (existing) existing.remove();
+        return;
+    }
+
+    const loadingHtml = '<div class="editor-layer-library-loading">Carregando vídeos da biblioteca...</div>';
+    const errorHtml = _editorLayerLibrary.error
+        ? `<div class="editor-layer-library-error">${esc(_editorLayerLibrary.error)}</div>`
+        : "";
+    const emptyHtml = '<div class="editor-layer-library-empty">Nenhum vídeo finalizado disponível na biblioteca.</div>';
+
+    const cardsHtml = (_editorLayerLibrary.items || []).map((item) => {
+        const pid = Number(item.id || 0);
+        const isAdding = Number(_editorLayerLibrary.addingProjectId || 0) === pid;
+        const title = esc(String(item.title || item.track_title || `Projeto ${pid}`));
+        const thumb = item.thumbnail_url
+            ? `<img class="editor-layer-library-thumb" src="${item.thumbnail_url}" alt="${title}" loading="lazy">`
+            : '<div class="editor-layer-library-thumb placeholder">Sem thumbnail</div>';
+        return `
+            <div class="editor-layer-library-card">
+                ${thumb}
+                <div class="editor-layer-library-meta">
+                    <strong>${title}</strong>
+                    <span>Projeto #${pid}</span>
+                </div>
+                <button
+                    class="editor-add-btn"
+                    type="button"
+                    onclick="_editorAddLayerVideoFromLibrary(${pid})"
+                    ${isAdding ? "disabled" : ""}
+                >
+                    ${isAdding ? "Adicionando..." : "Adicionar"}
+                </button>
+            </div>
+        `;
+    }).join("");
+
+    const bodyHtml = _editorLayerLibrary.loading
+        ? loadingHtml
+        : (_editorLayerLibrary.items.length ? cardsHtml : emptyHtml);
+
+    const overlayHtml = `
+        <div class="editor-layer-library-backdrop" onclick="_editorCloseLayerVideoLibrary()"></div>
+        <div class="editor-layer-library-modal" role="dialog" aria-modal="true" aria-label="Biblioteca de vídeos">
+            <div class="editor-layer-library-header">
+                <h3>Biblioteca de vídeos</h3>
+                <button class="editor-layer-library-close" type="button" onclick="_editorCloseLayerVideoLibrary()">×</button>
+            </div>
+            ${errorHtml}
+            <div class="editor-layer-library-list">${bodyHtml}</div>
+        </div>
+    `;
+
+    if (!existing) {
+        const wrapper = document.createElement("div");
+        wrapper.id = "editor-layer-library-overlay";
+        wrapper.className = "editor-layer-library-overlay";
+        wrapper.innerHTML = overlayHtml;
+        document.body.appendChild(wrapper);
+        return;
+    }
+
+    existing.innerHTML = overlayHtml;
+}
+
+async function _editorOpenLayerVideoLibrary() {
+    if (!_editor.projectId) {
+        showToast("Abra um projeto no editor antes de usar a biblioteca.", "error");
+        return;
+    }
+
+    _editorLayerLibrary.open = true;
+    _editorLayerLibrary.loading = true;
+    _editorLayerLibrary.error = "";
+    _editorLayerLibrary.items = [];
+    _editorLayerLibrary.addingProjectId = 0;
+    _editorRenderLayerVideoLibraryModal();
+
+    try {
+        const projects = await api("/video/projects");
+        const items = Array.isArray(projects)
+            ? projects.filter((project) => {
+                const status = String(project?.status || "").toLowerCase();
+                const expired = Boolean(project?.video_expired);
+                const sameProject = Number(project?.id || 0) === Number(_editor.projectId || 0);
+                return status === "completed" && !expired && !sameProject;
+            })
+            : [];
+        _editorLayerLibrary.items = items;
+    } catch (err) {
+        _editorLayerLibrary.error = err?.message || "Falha ao carregar biblioteca";
+    } finally {
+        _editorLayerLibrary.loading = false;
+        _editorRenderLayerVideoLibraryModal();
+    }
+}
+window._editorOpenLayerVideoLibrary = _editorOpenLayerVideoLibrary;
+
+async function _editorAddLayerVideoFromLibrary(projectId) {
+    const pid = Number(projectId || 0);
+    if (!pid) return;
+    if (_editorLayerLibrary.addingProjectId) return;
+
+    try {
+        _editorLayerLibrary.addingProjectId = pid;
+        _editorRenderLayerVideoLibraryModal();
+
+        _editorSaveState();
+        const payload = await api("/video/editor/add-layer-video-from-library", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project_id: pid }),
+        });
+
+        _editorPushMediaLayer("video", payload, { appendToTrack: true });
+        _editorRenderTimeline();
+        _editorRenderMediaLayers();
+        _editorCloseLayerVideoLibrary();
+        showToast("Vídeo da biblioteca adicionado no fim da faixa.", "success");
+    } catch (err) {
+        _editorLayerLibrary.addingProjectId = 0;
+        _editorRenderLayerVideoLibraryModal();
+        showToast("Erro ao adicionar vídeo da biblioteca: " + (err?.message || "erro desconhecido"), "error");
+    }
+}
+window._editorAddLayerVideoFromLibrary = _editorAddLayerVideoFromLibrary;
 
 function _editorNormalizeMediaLayer(layer) {
     const aspect = Math.max(0.2, Number(layer.aspectRatio || 1));
@@ -10803,6 +10956,7 @@ window.openEditor = openEditor;
 function closeEditor() {
     document.getElementById("editor-select-view").hidden = false;
     document.getElementById("editor-workspace").hidden = true;
+    _editorCloseLayerVideoLibrary();
     const video = document.getElementById("editor-video");
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = false;
@@ -11454,9 +11608,12 @@ function _editorRenderProps() {
         container.innerHTML = `
             <div class="editor-props-title">Camadas</div>
             <div class="editor-props-group" style="margin-top:12px">
-                <div style="display:grid;gap:8px;grid-template-columns:repeat(2,minmax(0,1fr))">
+                <div style="display:grid;gap:8px;grid-template-columns:repeat(3,minmax(0,1fr))">
                     <button class="editor-add-btn" type="button" onclick="document.getElementById('editor-layer-video-upload-input').click()">
                         + Video
+                    </button>
+                    <button class="editor-add-btn" type="button" onclick="_editorOpenLayerVideoLibrary()">
+                        Biblioteca
                     </button>
                     <button class="editor-add-btn" type="button" onclick="document.getElementById('editor-layer-image-upload-input').click()">
                         + Imagem
@@ -11472,7 +11629,7 @@ function _editorRenderProps() {
                             </div>
                         `).join("")}
                     </div>
-                ` : '<p style="margin-top:8px;font-size:11px;color:var(--text-muted)">Envie video/imagem para adicionar uma camada acima do video base.</p>'}
+                ` : '<p style="margin-top:8px;font-size:11px;color:var(--text-muted)">Envie vídeo/imagem ou escolha da Biblioteca para adicionar na mesma faixa.</p>'}
             </div>
 
             ${selectedLayer ? `
@@ -12222,7 +12379,7 @@ function _editorRenderTimeline() {
     const rows = [];
 
     _editorSortSegments("video");
-    const videoClips = _editor.videoSegments.map((seg, idx) => {
+    const baseVideoClips = _editor.videoSegments.map((seg, idx) => {
         const segStart = Math.max(0, Math.min(Number(seg.start || 0), dur));
         const segEnd = Math.max(segStart + 0.05, Math.min(Number(seg.end || 0), dur));
         const startPct = (segStart / dur) * 100;
@@ -12230,6 +12387,22 @@ function _editorRenderTimeline() {
         const selectedClass = selectedKind === "segment" && selectedTrack === "video" && selectedId === String(seg.id) ? " selected" : "";
         return `<div class="editor-track-clip clip-video${selectedClass}" data-kind="segment" data-track="video" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Video ${idx + 1}</div>`;
     }).join("");
+
+    const layerVideoClips = _editor.mediaLayers.map((layer, idx) => {
+        const start = Math.max(0, Math.min(Number(layer.startTime || 0), dur));
+        const maxLayerEnd = layer.kind === "video" && Number(layer.duration || 0) > 0
+            ? start + Number(layer.duration || 0)
+            : dur;
+        const requestedEnd = Number(layer.endTime || dur);
+        const end = Math.max(start + 0.05, Math.min(dur, Math.min(requestedEnd, maxLayerEnd)));
+        const left = (start / dur) * 100;
+        const width = Math.max(0.5, ((end - start) / dur) * 100);
+        const selectedClass = selectedKind === "media-layer" && selectedId === String(layer.id) ? " selected" : "";
+        const label = layer.kind === "video" ? `Video ${idx + 1}` : `Imagem ${idx + 1}`;
+        return `<div class="editor-track-clip clip-media${selectedClass}" data-kind="media-layer" data-track="layer-video" data-id="${layer.id}" style="left:${left}%;width:${width}%">${label}</div>`;
+    }).join("");
+
+    const videoClips = `${baseVideoClips}${layerVideoClips}`;
     rows.push({
         track: "video",
         kind: "video",
@@ -12258,30 +12431,6 @@ function _editorRenderTimeline() {
             contentId: "editor-track-audio",
             label: "Audio",
             clipsHtml: audioClips,
-        });
-    }
-
-    if (_editor.mediaLayers.length) {
-        const mediaClips = _editor.mediaLayers.map((layer, idx) => {
-            const start = Math.max(0, Math.min(Number(layer.startTime || 0), dur));
-            const maxLayerEnd = layer.kind === "video" && Number(layer.duration || 0) > 0
-                ? start + Number(layer.duration || 0)
-                : dur;
-            const requestedEnd = Number(layer.endTime || dur);
-            const end = Math.max(start + 0.05, Math.min(dur, Math.min(requestedEnd, maxLayerEnd)));
-            const left = (start / dur) * 100;
-            const width = Math.max(0.5, ((end - start) / dur) * 100);
-            const selectedClass = selectedKind === "media-layer" && selectedId === String(layer.id) ? " selected" : "";
-            const label = layer.kind === "video" ? `Video ${idx + 1}` : `Imagem ${idx + 1}`;
-            return `<div class="editor-track-clip clip-media${selectedClass}" data-kind="media-layer" data-track="layer-video" data-id="${layer.id}" style="left:${left}%;width:${width}%">${label}</div>`;
-        }).join("");
-
-        rows.push({
-            track: "layer-video",
-            kind: "media-layer",
-            label: "Camadas",
-            contentId: "editor-track-layer-video",
-            clipsHtml: mediaClips,
         });
     }
 
@@ -12739,6 +12888,54 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
     return true;
 }
 
+function _editorSnapMediaLayerMove(layerId, start, end, timelineDuration) {
+    const span = Math.max(0.1, Number(end || 0) - Number(start || 0));
+    const safeDuration = Math.max(span, Number(timelineDuration || span));
+    const edges = [0];
+
+    _editor.videoSegments.forEach((seg) => {
+        edges.push(Number(seg.start || 0));
+        edges.push(Number(seg.end || 0));
+    });
+
+    _editor.mediaLayers.forEach((layer) => {
+        if (String(layer.id) === String(layerId)) return;
+        edges.push(Number(layer.startTime || 0));
+        edges.push(Number(layer.endTime || 0));
+    });
+
+    const snapWindow = Math.max(0.08, Math.min(0.35, span * 0.12));
+    let bestOffset = null;
+
+    edges.forEach((edge) => {
+        if (!Number.isFinite(edge)) return;
+        const offsetStart = edge - start;
+        if (Math.abs(offsetStart) <= snapWindow) {
+            if (bestOffset === null || Math.abs(offsetStart) < Math.abs(bestOffset)) {
+                bestOffset = offsetStart;
+            }
+        }
+
+        const offsetEnd = edge - end;
+        if (Math.abs(offsetEnd) <= snapWindow) {
+            if (bestOffset === null || Math.abs(offsetEnd) < Math.abs(bestOffset)) {
+                bestOffset = offsetEnd;
+            }
+        }
+    });
+
+    let snappedStart = start;
+    if (bestOffset !== null) {
+        snappedStart = start + bestOffset;
+    }
+
+    const clampedStart = Math.max(0, Math.min(Math.max(0, safeDuration - span), snappedStart));
+    return {
+        start: clampedStart,
+        end: clampedStart + span,
+    };
+}
+
 function _editorOnTimelineDragMove(event) {
     if (!_editorTimelineDrag) return;
 
@@ -12759,6 +12956,12 @@ function _editorOnTimelineDragMove(event) {
         const maxStart = Math.max(0, drag.duration - baseSpan);
         nextStart = Math.max(0, Math.min(maxStart, drag.baseStart + deltaSec));
         nextEnd = nextStart + baseSpan;
+
+        if (drag.kind === "media-layer") {
+            const snapped = _editorSnapMediaLayerMove(drag.id, nextStart, nextEnd, drag.duration);
+            nextStart = snapped.start;
+            nextEnd = snapped.end;
+        }
     }
 
     if (Math.abs(dx) > 1) {
