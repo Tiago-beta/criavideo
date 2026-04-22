@@ -4,6 +4,7 @@ Video Router — Endpoints for creating video projects, generating scenes/render
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import uuid
@@ -64,6 +65,22 @@ _REFERENCE_IMAGE_HINT_MARKERS = (
     "foto enviada",
 )
 _INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"}
+_NON_VISUAL_BRIEFING_MARKERS = (
+    "regra obrigatoria",
+    "imagem de referencia",
+    "inclua um homem em cena",
+    "inclua uma mulher em cena",
+    "inclua uma crianca em cena",
+    "inclua uma familia",
+    "inclua obrigatoriamente",
+    "persona personalizada",
+    "priorize natureza viva",
+    "elemento visual de conexao",
+)
+_SCENE_RANGE_ONLY_RE = re.compile(r"^(?P<start>\d+\.\d)s\s*-\s*(?P<end>\d+\.\d)s$")
+_DIALOGUE_TIMING_LINE_RE = re.compile(
+    r"^(?P<start>\d+\.\d)s\s*-\s*(?P<end>\d+\.\d)s\s*\|\s*Speaker:\s*(?P<speaker>.+)$"
+)
 
 
 def _ensure_reference_image_instruction(prompt: str) -> str:
@@ -149,6 +166,245 @@ def _inject_interaction_persona_instruction(prompt: str, interaction_persona: st
         return base_prompt
 
     return f"{base_prompt}\n\n{instruction}"
+
+
+def _strip_non_visual_briefing_directives(briefing: str) -> str:
+    raw = (briefing or "").strip()
+    if not raw:
+        return ""
+
+    cleaned_lines: list[str] = []
+    for line in raw.splitlines():
+        candidate = line.strip()
+        if not candidate:
+            continue
+        lowered = re.sub(r"\s+", " ", candidate.lower())
+        if any(marker in lowered for marker in _NON_VISUAL_BRIEFING_MARKERS):
+            continue
+        cleaned_lines.append(candidate)
+
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(cleaned_lines)).strip()
+    if cleaned:
+        return cleaned
+    return "Create a realistic cinematic sequence with clear visual continuity and emotional progression."
+
+
+def _build_continuous_time_ranges(total_duration: int, block_count: int) -> list[tuple[float, float]]:
+    total_tenths = max(1, int(round(max(0.1, float(total_duration or 1)) * 10)))
+    count = max(1, int(block_count or 1))
+
+    ranges: list[tuple[float, float]] = []
+    prev_end = 0
+    for idx in range(count):
+        start = prev_end
+        end = (total_tenths * (idx + 1)) // count
+        if idx == count - 1:
+            end = total_tenths
+        if end <= start:
+            end = min(total_tenths, start + 1)
+        ranges.append((start / 10.0, end / 10.0))
+        prev_end = end
+
+    if ranges:
+        ranges[-1] = (ranges[-1][0], total_tenths / 10.0)
+    return ranges
+
+
+def _build_temporal_prompt_fallback(briefing: str, duration: int) -> str:
+    cleaned_briefing = _strip_non_visual_briefing_directives(briefing)
+    scene_count = 4 if duration <= 6 else 5 if duration <= 12 else 6
+    scene_ranges = _build_continuous_time_ranges(duration, scene_count)
+    dialogue_count = 1 if duration <= 6 else 2
+    dialogue_ranges = _build_continuous_time_ranges(duration, dialogue_count)
+
+    visual_seed = re.sub(r"\s+", " ", cleaned_briefing).strip()
+    visual_seed = visual_seed[:240] if visual_seed else "a grounded cinematic scene"
+
+    scene_templates = [
+        "Explosive opening frame built around {seed}, with strong subject focus, cinematic depth, and dynamic environmental motion.",
+        "Camera shifts aggressively to reveal character emotion, layered foreground movement, and intensified dramatic atmosphere.",
+        "A tighter framing captures critical action details, reactive body language, and escalating visual tension in real time.",
+        "Sustained confrontation beat with continuous motion, expressive reactions, and coherent scene geography.",
+        "Final push-in emphasizes the emotional peak, preserving continuity in identity, lighting, and environment.",
+        "Closing beat that keeps all elements in motion and lands the sequence with high cinematic impact.",
+    ]
+
+    lines: list[str] = []
+    for idx, (start, end) in enumerate(scene_ranges):
+        template = scene_templates[min(idx, len(scene_templates) - 1)]
+        description = template.format(seed=visual_seed)
+        lines.append(f"{start:.1f}s - {end:.1f}s")
+        lines.append(description)
+        if idx < len(scene_ranges) - 1:
+            lines.append("")
+
+    lines.append("")
+    lines.append("Dialogue timing:")
+
+    fallback_dialogues = [
+        '"Voce mentiu para mim esse tempo todo, e agora tudo veio a tona!"',
+        '"Acabou. Nao tem mais volta depois de tudo que eu descobri."',
+        '"A cena explode em emocao enquanto os personagens reagem em choque."',
+    ]
+
+    for idx, (start, end) in enumerate(dialogue_ranges):
+        speaker = "Strawberry woman" if idx % 2 == 0 else "Avocado man"
+        speech = fallback_dialogues[min(idx, len(fallback_dialogues) - 1)]
+        lines.append(f"{start:.1f}s - {end:.1f}s | Speaker: {speaker}")
+        lines.append(speech)
+        if idx < len(dialogue_ranges) - 1:
+            lines.append("")
+
+    return "\n".join(lines).strip()
+
+
+def _is_temporal_prompt_format_valid(prompt_text: str, total_duration: int) -> bool:
+    raw = (prompt_text or "").strip()
+    if not raw:
+        return False
+    if "```" in raw:
+        return False
+    if raw.startswith("{") or raw.startswith("["):
+        return False
+
+    lines = [line.rstrip() for line in raw.splitlines()]
+    dialogue_idx = -1
+    for idx, line in enumerate(lines):
+        if line.strip().lower() == "dialogue timing:":
+            dialogue_idx = idx
+            break
+
+    if dialogue_idx <= 0:
+        return False
+
+    scene_lines = [line.strip() for line in lines[:dialogue_idx] if line.strip()]
+    if not scene_lines:
+        return False
+
+    scene_ranges: list[tuple[float, float]] = []
+    i = 0
+    while i < len(scene_lines):
+        range_match = _SCENE_RANGE_ONLY_RE.match(scene_lines[i])
+        if not range_match:
+            return False
+
+        start = float(range_match.group("start"))
+        end = float(range_match.group("end"))
+        if end <= start:
+            return False
+
+        scene_ranges.append((start, end))
+        i += 1
+
+        if i >= len(scene_lines):
+            return False
+
+        has_description = False
+        while i < len(scene_lines) and not _SCENE_RANGE_ONLY_RE.match(scene_lines[i]):
+            if scene_lines[i].strip():
+                has_description = True
+            i += 1
+
+        if not has_description:
+            return False
+
+    if abs(scene_ranges[0][0] - 0.0) > 0.11:
+        return False
+
+    for idx in range(1, len(scene_ranges)):
+        if abs(scene_ranges[idx][0] - scene_ranges[idx - 1][1]) > 0.11:
+            return False
+
+    expected_end = round(float(total_duration or 1), 1)
+    if abs(scene_ranges[-1][1] - expected_end) > 0.11:
+        return False
+
+    dialogue_lines = [line.strip() for line in lines[dialogue_idx + 1 :] if line.strip()]
+    if not dialogue_lines:
+        return False
+
+    dialogue_blocks = 0
+    j = 0
+    while j < len(dialogue_lines):
+        timing_match = _DIALOGUE_TIMING_LINE_RE.match(dialogue_lines[j])
+        if not timing_match:
+            return False
+
+        start = float(timing_match.group("start"))
+        end = float(timing_match.group("end"))
+        if end <= start:
+            return False
+
+        j += 1
+        if j >= len(dialogue_lines):
+            return False
+
+        speech_line = dialogue_lines[j]
+        if not (speech_line.startswith('"') and speech_line.endswith('"') and len(speech_line) >= 3):
+            return False
+
+        dialogue_blocks += 1
+        j += 1
+
+    return dialogue_blocks >= 1
+
+
+async def _generate_temporal_realistic_prompt(optimized_prompt: str, duration: int) -> str:
+    cleaned_briefing = _strip_non_visual_briefing_directives(optimized_prompt)
+
+    scene_count = 4 if duration <= 6 else 5 if duration <= 12 else 6 if duration <= 20 else 7
+    dialogue_count = 1 if duration <= 6 else 2 if duration <= 16 else 3
+    scene_ranges = _build_continuous_time_ranges(duration, scene_count)
+    dialogue_ranges = _build_continuous_time_ranges(duration, dialogue_count)
+
+    scene_ranges_text = "\n".join(f"{start:.1f}s - {end:.1f}s" for start, end in scene_ranges)
+    dialogue_ranges_text = "\n".join(f"{start:.1f}s - {end:.1f}s" for start, end in dialogue_ranges)
+
+    system_prompt = (
+        "You convert realistic video briefs into strict temporal prompt blocks. "
+        "Return plain text only, never markdown, never JSON. "
+        "Scene descriptions must be in English. "
+        "Dialogue must be in PT-BR."
+    )
+    user_prompt = (
+        f"Total duration: {duration:.1f}s\n\n"
+        "Visual briefing:\n"
+        f"{cleaned_briefing}\n\n"
+        "Output rules (mandatory):\n"
+        "1) For each scene block, write exactly:\n"
+        "   X.Xs - Y.Ys\n"
+        "   <One detailed English description for this interval>\n"
+        "2) Use continuous timeline from 0.0s to total duration with no gaps.\n"
+        "3) After scene blocks, write exactly:\n"
+        "   Dialogue timing:\n"
+        "4) Then write at least one dialogue block exactly as:\n"
+        "   X.Xs - Y.Ys | Speaker: Name\n"
+        "   \"<spoken line in PT-BR>\"\n"
+        "5) No markdown and no JSON.\n\n"
+        "Use exactly these scene ranges:\n"
+        f"{scene_ranges_text}\n\n"
+        "Use dialogue inside these ranges:\n"
+        f"{dialogue_ranges_text}"
+    )
+
+    try:
+        resp = await _openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.35,
+            max_tokens=1400,
+        )
+        candidate = (resp.choices[0].message.content or "").strip()
+        if _is_temporal_prompt_format_valid(candidate, duration):
+            return candidate
+        logger.warning("Temporal prompt returned with invalid format; using fallback template")
+    except Exception as e:
+        logger.warning("Temporal prompt generation failed: %s", e)
+
+    return _build_temporal_prompt_fallback(cleaned_briefing, duration)
 
 
 def _cleanup_karaoke_progress_store() -> None:
@@ -1175,6 +1431,73 @@ class GenerateTTSRequest(BaseModel):
     tevoxi_clip_duration: float = 0
 
 
+class TranscribeTevoxiClipRequest(BaseModel):
+    audio_url: str
+    clip_start: float = 0
+    clip_duration: float = 10
+    lyrics_hint: str = ""
+
+
+@router.post("/transcribe-tevoxi-clip")
+async def transcribe_tevoxi_clip_endpoint(
+    req: TranscribeTevoxiClipRequest,
+    user: dict = Depends(get_current_user),
+):
+    audio_url = (req.audio_url or "").strip()
+    if not audio_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="URL de áudio inválida.")
+
+    clip_start = max(0.0, float(req.clip_start or 0))
+    clip_duration = max(0.0, float(req.clip_duration or 0))
+    if clip_duration <= 0:
+        raise HTTPException(status_code=400, detail="Selecione um trecho com duração maior que zero.")
+
+    clip_duration = min(45.0, clip_duration)
+    transcribe_dir = Path(settings.media_dir) / "temp_transcribe" / str(user["id"])
+    transcribe_dir.mkdir(parents=True, exist_ok=True)
+    transcribe_id = uuid.uuid4().hex
+    source_path = transcribe_dir / f"{transcribe_id}_source.mp3"
+    clip_path = transcribe_dir / f"{transcribe_id}_clip.mp3"
+
+    try:
+        await _download_external_audio_to_path(audio_url, source_path)
+        _trim_audio_clip(str(source_path), str(clip_path), clip_start, clip_duration)
+
+        from app.services.transcriber import transcribe_audio
+        import asyncio
+
+        lyrics_hint = (req.lyrics_hint or "").strip()
+        if len(lyrics_hint) > 5000:
+            lyrics_hint = lyrics_hint[:5000]
+
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: transcribe_audio(str(clip_path), prompt=lyrics_hint),
+        )
+        text = ""
+        words = []
+        if isinstance(result, dict):
+            text = str(result.get("text", "") or "").strip()
+            words = result.get("words", []) if isinstance(result.get("words", []), list) else []
+
+        return {
+            "text": text,
+            "duration": clip_duration,
+            "words_count": len(words),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Tevoxi clip transcription failed: {e}")
+        raise HTTPException(status_code=502, detail="Não foi possível transcrever o trecho agora.")
+    finally:
+        for path in (clip_path, source_path):
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
 @router.post("/fix-text")
 async def fix_text_endpoint(
     req: FixTextRequest,
@@ -1889,10 +2212,16 @@ async def generate_realistic_prompt_endpoint(
             has_reference_image=req.has_reference_image,
         )
 
-    if req.has_reference_image:
-        optimized = _ensure_reference_image_instruction(optimized)
+    temporal_prompt = await _generate_temporal_realistic_prompt(
+        optimized_prompt=optimized,
+        duration=duration,
+    )
 
-    return {"prompt": optimized}
+    final_prompt = _inject_interaction_persona_instruction(temporal_prompt, interaction_persona)
+    if req.has_reference_image:
+        final_prompt = _ensure_reference_image_instruction(final_prompt)
+
+    return {"prompt": final_prompt}
 
 
 class GenerateRealisticRequest(BaseModel):

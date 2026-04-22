@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v177 loaded");
+﻿console.log("[CriaVideo] app.js v178 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1159,6 +1159,9 @@ let _scriptSelectedClip = null; // selected clip/full metadata for script mode
 let _wizardTevoxiSongs = []; // cached Tevoxi songs for wizard realistic mode
 let _wizardSelectedSong = null; // selected Tevoxi song for wizard realistic mode
 let _wizardSelectedClip = null; // selected clip/full metadata for wizard mode
+let _scriptTevoxiPromptAuto = false;
+let _scriptTevoxiPromptSignature = "";
+let _scriptTevoxiTranscribeTicket = 0;
 // Step flow arrays for each video type
 const WIZARD_FLOW_NORMAL = [2, 1, 3, 4, 5, 6]; // type, topic, tone, voice, style, details
 const WIZARD_FLOW_REALISTIC = [2, 1, 7]; // type, topic, realistic settings
@@ -1538,6 +1541,7 @@ function initCreateWizard() {
     document.getElementById("script-text").addEventListener("input", () => {
         const len = document.getElementById("script-text").value.length;
         document.getElementById("script-char-count").textContent = len.toLocaleString("pt-BR");
+        _scriptTevoxiPromptAuto = false;
     });
 
     // AI suggestion buttons
@@ -2072,6 +2076,9 @@ function resetCreateWizard() {
     _scriptSelectedClip = null;
     _wizardSelectedSong = null;
     _wizardSelectedClip = null;
+    _scriptTevoxiPromptAuto = false;
+    _scriptTevoxiPromptSignature = "";
+    _scriptTevoxiTranscribeTicket = 0;
     const scriptTevoxiCb = document.getElementById("script-realistic-tevoxi");
     if (scriptTevoxiCb) scriptTevoxiCb.checked = false;
     const scriptTevoxiPanel = document.getElementById("script-tevoxi-panel");
@@ -4564,13 +4571,13 @@ function showAiSuggestPanel() {
     // Adapt AI suggest panel for mode
     document.getElementById("ai-suggest-title").textContent = isRealistic ? "Gerar prompt com IA" : "Gerar roteiro com IA";
     aiHintEl.textContent = isRealistic
-        ? "Descreva a cena e escolha a duração para a IA criar um prompt cinematográfico profissional"
+        ? "Descreva a cena e escolha a duracao para a IA criar um prompt cinematografico com timeline por segundos e Dialogue timing."
         : "Descreva o tema e a IA criara um roteiro completo";
     aiTopicEl.placeholder = isRealistic
         ? "Ex: uma cachorra adotou um gatinho, produto girando..."
         : "Ex: beneficios da meditacao, como fazer pao caseiro...";
     if (hasScriptTevoxiClip) {
-        aiHintEl.textContent = "A IA vai analisar o trecho selecionado do Tevoxi para sugerir o roteiro visual.";
+        aiHintEl.textContent = "A IA vai analisar o trecho selecionado do Tevoxi e retornar um prompt com timeline por segundos e Dialogue timing.";
         if (!aiTopicEl.value.trim()) {
             aiTopicEl.value = _buildTevoxiAiTopicSeed(_scriptSelectedSong, _scriptSelectedClip);
         }
@@ -4640,7 +4647,7 @@ async function generateAiScript() {
                     : "Seedance";
         showCreateProgress("Gerando prompt cinematográfico com IA...", {
             progress: 30,
-            stage: `Otimizando prompt ${engineLabel}...`,
+            stage: `Otimizando prompt ${engineLabel} com timeline por segundos...`,
         });
         try {
             const tevoxiContext = hasScriptTevoxiClip
@@ -6687,6 +6694,69 @@ function _buildScriptTevoxiPrompt(song, clip) {
     return lines.join("\n").slice(0, 20000);
 }
 
+function _buildScriptTevoxiClipSignature(song, clip) {
+    if (!song || !clip) return "";
+    const songKey = String(song.job_id || song.audio_url || song.title || "song");
+    const clipStart = Number(clip.clip_start || 0).toFixed(1);
+    const clipDuration = Number(clip.clip_duration || 0).toFixed(1);
+    return `${songKey}|${clipStart}|${clipDuration}`;
+}
+
+function _applyScriptTevoxiPrompt(promptText, signature) {
+    const prompt = String(promptText || "");
+    const scriptTextEl = document.getElementById("script-text");
+    if (scriptTextEl) {
+        scriptTextEl.value = prompt;
+    }
+    scriptData.text = prompt;
+    const scriptCountEl = document.getElementById("script-char-count");
+    if (scriptCountEl) {
+        scriptCountEl.textContent = prompt.length.toLocaleString("pt-BR");
+    }
+    _scriptTevoxiPromptAuto = true;
+    _scriptTevoxiPromptSignature = String(signature || "");
+}
+
+async function _refreshScriptTevoxiClipTranscription(song, clip, signature) {
+    if (!song || !clip) return;
+    const clipDuration = Number(clip.clip_duration || 0);
+    if (!Number.isFinite(clipDuration) || clipDuration <= 0) return;
+
+    const requestTicket = ++_scriptTevoxiTranscribeTicket;
+    try {
+        const result = await api("/video/transcribe-tevoxi-clip", {
+            method: "POST",
+            body: JSON.stringify({
+                audio_url: String(song.audio_url || ""),
+                clip_start: Number(clip.clip_start || 0),
+                clip_duration: clipDuration,
+                lyrics_hint: String(song.lyrics || ""),
+            }),
+        });
+
+        if (requestTicket !== _scriptTevoxiTranscribeTicket) return;
+        if (!_scriptSelectedSong || !_scriptSelectedClip) return;
+
+        const currentSignature = _buildScriptTevoxiClipSignature(_scriptSelectedSong, _scriptSelectedClip);
+        if (currentSignature !== signature) return;
+
+        const transcribedText = String(result?.text || "").replace(/\s+/g, " ").trim();
+        if (!transcribedText) return;
+
+        _scriptSelectedClip = {
+            ..._scriptSelectedClip,
+            lyrics_excerpt: transcribedText,
+        };
+
+        if (_scriptTevoxiPromptAuto && _scriptTevoxiPromptSignature === signature) {
+            const updatedPrompt = _buildScriptTevoxiPrompt(_scriptSelectedSong, _scriptSelectedClip);
+            _applyScriptTevoxiPrompt(updatedPrompt, signature);
+        }
+    } catch (error) {
+        console.warn("[Tevoxi] Falha ao transcrever clip selecionado:", error?.message || error);
+    }
+}
+
 function _buildTevoxiAiTopicSeed(song, clip) {
     if (!song) return "";
     const baseLabel = _formatTevoxiClipLabel(song, clip).replace(/^🎵\s*/, "").trim();
@@ -7620,20 +7690,14 @@ function addClipToThemes() {
         _scriptSelectedSong = song;
         _scriptSelectedClip = payload;
 
+        const clipSignature = _buildScriptTevoxiClipSignature(song, payload);
         const scriptPrompt = _buildScriptTevoxiPrompt(song, payload);
-        const scriptTextEl = document.getElementById("script-text");
-        if (scriptTextEl) {
-            scriptTextEl.value = scriptPrompt;
-        }
-        scriptData.text = scriptPrompt;
-        const scriptCountEl = document.getElementById("script-char-count");
-        if (scriptCountEl) {
-            scriptCountEl.textContent = scriptPrompt.length.toLocaleString("pt-BR");
-        }
+        _applyScriptTevoxiPrompt(scriptPrompt, clipSignature);
 
         _renderScriptTevoxiSongs();
         _updateScriptTevoxiSelectionUI();
         _updateScriptDetailsForTevoxiMode();
+        _refreshScriptTevoxiClipTranscription(song, payload, clipSignature);
         closeClipSelector();
         return;
     }
