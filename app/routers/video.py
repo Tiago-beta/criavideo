@@ -8,6 +8,9 @@ import re
 import shutil
 import subprocess
 import uuid
+import asyncio
+import base64
+import mimetypes
 from datetime import datetime, timedelta
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File
@@ -2590,6 +2593,153 @@ class GenerateRealisticPromptRequest(BaseModel):
     persona_profile_id: int = 0
     persona_profile_ids: list[int] = Field(default_factory=list)
     has_reference_image: bool = False
+
+
+class PreviewGrokAnchorRequest(BaseModel):
+    prompt: str
+    duration: int = 10
+    aspect_ratio: str = "16:9"
+    interaction_persona: str = "natureza"
+    persona_profile_id: int = 0
+    persona_profile_ids: list[int] = Field(default_factory=list)
+    realistic_style: str = ""
+
+
+@router.post("/preview-grok-anchor")
+async def preview_grok_anchor_endpoint(
+    req: PreviewGrokAnchorRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    prompt = (req.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Descreva a cena antes de gerar a prévia.")
+    if len(prompt) > 5000:
+        raise HTTPException(status_code=400, detail="Descrição muito longa (máximo 5000 caracteres).")
+
+    if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
+        raise HTTPException(status_code=400, detail="Formato inválido. Use 16:9, 9:16 ou 1:1.")
+
+    interaction_persona = _normalize_interaction_persona(req.interaction_persona)
+    duration = max(1, min(int(req.duration or 10), 60))
+
+    selected_persona_profile_id = int(req.persona_profile_id or 0)
+    selected_persona_profile_ids: list[int] = []
+    for raw_pid in (req.persona_profile_ids or []):
+        try:
+            parsed_pid = int(raw_pid)
+        except Exception:
+            continue
+        if parsed_pid > 0 and parsed_pid not in selected_persona_profile_ids:
+            selected_persona_profile_ids.append(parsed_pid)
+
+    if selected_persona_profile_id and selected_persona_profile_id not in selected_persona_profile_ids:
+        selected_persona_profile_ids.insert(0, selected_persona_profile_id)
+
+    if not selected_persona_profile_ids:
+        raise HTTPException(status_code=400, detail="Selecione ao menos uma persona para gerar a prévia.")
+
+    try:
+        resolved_personas, persona_image_paths = await resolve_persona_reference_images(
+            db=db,
+            user_id=user["id"],
+            persona_type=interaction_persona,
+            persona_profile_ids=selected_persona_profile_ids,
+            ensure_default=False,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    if not persona_image_paths:
+        raise HTTPException(status_code=400, detail="Nenhuma imagem de persona válida foi encontrada para gerar a prévia.")
+
+    selected_persona_profile_ids = [int(profile.id) for profile in resolved_personas]
+    persona_reference_path = build_persona_reference_montage(
+        user_id=user["id"],
+        image_paths=persona_image_paths,
+        prefix="grok_preview_refs",
+    )
+    if not persona_reference_path or not os.path.exists(persona_reference_path):
+        raise HTTPException(status_code=500, detail="Falha ao montar a imagem de referência das personas.")
+
+    anchor_prompt = _inject_interaction_persona_instruction(prompt, interaction_persona)
+    anchor_prompt = _ensure_reference_image_instruction(anchor_prompt)
+
+    if len(selected_persona_profile_ids) > 1:
+        anchor_prompt = (
+            f"{anchor_prompt}\n\n"
+            "MULTI-PERSONA REFERENCE RULE: mantenha todos os personagens selecionados juntos na mesma cena, "
+            "preservando a identidade visual de cada um."
+        )
+
+    if req.realistic_style:
+        anchor_prompt = f"{anchor_prompt}\n\nEstilo visual desejado: {str(req.realistic_style).strip()}"
+
+    try:
+        from app.services.grok_video import optimize_prompt_for_grok
+
+        optimized_prompt = await optimize_prompt_for_grok(
+            user_description=anchor_prompt,
+            duration=duration,
+            has_reference_image=True,
+            tone=req.realistic_style,
+        )
+        optimized_prompt = _ensure_reference_image_instruction(optimized_prompt)
+    except Exception:
+        optimized_prompt = anchor_prompt
+
+    upload_id = f"{uuid.uuid4().hex}.png"
+    output_path = _temp_user_dir(user["id"]) / upload_id
+    provider_used = ""
+    retry_count = 0
+
+    from app.services.scene_generator import generate_scene_image
+
+    loop = asyncio.get_event_loop()
+    max_attempts = 2  # 1 retry
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if output_path.exists():
+                output_path.unlink(missing_ok=True)
+
+            anchor_meta: dict = {}
+            await loop.run_in_executor(
+                None,
+                generate_scene_image,
+                optimized_prompt[:800],
+                req.aspect_ratio,
+                str(output_path),
+                True,
+                persona_reference_path,
+                "openai",
+                anchor_meta,
+            )
+
+            if output_path.exists() and output_path.stat().st_size > 0:
+                provider_used = str(anchor_meta.get("provider") or "unknown")
+                retry_count = attempt - 1
+                break
+
+            raise RuntimeError("preview_anchor_empty")
+        except Exception as exc:
+            retry_count = attempt
+            if attempt >= max_attempts:
+                raise HTTPException(status_code=500, detail=f"Falha ao gerar a prévia da imagem: {exc}")
+
+    raw = output_path.read_bytes()
+    if not raw:
+        raise HTTPException(status_code=500, detail="A prévia da imagem foi gerada vazia.")
+
+    mime_type = mimetypes.guess_type(str(output_path))[0] or "image/png"
+    preview_data_url = f"data:{mime_type};base64,{base64.b64encode(raw).decode('ascii')}"
+
+    return {
+        "upload_id": upload_id,
+        "preview_data_url": preview_data_url,
+        "provider": provider_used,
+        "retry_count": retry_count,
+        "persona_count": len(selected_persona_profile_ids),
+    }
 
 
 @router.post("/generate-realistic-prompt")

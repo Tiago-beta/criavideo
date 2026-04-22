@@ -20,7 +20,7 @@
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 206;
+        var REQUIRED_VER = 207;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2450,6 +2450,27 @@
         </div>
     </div>
 
+    <div id="modal-grok-anchor-preview" class="modal">
+        <div class="modal-content modal-content-wide grok-anchor-preview-content">
+            <div class="modal-header">
+                <h3>Prévia da imagem-base (Cria 3.0 speed)</h3>
+                <button class="modal-close" onclick="cancelGrokAnchorPreview()" type="button">&times;</button>
+            </div>
+            <div class="modal-body grok-anchor-preview-body">
+                <p id="grok-anchor-preview-status" class="wizard-hint">Gerando imagem-base de personas...</p>
+                <div class="grok-anchor-preview-frame">
+                    <img id="grok-anchor-preview-img" class="grok-anchor-preview-img" src="" alt="Prévia da imagem-base" hidden>
+                </div>
+                <p class="muted">Se aprovar esta imagem, ela será enviada ao Cria 3.0 speed para animar o vídeo.</p>
+            </div>
+            <div class="modal-footer modal-footer-space">
+                <button class="btn btn-secondary" type="button" onclick="cancelGrokAnchorPreview()">Cancelar</button>
+                <button id="grok-anchor-preview-regenerate-btn" class="btn btn-secondary" type="button" onclick="regenerateGrokAnchorPreview()">Gerar outra</button>
+                <button id="grok-anchor-preview-approve-btn" class="btn btn-primary" type="button" onclick="approveGrokAnchorPreview()">Aprovar e continuar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="modal-persona-prompt-editor" class="modal">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
@@ -2532,8 +2553,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260422-37"></script>
-    <script src="/video/static/pwa.js?v=20260422-37"></script>
+    <script src="/video/static/app.js?v=20260422-38"></script>
+    <script src="/video/static/pwa.js?v=20260422-38"></script>
 </body>
 </html>
 

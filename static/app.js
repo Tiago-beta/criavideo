@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v189 loaded");
+﻿console.log("[CriaVideo] app.js v190 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -52,6 +52,15 @@ let _personaVoiceBuilderProfileId = 0;
 let _personaPromptEditorProfileId = 0;
 const PERSONA_REFERENCE_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const PERSONA_REFERENCE_MAX_SIZE = 10 * 1024 * 1024;
+let _grokAnchorPreviewState = {
+    resolve: null,
+    payload: null,
+    uploadId: "",
+    previewDataUrl: "",
+    provider: "",
+    retryCount: 0,
+    busy: false,
+};
 
 // Simple toast notification
 function showToast(msg, type = "info") {
@@ -903,6 +912,117 @@ function closeModal(id) {
             video.src = "";
         }
     }
+}
+
+function _setGrokAnchorPreviewBusy(isBusy, message = "") {
+    _grokAnchorPreviewState.busy = !!isBusy;
+    const statusEl = document.getElementById("grok-anchor-preview-status");
+    const regenBtn = document.getElementById("grok-anchor-preview-regenerate-btn");
+    const approveBtn = document.getElementById("grok-anchor-preview-approve-btn");
+
+    if (statusEl && message) {
+        statusEl.textContent = message;
+    }
+    if (regenBtn) {
+        regenBtn.disabled = !!isBusy;
+    }
+    if (approveBtn) {
+        approveBtn.disabled = !!isBusy || !_grokAnchorPreviewState.uploadId;
+    }
+}
+
+function _renderGrokAnchorPreview(result) {
+    const imgEl = document.getElementById("grok-anchor-preview-img");
+    const statusEl = document.getElementById("grok-anchor-preview-status");
+
+    _grokAnchorPreviewState.uploadId = result.upload_id || "";
+    _grokAnchorPreviewState.previewDataUrl = result.preview_data_url || "";
+    _grokAnchorPreviewState.provider = result.provider || "";
+    _grokAnchorPreviewState.retryCount = Number(result.retry_count || 0);
+
+    if (imgEl) {
+        imgEl.src = _grokAnchorPreviewState.previewDataUrl;
+        imgEl.hidden = !_grokAnchorPreviewState.previewDataUrl;
+    }
+
+    if (statusEl) {
+        const providerLabel = _grokAnchorPreviewState.provider || "desconhecido";
+        const retryLabel = _grokAnchorPreviewState.retryCount > 0
+            ? `, retry: ${_grokAnchorPreviewState.retryCount}`
+            : "";
+        statusEl.textContent = `Prévia gerada (provedor: ${providerLabel}${retryLabel}).`;
+    }
+
+    _setGrokAnchorPreviewBusy(false);
+}
+
+async function _fetchGrokAnchorPreview(payload) {
+    return api("/video/preview-grok-anchor", {
+        method: "POST",
+        body: JSON.stringify(payload),
+    });
+}
+
+async function regenerateGrokAnchorPreview() {
+    if (_grokAnchorPreviewState.busy) {
+        return;
+    }
+    if (!_grokAnchorPreviewState.payload) {
+        alert("Não foi possível regenerar a prévia agora.");
+        return;
+    }
+
+    _setGrokAnchorPreviewBusy(true, "Gerando outra imagem-base...");
+    try {
+        const result = await _fetchGrokAnchorPreview(_grokAnchorPreviewState.payload);
+        _renderGrokAnchorPreview(result);
+    } catch (error) {
+        _setGrokAnchorPreviewBusy(false, "Falha ao gerar a prévia.");
+        alert(`Erro ao gerar prévia: ${error.message}`);
+    }
+}
+
+function cancelGrokAnchorPreview() {
+    closeModal("modal-grok-anchor-preview");
+    const resolve = _grokAnchorPreviewState.resolve;
+    _grokAnchorPreviewState.resolve = null;
+    _grokAnchorPreviewState.payload = null;
+    _grokAnchorPreviewState.uploadId = "";
+    _grokAnchorPreviewState.previewDataUrl = "";
+    if (resolve) {
+        resolve({ approved: false, upload_id: "" });
+    }
+}
+
+function approveGrokAnchorPreview() {
+    if (!_grokAnchorPreviewState.uploadId) {
+        alert("A prévia ainda não está pronta.");
+        return;
+    }
+
+    closeModal("modal-grok-anchor-preview");
+    const resolve = _grokAnchorPreviewState.resolve;
+    const uploadId = _grokAnchorPreviewState.uploadId;
+    _grokAnchorPreviewState.resolve = null;
+    _grokAnchorPreviewState.payload = null;
+    _grokAnchorPreviewState.uploadId = "";
+    _grokAnchorPreviewState.previewDataUrl = "";
+    if (resolve) {
+        resolve({ approved: true, upload_id: uploadId });
+    }
+}
+
+async function requestGrokAnchorApproval(payload) {
+    _grokAnchorPreviewState.payload = payload;
+    _setGrokAnchorPreviewBusy(true, "Gerando imagem-base de personas...");
+
+    const result = await _fetchGrokAnchorPreview(payload);
+    _renderGrokAnchorPreview(result);
+
+    return new Promise((resolve) => {
+        _grokAnchorPreviewState.resolve = resolve;
+        openModal("modal-grok-anchor-preview");
+    });
 }
 
 async function loadLevitaSongs() {
@@ -2144,6 +2264,26 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 imageUploadIds.push(uploaded.upload_id);
             }
             imageUploadId = imageUploadIds[0] || "";
+            _smoothProgressTarget = 15;
+        } else if (engine === "grok" && personaProfileIds.length > 0) {
+            setCreateProgress(8, "Gerando vídeo realista...", "Gerando imagem-base para sua aprovação...");
+
+            const previewChoice = await requestGrokAnchorApproval({
+                prompt: finalPrompt,
+                duration,
+                aspect_ratio: aspect,
+                interaction_persona: interactionPersona,
+                persona_profile_id: personaProfileId,
+                persona_profile_ids: personaProfileIds,
+                realistic_style: realisticStyle || "",
+            });
+
+            if (!previewChoice?.approved || !previewChoice?.upload_id) {
+                throw new Error("Geração cancelada na aprovação da imagem-base.");
+            }
+
+            imageUploadIds = [previewChoice.upload_id];
+            imageUploadId = previewChoice.upload_id;
             _smoothProgressTarget = 15;
         }
 
@@ -9500,6 +9640,9 @@ window.openPersonaManager = openPersonaManager;
 window.handlePersonaReferenceImageSelect = handlePersonaReferenceImageSelect;
 window.handlePersonaReferenceImagePaste = handlePersonaReferenceImagePaste;
 window.removePersonaReferenceImage = removePersonaReferenceImage;
+window.regenerateGrokAnchorPreview = regenerateGrokAnchorPreview;
+window.cancelGrokAnchorPreview = cancelGrokAnchorPreview;
+window.approveGrokAnchorPreview = approveGrokAnchorPreview;
 window.createPersonaFromManager = createPersonaFromManager;
 window.selectPersonaFromManager = selectPersonaFromManager;
 window.setPersonaVoiceFromManager = setPersonaVoiceFromManager;

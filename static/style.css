@@ -5245,6 +5245,38 @@ th,
     background: rgba(255, 255, 255, 0.03);
 }
 
+.grok-anchor-preview-content {
+    width: min(96vw, 1180px);
+}
+
+.grok-anchor-preview-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.grok-anchor-preview-frame {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 240px;
+    max-height: 76vh;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    padding: 8px;
+}
+
+.grok-anchor-preview-img {
+    max-width: 100%;
+    max-height: 72vh;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 10px;
+}
+
 .persona-voice-builder-tags {
     display: flex;
     flex-wrap: wrap;
