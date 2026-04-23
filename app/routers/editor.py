@@ -35,14 +35,31 @@ _EDITOR_EXPORT_PRESET = "veryfast"
 _EDITOR_EXPORT_CRF = "23"
 _EDITOR_EXPORT_AUDIO_BITRATE = "160k"
 _EDITOR_TEVOXI_MOOD_MAP = {
-    "calmo": "calm",
-    "calma": "calm",
-    "drama": "dramatic",
-    "dramatico": "dramatic",
-    "dramático": "dramatic",
-    "alegre": "uplifting",
-    "animado": "upbeat",
-    "emocional": "emotional",
+    "calmo": "calmo",
+    "calma": "calmo",
+    "drama": "drama",
+    "dramatico": "drama",
+    "dramático": "drama",
+    "alegre": "alegre",
+    "animado": "alegre",
+    "emocional": "drama",
+}
+_EDITOR_TEVOXI_MOOD_SETTINGS = {
+    "calmo": {
+        "api_mood": "calmo reflexivo",
+        "genre": "ambient",
+        "theme_hint": "atmosfera suave, piano leve, texturas calmas, sem percussao agressiva",
+    },
+    "drama": {
+        "api_mood": "dramatico poderoso agressivo",
+        "genre": "cinematic trailer",
+        "theme_hint": "trilha dramatica agressiva de trailer, tensao crescente, impactos fortes, cordas intensas, sem voz",
+    },
+    "alegre": {
+        "api_mood": "alegre motivacional",
+        "genre": "pop",
+        "theme_hint": "energia positiva, ritmo animado, clima otimista, sem voz",
+    },
 }
 
 
@@ -80,7 +97,7 @@ def _to_media_url(path: str | None) -> str | None:
 def _normalize_editor_tevoxi_mood(value: str | None) -> str:
     raw = (value or "").strip().lower()
     if not raw:
-        return "emotional"
+        return "calmo"
     return _EDITOR_TEVOXI_MOOD_MAP.get(raw, raw[:40])
 
 
@@ -364,6 +381,7 @@ class MediaLayerEntry(BaseModel):
     start_time: float = 0
     end_time: float = 0
     duration: float = 0
+    source_offset: float = 0
 
 
 class TrimSegment(BaseModel):
@@ -420,15 +438,19 @@ async def generate_tevoxi_music(
         raise HTTPException(404, "Projeto não encontrado")
 
     mood = _normalize_editor_tevoxi_mood(req.mood)
+    mood_settings = _EDITOR_TEVOXI_MOOD_SETTINGS.get(mood, _EDITOR_TEVOXI_MOOD_SETTINGS["calmo"])
     characteristics = (req.characteristics or "").strip()
 
     theme_parts: list[str] = []
     project_title = (project.title or project.track_title or "").strip()
     if project_title:
         theme_parts.append(f"Tema do vídeo: {project_title[:120]}")
+    theme_parts.append(f"Direção sonora: {mood_settings['theme_hint']}")
     if characteristics:
         theme_parts.append(f"Características desejadas: {characteristics[:220]}")
-    theme_parts.append("Trilha instrumental emocional, sem voz cantada, pronta para edição de vídeo.")
+    if mood == "drama" and not characteristics:
+        theme_parts.append("Deixe mais agressivo e épico, com sensação de urgência cinematográfica.")
+    theme_parts.append("Trilha instrumental para fundo de narração, sem voz cantada.")
     theme = " | ".join(theme_parts)
 
     requested_duration = float(req.duration_seconds or 0.0)
@@ -444,9 +466,9 @@ async def generate_tevoxi_music(
             language="pt-BR",
             manual_settings={
                 "music_mode": "instrumental",
-                "music_genre": "cinematic",
+                "music_genre": mood_settings["genre"],
                 "music_vocalist": "",
-                "music_mood": mood,
+                "music_mood": mood_settings["api_mood"],
                 "music_duration": target_duration,
                 "music_language": "pt-BR",
             },
@@ -999,19 +1021,24 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             audio_only = bool(getattr(layer, "audio_only", False))
             start_time = max(0.0, float(getattr(layer, "start_time", 0) or 0))
             end_time = max(start_time, float(getattr(layer, "end_time", 0) or 0))
+            source_offset = max(0.0, float(getattr(layer, "source_offset", 0) or 0))
 
             layer_duration = 0.0
+            available_video_duration = 0.0
             if kind == "video":
                 layer_duration, _ = _probe_video_metadata(resolved_path)
+                if layer_duration > 0:
+                    source_offset = min(source_offset, max(0.0, layer_duration - 0.05))
+                    available_video_duration = max(0.0, layer_duration - source_offset)
 
             if end_time <= start_time + 0.02:
-                if kind == "video" and layer_duration > 0:
-                    end_time = start_time + layer_duration
+                if kind == "video" and available_video_duration > 0:
+                    end_time = start_time + available_video_duration
                 else:
                     end_time = start_time + 0.1
 
-            if kind == "video" and layer_duration > 0:
-                end_time = min(end_time, start_time + layer_duration)
+            if kind == "video" and available_video_duration > 0:
+                end_time = min(end_time, start_time + available_video_duration)
             if end_time <= start_time + 0.02:
                 continue
 
@@ -1027,6 +1054,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     "start_time": start_time,
                     "end_time": end_time,
                     "duration": max(0.0, layer_duration),
+                    "source_offset": source_offset,
                 }
             )
 
@@ -1279,8 +1307,11 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 out_label = f"vout{step}"
 
                 if layer["kind"] == "video":
+                    clip_duration = max(0.02, float(layer["end_time"]) - float(layer["start_time"]))
+                    source_offset = max(0.0, float(layer.get("source_offset", 0.0) or 0.0))
                     overlay_parts.append(
                         f"[{layer['input_idx']}:v]"
+                        f"trim=start={source_offset:.6f}:duration={clip_duration:.6f},"
                         f"setpts=PTS-STARTPTS+{layer['start_time']:.6f}/TB"
                         f"[{src_label}]"
                     )
@@ -1315,12 +1346,13 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 start_time = max(0.0, float(layer.get("start_time", 0.0) or 0.0))
                 configured_end = max(start_time, float(layer.get("end_time", 0.0) or 0.0))
                 layer_duration = max(0.0, float(layer.get("duration", 0.0) or 0.0))
+                source_offset = max(0.0, float(layer.get("source_offset", 0.0) or 0.0))
 
                 clip_duration = max(0.0, configured_end - start_time)
                 if clip_duration <= 0.02:
                     clip_duration = layer_duration if layer_duration > 0 else max(0.0, final_output_duration - start_time)
                 if layer_duration > 0:
-                    clip_duration = min(clip_duration, layer_duration)
+                    clip_duration = min(clip_duration, max(0.0, layer_duration - source_offset))
                 if final_output_duration > 0:
                     clip_duration = min(clip_duration, max(0.0, final_output_duration - start_time))
                 if clip_duration <= 0.02:
@@ -1331,11 +1363,11 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     continue
 
                 delay_ms = max(0, int(round(start_time * 1000)))
-                src_label = f"lasrc{audio_idx}"
                 out_label = f"la{audio_idx}"
-                filter_parts.append(f"[{layer['input_idx']}:a]asetpts=PTS-STARTPTS[{src_label}]")
                 filter_parts.append(
-                    f"[{src_label}]atrim=0:{clip_duration:.6f},adelay={delay_ms}|{delay_ms},"
+                    f"[{layer['input_idx']}:a]"
+                    f"atrim=start={source_offset:.6f}:duration={clip_duration:.6f},"
+                    f"asetpts=PTS-STARTPTS,adelay={delay_ms}|{delay_ms},"
                     f"volume={volume_factor:.4f}[{out_label}]"
                 )
                 layer_audio_labels.append(f"[{out_label}]")

@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v193 loaded");
+﻿console.log("[CriaVideo] app.js v194 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -11008,6 +11008,11 @@ window._editorGenerateAIMusic = _editorGenerateAIMusic;
 
 function _editorNormalizeMediaLayer(layer) {
     const aspect = Math.max(0.2, Number(layer.aspectRatio || 1));
+    const duration = Math.max(0, Number(layer.duration || 0));
+    let sourceOffset = Math.max(0, Number(layer.sourceOffset || 0));
+    if (duration > 0) {
+        sourceOffset = Math.min(sourceOffset, Math.max(0, duration - 0.05));
+    }
     const trackIndex = _editorGetLayerTrackIndex(layer);
     return {
         ...layer,
@@ -11016,7 +11021,8 @@ function _editorNormalizeMediaLayer(layer) {
         y: Math.max(0, Math.min(100, Number(layer.y || 0))),
         startTime: Math.max(0, Number(layer.startTime || 0)),
         endTime: Math.max(0, Number(layer.endTime || 0)),
-        duration: Math.max(0, Number(layer.duration || 0)),
+        duration,
+        sourceOffset,
         volume: Math.max(0, Math.min(200, Number(layer.volume ?? 100))),
         audioOnly: Boolean(layer.audioOnly),
         aspectRatio: aspect,
@@ -11054,9 +11060,10 @@ function _editorSyncMediaLayersWithTime(timeSec) {
 
         const normalizedLayer = _editorNormalizeMediaLayer(layer);
         const localTime = Math.max(0, currentTime - normalizedLayer.startTime);
+        const playbackTime = Math.max(0, Number(normalizedLayer.sourceOffset || 0) + localTime);
         const reachedVideoEnd = normalizedLayer.kind === "video"
             && Number(normalizedLayer.duration || 0) > 0
-            && localTime > Number(normalizedLayer.duration || 0);
+            && playbackTime > Number(normalizedLayer.duration || 0);
         const inRange = currentTime >= normalizedLayer.startTime && currentTime <= normalizedLayer.endTime && !reachedVideoEnd;
 
         if (normalizedLayer.kind === "video" && normalizedLayer.audioOnly) {
@@ -11073,8 +11080,8 @@ function _editorSyncMediaLayersWithTime(timeSec) {
 
         const videoEl = item.querySelector("video");
         if (!videoEl) return;
-        const maxTime = normalizedLayer.duration > 0 ? Math.max(0, normalizedLayer.duration - 0.05) : localTime;
-        const targetTime = Math.min(localTime, maxTime);
+        const maxTime = normalizedLayer.duration > 0 ? Math.max(0, normalizedLayer.duration - 0.05) : playbackTime;
+        const targetTime = Math.min(playbackTime, maxTime);
         if (Math.abs((videoEl.currentTime || 0) - targetTime) > 0.1) {
             try {
                 videoEl.currentTime = targetTime;
@@ -11215,9 +11222,16 @@ function _editorSetMediaLayerStart(id, val) {
     const layer = _editorGetMediaLayerById(id);
     if (!layer) return;
     const maxTimeline = _editorGetTimelineDuration();
+    const sourceOffset = Math.max(0, Number(layer.sourceOffset || 0));
+    const maxSpan = layer.kind === "video" && Number(layer.duration || 0) > 0
+        ? Math.max(0.1, Number(layer.duration || 0) - sourceOffset)
+        : Number.POSITIVE_INFINITY;
     const nextStart = Math.max(0, Math.min(maxTimeline, Number(val || 0)));
     layer.startTime = nextStart;
     layer.endTime = Math.max(nextStart + 0.1, Number(layer.endTime || nextStart + 0.1));
+    if (Number.isFinite(maxSpan)) {
+        layer.endTime = Math.min(layer.endTime, nextStart + maxSpan);
+    }
     if (maxTimeline > 0) {
         layer.endTime = Math.min(maxTimeline, layer.endTime);
     }
@@ -11231,9 +11245,16 @@ function _editorSetMediaLayerEnd(id, val) {
     const layer = _editorGetMediaLayerById(id);
     if (!layer) return;
     const maxTimeline = _editorGetTimelineDuration();
+    const sourceOffset = Math.max(0, Number(layer.sourceOffset || 0));
+    const maxSpan = layer.kind === "video" && Number(layer.duration || 0) > 0
+        ? Math.max(0.1, Number(layer.duration || 0) - sourceOffset)
+        : Number.POSITIVE_INFINITY;
     const nextEnd = Math.max(0, Math.min(maxTimeline, Number(val || 0)));
     layer.endTime = nextEnd;
     layer.startTime = Math.min(layer.startTime, Math.max(0, nextEnd - 0.1));
+    if (Number.isFinite(maxSpan)) {
+        layer.endTime = Math.min(layer.endTime, layer.startTime + maxSpan);
+    }
     _editorRenderTimeline();
     _editorSyncMediaLayersWithTime(Number(_editor.timelineTime || document.getElementById("editor-video")?.currentTime || 0));
     _editorRenderProps();
@@ -11282,6 +11303,7 @@ function _editorPushMediaLayer(kind, payload, options = {}) {
         startTime,
         endTime: Math.max(0.1, initialEnd),
         duration: layerDuration,
+        sourceOffset: 0,
         aspectRatio,
         volume: 100,
         audioOnly: false,
@@ -12707,7 +12729,54 @@ function _editorSplitAtCurrentTime() {
     const video = document.getElementById("editor-video");
     if (!video || !_editor.videoSegments.length) return;
 
-    const t = Math.max(0, Math.min(video.currentTime || 0, _editor.duration || 0));
+    const currentTimeline = Number(_editor.timelineTime || video.currentTime || 0);
+    const t = Math.max(0, Math.min(currentTimeline, _editorGetTimelineDuration()));
+    const selectedLayer = _editor.selectedClip.kind === "media-layer"
+        ? _editorGetMediaLayerById(_editor.selectedClip.id)
+        : null;
+
+    if (selectedLayer && selectedLayer.kind === "video") {
+        const normalizedLayer = _editorNormalizeMediaLayer(selectedLayer);
+        const canSplitLayer = t > normalizedLayer.startTime + 0.08 && t < normalizedLayer.endTime - 0.08;
+        if (canSplitLayer) {
+            _editorSaveState();
+
+            const firstEnd = t;
+            const secondStart = t;
+            const secondSourceOffset = Math.max(
+                0,
+                Number(normalizedLayer.sourceOffset || 0) + (t - normalizedLayer.startTime)
+            );
+            selectedLayer.endTime = firstEnd;
+
+            const secondLayer = {
+                ...selectedLayer,
+                id: _editorGenId(),
+                startTime: secondStart,
+                endTime: normalizedLayer.endTime,
+                sourceOffset: secondSourceOffset,
+            };
+
+            if (Number(secondLayer.duration || 0) > 0) {
+                const remainingDuration = Math.max(0.1, Number(secondLayer.duration || 0) - secondSourceOffset);
+                secondLayer.endTime = Math.min(secondLayer.endTime, secondLayer.startTime + remainingDuration);
+            }
+            secondLayer.endTime = Math.max(secondLayer.startTime + 0.1, secondLayer.endTime);
+
+            _editor.mediaLayers.push(secondLayer);
+
+            const trackIndex = _editorGetLayerTrackIndex(secondLayer);
+            _editor.selectedClip = { kind: "media-layer", id: String(secondLayer.id), track: `layer-video-${trackIndex}` };
+            _editor.selectedInsertTrack = _editorResolveInsertTrackForUi(`layer-video-${trackIndex}`);
+
+            _editorRenderTimeline();
+            _editorRenderMediaLayers();
+            _editorRenderProps();
+            showToast("Camada de vídeo dividida com sucesso.", "success");
+            return;
+        }
+    }
+
     const selectedTracks = _editorGetSelectedSegmentTracks();
     const splitTargets = selectedTracks.map(track => {
         const seg = _editorGetSegments(track).find(item => t > item.start + 0.08 && t < item.end - 0.08);
@@ -13461,8 +13530,9 @@ function _editorApplyDraggedRange(kind, id, start, end, track = "") {
     if (kind === "media-layer") {
         const item = _editorGetMediaLayerById(id);
         if (item) {
+            const sourceOffset = Math.max(0, Number(item.sourceOffset || 0));
             const maxByDuration = item.kind === "video" && Number(item.duration || 0) > 0
-                ? safeStart + Number(item.duration || 0)
+                ? safeStart + Math.max(0.1, Number(item.duration || 0) - sourceOffset)
                 : safeEnd;
             item.startTime = safeStart;
             item.endTime = Math.max(safeStart + 0.1, Math.min(safeEnd, maxByDuration));
@@ -13730,6 +13800,7 @@ async function _editorExport() {
             start_time: Number(layer.startTime || 0),
             end_time: Number(layer.endTime || 0),
             duration: Number(layer.duration || 0),
+            source_offset: Number(layer.sourceOffset || 0),
             volume: Number(layer.volume ?? 100),
             audio_only: Boolean(layer.audioOnly),
         })),
