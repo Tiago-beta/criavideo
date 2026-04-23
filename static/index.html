@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260423-43">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260423-44">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 212;
+        var REQUIRED_VER = 213;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -216,6 +216,9 @@
                                 </button>
                                 <span class="editor-project-name" id="editor-project-name">Projeto</span>
                                 <div class="editor-topbar-actions">
+                                    <button class="btn btn-secondary btn-sm" id="editor-new-btn" type="button" title="Iniciar nova edição">
+                                        Novo +
+                                    </button>
                                     <button class="btn btn-secondary btn-sm" id="editor-undo-btn" type="button" title="Desfazer" disabled>
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                                     </button>
@@ -2553,8 +2556,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260423-43"></script>
-    <script src="/video/static/pwa.js?v=20260423-43"></script>
+    <script src="/video/static/app.js?v=20260423-44"></script>
+    <script src="/video/static/pwa.js?v=20260423-44"></script>
 </body>
 </html>
 

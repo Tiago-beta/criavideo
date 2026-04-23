@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v195 loaded");
+﻿console.log("[CriaVideo] app.js v196 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -9884,6 +9884,16 @@ function _editorGetDraftStorageKey(projectId = 0) {
     return `${EDITOR_DRAFT_STORAGE_PREFIX}${pid}`;
 }
 
+function _editorClearDraft(projectId = 0) {
+    const key = _editorGetDraftStorageKey(projectId);
+    if (!key) return;
+    try {
+        localStorage.removeItem(key);
+    } catch {
+        // Ignore storage errors when clearing draft.
+    }
+}
+
 function _editorInferNextIdFromState() {
     const candidates = [];
     [_editor.videoSegments, _editor.audioSegments, _editor.texts, _editor.subtitles, _editor.stickers, _editor.mediaLayers]
@@ -11503,8 +11513,9 @@ async function _editorUploadProjectImages(input) {
 window._editorUploadProjectImages = _editorUploadProjectImages;
 
 // ---------- Open editor for a project ----------
-async function openEditor(projectId) {
+async function openEditor(projectId, options = {}) {
     try {
+        const shouldRestoreDraft = options && options.restoreDraft !== false;
         const detail = await api(`/video/projects/${projectId}`);
         const render = _pickLatestAvailableRender(detail.renders || []);
         if (!render || !render.video_url) {
@@ -11558,7 +11569,12 @@ async function openEditor(projectId) {
         video.onloadedmetadata = () => {
             _editor.duration = video.duration;
             _editorInitVideoSegments();
-            const restored = _editorRestoreDraft(projectId, _editor.videoUrl);
+            let restored = false;
+            if (shouldRestoreDraft) {
+                restored = _editorRestoreDraft(projectId, _editor.videoUrl);
+            } else {
+                _editorClearDraft(projectId);
+            }
             if (!restored) {
                 _editor.timelineTime = 0;
             }
@@ -11572,7 +11588,7 @@ async function openEditor(projectId) {
             _editorRefreshQuickActions();
             _editorRenderTimeline();
             _editorSelectTool(restored ? _editor.activeTool : "text");
-            if (restored) {
+            if (shouldRestoreDraft && restored) {
                 showToast("Edição restaurada de onde você parou.", "success");
             }
         };
@@ -11582,6 +11598,20 @@ async function openEditor(projectId) {
     }
 }
 window.openEditor = openEditor;
+
+async function _editorStartFreshEdit() {
+    const projectId = Number(_editor.projectId || 0);
+    if (!projectId) {
+        showToast("Abra um projeto no editor antes de iniciar uma nova edição.", "error");
+        return;
+    }
+
+    _editorPersistDraftNow();
+    _editorClearDraft(projectId);
+    await openEditor(projectId, { restoreDraft: false });
+    showToast("Nova edição iniciada do zero.", "success");
+}
+window._editorStartFreshEdit = _editorStartFreshEdit;
 
 // ---------- Close editor ----------
 function closeEditor() {
@@ -12913,6 +12943,13 @@ function _editorSplitAtCurrentTime() {
         }
     }
 
+    if (selectedKind === "music") {
+        const splitSelection = splitSegmentInTrack("audio", "");
+        if (splitSelection && finalizeSplit(splitSelection, "Trecho de áudio dividido com sucesso.")) {
+            return;
+        }
+    }
+
     const insertTrack = String(_editor.selectedInsertTrack || "").trim();
     if (/^layer-video-\d+$/i.test(insertTrack)) {
         const targetTrackIndex = _editorParseLayerTrackId(insertTrack, 0);
@@ -13307,7 +13344,7 @@ function _editorRenderTimeline() {
         }).join("");
 
         const musicSelected = selectedKind === "music" ? " selected" : "";
-        audioClips += `<div class="editor-track-clip clip-audio${musicSelected}" data-kind="music" data-id="music" style="left:0;width:100%;top:1px;background:linear-gradient(135deg,#6b1a4a,#4a0e2e);border-color:rgba(107,26,74,0.6)">Audio</div>`;
+        audioClips += `<div class="editor-track-clip clip-audio${musicSelected}" data-kind="music" data-track="audio" data-id="music" style="left:0;width:100%;top:1px;background:linear-gradient(135deg,#6b1a4a,#4a0e2e);border-color:rgba(107,26,74,0.6)">Audio</div>`;
 
         rows.push({
             track: "audio",
@@ -13490,6 +13527,9 @@ function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
         const layerTrack = normalizedTrack || `layer-video-${_editorGetLayerTrackIndex(layer)}`;
         _editor.selectedClip.track = layerTrack;
         _editor.selectedInsertTrack = _editorResolveInsertTrackForUi(layerTrack);
+    } else if (kind === "music") {
+        _editor.selectedClip.track = "audio";
+        _editor.selectedInsertTrack = "audio";
     } else if (normalizedTrack) {
         _editor.selectedInsertTrack = normalizedTrack;
     }
@@ -14112,6 +14152,7 @@ function _bindEditorEvents() {
     document.getElementById("editor-overlay-canvas")?.addEventListener("click", _editorHandleOverlayClick);
     document.getElementById("editor-play-btn")?.addEventListener("click", _editorTogglePlay);
     document.getElementById("editor-back-btn")?.addEventListener("click", closeEditor);
+    document.getElementById("editor-new-btn")?.addEventListener("click", _editorStartFreshEdit);
     document.getElementById("editor-undo-btn")?.addEventListener("click", _editorUndo);
     document.getElementById("editor-redo-btn")?.addEventListener("click", _editorRedo);
     document.getElementById("editor-export-btn")?.addEventListener("click", _editorExport);
