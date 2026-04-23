@@ -6065,6 +6065,120 @@ th,
     text-align: right;
 }
 
+.editor-ai-music-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 4050;
+}
+
+.editor-ai-music-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(3, 10, 20, 0.72);
+    backdrop-filter: blur(4px);
+}
+
+.editor-ai-music-modal {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(560px, calc(100vw - 24px));
+    border-radius: 14px;
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    background: linear-gradient(180deg, rgba(12, 34, 58, 0.98), rgba(5, 18, 34, 0.98));
+    box-shadow: 0 28px 56px rgba(0, 0, 0, 0.5);
+    padding: 14px;
+}
+
+.editor-ai-music-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.editor-ai-music-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--text);
+}
+
+.editor-ai-music-close {
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.editor-ai-music-subtitle {
+    margin: 8px 0 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.editor-ai-music-error {
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    background: rgba(239, 68, 68, 0.12);
+    color: #fca5a5;
+    font-size: 12px;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+}
+
+.editor-ai-music-form {
+    display: grid;
+    gap: 8px;
+}
+
+.editor-ai-music-form label {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.editor-ai-music-form select,
+.editor-ai-music-form textarea {
+    width: 100%;
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+    padding: 9px 10px;
+    font-size: 12px;
+    resize: vertical;
+}
+
+.editor-ai-music-form select:focus,
+.editor-ai-music-form textarea:focus {
+    outline: none;
+    border-color: rgba(0, 212, 255, 0.55);
+    box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.16);
+}
+
+.editor-ai-music-footer {
+    margin-top: 12px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.editor-ai-music-generate-btn {
+    border-color: rgba(0, 212, 255, 0.65);
+    background: rgba(0, 212, 255, 0.18);
+}
+
+.editor-ai-music-generate-btn:disabled,
+.editor-ai-music-close:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 /* ── Quick actions row ── */
 .editor-quick-actions {
     display: flex;

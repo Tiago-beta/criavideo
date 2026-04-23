@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v191 loaded");
+﻿console.log("[CriaVideo] app.js v192 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -9828,7 +9828,7 @@ const _editor = {
     musicUrl: "",
     _musicFile: null,
     _musicServerPath: "",
-    _musicSource: "audio", // audio | video
+    _musicSource: "audio", // audio | video | ai
     musicVolume: 80,
     originalVolume: 100,
     _lastMusicVolume: 80,
@@ -9861,6 +9861,18 @@ let _editorLayerLibrary = {
     sending: false,
     sendProgress: 0,
     sendTotal: 0,
+};
+const _EDITOR_AI_MUSIC_MOOD_OPTIONS = [
+    { value: "calmo", label: "Calmo" },
+    { value: "drama", label: "Drama" },
+    { value: "alegre", label: "Alegre" },
+];
+let _editorAIMusicModal = {
+    open: false,
+    generating: false,
+    error: "",
+    mood: "calmo",
+    characteristics: "",
 };
 
 const EDITOR_DRAFT_STORAGE_PREFIX = "editor_draft_v1_";
@@ -10829,6 +10841,171 @@ async function _editorAddSelectedLayerVideosFromLibrary() {
 }
 window._editorAddSelectedLayerVideosFromLibrary = _editorAddSelectedLayerVideosFromLibrary;
 
+function _editorResetAIMusicModalState() {
+    _editorAIMusicModal = {
+        open: false,
+        generating: false,
+        error: "",
+        mood: "calmo",
+        characteristics: "",
+    };
+}
+
+function _editorRenderAIMusicModal() {
+    const existing = document.getElementById("editor-ai-music-overlay");
+    if (!_editorAIMusicModal.open) {
+        if (existing) existing.remove();
+        return;
+    }
+
+    const isGenerating = Boolean(_editorAIMusicModal.generating);
+    const errorHtml = _editorAIMusicModal.error
+        ? `<div class="editor-ai-music-error">${esc(_editorAIMusicModal.error)}</div>`
+        : "";
+
+    const optionsHtml = _EDITOR_AI_MUSIC_MOOD_OPTIONS.map((option) => `
+        <option value="${option.value}" ${option.value === _editorAIMusicModal.mood ? "selected" : ""}>${option.label}</option>
+    `).join("");
+
+    const generateLabel = isGenerating ? "Gerando áudio IA..." : "Gerar áudio";
+
+    const overlayHtml = `
+        <div class="editor-ai-music-backdrop" onclick="_editorCloseAIMusicModal()"></div>
+        <div class="editor-ai-music-modal" role="dialog" aria-modal="true" aria-label="Criar áudio IA">
+            <div class="editor-ai-music-header">
+                <h3>Criar áudio IA (Tevoxi)</h3>
+                <button class="editor-ai-music-close" type="button" onclick="_editorCloseAIMusicModal()" ${isGenerating ? "disabled" : ""}>×</button>
+            </div>
+            <p class="editor-ai-music-subtitle">Gere uma trilha instrumental emocional e adicione automaticamente na faixa de áudio.</p>
+            ${errorHtml}
+            <div class="editor-ai-music-form">
+                <label for="editor-ai-music-mood">Clima</label>
+                <select id="editor-ai-music-mood" onchange="_editorSetAIMusicMood(this.value)" ${isGenerating ? "disabled" : ""}>
+                    ${optionsHtml}
+                </select>
+
+                <label for="editor-ai-music-characteristics">Características (opcional)</label>
+                <textarea
+                    id="editor-ai-music-characteristics"
+                    rows="5"
+                    maxlength="260"
+                    placeholder="Ex.: piano suave, clima emocional, crescendo no final"
+                    oninput="_editorSetAIMusicCharacteristics(this.value)"
+                    ${isGenerating ? "disabled" : ""}
+                >${esc(_editorAIMusicModal.characteristics || "")}</textarea>
+            </div>
+            <div class="editor-ai-music-footer">
+                <button class="editor-add-btn" type="button" onclick="_editorCloseAIMusicModal()" ${isGenerating ? "disabled" : ""}>Cancelar</button>
+                <button class="editor-add-btn editor-ai-music-generate-btn" type="button" onclick="_editorGenerateAIMusic()" ${isGenerating ? "disabled" : ""}>${generateLabel}</button>
+            </div>
+        </div>
+    `;
+
+    if (!existing) {
+        const wrapper = document.createElement("div");
+        wrapper.id = "editor-ai-music-overlay";
+        wrapper.className = "editor-ai-music-overlay";
+        wrapper.innerHTML = overlayHtml;
+        document.body.appendChild(wrapper);
+        return;
+    }
+
+    existing.innerHTML = overlayHtml;
+}
+
+function _editorOpenAIMusicModal() {
+    if (!_editor.projectId) {
+        showToast("Abra um projeto no editor antes de criar áudio IA.", "error");
+        return;
+    }
+    _editorAIMusicModal.open = true;
+    _editorAIMusicModal.generating = false;
+    _editorAIMusicModal.error = "";
+    _editorRenderAIMusicModal();
+}
+window._editorOpenAIMusicModal = _editorOpenAIMusicModal;
+
+function _editorCloseAIMusicModal(forceClose = false) {
+    if (_editorAIMusicModal.generating && !forceClose) return;
+    _editorAIMusicModal.open = false;
+    _editorAIMusicModal.error = "";
+    _editorRenderAIMusicModal();
+}
+window._editorCloseAIMusicModal = _editorCloseAIMusicModal;
+
+function _editorSetAIMusicMood(value) {
+    _editorAIMusicModal.mood = String(value || "calmo").trim() || "calmo";
+}
+window._editorSetAIMusicMood = _editorSetAIMusicMood;
+
+function _editorSetAIMusicCharacteristics(value) {
+    _editorAIMusicModal.characteristics = String(value || "").slice(0, 260);
+}
+window._editorSetAIMusicCharacteristics = _editorSetAIMusicCharacteristics;
+
+async function _editorGenerateAIMusic() {
+    if (!_editor.projectId) {
+        showToast("Projeto não encontrado no editor.", "error");
+        return;
+    }
+    if (_editorAIMusicModal.generating) return;
+
+    _editorAIMusicModal.generating = true;
+    _editorAIMusicModal.error = "";
+    _editorRenderAIMusicModal();
+
+    try {
+        const timelineDuration = Math.max(1, Number(_editorGetTimelineDuration() || _editor.duration || 0));
+        const payload = await api("/video/editor/generate-tevoxi-music", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                project_id: Number(_editor.projectId || 0),
+                mood: _editorAIMusicModal.mood,
+                characteristics: (_editorAIMusicModal.characteristics || "").trim(),
+                duration_seconds: timelineDuration,
+            }),
+        });
+
+        const serverPath = String(payload?.path || "").trim();
+        const mediaUrlRaw = String(payload?.media_url || "").trim();
+        const mediaUrl = mediaUrlRaw.startsWith("/")
+            ? `${API.replace("/api", "")}${mediaUrlRaw}`
+            : mediaUrlRaw;
+
+        if (!serverPath) {
+            throw new Error("Falha ao gerar áudio IA no servidor");
+        }
+
+        _editorSaveState();
+        _editor._musicSource = "ai";
+        _editor._musicFile = null;
+        _editor._musicServerPath = serverPath;
+        _editor.musicUrl = mediaUrl;
+        _editorSetMusicPreviewSource(_editor.musicUrl || "");
+
+        if (!_editor.audioSegments.length) {
+            _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
+        }
+        _editor.selectedTracks = ["video", "audio"];
+        _editor.selectedClip = { kind: "music", id: "music" };
+        _editorRefreshQuickActions();
+        _editorRenderProps();
+        _editorRenderTimeline();
+
+        _editorAIMusicModal.open = false;
+        _editorAIMusicModal.generating = false;
+        _editorRenderAIMusicModal();
+        showToast("Áudio IA criado com sucesso e adicionado na faixa!", "success");
+    } catch (err) {
+        _editorAIMusicModal.generating = false;
+        _editorAIMusicModal.error = err?.message || "Erro ao gerar áudio IA";
+        _editorRenderAIMusicModal();
+        showToast("Erro ao gerar áudio IA: " + (_editorAIMusicModal.error || "erro desconhecido"), "error");
+    }
+}
+window._editorGenerateAIMusic = _editorGenerateAIMusic;
+
 function _editorNormalizeMediaLayer(layer) {
     const aspect = Math.max(0.2, Number(layer.aspectRatio || 1));
     const trackIndex = _editorGetLayerTrackIndex(layer);
@@ -11346,6 +11523,8 @@ async function openEditor(projectId) {
         _editor.timelineTime = 0;
         _editor._virtualPlaybackActive = false;
         _editorStopVirtualTimelinePlayback();
+        _editorCloseAIMusicModal(true);
+        _editorResetAIMusicModalState();
 
         document.getElementById("editor-select-view").hidden = true;
         document.getElementById("editor-workspace").hidden = false;
@@ -11392,6 +11571,8 @@ function closeEditor() {
     document.getElementById("editor-select-view").hidden = false;
     document.getElementById("editor-workspace").hidden = true;
     _editorCloseLayerVideoLibrary();
+    _editorCloseAIMusicModal(true);
+    _editorResetAIMusicModalState();
     const video = document.getElementById("editor-video");
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = false;
@@ -12009,7 +12190,11 @@ function _editorRenderProps() {
         container.innerHTML = `
             <div class="editor-props-title">Audio</div>
             <div class="editor-props-group" style="margin-top:12px">
-                <button class="editor-add-btn" onclick="document.getElementById('editor-music-upload').click()">
+                <button class="editor-add-btn" onclick="_editorOpenAIMusicModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l2.4 4.9L20 9l-4 3.9L16.9 19 12 16.3 7.1 19 8 12.9 4 9l5.6-1.1L12 3z"/></svg>
+                    Criar áudio IA
+                </button>
+                <button class="editor-add-btn" style="margin-top:8px" onclick="document.getElementById('editor-music-upload').click()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                     Enviar arquivo de audio
                 </button>
@@ -12022,7 +12207,7 @@ function _editorRenderProps() {
                 ${_editor.musicUrl ? `
                     <div class="editor-music-current">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                        <div class="editor-music-info">Audio adicionado<small>${_editor._musicSource === "video" ? "Extraido de video enviado" : "Arquivo de audio carregado"}</small></div>
+                        <div class="editor-music-info">Audio adicionado<small>${_editor._musicSource === "video" ? "Extraido de video enviado" : _editor._musicSource === "ai" ? "Gerado por IA (Tevoxi)" : "Arquivo de audio carregado"}</small></div>
                         <button class="sub-delete" onclick="_editorRemoveMusic()">✕</button>
                     </div>
                     <label>Volume do audio</label>

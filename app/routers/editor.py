@@ -23,6 +23,7 @@ from app.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
 from app.models import VideoProject, VideoRender, VideoStatus
+from app.services.tevoxi_music import generate_music_from_theme
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/video/editor", tags=["editor"])
@@ -33,6 +34,16 @@ _export_jobs: dict[str, dict] = {}
 _EDITOR_EXPORT_PRESET = "veryfast"
 _EDITOR_EXPORT_CRF = "23"
 _EDITOR_EXPORT_AUDIO_BITRATE = "160k"
+_EDITOR_TEVOXI_MOOD_MAP = {
+    "calmo": "calm",
+    "calma": "calm",
+    "drama": "dramatic",
+    "dramatico": "dramatic",
+    "dramático": "dramatic",
+    "alegre": "uplifting",
+    "animado": "upbeat",
+    "emocional": "emotional",
+}
 
 
 def _resolve_render_video_path(render: VideoRender) -> str | None:
@@ -64,6 +75,13 @@ def _to_media_url(path: str | None) -> str | None:
         return None
     rel_url = rel.replace("\\", "/").lstrip("/")
     return f"/video/media/{rel_url}"
+
+
+def _normalize_editor_tevoxi_mood(value: str | None) -> str:
+    raw = (value or "").strip().lower()
+    if not raw:
+        return "emotional"
+    return _EDITOR_TEVOXI_MOOD_MAP.get(raw, raw[:40])
 
 
 def _fallback_project_video_path(project_id: int) -> str | None:
@@ -374,6 +392,94 @@ class ExportRequest(BaseModel):
 
 class AddLayerVideoFromLibraryRequest(BaseModel):
     project_id: int
+
+
+class GenerateTevoxiMusicRequest(BaseModel):
+    project_id: int
+    mood: str = "calmo"
+    characteristics: str = ""
+    duration_seconds: float = 0
+
+
+@router.post("/generate-tevoxi-music")
+async def generate_tevoxi_music(
+    req: GenerateTevoxiMusicRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project_id = int(req.project_id or 0)
+    if project_id <= 0:
+        raise HTTPException(400, "Projeto inválido")
+
+    result = await db.execute(
+        select(VideoProject)
+        .where(VideoProject.id == project_id, VideoProject.user_id == user["id"])
+    )
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(404, "Projeto não encontrado")
+
+    mood = _normalize_editor_tevoxi_mood(req.mood)
+    characteristics = (req.characteristics or "").strip()
+
+    theme_parts: list[str] = []
+    project_title = (project.title or project.track_title or "").strip()
+    if project_title:
+        theme_parts.append(f"Tema do vídeo: {project_title[:120]}")
+    if characteristics:
+        theme_parts.append(f"Características desejadas: {characteristics[:220]}")
+    theme_parts.append("Trilha instrumental emocional, sem voz cantada, pronta para edição de vídeo.")
+    theme = " | ".join(theme_parts)
+
+    requested_duration = float(req.duration_seconds or 0.0)
+    fallback_duration = float(project.track_duration or 0.0)
+    target_duration = int(round(requested_duration if requested_duration > 0 else fallback_duration))
+    target_duration = max(30, min(240, target_duration or 60))
+
+    try:
+        tevoxi_result = await generate_music_from_theme(
+            theme=theme,
+            project_id=project.id,
+            duration=target_duration,
+            language="pt-BR",
+            manual_settings={
+                "music_mode": "instrumental",
+                "music_genre": "cinematic",
+                "music_vocalist": "",
+                "music_mood": mood,
+                "music_duration": target_duration,
+                "music_language": "pt-BR",
+            },
+        )
+    except Exception as exc:
+        err_text = str(exc or "").strip()
+        logger.warning(
+            "[editor] Tevoxi music generation failed project_id=%s mood=%s: %s",
+            project.id,
+            mood,
+            err_text or "unknown",
+        )
+        if "não configurado" in err_text.lower() or "nao configurado" in err_text.lower():
+            raise HTTPException(503, "Serviço de música Tevoxi não está configurado no servidor")
+        raise HTTPException(502, "Falha ao gerar áudio via Tevoxi. Tente novamente em instantes")
+
+    audio_path = str(tevoxi_result.get("audio_path") or "").strip()
+    if not audio_path or not os.path.exists(audio_path):
+        raise HTTPException(500, "Tevoxi retornou sem arquivo de áudio válido")
+
+    media_url = _to_media_url(audio_path)
+    if not media_url:
+        raise HTTPException(500, "Falha ao mapear mídia de áudio gerada")
+
+    generated_duration = float(tevoxi_result.get("duration") or target_duration)
+    return {
+        "path": audio_path,
+        "media_url": media_url,
+        "title": str(tevoxi_result.get("title") or "Áudio IA Tevoxi"),
+        "duration": generated_duration,
+        "mood": mood,
+        "source": "tevoxi",
+    }
 
 
 # ── Upload music ──────────────────────────────────────
