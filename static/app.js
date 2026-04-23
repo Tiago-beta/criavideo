@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v194 loaded");
+﻿console.log("[CriaVideo] app.js v195 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -12731,55 +12731,246 @@ function _editorSplitAtCurrentTime() {
 
     const currentTimeline = Number(_editor.timelineTime || video.currentTime || 0);
     const t = Math.max(0, Math.min(currentTimeline, _editorGetTimelineDuration()));
-    const selectedLayer = _editor.selectedClip.kind === "media-layer"
-        ? _editorGetMediaLayerById(_editor.selectedClip.id)
-        : null;
+    const canSplitRange = (start, end) => {
+        return t > Number(start || 0) + 0.08 && t < Number(end || 0) - 0.08;
+    };
 
-    if (selectedLayer && selectedLayer.kind === "video") {
-        const normalizedLayer = _editorNormalizeMediaLayer(selectedLayer);
-        const canSplitLayer = t > normalizedLayer.startTime + 0.08 && t < normalizedLayer.endTime - 0.08;
-        if (canSplitLayer) {
+    let changed = false;
+    let segmentChanged = false;
+    let layerChanged = false;
+    let overlayChanged = false;
+    const ensureSaved = () => {
+        if (!changed) {
             _editorSaveState();
+            changed = true;
+        }
+    };
 
-            const firstEnd = t;
-            const secondStart = t;
-            const secondSourceOffset = Math.max(
-                0,
-                Number(normalizedLayer.sourceOffset || 0) + (t - normalizedLayer.startTime)
-            );
-            selectedLayer.endTime = firstEnd;
+    const splitSegmentInTrack = (track, preferredId = "") => {
+        const targetTrack = track === "audio" ? "audio" : "video";
+        const segments = _editorGetSegments(targetTrack);
+        let seg = preferredId
+            ? segments.find(item => String(item.id) === String(preferredId))
+            : null;
+        if (!seg || !canSplitRange(seg.start, seg.end)) {
+            seg = segments.find(item => canSplitRange(item.start, item.end));
+        }
+        if (!seg) return null;
 
-            const secondLayer = {
-                ...selectedLayer,
-                id: _editorGenId(),
-                startTime: secondStart,
-                endTime: normalizedLayer.endTime,
-                sourceOffset: secondSourceOffset,
-            };
+        ensureSaved();
+        const first = { id: _editorGenId(), start: seg.start, end: t };
+        const second = { id: _editorGenId(), start: t, end: seg.end };
+        const nextSegments = segments
+            .filter(item => item !== seg)
+            .concat([first, second]);
+        _editorSetSegments(targetTrack, nextSegments);
+        _editorSortSegments(targetTrack);
+        segmentChanged = true;
+        return { kind: "segment", id: String(second.id), track: targetTrack };
+    };
 
-            if (Number(secondLayer.duration || 0) > 0) {
-                const remainingDuration = Math.max(0.1, Number(secondLayer.duration || 0) - secondSourceOffset);
-                secondLayer.endTime = Math.min(secondLayer.endTime, secondLayer.startTime + remainingDuration);
-            }
-            secondLayer.endTime = Math.max(secondLayer.startTime + 0.1, secondLayer.endTime);
+    const splitMediaLayer = (layer) => {
+        if (!layer || layer.kind !== "video") return null;
+        const normalizedLayer = _editorNormalizeMediaLayer(layer);
+        if (!canSplitRange(normalizedLayer.startTime, normalizedLayer.endTime)) return null;
 
-            _editor.mediaLayers.push(secondLayer);
+        ensureSaved();
+        const firstEnd = t;
+        const secondStart = t;
+        const secondSourceOffset = Math.max(
+            0,
+            Number(normalizedLayer.sourceOffset || 0) + (t - normalizedLayer.startTime)
+        );
+        layer.endTime = firstEnd;
 
-            const trackIndex = _editorGetLayerTrackIndex(secondLayer);
-            _editor.selectedClip = { kind: "media-layer", id: String(secondLayer.id), track: `layer-video-${trackIndex}` };
-            _editor.selectedInsertTrack = _editorResolveInsertTrackForUi(`layer-video-${trackIndex}`);
+        const secondLayer = {
+            ...layer,
+            id: _editorGenId(),
+            startTime: secondStart,
+            endTime: normalizedLayer.endTime,
+            sourceOffset: secondSourceOffset,
+        };
 
-            _editorRenderTimeline();
+        if (Number(secondLayer.duration || 0) > 0) {
+            const remainingDuration = Math.max(0.1, Number(secondLayer.duration || 0) - secondSourceOffset);
+            secondLayer.endTime = Math.min(secondLayer.endTime, secondLayer.startTime + remainingDuration);
+        }
+        secondLayer.endTime = Math.max(secondLayer.startTime + 0.1, secondLayer.endTime);
+
+        _editor.mediaLayers.push(secondLayer);
+        layerChanged = true;
+        const trackIndex = _editorGetLayerTrackIndex(secondLayer);
+        return { kind: "media-layer", id: String(secondLayer.id), track: `layer-video-${trackIndex}` };
+    };
+
+    const splitTimedOverlayById = (kind, list, itemId, trackBuilder) => {
+        if (!Array.isArray(list) || !list.length) return null;
+        const idx = list.findIndex(item => String(item.id) === String(itemId));
+        if (idx < 0) return null;
+        const source = list[idx];
+        if (!canSplitRange(source.startTime, source.endTime)) return null;
+
+        ensureSaved();
+        const second = {
+            ...source,
+            id: _editorGenId(),
+            startTime: t,
+            endTime: Number(source.endTime || t),
+        };
+        source.endTime = t;
+        list.splice(idx + 1, 0, second);
+        overlayChanged = true;
+        return {
+            kind,
+            id: String(second.id),
+            track: typeof trackBuilder === "function" ? trackBuilder(second) : "",
+        };
+    };
+
+    const splitTimedOverlayAtTime = (kind, list, trackBuilder) => {
+        if (!Array.isArray(list) || !list.length) return null;
+        const idx = list.findIndex(item => canSplitRange(item.startTime, item.endTime));
+        if (idx < 0) return null;
+        const source = list[idx];
+
+        ensureSaved();
+        const second = {
+            ...source,
+            id: _editorGenId(),
+            startTime: t,
+            endTime: Number(source.endTime || t),
+        };
+        source.endTime = t;
+        list.splice(idx + 1, 0, second);
+        overlayChanged = true;
+        return {
+            kind,
+            id: String(second.id),
+            track: typeof trackBuilder === "function" ? trackBuilder(second) : "",
+        };
+    };
+
+    const finalizeSplit = (selection, message) => {
+        if (!changed) return false;
+        if (segmentChanged) {
+            _editorRecomputeTrimBounds();
+            _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
+        }
+        _editor.selectedClip = selection || { kind: "", id: "", track: "" };
+        if (selection?.track) {
+            _editor.selectedInsertTrack = _editorResolveInsertTrackForUi(selection.track);
+        }
+        _editorRenderTimeline();
+        if (layerChanged) {
             _editorRenderMediaLayers();
-            _editorRenderProps();
-            showToast("Camada de vídeo dividida com sucesso.", "success");
+        }
+        _editorRenderProps();
+        if (overlayChanged) {
+            const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
+            _editorDrawOverlays(currentTime);
+        }
+        showToast(message, "success");
+        return true;
+    };
+
+    const selectedKind = String(_editor.selectedClip.kind || "");
+    const selectedId = String(_editor.selectedClip.id || "");
+    const selectedTrack = String(_editor.selectedClip.track || "");
+
+    if (selectedKind === "segment") {
+        const splitSelection = splitSegmentInTrack(selectedTrack || "video", selectedId);
+        if (splitSelection && finalizeSplit(splitSelection, "Trecho dividido com sucesso.")) {
+            return;
+        }
+    }
+
+    if (selectedKind === "media-layer") {
+        const selectedLayer = _editorGetMediaLayerById(selectedId);
+        const splitSelection = splitMediaLayer(selectedLayer);
+        if (splitSelection && finalizeSplit(splitSelection, "Camada de vídeo dividida com sucesso.")) {
+            return;
+        }
+    }
+
+    if (selectedKind === "text") {
+        const splitSelection = splitTimedOverlayById("text", _editor.texts, selectedId, (item) => `text-${item.id}`);
+        if (splitSelection && finalizeSplit(splitSelection, "Texto dividido com sucesso.")) {
+            return;
+        }
+    }
+
+    if (selectedKind === "subtitle") {
+        const splitSelection = splitTimedOverlayById("subtitle", _editor.subtitles, selectedId, () => "subtitle");
+        if (splitSelection && finalizeSplit(splitSelection, "Legenda dividida com sucesso.")) {
+            return;
+        }
+    }
+
+    if (selectedKind === "sticker") {
+        const splitSelection = splitTimedOverlayById("sticker", _editor.stickers, selectedId, (item) => `sticker-${item.id}`);
+        if (splitSelection && finalizeSplit(splitSelection, "Sticker dividido com sucesso.")) {
+            return;
+        }
+    }
+
+    const insertTrack = String(_editor.selectedInsertTrack || "").trim();
+    if (/^layer-video-\d+$/i.test(insertTrack)) {
+        const targetTrackIndex = _editorParseLayerTrackId(insertTrack, 0);
+        const layerOnTrack = _editor.mediaLayers
+            .filter(layer => layer.kind === "video" && _editorGetLayerTrackIndex(layer) === targetTrackIndex)
+            .find(layer => {
+                const normalizedLayer = _editorNormalizeMediaLayer(layer);
+                return canSplitRange(normalizedLayer.startTime, normalizedLayer.endTime);
+            });
+
+        const splitSelection = splitMediaLayer(layerOnTrack);
+        if (splitSelection && finalizeSplit(splitSelection, "Camada de vídeo dividida com sucesso.")) {
+            return;
+        }
+
+        showToast("Posicione o playhead dentro de um trecho para cortar.", "error");
+        return;
+    }
+
+    if (insertTrack.startsWith("text-")) {
+        const itemId = insertTrack.slice("text-".length);
+        const splitSelection = splitTimedOverlayById("text", _editor.texts, itemId, (item) => `text-${item.id}`);
+        if (splitSelection && finalizeSplit(splitSelection, "Texto dividido com sucesso.")) {
+            return;
+        }
+        showToast("Posicione o playhead dentro de um trecho para cortar.", "error");
+        return;
+    }
+
+    if (insertTrack === "subtitle") {
+        const splitSelection = splitTimedOverlayAtTime("subtitle", _editor.subtitles, () => "subtitle");
+        if (splitSelection && finalizeSplit(splitSelection, "Legenda dividida com sucesso.")) {
+            return;
+        }
+        showToast("Posicione o playhead dentro de um trecho para cortar.", "error");
+        return;
+    }
+
+    if (insertTrack.startsWith("sticker-")) {
+        const itemId = insertTrack.slice("sticker-".length);
+        const splitSelection = splitTimedOverlayById("sticker", _editor.stickers, itemId, (item) => `sticker-${item.id}`);
+        if (splitSelection && finalizeSplit(splitSelection, "Sticker dividido com sucesso.")) {
+            return;
+        }
+        showToast("Posicione o playhead dentro de um trecho para cortar.", "error");
+        return;
+    }
+
+    if (insertTrack === "audio" || insertTrack === "video") {
+        const splitSelection = splitSegmentInTrack(insertTrack, "");
+        if (splitSelection && finalizeSplit(splitSelection, "Trecho dividido com sucesso.")) {
             return;
         }
     }
 
     const selectedTracks = _editorGetSelectedSegmentTracks();
     const splitTargets = selectedTracks.map(track => {
-        const seg = _editorGetSegments(track).find(item => t > item.start + 0.08 && t < item.end - 0.08);
+        const seg = _editorGetSegments(track).find(item => canSplitRange(item.start, item.end));
         return { track, seg };
     }).filter(item => item.seg);
 
@@ -12788,25 +12979,17 @@ function _editorSplitAtCurrentTime() {
         return;
     }
 
-    _editorSaveState();
     let selectedSplit = null;
     splitTargets.forEach(({ track, seg }) => {
-        const first = { id: _editorGenId(), start: seg.start, end: t };
-        const second = { id: _editorGenId(), start: t, end: seg.end };
-        const nextSegments = _editorGetSegments(track)
-            .filter(item => item !== seg)
-            .concat([first, second]);
-        _editorSetSegments(track, nextSegments);
-        _editorSortSegments(track);
-        selectedSplit = { kind: "segment", id: String(second.id), track };
+        const splitSelection = splitSegmentInTrack(track, seg.id);
+        if (splitSelection) {
+            selectedSplit = splitSelection;
+        }
     });
 
-    _editorRecomputeTrimBounds();
-    _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
-    _editor.selectedClip = selectedSplit || { kind: "", id: "", track: "" };
-    _editorRenderTimeline();
-    _editorRenderProps();
-    showToast(`Trecho dividido em ${splitTargets.length} faixa(s).`, "success");
+    if (!finalizeSplit(selectedSplit, `Trecho dividido em ${splitTargets.length} faixa(s).`)) {
+        showToast("Posicione o playhead dentro de um trecho para cortar.", "error");
+    }
 }
 window._editorSplitAtCurrentTime = _editorSplitAtCurrentTime;
 
@@ -13067,20 +13250,22 @@ function _editorRenderTimeline() {
 
     const layerClipsByTrack = new Map();
     _editor.mediaLayers.forEach((layer, idx) => {
-        const start = Math.max(0, Math.min(Number(layer.startTime || 0), dur));
-        const maxLayerEnd = layer.kind === "video" && Number(layer.duration || 0) > 0
-            ? start + Number(layer.duration || 0)
-            : dur;
-        const requestedEnd = Number(layer.endTime || dur);
+        const normalizedLayer = _editorNormalizeMediaLayer(layer);
+        const start = Math.max(0, Math.min(Number(normalizedLayer.startTime || 0), dur));
+        const availableLayerDuration = normalizedLayer.kind === "video" && Number(normalizedLayer.duration || 0) > 0
+            ? Math.max(0, Number(normalizedLayer.duration || 0) - Number(normalizedLayer.sourceOffset || 0))
+            : 0;
+        const maxLayerEnd = availableLayerDuration > 0 ? start + availableLayerDuration : dur;
+        const requestedEnd = Number(normalizedLayer.endTime || dur);
         const end = Math.max(start + 0.05, Math.min(dur, Math.min(requestedEnd, maxLayerEnd)));
         const left = (start / dur) * 100;
         const width = Math.max(0.5, ((end - start) / dur) * 100);
-        const selectedClass = selectedKind === "media-layer" && selectedId === String(layer.id) ? " selected" : "";
-        const labelPrefix = layer.kind === "video" ? "Video" : "Imagem";
+        const selectedClass = selectedKind === "media-layer" && selectedId === String(normalizedLayer.id) ? " selected" : "";
+        const labelPrefix = normalizedLayer.kind === "video" ? "Video" : "Imagem";
         const label = `${labelPrefix} ${idx + 1}`;
-        const trackIndex = _editorGetLayerTrackIndex(layer);
+        const trackIndex = _editorGetLayerTrackIndex(normalizedLayer);
         const layerTrack = `layer-video-${trackIndex}`;
-        const clipHtml = `<div class="editor-track-clip clip-media${selectedClass}" data-kind="media-layer" data-track="${layerTrack}" data-id="${layer.id}" style="left:${left}%;width:${width}%">${label}</div>`;
+        const clipHtml = `<div class="editor-track-clip clip-media${selectedClass}" data-kind="media-layer" data-track="${layerTrack}" data-id="${normalizedLayer.id}" style="left:${left}%;width:${width}%">${label}</div>`;
 
         if (!layerClipsByTrack.has(trackIndex)) {
             layerClipsByTrack.set(trackIndex, []);
