@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v202 loaded");
+console.log("[CriaVideo] app.js v203 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -11477,15 +11477,15 @@ function _editorBuildWaveformSvg(peaks = [], color = "rgba(239,191,255,0.85)") {
 }
 
 function _editorBuildMusicWaveformSvg(peaks = []) {
-    return _editorBuildWaveformSvg(peaks, "rgba(239,191,255,0.85)");
+    return _editorBuildWaveformSvg(peaks, "rgba(255,236,255,0.95)");
 }
 
 function _editorBuildSourceVideoWaveformSvg(peaks = []) {
-    return _editorBuildWaveformSvg(peaks, "rgba(172,241,198,0.88)");
+    return _editorBuildWaveformSvg(peaks, "rgba(238,250,255,0.96)");
 }
 
 function _editorBuildSourceAudioWaveformSvg(peaks = []) {
-    return _editorBuildWaveformSvg(peaks, "rgba(193,166,255,0.88)");
+    return _editorBuildWaveformSvg(peaks, "rgba(247,233,255,0.95)");
 }
 
 function _editorBuildFallbackWaveformPeaks(bucketCount = 320) {
@@ -12987,6 +12987,46 @@ async function _editorUploadProjectImages(input) {
 }
 window._editorUploadProjectImages = _editorUploadProjectImages;
 
+function _editorParseDurationSeconds(value) {
+    if (typeof value === "number") {
+        return Number.isFinite(value) && value > 0 ? value : 0;
+    }
+
+    const raw = String(value || "").trim();
+    if (!raw) return 0;
+
+    if (/^\d+(\.\d+)?$/.test(raw)) {
+        const numeric = Number(raw);
+        return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+    }
+
+    const normalized = raw.replace(",", ".");
+    const pieces = normalized.split(":").map((part) => Number(part));
+    if (pieces.some((part) => !Number.isFinite(part) || part < 0)) {
+        return 0;
+    }
+
+    if (pieces.length === 3) {
+        return (pieces[0] * 3600) + (pieces[1] * 60) + pieces[2];
+    }
+    if (pieces.length === 2) {
+        return (pieces[0] * 60) + pieces[1];
+    }
+
+    return 0;
+}
+
+function _editorResolveProjectDurationSeconds(detail = {}, render = {}, videoDuration = 0) {
+    const metadataDuration = _editorParseDurationSeconds(videoDuration);
+    const renderDuration = _editorParseDurationSeconds(render?.duration);
+    const trackDuration = _editorParseDurationSeconds(detail?.track_duration);
+    const sceneEndDuration = Array.isArray(detail?.scenes)
+        ? detail.scenes.reduce((maxValue, scene) => Math.max(maxValue, _editorParseDurationSeconds(scene?.end_time)), 0)
+        : 0;
+
+    return Math.max(0.1, metadataDuration, renderDuration, trackDuration, sceneEndDuration);
+}
+
 // ---------- Open editor for a project ----------
 async function openEditor(projectId, options = {}) {
     try {
@@ -13045,8 +13085,12 @@ async function openEditor(projectId, options = {}) {
         const video = document.getElementById("editor-video");
         video.src = _editor.videoUrl;
         video.load();
-        video.onloadedmetadata = () => {
-            _editor.duration = video.duration;
+        let editorReady = false;
+        const finalizeEditorOpen = () => {
+            if (editorReady) return;
+            editorReady = true;
+
+            _editor.duration = _editorResolveProjectDurationSeconds(detail, render, Number(video.duration || 0));
             _editorInitVideoSegments();
             let restored = false;
             if (shouldRestoreDraft) {
@@ -13081,6 +13125,9 @@ async function openEditor(projectId, options = {}) {
                 showToast("Edição restaurada de onde você parou.", "success");
             }
         };
+        video.onloadedmetadata = finalizeEditorOpen;
+        video.onerror = finalizeEditorOpen;
+        setTimeout(finalizeEditorOpen, 1500);
         _updateUndoRedoBtns();
     } catch (err) {
         showToast("Erro ao abrir editor: " + err.message, "error");
@@ -13164,9 +13211,7 @@ function _editorGetTimelineTrackWidth(durationSec = 0) {
     const timelineEl = document.getElementById("editor-timeline");
     const viewportTrackWidth = Math.max(560, Number(timelineEl?.clientWidth || 0) - 96);
     const zoom = _editorClampTimelineZoom(_editor.timelineZoom || 1);
-    const safeDuration = Math.max(0.1, Number(durationSec || _editorGetTimelineDuration() || 0.1));
-    const durationBaseWidth = Math.max(420, Math.round(safeDuration * 1.6));
-    const baseWidth = Math.max(viewportTrackWidth, durationBaseWidth);
+    const baseWidth = Math.max(420, viewportTrackWidth);
     return Math.round(baseWidth * zoom);
 }
 

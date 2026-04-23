@@ -7,3 +7,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+app/media/
+android-build/
+debug_frames/
+seedance/videos/
+temp_output.txt
