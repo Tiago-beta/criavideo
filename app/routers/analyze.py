@@ -1,0 +1,850 @@
+"""
+Analyze Router — Channel diagnostics and growth recommendations.
+"""
+import json
+import logging
+import re
+from collections import Counter
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+import httpx
+import openai
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth import get_current_user
+from app.config import get_settings
+from app.database import get_db
+from app.models import Platform, PublishJob, PublishStatus, SocialAccount
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/analyze", tags=["analyze"])
+settings = get_settings()
+_openai = openai.AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+
+YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
+YOUTUBE_TOKEN_URI = "https://oauth2.googleapis.com/token"
+
+PT_STOPWORDS = {
+    "a", "ao", "aos", "aquela", "aquele", "aqueles", "aquilo", "as", "ate", "com",
+    "como", "da", "das", "de", "dela", "dele", "deles", "depois", "do", "dos", "e",
+    "ela", "ele", "em", "entre", "era", "essa", "esse", "esta", "este", "eu", "foi",
+    "ha", "isso", "isto", "ja", "la", "mais", "mas", "me", "mesmo", "meu", "minha",
+    "na", "nas", "nem", "no", "nos", "nossa", "nosso", "o", "os", "ou", "para",
+    "pela", "pelo", "por", "pra", "que", "se", "sem", "ser", "seu", "sua", "sobre",
+    "sao", "tambem", "te", "tem", "tendo", "ter", "teu", "tua", "um", "uma", "uns",
+    "umas", "vai", "voce", "voces",
+}
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return 0
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(raw)
+    except Exception:
+        return None
+
+
+def _iso_duration_to_seconds(duration: str | None) -> int:
+    raw = str(duration or "").strip().upper()
+    if not raw:
+        return 0
+    match = re.match(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$", raw)
+    if not match:
+        return 0
+    hours = _safe_int(match.group(1))
+    minutes = _safe_int(match.group(2))
+    seconds = _safe_int(match.group(3))
+    return (hours * 3600) + (minutes * 60) + seconds
+
+
+def _normalize_text(value: str) -> str:
+    cleaned = re.sub(r"[^\w\s]", " ", (value or "").lower(), flags=re.UNICODE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _extract_keywords(texts: list[str], limit: int = 12) -> list[str]:
+    counter: Counter[str] = Counter()
+    for text in texts:
+        normalized = _normalize_text(text)
+        if not normalized:
+            continue
+        for token in normalized.split(" "):
+            if len(token) < 3 or token in PT_STOPWORDS or token.isdigit():
+                continue
+            counter[token] += 1
+    return [word for word, _ in counter.most_common(limit)]
+
+
+def _parse_json_response(raw_text: str) -> dict:
+    cleaned = (raw_text or "").strip()
+    if not cleaned:
+        return {}
+
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?", "", cleaned).strip()
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3].strip()
+
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(cleaned[start:end + 1])
+        raise
+
+
+def _coerce_list(value: Any, max_items: int = 8) -> list[str]:
+    if isinstance(value, str):
+        items = [part.strip() for part in value.split("\n") if part.strip()]
+    elif isinstance(value, list):
+        items = [str(item).strip() for item in value if str(item).strip()]
+    else:
+        items = []
+    return items[:max_items]
+
+
+def _normalize_title(text: str, limit: int = 90) -> str:
+    cleaned = re.sub(r"\s+", " ", str(text or "").strip())
+    if len(cleaned) <= limit:
+        return cleaned
+    chunk = cleaned[:limit]
+    if " " in chunk:
+        chunk = chunk.rsplit(" ", 1)[0]
+    return chunk.strip()
+
+
+def _build_description_template(main_keyword: str, second_keyword: str) -> str:
+    primary = main_keyword or "este tema"
+    secondary = second_keyword or "crescimento"
+    return (
+        f"Quer evoluir em {primary} sem enrolacao? Este video mostra o caminho mais rapido.\n\n"
+        f"Aqui voce vai aprender estrategias praticas sobre {primary} e {secondary}, com exemplos claros para aplicar hoje.\n\n"
+        "Comente sua maior duvida para eu trazer o proximo episodio da serie.\n"
+        "Inscreva-se e ative o sino para nao perder os proximos videos."
+    )
+
+
+def _format_hour_label(hour_utc: int | None) -> str:
+    if hour_utc is None:
+        return "Sem padrao suficiente"
+    return f"{hour_utc:02d}:00 UTC"
+
+
+def _build_tool_study(platform: str) -> list[dict[str, str]]:
+    base = [
+        {
+            "name": "YouTube Data API v3",
+            "phase": "Imediato",
+            "effort": "Baixo",
+            "focus": "Mapear videos top, frequencia e metadados que performam melhor.",
+            "why": "Entrega diagnostico direto para sugerir titulos, descricao e thumbnail com contexto real.",
+        },
+        {
+            "name": "YouTube Analytics API",
+            "phase": "Proxima etapa",
+            "effort": "Medio",
+            "focus": "Tempo de exibicao, retencao por video e origem de trafego.",
+            "why": "Permite orientar melhorias por queda de retencao e nao apenas por visualizacao.",
+        },
+        {
+            "name": "Google Trends + YouTube Suggest",
+            "phase": "Imediato",
+            "effort": "Baixo",
+            "focus": "Descobrir temas com demanda crescente antes de produzir.",
+            "why": "Aumenta chance de discovery organico para canais pequenos e medios.",
+        },
+        {
+            "name": "Pipeline de scoring de thumbnail (Vision)",
+            "phase": "Proxima etapa",
+            "effort": "Medio",
+            "focus": "Pontuar contraste, legibilidade e clareza de promessa visual.",
+            "why": "Reduz thumbnails fracas e aumenta CTR antes da publicacao.",
+        },
+        {
+            "name": "Data Warehouse de performance",
+            "phase": "Escala",
+            "effort": "Alto",
+            "focus": "Historico consolidado com cohort por formato, tema e horario.",
+            "why": "Base para modelos preditivos de crescimento e recomendacao automatica.",
+        },
+    ]
+
+    if platform == "tiktok":
+        base.insert(
+            1,
+            {
+                "name": "TikTok Content Posting + Analytics",
+                "phase": "Proxima etapa",
+                "effort": "Medio",
+                "focus": "Integrar dados reais de retencao, reproducoes e perfil da audiencia.",
+                "why": "Permite recomendacao mais precisa para formato curto e gancho inicial.",
+            },
+        )
+    if platform == "instagram":
+        base.insert(
+            1,
+            {
+                "name": "Instagram Graph API Insights",
+                "phase": "Proxima etapa",
+                "effort": "Medio",
+                "focus": "Alcance, reproducoes e salvamentos de Reels por tema.",
+                "why": "Melhora sugeroes de capa e legenda com base em dados de engajamento real.",
+            },
+        )
+    return base[:6]
+
+
+async def _refresh_google_access_token(account: SocialAccount, db: AsyncSession) -> bool:
+    if not account.refresh_token:
+        return False
+    if not settings.google_oauth_client_id or not settings.google_oauth_client_secret:
+        return False
+
+    payload = {
+        "grant_type": "refresh_token",
+        "refresh_token": account.refresh_token,
+        "client_id": settings.google_oauth_client_id,
+        "client_secret": settings.google_oauth_client_secret,
+    }
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(YOUTUBE_TOKEN_URI, data=payload)
+
+    if resp.status_code != 200:
+        logger.warning("Google token refresh failed (%s): %s", resp.status_code, resp.text[:500])
+        return False
+
+    data = resp.json()
+    new_access_token = str(data.get("access_token") or "").strip()
+    if not new_access_token:
+        return False
+
+    account.access_token = new_access_token
+    expires_in = _safe_int(data.get("expires_in"))
+    if expires_in > 0:
+        account.token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+
+    extra = dict(account.extra_data or {})
+    extra["token_refreshed_at"] = datetime.utcnow().isoformat()
+    account.extra_data = extra
+    await db.commit()
+    return True
+
+
+async def _youtube_get(
+    account: SocialAccount,
+    db: AsyncSession,
+    endpoint: str,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=30) as client:
+        headers = {"Authorization": f"Bearer {account.access_token}"}
+        resp = await client.get(f"{YOUTUBE_API_BASE}/{endpoint}", params=params, headers=headers)
+
+        if resp.status_code == 401:
+            refreshed = await _refresh_google_access_token(account, db)
+            if refreshed:
+                headers = {"Authorization": f"Bearer {account.access_token}"}
+                resp = await client.get(f"{YOUTUBE_API_BASE}/{endpoint}", params=params, headers=headers)
+
+    if resp.status_code != 200:
+        logger.warning("YouTube API error [%s]: %s", resp.status_code, resp.text[:600])
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Falha ao consultar dados do YouTube. "
+                "Reconecte sua conta e tente novamente."
+            ),
+        )
+
+    return resp.json()
+
+
+async def _collect_publish_history(user_id: int, social_account_id: int, db: AsyncSession) -> dict[str, Any]:
+    result = await db.execute(
+        select(PublishJob)
+        .where(PublishJob.user_id == user_id)
+        .where(PublishJob.social_account_id == social_account_id)
+        .order_by(PublishJob.created_at.desc())
+        .limit(150)
+    )
+    jobs = result.scalars().all()
+
+    published_jobs = [job for job in jobs if job.status == PublishStatus.PUBLISHED]
+    failed_jobs = [job for job in jobs if job.status == PublishStatus.FAILED]
+    scheduled_jobs = [job for job in jobs if job.status == PublishStatus.SCHEDULED]
+
+    now_utc = datetime.utcnow()
+    threshold_30d = now_utc - timedelta(days=30)
+    last_30d_published = [
+        job for job in published_jobs
+        if (job.published_at or job.created_at or now_utc) >= threshold_30d
+    ]
+
+    hour_counter: Counter[int] = Counter()
+    for job in published_jobs:
+        ref_date = job.published_at or job.created_at
+        if ref_date:
+            hour_counter[ref_date.hour] += 1
+    best_hour = hour_counter.most_common(1)[0][0] if hour_counter else None
+
+    publish_dates = [job.published_at for job in published_jobs if job.published_at]
+    publish_dates.sort(reverse=True)
+    gaps_days: list[float] = []
+    for idx in range(len(publish_dates) - 1):
+        delta = publish_dates[idx] - publish_dates[idx + 1]
+        gaps_days.append(max(delta.total_seconds() / 86400.0, 0.0))
+    avg_gap_days = round(sum(gaps_days) / len(gaps_days), 1) if gaps_days else None
+
+    title_samples = [str(job.title).strip() for job in published_jobs if str(job.title or "").strip()]
+    description_samples = [
+        str(job.description).strip()
+        for job in published_jobs
+        if str(job.description or "").strip()
+    ]
+    combined_keywords = _extract_keywords(title_samples + description_samples, limit=16)
+
+    recent_jobs_payload = []
+    for job in jobs[:15]:
+        ref_date = job.published_at or job.created_at
+        recent_jobs_payload.append(
+            {
+                "id": job.id,
+                "status": job.status.value if job.status else "pending",
+                "title": (job.title or "").strip(),
+                "description": (job.description or "").strip()[:260],
+                "platform_url": (job.platform_url or "").strip(),
+                "published_at": ref_date.isoformat() if ref_date else "",
+            }
+        )
+
+    return {
+        "total_jobs": len(jobs),
+        "published_jobs": len(published_jobs),
+        "failed_jobs": len(failed_jobs),
+        "scheduled_jobs": len(scheduled_jobs),
+        "last_30d_published": len(last_30d_published),
+        "best_publish_hour_utc": best_hour,
+        "best_publish_window": _format_hour_label(best_hour),
+        "avg_gap_days": avg_gap_days,
+        "keyword_candidates": combined_keywords,
+        "recent_titles": title_samples[:20],
+        "recent_jobs": recent_jobs_payload,
+    }
+
+
+async def _fetch_youtube_snapshot(account: SocialAccount, db: AsyncSession) -> dict[str, Any]:
+    channel_data = await _youtube_get(
+        account=account,
+        db=db,
+        endpoint="channels",
+        params={
+            "part": "snippet,statistics,contentDetails",
+            "mine": "true",
+            "maxResults": 1,
+        },
+    )
+
+    channel_items = channel_data.get("items") or []
+    if not channel_items:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Nao foi possivel carregar o canal do YouTube com esta conta. "
+                "Reconecte a conta para renovar as permissoes."
+            ),
+        )
+
+    channel_item = channel_items[0]
+    channel_snippet = channel_item.get("snippet", {})
+    channel_stats = channel_item.get("statistics", {})
+    channel_details = channel_item.get("contentDetails", {})
+
+    uploads_playlist_id = (
+        channel_details.get("relatedPlaylists", {}) or {}
+    ).get("uploads")
+
+    collected_video_ids: list[str] = []
+    seen_ids: set[str] = set()
+    if uploads_playlist_id:
+        next_page = ""
+        while len(collected_video_ids) < 60:
+            playlist_resp = await _youtube_get(
+                account=account,
+                db=db,
+                endpoint="playlistItems",
+                params={
+                    "part": "snippet,contentDetails",
+                    "playlistId": uploads_playlist_id,
+                    "maxResults": 50,
+                    "pageToken": next_page,
+                },
+            )
+
+            playlist_items = playlist_resp.get("items") or []
+            for playlist_item in playlist_items:
+                content_details = playlist_item.get("contentDetails", {})
+                video_id = str(content_details.get("videoId") or "").strip()
+                if not video_id or video_id in seen_ids:
+                    continue
+                seen_ids.add(video_id)
+                collected_video_ids.append(video_id)
+                if len(collected_video_ids) >= 60:
+                    break
+
+            next_page = str(playlist_resp.get("nextPageToken") or "")
+            if not next_page:
+                break
+
+    videos_by_id: dict[str, dict[str, Any]] = {}
+    for i in range(0, len(collected_video_ids), 50):
+        chunk = collected_video_ids[i:i + 50]
+        if not chunk:
+            continue
+        videos_resp = await _youtube_get(
+            account=account,
+            db=db,
+            endpoint="videos",
+            params={
+                "part": "snippet,statistics,contentDetails",
+                "id": ",".join(chunk),
+                "maxResults": len(chunk),
+            },
+        )
+        for video_item in videos_resp.get("items") or []:
+            vid = str(video_item.get("id") or "").strip()
+            if vid:
+                videos_by_id[vid] = video_item
+
+    videos: list[dict[str, Any]] = []
+    for video_id in collected_video_ids:
+        item = videos_by_id.get(video_id)
+        if not item:
+            continue
+
+        snippet = item.get("snippet", {})
+        statistics = item.get("statistics", {})
+        details = item.get("contentDetails", {})
+        thumbs = snippet.get("thumbnails", {}) or {}
+        thumb_url = (
+            (thumbs.get("maxres") or {}).get("url")
+            or (thumbs.get("high") or {}).get("url")
+            or (thumbs.get("medium") or {}).get("url")
+            or (thumbs.get("default") or {}).get("url")
+            or ""
+        )
+
+        views = _safe_int(statistics.get("viewCount"))
+        likes = _safe_int(statistics.get("likeCount"))
+        comments = _safe_int(statistics.get("commentCount"))
+        duration_seconds = _iso_duration_to_seconds(details.get("duration"))
+        engagement = likes + comments
+        engagement_rate = round((engagement / views) * 100, 2) if views > 0 else 0.0
+
+        videos.append(
+            {
+                "id": video_id,
+                "title": (snippet.get("title") or "").strip(),
+                "published_at": str(snippet.get("publishedAt") or "").strip(),
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+                "thumbnail_url": thumb_url,
+                "views": views,
+                "likes": likes,
+                "comments": comments,
+                "duration_seconds": duration_seconds,
+                "engagement_rate": engagement_rate,
+            }
+        )
+
+    videos_by_date = sorted(
+        videos,
+        key=lambda item: _parse_iso_datetime(item.get("published_at")) or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    top_videos = sorted(videos, key=lambda item: item.get("views", 0), reverse=True)
+
+    recent_cut = videos_by_date[:12]
+    avg_views_recent = int(sum(v.get("views", 0) for v in recent_cut) / len(recent_cut)) if recent_cut else 0
+    avg_duration_seconds = int(
+        sum(v.get("duration_seconds", 0) for v in recent_cut) / len(recent_cut)
+    ) if recent_cut else 0
+
+    now_utc = datetime.utcnow().replace(tzinfo=timezone.utc)
+    threshold_30d = now_utc - timedelta(days=30)
+    uploads_last_30d = 0
+    for video in videos_by_date:
+        dt = _parse_iso_datetime(video.get("published_at"))
+        if dt and dt >= threshold_30d:
+            uploads_last_30d += 1
+
+    title_keywords = _extract_keywords([v.get("title", "") for v in top_videos[:20]], limit=12)
+
+    channel_thumb = (
+        (channel_snippet.get("thumbnails", {}).get("high") or {}).get("url")
+        or (channel_snippet.get("thumbnails", {}).get("medium") or {}).get("url")
+        or (channel_snippet.get("thumbnails", {}).get("default") or {}).get("url")
+        or ""
+    )
+
+    channel_payload = {
+        "title": (channel_snippet.get("title") or account.account_label or "Canal YouTube").strip(),
+        "handle": (channel_snippet.get("customUrl") or account.platform_username or "").strip(),
+        "description": (channel_snippet.get("description") or "").strip()[:500],
+        "thumbnail_url": channel_thumb,
+        "subscribers": _safe_int(channel_stats.get("subscriberCount")),
+        "total_views": _safe_int(channel_stats.get("viewCount")),
+        "total_videos": _safe_int(channel_stats.get("videoCount")),
+        "uploads_last_30d": uploads_last_30d,
+        "avg_views_recent": avg_views_recent,
+        "avg_duration_seconds": avg_duration_seconds,
+    }
+
+    return {
+        "channel": channel_payload,
+        "top_videos": top_videos[:12],
+        "recent_videos": videos_by_date[:12],
+        "keyword_candidates": title_keywords,
+    }
+
+
+def _build_non_youtube_snapshot(account: SocialAccount, history: dict[str, Any]) -> dict[str, Any]:
+    recent_jobs = history.get("recent_jobs", [])
+    pseudo_top: list[dict[str, Any]] = []
+    for item in recent_jobs:
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        pseudo_top.append(
+            {
+                "id": str(item.get("id") or ""),
+                "title": title,
+                "published_at": item.get("published_at") or "",
+                "url": item.get("platform_url") or "",
+                "thumbnail_url": "",
+                "views": 0,
+                "likes": 0,
+                "comments": 0,
+                "duration_seconds": 0,
+                "engagement_rate": 0.0,
+            }
+        )
+        if len(pseudo_top) >= 10:
+            break
+
+    channel_payload = {
+        "title": (account.account_label or account.platform_username or "Conta conectada").strip(),
+        "handle": (account.platform_username or "").strip(),
+        "description": "Analise baseada no historico interno de publicacoes desta conta.",
+        "thumbnail_url": "",
+        "subscribers": 0,
+        "total_views": 0,
+        "total_videos": history.get("published_jobs", 0),
+        "uploads_last_30d": history.get("last_30d_published", 0),
+        "avg_views_recent": 0,
+        "avg_duration_seconds": 0,
+    }
+
+    return {
+        "channel": channel_payload,
+        "top_videos": pseudo_top,
+        "recent_videos": pseudo_top,
+        "keyword_candidates": history.get("keyword_candidates", []),
+    }
+
+
+def _build_fallback_recommendations(
+    platform: str,
+    channel_payload: dict[str, Any],
+    top_videos: list[dict[str, Any]],
+    history: dict[str, Any],
+) -> dict[str, Any]:
+    keyword_pool = []
+    keyword_pool.extend(channel_payload.get("keyword_candidates", []))
+    keyword_pool.extend(history.get("keyword_candidates", []))
+    keyword_pool = [str(word).strip() for word in keyword_pool if str(word).strip()]
+
+    if len(keyword_pool) < 2:
+        keyword_pool.extend(["historia", "emocao", "tutorial", "dicas"])
+
+    main_kw = keyword_pool[0]
+    second_kw = keyword_pool[1] if len(keyword_pool) > 1 else "resultado"
+    third_kw = keyword_pool[2] if len(keyword_pool) > 2 else "crescimento"
+
+    title_ideas = [
+        _normalize_title(f"{main_kw.title()} que da resultado | Guia rapido para iniciantes"),
+        _normalize_title(f"Como melhorar em {main_kw} sem complicacao | Passo a passo"),
+        _normalize_title(f"{main_kw.title()} na pratica: 7 ajustes que aumentam resultados"),
+        _normalize_title(f"{second_kw.title()} e {main_kw}: estrategia simples para crescer"),
+        _normalize_title(f"Erros em {main_kw} que travam seu canal (e como corrigir)"),
+        _normalize_title(f"Metodo de {third_kw} para {main_kw}: o que realmente funciona"),
+        _normalize_title(f"Plano de 30 dias para evoluir em {main_kw}"),
+        _normalize_title(f"{main_kw.title()} com constancia: rotina completa de producao"),
+    ]
+
+    description_template = _build_description_template(main_kw, second_kw)
+    hashtags = [f"#{word.replace(' ', '')}" for word in keyword_pool[:6]]
+
+    uploads_last_30d = _safe_int(channel_payload.get("uploads_last_30d"))
+    avg_gap_days = history.get("avg_gap_days")
+    publish_window = history.get("best_publish_window") or "Sem padrao"
+
+    growth_actions = [
+        "Defina 2 formatos fixos de conteudo (ex.: tutorial curto + estudo de caso) para facilitar recorrencia.",
+        "Use gancho forte nos primeiros 7 segundos e antecipe o beneficio principal no inicio.",
+        "Padronize thumbnail com 1 promessa visual clara e texto curto de alto contraste.",
+        f"Teste publicar no horario com mais historico ({publish_window}) por 4 semanas e compare resultados.",
+        "Republique temas vencedores com nova abordagem (angulo diferente ou nova promessa).",
+        "Inclua CTA de comentario orientado por pergunta para aumentar sinais de engajamento.",
+    ]
+
+    if uploads_last_30d < 4:
+        growth_actions.insert(
+            0,
+            "Aumente a cadencia para pelo menos 1 a 2 publicacoes por semana para acelerar aprendizado do algoritmo.",
+        )
+
+    if isinstance(avg_gap_days, (int, float)) and avg_gap_days > 10:
+        growth_actions.append(
+            "Reduza o intervalo medio entre uploads para manter distribuicao de impressao mais estavel."
+        )
+
+    top_titles = [item.get("title", "") for item in top_videos[:8]]
+    recurring_keywords = _extract_keywords(top_titles, limit=8)
+
+    content_gaps = [
+        "Criar serie recorrente baseada nos topicos que mais repetem nos videos com melhor desempenho.",
+        "Explorar conteudo de comparacao (antes vs depois, erro vs acerto, estrategia A vs B).",
+        "Adicionar videos de resposta para duvidas frequentes dos comentarios.",
+        "Publicar versoes curtas dos temas que performaram bem para ampliar alcance.",
+    ]
+
+    if recurring_keywords:
+        content_gaps.insert(
+            0,
+            f"Focar em cluster de temas com palavras-chave: {', '.join(recurring_keywords[:4])}.",
+        )
+
+    thumbnail_ideas = [
+        f"Rosto em close + texto de 2 palavras destacando '{main_kw}'.",
+        "Composicao antes/depois com seta forte e contraste alto.",
+        f"Fundo simples + objeto principal relacionado a '{second_kw}' + numero grande.",
+        "Expressao de surpresa/curiosidade + elemento visual unico no canto superior.",
+        "Capa com uma pergunta curta que gera curiosidade e promete transformacao.",
+        "Variante minimalista sem texto para teste A/B com foco em imagem central.",
+    ]
+
+    return {
+        "title_ideas": title_ideas[:10],
+        "description_template": description_template,
+        "thumbnail_ideas": thumbnail_ideas[:8],
+        "growth_actions": growth_actions[:10],
+        "content_gaps": content_gaps[:8],
+        "hashtags": hashtags,
+        "keyword_focus": keyword_pool[:10],
+        "platform_note": (
+            "Analise completa com YouTube API ativa."
+            if platform == "youtube"
+            else "Analise baseada no historico interno. Integração analitica da plataforma sera adicionada em fase seguinte."
+        ),
+    }
+
+
+def _merge_recommendations(base: dict[str, Any], override: dict[str, Any] | None) -> dict[str, Any]:
+    if not override:
+        return base
+
+    merged = dict(base)
+    merged["title_ideas"] = _coerce_list(override.get("title_ideas"), max_items=10) or base["title_ideas"]
+    merged["thumbnail_ideas"] = _coerce_list(override.get("thumbnail_ideas"), max_items=8) or base["thumbnail_ideas"]
+    merged["growth_actions"] = _coerce_list(override.get("growth_actions"), max_items=10) or base["growth_actions"]
+    merged["content_gaps"] = _coerce_list(override.get("content_gaps"), max_items=8) or base["content_gaps"]
+    merged["hashtags"] = _coerce_list(override.get("hashtags"), max_items=10) or base["hashtags"]
+    merged["keyword_focus"] = _coerce_list(override.get("keyword_focus"), max_items=10) or base["keyword_focus"]
+
+    description_template = str(override.get("description_template") or "").strip()
+    merged["description_template"] = description_template or base["description_template"]
+
+    platform_note = str(override.get("platform_note") or "").strip()
+    merged["platform_note"] = platform_note or base["platform_note"]
+
+    return merged
+
+
+async def _generate_ai_recommendations(
+    platform: str,
+    account: SocialAccount,
+    channel_snapshot: dict[str, Any],
+    top_videos: list[dict[str, Any]],
+    history: dict[str, Any],
+    fallback: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not _openai:
+        return None
+
+    channel = channel_snapshot.get("channel", {})
+    compact_top = []
+    for item in top_videos[:8]:
+        compact_top.append(
+            {
+                "title": item.get("title", ""),
+                "views": item.get("views", 0),
+                "likes": item.get("likes", 0),
+                "comments": item.get("comments", 0),
+                "duration_seconds": item.get("duration_seconds", 0),
+                "published_at": item.get("published_at", ""),
+            }
+        )
+
+    payload = {
+        "platform": platform,
+        "account_name": account.account_label or account.platform_username or "Conta",
+        "channel": {
+            "title": channel.get("title", ""),
+            "handle": channel.get("handle", ""),
+            "subscribers": channel.get("subscribers", 0),
+            "total_views": channel.get("total_views", 0),
+            "total_videos": channel.get("total_videos", 0),
+            "uploads_last_30d": channel.get("uploads_last_30d", 0),
+            "avg_views_recent": channel.get("avg_views_recent", 0),
+            "avg_duration_seconds": channel.get("avg_duration_seconds", 0),
+        },
+        "top_videos": compact_top,
+        "history": {
+            "total_jobs": history.get("total_jobs", 0),
+            "published_jobs": history.get("published_jobs", 0),
+            "failed_jobs": history.get("failed_jobs", 0),
+            "last_30d_published": history.get("last_30d_published", 0),
+            "best_publish_window": history.get("best_publish_window", ""),
+            "avg_gap_days": history.get("avg_gap_days"),
+            "keyword_candidates": history.get("keyword_candidates", []),
+        },
+        "fallback_recommendations": fallback,
+    }
+
+    prompt = f"""Voce e um estrategista senior de crescimento de canais sociais.
+
+Receba os dados abaixo e retorne recomendacoes acionaveis em portugues brasileiro.
+Priorize clareza, especificidade e crescimento real sem clickbait enganoso.
+
+DADOS:
+{json.dumps(payload, ensure_ascii=False)}
+
+REGRAS:
+- Entregar entre 6 e 10 sugestoes de titulos.
+- Titulos devem caber em mobile e manter promessa clara.
+- Descricao deve ter 3 a 5 linhas com CTA.
+- Entregar 5 a 8 ideias de thumbnail objetivas.
+- Entregar 6 a 10 acoes de crescimento praticas.
+- Entregar 4 a 8 lacunas de conteudo.
+- Se houver poucos dados da plataforma, use historico interno para inferir plano.
+
+Responda SOMENTE JSON neste formato:
+{{
+  "title_ideas": ["..."],
+  "description_template": "...",
+  "thumbnail_ideas": ["..."],
+  "growth_actions": ["..."],
+  "content_gaps": ["..."],
+  "hashtags": ["#..."],
+  "keyword_focus": ["..."],
+  "platform_note": "..."
+}}"""
+
+    try:
+        response = await _openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=1500,
+        )
+        content = response.choices[0].message.content or "{}"
+        data = _parse_json_response(content)
+        return data if isinstance(data, dict) else None
+    except Exception as err:
+        logger.warning("AI analysis recommendations failed: %s", err)
+        return None
+
+
+@router.get("/channel")
+async def analyze_channel(
+    social_account_id: int = Query(..., gt=0),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    account = await db.get(SocialAccount, social_account_id)
+    if not account or account.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Conta social nao encontrada")
+
+    platform = account.platform.value if account.platform else ""
+    history = await _collect_publish_history(user_id=user["id"], social_account_id=account.id, db=db)
+
+    if account.platform == Platform.YOUTUBE:
+        snapshot = await _fetch_youtube_snapshot(account=account, db=db)
+        platform_supported = True
+    else:
+        snapshot = _build_non_youtube_snapshot(account=account, history=history)
+        platform_supported = False
+
+    channel_data = snapshot.get("channel", {})
+    top_videos = snapshot.get("top_videos", [])
+    channel_for_fallback = dict(channel_data or {})
+    channel_for_fallback["keyword_candidates"] = snapshot.get("keyword_candidates", [])
+    fallback = _build_fallback_recommendations(
+        platform=platform,
+        channel_payload=channel_for_fallback,
+        top_videos=top_videos,
+        history=history,
+    )
+    ai_recommendations = await _generate_ai_recommendations(
+        platform=platform,
+        account=account,
+        channel_snapshot=snapshot,
+        top_videos=top_videos,
+        history=history,
+        fallback=fallback,
+    )
+    recommendations = _merge_recommendations(fallback, ai_recommendations)
+
+    return {
+        "account": {
+            "id": account.id,
+            "platform": platform,
+            "account_label": account.account_label or "",
+            "platform_username": account.platform_username or "",
+        },
+        "platform_supported": platform_supported,
+        "channel": channel_data,
+        "top_videos": top_videos,
+        "history": history,
+        "recommendations": recommendations,
+        "tool_study": _build_tool_study(platform),
+        "source": {
+            "youtube_api": account.platform == Platform.YOUTUBE,
+            "openai_used": bool(ai_recommendations),
+            "generated_at": datetime.utcnow().isoformat(),
+        },
+    }

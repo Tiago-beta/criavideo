@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v198 loaded");
+﻿console.log("[CriaVideo] app.js v199 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -19,6 +19,13 @@ let _publishAccountSelection = {};
 let _publishRenderOptions = {};
 let _pendingConnectPlatform = "";
 let _editingSocialAccountId = 0;
+let _analyzeState = {
+    accounts: [],
+    selectedAccountId: 0,
+    payloadByAccount: {},
+    loadingAccounts: false,
+    running: false,
+};
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 
 const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
@@ -647,6 +654,25 @@ function bindDashboardEvents() {
             setPublishTab(tabBtn.dataset.publishTab || "publish");
         });
     });
+    const analyzeRefreshBtn = document.getElementById("analyze-refresh-btn");
+    if (analyzeRefreshBtn) {
+        analyzeRefreshBtn.addEventListener("click", () => {
+            loadAnalyzePage(true);
+        });
+    }
+    const analyzeAccountSelect = document.getElementById("analyze-account-select");
+    if (analyzeAccountSelect) {
+        analyzeAccountSelect.addEventListener("change", () => {
+            const selectedId = parseInt(analyzeAccountSelect.value || "0", 10) || 0;
+            _analyzeSelectAccount(selectedId, false);
+        });
+    }
+    const analyzeRunBtn = document.getElementById("btn-run-analysis");
+    if (analyzeRunBtn) {
+        analyzeRunBtn.addEventListener("click", () => {
+            runAnalyzeChannel();
+        });
+    }
     document.querySelectorAll(".publish-platform-chip input").forEach((checkbox) => {
         checkbox.addEventListener("change", () => {
             renderPublishAccountSelectors();
@@ -820,6 +846,8 @@ function loadPageData(page) {
         loadProjects();
     } else if (page === "publish" || page === "accounts") {
         setPublishTab(page === "publish" ? "publish" : page);
+    } else if (page === "analyze") {
+        loadAnalyzePage();
     } else if (page === "automate") {
         loadAutoSchedules();
     } else if (page === "editor") {
@@ -853,6 +881,432 @@ function setPublishTab(tabName) {
         loadSchedules();
     } else if (nextTab === "accounts") {
         loadAccounts();
+    }
+}
+
+function _analyzeFormatNumber(value, compact = false) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return "--";
+    return new Intl.NumberFormat("pt-BR", compact
+        ? { notation: "compact", maximumFractionDigits: 1 }
+        : { maximumFractionDigits: 0 }).format(num);
+}
+
+function _analyzeFormatDuration(seconds) {
+    const total = Math.max(0, parseInt(seconds || "0", 10) || 0);
+    if (!total) return "--";
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function _analyzeFormatDate(value) {
+    if (!value) return "";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return "";
+    return dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function _analyzeShowLoading(message) {
+    const loadingEl = document.getElementById("analyze-loading");
+    if (loadingEl) {
+        loadingEl.hidden = false;
+        loadingEl.textContent = message || "Carregando analise...";
+    }
+    const resultsEl = document.getElementById("analyze-results");
+    if (resultsEl) {
+        resultsEl.hidden = true;
+    }
+}
+
+function _analyzeShowResults(show) {
+    const loadingEl = document.getElementById("analyze-loading");
+    const resultsEl = document.getElementById("analyze-results");
+    if (loadingEl) {
+        loadingEl.hidden = !!show;
+    }
+    if (resultsEl) {
+        resultsEl.hidden = !show;
+    }
+}
+
+function _analyzeSetRunButtonState(running) {
+    _analyzeState.running = !!running;
+    const runBtn = document.getElementById("btn-run-analysis");
+    if (!runBtn) return;
+    runBtn.disabled = !!running;
+    runBtn.textContent = running ? "Analisando..." : "Analisar agora";
+}
+
+function _analyzeRenderAccountSelect(accounts) {
+    const select = document.getElementById("analyze-account-select");
+    if (!select) return;
+
+    const current = _analyzeState.selectedAccountId;
+    const preferred = (accounts.find((a) => a.id === current)?.id)
+        || (accounts.find((a) => a.platform === "youtube")?.id)
+        || (accounts[0]?.id || 0);
+
+    _analyzeState.selectedAccountId = preferred;
+    select.innerHTML = accounts.map((account) => {
+        const platformName = socialPlatformName(account.platform || "");
+        const label = socialAccountDisplayName(account);
+        return `<option value="${account.id}">${esc(platformName)} · ${esc(label)}</option>`;
+    }).join("");
+
+    if (preferred) {
+        select.value = String(preferred);
+    }
+}
+
+function _analyzeRenderConnectedAccounts(accounts) {
+    const container = document.getElementById("analyze-connected-list");
+    if (!container) return;
+
+    if (!accounts.length) {
+        container.innerHTML = "<p class='loading'>Nenhuma conta conectada ainda.</p>";
+        return;
+    }
+
+    container.innerHTML = accounts.map((account) => {
+        const platform = String(account.platform || "").toLowerCase();
+        const accountName = socialAccountDisplayName(account);
+        const username = (account.platform_username && account.platform_username !== accountName)
+            ? account.platform_username
+            : "";
+        const selectedClass = account.id === _analyzeState.selectedAccountId ? " selected" : "";
+        return `
+            <button class="analyze-connected-card${selectedClass}" data-account-id="${account.id}" type="button">
+                <span class="social-account-icon" aria-hidden="true">${socialPlatformIcon(platform)}</span>
+                <span class="analyze-connected-meta">
+                    <strong>${esc(accountName)}</strong>
+                    <small>${esc(socialPlatformName(platform))}${username ? ` · ${esc(username)}` : ""}</small>
+                </span>
+                <span class="analyze-account-status">Conectada</span>
+            </button>
+        `;
+    }).join("");
+
+    container.querySelectorAll(".analyze-connected-card").forEach((card) => {
+        card.addEventListener("click", () => {
+            const accountId = parseInt(card.dataset.accountId || "0", 10) || 0;
+            _analyzeSelectAccount(accountId, false);
+        });
+    });
+}
+
+function _analyzeSelectAccount(accountId, autoRun = false) {
+    const selectedId = parseInt(accountId || "0", 10) || 0;
+    _analyzeState.selectedAccountId = selectedId;
+
+    const select = document.getElementById("analyze-account-select");
+    if (select && selectedId) {
+        select.value = String(selectedId);
+    }
+
+    document.querySelectorAll(".analyze-connected-card").forEach((card) => {
+        const cardId = parseInt(card.dataset.accountId || "0", 10) || 0;
+        card.classList.toggle("selected", cardId === selectedId);
+    });
+
+    if (!selectedId) {
+        _analyzeShowLoading("Selecione uma conta para iniciar a analise.");
+        return;
+    }
+
+    const cached = _analyzeState.payloadByAccount[selectedId];
+    if (cached) {
+        _analyzeRenderPayload(cached);
+        return;
+    }
+
+    _analyzeShowLoading("Conta selecionada. Clique em Analisar agora para gerar diagnostico.");
+    if (autoRun) {
+        runAnalyzeChannel({ skipEmptyAlert: true, silentError: true });
+    }
+}
+
+async function loadAnalyzePage(forceReload = false) {
+    if (_analyzeState.loadingAccounts && !forceReload) {
+        return;
+    }
+
+    _analyzeState.loadingAccounts = true;
+    _analyzeShowLoading("Carregando contas conectadas...");
+
+    try {
+        const accounts = await api("/social/accounts");
+        _socialAccountsCache = Array.isArray(accounts) ? accounts : [];
+        _analyzeState.accounts = _socialAccountsCache;
+
+        _analyzeRenderConnectedAccounts(_analyzeState.accounts);
+
+        if (!_analyzeState.accounts.length) {
+            const select = document.getElementById("analyze-account-select");
+            if (select) {
+                select.innerHTML = "<option value=''>Sem contas conectadas</option>";
+            }
+            _analyzeState.selectedAccountId = 0;
+            _analyzeShowLoading("Conecte ao menos uma conta social para iniciar a analise.");
+            return;
+        }
+
+        _analyzeRenderAccountSelect(_analyzeState.accounts);
+        _analyzeSelectAccount(_analyzeState.selectedAccountId, false);
+
+        const selectedId = _analyzeState.selectedAccountId;
+        const hasCached = !!_analyzeState.payloadByAccount[selectedId];
+        if (forceReload || !hasCached) {
+            await runAnalyzeChannel({ skipEmptyAlert: true, silentError: true });
+        }
+    } catch (error) {
+        _analyzeShowLoading(`Erro ao carregar contas: ${error.message}`);
+    } finally {
+        _analyzeState.loadingAccounts = false;
+    }
+}
+
+function _analyzeRenderStringList(containerId, rawItems, emptyText) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const items = Array.isArray(rawItems)
+        ? rawItems.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+
+    if (!items.length) {
+        container.innerHTML = `<li class="analyze-empty">${esc(emptyText || "Sem dados disponiveis.")}</li>`;
+        return;
+    }
+
+    container.innerHTML = items.map((item, idx) => (
+        `<li><span class="analyze-list-index">${idx + 1}.</span><span>${esc(item)}</span></li>`
+    )).join("");
+}
+
+function _analyzeRenderTopVideos(rawVideos) {
+    const container = document.getElementById("analyze-top-videos");
+    if (!container) return;
+
+    const videos = Array.isArray(rawVideos) ? rawVideos : [];
+    if (!videos.length) {
+        container.innerHTML = "<p class='loading'>Ainda nao ha videos suficientes para ranking nesta conta.</p>";
+        return;
+    }
+
+    container.innerHTML = videos.slice(0, 10).map((video, idx) => {
+        const views = _analyzeFormatNumber(video.views || 0, true);
+        const likes = _analyzeFormatNumber(video.likes || 0, true);
+        const comments = _analyzeFormatNumber(video.comments || 0, true);
+        const duration = _analyzeFormatDuration(video.duration_seconds || 0);
+        const pubDate = _analyzeFormatDate(video.published_at);
+        const watchBtn = video.url
+            ? `<a class="btn btn-secondary btn-sm" href="${esc(video.url)}" target="_blank" rel="noopener noreferrer">Abrir</a>`
+            : "";
+        const thumb = video.thumbnail_url
+            ? `<img src="${esc(video.thumbnail_url)}" alt="Thumbnail" class="analyze-video-thumb">`
+            : `<div class="analyze-video-thumb analyze-video-thumb-placeholder">Sem thumb</div>`;
+
+        return `
+            <article class="analyze-video-card">
+                <div class="analyze-video-rank">#${idx + 1}</div>
+                ${thumb}
+                <div class="analyze-video-body">
+                    <h4>${esc(video.title || "Sem titulo")}</h4>
+                    <div class="analyze-video-metrics">
+                        <span><strong>${views}</strong> views</span>
+                        <span><strong>${likes}</strong> likes</span>
+                        <span><strong>${comments}</strong> comentarios</span>
+                        <span><strong>${duration}</strong> duracao</span>
+                    </div>
+                    <div class="analyze-video-footer">
+                        <span>${esc(pubDate || "")}</span>
+                        ${watchBtn}
+                    </div>
+                </div>
+            </article>
+        `;
+    }).join("");
+}
+
+function _analyzeRenderKpis(channel, history, platformSupported) {
+    const container = document.getElementById("analyze-kpi-grid");
+    if (!container) return;
+
+    const isSupported = !!platformSupported;
+    const kpis = [
+        {
+            label: "Inscritos",
+            value: isSupported ? _analyzeFormatNumber(channel.subscribers || 0, true) : "--",
+            hint: "Canal conectado",
+        },
+        {
+            label: "Views totais",
+            value: isSupported ? _analyzeFormatNumber(channel.total_views || 0, true) : "--",
+            hint: "Historico do canal",
+        },
+        {
+            label: "Videos no canal",
+            value: isSupported ? _analyzeFormatNumber(channel.total_videos || 0, false) : _analyzeFormatNumber(history.published_jobs || 0, false),
+            hint: isSupported ? "Dados YouTube" : "Publicacoes internas",
+        },
+        {
+            label: "Media views recentes",
+            value: isSupported ? _analyzeFormatNumber(channel.avg_views_recent || 0, true) : "--",
+            hint: "Ultimos uploads",
+        },
+        {
+            label: "Uploads (30 dias)",
+            value: _analyzeFormatNumber(
+                isSupported ? (channel.uploads_last_30d || 0) : (history.last_30d_published || 0),
+                false,
+            ),
+            hint: "Cadencia recente",
+        },
+        {
+            label: "Janela de postagem",
+            value: history.best_publish_window || "Sem padrao",
+            hint: "Melhor hora do historico",
+        },
+    ];
+
+    container.innerHTML = kpis.map((item) => `
+        <article class="analyze-kpi-card">
+            <span class="analyze-kpi-label">${esc(item.label)}</span>
+            <strong class="analyze-kpi-value">${esc(String(item.value))}</strong>
+            <small class="analyze-kpi-hint">${esc(item.hint)}</small>
+        </article>
+    `).join("");
+}
+
+function _analyzeRenderToolStudy(rawTools) {
+    const container = document.getElementById("analyze-tools-study");
+    if (!container) return;
+
+    const tools = Array.isArray(rawTools) ? rawTools : [];
+    if (!tools.length) {
+        container.innerHTML = "<p class='loading'>Sem estudo de ferramentas disponivel.</p>";
+        return;
+    }
+
+    container.innerHTML = tools.map((tool) => `
+        <article class="analyze-tool-card">
+            <div class="analyze-tool-head">
+                <h4>${esc(tool.name || "Ferramenta")}</h4>
+                <div class="analyze-tool-badges">
+                    <span class="analyze-badge">${esc(tool.phase || "Fase")}</span>
+                    <span class="analyze-badge analyze-badge-soft">${esc(tool.effort || "Esforco")}</span>
+                </div>
+            </div>
+            <p>${esc(tool.focus || "")}</p>
+            <p class="analyze-tool-why">${esc(tool.why || "")}</p>
+        </article>
+    `).join("");
+}
+
+function _analyzeRenderPayload(payload) {
+    if (!payload || typeof payload !== "object") {
+        _analyzeShowLoading("Nao foi possivel renderizar a analise.");
+        return;
+    }
+
+    _analyzeShowResults(true);
+
+    const channel = payload.channel || {};
+    const history = payload.history || {};
+    const rec = payload.recommendations || {};
+
+    const accountLabel = payload.account?.account_label || payload.account?.platform_username || "Conta conectada";
+    const channelTitle = channel.title || accountLabel;
+    const platformName = socialPlatformName(payload.account?.platform || "");
+    const handle = String(channel.handle || "").trim();
+    const handleText = handle && handle.startsWith("@") ? handle : (handle ? `@${handle}` : "");
+    const generatedAt = payload.source?.generated_at ? _analyzeFormatDate(payload.source.generated_at) : "";
+
+    const headEl = document.getElementById("analyze-channel-head");
+    if (headEl) {
+        const avatar = channel.thumbnail_url
+            ? `<img src="${esc(channel.thumbnail_url)}" alt="Canal" class="analyze-channel-avatar">`
+            : `<div class="analyze-channel-avatar analyze-channel-avatar-fallback">${esc((channelTitle || "C").charAt(0).toUpperCase())}</div>`;
+
+        headEl.innerHTML = `
+            <div class="analyze-channel-main">
+                ${avatar}
+                <div class="analyze-channel-meta">
+                    <h3>${esc(channelTitle)}</h3>
+                    <p>${esc(platformName)}${handleText ? ` · ${esc(handleText)}` : ""}</p>
+                </div>
+            </div>
+            <div class="analyze-channel-extra">
+                ${generatedAt ? `<span class="analyze-generated-at">Atualizado em ${esc(generatedAt)}</span>` : ""}
+            </div>
+        `;
+    }
+
+    const noteEl = document.getElementById("analyze-platform-note");
+    if (noteEl) {
+        const note = String(rec.platform_note || "").trim();
+        noteEl.hidden = !note;
+        noteEl.textContent = note;
+    }
+
+    _analyzeRenderKpis(channel, history, !!payload.platform_supported);
+    _analyzeRenderTopVideos(payload.top_videos || []);
+    _analyzeRenderStringList("analyze-title-ideas", rec.title_ideas, "Sem titulos sugeridos.");
+    _analyzeRenderStringList("analyze-thumbnail-ideas", rec.thumbnail_ideas, "Sem direcoes de thumbnail.");
+    _analyzeRenderStringList("analyze-growth-actions", rec.growth_actions, "Sem plano de crescimento.");
+    _analyzeRenderStringList("analyze-content-gaps", rec.content_gaps, "Sem lacunas detectadas.");
+    _analyzeRenderToolStudy(payload.tool_study || []);
+
+    const descEl = document.getElementById("analyze-description-template");
+    if (descEl) {
+        descEl.value = String(rec.description_template || "").trim();
+    }
+
+    const hashtagsEl = document.getElementById("analyze-hashtags");
+    if (hashtagsEl) {
+        const tags = Array.isArray(rec.hashtags)
+            ? rec.hashtags.map((tag) => String(tag || "").trim()).filter(Boolean)
+            : [];
+        hashtagsEl.innerHTML = tags.length
+            ? tags.map((tag) => {
+                const formatted = tag.startsWith("#") ? tag : `#${tag}`;
+                return `<span class="analyze-hashtag">${esc(formatted)}</span>`;
+            }).join("")
+            : "<span class='analyze-hashtag-muted'>Sem hashtags sugeridas.</span>";
+    }
+}
+
+async function runAnalyzeChannel(options = {}) {
+    const select = document.getElementById("analyze-account-select");
+    const selectedId = parseInt(select?.value || _analyzeState.selectedAccountId || "0", 10) || 0;
+    _analyzeState.selectedAccountId = selectedId;
+
+    if (!selectedId) {
+        if (!options.skipEmptyAlert) {
+            alert("Selecione uma conta para analisar.");
+        }
+        _analyzeShowLoading("Selecione uma conta para iniciar a analise.");
+        return;
+    }
+
+    _analyzeSetRunButtonState(true);
+    _analyzeShowLoading("Analisando canal e historico de publicacoes...");
+
+    try {
+        const payload = await api(`/analyze/channel?social_account_id=${selectedId}`);
+        _analyzeState.payloadByAccount[selectedId] = payload;
+        _analyzeRenderPayload(payload);
+        _analyzeRenderConnectedAccounts(_analyzeState.accounts);
+    } catch (error) {
+        _analyzeShowLoading(`Erro ao analisar: ${error.message}`);
+        if (!options.silentError) {
+            alert(`Erro ao analisar canal: ${error.message}`);
+        }
+    } finally {
+        _analyzeSetRunButtonState(false);
     }
 }
 
