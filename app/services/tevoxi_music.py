@@ -73,7 +73,7 @@ async def generate_music_from_theme(
 ) -> dict:
     """Generate music via Tevoxi API and download the audio file.
 
-    Returns: {"audio_path": str, "title": str, "lyrics": str, "duration": float}
+    Returns: {"audio_path": str, "title": str, "lyrics": str, "duration": float, "job_id": str, "audio_url": str}
     """
     api_url = settings.tevoxi_api_url.rstrip("/")
     api_token = settings.tevoxi_api_token
@@ -164,6 +164,7 @@ async def generate_music_from_theme(
                 title = title_suggestion or status_data.get("title", theme)
                 lyrics = status_data.get("lyrics", "")
                 music_duration = status_data.get("duration", duration)
+                audio_url = status_data.get("audio_url") or f"{api_url}/api/create-music/audio/{job_id}"
 
                 # 3. Download audio
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
@@ -187,6 +188,8 @@ async def generate_music_from_theme(
                     "title": title,
                     "lyrics": lyrics,
                     "duration": music_duration,
+                    "job_id": str(job_id),
+                    "audio_url": str(audio_url),
                 }
 
             elif status == "failed":

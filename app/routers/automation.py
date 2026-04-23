@@ -105,6 +105,9 @@ class ToggleChannelPilotRequest(BaseModel):
     analysis_interval_hours: Optional[int] = None
     min_pending_themes: Optional[int] = None
     themes_per_cycle: Optional[int] = None
+    channel_mode: Optional[str] = None
+    short_mix_mode: Optional[str] = None
+    shorts_per_cycle: Optional[int] = None
 
 
 # ── Helpers ──
@@ -206,6 +209,9 @@ def _pilot_summary_dict(pilot: AutoChannelPilot | None) -> dict:
     if not pilot:
         return {
             "enabled": False,
+            "channel_mode": "auto",
+            "short_mix_mode": "realistic_all",
+            "shorts_per_cycle": 3,
             "analysis_interval_hours": 24,
             "min_pending_themes": 5,
             "themes_per_cycle": 4,
@@ -214,10 +220,15 @@ def _pilot_summary_dict(pilot: AutoChannelPilot | None) -> dict:
             "last_error": None,
             "last_summary": {},
             "schedule_id": None,
+            "long_schedule_id": None,
+            "shorts_schedule_id": None,
         }
 
     return {
         "enabled": bool(pilot.is_enabled),
+        "channel_mode": str(pilot.channel_mode or "auto"),
+        "short_mix_mode": str(pilot.short_mix_mode or "realistic_all"),
+        "shorts_per_cycle": int(pilot.shorts_per_cycle or 3),
         "analysis_interval_hours": int(pilot.analysis_interval_hours or 24),
         "min_pending_themes": int(pilot.min_pending_themes or 5),
         "themes_per_cycle": int(pilot.themes_per_cycle or 4),
@@ -226,6 +237,8 @@ def _pilot_summary_dict(pilot: AutoChannelPilot | None) -> dict:
         "last_error": pilot.last_error,
         "last_summary": pilot.last_summary or {},
         "schedule_id": pilot.auto_schedule_id,
+        "long_schedule_id": pilot.long_schedule_id,
+        "shorts_schedule_id": pilot.shorts_schedule_id,
     }
 
 
@@ -404,7 +417,16 @@ async def list_pilot_channels(
     pilots = pilots_result.scalars().all()
     pilot_by_account = {pilot.social_account_id: pilot for pilot in pilots}
 
-    schedule_ids = [pilot.auto_schedule_id for pilot in pilots if pilot.auto_schedule_id]
+    schedule_ids_set = set()
+    for pilot in pilots:
+        if pilot.auto_schedule_id:
+            schedule_ids_set.add(int(pilot.auto_schedule_id))
+        if pilot.long_schedule_id:
+            schedule_ids_set.add(int(pilot.long_schedule_id))
+        if pilot.shorts_schedule_id:
+            schedule_ids_set.add(int(pilot.shorts_schedule_id))
+
+    schedule_ids = list(schedule_ids_set)
     schedules_by_id = {}
     if schedule_ids:
         schedule_result = await db.execute(
@@ -435,8 +457,16 @@ async def list_pilot_channels(
         pilot = pilot_by_account.get(account.id)
         pilot_data = _pilot_summary_dict(pilot)
 
-        schedule = schedules_by_id.get(pilot_data.get("schedule_id") or 0)
-        theme_counts = counts_by_schedule.get(schedule.id if schedule else 0, {"pending": 0, "completed": 0})
+        long_schedule = schedules_by_id.get(
+            pilot_data.get("long_schedule_id") or pilot_data.get("schedule_id") or 0
+        )
+        short_schedule = schedules_by_id.get(pilot_data.get("shorts_schedule_id") or 0)
+
+        long_counts = counts_by_schedule.get(long_schedule.id if long_schedule else 0, {"pending": 0, "completed": 0})
+        short_counts = counts_by_schedule.get(short_schedule.id if short_schedule else 0, {"pending": 0, "completed": 0})
+
+        pending_total = int(long_counts.get("pending", 0)) + int(short_counts.get("pending", 0))
+        completed_total = int(long_counts.get("completed", 0)) + int(short_counts.get("completed", 0))
 
         payload.append(
             {
@@ -447,10 +477,18 @@ async def list_pilot_channels(
                 "connected_at": account.connected_at.isoformat() if account.connected_at else None,
                 "pilot": {
                     **pilot_data,
-                    "schedule_name": schedule.name if schedule else None,
-                    "schedule_is_active": bool(schedule.is_active) if schedule else False,
-                    "pending_themes": int(theme_counts.get("pending", 0)),
-                    "completed_themes": int(theme_counts.get("completed", 0)),
+                    "schedule_name": long_schedule.name if long_schedule else None,
+                    "schedule_is_active": bool(long_schedule.is_active) if long_schedule else False,
+                    "long_schedule_name": long_schedule.name if long_schedule else None,
+                    "shorts_schedule_name": short_schedule.name if short_schedule else None,
+                    "long_schedule_is_active": bool(long_schedule.is_active) if long_schedule else False,
+                    "shorts_schedule_is_active": bool(short_schedule.is_active) if short_schedule else False,
+                    "pending_themes": pending_total,
+                    "completed_themes": completed_total,
+                    "pending_themes_long": int(long_counts.get("pending", 0)),
+                    "completed_themes_long": int(long_counts.get("completed", 0)),
+                    "pending_themes_shorts": int(short_counts.get("pending", 0)),
+                    "completed_themes_shorts": int(short_counts.get("completed", 0)),
                 },
             }
         )
@@ -485,6 +523,9 @@ async def toggle_pilot_channel(
             user_id=user["id"],
             social_account_id=social_account_id,
             is_enabled=bool(req.enabled),
+            channel_mode="auto",
+            short_mix_mode="realistic_all",
+            shorts_per_cycle=3,
             analysis_interval_hours=24,
             min_pending_themes=5,
             themes_per_cycle=4,
@@ -500,9 +541,26 @@ async def toggle_pilot_channel(
         pilot.min_pending_themes = max(1, min(20, int(req.min_pending_themes)))
     if req.themes_per_cycle is not None:
         pilot.themes_per_cycle = max(1, min(20, int(req.themes_per_cycle)))
+    if req.channel_mode is not None:
+        mode = str(req.channel_mode or "").strip().lower()
+        pilot.channel_mode = mode if mode in {"auto", "music", "general"} else "auto"
+    if req.short_mix_mode is not None:
+        mix_mode = str(req.short_mix_mode or "").strip().lower()
+        pilot.short_mix_mode = (
+            mix_mode
+            if mix_mode in {"realistic_all", "image_all", "mixed_realistic2_image1"}
+            else "realistic_all"
+        )
+    if req.shorts_per_cycle is not None:
+        pilot.shorts_per_cycle = max(1, min(6, int(req.shorts_per_cycle)))
 
-    if pilot.auto_schedule_id:
-        schedule = await db.get(AutoSchedule, pilot.auto_schedule_id)
+    schedule_ids_to_toggle = {
+        int(sid)
+        for sid in [pilot.auto_schedule_id, pilot.long_schedule_id, pilot.shorts_schedule_id]
+        if sid
+    }
+    for schedule_id in schedule_ids_to_toggle:
+        schedule = await db.get(AutoSchedule, schedule_id)
         if schedule and schedule.user_id == user["id"]:
             schedule.is_active = bool(req.enabled)
 

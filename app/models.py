@@ -295,7 +295,12 @@ class AutoChannelPilot(Base):
     user_id = Column(Integer, nullable=False, index=True)
     social_account_id = Column(Integer, ForeignKey("social_accounts.id", ondelete="CASCADE"), nullable=False, unique=True)
     auto_schedule_id = Column(Integer, ForeignKey("auto_schedules.id", ondelete="SET NULL"))
+    long_schedule_id = Column(Integer, ForeignKey("auto_schedules.id", ondelete="SET NULL"))
+    shorts_schedule_id = Column(Integer, ForeignKey("auto_schedules.id", ondelete="SET NULL"))
     is_enabled = Column(Boolean, default=False, index=True)
+    channel_mode = Column(String(20), default="auto")
+    short_mix_mode = Column(String(40), default="realistic_all")
+    shorts_per_cycle = Column(Integer, default=3)
     analysis_interval_hours = Column(Integer, default=24)
     min_pending_themes = Column(Integer, default=5)
     themes_per_cycle = Column(Integer, default=4)
@@ -307,4 +312,25 @@ class AutoChannelPilot(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     social_account = relationship("SocialAccount")
-    auto_schedule = relationship("AutoSchedule")
+    auto_schedule = relationship("AutoSchedule", foreign_keys=[auto_schedule_id])
+    long_schedule = relationship("AutoSchedule", foreign_keys=[long_schedule_id])
+    shorts_schedule = relationship("AutoSchedule", foreign_keys=[shorts_schedule_id])
+
+
+class AutoPilotCycleRun(Base):
+    __tablename__ = "auto_pilot_cycle_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pilot_id = Column(Integer, ForeignKey("auto_channel_pilots.id", ondelete="CASCADE"), nullable=False, index=True)
+    cycle_key = Column(String(120), nullable=False, unique=True, index=True)
+    base_theme = Column(Text, nullable=False)
+    long_theme_id = Column(Integer, ForeignKey("auto_schedule_themes.id", ondelete="SET NULL"))
+    status = Column(String(20), default="planned")  # planned|running|completed|failed
+    planned_shorts = Column(Integer, default=3)
+    completed_shorts = Column(Integer, default=0)
+    short_mix_mode = Column(String(40), default="realistic_all")
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    error_message = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
