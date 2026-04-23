@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260423-48">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260423-49">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 217;
+        var REQUIRED_VER = 218;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -526,6 +526,7 @@
                                         <option value="">Selecione uma conta conectada...</option>
                                     </select>
                                     <button id="btn-run-analysis" class="btn btn-primary" type="button">Analisar agora</button>
+                                    <button id="btn-analyze-history" class="btn btn-secondary" type="button">Minhas analises</button>
                                 </div>
 
                                 <div id="analyze-connected-list" class="analyze-connected-list">
@@ -576,11 +577,6 @@
                                         <ul id="analyze-content-gaps" class="analyze-list"></ul>
                                     </div>
 
-                                    <div class="analyze-section">
-                                        <h3 class="section-title">Estudo de ferramentas recomendado</h3>
-                                        <p class="section-subtitle">Essas diretrizes tambem alimentam o Piloto automatico para ajuste continuo.</p>
-                                        <div id="analyze-tools-study" class="analyze-tools-grid"></div>
-                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1910,8 +1906,27 @@
                 </div>
                 <p class="muted auto-pilot-note">Quando ligado, o piloto repoe temas automaticamente e mantem a fila ativa para crescimento continuo do canal.</p>
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer modal-footer-space">
+                <button class="btn btn-primary" onclick="closeModal('modal-auto-pilot'); connectPlatform('youtube')" type="button">Conectar YouTube</button>
                 <button class="btn btn-secondary" onclick="closeModal('modal-auto-pilot')" type="button">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-analyze-history" class="modal">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h3>Minhas analises</h3>
+                <button class="modal-close" onclick="closeModal('modal-analyze-history')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="section-subtitle">Analises salvas automaticamente ao clicar em Analisar agora. Clique em uma analise para visualizar novamente.</p>
+                <div id="analyze-history-list" class="analyze-history-list">
+                    <p class="loading">Carregando historico...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-analyze-history')" type="button">Fechar</button>
             </div>
         </div>
     </div>
@@ -2737,8 +2752,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260423-48"></script>
-    <script src="/video/static/pwa.js?v=20260423-48"></script>
+    <script src="/video/static/app.js?v=20260423-49"></script>
+    <script src="/video/static/pwa.js?v=20260423-49"></script>
 </body>
 </html>
 

@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, cast, String
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, Field
 import httpx
@@ -400,7 +400,7 @@ async def list_pilot_channels(
     accounts_result = await db.execute(
         select(SocialAccount)
         .where(SocialAccount.user_id == user["id"])
-        .where(SocialAccount.platform == Platform.YOUTUBE)
+        .where(func.lower(cast(SocialAccount.platform, String)) == "youtube")
         .order_by(SocialAccount.connected_at.desc(), SocialAccount.id.desc())
     )
     accounts = accounts_result.scalars().all()
@@ -507,7 +507,9 @@ async def toggle_pilot_channel(
     account = await db.get(SocialAccount, social_account_id)
     if not account or account.user_id != user["id"]:
         raise HTTPException(status_code=404, detail="Conta social nao encontrada.")
-    if account.platform != Platform.YOUTUBE:
+
+    account_platform = account.platform.value if isinstance(account.platform, Platform) else str(account.platform or "")
+    if str(account_platform).strip().lower() != "youtube":
         raise HTTPException(status_code=400, detail="Piloto automatico disponivel apenas para YouTube.")
 
     pilot_result = await db.execute(

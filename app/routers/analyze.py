@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
-from app.models import Platform, PublishJob, PublishStatus, SocialAccount
+from app.models import ChannelAnalysisReport, Platform, PublishJob, PublishStatus, SocialAccount
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analyze", tags=["analyze"])
@@ -952,4 +952,92 @@ async def analyze_channel(
     if not account or account.user_id != user["id"]:
         raise HTTPException(status_code=404, detail="Conta social nao encontrada")
 
-    return await build_channel_analysis_payload(user_id=user["id"], account=account, db=db)
+    payload = await build_channel_analysis_payload(user_id=user["id"], account=account, db=db)
+
+    # Store each run so users can revisit past analyses without rerunning API calls.
+    serializable_payload = json.loads(json.dumps(payload, ensure_ascii=False, default=str))
+    channel_title = str((payload.get("channel") or {}).get("title") or "").strip()
+    platform_value = account.platform.value if isinstance(account.platform, Platform) else str(account.platform or "")
+
+    report = ChannelAnalysisReport(
+        user_id=user["id"],
+        social_account_id=account.id,
+        platform=platform_value or "youtube",
+        account_label=account.account_label or "",
+        platform_username=account.platform_username or "",
+        channel_title=channel_title,
+        payload=serializable_payload,
+    )
+    db.add(report)
+    await db.commit()
+    await db.refresh(report)
+
+    source = dict(payload.get("source") or {})
+    source["analysis_id"] = int(report.id)
+    source["saved_at"] = report.created_at.isoformat() if report.created_at else datetime.utcnow().isoformat()
+    payload["source"] = source
+
+    return payload
+
+
+@router.get("/history")
+async def list_analysis_history(
+    social_account_id: int | None = Query(default=None, gt=0),
+    limit: int = Query(default=30, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    query = (
+        select(ChannelAnalysisReport)
+        .where(ChannelAnalysisReport.user_id == user["id"])
+        .order_by(ChannelAnalysisReport.created_at.desc(), ChannelAnalysisReport.id.desc())
+        .limit(limit)
+    )
+    if social_account_id:
+        query = query.where(ChannelAnalysisReport.social_account_id == social_account_id)
+
+    result = await db.execute(query)
+    reports = result.scalars().all()
+
+    payload: list[dict[str, Any]] = []
+    for report in reports:
+        payload.append(
+            {
+                "id": report.id,
+                "social_account_id": report.social_account_id,
+                "platform": report.platform,
+                "account_label": report.account_label,
+                "platform_username": report.platform_username,
+                "channel_title": report.channel_title,
+                "created_at": report.created_at.isoformat() if report.created_at else None,
+            }
+        )
+
+    return payload
+
+
+@router.get("/history/{report_id}")
+async def get_analysis_history_report(
+    report_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    report = await db.get(ChannelAnalysisReport, report_id)
+    if not report or report.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Analise nao encontrada")
+
+    payload = dict(report.payload or {})
+
+    account = payload.get("account") if isinstance(payload.get("account"), dict) else {}
+    account.setdefault("id", report.social_account_id or 0)
+    account.setdefault("platform", report.platform or "youtube")
+    account.setdefault("account_label", report.account_label or "")
+    account.setdefault("platform_username", report.platform_username or "")
+    payload["account"] = account
+
+    source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
+    source["analysis_id"] = int(report.id)
+    source["saved_at"] = report.created_at.isoformat() if report.created_at else None
+    payload["source"] = source
+
+    return payload

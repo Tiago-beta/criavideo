@@ -170,6 +170,22 @@ class SocialAccount(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class ChannelAnalysisReport(Base):
+    __tablename__ = "channel_analysis_reports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    social_account_id = Column(Integer, ForeignKey("social_accounts.id", ondelete="SET NULL"), index=True)
+    platform = Column(String(20), default="youtube", index=True)
+    account_label = Column(String(255), default="")
+    platform_username = Column(String(255), default="")
+    channel_title = Column(String(255), default="")
+    payload = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    social_account = relationship("SocialAccount")
+
+
 class PublishJob(Base):
     __tablename__ = "publish_jobs"
 

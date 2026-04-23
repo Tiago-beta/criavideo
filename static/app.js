@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v200 loaded");
+﻿console.log("[CriaVideo] app.js v201 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -25,6 +25,8 @@ let _analyzeState = {
     payloadByAccount: {},
     loadingAccounts: false,
     running: false,
+    historyLoading: false,
+    historyItems: [],
 };
 let _autoPilotState = {
     channels: [],
@@ -684,6 +686,12 @@ function bindDashboardEvents() {
             runAnalyzeChannel();
         });
     }
+    const analyzeHistoryBtn = document.getElementById("btn-analyze-history");
+    if (analyzeHistoryBtn) {
+        analyzeHistoryBtn.addEventListener("click", () => {
+            openAnalyzeHistoryModal();
+        });
+    }
     document.querySelectorAll(".publish-platform-chip input").forEach((checkbox) => {
         checkbox.addEventListener("change", () => {
             renderPublishAccountSelectors();
@@ -920,6 +928,19 @@ function _analyzeFormatDate(value) {
     return dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+function _analyzeFormatDateTime(value) {
+    if (!value) return "";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return "";
+    return dt.toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
 function _analyzeShowLoading(message) {
     const loadingEl = document.getElementById("analyze-loading");
     if (loadingEl) {
@@ -1039,6 +1060,117 @@ function _analyzeSelectAccount(accountId, autoRun = false) {
     }
 }
 
+async function _loadLatestSavedAnalysis(accountId) {
+    const selectedId = parseInt(accountId || "0", 10) || 0;
+    if (!selectedId) return false;
+
+    try {
+        const rows = await api(`/analyze/history?social_account_id=${selectedId}&limit=1`);
+        const items = Array.isArray(rows) ? rows : [];
+        const latest = items[0];
+        if (!latest?.id) return false;
+
+        const payload = await api(`/analyze/history/${latest.id}`);
+        if (!payload || typeof payload !== "object") return false;
+
+        _analyzeState.payloadByAccount[selectedId] = payload;
+        _analyzeRenderPayload(payload);
+        return true;
+    } catch (error) {
+        console.warn("[analyze] failed to load saved analysis:", error);
+        return false;
+    }
+}
+
+function _analyzeRenderHistoryList() {
+    const container = document.getElementById("analyze-history-list");
+    if (!container) return;
+
+    if (_analyzeState.historyLoading) {
+        container.innerHTML = "<p class='loading'>Carregando historico...</p>";
+        return;
+    }
+
+    const items = Array.isArray(_analyzeState.historyItems) ? _analyzeState.historyItems : [];
+    if (!items.length) {
+        container.innerHTML = "<p class='loading'>Nenhuma analise salva ainda. Clique em Analisar agora para criar a primeira.</p>";
+        return;
+    }
+
+    container.innerHTML = items.map((item) => {
+        const reportId = parseInt(item.id || "0", 10) || 0;
+        const accountId = parseInt(item.social_account_id || "0", 10) || 0;
+        const title = item.channel_title || item.account_label || item.platform_username || "Analise";
+        const accountLabel = item.account_label || item.platform_username || "Conta conectada";
+        const createdAt = _analyzeFormatDateTime(item.created_at) || "--";
+        return `
+            <button class="analyze-history-item" data-report-id="${reportId}" data-account-id="${accountId}" type="button">
+                <span class="analyze-history-title">${esc(title)}</span>
+                <span class="analyze-history-meta">${esc(accountLabel)}</span>
+                <span class="analyze-history-date">${esc(createdAt)}</span>
+            </button>
+        `;
+    }).join("");
+
+    container.querySelectorAll(".analyze-history-item").forEach((node) => {
+        node.addEventListener("click", () => {
+            const reportId = parseInt(node.dataset.reportId || "0", 10) || 0;
+            const accountId = parseInt(node.dataset.accountId || "0", 10) || 0;
+            openSavedAnalysisReport(reportId, accountId);
+        });
+    });
+}
+
+async function loadAnalyzeHistoryList(forceReload = false) {
+    if (_analyzeState.historyLoading && !forceReload) {
+        return;
+    }
+
+    _analyzeState.historyLoading = true;
+    _analyzeRenderHistoryList();
+
+    try {
+        const rows = await api("/analyze/history?limit=60");
+        _analyzeState.historyItems = Array.isArray(rows) ? rows : [];
+    } catch (error) {
+        const container = document.getElementById("analyze-history-list");
+        if (container) {
+            container.innerHTML = `<p class="loading">Erro ao carregar historico: ${esc(error.message)}</p>`;
+        }
+        _analyzeState.historyItems = [];
+    } finally {
+        _analyzeState.historyLoading = false;
+        _analyzeRenderHistoryList();
+    }
+}
+
+async function openAnalyzeHistoryModal() {
+    openModal("modal-analyze-history");
+    await loadAnalyzeHistoryList(true);
+}
+
+async function openSavedAnalysisReport(reportId, socialAccountId = 0) {
+    const id = parseInt(reportId || "0", 10) || 0;
+    if (!id) return;
+
+    try {
+        const payload = await api(`/analyze/history/${id}`);
+        const payloadAccountId = parseInt(payload?.account?.id || "0", 10) || 0;
+        const accountId = payloadAccountId || (parseInt(socialAccountId || "0", 10) || 0);
+
+        if (accountId) {
+            _analyzeState.payloadByAccount[accountId] = payload;
+            _analyzeSelectAccount(accountId, false);
+        }
+
+        _analyzeRenderPayload(payload);
+        _analyzeRenderConnectedAccounts(_analyzeState.accounts);
+        closeModal("modal-analyze-history");
+    } catch (error) {
+        alert(`Erro ao abrir analise salva: ${error.message}`);
+    }
+}
+
 async function loadAnalyzePage(forceReload = false) {
     if (_analyzeState.loadingAccounts && !forceReload) {
         return;
@@ -1069,9 +1201,14 @@ async function loadAnalyzePage(forceReload = false) {
 
         const selectedId = _analyzeState.selectedAccountId;
         const hasCached = !!_analyzeState.payloadByAccount[selectedId];
-        if (forceReload || !hasCached) {
-            await runAnalyzeChannel({ skipEmptyAlert: true, silentError: true });
+        if (!hasCached && selectedId) {
+            const loaded = await _loadLatestSavedAnalysis(selectedId);
+            if (!loaded) {
+                _analyzeShowLoading("Conta selecionada. Clique em Analisar agora para gerar diagnostico.");
+            }
         }
+
+        await loadAnalyzeHistoryList(forceReload);
     } catch (error) {
         _analyzeShowLoading(`Erro ao carregar contas: ${error.message}`);
     } finally {
@@ -1311,6 +1448,7 @@ async function runAnalyzeChannel(options = {}) {
         _analyzeState.payloadByAccount[selectedId] = payload;
         _analyzeRenderPayload(payload);
         _analyzeRenderConnectedAccounts(_analyzeState.accounts);
+        await loadAnalyzeHistoryList(true);
     } catch (error) {
         _analyzeShowLoading(`Erro ao analisar: ${error.message}`);
         if (!options.silentError) {
@@ -7071,7 +7209,18 @@ function _renderAutoPilotChannels() {
 
     const channels = Array.isArray(_autoPilotState.channels) ? _autoPilotState.channels : [];
     if (!channels.length) {
-        container.innerHTML = "<p class='loading'>Conecte ao menos um canal do YouTube para ativar o Piloto automatico.</p>";
+        const hasYoutubeConnected = Array.isArray(_socialAccountsCache)
+            && _socialAccountsCache.some((account) => String(account.platform || "").toLowerCase() === "youtube");
+        const emptyText = hasYoutubeConnected
+            ? "Nenhum canal do YouTube ficou disponivel no piloto. Clique em Conectar YouTube para adicionar outro canal ou atualizar acesso."
+            : "Conecte ao menos um canal do YouTube para ativar o Piloto automatico.";
+
+        container.innerHTML = `
+            <div class="auto-pilot-empty">
+                <p class="loading">${esc(emptyText)}</p>
+                <button class="btn btn-primary btn-sm" type="button" onclick="closeModal('modal-auto-pilot'); connectPlatform('youtube')">Conectar YouTube</button>
+            </div>
+        `;
         return;
     }
 
@@ -7132,7 +7281,34 @@ async function loadAutoPilotChannels(forceReload = false) {
 
     try {
         const channels = await api("/automation/pilot/channels");
-        _autoPilotState.channels = Array.isArray(channels) ? channels : [];
+        const parsedChannels = Array.isArray(channels) ? channels : [];
+        if (parsedChannels.length) {
+            _autoPilotState.channels = parsedChannels;
+        } else {
+            const accounts = await api("/social/accounts");
+            _socialAccountsCache = Array.isArray(accounts) ? accounts : _socialAccountsCache;
+
+            const youtubeAccounts = (Array.isArray(_socialAccountsCache) ? _socialAccountsCache : []).filter(
+                (account) => String(account.platform || "").toLowerCase() === "youtube"
+            );
+
+            _autoPilotState.channels = youtubeAccounts.map((account) => ({
+                social_account_id: account.id,
+                platform: "youtube",
+                account_label: account.account_label || account.platform_username || "Canal YouTube",
+                platform_username: account.platform_username || "",
+                connected_at: account.connected_at || null,
+                pilot: {
+                    enabled: false,
+                    pending_themes: 0,
+                    completed_themes: 0,
+                    schedule_name: null,
+                    last_run_at: null,
+                    last_analysis_at: null,
+                    last_error: null,
+                },
+            }));
+        }
     } catch (error) {
         const container = document.getElementById("auto-pilot-channels");
         if (container) {
