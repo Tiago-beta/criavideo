@@ -6154,6 +6154,11 @@ th,
     resize: vertical;
 }
 
+.editor-ai-music-form select option {
+    background: #253241;
+    color: #e6f7ff;
+}
+
 .editor-ai-music-form select:focus,
 .editor-ai-music-form textarea:focus {
     outline: none;

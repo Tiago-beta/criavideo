@@ -1278,7 +1278,14 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 ref_label = f"vref{step}"
                 out_label = f"vout{step}"
 
-                overlay_parts.append(f"[{layer['input_idx']}:v]setpts=PTS-STARTPTS[{src_label}]")
+                if layer["kind"] == "video":
+                    overlay_parts.append(
+                        f"[{layer['input_idx']}:v]"
+                        f"setpts=PTS-STARTPTS+{layer['start_time']:.6f}/TB"
+                        f"[{src_label}]"
+                    )
+                else:
+                    overlay_parts.append(f"[{layer['input_idx']}:v]setpts=PTS-STARTPTS[{src_label}]")
                 overlay_parts.append(
                     f"[{src_label}]{current_video_label}"
                     f"scale2ref=w='trunc(main_w*{layer['width_pct']/100.0:.6f}/2)*2':h='-2'"
@@ -1403,24 +1410,60 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         job["progress"] = 95
         job["message"] = "Finalizando..."
 
-        # Register as a new render
+        # Register as a new project so the source project remains unchanged.
         from app.database import async_session
 
         async def _save_render():
             async with async_session() as db:
+                source_title = (project.title or project.track_title or "Vídeo").strip() or "Vídeo"
+                edited_title = f"{source_title} (Editado)"
+                if len(edited_title) > 500:
+                    edited_title = edited_title[:500]
+
+                exported_project = VideoProject(
+                    user_id=project.user_id,
+                    track_id=int(project.track_id or 0),
+                    title=edited_title,
+                    description=project.description or "",
+                    tags=project.tags or [],
+                    style_prompt=project.style_prompt or "",
+                    aspect_ratio=selected_aspect,
+                    status=VideoStatus.COMPLETED,
+                    progress=100,
+                    track_title=project.track_title,
+                    track_artist=project.track_artist,
+                    track_duration=float(final_output_duration or project.track_duration or 0) or None,
+                    lyrics_text=project.lyrics_text,
+                    lyrics_words=project.lyrics_words,
+                    audio_path=project.audio_path,
+                    use_custom_images=bool(project.use_custom_images),
+                    use_custom_video=True,
+                    enable_subtitles=bool(project.enable_subtitles),
+                    zoom_images=bool(project.zoom_images),
+                    image_display_seconds=project.image_display_seconds,
+                    no_background_music=bool(project.no_background_music),
+                    is_karaoke=bool(project.is_karaoke),
+                    is_realistic=bool(project.is_realistic),
+                )
+                db.add(exported_project)
+                await db.flush()
+
                 new_render = VideoRender(
-                    project_id=project.id,
+                    project_id=exported_project.id,
                     format=selected_aspect,
                     file_path=final_out_file,
                     file_size=os.path.getsize(final_out_file) if os.path.exists(final_out_file) else None,
                     thumbnail_path=render.thumbnail_path,
+                    duration=float(final_output_duration or 0) or None,
                 )
                 db.add(new_render)
                 await db.commit()
 
+                return exported_project.id
+
         future = asyncio.run_coroutine_threadsafe(_save_render(), main_loop)
         try:
-            future.result(timeout=60)
+            exported_project_id = future.result(timeout=60)
         except Exception as save_error:
             logger.exception("[editor] Failed to persist export render: %s", save_error)
             job["status"] = "failed"
@@ -1431,6 +1474,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         job["status"] = "completed"
         job["message"] = "Exportacao concluida!"
         job["output_url"] = _to_media_url(final_out_file)
+        job["output_project_id"] = exported_project_id
         logger.info(f"[editor] Export completed: {final_out_file}")
 
     except Exception as e:
