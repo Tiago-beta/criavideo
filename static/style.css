@@ -6285,6 +6285,11 @@ th,
     font-variant-numeric: tabular-nums;
 }
 
+.editor-ruler-mark.minute {
+    font-size: 10px;
+    color: rgba(219, 237, 255, 0.9);
+}
+
 .editor-ruler-tick {
     position: absolute;
     bottom: 0;
@@ -6494,6 +6499,66 @@ th,
 .editor-track-clip.clip-audio {
     background: linear-gradient(135deg, #4a1a6b, #2e0e4a);
     border: 1px solid rgba(74, 26, 107, 0.6);
+}
+
+.editor-track-clip.clip-audio.clip-audio-master {
+    top: 1px;
+    height: calc(100% - 2px);
+    border-color: rgba(107, 26, 74, 0.72);
+    background: linear-gradient(135deg, #6b1a4a, #4a0e2e);
+    overflow: hidden;
+}
+
+.editor-track-clip.clip-audio.clip-audio-master::before {
+    content: "";
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    top: 2px;
+    bottom: 2px;
+    border-radius: 3px;
+    background-image: var(--audio-waveform-image);
+    background-repeat: var(--audio-waveform-repeat, no-repeat);
+    background-size: var(--audio-waveform-size, 100% 100%);
+    background-position: left center;
+    opacity: 0.95;
+    pointer-events: none;
+}
+
+.editor-track-clip.clip-audio.clip-audio-master::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0));
+    pointer-events: none;
+}
+
+.editor-track-clip.clip-audio.clip-audio-master > span {
+    position: relative;
+    z-index: 1;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.editor-track-clip.clip-audio.clip-audio-master.loading::before {
+    background-image: repeating-linear-gradient(
+        90deg,
+        rgba(238, 188, 255, 0.9) 0,
+        rgba(238, 188, 255, 0.9) 2px,
+        rgba(238, 188, 255, 0.2) 2px,
+        rgba(238, 188, 255, 0.2) 8px
+    );
+    background-size: 120px 100%;
+    animation: editor-wave-loading 1.25s linear infinite;
+}
+
+@keyframes editor-wave-loading {
+    0% {
+        background-position: 0 50%;
+    }
+    100% {
+        background-position: 120px 50%;
+    }
 }
 .editor-track-clip.clip-text {
     background: linear-gradient(135deg, #1a4a6b, #0e2e4a);

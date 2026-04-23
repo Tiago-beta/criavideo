@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v197 loaded");
+﻿console.log("[CriaVideo] app.js v198 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -9858,6 +9858,17 @@ let _editorTimelineScrub = null;
 let _editorMediaLayerDrag = null;
 let _editorMusicPreviewAudio = null;
 let _editorMusicPreviewWarned = false;
+let _editorMusicPreviewPrimed = false;
+let _editorMusicWaveformState = {
+    key: "",
+    loading: false,
+    peaks: [],
+    duration: 0,
+    svgDataUrl: "",
+    error: "",
+    requestId: 0,
+};
+const _EDITOR_RULER_STEPS_SEC = [5, 10, 15, 20, 30, 60, 120, 180, 300, 600, 900, 1200];
 let _editorLayerLibrary = {
     open: false,
     loading: false,
@@ -10544,33 +10555,279 @@ function _editorStartVirtualTimelinePlayback(startTime = 0) {
     _editor._virtualPlaybackRaf = requestAnimationFrame(tick);
 }
 
+function _editorNormalizeMediaUrl(rawUrl = "") {
+    const source = String(rawUrl || "").trim();
+    if (!source) return "";
+    try {
+        return new URL(source, window.location.href).href;
+    } catch {
+        return source;
+    }
+}
+
+function _editorResetMusicWaveformState() {
+    _editorMusicWaveformState = {
+        key: "",
+        loading: false,
+        peaks: [],
+        duration: 0,
+        svgDataUrl: "",
+        error: "",
+        requestId: Number(_editorMusicWaveformState?.requestId || 0) + 1,
+    };
+}
+
+function _editorBuildMusicWaveformSvg(peaks = []) {
+    if (!Array.isArray(peaks) || !peaks.length) return "";
+
+    const width = 1200;
+    const height = 54;
+    const barCount = Math.max(48, Math.min(280, peaks.length));
+    const gap = 1;
+    const barWidth = Math.max(1, Math.floor((width - ((barCount - 1) * gap)) / barCount));
+    let x = 0;
+    let rects = "";
+
+    for (let idx = 0; idx < barCount; idx += 1) {
+        const sourceIndex = Math.min(peaks.length - 1, Math.floor((idx / Math.max(1, barCount - 1)) * (peaks.length - 1)));
+        const amp = Math.max(0.04, Math.min(1, Number(peaks[sourceIndex] || 0)));
+        const barHeight = Math.max(2, Math.round((height - 6) * amp));
+        const y = Math.round((height - barHeight) / 2);
+        rects += `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="1" ry="1"></rect>`;
+        x += barWidth + gap;
+    }
+
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${width} ${height}' preserveAspectRatio='none'><rect width='${width}' height='${height}' fill='rgba(0,0,0,0)'/><style>rect{fill:rgba(239,191,255,0.85)}</style>${rects}</svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+async function _editorExtractMusicWaveformPeaks(url) {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) {
+        throw new Error(`Falha ao carregar áudio (${response.status})`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) {
+        throw new Error("AudioContext indisponível neste navegador.");
+    }
+
+    const audioContext = new AudioContextCtor();
+    let decoded = null;
+    try {
+        decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+    } finally {
+        try {
+            await audioContext.close();
+        } catch {
+            // Ignore AudioContext close errors.
+        }
+    }
+
+    const channelCount = Math.max(1, Number(decoded.numberOfChannels || 1));
+    const channels = [];
+    for (let ch = 0; ch < channelCount; ch += 1) {
+        channels.push(decoded.getChannelData(ch));
+    }
+
+    const sampleCount = Math.max(1, Number(decoded.length || 1));
+    const bucketCount = Math.max(220, Math.min(2600, Math.round(Math.max(1, Number(decoded.duration || 1)) * 36)));
+    const samplesPerBucket = Math.max(1, Math.floor(sampleCount / bucketCount));
+    const peaks = [];
+
+    for (let bucket = 0; bucket < bucketCount; bucket += 1) {
+        const start = bucket * samplesPerBucket;
+        if (start >= sampleCount) break;
+        const end = Math.min(sampleCount, start + samplesPerBucket);
+        const stride = Math.max(1, Math.floor((end - start) / 40));
+        let peak = 0;
+
+        for (let i = start; i < end; i += stride) {
+            let mixed = 0;
+            for (let ch = 0; ch < channelCount; ch += 1) {
+                mixed += Math.abs(channels[ch][i] || 0);
+            }
+            mixed /= channelCount;
+            if (mixed > peak) {
+                peak = mixed;
+            }
+        }
+
+        peaks.push(peak);
+    }
+
+    const maxPeak = peaks.reduce((maxValue, value) => Math.max(maxValue, Number(value || 0)), 0);
+    const normalizedPeaks = maxPeak > 0
+        ? peaks.map((value) => Math.pow(Math.max(0, Number(value || 0)) / maxPeak, 0.7))
+        : peaks.map(() => 0);
+
+    return {
+        peaks: normalizedPeaks,
+        duration: Math.max(0, Number(decoded.duration || 0)),
+    };
+}
+
+function _editorEnsureMusicWaveform() {
+    if (!_editorShouldShowAudioTrack() || !_editor.musicUrl) {
+        if (_editorMusicWaveformState.key || _editorMusicWaveformState.loading) {
+            _editorResetMusicWaveformState();
+        }
+        return;
+    }
+
+    const normalizedUrl = _editorNormalizeMediaUrl(_editor.musicUrl);
+    if (!normalizedUrl) return;
+
+    if (_editorMusicWaveformState.key === normalizedUrl) {
+        return;
+    }
+
+    const requestId = Number(_editorMusicWaveformState.requestId || 0) + 1;
+    _editorMusicWaveformState = {
+        key: normalizedUrl,
+        loading: true,
+        peaks: [],
+        duration: 0,
+        svgDataUrl: "",
+        error: "",
+        requestId,
+    };
+
+    _editorExtractMusicWaveformPeaks(normalizedUrl)
+        .then(({ peaks, duration }) => {
+            if (requestId !== _editorMusicWaveformState.requestId) return;
+
+            _editorMusicWaveformState = {
+                key: normalizedUrl,
+                loading: false,
+                peaks,
+                duration,
+                svgDataUrl: _editorBuildMusicWaveformSvg(peaks),
+                error: "",
+                requestId,
+            };
+            _editorRenderTimeline();
+        })
+        .catch((err) => {
+            if (requestId !== _editorMusicWaveformState.requestId) return;
+
+            _editorMusicWaveformState = {
+                key: normalizedUrl,
+                loading: false,
+                peaks: [],
+                duration: 0,
+                svgDataUrl: "",
+                error: String(err?.message || "waveform-error"),
+                requestId,
+            };
+            _editorRenderTimeline();
+        });
+}
+
+function _editorGetMusicWaveformInlineStyle(timelineDuration = 0) {
+    const waveUrl = String(_editorMusicWaveformState.svgDataUrl || "");
+    if (!waveUrl) return "";
+
+    const safeTimelineDuration = Math.max(0.1, Number(timelineDuration || 0.1));
+    const audioDuration = Math.max(0, Number(_editorMusicWaveformState.duration || 0));
+    const sizePct = audioDuration > 0
+        ? Math.max(2, Math.min(100, (audioDuration / safeTimelineDuration) * 100))
+        : 100;
+    const repeatMode = audioDuration > 0 && audioDuration < safeTimelineDuration - 0.05
+        ? "repeat-x"
+        : "no-repeat";
+
+    return `--audio-waveform-image:url("${waveUrl}");--audio-waveform-size:${sizePct.toFixed(3)}% 100%;--audio-waveform-repeat:${repeatMode};`;
+}
+
+function _editorShouldIgnoreMusicPreviewError(err) {
+    const errorName = String(err?.name || "").trim();
+    const errorMessage = String(err?.message || "").toLowerCase();
+    if (errorName === "AbortError") return true;
+    if (errorMessage.includes("interrupted") || errorMessage.includes("abort")) return true;
+    return false;
+}
+
+function _editorPrimeMusicPreviewPlayback(videoTime = 0) {
+    if (!_editorShouldShowAudioTrack() || !_editor.musicUrl) return;
+
+    const audio = _editorGetMusicPreviewAudio();
+    if (!audio.src) {
+        _editorSetMusicPreviewSource(_editor.musicUrl);
+    }
+
+    let targetTime = Math.max(0, Number(videoTime || 0));
+    const duration = Number(audio.duration || 0);
+    if (Number.isFinite(duration) && duration > 0.05) {
+        targetTime %= duration;
+    }
+
+    if (audio.readyState >= 1 && Math.abs(Number(audio.currentTime || 0) - targetTime) > 0.3) {
+        try {
+            audio.currentTime = targetTime;
+        } catch {
+            // Ignore seek errors while metadata is loading.
+        }
+    }
+
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.then === "function") {
+        playPromise.then(() => {
+            _editorMusicPreviewPrimed = true;
+            if (!_editor.playing) {
+                audio.pause();
+            }
+        }).catch((err) => {
+            if (_editorShouldIgnoreMusicPreviewError(err)) {
+                return;
+            }
+            if (!_editorMusicPreviewWarned) {
+                _editorMusicPreviewWarned = true;
+                showToast("Não foi possível tocar a prévia do áudio externo. O áudio será aplicado na exportação.", "error");
+            }
+        });
+    }
+}
+
 function _editorGetMusicPreviewAudio() {
     if (!_editorMusicPreviewAudio) {
         _editorMusicPreviewAudio = new Audio();
         _editorMusicPreviewAudio.preload = "auto";
         _editorMusicPreviewAudio.loop = true;
+        _editorMusicPreviewAudio.setAttribute("playsinline", "true");
     }
     return _editorMusicPreviewAudio;
 }
 
 function _editorSetMusicPreviewSource(url) {
     const audio = _editorGetMusicPreviewAudio();
-    if (!url) {
-        audio.pause();
-        audio.removeAttribute("src");
-        audio.load();
+    const normalizedUrl = _editorNormalizeMediaUrl(url);
+
+    if (!normalizedUrl) {
+        if (audio.src) {
+            audio.pause();
+            audio.removeAttribute("src");
+            audio.load();
+        }
         _editorMusicPreviewWarned = false;
+        _editorMusicPreviewPrimed = false;
+        if (_editorMusicWaveformState.key || _editorMusicWaveformState.loading) {
+            _editorResetMusicWaveformState();
+        }
         return;
     }
 
-    if (audio.src !== url) {
+    if (audio.src !== normalizedUrl) {
         audio.pause();
-        audio.src = url;
+        audio.src = normalizedUrl;
         audio.load();
+        _editorMusicPreviewWarned = false;
+        _editorMusicPreviewPrimed = false;
     }
 
     audio.volume = Math.max(0, Math.min(1, (_editor.musicVolume || 0) / 100));
-    _editorMusicPreviewWarned = false;
+    _editorEnsureMusicWaveform();
 }
 
 function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
@@ -10593,10 +10850,12 @@ function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
     }
 
     if (Math.abs(Number(audio.currentTime || 0) - targetTime) > 0.25) {
-        try {
-            audio.currentTime = targetTime;
-        } catch (_) {
-            // Ignore seek errors while metadata is not ready.
+        if (audio.readyState >= 1) {
+            try {
+                audio.currentTime = targetTime;
+            } catch (_) {
+                // Ignore seek errors while metadata is not ready.
+            }
         }
     }
 
@@ -10604,7 +10863,12 @@ function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
         if (audio.paused) {
             const playPromise = audio.play();
             if (playPromise && typeof playPromise.catch === "function") {
-                playPromise.catch(() => {
+                playPromise.then(() => {
+                    _editorMusicPreviewPrimed = true;
+                }).catch((err) => {
+                    if (_editorShouldIgnoreMusicPreviewError(err)) {
+                        return;
+                    }
                     if (!_editorMusicPreviewWarned) {
                         _editorMusicPreviewWarned = true;
                         showToast("Não foi possível tocar a prévia do áudio externo. O áudio será aplicado na exportação.", "error");
@@ -11855,6 +12119,33 @@ function _fmtTime(sec) {
     return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
 }
 
+function _editorFormatRulerTime(sec, totalDuration, stepSec) {
+    const safeSec = Math.max(0, Number(sec || 0));
+    const safeTotal = Math.max(0, Number(totalDuration || 0));
+    const safeStep = Math.max(1, Number(stepSec || 1));
+
+    if (safeTotal >= 600 && safeStep >= 60) {
+        const minutes = safeSec / 60;
+        const rounded = Math.round(minutes * 10) / 10;
+        if (Math.abs(rounded - Math.round(rounded)) < 0.05) {
+            return `${Math.round(rounded)}m`;
+        }
+        return `${rounded.toFixed(1)}m`;
+    }
+
+    return _fmtTime(safeSec);
+}
+
+function _editorResolveRulerStepSec(durationSec, trackWidthPx) {
+    const safeDuration = Math.max(1, Number(durationSec || 1));
+    const safeWidth = Math.max(320, Number(trackWidthPx || 0));
+    const targetMarkCount = Math.max(4, Math.floor(safeWidth / 88));
+    const rawStep = safeDuration / targetMarkCount;
+    const candidate = _EDITOR_RULER_STEPS_SEC.find((step) => step >= rawStep);
+    if (candidate) return candidate;
+    return Math.max(1200, Math.ceil(rawStep / 300) * 300);
+}
+
 // ---------- Play/Pause ----------
 function _editorTogglePlay() {
     const video = document.getElementById("editor-video");
@@ -11890,6 +12181,9 @@ function _editorTogglePlay() {
 
     _editorSetMusicPreviewSource(_editor.musicUrl || "");
     _editor.playing = true;
+    if (!_editorMusicPreviewPrimed) {
+        _editorPrimeMusicPreviewPlayback(startTime);
+    }
 
     const videoPlaybackEnd = _editorGetVideoPlaybackEndTime();
     if (startTime > videoPlaybackEnd + 0.01) {
@@ -11975,7 +12269,7 @@ function _editorTimeUpdate() {
         return;
     }
 
-    _editorApplyTimelineFrame(t, _editor.playing && !video.paused);
+    _editorApplyTimelineFrame(t, _editor.playing);
 }
 
 function _editorMovePlayhead(t) {
@@ -12027,7 +12321,7 @@ function _editorSeekByClientX(clientX) {
                 });
             }
         }
-        _editorApplyTimelineFrame(nextTime, _editor.playing && !video.paused);
+        _editorApplyTimelineFrame(nextTime, _editor.playing);
         return;
     }
 
@@ -13426,7 +13720,7 @@ function _editorSetMusicVolume(val) {
     if (trimLabel) trimLabel.textContent = _editor.musicVolume + "%";
     const video = document.getElementById("editor-video");
     const previewTime = Number(_editor.timelineTime || video?.currentTime || 0);
-    _editorSyncMusicPreviewPlayback(previewTime, _editor.playing && !!video && !video.paused);
+    _editorSyncMusicPreviewPlayback(previewTime, _editor.playing);
 }
 window._editorSetMusicVolume = _editorSetMusicVolume;
 
@@ -13600,6 +13894,7 @@ function _editorRenderTimeline() {
     });
 
     if (_editorShouldShowAudioTrack()) {
+        _editorEnsureMusicWaveform();
         _editorSortSegments("audio");
         let audioClips = _editor.audioSegments.map((seg, idx) => {
             const segStart = Math.max(0, Math.min(Number(seg.start || 0), dur));
@@ -13611,7 +13906,13 @@ function _editorRenderTimeline() {
         }).join("");
 
         const musicSelected = selectedKind === "music" ? " selected" : "";
-        audioClips += `<div class="editor-track-clip clip-audio${musicSelected}" data-kind="music" data-track="audio" data-id="music" style="left:0;width:100%;top:1px;background:linear-gradient(135deg,#6b1a4a,#4a0e2e);border-color:rgba(107,26,74,0.6)">Audio</div>`;
+        const waveformStyle = _editorGetMusicWaveformInlineStyle(dur);
+        const masterClasses = `${musicSelected}${_editorMusicWaveformState.loading ? " loading" : ""}`;
+        const masterStyleParts = ["left:0", "width:100%"];
+        if (waveformStyle) {
+            masterStyleParts.push(waveformStyle);
+        }
+        audioClips += `<div class="editor-track-clip clip-audio clip-audio-master${masterClasses}" data-kind="music" data-track="audio" data-id="music" style="${masterStyleParts.join(";")}"><span>Audio</span></div>`;
 
         rows.push({
             track: "audio",
@@ -13696,14 +13997,30 @@ function _editorRenderTimeline() {
     }
 
     // Ruler marks
-    const step = dur > 120 ? 30 : dur > 60 ? 10 : 5;
-    const trackW = document.getElementById("editor-track-video")?.offsetWidth || 600;
-    let rulerHtml = "";
-    for (let t = 0; t <= dur; t += step) {
-        const pct = (t / dur) * trackW;
-        rulerHtml += `<span class="editor-ruler-mark" style="left:${80 + pct}px">${_fmtTime(t)}</span>`;
-        rulerHtml += `<span class="editor-ruler-tick major" style="left:${80 + pct}px"></span>`;
+    const trackW = Math.max(document.getElementById("editor-track-video")?.offsetWidth || 0, 600);
+    const step = _editorResolveRulerStepSec(dur, trackW);
+    const marks = [];
+    for (let t = 0; t <= dur + 0.001; t += step) {
+        marks.push(Math.min(dur, Number(t.toFixed(3))));
+        if (marks.length >= 1200) break;
     }
+    if (!marks.length || Math.abs(marks[marks.length - 1] - dur) > 0.08) {
+        marks.push(dur);
+    }
+
+    let rulerHtml = "";
+    const showAllLabels = marks.length <= 16;
+    marks.forEach((t, idx) => {
+        const pct = (t / dur) * trackW;
+        const isLast = idx === marks.length - 1;
+        const showLabel = showAllLabels || idx % 2 === 0 || isLast;
+        const tickClass = showLabel ? " major" : "";
+        if (showLabel) {
+            const minuteClass = dur >= 600 && step >= 60 ? " minute" : "";
+            rulerHtml += `<span class="editor-ruler-mark${minuteClass}" style="left:${80 + pct}px">${_editorFormatRulerTime(t, dur, step)}</span>`;
+        }
+        rulerHtml += `<span class="editor-ruler-tick${tickClass}" style="left:${80 + pct}px"></span>`;
+    });
     ruler.innerHTML = rulerHtml;
 
     const totalTimeEl = document.getElementById("editor-time-total");
