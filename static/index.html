@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260423-46">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260423-47">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 215;
+        var REQUIRED_VER = 216;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -137,6 +137,10 @@
                         <a href="#" class="nav-item" data-page="editor">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
                             <span>Editar</span>
+                        </a>
+                        <a href="#" class="nav-item" data-page="analyze">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15v-3"/><path d="M12 15V9"/><path d="M17 15V6"/></svg>
+                            <span>Analisar</span>
                         </a>
                         <a href="#" class="nav-item" data-page="publish">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
@@ -307,15 +311,6 @@
                                 <button class="editor-quick-icon-btn" id="editor-quick-cut" type="button" title="Cortar no ponto atual">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
                                 </button>
-                                <button class="editor-quick-icon-btn" id="editor-quick-zoom-out" type="button" title="Afastar timeline (-)">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-                                </button>
-                                <button class="editor-quick-icon-btn" id="editor-quick-zoom-in" type="button" title="Aproximar timeline (+)">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-                                </button>
-                                <button class="editor-quick-icon-btn" id="editor-quick-speed" type="button" title="Velocidade de reprodução (1x)" aria-label="Velocidade de reprodução 1x">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4a9 9 0 1 0 9 9"/><path d="M12 12l5-3"/><path d="M7.5 14.5h.01"/><path d="M6.5 11h.01"/><path d="M8.5 8h.01"/></svg>
-                                </button>
                                 <button class="editor-quick-icon-btn" id="editor-quick-layer-order" type="button" title="Alternar ordem das camadas" disabled>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h11"/><path d="M4 12h7"/><path d="M4 17h11"/><path d="m15 5 3-3 3 3"/><path d="m15 19 3 3 3-3"/></svg>
                                 </button>
@@ -474,11 +469,127 @@
                         </div>
                     </section>
 
+                    <section id="page-analyze" class="page">
+                        <div class="page-header">
+                            <h1>Analisar canal</h1>
+                            <button id="analyze-refresh-btn" class="btn btn-secondary btn-sm" type="button">Atualizar contas</button>
+                        </div>
+
+                        <div class="analyze-layout">
+                            <div class="panel analyze-hero">
+                                <p class="analyze-hero-kicker">Especialista de crescimento</p>
+                                <h3>Mapeie o que funciona no seu canal e publique com mais precisão.</h3>
+                                <p class="section-subtitle">A análise cruza contas conectadas + histórico interno para sugerir títulos, descrição, thumbnail e plano de crescimento.</p>
+                                <div class="analyze-chip-row">
+                                    <span class="analyze-chip">Top vídeos</span>
+                                    <span class="analyze-chip">Metadados vencedores</span>
+                                    <span class="analyze-chip">Ações semanais</span>
+                                </div>
+                            </div>
+
+                            <div class="panel">
+                                <h3 class="section-title">Contas conectadas</h3>
+                                <p class="section-subtitle">Conecte YouTube para diagnóstico completo. TikTok e Instagram usam histórico interno enquanto a integração analítica evolui.</p>
+
+                                <div class="social-connect-grid analyze-connect-grid">
+                                    <button class="btn btn-provider social-connect-btn social-connect-btn-youtube" onclick="connectPlatform('youtube')" type="button">
+                                        <span class="social-connect-icon" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none">
+                                                <rect x="2.5" y="5.5" width="19" height="13" rx="4" stroke="currentColor" stroke-width="1.9"></rect>
+                                                <path d="M10 9.2L15.8 12L10 14.8V9.2Z" fill="currentColor"></path>
+                                            </svg>
+                                        </span>
+                                        <span class="social-connect-label">Conectar YouTube</span>
+                                    </button>
+                                    <button class="btn btn-provider social-connect-btn social-connect-btn-tiktok" onclick="connectPlatform('tiktok')" type="button">
+                                        <span class="social-connect-icon" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none">
+                                                <path d="M14.4 5.2C15 6.9 16.4 8.1 18.2 8.4V11.1C16.9 11 15.7 10.6 14.7 10V14.8C14.7 18.1 12.2 20.5 9 20.5C5.8 20.5 3.3 18.1 3.3 14.8C3.3 11.6 5.8 9.1 9 9.1C9.4 9.1 9.9 9.2 10.3 9.3V12.1C9.9 11.9 9.5 11.8 9 11.8C7.3 11.8 6 13.1 6 14.8C6 16.6 7.3 17.8 9 17.8C10.7 17.8 12 16.6 12 14.8V3.5H14.4V5.2Z" fill="currentColor"></path>
+                                            </svg>
+                                        </span>
+                                        <span class="social-connect-label">Conectar TikTok</span>
+                                    </button>
+                                    <button class="btn btn-provider social-connect-btn social-connect-btn-instagram" onclick="connectPlatform('instagram')" type="button">
+                                        <span class="social-connect-icon" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none">
+                                                <rect x="3.5" y="3.5" width="17" height="17" rx="5.5" stroke="currentColor" stroke-width="1.9"></rect>
+                                                <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.9"></circle>
+                                                <circle cx="17.2" cy="6.8" r="1.2" fill="currentColor"></circle>
+                                            </svg>
+                                        </span>
+                                        <span class="social-connect-label">Conectar Instagram</span>
+                                    </button>
+                                </div>
+
+                                <div class="analyze-account-picker">
+                                    <select id="analyze-account-select" class="input" aria-label="Selecionar conta para analisar">
+                                        <option value="">Selecione uma conta conectada...</option>
+                                    </select>
+                                    <button id="btn-run-analysis" class="btn btn-primary" type="button">Analisar agora</button>
+                                    <button id="btn-analyze-history" class="btn btn-secondary" type="button">Minhas analises</button>
+                                </div>
+
+                                <div id="analyze-connected-list" class="analyze-connected-list">
+                                    <p class="loading">Carregando contas conectadas...</p>
+                                </div>
+                            </div>
+
+                            <div class="panel analyze-results-panel">
+                                <div id="analyze-loading" class="loading">Selecione uma conta para iniciar a análise.</div>
+
+                                <div id="analyze-results" class="analyze-results" hidden>
+                                    <div id="analyze-platform-note" class="analyze-platform-note" hidden></div>
+
+                                    <div id="analyze-channel-head" class="analyze-channel-head"></div>
+                                    <div id="analyze-kpi-grid" class="analyze-kpi-grid"></div>
+
+                                    <div class="analyze-section">
+                                        <h3 class="section-title">Melhores vídeos</h3>
+                                        <div id="analyze-top-videos" class="analyze-video-grid"></div>
+                                    </div>
+
+                                    <div class="analyze-section">
+                                        <h3 class="section-title">Sugestões para próximos conteúdos</h3>
+                                        <div class="analyze-suggestions-grid">
+                                            <div class="analyze-suggestion-card">
+                                                <h4>Títulos sugeridos</h4>
+                                                <ul id="analyze-title-ideas" class="analyze-list"></ul>
+                                            </div>
+
+                                            <div class="analyze-suggestion-card">
+                                                <h4>Descrição sugerida</h4>
+                                                <textarea id="analyze-description-template" class="input analyze-description-template" rows="9" readonly></textarea>
+                                                <div id="analyze-hashtags" class="analyze-hashtags"></div>
+                                            </div>
+
+                                            <div class="analyze-suggestion-card">
+                                                <h4>Direções de thumbnail</h4>
+                                                <ul id="analyze-thumbnail-ideas" class="analyze-list"></ul>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="analyze-section">
+                                        <h3 class="section-title">Plano de crescimento</h3>
+                                        <ul id="analyze-growth-actions" class="analyze-list analyze-list-strong"></ul>
+
+                                        <h4 class="analyze-subsection-title">Lacunas e oportunidades</h4>
+                                        <ul id="analyze-content-gaps" class="analyze-list"></ul>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
                     <section id="page-automate" class="page">
                         <div class="page-header">
                             <div class="page-header-left">
                                 <h1>Automatizar</h1>
-                                <button id="btn-new-automation" class="btn btn-primary btn-add-project" type="button" title="Nova automação" aria-label="Nova automação">+</button>
+                                <div class="automate-header-actions">
+                                    <button id="btn-auto-pilot" class="btn btn-secondary btn-sm" type="button">Piloto automatico</button>
+                                    <button id="btn-new-automation" class="btn btn-primary btn-add-project" type="button" title="Nova automação" aria-label="Nova automação">+</button>
+                                </div>
                             </div>
                         </div>
                         <div class="automate-sections">
@@ -520,6 +631,10 @@
                     <button class="mobile-nav-tab" data-mobile-page="editor">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
                         <span>Editar</span>
+                    </button>
+                    <button class="mobile-nav-tab" data-mobile-page="analyze">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15v-3"/><path d="M12 15V9"/><path d="M17 15V6"/></svg>
+                        <span>Analisar</span>
                     </button>
                     <button class="mobile-nav-tab" data-mobile-page="publish">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
@@ -1777,6 +1892,52 @@
         </div>
     </div>
 
+    <!-- ═══ MODAL: Piloto Automatico ═══ -->
+    <div id="modal-auto-pilot" class="modal">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h3>Piloto automatico</h3>
+                <button class="modal-close" onclick="closeModal('modal-auto-pilot')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="section-subtitle">Ligue por canal do YouTube para o sistema criar temas, produzir, publicar e ajustar a estrategia com base no desempenho.</p>
+                <div id="auto-pilot-channels" class="auto-pilot-list">
+                    <p class="loading">Carregando canais conectados...</p>
+                </div>
+                <p class="muted auto-pilot-note">Quando ligado, o piloto repoe temas automaticamente e mantem a fila ativa para crescimento continuo do canal.</p>
+            </div>
+            <div class="modal-footer modal-footer-space">
+                <button class="btn btn-primary" onclick="closeModal('modal-auto-pilot'); connectPlatform('youtube')" type="button">Conectar YouTube</button>
+                <button class="btn btn-secondary" onclick="closeModal('modal-auto-pilot')" type="button">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-analyze-history" class="modal">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h3>Minhas analises</h3>
+                <button class="modal-close" onclick="closeModal('modal-analyze-history')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="section-subtitle">Analises salvas automaticamente ao clicar em Analisar agora. Clique em uma analise para visualizar novamente.</p>
+                <div class="analyze-history-toolbar">
+                    <label for="analyze-history-account-filter">Filtrar por canal</label>
+                    <select id="analyze-history-account-filter" class="input" aria-label="Filtrar analises por canal">
+                        <option value="0">Todos os canais</option>
+                    </select>
+                    <button id="analyze-history-refresh-btn" class="btn btn-secondary btn-sm" type="button">Atualizar</button>
+                </div>
+                <div id="analyze-history-list" class="analyze-history-list">
+                    <p class="loading">Carregando historico...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-analyze-history')" type="button">Fechar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ═══ MODAL: Nova Automação ═══ -->
     <div id="modal-new-automation" class="modal">
         <div class="modal-content modal-content-wide">
@@ -2598,8 +2759,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260423-46"></script>
-    <script src="/video/static/pwa.js?v=20260423-46"></script>
+    <script src="/video/static/app.js?v=20260423-47"></script>
+    <script src="/video/static/pwa.js?v=20260423-47"></script>
 </body>
 </html>
 

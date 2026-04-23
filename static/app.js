@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v198 loaded");
+console.log("[CriaVideo] app.js v199 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -19,6 +19,21 @@ let _publishAccountSelection = {};
 let _publishRenderOptions = {};
 let _pendingConnectPlatform = "";
 let _editingSocialAccountId = 0;
+let _analyzeState = {
+    accounts: [],
+    selectedAccountId: 0,
+    payloadByAccount: {},
+    loadingAccounts: false,
+    running: false,
+    historyLoading: false,
+    historyItems: [],
+    historyFilterAccountId: 0,
+};
+let _autoPilotState = {
+    channels: [],
+    loading: false,
+    togglingByAccount: {},
+};
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 
 const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
@@ -642,11 +657,55 @@ function bindDashboardEvents() {
     document.getElementById("btn-new-automation").addEventListener("click", () => {
         openNewAutomationModal();
     });
+    const autoPilotBtn = document.getElementById("btn-auto-pilot");
+    if (autoPilotBtn) {
+        autoPilotBtn.addEventListener("click", () => {
+            openAutoPilotModal();
+        });
+    }
     document.querySelectorAll(".publish-top-tab").forEach((tabBtn) => {
         tabBtn.addEventListener("click", () => {
             setPublishTab(tabBtn.dataset.publishTab || "publish");
         });
     });
+    const analyzeRefreshBtn = document.getElementById("analyze-refresh-btn");
+    if (analyzeRefreshBtn) {
+        analyzeRefreshBtn.addEventListener("click", () => {
+            loadAnalyzePage(true);
+        });
+    }
+    const analyzeAccountSelect = document.getElementById("analyze-account-select");
+    if (analyzeAccountSelect) {
+        analyzeAccountSelect.addEventListener("change", () => {
+            const selectedId = parseInt(analyzeAccountSelect.value || "0", 10) || 0;
+            _analyzeSelectAccount(selectedId, false);
+        });
+    }
+    const analyzeRunBtn = document.getElementById("btn-run-analysis");
+    if (analyzeRunBtn) {
+        analyzeRunBtn.addEventListener("click", () => {
+            runAnalyzeChannel();
+        });
+    }
+    const analyzeHistoryBtn = document.getElementById("btn-analyze-history");
+    if (analyzeHistoryBtn) {
+        analyzeHistoryBtn.addEventListener("click", () => {
+            openAnalyzeHistoryModal();
+        });
+    }
+    const analyzeHistoryFilter = document.getElementById("analyze-history-account-filter");
+    if (analyzeHistoryFilter) {
+        analyzeHistoryFilter.addEventListener("change", () => {
+            _analyzeState.historyFilterAccountId = Math.max(0, parseInt(analyzeHistoryFilter.value || "0", 10) || 0);
+            loadAnalyzeHistoryList(true);
+        });
+    }
+    const analyzeHistoryRefreshBtn = document.getElementById("analyze-history-refresh-btn");
+    if (analyzeHistoryRefreshBtn) {
+        analyzeHistoryRefreshBtn.addEventListener("click", () => {
+            loadAnalyzeHistoryList(true);
+        });
+    }
     document.querySelectorAll(".publish-platform-chip input").forEach((checkbox) => {
         checkbox.addEventListener("change", () => {
             renderPublishAccountSelectors();
@@ -820,6 +879,8 @@ function loadPageData(page) {
         loadProjects();
     } else if (page === "publish" || page === "accounts") {
         setPublishTab(page === "publish" ? "publish" : page);
+    } else if (page === "analyze") {
+        loadAnalyzePage();
     } else if (page === "automate") {
         loadAutoSchedules();
     } else if (page === "editor") {
@@ -853,6 +914,621 @@ function setPublishTab(tabName) {
         loadSchedules();
     } else if (nextTab === "accounts") {
         loadAccounts();
+    }
+}
+
+function _analyzeFormatNumber(value, compact = false) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return "--";
+    return new Intl.NumberFormat("pt-BR", compact
+        ? { notation: "compact", maximumFractionDigits: 1 }
+        : { maximumFractionDigits: 0 }).format(num);
+}
+
+function _analyzeFormatDuration(seconds) {
+    const total = Math.max(0, parseInt(seconds || "0", 10) || 0);
+    if (!total) return "--";
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function _analyzeFormatDate(value) {
+    if (!value) return "";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return "";
+    return dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function _analyzeFormatDateTime(value) {
+    if (!value) return "";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return "";
+    return dt.toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function _analyzeShowLoading(message) {
+    const loadingEl = document.getElementById("analyze-loading");
+    if (loadingEl) {
+        loadingEl.hidden = false;
+        loadingEl.textContent = message || "Carregando analise...";
+    }
+    const resultsEl = document.getElementById("analyze-results");
+    if (resultsEl) {
+        resultsEl.hidden = true;
+    }
+}
+
+function _analyzeShowResults(show) {
+    const loadingEl = document.getElementById("analyze-loading");
+    const resultsEl = document.getElementById("analyze-results");
+    if (loadingEl) {
+        loadingEl.hidden = !!show;
+    }
+    if (resultsEl) {
+        resultsEl.hidden = !show;
+    }
+}
+
+function _analyzeSetRunButtonState(running) {
+    _analyzeState.running = !!running;
+    const runBtn = document.getElementById("btn-run-analysis");
+    if (!runBtn) return;
+    runBtn.disabled = !!running;
+    runBtn.textContent = running ? "Analisando..." : "Analisar agora";
+}
+
+function _analyzeRenderAccountSelect(accounts) {
+    const select = document.getElementById("analyze-account-select");
+    if (!select) return;
+
+    const current = _analyzeState.selectedAccountId;
+    const preferred = (accounts.find((a) => a.id === current)?.id)
+        || (accounts.find((a) => a.platform === "youtube")?.id)
+        || (accounts[0]?.id || 0);
+
+    _analyzeState.selectedAccountId = preferred;
+    select.innerHTML = accounts.map((account) => {
+        const platformName = socialPlatformName(account.platform || "");
+        const label = socialAccountDisplayName(account);
+        return `<option value="${account.id}">${esc(platformName)} · ${esc(label)}</option>`;
+    }).join("");
+
+    if (preferred) {
+        select.value = String(preferred);
+    }
+}
+
+function _analyzeRenderConnectedAccounts(accounts) {
+    const container = document.getElementById("analyze-connected-list");
+    if (!container) return;
+
+    if (!accounts.length) {
+        container.innerHTML = "<p class='loading'>Nenhuma conta conectada ainda.</p>";
+        return;
+    }
+
+    container.innerHTML = accounts.map((account) => {
+        const platform = String(account.platform || "").toLowerCase();
+        const accountName = socialAccountDisplayName(account);
+        const username = (account.platform_username && account.platform_username !== accountName)
+            ? account.platform_username
+            : "";
+        const selectedClass = account.id === _analyzeState.selectedAccountId ? " selected" : "";
+        return `
+            <button class="analyze-connected-card${selectedClass}" data-account-id="${account.id}" type="button">
+                <span class="social-account-icon" aria-hidden="true">${socialPlatformIcon(platform)}</span>
+                <span class="analyze-connected-meta">
+                    <strong>${esc(accountName)}</strong>
+                    <small>${esc(socialPlatformName(platform))}${username ? ` · ${esc(username)}` : ""}</small>
+                </span>
+                <span class="analyze-account-status">Conectada</span>
+            </button>
+        `;
+    }).join("");
+
+    container.querySelectorAll(".analyze-connected-card").forEach((card) => {
+        card.addEventListener("click", () => {
+            const accountId = parseInt(card.dataset.accountId || "0", 10) || 0;
+            _analyzeSelectAccount(accountId, false);
+        });
+    });
+}
+
+function _analyzeSelectAccount(accountId, autoRun = false) {
+    const selectedId = parseInt(accountId || "0", 10) || 0;
+    _analyzeState.selectedAccountId = selectedId;
+
+    const select = document.getElementById("analyze-account-select");
+    if (select && selectedId) {
+        select.value = String(selectedId);
+    }
+
+    document.querySelectorAll(".analyze-connected-card").forEach((card) => {
+        const cardId = parseInt(card.dataset.accountId || "0", 10) || 0;
+        card.classList.toggle("selected", cardId === selectedId);
+    });
+
+    if (!selectedId) {
+        _analyzeShowLoading("Selecione uma conta para iniciar a analise.");
+        return;
+    }
+
+    const cached = _analyzeState.payloadByAccount[selectedId];
+    if (cached) {
+        _analyzeRenderPayload(cached);
+        return;
+    }
+
+    _analyzeShowLoading("Conta selecionada. Clique em Analisar agora para gerar diagnostico.");
+    if (autoRun) {
+        runAnalyzeChannel({ skipEmptyAlert: true, silentError: true });
+    }
+}
+
+async function _loadLatestSavedAnalysis(accountId) {
+    const selectedId = parseInt(accountId || "0", 10) || 0;
+    if (!selectedId) return false;
+
+    try {
+        const rows = await api(`/analyze/history?social_account_id=${selectedId}&limit=1`);
+        const items = Array.isArray(rows) ? rows : [];
+        const latest = items[0];
+        if (!latest?.id) return false;
+
+        const payload = await api(`/analyze/history/${latest.id}`);
+        if (!payload || typeof payload !== "object") return false;
+
+        _analyzeState.payloadByAccount[selectedId] = payload;
+        _analyzeRenderPayload(payload);
+        return true;
+    } catch (error) {
+        console.warn("[analyze] failed to load saved analysis:", error);
+        return false;
+    }
+}
+
+function _analyzeRenderHistoryFilterOptions() {
+    const select = document.getElementById("analyze-history-account-filter");
+    if (!select) return;
+
+    const optionsById = new Map();
+
+    const connectedAccounts = Array.isArray(_analyzeState.accounts) ? _analyzeState.accounts : [];
+    for (const account of connectedAccounts) {
+        const id = parseInt(account?.id || "0", 10) || 0;
+        if (!id) continue;
+        const platformName = socialPlatformName(account.platform || "");
+        const displayName = socialAccountDisplayName(account);
+        optionsById.set(id, `${platformName} · ${displayName}`);
+    }
+
+    const historyItems = Array.isArray(_analyzeState.historyItems) ? _analyzeState.historyItems : [];
+    for (const item of historyItems) {
+        const id = parseInt(item?.social_account_id || "0", 10) || 0;
+        if (!id || optionsById.has(id)) continue;
+        const accountLabel = String(item?.account_label || item?.platform_username || item?.channel_title || `Canal ${id}`).trim();
+        optionsById.set(id, accountLabel);
+    }
+
+    const sortedOptions = Array.from(optionsById.entries()).sort((a, b) => a[1].localeCompare(b[1], "pt-BR"));
+
+    let selectedId = Math.max(0, parseInt(_analyzeState.historyFilterAccountId || "0", 10) || 0);
+    if (selectedId && !optionsById.has(selectedId)) {
+        selectedId = 0;
+        _analyzeState.historyFilterAccountId = 0;
+    }
+
+    const html = ["<option value=\"0\">Todos os canais</option>"];
+    for (const [id, label] of sortedOptions) {
+        html.push(`<option value="${id}">${esc(label)}</option>`);
+    }
+    select.innerHTML = html.join("");
+    select.value = String(selectedId || 0);
+}
+
+function _analyzeRenderHistoryList() {
+    const container = document.getElementById("analyze-history-list");
+    if (!container) return;
+
+    _analyzeRenderHistoryFilterOptions();
+
+    if (_analyzeState.historyLoading) {
+        container.innerHTML = "<p class='loading'>Carregando historico...</p>";
+        return;
+    }
+
+    const items = Array.isArray(_analyzeState.historyItems) ? _analyzeState.historyItems : [];
+    if (!items.length) {
+        container.innerHTML = "<p class='loading'>Nenhuma analise salva ainda. Clique em Analisar agora para criar a primeira.</p>";
+        return;
+    }
+
+    container.innerHTML = items.map((item) => {
+        const reportId = parseInt(item.id || "0", 10) || 0;
+        const accountId = parseInt(item.social_account_id || "0", 10) || 0;
+        const title = item.channel_title || item.account_label || item.platform_username || "Analise";
+        const accountLabel = item.account_label || item.platform_username || "Conta conectada";
+        const createdAt = _analyzeFormatDateTime(item.created_at) || "--";
+        return `
+            <button class="analyze-history-item" data-report-id="${reportId}" data-account-id="${accountId}" type="button">
+                <span class="analyze-history-title">${esc(title)}</span>
+                <span class="analyze-history-meta">${esc(accountLabel)}</span>
+                <span class="analyze-history-date">${esc(createdAt)}</span>
+            </button>
+        `;
+    }).join("");
+
+    container.querySelectorAll(".analyze-history-item").forEach((node) => {
+        node.addEventListener("click", () => {
+            const reportId = parseInt(node.dataset.reportId || "0", 10) || 0;
+            const accountId = parseInt(node.dataset.accountId || "0", 10) || 0;
+            openSavedAnalysisReport(reportId, accountId);
+        });
+    });
+}
+
+async function loadAnalyzeHistoryList(forceReload = false) {
+    if (_analyzeState.historyLoading && !forceReload) {
+        return;
+    }
+
+    _analyzeState.historyLoading = true;
+    _analyzeRenderHistoryList();
+
+    try {
+        const params = new URLSearchParams();
+        params.set("limit", "60");
+        const filterAccountId = Math.max(0, parseInt(_analyzeState.historyFilterAccountId || "0", 10) || 0);
+        if (filterAccountId > 0) {
+            params.set("social_account_id", String(filterAccountId));
+        }
+
+        const rows = await api(`/analyze/history?${params.toString()}`);
+        _analyzeState.historyItems = Array.isArray(rows) ? rows : [];
+    } catch (error) {
+        const container = document.getElementById("analyze-history-list");
+        if (container) {
+            container.innerHTML = `<p class="loading">Erro ao carregar historico: ${esc(error.message)}</p>`;
+        }
+        _analyzeState.historyItems = [];
+    } finally {
+        _analyzeState.historyLoading = false;
+        _analyzeRenderHistoryList();
+    }
+}
+
+async function openAnalyzeHistoryModal() {
+    if (!Array.isArray(_analyzeState.accounts) || !_analyzeState.accounts.length) {
+        try {
+            const accounts = await api("/social/accounts");
+            _socialAccountsCache = Array.isArray(accounts) ? accounts : _socialAccountsCache;
+            _analyzeState.accounts = _socialAccountsCache;
+        } catch (error) {
+            console.warn("[analyze] failed to refresh accounts for history filter:", error);
+        }
+    }
+
+    openModal("modal-analyze-history");
+    _analyzeRenderHistoryFilterOptions();
+    await loadAnalyzeHistoryList(true);
+}
+
+async function openSavedAnalysisReport(reportId, socialAccountId = 0) {
+    const id = parseInt(reportId || "0", 10) || 0;
+    if (!id) return;
+
+    try {
+        const payload = await api(`/analyze/history/${id}`);
+        const payloadAccountId = parseInt(payload?.account?.id || "0", 10) || 0;
+        const accountId = payloadAccountId || (parseInt(socialAccountId || "0", 10) || 0);
+
+        if (accountId) {
+            _analyzeState.payloadByAccount[accountId] = payload;
+            _analyzeSelectAccount(accountId, false);
+        }
+
+        _analyzeRenderPayload(payload);
+        _analyzeRenderConnectedAccounts(_analyzeState.accounts);
+        closeModal("modal-analyze-history");
+    } catch (error) {
+        alert(`Erro ao abrir analise salva: ${error.message}`);
+    }
+}
+
+async function loadAnalyzePage(forceReload = false) {
+    if (_analyzeState.loadingAccounts && !forceReload) {
+        return;
+    }
+
+    _analyzeState.loadingAccounts = true;
+    _analyzeShowLoading("Carregando contas conectadas...");
+
+    try {
+        const accounts = await api("/social/accounts");
+        _socialAccountsCache = Array.isArray(accounts) ? accounts : [];
+        _analyzeState.accounts = _socialAccountsCache;
+
+        _analyzeRenderConnectedAccounts(_analyzeState.accounts);
+
+        if (!_analyzeState.accounts.length) {
+            const select = document.getElementById("analyze-account-select");
+            if (select) {
+                select.innerHTML = "<option value=''>Sem contas conectadas</option>";
+            }
+            _analyzeState.selectedAccountId = 0;
+            _analyzeShowLoading("Conecte ao menos uma conta social para iniciar a analise.");
+            return;
+        }
+
+        _analyzeRenderAccountSelect(_analyzeState.accounts);
+        _analyzeSelectAccount(_analyzeState.selectedAccountId, false);
+
+        const selectedId = _analyzeState.selectedAccountId;
+        const hasCached = !!_analyzeState.payloadByAccount[selectedId];
+        if (!hasCached && selectedId) {
+            const loaded = await _loadLatestSavedAnalysis(selectedId);
+            if (!loaded) {
+                _analyzeShowLoading("Conta selecionada. Clique em Analisar agora para gerar diagnostico.");
+            }
+        }
+
+        await loadAnalyzeHistoryList(forceReload);
+    } catch (error) {
+        _analyzeShowLoading(`Erro ao carregar contas: ${error.message}`);
+    } finally {
+        _analyzeState.loadingAccounts = false;
+    }
+}
+
+function _analyzeRenderStringList(containerId, rawItems, emptyText) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const items = Array.isArray(rawItems)
+        ? rawItems.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+
+    if (!items.length) {
+        container.innerHTML = `<li class="analyze-empty">${esc(emptyText || "Sem dados disponiveis.")}</li>`;
+        return;
+    }
+
+    container.innerHTML = items.map((item, idx) => (
+        `<li><span class="analyze-list-index">${idx + 1}.</span><span>${esc(item)}</span></li>`
+    )).join("");
+}
+
+function _analyzeRenderTopVideos(rawVideos) {
+    const container = document.getElementById("analyze-top-videos");
+    if (!container) return;
+
+    const videos = Array.isArray(rawVideos) ? rawVideos : [];
+    if (!videos.length) {
+        container.innerHTML = "<p class='loading'>Ainda nao ha videos suficientes para ranking nesta conta.</p>";
+        return;
+    }
+
+    container.innerHTML = videos.slice(0, 10).map((video, idx) => {
+        const views = _analyzeFormatNumber(video.views || 0, true);
+        const likes = _analyzeFormatNumber(video.likes || 0, true);
+        const comments = _analyzeFormatNumber(video.comments || 0, true);
+        const duration = _analyzeFormatDuration(video.duration_seconds || 0);
+        const pubDate = _analyzeFormatDate(video.published_at);
+        const watchBtn = video.url
+            ? `<a class="btn btn-secondary btn-sm" href="${esc(video.url)}" target="_blank" rel="noopener noreferrer">Abrir</a>`
+            : "";
+        const thumb = video.thumbnail_url
+            ? `<img src="${esc(video.thumbnail_url)}" alt="Thumbnail" class="analyze-video-thumb">`
+            : `<div class="analyze-video-thumb analyze-video-thumb-placeholder">Sem thumb</div>`;
+
+        return `
+            <article class="analyze-video-card">
+                <div class="analyze-video-rank">#${idx + 1}</div>
+                ${thumb}
+                <div class="analyze-video-body">
+                    <h4>${esc(video.title || "Sem titulo")}</h4>
+                    <div class="analyze-video-metrics">
+                        <span><strong>${views}</strong> views</span>
+                        <span><strong>${likes}</strong> likes</span>
+                        <span><strong>${comments}</strong> comentarios</span>
+                        <span><strong>${duration}</strong> duracao</span>
+                    </div>
+                    <div class="analyze-video-footer">
+                        <span>${esc(pubDate || "")}</span>
+                        ${watchBtn}
+                    </div>
+                </div>
+            </article>
+        `;
+    }).join("");
+}
+
+function _analyzeRenderKpis(channel, history, platformSupported) {
+    const container = document.getElementById("analyze-kpi-grid");
+    if (!container) return;
+
+    const isSupported = !!platformSupported;
+    const kpis = [
+        {
+            label: "Inscritos",
+            value: isSupported ? _analyzeFormatNumber(channel.subscribers || 0, true) : "--",
+            hint: "Canal conectado",
+        },
+        {
+            label: "Views totais",
+            value: isSupported ? _analyzeFormatNumber(channel.total_views || 0, true) : "--",
+            hint: "Historico do canal",
+        },
+        {
+            label: "Videos no canal",
+            value: isSupported ? _analyzeFormatNumber(channel.total_videos || 0, false) : _analyzeFormatNumber(history.published_jobs || 0, false),
+            hint: isSupported ? "Dados YouTube" : "Publicacoes internas",
+        },
+        {
+            label: "Media views recentes",
+            value: isSupported ? _analyzeFormatNumber(channel.avg_views_recent || 0, true) : "--",
+            hint: "Ultimos uploads",
+        },
+        {
+            label: "Uploads (30 dias)",
+            value: _analyzeFormatNumber(
+                isSupported ? (channel.uploads_last_30d || 0) : (history.last_30d_published || 0),
+                false,
+            ),
+            hint: "Cadencia recente",
+        },
+        {
+            label: "Janela de postagem",
+            value: history.best_publish_window || "Sem padrao",
+            hint: "Melhor hora do historico",
+        },
+    ];
+
+    container.innerHTML = kpis.map((item) => `
+        <article class="analyze-kpi-card">
+            <span class="analyze-kpi-label">${esc(item.label)}</span>
+            <strong class="analyze-kpi-value">${esc(String(item.value))}</strong>
+            <small class="analyze-kpi-hint">${esc(item.hint)}</small>
+        </article>
+    `).join("");
+}
+
+function _analyzeRenderToolStudy(rawTools) {
+    const container = document.getElementById("analyze-tools-study");
+    if (!container) return;
+
+    const tools = Array.isArray(rawTools) ? rawTools : [];
+    if (!tools.length) {
+        container.innerHTML = "<p class='loading'>Sem estudo de ferramentas disponivel.</p>";
+        return;
+    }
+
+    container.innerHTML = tools.map((tool) => `
+        <article class="analyze-tool-card">
+            <div class="analyze-tool-head">
+                <h4>${esc(tool.name || "Ferramenta")}</h4>
+                <div class="analyze-tool-badges">
+                    <span class="analyze-badge">${esc(tool.phase || "Fase")}</span>
+                    <span class="analyze-badge analyze-badge-soft">${esc(tool.effort || "Esforco")}</span>
+                </div>
+            </div>
+            <p>${esc(tool.focus || "")}</p>
+            <p class="analyze-tool-why">${esc(tool.why || "")}</p>
+        </article>
+    `).join("");
+}
+
+function _analyzeRenderPayload(payload) {
+    if (!payload || typeof payload !== "object") {
+        _analyzeShowLoading("Nao foi possivel renderizar a analise.");
+        return;
+    }
+
+    _analyzeShowResults(true);
+
+    const channel = payload.channel || {};
+    const history = payload.history || {};
+    const rec = payload.recommendations || {};
+
+    const accountLabel = payload.account?.account_label || payload.account?.platform_username || "Conta conectada";
+    const channelTitle = channel.title || accountLabel;
+    const platformName = socialPlatformName(payload.account?.platform || "");
+    const handle = String(channel.handle || "").trim();
+    const handleText = handle && handle.startsWith("@") ? handle : (handle ? `@${handle}` : "");
+    const generatedAt = payload.source?.generated_at ? _analyzeFormatDate(payload.source.generated_at) : "";
+
+    const headEl = document.getElementById("analyze-channel-head");
+    if (headEl) {
+        const avatar = channel.thumbnail_url
+            ? `<img src="${esc(channel.thumbnail_url)}" alt="Canal" class="analyze-channel-avatar">`
+            : `<div class="analyze-channel-avatar analyze-channel-avatar-fallback">${esc((channelTitle || "C").charAt(0).toUpperCase())}</div>`;
+
+        headEl.innerHTML = `
+            <div class="analyze-channel-main">
+                ${avatar}
+                <div class="analyze-channel-meta">
+                    <h3>${esc(channelTitle)}</h3>
+                    <p>${esc(platformName)}${handleText ? ` · ${esc(handleText)}` : ""}</p>
+                </div>
+            </div>
+            <div class="analyze-channel-extra">
+                ${generatedAt ? `<span class="analyze-generated-at">Atualizado em ${esc(generatedAt)}</span>` : ""}
+            </div>
+        `;
+    }
+
+    const noteEl = document.getElementById("analyze-platform-note");
+    if (noteEl) {
+        const note = String(rec.platform_note || "").trim();
+        noteEl.hidden = !note;
+        noteEl.textContent = note;
+    }
+
+    _analyzeRenderKpis(channel, history, !!payload.platform_supported);
+    _analyzeRenderTopVideos(payload.top_videos || []);
+    _analyzeRenderStringList("analyze-title-ideas", rec.title_ideas, "Sem titulos sugeridos.");
+    _analyzeRenderStringList("analyze-thumbnail-ideas", rec.thumbnail_ideas, "Sem direcoes de thumbnail.");
+    _analyzeRenderStringList("analyze-growth-actions", rec.growth_actions, "Sem plano de crescimento.");
+    _analyzeRenderStringList("analyze-content-gaps", rec.content_gaps, "Sem lacunas detectadas.");
+    _analyzeRenderToolStudy(payload.tool_study || []);
+
+    const descEl = document.getElementById("analyze-description-template");
+    if (descEl) {
+        descEl.value = String(rec.description_template || "").trim();
+    }
+
+    const hashtagsEl = document.getElementById("analyze-hashtags");
+    if (hashtagsEl) {
+        const tags = Array.isArray(rec.hashtags)
+            ? rec.hashtags.map((tag) => String(tag || "").trim()).filter(Boolean)
+            : [];
+        hashtagsEl.innerHTML = tags.length
+            ? tags.map((tag) => {
+                const formatted = tag.startsWith("#") ? tag : `#${tag}`;
+                return `<span class="analyze-hashtag">${esc(formatted)}</span>`;
+            }).join("")
+            : "<span class='analyze-hashtag-muted'>Sem hashtags sugeridas.</span>";
+    }
+}
+
+async function runAnalyzeChannel(options = {}) {
+    const select = document.getElementById("analyze-account-select");
+    const selectedId = parseInt(select?.value || _analyzeState.selectedAccountId || "0", 10) || 0;
+    _analyzeState.selectedAccountId = selectedId;
+
+    if (!selectedId) {
+        if (!options.skipEmptyAlert) {
+            alert("Selecione uma conta para analisar.");
+        }
+        _analyzeShowLoading("Selecione uma conta para iniciar a analise.");
+        return;
+    }
+
+    _analyzeSetRunButtonState(true);
+    _analyzeShowLoading("Analisando canal e historico de publicacoes...");
+
+    try {
+        const payload = await api(`/analyze/channel?social_account_id=${selectedId}`);
+        _analyzeState.payloadByAccount[selectedId] = payload;
+        _analyzeRenderPayload(payload);
+        _analyzeRenderConnectedAccounts(_analyzeState.accounts);
+        await loadAnalyzeHistoryList(true);
+    } catch (error) {
+        _analyzeShowLoading(`Erro ao analisar: ${error.message}`);
+        if (!options.silentError) {
+            alert(`Erro ao analisar canal: ${error.message}`);
+        }
+    } finally {
+        _analyzeSetRunButtonState(false);
     }
 }
 
@@ -6582,6 +7258,168 @@ function _getAutoSubtitleSettingsForSchedule() {
     };
 }
 
+function _autoPilotFormatDateTime(value) {
+    if (!value) return "--";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return "--";
+    return dt.toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function _renderAutoPilotChannels() {
+    const container = document.getElementById("auto-pilot-channels");
+    if (!container) return;
+
+    if (_autoPilotState.loading) {
+        container.innerHTML = "<p class='loading'>Carregando canais conectados...</p>";
+        return;
+    }
+
+    const channels = Array.isArray(_autoPilotState.channels) ? _autoPilotState.channels : [];
+    if (!channels.length) {
+        const hasYoutubeConnected = Array.isArray(_socialAccountsCache)
+            && _socialAccountsCache.some((account) => String(account.platform || "").toLowerCase() === "youtube");
+        const emptyText = hasYoutubeConnected
+            ? "Nenhum canal do YouTube ficou disponivel no piloto. Clique em Conectar YouTube para adicionar outro canal ou atualizar acesso."
+            : "Conecte ao menos um canal do YouTube para ativar o Piloto automatico.";
+
+        container.innerHTML = `
+            <div class="auto-pilot-empty">
+                <p class="loading">${esc(emptyText)}</p>
+                <button class="btn btn-primary btn-sm" type="button" onclick="closeModal('modal-auto-pilot'); connectPlatform('youtube')">Conectar YouTube</button>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = channels.map((channel) => {
+        const accountId = parseInt(channel.social_account_id || "0", 10) || 0;
+        const pilot = channel.pilot || {};
+        const enabled = !!pilot.enabled;
+        const toggling = !!_autoPilotState.togglingByAccount[accountId];
+        const accountName = channel.account_label || channel.platform_username || `Canal ${accountId}`;
+        const username = channel.platform_username || "";
+        const pendingThemes = parseInt(pilot.pending_themes || "0", 10) || 0;
+        const completedThemes = parseInt(pilot.completed_themes || "0", 10) || 0;
+        const scheduleName = pilot.schedule_name || "Automacao do piloto ainda nao criada.";
+        const lastRun = _autoPilotFormatDateTime(pilot.last_run_at || pilot.last_analysis_at);
+        const lastError = String(pilot.last_error || "").trim();
+
+        const actionLabel = toggling
+            ? "Salvando..."
+            : (enabled ? "Desligar" : "Ligar");
+        const actionClass = enabled ? "btn-secondary" : "btn-accent";
+
+        return `
+            <article class="auto-pilot-item">
+                <div class="auto-pilot-main">
+                    <div class="auto-pilot-title-row">
+                        <h4>${esc(accountName)}</h4>
+                        <span class="auto-pilot-status ${enabled ? "active" : "inactive"}">${enabled ? "Ligado" : "Desligado"}</span>
+                    </div>
+                    <p class="auto-pilot-meta">${esc(username ? `@${username}` : "Canal conectado")}</p>
+                    <p class="auto-pilot-meta">${esc(scheduleName)}</p>
+                    <div class="auto-pilot-kpis">
+                        <span>Fila pendente: <strong>${pendingThemes}</strong></span>
+                        <span>Temas concluidos: <strong>${completedThemes}</strong></span>
+                        <span>Ultima analise: <strong>${esc(lastRun)}</strong></span>
+                    </div>
+                    ${lastError ? `<p class="auto-pilot-error">Ultimo erro: ${esc(lastError)}</p>` : ""}
+                </div>
+                <div class="auto-pilot-actions">
+                    <button
+                        class="btn btn-sm ${actionClass}"
+                        type="button"
+                        ${toggling ? "disabled" : ""}
+                        onclick="toggleAutoPilotChannel(${accountId}, ${enabled ? "false" : "true"})"
+                    >${actionLabel}</button>
+                </div>
+            </article>
+        `;
+    }).join("");
+}
+
+async function loadAutoPilotChannels(forceReload = false) {
+    if (_autoPilotState.loading && !forceReload) {
+        return;
+    }
+
+    _autoPilotState.loading = true;
+    _renderAutoPilotChannels();
+
+    try {
+        const channels = await api("/automation/pilot/channels");
+        const parsedChannels = Array.isArray(channels) ? channels : [];
+        if (parsedChannels.length) {
+            _autoPilotState.channels = parsedChannels;
+        } else {
+            const accounts = await api("/social/accounts");
+            _socialAccountsCache = Array.isArray(accounts) ? accounts : _socialAccountsCache;
+
+            const youtubeAccounts = (Array.isArray(_socialAccountsCache) ? _socialAccountsCache : []).filter(
+                (account) => String(account.platform || "").toLowerCase() === "youtube"
+            );
+
+            _autoPilotState.channels = youtubeAccounts.map((account) => ({
+                social_account_id: account.id,
+                platform: "youtube",
+                account_label: account.account_label || account.platform_username || "Canal YouTube",
+                platform_username: account.platform_username || "",
+                connected_at: account.connected_at || null,
+                pilot: {
+                    enabled: false,
+                    pending_themes: 0,
+                    completed_themes: 0,
+                    schedule_name: null,
+                    last_run_at: null,
+                    last_analysis_at: null,
+                    last_error: null,
+                },
+            }));
+        }
+    } catch (error) {
+        const container = document.getElementById("auto-pilot-channels");
+        if (container) {
+            container.innerHTML = `<p class="loading">Erro ao carregar piloto automatico: ${esc(error.message)}</p>`;
+        }
+    } finally {
+        _autoPilotState.loading = false;
+        _renderAutoPilotChannels();
+    }
+}
+
+function openAutoPilotModal() {
+    openModal("modal-auto-pilot");
+    loadAutoPilotChannels(true);
+}
+
+async function toggleAutoPilotChannel(socialAccountId, enabled) {
+    const accountId = parseInt(socialAccountId || "0", 10) || 0;
+    if (!accountId) return;
+
+    _autoPilotState.togglingByAccount[accountId] = true;
+    _renderAutoPilotChannels();
+
+    try {
+        await api(`/automation/pilot/channels/${accountId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ enabled: !!enabled }),
+        });
+        await loadAutoPilotChannels(true);
+        await loadAutoSchedules();
+    } catch (error) {
+        alert(`Erro ao atualizar piloto automatico: ${error.message}`);
+    } finally {
+        _autoPilotState.togglingByAccount[accountId] = false;
+        _renderAutoPilotChannels();
+    }
+}
+
 async function loadAutoSchedules() {
     const container = document.getElementById("auto-schedules-list");
     if (!container) return;
@@ -9848,8 +10686,6 @@ const _editor = {
     redoStack: [],
     _nextId: 1,
     timelineTime: 0,
-    timelineZoom: 1,
-    playbackRate: 1,
     _virtualPlaybackActive: false,
     _virtualPlaybackRaf: 0,
     _virtualPlaybackLastTs: 0,
@@ -9870,21 +10706,7 @@ let _editorMusicWaveformState = {
     error: "",
     requestId: 0,
 };
-let _editorSourceWaveformState = {
-    key: "",
-    loading: false,
-    peaks: [],
-    duration: 0,
-    videoSvgDataUrl: "",
-    audioSvgDataUrl: "",
-    error: "",
-    requestId: 0,
-};
-const _EDITOR_RULER_STEPS_SEC = [0.25, 0.5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 180, 300, 600, 900, 1200];
-const _EDITOR_TIMELINE_MIN_ZOOM = 1;
-const _EDITOR_TIMELINE_MAX_ZOOM = 12;
-const _EDITOR_TIMELINE_ZOOM_STEP = 1.25;
-const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
+const _EDITOR_RULER_STEPS_SEC = [5, 10, 15, 20, 30, 60, 120, 180, 300, 600, 900, 1200];
 let _editorLayerLibrary = {
     open: false,
     loading: false,
@@ -10127,8 +10949,6 @@ function _editorBuildDraftSnapshot() {
         outputAspectRatio: String(_editor.outputAspectRatio || "source"),
         activeTool: String(_editor.activeTool || "text"),
         timelineTime: Number(_editor.timelineTime || 0),
-        timelineZoom: Number(_editor.timelineZoom || 1),
-        playbackRate: Number(_editor.playbackRate || 1),
         trimStart: Number(_editor.trimStart || 0),
         trimEnd: Number(_editor.trimEnd || 0),
         texts: _editor.texts || [],
@@ -10238,11 +11058,6 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
 
         _editor.filter = String(draft.filter || "none");
         _editor.quality = String(draft.quality || "original");
-        _editor.timelineZoom = Math.max(
-            _EDITOR_TIMELINE_MIN_ZOOM,
-            Math.min(_EDITOR_TIMELINE_MAX_ZOOM, Number(draft.timelineZoom || 1)),
-        );
-        _editor.playbackRate = Math.max(0.25, Math.min(2, Number(draft.playbackRate || 1)));
 
         if (!_editor.videoSegments.length) {
             _editorInitVideoSegments();
@@ -10561,8 +11376,7 @@ function _editorStartVirtualTimelinePlayback(startTime = 0) {
             _editor._virtualPlaybackLastTs = ts;
         }
 
-        const speed = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
-        const deltaSec = Math.max(0, (ts - _editor._virtualPlaybackLastTs) / 1000) * speed;
+        const deltaSec = Math.max(0, (ts - _editor._virtualPlaybackLastTs) / 1000);
         _editor._virtualPlaybackLastTs = ts;
 
         const timelineDuration = _editorGetTimelineDuration();
@@ -10601,20 +11415,7 @@ function _editorResetMusicWaveformState() {
     };
 }
 
-function _editorResetSourceWaveformState() {
-    _editorSourceWaveformState = {
-        key: "",
-        loading: false,
-        peaks: [],
-        duration: 0,
-        videoSvgDataUrl: "",
-        audioSvgDataUrl: "",
-        error: "",
-        requestId: Number(_editorSourceWaveformState?.requestId || 0) + 1,
-    };
-}
-
-function _editorBuildWaveformSvg(peaks = [], color = "rgba(239,191,255,0.85)") {
+function _editorBuildMusicWaveformSvg(peaks = []) {
     if (!Array.isArray(peaks) || !peaks.length) return "";
 
     const width = 1200;
@@ -10634,20 +11435,8 @@ function _editorBuildWaveformSvg(peaks = [], color = "rgba(239,191,255,0.85)") {
         x += barWidth + gap;
     }
 
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${width} ${height}' preserveAspectRatio='none'><rect width='${width}' height='${height}' fill='rgba(0,0,0,0)'/><style>rect{fill:${color}}</style>${rects}</svg>`;
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${width} ${height}' preserveAspectRatio='none'><rect width='${width}' height='${height}' fill='rgba(0,0,0,0)'/><style>rect{fill:rgba(239,191,255,0.85)}</style>${rects}</svg>`;
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
-function _editorBuildMusicWaveformSvg(peaks = []) {
-    return _editorBuildWaveformSvg(peaks, "rgba(239,191,255,0.85)");
-}
-
-function _editorBuildSourceVideoWaveformSvg(peaks = []) {
-    return _editorBuildWaveformSvg(peaks, "rgba(172,241,198,0.88)");
-}
-
-function _editorBuildSourceAudioWaveformSvg(peaks = []) {
-    return _editorBuildWaveformSvg(peaks, "rgba(193,166,255,0.88)");
 }
 
 async function _editorExtractMusicWaveformPeaks(url) {
@@ -10774,84 +11563,6 @@ function _editorEnsureMusicWaveform() {
         });
 }
 
-function _editorEnsureSourceWaveform() {
-    if (!_editor.videoUrl) {
-        if (_editorSourceWaveformState.key || _editorSourceWaveformState.loading) {
-            _editorResetSourceWaveformState();
-        }
-        return;
-    }
-
-    const normalizedUrl = _editorNormalizeMediaUrl(_editor.videoUrl);
-    if (!normalizedUrl) return;
-
-    if (_editorSourceWaveformState.key === normalizedUrl) {
-        return;
-    }
-
-    const requestId = Number(_editorSourceWaveformState.requestId || 0) + 1;
-    _editorSourceWaveformState = {
-        key: normalizedUrl,
-        loading: true,
-        peaks: [],
-        duration: 0,
-        videoSvgDataUrl: "",
-        audioSvgDataUrl: "",
-        error: "",
-        requestId,
-    };
-
-    _editorExtractMusicWaveformPeaks(normalizedUrl)
-        .then(({ peaks, duration }) => {
-            if (requestId !== _editorSourceWaveformState.requestId) return;
-
-            _editorSourceWaveformState = {
-                key: normalizedUrl,
-                loading: false,
-                peaks,
-                duration,
-                videoSvgDataUrl: _editorBuildSourceVideoWaveformSvg(peaks),
-                audioSvgDataUrl: _editorBuildSourceAudioWaveformSvg(peaks),
-                error: "",
-                requestId,
-            };
-            _editorRenderTimeline();
-        })
-        .catch((err) => {
-            if (requestId !== _editorSourceWaveformState.requestId) return;
-
-            _editorSourceWaveformState = {
-                key: normalizedUrl,
-                loading: false,
-                peaks: [],
-                duration: 0,
-                videoSvgDataUrl: "",
-                audioSvgDataUrl: "",
-                error: String(err?.message || "waveform-error"),
-                requestId,
-            };
-            _editorRenderTimeline();
-        });
-}
-
-function _editorGetSourceWaveformInlineStyle(kind = "video", timelineDuration = 0) {
-    const waveUrl = kind === "audio"
-        ? String(_editorSourceWaveformState.audioSvgDataUrl || "")
-        : String(_editorSourceWaveformState.videoSvgDataUrl || "");
-    if (!waveUrl) return "";
-
-    const safeTimelineDuration = Math.max(0.1, Number(timelineDuration || 0.1));
-    const sourceDuration = Math.max(0, Number(_editorSourceWaveformState.duration || 0));
-    const sizePct = sourceDuration > 0
-        ? Math.max(2, Math.min(100, (sourceDuration / safeTimelineDuration) * 100))
-        : 100;
-    const repeatMode = sourceDuration > 0 && sourceDuration < safeTimelineDuration - 0.05
-        ? "repeat-x"
-        : "no-repeat";
-
-    return `--editor-track-wave-image:url("${waveUrl}");--editor-track-wave-size:${sizePct.toFixed(3)}% 100%;--editor-track-wave-repeat:${repeatMode};`;
-}
-
 function _editorGetMusicWaveformInlineStyle(timelineDuration = 0) {
     const waveUrl = String(_editorMusicWaveformState.svgDataUrl || "");
     if (!waveUrl) return "";
@@ -10923,7 +11634,6 @@ function _editorGetMusicPreviewAudio() {
         _editorMusicPreviewAudio.preload = "auto";
         _editorMusicPreviewAudio.loop = true;
         _editorMusicPreviewAudio.setAttribute("playsinline", "true");
-        _editorMusicPreviewAudio.playbackRate = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
     }
     return _editorMusicPreviewAudio;
 }
@@ -10955,7 +11665,6 @@ function _editorSetMusicPreviewSource(url) {
     }
 
     audio.volume = Math.max(0, Math.min(1, (_editor.musicVolume || 0) / 100));
-    audio.playbackRate = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
     _editorEnsureMusicWaveform();
 }
 
@@ -10971,7 +11680,6 @@ function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
     }
 
     audio.volume = Math.max(0, Math.min(1, (_editor.musicVolume || 0) / 100));
-    audio.playbackRate = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
 
     let targetTime = Math.max(0, Number(videoTime || 0));
     const duration = Number(audio.duration || 0);
@@ -12139,11 +12847,8 @@ async function openEditor(projectId, options = {}) {
         _editor.redoStack = [];
         _editor._nextId = 1;
         _editor.timelineTime = 0;
-        _editor.timelineZoom = 1;
-        _editor.playbackRate = 1;
         _editor._virtualPlaybackActive = false;
         _editorStopVirtualTimelinePlayback();
-        _editorResetSourceWaveformState();
         _editorCloseAIMusicModal(true);
         _editorResetAIMusicModalState();
 
@@ -12179,11 +12884,9 @@ async function openEditor(projectId, options = {}) {
             _editorApplyAspectRatio();
             _editorRenderMediaLayers();
             document.getElementById("editor-time-total").textContent = _fmtTime(_editorGetTimelineDuration());
-            _editorApplyPlaybackRate(_editor.playbackRate, { announce: false });
             _editorApplyTimelineFrame(Number(_editor.timelineTime || 0), false);
             _editorRefreshQuickActions();
             _editorRenderTimeline();
-            _editorCenterTimelineOnTime(Number(_editor.timelineTime || 0));
             _editorSelectTool(restored ? _editor.activeTool : "text");
             if (shouldRestoreDraft && restored) {
                 showToast("Edição restaurada de onde você parou.", "success");
@@ -12244,9 +12947,6 @@ function closeEditor() {
     _editorRefreshTrackSelectionUI();
     _editor.playing = false;
     _editor.timelineTime = 0;
-    _editor.timelineZoom = 1;
-    _editor.playbackRate = 1;
-    _editorResetSourceWaveformState();
 }
 
 // ---------- Format time ----------
@@ -12257,85 +12957,10 @@ function _fmtTime(sec) {
     return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
 }
 
-function _editorFormatRateLabel(rate = 1) {
-    const safeRate = Math.max(0.25, Math.min(2, Number(rate || 1)));
-    return `${safeRate.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1")}x`;
-}
-
-function _editorClampTimelineZoom(value) {
-    const parsed = Number(value || 1);
-    if (!Number.isFinite(parsed)) return 1;
-    return Math.max(_EDITOR_TIMELINE_MIN_ZOOM, Math.min(_EDITOR_TIMELINE_MAX_ZOOM, parsed));
-}
-
-function _editorGetTimelineTrackWidth(durationSec = 0) {
-    const timelineEl = document.getElementById("editor-timeline");
-    const viewportTrackWidth = Math.max(560, Number(timelineEl?.clientWidth || 0) - 96);
-    const zoom = _editorClampTimelineZoom(_editor.timelineZoom || 1);
-    const scaled = Math.round(viewportTrackWidth * zoom);
-    const safeDuration = Math.max(0.1, Number(durationSec || _editorGetTimelineDuration() || 0.1));
-    const minByDuration = Math.max(420, Math.round(safeDuration * 12));
-    return Math.max(minByDuration, scaled);
-}
-
-function _editorGetTimelineFocusTime() {
-    const video = document.getElementById("editor-video");
-    return Number(_editor.timelineTime || video?.currentTime || 0);
-}
-
-function _editorCenterTimelineOnTime(timeSec) {
-    const timelineEl = document.getElementById("editor-timeline");
-    if (!timelineEl) return;
-
-    requestAnimationFrame(() => {
-        const timelineDuration = _editorGetTimelineDuration();
-        if (!timelineDuration) return;
-        const trackWidth = Math.max(document.getElementById("editor-track-video")?.offsetWidth || 0, _editorGetTimelineTrackWidth(timelineDuration));
-        const safeTime = Math.max(0, Math.min(timelineDuration, Number(timeSec || 0)));
-        const x = 80 + (safeTime / timelineDuration) * trackWidth;
-        const targetScroll = Math.max(0, Math.min(timelineEl.scrollWidth - timelineEl.clientWidth, x - (timelineEl.clientWidth / 2)));
-        timelineEl.scrollLeft = targetScroll;
-    });
-}
-
-function _editorSetTimelineZoom(nextZoom, options = {}) {
-    const safeZoom = _editorClampTimelineZoom(nextZoom);
-    const focusTime = Number(options.focusTime);
-    const resolvedFocus = Number.isFinite(focusTime) ? focusTime : _editorGetTimelineFocusTime();
-    const announce = Boolean(options.announce);
-
-    if (Math.abs(safeZoom - Number(_editor.timelineZoom || 1)) < 0.0001) {
-        _editorCenterTimelineOnTime(resolvedFocus);
-        return false;
-    }
-
-    _editor.timelineZoom = safeZoom;
-    _editorRenderTimeline();
-    _editorCenterTimelineOnTime(resolvedFocus);
-    if (announce) {
-        showToast(`Zoom da timeline: ${Math.round(safeZoom * 100)}%`, "info");
-    }
-    _editorScheduleDraftPersist(120);
-    return true;
-}
-
-function _editorAdjustTimelineZoom(direction = 1, options = {}) {
-    const factor = direction >= 0 ? _EDITOR_TIMELINE_ZOOM_STEP : (1 / _EDITOR_TIMELINE_ZOOM_STEP);
-    return _editorSetTimelineZoom(Number(_editor.timelineZoom || 1) * factor, options);
-}
-
 function _editorFormatRulerTime(sec, totalDuration, stepSec) {
     const safeSec = Math.max(0, Number(sec || 0));
     const safeTotal = Math.max(0, Number(totalDuration || 0));
-    const safeStep = Math.max(0.05, Number(stepSec || 1));
-
-    if (safeStep <= 1) {
-        return `${safeSec.toFixed(safeStep < 0.5 ? 2 : 1).replace(/\.0+$/, "")}s`;
-    }
-
-    if (safeStep <= 30) {
-        return `${Math.round(safeSec)}s`;
-    }
+    const safeStep = Math.max(1, Number(stepSec || 1));
 
     if (safeTotal >= 600 && safeStep >= 60) {
         const minutes = safeSec / 60;
@@ -12359,46 +12984,10 @@ function _editorResolveRulerStepSec(durationSec, trackWidthPx) {
     return Math.max(1200, Math.ceil(rawStep / 300) * 300);
 }
 
-function _editorApplyPlaybackRate(nextRate, options = {}) {
-    const safeRate = Math.max(0.25, Math.min(2, Number(nextRate || 1)));
-    _editor.playbackRate = safeRate;
-
-    const video = document.getElementById("editor-video");
-    if (video) {
-        video.playbackRate = safeRate;
-        video.defaultPlaybackRate = safeRate;
-    }
-
-    if (_editorMusicPreviewAudio) {
-        _editorMusicPreviewAudio.playbackRate = safeRate;
-    }
-
-    const speedBtn = document.getElementById("editor-quick-speed");
-    if (speedBtn) {
-        const label = _editorFormatRateLabel(safeRate);
-        speedBtn.title = `Velocidade de reprodução (${label})`;
-        speedBtn.setAttribute("aria-label", `Velocidade de reprodução ${label}`);
-        speedBtn.setAttribute("data-rate-label", label);
-    }
-
-    if (options.announce) {
-        showToast(`Velocidade: ${_editorFormatRateLabel(safeRate)}`, "info");
-    }
-    _editorScheduleDraftPersist(120);
-}
-
-function _editorCyclePlaybackRate() {
-    const current = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
-    const idx = _EDITOR_PLAYBACK_RATES.findIndex((value) => Math.abs(value - current) < 0.001);
-    const next = _EDITOR_PLAYBACK_RATES[(idx + 1 + _EDITOR_PLAYBACK_RATES.length) % _EDITOR_PLAYBACK_RATES.length];
-    _editorApplyPlaybackRate(next, { announce: true });
-}
-
 // ---------- Play/Pause ----------
 function _editorTogglePlay() {
     const video = document.getElementById("editor-video");
     if (!video.src) return;
-    _editorApplyPlaybackRate(_editor.playbackRate, { announce: false });
 
     if (_editor.playing) {
         _editor.playing = false;
@@ -12525,10 +13114,7 @@ function _editorMovePlayhead(t) {
     const playhead = document.getElementById("editor-timeline-playhead");
     const timelineDuration = _editorGetTimelineDuration();
     if (!playhead || !timelineDuration) return;
-    const trackWidth = Math.max(
-        document.getElementById("editor-track-video")?.offsetWidth || 0,
-        _editorGetTimelineTrackWidth(timelineDuration),
-    );
+    const trackWidth = document.getElementById("editor-track-video")?.offsetWidth || 600;
     const safeTime = Math.max(0, Math.min(timelineDuration, t || 0));
     const pct = timelineDuration > 0 ? (safeTime / timelineDuration) : 0;
     const x = Math.max(0, Math.min(trackWidth - 2, pct * trackWidth));
@@ -14087,13 +14673,6 @@ function _editorRenderTimeline() {
     const selectedId = String(_editor.selectedClip.id || "");
     const selectedTrack = _editor.selectedClip.track || "";
     const rows = [];
-    const trackW = _editorGetTimelineTrackWidth(dur);
-    const timelineInnerWidth = Math.max(120, Math.round(80 + trackW + 16));
-
-    _editorEnsureSourceWaveform();
-    const sourceVideoWaveStyle = _editorGetSourceWaveformInlineStyle("video", dur);
-    const sourceAudioWaveStyle = _editorGetSourceWaveformInlineStyle("audio", dur);
-    const sourceWaveLoadingClass = _editorSourceWaveformState.loading ? " loading" : "";
 
     _editorSortSegments("video");
     const baseVideoClips = _editor.videoSegments.map((seg, idx) => {
@@ -14102,13 +14681,7 @@ function _editorRenderTimeline() {
         const startPct = (segStart / dur) * 100;
         const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
         const selectedClass = selectedKind === "segment" && selectedTrack === "video" && selectedId === String(seg.id) ? " selected" : "";
-        const hasWaveOverlay = Boolean(sourceVideoWaveStyle || _editorSourceWaveformState.loading);
-        const waveClass = hasWaveOverlay ? ` with-waveform${sourceWaveLoadingClass}` : "";
-        const styleParts = [`left:${startPct}%`, `width:${widthPct}%`];
-        if (sourceVideoWaveStyle) {
-            styleParts.push(sourceVideoWaveStyle);
-        }
-        return `<div class="editor-track-clip clip-video${waveClass}${selectedClass}" data-kind="segment" data-track="video" data-id="${seg.id}" style="${styleParts.join(";")}">Video ${idx + 1}</div>`;
+        return `<div class="editor-track-clip clip-video${selectedClass}" data-kind="segment" data-track="video" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Video ${idx + 1}</div>`;
     }).join("");
 
     const layerClipsByTrack = new Map();
@@ -14167,13 +14740,7 @@ function _editorRenderTimeline() {
             const startPct = (segStart / dur) * 100;
             const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
             const selectedClass = selectedKind === "segment" && selectedTrack === "audio" && selectedId === String(seg.id) ? " selected" : "";
-            const hasWaveOverlay = Boolean(sourceAudioWaveStyle || _editorSourceWaveformState.loading);
-            const waveClass = hasWaveOverlay ? ` with-waveform${sourceWaveLoadingClass}` : "";
-            const styleParts = [`left:${startPct}%`, `width:${widthPct}%`];
-            if (sourceAudioWaveStyle) {
-                styleParts.push(sourceAudioWaveStyle);
-            }
-            return `<div class="editor-track-clip clip-audio${waveClass}${selectedClass}" data-kind="segment" data-track="audio" data-id="${seg.id}" style="${styleParts.join(";")}">Audio ${idx + 1}</div>`;
+            return `<div class="editor-track-clip clip-audio${selectedClass}" data-kind="segment" data-track="audio" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Audio ${idx + 1}</div>`;
         }).join("");
 
         const musicSelected = selectedKind === "music" ? " selected" : "";
@@ -14248,7 +14815,7 @@ function _editorRenderTimeline() {
                 <div class="editor-track-label">
                     <span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}<span class="editor-track-label-text">${row.label}</span></span>
                 </div>
-                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px">${row.clipsHtml || ""}</div>
+                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""}>${row.clipsHtml || ""}</div>
             </div>
         `;
     }).join("");
@@ -14267,12 +14834,8 @@ function _editorRenderTimeline() {
         timelineEl.style.overflowY = idealHeight > maxHeight ? "auto" : "hidden";
     }
 
-    ruler.style.minWidth = `${timelineInnerWidth}px`;
-    ruler.style.width = `${timelineInnerWidth}px`;
-    tracksWrap.style.minWidth = `${timelineInnerWidth}px`;
-    tracksWrap.style.width = `${timelineInnerWidth}px`;
-
     // Ruler marks
+    const trackW = Math.max(document.getElementById("editor-track-video")?.offsetWidth || 0, 600);
     const step = _editorResolveRulerStepSec(dur, trackW);
     const marks = [];
     for (let t = 0; t <= dur + 0.001; t += step) {
@@ -14371,21 +14934,10 @@ function _editorRefreshQuickActions() {
     const dupBtn = document.getElementById("editor-quick-duplicate");
     const cutBtn = document.getElementById("editor-quick-cut");
     const layerOrderBtn = document.getElementById("editor-quick-layer-order");
-    const zoomOutBtn = document.getElementById("editor-quick-zoom-out");
-    const zoomInBtn = document.getElementById("editor-quick-zoom-in");
-    const speedBtn = document.getElementById("editor-quick-speed");
     if (delBtn) delBtn.disabled = !_editorSelectionCanDelete();
     if (dupBtn) dupBtn.disabled = !_editorSelectionCanDuplicate();
     if (cutBtn) cutBtn.disabled = !_editor.duration || !_editorGetSelectedSegmentTracks().length;
     if (layerOrderBtn) layerOrderBtn.disabled = _editorGetLayerOrderCount() < 2;
-    if (zoomOutBtn) zoomOutBtn.disabled = Number(_editor.timelineZoom || 1) <= _EDITOR_TIMELINE_MIN_ZOOM + 0.0001;
-    if (zoomInBtn) zoomInBtn.disabled = Number(_editor.timelineZoom || 1) >= _EDITOR_TIMELINE_MAX_ZOOM - 0.0001;
-    if (speedBtn) {
-        const rateLabel = _editorFormatRateLabel(_editor.playbackRate || 1);
-        speedBtn.title = `Velocidade de reprodução (${rateLabel})`;
-        speedBtn.setAttribute("aria-label", `Velocidade de reprodução ${rateLabel}`);
-        speedBtn.setAttribute("data-rate-label", rateLabel);
-    }
 }
 
 function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
@@ -14841,53 +15393,17 @@ function _editorOnTimelineDragEnd() {
 function _editorHandleDeleteKey(event) {
     const workspace = document.getElementById("editor-workspace");
     if (!workspace || workspace.hidden) return;
+    if (event.key !== "Delete" && event.key !== "Backspace") return;
 
     const active = document.activeElement;
     const tag = (active?.tagName || "").toUpperCase();
-    const editingText = Boolean(active?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(tag));
-
-    const key = String(event.key || "");
-    const wantsZoomIn = key === "+" || key === "=" || key === "NumpadAdd";
-    const wantsZoomOut = key === "-" || key === "_" || key === "NumpadSubtract";
-    const wantsZoomReset = (event.ctrlKey || event.metaKey) && (key === "0" || key === "Numpad0");
-
-    if (!editingText && (wantsZoomIn || wantsZoomOut || wantsZoomReset)) {
-        event.preventDefault();
-        const focusTime = _editorGetTimelineFocusTime();
-        if (wantsZoomReset) {
-            _editorSetTimelineZoom(1, { focusTime, announce: true });
-        } else if (wantsZoomIn) {
-            _editorAdjustTimelineZoom(1, { focusTime, announce: true });
-        } else {
-            _editorAdjustTimelineZoom(-1, { focusTime, announce: true });
-        }
-        return;
-    }
-
-    if (editingText) {
-        return;
-    }
-
-    if (key !== "Delete" && key !== "Backspace") {
+    if (active?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(tag)) {
         return;
     }
     if (!_editor.selectedClip.kind) return;
 
     event.preventDefault();
     _editorDeleteSelectedClip();
-}
-
-function _editorHandleTimelineWheel(event) {
-    const workspace = document.getElementById("editor-workspace");
-    if (!workspace || workspace.hidden) return;
-    if (!(event.ctrlKey || event.metaKey)) return;
-
-    event.preventDefault();
-    const direction = Number(event.deltaY || 0) < 0 ? 1 : -1;
-    _editorAdjustTimelineZoom(direction, {
-        focusTime: _editorGetTimelineFocusTime(),
-        announce: false,
-    });
 }
 
 // ---------- Export ----------
@@ -15102,18 +15618,10 @@ function _bindEditorEvents() {
     document.addEventListener("pointermove", _editorOnMediaLayerDragMove);
     document.addEventListener("pointerup", _editorOnMediaLayerDragEnd);
     window.addEventListener("resize", _editorRenderMediaLayers);
-    window.addEventListener("resize", _editorRenderTimeline);
     document.getElementById("editor-quick-add-text")?.addEventListener("click", _editorAddText);
     document.getElementById("editor-quick-add-subtitle")?.addEventListener("click", _editorAddSubtitle);
     document.getElementById("editor-quick-cut")?.addEventListener("click", _editorSplitAtCurrentTime);
     document.getElementById("editor-quick-layer-order")?.addEventListener("click", _editorCycleMediaLayerOrder);
-    document.getElementById("editor-quick-zoom-out")?.addEventListener("click", () => {
-        _editorAdjustTimelineZoom(-1, { focusTime: _editorGetTimelineFocusTime(), announce: true });
-    });
-    document.getElementById("editor-quick-zoom-in")?.addEventListener("click", () => {
-        _editorAdjustTimelineZoom(1, { focusTime: _editorGetTimelineFocusTime(), announce: true });
-    });
-    document.getElementById("editor-quick-speed")?.addEventListener("click", _editorCyclePlaybackRate);
     document.getElementById("editor-quick-delete")?.addEventListener("click", _editorDeleteSelectedClip);
     document.getElementById("editor-quick-duplicate")?.addEventListener("click", _editorDuplicateSelectedClip);
     document.getElementById("editor-aspect-select")?.addEventListener("change", (e) => {
@@ -15187,7 +15695,6 @@ function _bindEditorEvents() {
             e.preventDefault();
         }
     });
-    document.getElementById("editor-timeline")?.addEventListener("wheel", _editorHandleTimelineWheel, { passive: false });
 
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
