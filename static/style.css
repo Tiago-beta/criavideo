@@ -2972,6 +2972,19 @@ th {
     padding-right: 0.15rem;
 }
 
+.analyze-history-toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(220px, 1fr) auto;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.78rem;
+}
+
+.analyze-history-toolbar label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
 .analyze-history-item {
     width: 100%;
     border: 1px solid rgba(0, 212, 255, 0.2);
@@ -4043,6 +4056,10 @@ svg.spin {
 
     .analyze-channel-head {
         align-items: flex-start;
+    }
+
+    .analyze-history-toolbar {
+        grid-template-columns: 1fr;
     }
 
     .analyze-video-grid,

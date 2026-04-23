@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v201 loaded");
+﻿console.log("[CriaVideo] app.js v202 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -27,6 +27,7 @@ let _analyzeState = {
     running: false,
     historyLoading: false,
     historyItems: [],
+    historyFilterAccountId: 0,
 };
 let _autoPilotState = {
     channels: [],
@@ -692,6 +693,19 @@ function bindDashboardEvents() {
             openAnalyzeHistoryModal();
         });
     }
+    const analyzeHistoryFilter = document.getElementById("analyze-history-account-filter");
+    if (analyzeHistoryFilter) {
+        analyzeHistoryFilter.addEventListener("change", () => {
+            _analyzeState.historyFilterAccountId = Math.max(0, parseInt(analyzeHistoryFilter.value || "0", 10) || 0);
+            loadAnalyzeHistoryList(true);
+        });
+    }
+    const analyzeHistoryRefreshBtn = document.getElementById("analyze-history-refresh-btn");
+    if (analyzeHistoryRefreshBtn) {
+        analyzeHistoryRefreshBtn.addEventListener("click", () => {
+            loadAnalyzeHistoryList(true);
+        });
+    }
     document.querySelectorAll(".publish-platform-chip input").forEach((checkbox) => {
         checkbox.addEventListener("change", () => {
             renderPublishAccountSelectors();
@@ -1082,9 +1096,50 @@ async function _loadLatestSavedAnalysis(accountId) {
     }
 }
 
+function _analyzeRenderHistoryFilterOptions() {
+    const select = document.getElementById("analyze-history-account-filter");
+    if (!select) return;
+
+    const optionsById = new Map();
+
+    const connectedAccounts = Array.isArray(_analyzeState.accounts) ? _analyzeState.accounts : [];
+    for (const account of connectedAccounts) {
+        const id = parseInt(account?.id || "0", 10) || 0;
+        if (!id) continue;
+        const platformName = socialPlatformName(account.platform || "");
+        const displayName = socialAccountDisplayName(account);
+        optionsById.set(id, `${platformName} · ${displayName}`);
+    }
+
+    const historyItems = Array.isArray(_analyzeState.historyItems) ? _analyzeState.historyItems : [];
+    for (const item of historyItems) {
+        const id = parseInt(item?.social_account_id || "0", 10) || 0;
+        if (!id || optionsById.has(id)) continue;
+        const accountLabel = String(item?.account_label || item?.platform_username || item?.channel_title || `Canal ${id}`).trim();
+        optionsById.set(id, accountLabel);
+    }
+
+    const sortedOptions = Array.from(optionsById.entries()).sort((a, b) => a[1].localeCompare(b[1], "pt-BR"));
+
+    let selectedId = Math.max(0, parseInt(_analyzeState.historyFilterAccountId || "0", 10) || 0);
+    if (selectedId && !optionsById.has(selectedId)) {
+        selectedId = 0;
+        _analyzeState.historyFilterAccountId = 0;
+    }
+
+    const html = ["<option value=\"0\">Todos os canais</option>"];
+    for (const [id, label] of sortedOptions) {
+        html.push(`<option value="${id}">${esc(label)}</option>`);
+    }
+    select.innerHTML = html.join("");
+    select.value = String(selectedId || 0);
+}
+
 function _analyzeRenderHistoryList() {
     const container = document.getElementById("analyze-history-list");
     if (!container) return;
+
+    _analyzeRenderHistoryFilterOptions();
 
     if (_analyzeState.historyLoading) {
         container.innerHTML = "<p class='loading'>Carregando historico...</p>";
@@ -1130,7 +1185,14 @@ async function loadAnalyzeHistoryList(forceReload = false) {
     _analyzeRenderHistoryList();
 
     try {
-        const rows = await api("/analyze/history?limit=60");
+        const params = new URLSearchParams();
+        params.set("limit", "60");
+        const filterAccountId = Math.max(0, parseInt(_analyzeState.historyFilterAccountId || "0", 10) || 0);
+        if (filterAccountId > 0) {
+            params.set("social_account_id", String(filterAccountId));
+        }
+
+        const rows = await api(`/analyze/history?${params.toString()}`);
         _analyzeState.historyItems = Array.isArray(rows) ? rows : [];
     } catch (error) {
         const container = document.getElementById("analyze-history-list");
@@ -1145,7 +1207,18 @@ async function loadAnalyzeHistoryList(forceReload = false) {
 }
 
 async function openAnalyzeHistoryModal() {
+    if (!Array.isArray(_analyzeState.accounts) || !_analyzeState.accounts.length) {
+        try {
+            const accounts = await api("/social/accounts");
+            _socialAccountsCache = Array.isArray(accounts) ? accounts : _socialAccountsCache;
+            _analyzeState.accounts = _socialAccountsCache;
+        } catch (error) {
+            console.warn("[analyze] failed to refresh accounts for history filter:", error);
+        }
+    }
+
     openModal("modal-analyze-history");
+    _analyzeRenderHistoryFilterOptions();
     await loadAnalyzeHistoryList(true);
 }
 

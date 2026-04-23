@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260423-49">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260423-50">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 218;
+        var REQUIRED_VER = 219;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1921,6 +1921,13 @@
             </div>
             <div class="modal-body">
                 <p class="section-subtitle">Analises salvas automaticamente ao clicar em Analisar agora. Clique em uma analise para visualizar novamente.</p>
+                <div class="analyze-history-toolbar">
+                    <label for="analyze-history-account-filter">Filtrar por canal</label>
+                    <select id="analyze-history-account-filter" class="input" aria-label="Filtrar analises por canal">
+                        <option value="0">Todos os canais</option>
+                    </select>
+                    <button id="analyze-history-refresh-btn" class="btn btn-secondary btn-sm" type="button">Atualizar</button>
+                </div>
                 <div id="analyze-history-list" class="analyze-history-list">
                     <p class="loading">Carregando historico...</p>
                 </div>
@@ -2752,8 +2759,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260423-49"></script>
-    <script src="/video/static/pwa.js?v=20260423-49"></script>
+    <script src="/video/static/app.js?v=20260423-50"></script>
+    <script src="/video/static/pwa.js?v=20260423-50"></script>
 </body>
 </html>
 
