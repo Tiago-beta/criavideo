@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260423-47">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260423-48">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 216;
+        var REQUIRED_VER = 217;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -310,6 +310,15 @@
                                 </button>
                                 <button class="editor-quick-icon-btn" id="editor-quick-cut" type="button" title="Cortar no ponto atual">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+                                </button>
+                                <button class="editor-quick-icon-btn" id="editor-quick-zoom-out" type="button" title="Afastar timeline (-)">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                                </button>
+                                <button class="editor-quick-icon-btn" id="editor-quick-zoom-in" type="button" title="Aproximar timeline (+)">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                                </button>
+                                <button class="editor-quick-icon-btn" id="editor-quick-speed" type="button" title="Velocidade de reprodução (1x)" aria-label="Velocidade de reprodução 1x">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4a9 9 0 1 0 9 9"/><path d="M12 12l5-3"/><path d="M7.5 14.5h.01"/><path d="M6.5 11h.01"/><path d="M8.5 8h.01"/></svg>
                                 </button>
                                 <button class="editor-quick-icon-btn" id="editor-quick-layer-order" type="button" title="Alternar ordem das camadas" disabled>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h11"/><path d="M4 12h7"/><path d="M4 17h11"/><path d="m15 5 3-3 3 3"/><path d="m15 19 3 3 3-3"/></svg>
@@ -2759,8 +2768,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260423-47"></script>
-    <script src="/video/static/pwa.js?v=20260423-47"></script>
+    <script src="/video/static/app.js?v=20260423-48"></script>
+    <script src="/video/static/pwa.js?v=20260423-48"></script>
 </body>
 </html>
 

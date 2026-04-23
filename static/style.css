@@ -6871,6 +6871,7 @@ th,
     padding: 8px 12px;
     border-top: 1px solid var(--border);
     background: rgba(5, 20, 36, 0.7);
+    overflow-x: auto;
 }
 
 .editor-quick-icon-btn {
@@ -6896,6 +6897,26 @@ th,
 .editor-quick-icon-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+}
+
+.editor-quick-icon-btn[data-rate-label] {
+    position: relative;
+    width: 42px;
+    justify-content: flex-start;
+    padding-left: 8px;
+}
+
+.editor-quick-icon-btn[data-rate-label]::after {
+    content: attr(data-rate-label);
+    position: absolute;
+    right: 5px;
+    bottom: 4px;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    color: #dff6ff;
+    opacity: 0.9;
+    font-variant-numeric: tabular-nums;
 }
 
 .editor-aspect-selector {
@@ -7178,6 +7199,50 @@ th,
 .editor-track-clip.clip-audio {
     background: linear-gradient(135deg, #4a1a6b, #2e0e4a);
     border: 1px solid rgba(74, 26, 107, 0.6);
+}
+
+.editor-track-clip.with-waveform {
+    overflow: hidden;
+}
+
+.editor-track-clip.with-waveform::before {
+    content: "";
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    top: 2px;
+    bottom: 2px;
+    border-radius: 3px;
+    background-image: var(--editor-track-wave-image);
+    background-repeat: var(--editor-track-wave-repeat, no-repeat);
+    background-size: var(--editor-track-wave-size, 100% 100%);
+    background-position: left center;
+    opacity: 0.92;
+    pointer-events: none;
+}
+
+.editor-track-clip.with-waveform.loading::before {
+    background-image: repeating-linear-gradient(
+        90deg,
+        rgba(228, 247, 255, 0.9) 0,
+        rgba(228, 247, 255, 0.9) 2px,
+        rgba(228, 247, 255, 0.2) 2px,
+        rgba(228, 247, 255, 0.2) 8px
+    );
+    background-size: 120px 100%;
+    animation: editor-wave-loading 1.25s linear infinite;
+}
+
+.editor-track-clip.with-waveform::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0));
+    pointer-events: none;
+}
+
+.editor-track-clip.with-waveform {
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
 }
 
 .editor-track-clip.clip-audio.clip-audio-master {

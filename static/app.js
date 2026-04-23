@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v199 loaded");
+console.log("[CriaVideo] app.js v200 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -10686,6 +10686,8 @@ const _editor = {
     redoStack: [],
     _nextId: 1,
     timelineTime: 0,
+    timelineZoom: 1,
+    playbackRate: 1,
     _virtualPlaybackActive: false,
     _virtualPlaybackRaf: 0,
     _virtualPlaybackLastTs: 0,
@@ -10706,7 +10708,21 @@ let _editorMusicWaveformState = {
     error: "",
     requestId: 0,
 };
-const _EDITOR_RULER_STEPS_SEC = [5, 10, 15, 20, 30, 60, 120, 180, 300, 600, 900, 1200];
+let _editorSourceWaveformState = {
+    key: "",
+    loading: false,
+    peaks: [],
+    duration: 0,
+    videoSvgDataUrl: "",
+    audioSvgDataUrl: "",
+    error: "",
+    requestId: 0,
+};
+const _EDITOR_RULER_STEPS_SEC = [0.25, 0.5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 180, 300, 600, 900, 1200];
+const _EDITOR_TIMELINE_MIN_ZOOM = 1;
+const _EDITOR_TIMELINE_MAX_ZOOM = 12;
+const _EDITOR_TIMELINE_ZOOM_STEP = 1.25;
+const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
 let _editorLayerLibrary = {
     open: false,
     loading: false,
@@ -10949,6 +10965,8 @@ function _editorBuildDraftSnapshot() {
         outputAspectRatio: String(_editor.outputAspectRatio || "source"),
         activeTool: String(_editor.activeTool || "text"),
         timelineTime: Number(_editor.timelineTime || 0),
+        timelineZoom: Number(_editor.timelineZoom || 1),
+        playbackRate: Number(_editor.playbackRate || 1),
         trimStart: Number(_editor.trimStart || 0),
         trimEnd: Number(_editor.trimEnd || 0),
         texts: _editor.texts || [],
@@ -11058,6 +11076,11 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
 
         _editor.filter = String(draft.filter || "none");
         _editor.quality = String(draft.quality || "original");
+        _editor.timelineZoom = Math.max(
+            _EDITOR_TIMELINE_MIN_ZOOM,
+            Math.min(_EDITOR_TIMELINE_MAX_ZOOM, Number(draft.timelineZoom || 1)),
+        );
+        _editor.playbackRate = Math.max(0.25, Math.min(2, Number(draft.playbackRate || 1)));
 
         if (!_editor.videoSegments.length) {
             _editorInitVideoSegments();
@@ -11376,7 +11399,8 @@ function _editorStartVirtualTimelinePlayback(startTime = 0) {
             _editor._virtualPlaybackLastTs = ts;
         }
 
-        const deltaSec = Math.max(0, (ts - _editor._virtualPlaybackLastTs) / 1000);
+        const speed = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
+        const deltaSec = Math.max(0, (ts - _editor._virtualPlaybackLastTs) / 1000) * speed;
         _editor._virtualPlaybackLastTs = ts;
 
         const timelineDuration = _editorGetTimelineDuration();
@@ -11415,7 +11439,20 @@ function _editorResetMusicWaveformState() {
     };
 }
 
-function _editorBuildMusicWaveformSvg(peaks = []) {
+function _editorResetSourceWaveformState() {
+    _editorSourceWaveformState = {
+        key: "",
+        loading: false,
+        peaks: [],
+        duration: 0,
+        videoSvgDataUrl: "",
+        audioSvgDataUrl: "",
+        error: "",
+        requestId: Number(_editorSourceWaveformState?.requestId || 0) + 1,
+    };
+}
+
+function _editorBuildWaveformSvg(peaks = [], color = "rgba(239,191,255,0.85)") {
     if (!Array.isArray(peaks) || !peaks.length) return "";
 
     const width = 1200;
@@ -11435,8 +11472,20 @@ function _editorBuildMusicWaveformSvg(peaks = []) {
         x += barWidth + gap;
     }
 
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${width} ${height}' preserveAspectRatio='none'><rect width='${width}' height='${height}' fill='rgba(0,0,0,0)'/><style>rect{fill:rgba(239,191,255,0.85)}</style>${rects}</svg>`;
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${width} ${height}' preserveAspectRatio='none'><rect width='${width}' height='${height}' fill='rgba(0,0,0,0)'/><style>rect{fill:${color}}</style>${rects}</svg>`;
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function _editorBuildMusicWaveformSvg(peaks = []) {
+    return _editorBuildWaveformSvg(peaks, "rgba(239,191,255,0.85)");
+}
+
+function _editorBuildSourceVideoWaveformSvg(peaks = []) {
+    return _editorBuildWaveformSvg(peaks, "rgba(172,241,198,0.88)");
+}
+
+function _editorBuildSourceAudioWaveformSvg(peaks = []) {
+    return _editorBuildWaveformSvg(peaks, "rgba(193,166,255,0.88)");
 }
 
 async function _editorExtractMusicWaveformPeaks(url) {
@@ -11563,6 +11612,84 @@ function _editorEnsureMusicWaveform() {
         });
 }
 
+function _editorEnsureSourceWaveform() {
+    if (!_editor.videoUrl) {
+        if (_editorSourceWaveformState.key || _editorSourceWaveformState.loading) {
+            _editorResetSourceWaveformState();
+        }
+        return;
+    }
+
+    const normalizedUrl = _editorNormalizeMediaUrl(_editor.videoUrl);
+    if (!normalizedUrl) return;
+
+    if (_editorSourceWaveformState.key === normalizedUrl) {
+        return;
+    }
+
+    const requestId = Number(_editorSourceWaveformState.requestId || 0) + 1;
+    _editorSourceWaveformState = {
+        key: normalizedUrl,
+        loading: true,
+        peaks: [],
+        duration: 0,
+        videoSvgDataUrl: "",
+        audioSvgDataUrl: "",
+        error: "",
+        requestId,
+    };
+
+    _editorExtractMusicWaveformPeaks(normalizedUrl)
+        .then(({ peaks, duration }) => {
+            if (requestId !== _editorSourceWaveformState.requestId) return;
+
+            _editorSourceWaveformState = {
+                key: normalizedUrl,
+                loading: false,
+                peaks,
+                duration,
+                videoSvgDataUrl: _editorBuildSourceVideoWaveformSvg(peaks),
+                audioSvgDataUrl: _editorBuildSourceAudioWaveformSvg(peaks),
+                error: "",
+                requestId,
+            };
+            _editorRenderTimeline();
+        })
+        .catch((err) => {
+            if (requestId !== _editorSourceWaveformState.requestId) return;
+
+            _editorSourceWaveformState = {
+                key: normalizedUrl,
+                loading: false,
+                peaks: [],
+                duration: 0,
+                videoSvgDataUrl: "",
+                audioSvgDataUrl: "",
+                error: String(err?.message || "waveform-error"),
+                requestId,
+            };
+            _editorRenderTimeline();
+        });
+}
+
+function _editorGetSourceWaveformInlineStyle(kind = "video", timelineDuration = 0) {
+    const waveUrl = kind === "audio"
+        ? String(_editorSourceWaveformState.audioSvgDataUrl || "")
+        : String(_editorSourceWaveformState.videoSvgDataUrl || "");
+    if (!waveUrl) return "";
+
+    const safeTimelineDuration = Math.max(0.1, Number(timelineDuration || 0.1));
+    const sourceDuration = Math.max(0, Number(_editorSourceWaveformState.duration || 0));
+    const sizePct = sourceDuration > 0
+        ? Math.max(2, Math.min(100, (sourceDuration / safeTimelineDuration) * 100))
+        : 100;
+    const repeatMode = sourceDuration > 0 && sourceDuration < safeTimelineDuration - 0.05
+        ? "repeat-x"
+        : "no-repeat";
+
+    return `--editor-track-wave-image:url("${waveUrl}");--editor-track-wave-size:${sizePct.toFixed(3)}% 100%;--editor-track-wave-repeat:${repeatMode};`;
+}
+
 function _editorGetMusicWaveformInlineStyle(timelineDuration = 0) {
     const waveUrl = String(_editorMusicWaveformState.svgDataUrl || "");
     if (!waveUrl) return "";
@@ -11634,6 +11761,7 @@ function _editorGetMusicPreviewAudio() {
         _editorMusicPreviewAudio.preload = "auto";
         _editorMusicPreviewAudio.loop = true;
         _editorMusicPreviewAudio.setAttribute("playsinline", "true");
+        _editorMusicPreviewAudio.playbackRate = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
     }
     return _editorMusicPreviewAudio;
 }
@@ -11665,6 +11793,7 @@ function _editorSetMusicPreviewSource(url) {
     }
 
     audio.volume = Math.max(0, Math.min(1, (_editor.musicVolume || 0) / 100));
+    audio.playbackRate = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
     _editorEnsureMusicWaveform();
 }
 
@@ -11680,6 +11809,7 @@ function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
     }
 
     audio.volume = Math.max(0, Math.min(1, (_editor.musicVolume || 0) / 100));
+    audio.playbackRate = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
 
     let targetTime = Math.max(0, Number(videoTime || 0));
     const duration = Number(audio.duration || 0);
@@ -12847,8 +12977,11 @@ async function openEditor(projectId, options = {}) {
         _editor.redoStack = [];
         _editor._nextId = 1;
         _editor.timelineTime = 0;
+        _editor.timelineZoom = 1;
+        _editor.playbackRate = 1;
         _editor._virtualPlaybackActive = false;
         _editorStopVirtualTimelinePlayback();
+        _editorResetSourceWaveformState();
         _editorCloseAIMusicModal(true);
         _editorResetAIMusicModalState();
 
@@ -12884,9 +13017,11 @@ async function openEditor(projectId, options = {}) {
             _editorApplyAspectRatio();
             _editorRenderMediaLayers();
             document.getElementById("editor-time-total").textContent = _fmtTime(_editorGetTimelineDuration());
+            _editorApplyPlaybackRate(_editor.playbackRate, { announce: false });
             _editorApplyTimelineFrame(Number(_editor.timelineTime || 0), false);
             _editorRefreshQuickActions();
             _editorRenderTimeline();
+            _editorCenterTimelineOnTime(Number(_editor.timelineTime || 0));
             _editorSelectTool(restored ? _editor.activeTool : "text");
             if (shouldRestoreDraft && restored) {
                 showToast("Edição restaurada de onde você parou.", "success");
@@ -12947,6 +13082,9 @@ function closeEditor() {
     _editorRefreshTrackSelectionUI();
     _editor.playing = false;
     _editor.timelineTime = 0;
+    _editor.timelineZoom = 1;
+    _editor.playbackRate = 1;
+    _editorResetSourceWaveformState();
 }
 
 // ---------- Format time ----------
@@ -12957,10 +13095,85 @@ function _fmtTime(sec) {
     return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
 }
 
+function _editorFormatRateLabel(rate = 1) {
+    const safeRate = Math.max(0.25, Math.min(2, Number(rate || 1)));
+    return `${safeRate.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1")}x`;
+}
+
+function _editorClampTimelineZoom(value) {
+    const parsed = Number(value || 1);
+    if (!Number.isFinite(parsed)) return 1;
+    return Math.max(_EDITOR_TIMELINE_MIN_ZOOM, Math.min(_EDITOR_TIMELINE_MAX_ZOOM, parsed));
+}
+
+function _editorGetTimelineTrackWidth(durationSec = 0) {
+    const timelineEl = document.getElementById("editor-timeline");
+    const viewportTrackWidth = Math.max(560, Number(timelineEl?.clientWidth || 0) - 96);
+    const zoom = _editorClampTimelineZoom(_editor.timelineZoom || 1);
+    const scaled = Math.round(viewportTrackWidth * zoom);
+    const safeDuration = Math.max(0.1, Number(durationSec || _editorGetTimelineDuration() || 0.1));
+    const minByDuration = Math.max(420, Math.round(safeDuration * 12));
+    return Math.max(minByDuration, scaled);
+}
+
+function _editorGetTimelineFocusTime() {
+    const video = document.getElementById("editor-video");
+    return Number(_editor.timelineTime || video?.currentTime || 0);
+}
+
+function _editorCenterTimelineOnTime(timeSec) {
+    const timelineEl = document.getElementById("editor-timeline");
+    if (!timelineEl) return;
+
+    requestAnimationFrame(() => {
+        const timelineDuration = _editorGetTimelineDuration();
+        if (!timelineDuration) return;
+        const trackWidth = Math.max(document.getElementById("editor-track-video")?.offsetWidth || 0, _editorGetTimelineTrackWidth(timelineDuration));
+        const safeTime = Math.max(0, Math.min(timelineDuration, Number(timeSec || 0)));
+        const x = 80 + (safeTime / timelineDuration) * trackWidth;
+        const targetScroll = Math.max(0, Math.min(timelineEl.scrollWidth - timelineEl.clientWidth, x - (timelineEl.clientWidth / 2)));
+        timelineEl.scrollLeft = targetScroll;
+    });
+}
+
+function _editorSetTimelineZoom(nextZoom, options = {}) {
+    const safeZoom = _editorClampTimelineZoom(nextZoom);
+    const focusTime = Number(options.focusTime);
+    const resolvedFocus = Number.isFinite(focusTime) ? focusTime : _editorGetTimelineFocusTime();
+    const announce = Boolean(options.announce);
+
+    if (Math.abs(safeZoom - Number(_editor.timelineZoom || 1)) < 0.0001) {
+        _editorCenterTimelineOnTime(resolvedFocus);
+        return false;
+    }
+
+    _editor.timelineZoom = safeZoom;
+    _editorRenderTimeline();
+    _editorCenterTimelineOnTime(resolvedFocus);
+    if (announce) {
+        showToast(`Zoom da timeline: ${Math.round(safeZoom * 100)}%`, "info");
+    }
+    _editorScheduleDraftPersist(120);
+    return true;
+}
+
+function _editorAdjustTimelineZoom(direction = 1, options = {}) {
+    const factor = direction >= 0 ? _EDITOR_TIMELINE_ZOOM_STEP : (1 / _EDITOR_TIMELINE_ZOOM_STEP);
+    return _editorSetTimelineZoom(Number(_editor.timelineZoom || 1) * factor, options);
+}
+
 function _editorFormatRulerTime(sec, totalDuration, stepSec) {
     const safeSec = Math.max(0, Number(sec || 0));
     const safeTotal = Math.max(0, Number(totalDuration || 0));
-    const safeStep = Math.max(1, Number(stepSec || 1));
+    const safeStep = Math.max(0.05, Number(stepSec || 1));
+
+    if (safeStep <= 1) {
+        return `${safeSec.toFixed(safeStep < 0.5 ? 2 : 1).replace(/\.0+$/, "")}s`;
+    }
+
+    if (safeStep <= 30) {
+        return `${Math.round(safeSec)}s`;
+    }
 
     if (safeTotal >= 600 && safeStep >= 60) {
         const minutes = safeSec / 60;
@@ -12984,10 +13197,46 @@ function _editorResolveRulerStepSec(durationSec, trackWidthPx) {
     return Math.max(1200, Math.ceil(rawStep / 300) * 300);
 }
 
+function _editorApplyPlaybackRate(nextRate, options = {}) {
+    const safeRate = Math.max(0.25, Math.min(2, Number(nextRate || 1)));
+    _editor.playbackRate = safeRate;
+
+    const video = document.getElementById("editor-video");
+    if (video) {
+        video.playbackRate = safeRate;
+        video.defaultPlaybackRate = safeRate;
+    }
+
+    if (_editorMusicPreviewAudio) {
+        _editorMusicPreviewAudio.playbackRate = safeRate;
+    }
+
+    const speedBtn = document.getElementById("editor-quick-speed");
+    if (speedBtn) {
+        const label = _editorFormatRateLabel(safeRate);
+        speedBtn.title = `Velocidade de reprodução (${label})`;
+        speedBtn.setAttribute("aria-label", `Velocidade de reprodução ${label}`);
+        speedBtn.setAttribute("data-rate-label", label);
+    }
+
+    if (options.announce) {
+        showToast(`Velocidade: ${_editorFormatRateLabel(safeRate)}`, "info");
+    }
+    _editorScheduleDraftPersist(120);
+}
+
+function _editorCyclePlaybackRate() {
+    const current = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
+    const idx = _EDITOR_PLAYBACK_RATES.findIndex((value) => Math.abs(value - current) < 0.001);
+    const next = _EDITOR_PLAYBACK_RATES[(idx + 1 + _EDITOR_PLAYBACK_RATES.length) % _EDITOR_PLAYBACK_RATES.length];
+    _editorApplyPlaybackRate(next, { announce: true });
+}
+
 // ---------- Play/Pause ----------
 function _editorTogglePlay() {
     const video = document.getElementById("editor-video");
     if (!video.src) return;
+    _editorApplyPlaybackRate(_editor.playbackRate, { announce: false });
 
     if (_editor.playing) {
         _editor.playing = false;
@@ -13114,7 +13363,7 @@ function _editorMovePlayhead(t) {
     const playhead = document.getElementById("editor-timeline-playhead");
     const timelineDuration = _editorGetTimelineDuration();
     if (!playhead || !timelineDuration) return;
-    const trackWidth = document.getElementById("editor-track-video")?.offsetWidth || 600;
+    const trackWidth = _editorGetTimelineTrackWidth(timelineDuration);
     const safeTime = Math.max(0, Math.min(timelineDuration, t || 0));
     const pct = timelineDuration > 0 ? (safeTime / timelineDuration) : 0;
     const x = Math.max(0, Math.min(trackWidth - 2, pct * trackWidth));
@@ -14673,6 +14922,13 @@ function _editorRenderTimeline() {
     const selectedId = String(_editor.selectedClip.id || "");
     const selectedTrack = _editor.selectedClip.track || "";
     const rows = [];
+    const trackW = _editorGetTimelineTrackWidth(dur);
+    const timelineInnerWidth = Math.max(120, Math.round(80 + trackW + 16));
+
+    _editorEnsureSourceWaveform();
+    const sourceVideoWaveStyle = _editorGetSourceWaveformInlineStyle("video", dur);
+    const sourceAudioWaveStyle = _editorGetSourceWaveformInlineStyle("audio", dur);
+    const sourceWaveLoadingClass = _editorSourceWaveformState.loading ? " loading" : "";
 
     _editorSortSegments("video");
     const baseVideoClips = _editor.videoSegments.map((seg, idx) => {
@@ -14681,7 +14937,13 @@ function _editorRenderTimeline() {
         const startPct = (segStart / dur) * 100;
         const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
         const selectedClass = selectedKind === "segment" && selectedTrack === "video" && selectedId === String(seg.id) ? " selected" : "";
-        return `<div class="editor-track-clip clip-video${selectedClass}" data-kind="segment" data-track="video" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Video ${idx + 1}</div>`;
+        const hasWaveOverlay = Boolean(sourceVideoWaveStyle || _editorSourceWaveformState.loading);
+        const waveClass = hasWaveOverlay ? ` with-waveform${sourceWaveLoadingClass}` : "";
+        const styleParts = [`left:${startPct}%`, `width:${widthPct}%`];
+        if (sourceVideoWaveStyle) {
+            styleParts.push(sourceVideoWaveStyle);
+        }
+        return `<div class="editor-track-clip clip-video${waveClass}${selectedClass}" data-kind="segment" data-track="video" data-id="${seg.id}" style="${styleParts.join(";")}">Video ${idx + 1}</div>`;
     }).join("");
 
     const layerClipsByTrack = new Map();
@@ -14740,7 +15002,13 @@ function _editorRenderTimeline() {
             const startPct = (segStart / dur) * 100;
             const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
             const selectedClass = selectedKind === "segment" && selectedTrack === "audio" && selectedId === String(seg.id) ? " selected" : "";
-            return `<div class="editor-track-clip clip-audio${selectedClass}" data-kind="segment" data-track="audio" data-id="${seg.id}" style="left:${startPct}%;width:${widthPct}%">Audio ${idx + 1}</div>`;
+            const hasWaveOverlay = Boolean(sourceAudioWaveStyle || _editorSourceWaveformState.loading);
+            const waveClass = hasWaveOverlay ? ` with-waveform${sourceWaveLoadingClass}` : "";
+            const styleParts = [`left:${startPct}%`, `width:${widthPct}%`];
+            if (sourceAudioWaveStyle) {
+                styleParts.push(sourceAudioWaveStyle);
+            }
+            return `<div class="editor-track-clip clip-audio${waveClass}${selectedClass}" data-kind="segment" data-track="audio" data-id="${seg.id}" style="${styleParts.join(";")}">Audio ${idx + 1}</div>`;
         }).join("");
 
         const musicSelected = selectedKind === "music" ? " selected" : "";
@@ -14815,7 +15083,7 @@ function _editorRenderTimeline() {
                 <div class="editor-track-label">
                     <span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}<span class="editor-track-label-text">${row.label}</span></span>
                 </div>
-                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""}>${row.clipsHtml || ""}</div>
+                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px">${row.clipsHtml || ""}</div>
             </div>
         `;
     }).join("");
@@ -14834,8 +15102,12 @@ function _editorRenderTimeline() {
         timelineEl.style.overflowY = idealHeight > maxHeight ? "auto" : "hidden";
     }
 
+    ruler.style.minWidth = `${timelineInnerWidth}px`;
+    ruler.style.width = `${timelineInnerWidth}px`;
+    tracksWrap.style.minWidth = `${timelineInnerWidth}px`;
+    tracksWrap.style.width = `${timelineInnerWidth}px`;
+
     // Ruler marks
-    const trackW = Math.max(document.getElementById("editor-track-video")?.offsetWidth || 0, 600);
     const step = _editorResolveRulerStepSec(dur, trackW);
     const marks = [];
     for (let t = 0; t <= dur + 0.001; t += step) {
@@ -14934,10 +15206,21 @@ function _editorRefreshQuickActions() {
     const dupBtn = document.getElementById("editor-quick-duplicate");
     const cutBtn = document.getElementById("editor-quick-cut");
     const layerOrderBtn = document.getElementById("editor-quick-layer-order");
+    const zoomOutBtn = document.getElementById("editor-quick-zoom-out");
+    const zoomInBtn = document.getElementById("editor-quick-zoom-in");
+    const speedBtn = document.getElementById("editor-quick-speed");
     if (delBtn) delBtn.disabled = !_editorSelectionCanDelete();
     if (dupBtn) dupBtn.disabled = !_editorSelectionCanDuplicate();
     if (cutBtn) cutBtn.disabled = !_editor.duration || !_editorGetSelectedSegmentTracks().length;
     if (layerOrderBtn) layerOrderBtn.disabled = _editorGetLayerOrderCount() < 2;
+    if (zoomOutBtn) zoomOutBtn.disabled = Number(_editor.timelineZoom || 1) <= _EDITOR_TIMELINE_MIN_ZOOM + 0.0001;
+    if (zoomInBtn) zoomInBtn.disabled = Number(_editor.timelineZoom || 1) >= _EDITOR_TIMELINE_MAX_ZOOM - 0.0001;
+    if (speedBtn) {
+        const rateLabel = _editorFormatRateLabel(_editor.playbackRate || 1);
+        speedBtn.title = `Velocidade de reprodução (${rateLabel})`;
+        speedBtn.setAttribute("aria-label", `Velocidade de reprodução ${rateLabel}`);
+        speedBtn.setAttribute("data-rate-label", rateLabel);
+    }
 }
 
 function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
@@ -15393,17 +15676,53 @@ function _editorOnTimelineDragEnd() {
 function _editorHandleDeleteKey(event) {
     const workspace = document.getElementById("editor-workspace");
     if (!workspace || workspace.hidden) return;
-    if (event.key !== "Delete" && event.key !== "Backspace") return;
 
     const active = document.activeElement;
     const tag = (active?.tagName || "").toUpperCase();
-    if (active?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(tag)) {
+    const editingText = Boolean(active?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(tag));
+
+    const key = String(event.key || "");
+    const wantsZoomIn = key === "+" || key === "=" || key === "NumpadAdd";
+    const wantsZoomOut = key === "-" || key === "_" || key === "NumpadSubtract";
+    const wantsZoomReset = (event.ctrlKey || event.metaKey) && (key === "0" || key === "Numpad0");
+
+    if (!editingText && (wantsZoomIn || wantsZoomOut || wantsZoomReset)) {
+        event.preventDefault();
+        const focusTime = _editorGetTimelineFocusTime();
+        if (wantsZoomReset) {
+            _editorSetTimelineZoom(1, { focusTime, announce: true });
+        } else if (wantsZoomIn) {
+            _editorAdjustTimelineZoom(1, { focusTime, announce: true });
+        } else {
+            _editorAdjustTimelineZoom(-1, { focusTime, announce: true });
+        }
+        return;
+    }
+
+    if (editingText) {
+        return;
+    }
+
+    if (key !== "Delete" && key !== "Backspace") {
         return;
     }
     if (!_editor.selectedClip.kind) return;
 
     event.preventDefault();
     _editorDeleteSelectedClip();
+}
+
+function _editorHandleTimelineWheel(event) {
+    const workspace = document.getElementById("editor-workspace");
+    if (!workspace || workspace.hidden) return;
+    if (!(event.ctrlKey || event.metaKey)) return;
+
+    event.preventDefault();
+    const direction = Number(event.deltaY || 0) < 0 ? 1 : -1;
+    _editorAdjustTimelineZoom(direction, {
+        focusTime: _editorGetTimelineFocusTime(),
+        announce: false,
+    });
 }
 
 // ---------- Export ----------
@@ -15618,10 +15937,18 @@ function _bindEditorEvents() {
     document.addEventListener("pointermove", _editorOnMediaLayerDragMove);
     document.addEventListener("pointerup", _editorOnMediaLayerDragEnd);
     window.addEventListener("resize", _editorRenderMediaLayers);
+    window.addEventListener("resize", _editorRenderTimeline);
     document.getElementById("editor-quick-add-text")?.addEventListener("click", _editorAddText);
     document.getElementById("editor-quick-add-subtitle")?.addEventListener("click", _editorAddSubtitle);
     document.getElementById("editor-quick-cut")?.addEventListener("click", _editorSplitAtCurrentTime);
     document.getElementById("editor-quick-layer-order")?.addEventListener("click", _editorCycleMediaLayerOrder);
+    document.getElementById("editor-quick-zoom-out")?.addEventListener("click", () => {
+        _editorAdjustTimelineZoom(-1, { focusTime: _editorGetTimelineFocusTime(), announce: true });
+    });
+    document.getElementById("editor-quick-zoom-in")?.addEventListener("click", () => {
+        _editorAdjustTimelineZoom(1, { focusTime: _editorGetTimelineFocusTime(), announce: true });
+    });
+    document.getElementById("editor-quick-speed")?.addEventListener("click", _editorCyclePlaybackRate);
     document.getElementById("editor-quick-delete")?.addEventListener("click", _editorDeleteSelectedClip);
     document.getElementById("editor-quick-duplicate")?.addEventListener("click", _editorDuplicateSelectedClip);
     document.getElementById("editor-aspect-select")?.addEventListener("change", (e) => {
@@ -15695,6 +16022,7 @@ function _bindEditorEvents() {
             e.preventDefault();
         }
     });
+    document.getElementById("editor-timeline")?.addEventListener("wheel", _editorHandleTimelineWheel, { passive: false });
 
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
