@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v201 loaded");
+console.log("[CriaVideo] app.js v202 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -11659,7 +11659,17 @@ function _editorEnsureSourceWaveform() {
     const normalizedUrl = _editorNormalizeMediaUrl(_editor.videoUrl);
     if (!normalizedUrl) return;
 
-    if (_editorSourceWaveformState.key === normalizedUrl) {
+    const expectedDurationHint = Math.max(
+        _editorGetTimelineDuration(),
+        Number(document.getElementById("editor-video")?.duration || 0),
+        Number(_editor.duration || 0),
+    );
+    const currentDuration = Math.max(0, Number(_editorSourceWaveformState.duration || 0));
+    const staleDuration = currentDuration > 0
+        && expectedDurationHint > 60
+        && currentDuration < (expectedDurationHint * 0.75);
+
+    if (_editorSourceWaveformState.key === normalizedUrl && !staleDuration) {
         return;
     }
 
@@ -11677,10 +11687,7 @@ function _editorEnsureSourceWaveform() {
     _editorRenderTimeline();
 
     _editorExtractMusicWaveformPeaks(normalizedUrl, {
-        durationHint: Math.max(
-            _editorGetTimelineDuration(),
-            Number(document.getElementById("editor-video")?.duration || 0),
-        ),
+        durationHint: expectedDurationHint,
     })
         .then(({ peaks, duration }) => {
             if (requestId !== _editorSourceWaveformState.requestId) return;
@@ -11721,7 +11728,12 @@ function _editorGetSourceWaveformInlineStyle(kind = "video", timelineDuration = 
     if (!waveUrl) return "";
 
     const safeTimelineDuration = Math.max(0.1, Number(timelineDuration || 0.1));
-    const sourceDuration = Math.max(0, Number(_editorSourceWaveformState.duration || 0));
+    const mediaDuration = Math.max(
+        0,
+        Number(_editor.duration || 0),
+        Number(document.getElementById("editor-video")?.duration || 0),
+    );
+    const sourceDuration = Math.max(0, Number(_editorSourceWaveformState.duration || 0), mediaDuration);
     const sizePct = sourceDuration > 0
         ? Math.max(2, Math.min(100, (sourceDuration / safeTimelineDuration) * 100))
         : 100;
@@ -13152,10 +13164,10 @@ function _editorGetTimelineTrackWidth(durationSec = 0) {
     const timelineEl = document.getElementById("editor-timeline");
     const viewportTrackWidth = Math.max(560, Number(timelineEl?.clientWidth || 0) - 96);
     const zoom = _editorClampTimelineZoom(_editor.timelineZoom || 1);
-    const scaled = Math.round(viewportTrackWidth * zoom);
     const safeDuration = Math.max(0.1, Number(durationSec || _editorGetTimelineDuration() || 0.1));
-    const minByDuration = Math.max(420, Math.round(safeDuration * 12));
-    return Math.max(minByDuration, scaled);
+    const durationBaseWidth = Math.max(420, Math.round(safeDuration * 1.6));
+    const baseWidth = Math.max(viewportTrackWidth, durationBaseWidth);
+    return Math.round(baseWidth * zoom);
 }
 
 function _editorGetTimelineFocusTime() {
@@ -13225,21 +13237,25 @@ function _editorFormatRulerTime(sec, totalDuration, stepSec) {
     const safeTotal = Math.max(0, Number(totalDuration || 0));
     const safeStep = Math.max(0.05, Number(stepSec || 1));
 
+    // For long timelines, keep labels minute-oriented by default.
+    if (safeTotal >= 600) {
+        if (safeStep >= 60) {
+            const minutes = safeSec / 60;
+            const rounded = Math.round(minutes * 10) / 10;
+            if (Math.abs(rounded - Math.round(rounded)) < 0.05) {
+                return `${Math.round(rounded)}m`;
+            }
+            return `${rounded.toFixed(1)}m`;
+        }
+        return _fmtTime(safeSec);
+    }
+
     if (safeStep <= 1) {
         return `${safeSec.toFixed(safeStep < 0.5 ? 2 : 1).replace(/\.0+$/, "")}s`;
     }
 
     if (safeStep <= 30) {
         return `${Math.round(safeSec)}s`;
-    }
-
-    if (safeTotal >= 600 && safeStep >= 60) {
-        const minutes = safeSec / 60;
-        const rounded = Math.round(minutes * 10) / 10;
-        if (Math.abs(rounded - Math.round(rounded)) < 0.05) {
-            return `${Math.round(rounded)}m`;
-        }
-        return `${rounded.toFixed(1)}m`;
     }
 
     return _fmtTime(safeSec);
@@ -13250,7 +13266,8 @@ function _editorResolveRulerStepSec(durationSec, trackWidthPx) {
     const safeWidth = Math.max(320, Number(trackWidthPx || 0));
     const targetMarkCount = Math.max(4, Math.floor(safeWidth / 88));
     const rawStep = safeDuration / targetMarkCount;
-    const candidate = _EDITOR_RULER_STEPS_SEC.find((step) => step >= rawStep);
+    const minStepForLongVideo = safeDuration >= 600 && Number(_editor.timelineZoom || 1) <= 1.01 ? 60 : 0;
+    const candidate = _EDITOR_RULER_STEPS_SEC.find((step) => step >= Math.max(rawStep, minStepForLongVideo));
     if (candidate) return candidate;
     return Math.max(1200, Math.ceil(rawStep / 300) * 300);
 }
