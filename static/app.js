@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v200 loaded");
+console.log("[CriaVideo] app.js v201 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -10721,7 +10721,7 @@ let _editorSourceWaveformState = {
 const _EDITOR_RULER_STEPS_SEC = [0.25, 0.5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 180, 300, 600, 900, 1200];
 const _EDITOR_TIMELINE_MIN_ZOOM = 1;
 const _EDITOR_TIMELINE_MAX_ZOOM = 12;
-const _EDITOR_TIMELINE_ZOOM_STEP = 1.25;
+const _EDITOR_TIMELINE_ZOOM_LEVELS = [1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12];
 const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
 let _editorLayerLibrary = {
     open: false,
@@ -11488,71 +11488,104 @@ function _editorBuildSourceAudioWaveformSvg(peaks = []) {
     return _editorBuildWaveformSvg(peaks, "rgba(193,166,255,0.88)");
 }
 
-async function _editorExtractMusicWaveformPeaks(url) {
-    const response = await fetch(url, { cache: "no-store" });
-    if (!response.ok) {
-        throw new Error(`Falha ao carregar áudio (${response.status})`);
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextCtor) {
-        throw new Error("AudioContext indisponível neste navegador.");
-    }
-
-    const audioContext = new AudioContextCtor();
-    let decoded = null;
-    try {
-        decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0));
-    } finally {
-        try {
-            await audioContext.close();
-        } catch {
-            // Ignore AudioContext close errors.
-        }
-    }
-
-    const channelCount = Math.max(1, Number(decoded.numberOfChannels || 1));
-    const channels = [];
-    for (let ch = 0; ch < channelCount; ch += 1) {
-        channels.push(decoded.getChannelData(ch));
-    }
-
-    const sampleCount = Math.max(1, Number(decoded.length || 1));
-    const bucketCount = Math.max(220, Math.min(2600, Math.round(Math.max(1, Number(decoded.duration || 1)) * 36)));
-    const samplesPerBucket = Math.max(1, Math.floor(sampleCount / bucketCount));
+function _editorBuildFallbackWaveformPeaks(bucketCount = 320) {
+    const count = Math.max(64, Math.min(2600, Math.floor(Number(bucketCount || 0) || 320)));
     const peaks = [];
 
-    for (let bucket = 0; bucket < bucketCount; bucket += 1) {
-        const start = bucket * samplesPerBucket;
-        if (start >= sampleCount) break;
-        const end = Math.min(sampleCount, start + samplesPerBucket);
-        const stride = Math.max(1, Math.floor((end - start) / 40));
-        let peak = 0;
+    for (let idx = 0; idx < count; idx += 1) {
+        const x = idx / Math.max(1, count - 1);
+        const p1 = Math.sin((x * Math.PI * 7.5) + 0.2) * 0.18;
+        const p2 = Math.sin((x * Math.PI * 19.5) + 1.4) * 0.12;
+        const p3 = Math.sin((x * Math.PI * 3.2) + 0.9) * 0.22;
+        const amplitude = Math.max(0.06, Math.min(1, Math.abs(0.24 + p1 + p2 + p3)));
+        peaks.push(amplitude);
+    }
 
-        for (let i = start; i < end; i += stride) {
-            let mixed = 0;
-            for (let ch = 0; ch < channelCount; ch += 1) {
-                mixed += Math.abs(channels[ch][i] || 0);
-            }
-            mixed /= channelCount;
-            if (mixed > peak) {
-                peak = mixed;
+    return peaks;
+}
+
+async function _editorExtractMusicWaveformPeaks(url, options = {}) {
+    const durationHint = Math.max(0, Number(options?.durationHint || 0));
+    const fallbackBucketCount = Math.max(220, Math.min(2600, Math.round(Math.max(1, durationHint || 8) * 36)));
+
+    try {
+        const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+        const response = await fetch(url, {
+            cache: "no-store",
+            headers: authHeaders,
+            credentials: "same-origin",
+        });
+        if (!response.ok) {
+            throw new Error(`Falha ao carregar áudio (${response.status})`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextCtor) {
+            throw new Error("AudioContext indisponível neste navegador.");
+        }
+
+        const audioContext = new AudioContextCtor();
+        let decoded = null;
+        try {
+            decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+        } finally {
+            try {
+                await audioContext.close();
+            } catch {
+                // Ignore AudioContext close errors.
             }
         }
 
-        peaks.push(peak);
+        const channelCount = Math.max(1, Number(decoded.numberOfChannels || 1));
+        const channels = [];
+        for (let ch = 0; ch < channelCount; ch += 1) {
+            channels.push(decoded.getChannelData(ch));
+        }
+
+        const sampleCount = Math.max(1, Number(decoded.length || 1));
+        const bucketCount = Math.max(220, Math.min(2600, Math.round(Math.max(1, Number(decoded.duration || 1)) * 36)));
+        const samplesPerBucket = Math.max(1, Math.floor(sampleCount / bucketCount));
+        const peaks = [];
+
+        for (let bucket = 0; bucket < bucketCount; bucket += 1) {
+            const start = bucket * samplesPerBucket;
+            if (start >= sampleCount) break;
+            const end = Math.min(sampleCount, start + samplesPerBucket);
+            const stride = Math.max(1, Math.floor((end - start) / 40));
+            let peak = 0;
+
+            for (let i = start; i < end; i += stride) {
+                let mixed = 0;
+                for (let ch = 0; ch < channelCount; ch += 1) {
+                    mixed += Math.abs(channels[ch][i] || 0);
+                }
+                mixed /= channelCount;
+                if (mixed > peak) {
+                    peak = mixed;
+                }
+            }
+
+            peaks.push(peak);
+        }
+
+        const maxPeak = peaks.reduce((maxValue, value) => Math.max(maxValue, Number(value || 0)), 0);
+        const normalizedPeaks = maxPeak > 0
+            ? peaks.map((value) => Math.pow(Math.max(0, Number(value || 0)) / maxPeak, 0.7))
+            : peaks.map(() => 0);
+
+        return {
+            peaks: normalizedPeaks,
+            duration: Math.max(0, Number(decoded.duration || 0)),
+        };
+    } catch (_err) {
+        const fallbackPeaks = _editorBuildFallbackWaveformPeaks(fallbackBucketCount);
+        return {
+            peaks: fallbackPeaks,
+            duration: Math.max(durationHint, fallbackPeaks.length / 36),
+            fallback: true,
+        };
     }
-
-    const maxPeak = peaks.reduce((maxValue, value) => Math.max(maxValue, Number(value || 0)), 0);
-    const normalizedPeaks = maxPeak > 0
-        ? peaks.map((value) => Math.pow(Math.max(0, Number(value || 0)) / maxPeak, 0.7))
-        : peaks.map(() => 0);
-
-    return {
-        peaks: normalizedPeaks,
-        duration: Math.max(0, Number(decoded.duration || 0)),
-    };
 }
 
 function _editorEnsureMusicWaveform() {
@@ -11580,8 +11613,11 @@ function _editorEnsureMusicWaveform() {
         error: "",
         requestId,
     };
+    _editorRenderTimeline();
 
-    _editorExtractMusicWaveformPeaks(normalizedUrl)
+    _editorExtractMusicWaveformPeaks(normalizedUrl, {
+        durationHint: _editorGetTimelineDuration(),
+    })
         .then(({ peaks, duration }) => {
             if (requestId !== _editorMusicWaveformState.requestId) return;
 
@@ -11638,8 +11674,14 @@ function _editorEnsureSourceWaveform() {
         error: "",
         requestId,
     };
+    _editorRenderTimeline();
 
-    _editorExtractMusicWaveformPeaks(normalizedUrl)
+    _editorExtractMusicWaveformPeaks(normalizedUrl, {
+        durationHint: Math.max(
+            _editorGetTimelineDuration(),
+            Number(document.getElementById("editor-video")?.duration || 0),
+        ),
+    })
         .then(({ peaks, duration }) => {
             if (requestId !== _editorSourceWaveformState.requestId) return;
 
@@ -13149,7 +13191,16 @@ function _editorSetTimelineZoom(nextZoom, options = {}) {
 
     _editor.timelineZoom = safeZoom;
     _editorRenderTimeline();
-    _editorCenterTimelineOnTime(resolvedFocus);
+    if (safeZoom <= _EDITOR_TIMELINE_MIN_ZOOM + 0.0001) {
+        const timelineEl = document.getElementById("editor-timeline");
+        if (timelineEl) {
+            requestAnimationFrame(() => {
+                timelineEl.scrollLeft = 0;
+            });
+        }
+    } else {
+        _editorCenterTimelineOnTime(resolvedFocus);
+    }
     if (announce) {
         showToast(`Zoom da timeline: ${Math.round(safeZoom * 100)}%`, "info");
     }
@@ -13158,8 +13209,15 @@ function _editorSetTimelineZoom(nextZoom, options = {}) {
 }
 
 function _editorAdjustTimelineZoom(direction = 1, options = {}) {
-    const factor = direction >= 0 ? _EDITOR_TIMELINE_ZOOM_STEP : (1 / _EDITOR_TIMELINE_ZOOM_STEP);
-    return _editorSetTimelineZoom(Number(_editor.timelineZoom || 1) * factor, options);
+    const current = _editorClampTimelineZoom(_editor.timelineZoom || 1);
+    if (direction >= 0) {
+        const next = _EDITOR_TIMELINE_ZOOM_LEVELS.find((level) => level > current + 0.001) || _EDITOR_TIMELINE_MAX_ZOOM;
+        return _editorSetTimelineZoom(next, options);
+    }
+
+    const lowerLevels = _EDITOR_TIMELINE_ZOOM_LEVELS.filter((level) => level < current - 0.001);
+    const next = lowerLevels.length ? lowerLevels[lowerLevels.length - 1] : _EDITOR_TIMELINE_MIN_ZOOM;
+    return _editorSetTimelineZoom(next, options);
 }
 
 function _editorFormatRulerTime(sec, totalDuration, stepSec) {
