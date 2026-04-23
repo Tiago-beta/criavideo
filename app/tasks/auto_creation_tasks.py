@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.database import async_session
 from app.config import get_settings
 from app.models import (
-    AutoPilotCycleRun, AutoSchedule, AutoScheduleTheme, VideoProject, VideoStatus,
+    AutoSchedule, AutoScheduleTheme, VideoProject, VideoStatus,
     PublishJob, PublishStatus, SocialAccount, VideoRender,
 )
 from app.services.persona_registry import (
@@ -456,12 +456,6 @@ async def ai_select_video_settings(theme: str) -> dict:
 
 async def run_auto_creation(auto_schedule_id: int):
     """Main auto-creation pipeline: pick next theme, create video, publish."""
-    pilot_cycle_key = ""
-    pilot_stream = ""
-    schedule_user_id = 0
-    theme_entry_id = 0
-    theme_entry_text = ""
-
     async with async_session() as db:
         result = await db.execute(
             select(AutoSchedule)
@@ -495,28 +489,19 @@ async def run_auto_creation(auto_schedule_id: int):
         theme_entry.status = "processing"
         await db.commit()
 
-        schedule_user_id = int(schedule.user_id)
-        theme_entry_id = int(theme_entry.id)
-        theme_entry_text = str(theme_entry.theme or "")
-        pilot_cycle_key = str((theme_entry.custom_settings or {}).get("pilot_cycle_key") or "").strip()
-        pilot_stream = str((schedule.default_settings or {}).get("pilot_stream") or "").strip().lower()
-
         logger.info(
             "Auto-creation started: schedule=%d, theme=%d '%s', mode=%s, type=%s",
             auto_schedule_id, theme_entry.id, theme_entry.theme,
             schedule.creation_mode, schedule.video_type,
         )
 
-    if pilot_cycle_key:
-        await _mark_pilot_cycle_status(cycle_key=pilot_cycle_key, status="running")
-
     # Run the pipeline outside the DB session to avoid long-held connections
     try:
         project_id = await _create_video_for_theme(
             schedule_id=auto_schedule_id,
-            theme_id=theme_entry_id,
-            theme_text=theme_entry_text,
-            user_id=schedule_user_id,
+            theme_id=theme_entry.id,
+            theme_text=theme_entry.theme,
+            user_id=schedule.user_id,
             video_type=schedule.video_type,
             creation_mode=schedule.creation_mode,
             default_settings=schedule.default_settings or {},
@@ -531,7 +516,7 @@ async def run_auto_creation(auto_schedule_id: int):
             if schedule.social_account_id:
                 await _auto_publish(
                     project_id=project_id,
-                    user_id=schedule_user_id,
+                    user_id=schedule.user_id,
                     platform=schedule.platform,
                     social_account_id=schedule.social_account_id,
                 )
@@ -539,305 +524,34 @@ async def run_auto_creation(auto_schedule_id: int):
                 logger.info(
                     "Auto-creation in test mode (no publish): schedule=%d, theme=%d, project=%d",
                     auto_schedule_id,
-                    theme_entry_id,
+                    theme_entry.id,
                     project_id,
                 )
 
             async with async_session() as db:
-                theme = await db.get(AutoScheduleTheme, theme_entry_id)
+                theme = await db.get(AutoScheduleTheme, theme_entry.id)
                 if theme:
                     theme.status = "completed"
                     theme.video_project_id = project_id
                     await db.commit()
 
-            if pilot_stream == "long":
-                enqueue_result = await _enqueue_pilot_shorts_from_long_project(
-                    long_schedule_id=auto_schedule_id,
-                    long_theme_id=theme_entry_id,
-                    long_project_id=project_id,
-                )
-                added_shorts = int(enqueue_result.get("added", 0))
-                short_schedule_id = int(enqueue_result.get("short_schedule_id", 0))
-
-                if added_shorts > 0 and short_schedule_id:
-                    for _ in range(added_shorts):
-                        await run_auto_creation(short_schedule_id)
-                elif pilot_cycle_key:
-                    await _mark_pilot_cycle_status(cycle_key=pilot_cycle_key, status="completed")
-
-            if pilot_stream == "short" and pilot_cycle_key:
-                await _mark_pilot_short_completed(cycle_key=pilot_cycle_key)
-
-            logger.info("Auto-creation completed: schedule=%d, theme=%d, project=%d", auto_schedule_id, theme_entry_id, project_id)
+            logger.info("Auto-creation completed: schedule=%d, theme=%d, project=%d", auto_schedule_id, theme_entry.id, project_id)
         else:
             async with async_session() as db:
-                theme = await db.get(AutoScheduleTheme, theme_entry_id)
+                theme = await db.get(AutoScheduleTheme, theme_entry.id)
                 if theme:
                     theme.status = "failed"
                     theme.error_message = "Video rendering timed out or failed"
                     await db.commit()
 
-            if pilot_cycle_key:
-                await _mark_pilot_cycle_status(
-                    cycle_key=pilot_cycle_key,
-                    status="failed",
-                    error_message="Video rendering timed out or failed",
-                )
-
     except Exception as e:
-        logger.error("Auto-creation failed: schedule=%d, theme=%d, error=%s", auto_schedule_id, theme_entry_id, e)
+        logger.error("Auto-creation failed: schedule=%d, theme=%d, error=%s", auto_schedule_id, theme_entry.id, e)
         async with async_session() as db:
-            theme = await db.get(AutoScheduleTheme, theme_entry_id)
+            theme = await db.get(AutoScheduleTheme, theme_entry.id)
             if theme:
                 theme.status = "failed"
                 theme.error_message = str(e)[:500]
                 await db.commit()
-
-        if pilot_cycle_key:
-            await _mark_pilot_cycle_status(
-                cycle_key=pilot_cycle_key,
-                status="failed",
-                error_message=str(e)[:500],
-            )
-
-
-def _resolve_short_render_modes(shorts_per_cycle: int, short_mix_mode: str) -> list[str]:
-    count = max(1, int(shorts_per_cycle or 1))
-    mode = str(short_mix_mode or "realistic_all").strip().lower()
-
-    if mode == "image_all":
-        return ["image"] * count
-
-    if mode == "mixed_realistic2_image1":
-        if count == 1:
-            return ["realistic"]
-        if count == 2:
-            return ["realistic", "image"]
-        resolved = ["realistic", "realistic"]
-        while len(resolved) < count:
-            resolved.append("image")
-        return resolved
-
-    return ["realistic"] * count
-
-
-def _build_short_clip_starts(total_duration: float, clip_duration: float, count: int) -> list[float]:
-    total = max(0.0, float(total_duration or 0.0))
-    clip = max(6.0, float(clip_duration or 10.0))
-    qty = max(1, int(count or 1))
-
-    max_start = max(0.0, total - clip - 0.5)
-    if max_start <= 0:
-        return [0.0] * qty
-
-    first = min(max_start, max(0.0, min(18.0, total * 0.2)))
-    if qty == 1:
-        return [round(first, 2)]
-
-    end = max(first, max_start - min(max_start, max(0.0, total * 0.06)))
-    if end <= first:
-        end = max_start
-
-    step = (end - first) / max(1, qty - 1)
-    starts = [round(first + (step * idx), 2) for idx in range(qty)]
-    return [max(0.0, min(max_start, value)) for value in starts]
-
-
-async def _mark_pilot_cycle_status(cycle_key: str, status: str, error_message: str = "") -> None:
-    if not cycle_key:
-        return
-
-    async with async_session() as db:
-        result = await db.execute(
-            select(AutoPilotCycleRun)
-            .where(AutoPilotCycleRun.cycle_key == cycle_key)
-            .limit(1)
-        )
-        cycle = result.scalar_one_or_none()
-        if not cycle:
-            return
-
-        now = datetime.utcnow()
-        cycle.status = str(status or "planned")
-        if cycle.status == "running" and not cycle.started_at:
-            cycle.started_at = now
-        if cycle.status in {"completed", "failed"}:
-            cycle.completed_at = now
-        if error_message:
-            cycle.error_message = str(error_message)[:1000]
-        elif cycle.status == "completed":
-            cycle.error_message = None
-
-        await db.commit()
-
-
-async def _mark_pilot_short_completed(cycle_key: str) -> None:
-    if not cycle_key:
-        return
-
-    async with async_session() as db:
-        result = await db.execute(
-            select(AutoPilotCycleRun)
-            .where(AutoPilotCycleRun.cycle_key == cycle_key)
-            .limit(1)
-        )
-        cycle = result.scalar_one_or_none()
-        if not cycle:
-            return
-
-        now = datetime.utcnow()
-        if not cycle.started_at:
-            cycle.started_at = now
-
-        planned = max(1, int(cycle.planned_shorts or 1))
-        done = int(cycle.completed_shorts or 0) + 1
-        cycle.completed_shorts = min(done, planned)
-
-        if cycle.completed_shorts >= planned:
-            cycle.status = "completed"
-            cycle.completed_at = now
-            cycle.error_message = None
-        else:
-            cycle.status = "running"
-
-        await db.commit()
-
-
-async def _enqueue_pilot_shorts_from_long_project(
-    long_schedule_id: int,
-    long_theme_id: int,
-    long_project_id: int,
-) -> dict:
-    """Create short themes from a completed long music project."""
-    async with async_session() as db:
-        long_schedule = await db.get(AutoSchedule, long_schedule_id)
-        long_theme = await db.get(AutoScheduleTheme, long_theme_id)
-        project = await db.get(VideoProject, long_project_id)
-
-        if not long_schedule or not long_theme or not project:
-            return {"added": 0, "short_schedule_id": 0}
-
-        long_cfg = dict(long_schedule.default_settings or {})
-        if not long_cfg.get("pilot_mode") or str(long_cfg.get("pilot_stream") or "").lower() != "long":
-            return {"added": 0, "short_schedule_id": 0}
-
-        short_schedule_id = int(long_cfg.get("pilot_short_schedule_id") or 0)
-        if short_schedule_id <= 0:
-            return {"added": 0, "short_schedule_id": 0}
-
-        short_schedule = await db.get(AutoSchedule, short_schedule_id)
-        if not short_schedule or short_schedule.user_id != long_schedule.user_id:
-            return {"added": 0, "short_schedule_id": 0}
-
-        audio_local_path = str(project.audio_path or "").strip()
-        project_tags = project.tags if isinstance(project.tags, dict) else {}
-        audio_remote_url = str(project_tags.get("tevoxi_audio_url") or "").strip()
-        if not audio_local_path and not audio_remote_url:
-            logger.warning(
-                "Pilot long project has no reusable audio source: schedule=%d theme=%d project=%d",
-                long_schedule_id,
-                long_theme_id,
-                long_project_id,
-            )
-            return {"added": 0, "short_schedule_id": short_schedule_id}
-
-        custom_cfg = long_theme.custom_settings if isinstance(long_theme.custom_settings, dict) else {}
-        cycle_key = str(custom_cfg.get("pilot_cycle_key") or "").strip()
-        short_mix_mode = str(custom_cfg.get("pilot_short_mix_mode") or long_cfg.get("pilot_short_mix_mode") or "realistic_all").strip().lower()
-
-        try:
-            shorts_per_cycle = int(custom_cfg.get("pilot_shorts_per_cycle") or long_cfg.get("pilot_shorts_per_cycle") or 3)
-        except Exception:
-            shorts_per_cycle = 3
-        shorts_per_cycle = max(1, min(shorts_per_cycle, 6))
-
-        short_modes_cfg = custom_cfg.get("pilot_short_modes")
-        if isinstance(short_modes_cfg, list) and short_modes_cfg:
-            short_modes = [str(mode or "realistic").strip().lower() for mode in short_modes_cfg][:shorts_per_cycle]
-            while len(short_modes) < shorts_per_cycle:
-                short_modes.append("realistic")
-        else:
-            short_modes = _resolve_short_render_modes(shorts_per_cycle, short_mix_mode)
-
-        song_duration = float(project.track_duration or 0)
-        clip_duration = 10.0
-        if song_duration > 0:
-            if song_duration >= 90:
-                clip_duration = 14.0
-            elif song_duration >= 60:
-                clip_duration = 12.0
-            elif song_duration >= 40:
-                clip_duration = 10.0
-            else:
-                clip_duration = max(8.0, min(10.0, round(song_duration * 0.25, 1)))
-
-        clip_starts = _build_short_clip_starts(song_duration, clip_duration, shorts_per_cycle)
-
-        existing_result = await db.execute(
-            select(AutoScheduleTheme)
-            .where(AutoScheduleTheme.auto_schedule_id == short_schedule_id)
-            .order_by(AutoScheduleTheme.position.asc())
-        )
-        existing_themes = existing_result.scalars().all()
-        max_pos = max([item.position for item in existing_themes], default=-1)
-
-        base_theme_text = str(long_theme.theme or project.title or "Tema musical").strip()
-        persona_type = str(project_tags.get("interaction_persona") or "natureza").strip().lower() or "natureza"
-        persona_profile_ids = project_tags.get("persona_profile_ids") or []
-        persona_profile_id = int(project_tags.get("persona_profile_id") or 0)
-
-        added = 0
-        for idx in range(shorts_per_cycle):
-            max_pos += 1
-            short_mode = short_modes[idx] if idx < len(short_modes) else "realistic"
-            short_theme_title = f"{base_theme_text} - Short {idx + 1}"
-
-            custom_settings = {
-                "pilot_mode": True,
-                "pilot_stream": "short",
-                "pilot_cycle_key": cycle_key,
-                "segment_index": idx,
-                "clip_start": clip_starts[idx] if idx < len(clip_starts) else 0,
-                "clip_duration": clip_duration,
-                "tevoxi_audio_local_path": audio_local_path,
-                "tevoxi_audio_url": audio_remote_url,
-                "tevoxi_job_id": str(project_tags.get("tevoxi_job_id") or ""),
-                "tevoxi_title": project.track_title or project.title or base_theme_text,
-                "tevoxi_lyrics": project.lyrics_text or "",
-                "tevoxi_duration": float(project.track_duration or 0),
-                "interaction_persona": persona_type,
-                "persona_profile_id": persona_profile_id,
-                "persona_profile_ids": persona_profile_ids,
-                "short_render_mode": "image" if short_mode == "image" else "realistic",
-            }
-
-            theme_entry = AutoScheduleTheme(
-                auto_schedule_id=short_schedule_id,
-                theme=short_theme_title,
-                status="pending",
-                position=max_pos,
-                custom_settings=custom_settings,
-            )
-            db.add(theme_entry)
-            added += 1
-
-        if cycle_key:
-            cycle_result = await db.execute(
-                select(AutoPilotCycleRun)
-                .where(AutoPilotCycleRun.cycle_key == cycle_key)
-                .limit(1)
-            )
-            cycle = cycle_result.scalar_one_or_none()
-            if cycle:
-                cycle.status = "running"
-                if not cycle.started_at:
-                    cycle.started_at = datetime.utcnow()
-                cycle.planned_shorts = shorts_per_cycle
-                cycle.short_mix_mode = short_mix_mode
-
-        await db.commit()
-
-    return {"added": added, "short_schedule_id": short_schedule_id}
 
 
 async def _create_video_for_theme(
@@ -858,9 +572,6 @@ async def _create_video_for_theme(
     cfg = {**_AUTO_DEFAULTS, **default_settings, **custom_settings}
 
     if video_type == "musical_shorts":
-        short_render_mode = str(cfg.get("short_render_mode", "realistic") or "realistic").strip().lower()
-        if short_render_mode == "image":
-            return await _create_musical_image_short(theme_text, user_id, cfg, custom_settings)
         return await _create_musical_short(theme_text, user_id, cfg, custom_settings)
 
     if video_type == "realistic":
@@ -1003,9 +714,6 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
         project_tags = {
             "audio_source": "tevoxi",
             "force_karaoke_two_line": True,
-            "tevoxi_job_id": str(music_result.get("job_id") or ""),
-            "tevoxi_audio_url": str(music_result.get("audio_url") or ""),
-            "tevoxi_duration": float(music_result.get("duration") or 0),
         }
         project = VideoProject(
             user_id=user_id,
@@ -1323,10 +1031,11 @@ async def _create_musical_short(
     Flow: download audio → extract segment → transcribe → generate realistic video
     → combine audio + video → done.
     """
+    import shutil
+    import subprocess
     from app.tasks.video_tasks import run_realistic_video_pipeline
 
     tevoxi_audio_url = cfg.get("tevoxi_audio_url", "")
-    tevoxi_audio_local_path = cfg.get("tevoxi_audio_local_path", "")
     tevoxi_job_id = cfg.get("tevoxi_job_id", "")
     tevoxi_title = cfg.get("tevoxi_title", theme_text)
     clip_start = float(custom_settings.get("clip_start", 0))
@@ -1392,8 +1101,8 @@ async def _create_musical_short(
         if not reference_image_path:
             raise RuntimeError("Crie uma persona de interacao antes de gerar short realista")
 
-    if not tevoxi_audio_url and not tevoxi_audio_local_path:
-        raise RuntimeError("Audio Tevoxi nao configurado para short musical.")
+    if not tevoxi_audio_url:
+        raise RuntimeError("URL do audio Tevoxi nao configurada.")
 
     # Credit check (1 credit per short)
     async with async_session() as db:
@@ -1402,17 +1111,11 @@ async def _create_musical_short(
         await deduct_credits(db, user_id, credits_needed)
 
     # 1. Download full audio from Tevoxi
-    source_key = tevoxi_job_id or str(user_id)
-    audio_dir = Path(settings.media_dir) / "audio" / f"short_{source_key}_{segment_index}"
+    audio_dir = Path(settings.media_dir) / "audio" / f"short_{tevoxi_job_id}_{segment_index}"
     audio_dir.mkdir(parents=True, exist_ok=True)
     full_audio_path = audio_dir / "full_music.mp3"
 
-    if tevoxi_audio_local_path and Path(str(tevoxi_audio_local_path)).exists():
-        import shutil
-        if not full_audio_path.exists():
-            shutil.copy2(str(tevoxi_audio_local_path), str(full_audio_path))
-
-    if not full_audio_path.exists() and tevoxi_audio_url:
+    if not full_audio_path.exists():
         from app.config import get_settings
         s = get_settings()
         token = s.tevoxi_api_token
@@ -1437,9 +1140,6 @@ async def _create_musical_short(
             with open(full_audio_path, "wb") as f:
                 f.write(resp.content)
         logger.info("Tevoxi audio downloaded: %s (%d bytes)", full_audio_path, len(resp.content))
-
-    if not full_audio_path.exists():
-        raise RuntimeError("Nao foi possivel obter o audio para gerar short musical")
 
     # 2. Extract audio segment
     segment_audio_path = str(audio_dir / f"segment_{segment_index}.mp3")
@@ -1562,135 +1262,6 @@ async def _create_musical_short(
     # 6. After pipeline completes, combine audio segment with video
     await _combine_short_audio(project_id, segment_audio_path, clip_duration)
 
-    return project_id
-
-
-async def _create_musical_image_short(
-    theme_text: str,
-    user_id: int,
-    cfg: dict,
-    custom_settings: dict,
-) -> int:
-    """Create a musical short using image pipeline (non-realistic) plus Tevoxi segment audio."""
-    from app.tasks.video_tasks import run_video_pipeline
-
-    tevoxi_audio_url = cfg.get("tevoxi_audio_url", "")
-    tevoxi_audio_local_path = cfg.get("tevoxi_audio_local_path", "")
-    tevoxi_job_id = cfg.get("tevoxi_job_id", "")
-    tevoxi_title = cfg.get("tevoxi_title", theme_text)
-    clip_start = float(custom_settings.get("clip_start", 0))
-    clip_duration = float(custom_settings.get("clip_duration", 10))
-    segment_index = int(custom_settings.get("segment_index", 0))
-
-    if not tevoxi_audio_url and not tevoxi_audio_local_path:
-        raise RuntimeError("Audio Tevoxi nao configurado para short musical (imagem).")
-
-    async with async_session() as db:
-        from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
-        await deduct_credits(db, user_id, CREDITS_PER_MINUTE)
-
-    source_key = tevoxi_job_id or str(user_id)
-    audio_dir = Path(settings.media_dir) / "audio" / f"short_img_{source_key}_{segment_index}"
-    audio_dir.mkdir(parents=True, exist_ok=True)
-    full_audio_path = audio_dir / "full_music.mp3"
-
-    if tevoxi_audio_local_path and Path(str(tevoxi_audio_local_path)).exists():
-        import shutil
-        if not full_audio_path.exists():
-            shutil.copy2(str(tevoxi_audio_local_path), str(full_audio_path))
-
-    if not full_audio_path.exists() and tevoxi_audio_url:
-        from app.config import get_settings
-        s = get_settings()
-        token = s.tevoxi_api_token
-        if not token and s.tevoxi_jwt_secret:
-            from jose import jwt as jose_jwt
-            import time
-            payload = {
-                "id": s.tevoxi_jwt_user_id,
-                "email": s.tevoxi_jwt_email,
-                "role": "admin",
-                "iat": int(time.time()),
-                "exp": int(time.time()) + 3600,
-            }
-            token = jose_jwt.encode(payload, s.tevoxi_jwt_secret, algorithm="HS256")
-
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
-        import httpx
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.get(tevoxi_audio_url, headers=headers)
-            if resp.status_code != 200:
-                raise RuntimeError(f"Falha ao baixar audio do Tevoxi: HTTP {resp.status_code}")
-            with open(full_audio_path, "wb") as f:
-                f.write(resp.content)
-
-    if not full_audio_path.exists():
-        raise RuntimeError("Nao foi possivel obter o audio para short musical (imagem)")
-
-    segment_audio_path = str(audio_dir / f"segment_{segment_index}.mp3")
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(full_audio_path),
-        "-ss", str(clip_start),
-        "-t", str(clip_duration),
-        "-c:a", "libmp3lame", "-q:a", "2",
-        segment_audio_path,
-    ]
-    proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-    )
-    await proc.wait()
-    if not Path(segment_audio_path).exists():
-        raise RuntimeError("Falha ao extrair segmento de audio para short imagem")
-
-    short_lyrics = str(cfg.get("tevoxi_lyrics", "") or "").strip()
-    short_prompt = ""
-    if short_lyrics:
-        short_prompt = (
-            f'Trecho da musica: "{" ".join(short_lyrics.split())[:420]}". '
-            "Crie uma sequencia visual cinematografica em imagens, com narrativa forte e coerencia emocional."
-        )
-    if not short_prompt:
-        short_prompt = (
-            "Crie uma sequencia visual cinematografica em imagens para short musical, "
-            "com ritmo dinamico e narrativa clara para mobile."
-        )
-
-    style_prompt = cfg.get("style_prompt", "cinematic, dramatic lighting, textured details")
-
-    async with async_session() as db:
-        project = VideoProject(
-            user_id=user_id,
-            track_id=0,
-            title=f"{tevoxi_title} — Short {segment_index + 1}",
-            description=short_prompt,
-            tags={
-                "musical_short": True,
-                "short_render_mode": "image",
-                "segment_index": segment_index,
-                "clip_start": clip_start,
-                "clip_duration": clip_duration,
-                "segment_audio_path": segment_audio_path,
-            },
-            style_prompt=style_prompt,
-            aspect_ratio="9:16",
-            track_title=tevoxi_title,
-            track_artist="",
-            track_duration=clip_duration,
-            lyrics_text=short_prompt,
-            lyrics_words=[],
-            audio_path=segment_audio_path,
-            enable_subtitles=True,
-            zoom_images=True,
-            no_background_music=True,
-            is_realistic=False,
-        )
-        db.add(project)
-        await db.commit()
-        await db.refresh(project)
-        project_id = project.id
-
-    await run_video_pipeline(project_id)
     return project_id
 
 
