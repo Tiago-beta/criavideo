@@ -146,6 +146,16 @@ async def check_auto_schedules():
             asyncio.create_task(run_auto_creation(schedule.id))
 
 
+async def check_auto_channel_pilots():
+    """Runs every 15 minutes. Re-analyzes enabled pilot channels and replenishes themes."""
+    from app.tasks.auto_pilot_tasks import run_due_channel_pilots
+
+    try:
+        await run_due_channel_pilots()
+    except Exception as err:
+        logger.error("Auto channel pilot cycle failed: %s", err)
+
+
 async def cleanup_expired_renders():
     """Delete render files older than 48 hours to free server storage."""
     cutoff = datetime.utcnow() - timedelta(hours=RENDER_EXPIRY_HOURS)
@@ -239,6 +249,12 @@ def start_scheduler():
         check_auto_schedules,
         trigger=IntervalTrigger(minutes=1),
         id="check_auto_schedules",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        check_auto_channel_pilots,
+        trigger=IntervalTrigger(minutes=15),
+        id="check_auto_channel_pilots",
         replace_existing=True,
     )
     scheduler.start()

@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Union
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -16,7 +16,7 @@ import httpx
 from app.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
-from app.models import AutoSchedule, AutoScheduleTheme, SocialAccount
+from app.models import AutoChannelPilot, AutoSchedule, AutoScheduleTheme, Platform, SocialAccount
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -98,6 +98,13 @@ class AddThemesRequest(BaseModel):
 
 class ReorderThemesRequest(BaseModel):
     theme_ids: list[int]
+
+
+class ToggleChannelPilotRequest(BaseModel):
+    enabled: bool
+    analysis_interval_hours: Optional[int] = None
+    min_pending_themes: Optional[int] = None
+    themes_per_cycle: Optional[int] = None
 
 
 # ── Helpers ──
@@ -192,6 +199,33 @@ def _theme_to_dict(t: AutoScheduleTheme) -> dict:
         "video_project_id": t.video_project_id,
         "error_message": t.error_message,
         "created_at": t.created_at.isoformat() if t.created_at else None,
+    }
+
+
+def _pilot_summary_dict(pilot: AutoChannelPilot | None) -> dict:
+    if not pilot:
+        return {
+            "enabled": False,
+            "analysis_interval_hours": 24,
+            "min_pending_themes": 5,
+            "themes_per_cycle": 4,
+            "last_analysis_at": None,
+            "last_run_at": None,
+            "last_error": None,
+            "last_summary": {},
+            "schedule_id": None,
+        }
+
+    return {
+        "enabled": bool(pilot.is_enabled),
+        "analysis_interval_hours": int(pilot.analysis_interval_hours or 24),
+        "min_pending_themes": int(pilot.min_pending_themes or 5),
+        "themes_per_cycle": int(pilot.themes_per_cycle or 4),
+        "last_analysis_at": pilot.last_analysis_at.isoformat() if pilot.last_analysis_at else None,
+        "last_run_at": pilot.last_run_at.isoformat() if pilot.last_run_at else None,
+        "last_error": pilot.last_error,
+        "last_summary": pilot.last_summary or {},
+        "schedule_id": pilot.auto_schedule_id,
     }
 
 
@@ -343,6 +377,151 @@ async def list_auto_schedules(
     )
     schedules = result.scalars().all()
     return [_schedule_to_dict(s) for s in schedules]
+
+
+@router.get("/pilot/channels")
+async def list_pilot_channels(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    accounts_result = await db.execute(
+        select(SocialAccount)
+        .where(SocialAccount.user_id == user["id"])
+        .where(SocialAccount.platform == Platform.YOUTUBE)
+        .order_by(SocialAccount.connected_at.desc(), SocialAccount.id.desc())
+    )
+    accounts = accounts_result.scalars().all()
+    if not accounts:
+        return []
+
+    account_ids = [account.id for account in accounts]
+
+    pilots_result = await db.execute(
+        select(AutoChannelPilot)
+        .where(AutoChannelPilot.user_id == user["id"])
+        .where(AutoChannelPilot.social_account_id.in_(account_ids))
+    )
+    pilots = pilots_result.scalars().all()
+    pilot_by_account = {pilot.social_account_id: pilot for pilot in pilots}
+
+    schedule_ids = [pilot.auto_schedule_id for pilot in pilots if pilot.auto_schedule_id]
+    schedules_by_id = {}
+    if schedule_ids:
+        schedule_result = await db.execute(
+            select(AutoSchedule)
+            .where(AutoSchedule.user_id == user["id"])
+            .where(AutoSchedule.id.in_(schedule_ids))
+        )
+        schedules = schedule_result.scalars().all()
+        schedules_by_id = {schedule.id: schedule for schedule in schedules}
+
+    counts_by_schedule: dict[int, dict[str, int]] = {}
+    if schedule_ids:
+        counts_result = await db.execute(
+            select(AutoScheduleTheme.auto_schedule_id, AutoScheduleTheme.status, func.count(AutoScheduleTheme.id))
+            .where(AutoScheduleTheme.auto_schedule_id.in_(schedule_ids))
+            .group_by(AutoScheduleTheme.auto_schedule_id, AutoScheduleTheme.status)
+        )
+        for schedule_id, status, qty in counts_result.all():
+            entry = counts_by_schedule.setdefault(int(schedule_id), {"pending": 0, "completed": 0})
+            status_key = str(status or "").lower()
+            if status_key == "pending":
+                entry["pending"] += int(qty or 0)
+            if status_key in ("completed", "done"):
+                entry["completed"] += int(qty or 0)
+
+    payload = []
+    for account in accounts:
+        pilot = pilot_by_account.get(account.id)
+        pilot_data = _pilot_summary_dict(pilot)
+
+        schedule = schedules_by_id.get(pilot_data.get("schedule_id") or 0)
+        theme_counts = counts_by_schedule.get(schedule.id if schedule else 0, {"pending": 0, "completed": 0})
+
+        payload.append(
+            {
+                "social_account_id": account.id,
+                "platform": "youtube",
+                "account_label": account.account_label or account.platform_username or "Canal YouTube",
+                "platform_username": account.platform_username or "",
+                "connected_at": account.connected_at.isoformat() if account.connected_at else None,
+                "pilot": {
+                    **pilot_data,
+                    "schedule_name": schedule.name if schedule else None,
+                    "schedule_is_active": bool(schedule.is_active) if schedule else False,
+                    "pending_themes": int(theme_counts.get("pending", 0)),
+                    "completed_themes": int(theme_counts.get("completed", 0)),
+                },
+            }
+        )
+
+    return payload
+
+
+@router.patch("/pilot/channels/{social_account_id}")
+async def toggle_pilot_channel(
+    social_account_id: int,
+    req: ToggleChannelPilotRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    account = await db.get(SocialAccount, social_account_id)
+    if not account or account.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Conta social nao encontrada.")
+    if account.platform != Platform.YOUTUBE:
+        raise HTTPException(status_code=400, detail="Piloto automatico disponivel apenas para YouTube.")
+
+    pilot_result = await db.execute(
+        select(AutoChannelPilot)
+        .where(AutoChannelPilot.user_id == user["id"])
+        .where(AutoChannelPilot.social_account_id == social_account_id)
+        .limit(1)
+    )
+    pilot = pilot_result.scalar_one_or_none()
+
+    if not pilot:
+        pilot = AutoChannelPilot(
+            user_id=user["id"],
+            social_account_id=social_account_id,
+            is_enabled=bool(req.enabled),
+            analysis_interval_hours=24,
+            min_pending_themes=5,
+            themes_per_cycle=4,
+        )
+        db.add(pilot)
+        await db.flush()
+
+    pilot.is_enabled = bool(req.enabled)
+
+    if req.analysis_interval_hours is not None:
+        pilot.analysis_interval_hours = max(1, min(168, int(req.analysis_interval_hours)))
+    if req.min_pending_themes is not None:
+        pilot.min_pending_themes = max(1, min(20, int(req.min_pending_themes)))
+    if req.themes_per_cycle is not None:
+        pilot.themes_per_cycle = max(1, min(20, int(req.themes_per_cycle)))
+
+    if pilot.auto_schedule_id:
+        schedule = await db.get(AutoSchedule, pilot.auto_schedule_id)
+        if schedule and schedule.user_id == user["id"]:
+            schedule.is_active = bool(req.enabled)
+
+    if not req.enabled:
+        pilot.last_error = None
+
+    await db.commit()
+    await db.refresh(pilot)
+
+    if req.enabled:
+        from app.tasks.auto_pilot_tasks import run_channel_pilot_cycle
+
+        background_tasks.add_task(run_channel_pilot_cycle, pilot.id)
+
+    return {
+        "ok": True,
+        "social_account_id": social_account_id,
+        "pilot": _pilot_summary_dict(pilot),
+    }
 
 
 @router.get("/schedules/{schedule_id}")

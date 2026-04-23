@@ -286,3 +286,25 @@ class AutoScheduleTheme(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     schedule = relationship("AutoSchedule", back_populates="themes")
+
+
+class AutoChannelPilot(Base):
+    __tablename__ = "auto_channel_pilots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    social_account_id = Column(Integer, ForeignKey("social_accounts.id", ondelete="CASCADE"), nullable=False, unique=True)
+    auto_schedule_id = Column(Integer, ForeignKey("auto_schedules.id", ondelete="SET NULL"))
+    is_enabled = Column(Boolean, default=False, index=True)
+    analysis_interval_hours = Column(Integer, default=24)
+    min_pending_themes = Column(Integer, default=5)
+    themes_per_cycle = Column(Integer, default=4)
+    last_analysis_at = Column(DateTime)
+    last_run_at = Column(DateTime)
+    last_error = Column(Text)
+    last_summary = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    social_account = relationship("SocialAccount")
+    auto_schedule = relationship("AutoSchedule")

@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v199 loaded");
+﻿console.log("[CriaVideo] app.js v200 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -25,6 +25,11 @@ let _analyzeState = {
     payloadByAccount: {},
     loadingAccounts: false,
     running: false,
+};
+let _autoPilotState = {
+    channels: [],
+    loading: false,
+    togglingByAccount: {},
 };
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 
@@ -649,6 +654,12 @@ function bindDashboardEvents() {
     document.getElementById("btn-new-automation").addEventListener("click", () => {
         openNewAutomationModal();
     });
+    const autoPilotBtn = document.getElementById("btn-auto-pilot");
+    if (autoPilotBtn) {
+        autoPilotBtn.addEventListener("click", () => {
+            openAutoPilotModal();
+        });
+    }
     document.querySelectorAll(".publish-top-tab").forEach((tabBtn) => {
         tabBtn.addEventListener("click", () => {
             setPublishTab(tabBtn.dataset.publishTab || "publish");
@@ -7034,6 +7045,130 @@ function _getAutoSubtitleSettingsForSchedule() {
         font_size_mode: "preview_px",
         preview_reference_width: 240,
     };
+}
+
+function _autoPilotFormatDateTime(value) {
+    if (!value) return "--";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return "--";
+    return dt.toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function _renderAutoPilotChannels() {
+    const container = document.getElementById("auto-pilot-channels");
+    if (!container) return;
+
+    if (_autoPilotState.loading) {
+        container.innerHTML = "<p class='loading'>Carregando canais conectados...</p>";
+        return;
+    }
+
+    const channels = Array.isArray(_autoPilotState.channels) ? _autoPilotState.channels : [];
+    if (!channels.length) {
+        container.innerHTML = "<p class='loading'>Conecte ao menos um canal do YouTube para ativar o Piloto automatico.</p>";
+        return;
+    }
+
+    container.innerHTML = channels.map((channel) => {
+        const accountId = parseInt(channel.social_account_id || "0", 10) || 0;
+        const pilot = channel.pilot || {};
+        const enabled = !!pilot.enabled;
+        const toggling = !!_autoPilotState.togglingByAccount[accountId];
+        const accountName = channel.account_label || channel.platform_username || `Canal ${accountId}`;
+        const username = channel.platform_username || "";
+        const pendingThemes = parseInt(pilot.pending_themes || "0", 10) || 0;
+        const completedThemes = parseInt(pilot.completed_themes || "0", 10) || 0;
+        const scheduleName = pilot.schedule_name || "Automacao do piloto ainda nao criada.";
+        const lastRun = _autoPilotFormatDateTime(pilot.last_run_at || pilot.last_analysis_at);
+        const lastError = String(pilot.last_error || "").trim();
+
+        const actionLabel = toggling
+            ? "Salvando..."
+            : (enabled ? "Desligar" : "Ligar");
+        const actionClass = enabled ? "btn-secondary" : "btn-accent";
+
+        return `
+            <article class="auto-pilot-item">
+                <div class="auto-pilot-main">
+                    <div class="auto-pilot-title-row">
+                        <h4>${esc(accountName)}</h4>
+                        <span class="auto-pilot-status ${enabled ? "active" : "inactive"}">${enabled ? "Ligado" : "Desligado"}</span>
+                    </div>
+                    <p class="auto-pilot-meta">${esc(username ? `@${username}` : "Canal conectado")}</p>
+                    <p class="auto-pilot-meta">${esc(scheduleName)}</p>
+                    <div class="auto-pilot-kpis">
+                        <span>Fila pendente: <strong>${pendingThemes}</strong></span>
+                        <span>Temas concluidos: <strong>${completedThemes}</strong></span>
+                        <span>Ultima analise: <strong>${esc(lastRun)}</strong></span>
+                    </div>
+                    ${lastError ? `<p class="auto-pilot-error">Ultimo erro: ${esc(lastError)}</p>` : ""}
+                </div>
+                <div class="auto-pilot-actions">
+                    <button
+                        class="btn btn-sm ${actionClass}"
+                        type="button"
+                        ${toggling ? "disabled" : ""}
+                        onclick="toggleAutoPilotChannel(${accountId}, ${enabled ? "false" : "true"})"
+                    >${actionLabel}</button>
+                </div>
+            </article>
+        `;
+    }).join("");
+}
+
+async function loadAutoPilotChannels(forceReload = false) {
+    if (_autoPilotState.loading && !forceReload) {
+        return;
+    }
+
+    _autoPilotState.loading = true;
+    _renderAutoPilotChannels();
+
+    try {
+        const channels = await api("/automation/pilot/channels");
+        _autoPilotState.channels = Array.isArray(channels) ? channels : [];
+    } catch (error) {
+        const container = document.getElementById("auto-pilot-channels");
+        if (container) {
+            container.innerHTML = `<p class="loading">Erro ao carregar piloto automatico: ${esc(error.message)}</p>`;
+        }
+    } finally {
+        _autoPilotState.loading = false;
+        _renderAutoPilotChannels();
+    }
+}
+
+function openAutoPilotModal() {
+    openModal("modal-auto-pilot");
+    loadAutoPilotChannels(true);
+}
+
+async function toggleAutoPilotChannel(socialAccountId, enabled) {
+    const accountId = parseInt(socialAccountId || "0", 10) || 0;
+    if (!accountId) return;
+
+    _autoPilotState.togglingByAccount[accountId] = true;
+    _renderAutoPilotChannels();
+
+    try {
+        await api(`/automation/pilot/channels/${accountId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ enabled: !!enabled }),
+        });
+        await loadAutoPilotChannels(true);
+        await loadAutoSchedules();
+    } catch (error) {
+        alert(`Erro ao atualizar piloto automatico: ${error.message}`);
+    } finally {
+        _autoPilotState.togglingByAccount[accountId] = false;
+        _renderAutoPilotChannels();
+    }
 }
 
 async function loadAutoSchedules() {

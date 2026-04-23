@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260423-47">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260423-48">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 216;
+        var REQUIRED_VER = 217;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -578,6 +578,7 @@
 
                                     <div class="analyze-section">
                                         <h3 class="section-title">Estudo de ferramentas recomendado</h3>
+                                        <p class="section-subtitle">Essas diretrizes tambem alimentam o Piloto automatico para ajuste continuo.</p>
                                         <div id="analyze-tools-study" class="analyze-tools-grid"></div>
                                     </div>
                                 </div>
@@ -589,7 +590,10 @@
                         <div class="page-header">
                             <div class="page-header-left">
                                 <h1>Automatizar</h1>
-                                <button id="btn-new-automation" class="btn btn-primary btn-add-project" type="button" title="Nova automação" aria-label="Nova automação">+</button>
+                                <div class="automate-header-actions">
+                                    <button id="btn-auto-pilot" class="btn btn-secondary btn-sm" type="button">Piloto automatico</button>
+                                    <button id="btn-new-automation" class="btn btn-primary btn-add-project" type="button" title="Nova automação" aria-label="Nova automação">+</button>
+                                </div>
                             </div>
                         </div>
                         <div class="automate-sections">
@@ -1892,6 +1896,26 @@
         </div>
     </div>
 
+    <!-- ═══ MODAL: Piloto Automatico ═══ -->
+    <div id="modal-auto-pilot" class="modal">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h3>Piloto automatico</h3>
+                <button class="modal-close" onclick="closeModal('modal-auto-pilot')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="section-subtitle">Ligue por canal do YouTube para o sistema criar temas, produzir, publicar e ajustar a estrategia com base no desempenho.</p>
+                <div id="auto-pilot-channels" class="auto-pilot-list">
+                    <p class="loading">Carregando canais conectados...</p>
+                </div>
+                <p class="muted auto-pilot-note">Quando ligado, o piloto repoe temas automaticamente e mantem a fila ativa para crescimento continuo do canal.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-auto-pilot')" type="button">Fechar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ═══ MODAL: Nova Automação ═══ -->
     <div id="modal-new-automation" class="modal">
         <div class="modal-content modal-content-wide">
@@ -2713,8 +2737,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260423-47"></script>
-    <script src="/video/static/pwa.js?v=20260423-47"></script>
+    <script src="/video/static/app.js?v=20260423-48"></script>
+    <script src="/video/static/pwa.js?v=20260423-48"></script>
 </body>
 </html>
 

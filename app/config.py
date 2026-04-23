@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     facebook_app_secret: str = ""
     xai_api_key: str = ""
     openai_api_key: str = ""
+    openai_analysis_models: str = "gpt-5,gpt-4.1,gpt-4o"
     persona_image_openai_model: str = "gpt-image-1"
     persona_image_google_model: str = "gemini-2.5-flash-image"
     persona_image_prefer_google_for_drawing: bool = False

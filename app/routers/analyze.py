@@ -24,6 +24,20 @@ router = APIRouter(prefix="/api/analyze", tags=["analyze"])
 settings = get_settings()
 _openai = openai.AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
 
+_DEFAULT_ANALYSIS_MODELS = ("gpt-5", "gpt-4.1", "gpt-4o")
+
+
+def _resolve_analysis_models() -> list[str]:
+    raw = str(getattr(settings, "openai_analysis_models", "") or "").strip()
+    if not raw:
+        return list(_DEFAULT_ANALYSIS_MODELS)
+
+    parsed = [part.strip() for part in raw.split(",") if part.strip()]
+    return parsed or list(_DEFAULT_ANALYSIS_MODELS)
+
+
+_ANALYSIS_MODELS = _resolve_analysis_models()
+
 YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
 YOUTUBE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
@@ -162,6 +176,7 @@ def _build_tool_study(platform: str) -> list[dict[str, str]]:
             "effort": "Baixo",
             "focus": "Mapear videos top, frequencia e metadados que performam melhor.",
             "why": "Entrega diagnostico direto para sugerir titulos, descricao e thumbnail com contexto real.",
+            "system_use": "Coletar videos top e atualizar ideias de temas semanalmente.",
         },
         {
             "name": "YouTube Analytics API",
@@ -169,6 +184,7 @@ def _build_tool_study(platform: str) -> list[dict[str, str]]:
             "effort": "Medio",
             "focus": "Tempo de exibicao, retencao por video e origem de trafego.",
             "why": "Permite orientar melhorias por queda de retencao e nao apenas por visualizacao.",
+            "system_use": "Priorizar formatos com maior retencao e reduzir formatos com queda no inicio.",
         },
         {
             "name": "Google Trends + YouTube Suggest",
@@ -176,6 +192,7 @@ def _build_tool_study(platform: str) -> list[dict[str, str]]:
             "effort": "Baixo",
             "focus": "Descobrir temas com demanda crescente antes de produzir.",
             "why": "Aumenta chance de discovery organico para canais pequenos e medios.",
+            "system_use": "Atualizar fila de temas com tendencias relacionadas ao nicho principal.",
         },
         {
             "name": "Pipeline de scoring de thumbnail (Vision)",
@@ -183,6 +200,7 @@ def _build_tool_study(platform: str) -> list[dict[str, str]]:
             "effort": "Medio",
             "focus": "Pontuar contraste, legibilidade e clareza de promessa visual.",
             "why": "Reduz thumbnails fracas e aumenta CTR antes da publicacao.",
+            "system_use": "Aprovar thumbnails com score minimo antes da publicacao automatica.",
         },
         {
             "name": "Data Warehouse de performance",
@@ -190,6 +208,7 @@ def _build_tool_study(platform: str) -> list[dict[str, str]]:
             "effort": "Alto",
             "focus": "Historico consolidado com cohort por formato, tema e horario.",
             "why": "Base para modelos preditivos de crescimento e recomendacao automatica.",
+            "system_use": "Ajustar cadencia e topicos com base em historico de crescimento mensal.",
         },
     ]
 
@@ -202,6 +221,7 @@ def _build_tool_study(platform: str) -> list[dict[str, str]]:
                 "effort": "Medio",
                 "focus": "Integrar dados reais de retencao, reproducoes e perfil da audiencia.",
                 "why": "Permite recomendacao mais precisa para formato curto e gancho inicial.",
+                "system_use": "Reordenar temas curtos por taxa de conclusao e replays.",
             },
         )
     if platform == "instagram":
@@ -213,6 +233,7 @@ def _build_tool_study(platform: str) -> list[dict[str, str]]:
                 "effort": "Medio",
                 "focus": "Alcance, reproducoes e salvamentos de Reels por tema.",
                 "why": "Melhora sugeroes de capa e legenda com base em dados de engajamento real.",
+                "system_use": "Ajustar hooks e capas com base em salvamentos e compartilhamentos.",
             },
         )
     return base[:6]
@@ -585,24 +606,25 @@ def _build_fallback_recommendations(
     keyword_pool = []
     keyword_pool.extend(channel_payload.get("keyword_candidates", []))
     keyword_pool.extend(history.get("keyword_candidates", []))
+    keyword_pool.extend(_extract_keywords([str(item.get("title") or "") for item in top_videos[:12]], limit=10))
     keyword_pool = [str(word).strip() for word in keyword_pool if str(word).strip()]
 
     if len(keyword_pool) < 2:
-        keyword_pool.extend(["historia", "emocao", "tutorial", "dicas"])
+        keyword_pool.extend(["tema central", "dicas praticas", "resultado real", "passo a passo"])
 
     main_kw = keyword_pool[0]
     second_kw = keyword_pool[1] if len(keyword_pool) > 1 else "resultado"
     third_kw = keyword_pool[2] if len(keyword_pool) > 2 else "crescimento"
 
     title_ideas = [
-        _normalize_title(f"{main_kw.title()} que da resultado | Guia rapido para iniciantes"),
-        _normalize_title(f"Como melhorar em {main_kw} sem complicacao | Passo a passo"),
-        _normalize_title(f"{main_kw.title()} na pratica: 7 ajustes que aumentam resultados"),
-        _normalize_title(f"{second_kw.title()} e {main_kw}: estrategia simples para crescer"),
-        _normalize_title(f"Erros em {main_kw} que travam seu canal (e como corrigir)"),
-        _normalize_title(f"Metodo de {third_kw} para {main_kw}: o que realmente funciona"),
-        _normalize_title(f"Plano de 30 dias para evoluir em {main_kw}"),
-        _normalize_title(f"{main_kw.title()} com constancia: rotina completa de producao"),
+        _normalize_title(f"Como evoluir em {main_kw} com passos simples"),
+        _normalize_title(f"{main_kw.title()} na pratica: o que realmente funciona"),
+        _normalize_title(f"Guia direto de {main_kw} para melhorar resultados"),
+        _normalize_title(f"{second_kw.title()} aplicado a {main_kw}: estrategia clara"),
+        _normalize_title(f"Erros comuns em {main_kw} e como corrigir rapido"),
+        _normalize_title(f"Plano de 30 dias para crescer com {main_kw}"),
+        _normalize_title(f"Rotina simples de {main_kw} com foco em {third_kw}"),
+        _normalize_title(f"{main_kw.title()} sem enrolacao: metodo para manter constancia"),
     ]
 
     description_template = _build_description_template(main_kw, second_kw)
@@ -694,6 +716,62 @@ def _merge_recommendations(base: dict[str, Any], override: dict[str, Any] | None
     return merged
 
 
+def _title_to_theme(raw_title: str) -> str:
+    text = str(raw_title or "").strip()
+    if not text:
+        return ""
+
+    text = re.sub(r"^\d+[\.)\-:\s]+", "", text)
+    if "|" in text:
+        left, right = [part.strip() for part in text.split("|", 1)]
+        text = right or left
+
+    text = re.sub(r"#[\w\-]+", "", text)
+    text = re.sub(r"\s+", " ", text).strip(" -|,.;:")
+
+    if len(text) > 120:
+        text = text[:120].rsplit(" ", 1)[0].strip()
+
+    return text
+
+
+def _build_automation_blueprint(
+    recommendations: dict[str, Any],
+    tool_study: list[dict[str, str]],
+    history: dict[str, Any],
+    platform_supported: bool,
+) -> dict[str, Any]:
+    title_ideas = _coerce_list(recommendations.get("title_ideas"), max_items=12)
+    content_gaps = _coerce_list(recommendations.get("content_gaps"), max_items=8)
+    growth_actions = _coerce_list(recommendations.get("growth_actions"), max_items=8)
+
+    priority_themes: list[str] = []
+    seen: set[str] = set()
+
+    for candidate in title_ideas + content_gaps:
+        theme = _title_to_theme(candidate)
+        key = theme.lower()
+        if not theme or key in seen:
+            continue
+        seen.add(key)
+        priority_themes.append(theme)
+        if len(priority_themes) >= 12:
+            break
+
+    cadence_hint = "daily" if _safe_int(history.get("last_30d_published")) >= 6 else "3x_week"
+
+    return {
+        "for_system_use": True,
+        "priority_themes": priority_themes,
+        "cadence_hint": cadence_hint,
+        "best_publish_window": history.get("best_publish_window") or "Sem padrao",
+        "keyword_focus": _coerce_list(recommendations.get("keyword_focus"), max_items=10),
+        "top_actions": growth_actions,
+        "tool_study": tool_study,
+        "data_quality": "high" if platform_supported else "medium",
+    }
+
+
 async def _generate_ai_recommendations(
     platform: str,
     account: SocialAccount,
@@ -701,9 +779,9 @@ async def _generate_ai_recommendations(
     top_videos: list[dict[str, Any]],
     history: dict[str, Any],
     fallback: dict[str, Any],
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any] | None, str | None]:
     if not _openai:
-        return None
+        return None, None
 
     channel = channel_snapshot.get("channel", {})
     compact_top = []
@@ -745,24 +823,28 @@ async def _generate_ai_recommendations(
         "fallback_recommendations": fallback,
     }
 
-    prompt = f"""Voce e um estrategista senior de crescimento de canais sociais.
+    prompt = f"""Voce e um estrategista senior de crescimento para canais de video.
 
-Receba os dados abaixo e retorne recomendacoes acionaveis em portugues brasileiro.
-Priorize clareza, especificidade e crescimento real sem clickbait enganoso.
+Objetivo: gerar recomendacoes de alta qualidade, altamente coerentes com o historico real do canal.
 
 DADOS:
 {json.dumps(payload, ensure_ascii=False)}
 
-REGRAS:
-- Entregar entre 6 e 10 sugestoes de titulos.
-- Titulos devem caber em mobile e manter promessa clara.
-- Descricao deve ter 3 a 5 linhas com CTA.
-- Entregar 5 a 8 ideias de thumbnail objetivas.
-- Entregar 6 a 10 acoes de crescimento praticas.
-- Entregar 4 a 8 lacunas de conteudo.
-- Se houver poucos dados da plataforma, use historico interno para inferir plano.
+REGRAS IMPORTANTES:
+- Use portugues brasileiro natural, sem frases roboticas.
+- Nao invente nicho diferente do que aparece nos videos top e no historico.
+- Evite titulos genericos, vagos ou sem conexao com os temas do canal.
+- Entregue titulos curtos e claros, de leitura facil em mobile.
+- Mantenha descricao humana, com CTA simples.
+- Se os dados forem limitados, sinalize isso em platform_note e use historico interno.
 
-Responda SOMENTE JSON neste formato:
+QUANTIDADE:
+- 6 a 10 titulos
+- 5 a 8 ideias de thumbnail
+- 6 a 10 acoes de crescimento
+- 4 a 8 lacunas de conteudo
+
+Responda SOMENTE JSON no formato:
 {{
   "title_ideas": ["..."],
   "description_template": "...",
@@ -774,33 +856,33 @@ Responda SOMENTE JSON neste formato:
   "platform_note": "..."
 }}"""
 
-    try:
-        response = await _openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=1500,
-        )
-        content = response.choices[0].message.content or "{}"
-        data = _parse_json_response(content)
-        return data if isinstance(data, dict) else None
-    except Exception as err:
-        logger.warning("AI analysis recommendations failed: %s", err)
-        return None
+    for model_name in _ANALYSIS_MODELS:
+        try:
+            response = await _openai.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.45,
+                max_tokens=1800,
+                response_format={"type": "json_object"},
+            )
+            content = response.choices[0].message.content or "{}"
+            data = _parse_json_response(content)
+            if isinstance(data, dict) and data:
+                return data, model_name
+        except Exception as err:
+            logger.warning("AI analysis recommendations failed for model %s: %s", model_name, err)
+            continue
+
+    return None, None
 
 
-@router.get("/channel")
-async def analyze_channel(
-    social_account_id: int = Query(..., gt=0),
-    user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    account = await db.get(SocialAccount, social_account_id)
-    if not account or account.user_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Conta social nao encontrada")
-
+async def build_channel_analysis_payload(
+    user_id: int,
+    account: SocialAccount,
+    db: AsyncSession,
+) -> dict[str, Any]:
     platform = account.platform.value if account.platform else ""
-    history = await _collect_publish_history(user_id=user["id"], social_account_id=account.id, db=db)
+    history = await _collect_publish_history(user_id=user_id, social_account_id=account.id, db=db)
 
     if account.platform == Platform.YOUTUBE:
         snapshot = await _fetch_youtube_snapshot(account=account, db=db)
@@ -813,13 +895,14 @@ async def analyze_channel(
     top_videos = snapshot.get("top_videos", [])
     channel_for_fallback = dict(channel_data or {})
     channel_for_fallback["keyword_candidates"] = snapshot.get("keyword_candidates", [])
+
     fallback = _build_fallback_recommendations(
         platform=platform,
         channel_payload=channel_for_fallback,
         top_videos=top_videos,
         history=history,
     )
-    ai_recommendations = await _generate_ai_recommendations(
+    ai_recommendations, ai_model_used = await _generate_ai_recommendations(
         platform=platform,
         account=account,
         channel_snapshot=snapshot,
@@ -828,6 +911,13 @@ async def analyze_channel(
         fallback=fallback,
     )
     recommendations = _merge_recommendations(fallback, ai_recommendations)
+    tool_study = _build_tool_study(platform)
+    automation_blueprint = _build_automation_blueprint(
+        recommendations=recommendations,
+        tool_study=tool_study,
+        history=history,
+        platform_supported=platform_supported,
+    )
 
     return {
         "account": {
@@ -841,10 +931,25 @@ async def analyze_channel(
         "top_videos": top_videos,
         "history": history,
         "recommendations": recommendations,
-        "tool_study": _build_tool_study(platform),
+        "tool_study": tool_study,
+        "automation_blueprint": automation_blueprint,
         "source": {
             "youtube_api": account.platform == Platform.YOUTUBE,
             "openai_used": bool(ai_recommendations),
+            "analysis_model": ai_model_used,
             "generated_at": datetime.utcnow().isoformat(),
         },
     }
+
+
+@router.get("/channel")
+async def analyze_channel(
+    social_account_id: int = Query(..., gt=0),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    account = await db.get(SocialAccount, social_account_id)
+    if not account or account.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Conta social nao encontrada")
+
+    return await build_channel_analysis_payload(user_id=user["id"], account=account, db=db)
