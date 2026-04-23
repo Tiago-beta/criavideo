@@ -6596,6 +6596,66 @@ th,
 }
 .card:hover .editor-video-card-overlay { opacity: 1; }
 
+.editor-subtitle-modal-content {
+    width: min(100%, 460px);
+}
+
+.editor-subtitle-modal-input {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.editor-subtitle-modal-time {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.editor-drafts-modal-list {
+    display: grid;
+    gap: 10px;
+    max-height: min(52vh, 420px);
+    overflow-y: auto;
+}
+
+.editor-drafts-empty {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.editor-draft-item {
+    border: 1px solid rgba(111, 142, 173, 0.35);
+    border-radius: 12px;
+    background: rgba(7, 24, 43, 0.58);
+    padding: 10px 12px;
+    display: grid;
+    gap: 8px;
+}
+
+.editor-draft-head {
+    display: block;
+}
+
+.editor-draft-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.editor-draft-meta {
+    margin: 3px 0 0;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.editor-draft-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
 .editor-upload-card {
     grid-column: 1 / -1;
     padding: 12px;

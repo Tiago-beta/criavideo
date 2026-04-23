@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260423-44">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260423-45">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 213;
+        var REQUIRED_VER = 214;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2556,8 +2556,41 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260423-44"></script>
-    <script src="/video/static/pwa.js?v=20260423-44"></script>
+    <div id="modal-editor-subtitle-text" class="modal" style="z-index:3140">
+        <div class="modal-content editor-subtitle-modal-content">
+            <div class="modal-header">
+                <h3>Editar legenda</h3>
+                <button class="modal-close" type="button" onclick="_editorCloseSubtitleTextModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="editor-subtitle-modal-input" class="input editor-subtitle-modal-input" rows="4" placeholder="Digite o texto da legenda"></textarea>
+                <p id="editor-subtitle-modal-time" class="editor-subtitle-modal-time">00:00 - 00:00</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" type="button" onclick="_editorCloseSubtitleTextModal()">Cancelar</button>
+                <button class="btn btn-primary" type="button" onclick="_editorSaveSubtitleTextModal()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-editor-drafts" class="modal" style="z-index:3130">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Projetos em andamento</h3>
+                <button class="modal-close" type="button" onclick="_editorStartNewFromDraftModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="muted">Escolha uma edição para continuar ou inicie um projeto novo na biblioteca.</p>
+                <div id="editor-drafts-modal-list" class="editor-drafts-modal-list"></div>
+            </div>
+            <div class="modal-footer modal-footer-space">
+                <button class="btn btn-secondary" type="button" onclick="_editorStartNewFromDraftModal()">Iniciar novo</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/video/static/app.js?v=20260423-45"></script>
+    <script src="/video/static/pwa.js?v=20260423-45"></script>
 </body>
 </html>
 

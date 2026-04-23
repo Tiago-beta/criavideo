@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v196 loaded");
+﻿console.log("[CriaVideo] app.js v197 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -516,6 +516,10 @@ function navigateTo(pageName) {
     document.querySelectorAll(".mobile-nav-tab").forEach((tab) => {
         tab.classList.toggle("active", tab.dataset.mobilePage === normalizedPage);
     });
+    if (normalizedPage !== "editor") {
+        closeModal("modal-editor-drafts");
+        _editorCloseSubtitleTextModal();
+    }
     loadPageData(pageName);
 }
 
@@ -819,7 +823,7 @@ function loadPageData(page) {
     } else if (page === "automate") {
         loadAutoSchedules();
     } else if (page === "editor") {
-        loadEditorVideosList();
+        _editorHandleEditorPageEntry();
     }
 }
 
@@ -9809,6 +9813,8 @@ window.purchaseCredits = purchaseCredits;
 const _editor = {
     projectId: 0,
     videoUrl: "",
+    sourceProjectTitle: "",
+    editProjectName: "",
     duration: 0,
     sourceAspectRatio: "9:16",
     outputAspectRatio: "source",
@@ -9877,6 +9883,7 @@ let _editorAIMusicModal = {
 
 const EDITOR_DRAFT_STORAGE_PREFIX = "editor_draft_v1_";
 let _editorDraftPersistTimer = 0;
+let _editorSubtitleModalTargetId = "";
 
 function _editorGetDraftStorageKey(projectId = 0) {
     const pid = Number(projectId || _editor.projectId || 0);
@@ -9893,6 +9900,179 @@ function _editorClearDraft(projectId = 0) {
         // Ignore storage errors when clearing draft.
     }
 }
+
+function _editorFormatDraftDateTime(rawValue = "") {
+    const source = String(rawValue || "").trim();
+    if (!source) return "sem data";
+    const parsed = new Date(source);
+    if (Number.isNaN(parsed.getTime())) return source;
+    try {
+        return parsed.toLocaleString("pt-BR", {
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    } catch {
+        return parsed.toISOString();
+    }
+}
+
+function _editorResolveEditProjectName(name = "", sourceTitle = "", projectId = 0, savedAt = "") {
+    const cleanName = String(name || "").trim();
+    if (cleanName) return cleanName;
+    const cleanSource = String(sourceTitle || "").trim();
+    const base = cleanSource || (projectId ? `Projeto ${projectId}` : "Projeto");
+    const suffix = savedAt ? ` (${_editorFormatDraftDateTime(savedAt)})` : "";
+    return `Novo + ${base}${suffix}`;
+}
+
+function _editorBuildDefaultEditName(sourceTitle = "", projectId = 0) {
+    return _editorResolveEditProjectName("", sourceTitle, projectId, new Date().toISOString());
+}
+
+function _editorSetProjectName(name = "", sourceTitle = "", projectId = 0) {
+    const resolvedSource = String(sourceTitle || _editor.sourceProjectTitle || "").trim();
+    const resolvedProjectId = Number(projectId || _editor.projectId || 0);
+    _editor.editProjectName = _editorResolveEditProjectName(name, resolvedSource, resolvedProjectId);
+    const label = document.getElementById("editor-project-name");
+    if (label) {
+        label.textContent = _editor.editProjectName;
+    }
+}
+
+function _editorGetSavedDraftProjects() {
+    const drafts = [];
+    try {
+        for (let idx = 0; idx < localStorage.length; idx += 1) {
+            const key = localStorage.key(idx);
+            if (!key || !key.startsWith(EDITOR_DRAFT_STORAGE_PREFIX)) continue;
+
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+
+            let draft = null;
+            try {
+                draft = JSON.parse(raw);
+            } catch {
+                continue;
+            }
+
+            if (!draft || typeof draft !== "object") continue;
+            const keyProjectId = parseInt(key.slice(EDITOR_DRAFT_STORAGE_PREFIX.length), 10);
+            const projectId = Number(draft.projectId || keyProjectId || 0);
+            if (!projectId) continue;
+
+            const sourceTitle = String(draft.sourceProjectTitle || "").trim();
+            const savedAt = String(draft.savedAt || "");
+            const editName = _editorResolveEditProjectName(
+                String(draft.editProjectName || ""),
+                sourceTitle,
+                projectId,
+                savedAt,
+            );
+
+            drafts.push({
+                projectId,
+                name: editName,
+                sourceTitle,
+                savedAt,
+                videoUrl: String(draft.videoUrl || ""),
+            });
+        }
+    } catch {
+        return [];
+    }
+
+    drafts.sort((a, b) => {
+        const aTs = Date.parse(a.savedAt || "");
+        const bTs = Date.parse(b.savedAt || "");
+        return (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0);
+    });
+
+    return drafts;
+}
+
+function _editorRenderSavedDraftsModal() {
+    const container = document.getElementById("editor-drafts-modal-list");
+    if (!container) return 0;
+
+    const drafts = _editorGetSavedDraftProjects();
+    if (!drafts.length) {
+        container.innerHTML = "<p class='editor-drafts-empty'>Nenhum projeto em andamento salvo neste navegador.</p>";
+        return 0;
+    }
+
+    container.innerHTML = drafts.map((item) => {
+        const title = esc(item.name || "Novo + Projeto");
+        const source = esc(item.sourceTitle || `Projeto ${item.projectId}`);
+        const savedAt = esc(_editorFormatDraftDateTime(item.savedAt));
+        return `
+            <div class="editor-draft-item">
+                <div class="editor-draft-head">
+                    <div>
+                        <p class="editor-draft-title">${title}</p>
+                        <p class="editor-draft-meta">Base: ${source}</p>
+                        <p class="editor-draft-meta">Salvo em: ${savedAt}</p>
+                    </div>
+                </div>
+                <div class="editor-draft-actions">
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="_editorDeleteDraftFromModal(${item.projectId})">Excluir</button>
+                    <button class="btn btn-primary btn-sm" type="button" onclick="_editorContinueDraftFromModal(${item.projectId})">Continuar</button>
+                </div>
+            </div>
+        `;
+    }).join("");
+
+    return drafts.length;
+}
+
+function _editorHandleEditorPageEntry() {
+    const workspace = document.getElementById("editor-workspace");
+    if (workspace && !workspace.hidden && Number(_editor.projectId || 0) > 0) {
+        return;
+    }
+
+    const selectView = document.getElementById("editor-select-view");
+    if (selectView) selectView.hidden = false;
+    if (workspace) workspace.hidden = true;
+
+    loadEditorVideosList();
+    const draftCount = _editorRenderSavedDraftsModal();
+    if (draftCount > 0) {
+        openModal("modal-editor-drafts");
+    } else {
+        closeModal("modal-editor-drafts");
+    }
+}
+
+async function _editorContinueDraftFromModal(projectId) {
+    const parsedProjectId = Number(projectId || 0);
+    if (!parsedProjectId) return;
+    closeModal("modal-editor-drafts");
+    await openEditor(parsedProjectId, { restoreDraft: true });
+}
+
+function _editorStartNewFromDraftModal() {
+    closeModal("modal-editor-drafts");
+    loadEditorVideosList();
+}
+
+function _editorDeleteDraftFromModal(projectId) {
+    const parsedProjectId = Number(projectId || 0);
+    if (!parsedProjectId) return;
+    _editorClearDraft(parsedProjectId);
+    const remaining = _editorRenderSavedDraftsModal();
+    if (!remaining) {
+        closeModal("modal-editor-drafts");
+    }
+    loadEditorVideosList();
+}
+
+window._editorHandleEditorPageEntry = _editorHandleEditorPageEntry;
+window._editorContinueDraftFromModal = _editorContinueDraftFromModal;
+window._editorStartNewFromDraftModal = _editorStartNewFromDraftModal;
+window._editorDeleteDraftFromModal = _editorDeleteDraftFromModal;
 
 function _editorInferNextIdFromState() {
     const candidates = [];
@@ -9914,6 +10094,8 @@ function _editorBuildDraftSnapshot() {
     return {
         projectId: Number(_editor.projectId || 0),
         videoUrl: String(_editor.videoUrl || ""),
+        sourceProjectTitle: String(_editor.sourceProjectTitle || ""),
+        editProjectName: String(_editor.editProjectName || ""),
         sourceAspectRatio: String(_editor.sourceAspectRatio || "9:16"),
         outputAspectRatio: String(_editor.outputAspectRatio || "source"),
         activeTool: String(_editor.activeTool || "text"),
@@ -9986,6 +10168,13 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
         }
         _editor.outputAspectRatio = _normalizeAspectValue(String(draft.outputAspectRatio || _editor.outputAspectRatio || "source"));
         _editor.activeTool = String(draft.activeTool || _editor.activeTool || "text");
+        _editor.sourceProjectTitle = String(draft.sourceProjectTitle || _editor.sourceProjectTitle || "");
+        _editor.editProjectName = _editorResolveEditProjectName(
+            String(draft.editProjectName || ""),
+            _editor.sourceProjectTitle,
+            Number(projectId || 0),
+            String(draft.savedAt || ""),
+        );
 
         _editor.texts = Array.isArray(draft.texts) ? draft.texts : [];
         _editor.subtitles = Array.isArray(draft.subtitles) ? draft.subtitles : [];
@@ -11525,6 +11714,8 @@ async function openEditor(projectId, options = {}) {
         // Reset editor state
         _editor.projectId = projectId;
         _editor.videoUrl = render.video_url;
+        _editor.sourceProjectTitle = String(detail.title || "").trim();
+        _editor.editProjectName = "";
         _editor.sourceAspectRatio = ["9:16", "16:9", "1:1"].includes(detail.aspect_ratio) ? detail.aspect_ratio : "9:16";
         _editor.outputAspectRatio = "source";
         _editor.playing = false;
@@ -11561,7 +11752,6 @@ async function openEditor(projectId, options = {}) {
 
         document.getElementById("editor-select-view").hidden = true;
         document.getElementById("editor-workspace").hidden = false;
-        document.getElementById("editor-project-name").textContent = detail.title || "Projeto";
 
         const video = document.getElementById("editor-video");
         video.src = _editor.videoUrl;
@@ -11578,6 +11768,14 @@ async function openEditor(projectId, options = {}) {
             if (!restored) {
                 _editor.timelineTime = 0;
             }
+
+            if (restored) {
+                _editorSetProjectName(_editor.editProjectName, _editor.sourceProjectTitle, Number(projectId || 0));
+            } else {
+                const generatedName = _editorBuildDefaultEditName(_editor.sourceProjectTitle, Number(projectId || 0));
+                _editorSetProjectName(generatedName, _editor.sourceProjectTitle, Number(projectId || 0));
+            }
+
             if (!["9:16", "16:9", "1:1"].includes(detail.aspect_ratio)) {
                 _editor.sourceAspectRatio = video.videoWidth >= video.videoHeight ? "16:9" : "9:16";
             }
@@ -11615,6 +11813,7 @@ window._editorStartFreshEdit = _editorStartFreshEdit;
 
 // ---------- Close editor ----------
 function closeEditor() {
+    _editorCloseSubtitleTextModal();
     _editorPersistDraftNow();
     if (_editorDraftPersistTimer) {
         clearTimeout(_editorDraftPersistTimer);
@@ -12524,6 +12723,67 @@ function _editorUpdateTextProp(id, prop, val) {
 }
 window._editorUpdateTextProp = _editorUpdateTextProp;
 
+function _editorOpenSubtitleTextModal(subtitleId) {
+    const normalizedId = String(subtitleId || "");
+    const subtitle = _editor.subtitles.find((item) => String(item.id) === normalizedId);
+    if (!subtitle) return;
+
+    _editorSubtitleModalTargetId = normalizedId;
+    const input = document.getElementById("editor-subtitle-modal-input");
+    const timeLabel = document.getElementById("editor-subtitle-modal-time");
+    if (input) {
+        input.value = String(subtitle.text || "");
+    }
+    if (timeLabel) {
+        timeLabel.textContent = `${_fmtTime(subtitle.startTime)} - ${_fmtTime(subtitle.endTime)}`;
+    }
+
+    openModal("modal-editor-subtitle-text");
+    requestAnimationFrame(() => {
+        if (input) {
+            input.focus();
+            input.select();
+        }
+    });
+}
+window._editorOpenSubtitleTextModal = _editorOpenSubtitleTextModal;
+
+function _editorCloseSubtitleTextModal() {
+    _editorSubtitleModalTargetId = "";
+    closeModal("modal-editor-subtitle-text");
+}
+window._editorCloseSubtitleTextModal = _editorCloseSubtitleTextModal;
+
+function _editorSaveSubtitleTextModal() {
+    const normalizedId = String(_editorSubtitleModalTargetId || "");
+    const subtitle = _editor.subtitles.find((item) => String(item.id) === normalizedId);
+    const input = document.getElementById("editor-subtitle-modal-input");
+    if (!subtitle || !input) {
+        _editorCloseSubtitleTextModal();
+        return;
+    }
+
+    const nextText = String(input.value || "").trim();
+    if (!nextText) {
+        showToast("Digite o texto da legenda.", "error");
+        input.focus();
+        return;
+    }
+
+    if (nextText !== String(subtitle.text || "")) {
+        _editorSaveState();
+        subtitle.text = nextText;
+        _editorRenderTimeline();
+        _editorRenderProps();
+        const video = document.getElementById("editor-video");
+        _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+        _editorScheduleDraftPersist(120);
+    }
+
+    _editorCloseSubtitleTextModal();
+}
+window._editorSaveSubtitleTextModal = _editorSaveSubtitleTextModal;
+
 // ---------- Subtitle actions ----------
 function _editorAddSubtitle() {
     _editorSaveState();
@@ -12539,10 +12799,17 @@ function _editorAddSubtitle() {
     };
     _editor.subtitles.push(newSub);
     _editor.selectedClip = { kind: "subtitle", id: String(newSub.id) };
-    _editorRefreshQuickActions();
-    _editor.subtitleListOpen = false;
-    _editorRenderProps();
+    _editor.subtitleListOpen = true;
+
+    if (_editor.activeTool !== "subtitles") {
+        _editorSelectTool("subtitles");
+    } else {
+        _editorRenderProps();
+    }
+
     _editorRenderTimeline();
+    _editorRefreshQuickActions();
+    _editorOpenSubtitleTextModal(newSub.id);
 }
 window._editorAddSubtitle = _editorAddSubtitle;
 
@@ -13521,6 +13788,7 @@ function _editorRefreshQuickActions() {
 function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
     const normalizedId = String(id ?? "");
     const normalizedTrack = String(track || "");
+    let shouldOpenSubtitleModal = false;
     _editor.selectedClip = { kind: kind || "", id: normalizedId, track: normalizedTrack };
     if (kind === "media-layer") {
         const layer = _editorGetMediaLayerById(normalizedId);
@@ -13550,6 +13818,7 @@ function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
     } else if (kind === "subtitle") {
         _editor.subtitles.forEach(s => s._selected = String(s.id) === normalizedId);
         _editor.texts.forEach(t => t._selected = false);
+        shouldOpenSubtitleModal = Boolean(renderProps);
         if (renderProps && _editor.activeTool !== "subtitles") {
             _editorSelectTool("subtitles");
             switchedTool = true;
@@ -13570,6 +13839,10 @@ function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
     }
 
     _editorRenderTimeline();
+
+    if (shouldOpenSubtitleModal) {
+        _editorOpenSubtitleTextModal(normalizedId);
+    }
 }
 
 function _editorDeleteSelectedClip() {
@@ -14199,6 +14472,17 @@ function _bindEditorEvents() {
     document.getElementById("editor-aspect-select")?.addEventListener("change", (e) => {
         _editorSaveState();
         _editorSetOutputAspectRatio(e.target.value);
+    });
+    document.getElementById("editor-subtitle-modal-input")?.addEventListener("keydown", (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+            event.preventDefault();
+            _editorSaveSubtitleTextModal();
+            return;
+        }
+        if (event.key === "Escape") {
+            event.preventDefault();
+            _editorCloseSubtitleTextModal();
+        }
     });
 
     // Tool buttons

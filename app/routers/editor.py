@@ -1071,15 +1071,32 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 continue
 
             mapped_ranges = _map_source_interval_to_output_detailed(start_time, end_time, video_segments)
-            if not mapped_ranges:
-                continue
+            candidate_ranges: list[tuple[float, float, float]] = []
+            mapped_duration = 0.0
+            for mapped_start, mapped_end, overlap_start, _overlap_end in mapped_ranges:
+                clip_duration = max(0.0, mapped_end - mapped_start)
+                if clip_duration <= 0.02:
+                    continue
+                mapped_source_offset = source_offset + max(0.0, overlap_start - start_time)
+                candidate_ranges.append((mapped_start, mapped_end, mapped_source_offset))
+                mapped_duration += clip_duration
 
-            for range_idx, (mapped_start, mapped_end, overlap_start, _overlap_end) in enumerate(mapped_ranges):
+            # Layers can live in the extended timeline even when there is no base-video overlap.
+            if not candidate_ranges:
+                if start_time >= max(0.0, output_video_duration - 0.02):
+                    candidate_ranges.append((start_time, end_time, source_offset))
+                else:
+                    continue
+            elif end_time > output_video_duration + 0.02:
+                tail_start = max(start_time, output_video_duration)
+                if end_time > tail_start + 0.02:
+                    candidate_ranges.append((tail_start, end_time, source_offset + mapped_duration))
+
+            for range_idx, (mapped_start, mapped_end, mapped_source_offset) in enumerate(candidate_ranges):
                 clip_duration = max(0.0, mapped_end - mapped_start)
                 if clip_duration <= 0.02:
                     continue
 
-                mapped_source_offset = source_offset + max(0.0, overlap_start - start_time)
                 if kind == "video" and layer_duration > 0:
                     mapped_source_offset = min(mapped_source_offset, max(0.0, layer_duration - 0.05))
                     max_clip_duration = max(0.0, layer_duration - mapped_source_offset)
