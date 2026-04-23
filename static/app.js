@@ -1,4 +1,4 @@
-﻿console.log("[CriaVideo] app.js v190 loaded");
+﻿console.log("[CriaVideo] app.js v191 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2266,9 +2266,9 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             imageUploadId = imageUploadIds[0] || "";
             _smoothProgressTarget = 15;
         } else if (engine === "grok" && personaProfileIds.length > 0) {
-            setCreateProgress(8, "Gerando vídeo realista...", "Gerando imagem-base para sua aprovação...");
+            setCreateProgress(8, "Gerando vídeo realista...", "Gerando imagem-base com personas para o Cria 3.0...");
 
-            const previewChoice = await requestGrokAnchorApproval({
+            const previewResult = await _fetchGrokAnchorPreview({
                 prompt: finalPrompt,
                 duration,
                 aspect_ratio: aspect,
@@ -2278,12 +2278,12 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 realistic_style: realisticStyle || "",
             });
 
-            if (!previewChoice?.approved || !previewChoice?.upload_id) {
-                throw new Error("Geração cancelada na aprovação da imagem-base.");
+            if (!previewResult?.upload_id) {
+                throw new Error("Falha ao gerar imagem-base para o Cria 3.0.");
             }
 
-            imageUploadIds = [previewChoice.upload_id];
-            imageUploadId = previewChoice.upload_id;
+            imageUploadIds = [previewResult.upload_id];
+            imageUploadId = previewResult.upload_id;
             _smoothProgressTarget = 15;
         }
 
