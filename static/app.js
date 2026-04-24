@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v208 loaded");
+console.log("[CriaVideo] app.js v209 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -15969,9 +15969,11 @@ function _editorHandleDeleteKey(event) {
 }
 
 function _editorHandleTimelineWheel(event) {
+    if (event.defaultPrevented) return;
     const workspace = document.getElementById("editor-workspace");
     if (!workspace || workspace.hidden) return;
     if (!(event.ctrlKey || event.metaKey)) return;
+    if (!(event.target instanceof Element) || !event.target.closest("#editor-workspace")) return;
 
     event.preventDefault();
     const direction = Number(event.deltaY || 0) < 0 ? 1 : -1;
@@ -16279,6 +16281,7 @@ function _bindEditorEvents() {
         }
     });
     document.getElementById("editor-timeline")?.addEventListener("wheel", _editorHandleTimelineWheel, { passive: false });
+    document.addEventListener("wheel", _editorHandleTimelineWheel, { passive: false });
 
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {

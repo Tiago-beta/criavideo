@@ -6010,6 +6010,8 @@ th,
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
     min-height: 48px;
+    max-width: 100%;
+    overflow-x: hidden;
 }
 
 .editor-back-btn {
@@ -6050,6 +6052,7 @@ th,
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+    max-width: 100%;
 }
 
 /* Left tools panel */
