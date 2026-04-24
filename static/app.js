@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v203 loaded");
+console.log("[CriaVideo] app.js v204 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -10719,9 +10719,9 @@ let _editorSourceWaveformState = {
     requestId: 0,
 };
 const _EDITOR_RULER_STEPS_SEC = [0.25, 0.5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 180, 300, 600, 900, 1200];
-const _EDITOR_TIMELINE_MIN_ZOOM = 1;
+const _EDITOR_TIMELINE_MIN_ZOOM = 0.5;
 const _EDITOR_TIMELINE_MAX_ZOOM = 12;
-const _EDITOR_TIMELINE_ZOOM_LEVELS = [1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12];
+const _EDITOR_TIMELINE_ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12];
 const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
 let _editorLayerLibrary = {
     open: false,
@@ -11674,13 +11674,15 @@ function _editorEnsureSourceWaveform() {
     }
 
     const requestId = Number(_editorSourceWaveformState.requestId || 0) + 1;
+    const fallbackBucketCount = Math.max(220, Math.min(2600, Math.round(Math.max(8, expectedDurationHint || 8) * 36)));
+    const initialFallbackPeaks = _editorBuildFallbackWaveformPeaks(fallbackBucketCount);
     _editorSourceWaveformState = {
         key: normalizedUrl,
         loading: true,
-        peaks: [],
-        duration: 0,
-        videoSvgDataUrl: "",
-        audioSvgDataUrl: "",
+        peaks: initialFallbackPeaks,
+        duration: Math.max(expectedDurationHint, initialFallbackPeaks.length / 36),
+        videoSvgDataUrl: _editorBuildSourceVideoWaveformSvg(initialFallbackPeaks),
+        audioSvgDataUrl: _editorBuildSourceAudioWaveformSvg(initialFallbackPeaks),
         error: "",
         requestId,
     };
@@ -11707,13 +11709,17 @@ function _editorEnsureSourceWaveform() {
         .catch((err) => {
             if (requestId !== _editorSourceWaveformState.requestId) return;
 
+            // Keep the synthetic fallback peaks visible if the real extraction failed.
+            const keepPeaks = Array.isArray(_editorSourceWaveformState.peaks) && _editorSourceWaveformState.peaks.length
+                ? _editorSourceWaveformState.peaks
+                : initialFallbackPeaks;
             _editorSourceWaveformState = {
                 key: normalizedUrl,
                 loading: false,
-                peaks: [],
-                duration: 0,
-                videoSvgDataUrl: "",
-                audioSvgDataUrl: "",
+                peaks: keepPeaks,
+                duration: Math.max(expectedDurationHint, keepPeaks.length / 36),
+                videoSvgDataUrl: _editorBuildSourceVideoWaveformSvg(keepPeaks),
+                audioSvgDataUrl: _editorBuildSourceAudioWaveformSvg(keepPeaks),
                 error: String(err?.message || "waveform-error"),
                 requestId,
             };
