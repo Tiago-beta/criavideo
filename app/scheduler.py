@@ -118,6 +118,17 @@ async def check_auto_schedules():
             if schedule.frequency == "weekly" and schedule.day_of_week != current_dow:
                 continue
 
+            active_weekdays = None
+            if isinstance(schedule.default_settings, dict):
+                active_weekdays = schedule.default_settings.get("active_weekdays")
+            if schedule.frequency == "daily" and active_weekdays:
+                try:
+                    allowed_days = {int(day) for day in active_weekdays}
+                except Exception:
+                    allowed_days = set()
+                if allowed_days and current_dow not in allowed_days:
+                    continue
+
             # Check if there are pending themes
             theme_result = await db.execute(
                 select(AutoScheduleTheme)

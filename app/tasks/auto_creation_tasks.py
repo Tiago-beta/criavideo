@@ -551,6 +551,14 @@ async def run_auto_creation(auto_schedule_id: int):
                         "Pilot shorts enqueue failed: schedule=%d, theme=%d, error=%s",
                         auto_schedule_id, theme_entry.id, pilot_err,
                     )
+            elif pilot_cycle_key and schedule.video_type == "musical_shorts":
+                try:
+                    await _mark_pilot_short_completed(pilot_cycle_key)
+                except Exception as pilot_err:
+                    logger.error(
+                        "Pilot short cycle update failed: schedule=%d, theme=%d, error=%s",
+                        auto_schedule_id, theme_entry.id, pilot_err,
+                    )
         else:
             async with async_session() as db:
                 theme = await db.get(AutoScheduleTheme, theme_entry.id)
@@ -1432,8 +1440,6 @@ async def _enqueue_pilot_shorts_from_long(
     schedule_id: int,
 ):
     """After a long pilot video completes, extract emotional segments and enqueue shorts."""
-    from app.models import AutoPilotCycleRun
-
     async with async_session() as db:
         project = await db.get(VideoProject, project_id)
         if not project:
@@ -1539,45 +1545,17 @@ async def _enqueue_pilot_shorts_from_long(
             )
             db.add(short_theme)
 
-        cycle_result = await db.execute(
-            select(AutoPilotCycleRun)
-            .where(AutoPilotCycleRun.cycle_key == pilot_cycle_key)
-        )
-        cycle_run = cycle_result.scalar_one_or_none()
-        if cycle_run:
-            cycle_run.status = "running"
-            cycle_run.started_at = datetime.utcnow()
-
         await db.commit()
 
         logger.info(
-            "Pilot shorts enqueued: project=%d, shorts_schedule=%d, segments=%d",
+            "Pilot shorts enqueued for scheduled creation: project=%d, shorts_schedule=%d, segments=%d",
             project_id, shorts_schedule_id, len(segments),
         )
 
-        asyncio.create_task(
-            _trigger_pilot_shorts_creation(shorts_schedule_id, len(segments), pilot_cycle_key)
-        )
 
-
-async def _trigger_pilot_shorts_creation(
-    shorts_schedule_id: int, count: int, cycle_key: str,
-):
-    """Run shorts creation sequentially with a delay after the long video finishes."""
+async def _mark_pilot_short_completed(cycle_key: str):
+    """Track pilot short completion as spaced shorts are created by the scheduler."""
     from app.models import AutoPilotCycleRun
-
-    await asyncio.sleep(120)
-    logger.info("Pilot shorts creation starting: schedule=%d, count=%d", shorts_schedule_id, count)
-
-    completed = 0
-    for i in range(count):
-        try:
-            await run_auto_creation(shorts_schedule_id)
-            completed += 1
-        except Exception as e:
-            logger.error("Pilot short %d/%d creation failed: %s", i + 1, count, e)
-        if i < count - 1:
-            await asyncio.sleep(30)
 
     async with async_session() as db:
         result = await db.execute(
@@ -1586,16 +1564,18 @@ async def _trigger_pilot_shorts_creation(
         )
         cycle_run = result.scalar_one_or_none()
         if cycle_run:
-            cycle_run.completed_shorts = completed
-            cycle_run.status = "completed" if completed > 0 else "failed"
-            cycle_run.completed_at = datetime.utcnow()
-            if completed == 0:
-                cycle_run.error_message = "All shorts failed"
+            if not cycle_run.started_at:
+                cycle_run.started_at = datetime.utcnow()
+            cycle_run.status = "running"
+            cycle_run.completed_shorts = int(cycle_run.completed_shorts or 0) + 1
+            if cycle_run.completed_shorts >= int(cycle_run.planned_shorts or 0):
+                cycle_run.status = "completed"
+                cycle_run.completed_at = datetime.utcnow()
             await db.commit()
 
     logger.info(
-        "Pilot shorts creation finished: schedule=%d, completed=%d/%d",
-        shorts_schedule_id, completed, count,
+        "Pilot short completed: cycle=%s",
+        cycle_key,
     )
 
 

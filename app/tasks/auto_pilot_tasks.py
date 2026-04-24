@@ -67,6 +67,13 @@ def _resolve_short_render_modes(shorts_per_cycle: int, short_mix_mode: str) -> l
     return ["realistic"] * count
 
 
+def _resolve_pilot_short_weekdays(long_day_of_week: int, shorts_per_cycle: int) -> list[int]:
+    """Publish shorts after the long video, skipping one day between each short."""
+    long_day = max(0, min(_safe_int(long_day_of_week, 0), 6))
+    count = max(1, min(_safe_int(shorts_per_cycle, 3), 6))
+    return [int((long_day + 1 + (idx * 2)) % 7) for idx in range(count)]
+
+
 def _normalize_theme_text(value: str) -> str:
     text = str(value or "").strip()
     if not text:
@@ -184,11 +191,18 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         short_mix_mode = "realistic_all"
 
     shorts_per_cycle = max(1, min(_safe_int(pilot.shorts_per_cycle, 3), 6))
+    long_day_of_week = (
+        _safe_int(long_schedule.day_of_week, 0)
+        if long_schedule and long_schedule.day_of_week is not None
+        else 0
+    )
+    pilot_short_weekdays = _resolve_pilot_short_weekdays(long_day_of_week, shorts_per_cycle)
 
     base_settings_common = {
         "pilot_mode": True,
         "pilot_account_id": account.id,
         "pilot_channel_mode": effective_channel_mode,
+        "pilot_publish_cadence": "weekly_long_plus_spaced_shorts",
         "pilot_tool_study": analysis_payload.get("tool_study") or [],
         "pilot_keyword_focus": (analysis_payload.get("recommendations") or {}).get("keyword_focus") or [],
         "pilot_last_generated_at": (analysis_payload.get("source") or {}).get("generated_at") or "",
@@ -211,6 +225,9 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         "pilot_stream": "short",
         "auto_items_per_run": shorts_per_cycle,
         "short_render_mode": default_short_render_mode,
+        "active_weekdays": pilot_short_weekdays,
+        "pilot_short_weekdays": pilot_short_weekdays,
+        "pilot_spacing_days": 2,
     }
 
     if not long_schedule:
@@ -221,9 +238,9 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
             creation_mode="auto",
             platform="youtube",
             social_account_id=account.id,
-            frequency="daily",
+            frequency="weekly",
             time_utc="14:00",
-            day_of_week=0,
+            day_of_week=long_day_of_week,
             timezone="UTC",
             default_settings=long_settings,
             is_active=bool(pilot.is_enabled),
@@ -236,6 +253,8 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         long_schedule.social_account_id = account.id
         long_schedule.video_type = "music"
         long_schedule.creation_mode = "auto"
+        long_schedule.frequency = "weekly"
+        long_schedule.day_of_week = long_day_of_week
         long_schedule.default_settings = long_settings
 
     short_settings["pilot_long_schedule_id"] = long_schedule.id
@@ -250,7 +269,7 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
             social_account_id=account.id,
             frequency="daily",
             time_utc="15:00",
-            day_of_week=0,
+            day_of_week=pilot_short_weekdays[0] if pilot_short_weekdays else 0,
             timezone="UTC",
             default_settings=short_settings,
             is_active=bool(pilot.is_enabled),
@@ -263,6 +282,8 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         shorts_schedule.social_account_id = account.id
         shorts_schedule.video_type = "musical_shorts"
         shorts_schedule.creation_mode = "manual"
+        shorts_schedule.frequency = "daily"
+        shorts_schedule.day_of_week = pilot_short_weekdays[0] if pilot_short_weekdays else 0
         shorts_schedule.default_settings = short_settings
 
     long_settings["pilot_short_schedule_id"] = shorts_schedule.id
@@ -414,6 +435,7 @@ async def run_channel_pilot_cycle(pilot_id: int) -> dict:
                 "shorts_per_cycle": pilot.shorts_per_cycle,
                 "long_schedule_id": long_schedule.id,
                 "shorts_schedule_id": shorts_schedule.id,
+                "pilot_short_weekdays": (shorts_schedule.default_settings or {}).get("pilot_short_weekdays", []),
                 "pending_long_themes": pending_long,
                 "pending_short_themes": pending_shorts,
                 "tool_study": analysis_payload.get("tool_study") or [],
