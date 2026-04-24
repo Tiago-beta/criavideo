@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v209 loaded");
+console.log("[CriaVideo] app.js v210 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -13202,6 +13202,7 @@ async function openEditor(projectId, options = {}) {
 
         document.getElementById("editor-select-view").hidden = true;
         document.getElementById("editor-workspace").hidden = false;
+        document.getElementById("page-editor")?.classList.add("editor-fullscreen");
 
         const video = document.getElementById("editor-video");
         video.src = _editor.videoUrl;
@@ -13280,6 +13281,7 @@ function closeEditor() {
     }
     document.getElementById("editor-select-view").hidden = false;
     document.getElementById("editor-workspace").hidden = true;
+    document.getElementById("page-editor")?.classList.remove("editor-fullscreen");
     _editorCloseLayerVideoLibrary();
     _editorCloseAIMusicModal(true);
     _editorResetAIMusicModalState();

@@ -866,6 +866,7 @@ a {
     min-height: 100vh;
     padding: 24px 32px;
     transition: margin-left 0.3s ease;
+    overflow-x: hidden;
 }
 
 .muted {
@@ -5989,16 +5990,33 @@ th,
    VIDEO EDITOR — CapCut-style editing workspace
    ══════════════════════════════════════════════════════════════ */
 
+/* When the editor page is active, strip main-content padding and lock overflow
+   so that timeline zoom never shifts the top area. */
+#page-editor {
+    overflow: hidden;
+    max-width: 100%;
+}
+#page-editor:has(.editor-workspace:not([hidden])),
+#page-editor.editor-fullscreen {
+    margin: -24px -32px;
+    padding: 0;
+    width: calc(100% + 64px);
+    max-height: 100vh;
+    max-height: 100dvh;
+}
+
 /* ── Editor workspace layout ── */
 .editor-workspace {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 56px);
-    max-height: calc(100dvh - 56px);
+    height: 100vh;
+    max-height: 100dvh;
     width: 100%;
     min-width: 0;
+    max-width: 100%;
     overflow: hidden;
     background: var(--bg);
+    position: relative;
 }
 
 .editor-topbar {
@@ -7511,6 +7529,13 @@ th,
 
 /* ── Responsive: mobile editor ── */
 @media (max-width: 768px) {
+    #page-editor:has(.editor-workspace:not([hidden])),
+    #page-editor.editor-fullscreen {
+        margin: -16px -16px -76px;
+        padding: 0;
+        width: calc(100% + 32px);
+    }
+
     .editor-workspace {
         --editor-mobile-props-height: clamp(96px, 18vh, 152px);
         height: calc(100vh - 56px);
