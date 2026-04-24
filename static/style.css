@@ -6089,12 +6089,14 @@ th,
 
 /* Preview area */
 .editor-preview-area {
-    flex: 1;
+    flex: 1 1 0;
+    width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     min-width: 0;
+    overflow: hidden;
     padding: 12px;
     gap: 8px;
     position: relative;
@@ -6102,6 +6104,7 @@ th,
 
 .editor-canvas-wrapper {
     position: relative;
+    margin: 0 auto;
     max-width: 100%;
     max-height: calc(100% - 48px);
     aspect-ratio: var(--editor-aspect-ratio, 9 / 16);
