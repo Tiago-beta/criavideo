@@ -536,6 +536,21 @@ async def run_auto_creation(auto_schedule_id: int):
                     await db.commit()
 
             logger.info("Auto-creation completed: schedule=%d, theme=%d, project=%d", auto_schedule_id, theme_entry.id, project_id)
+
+            # Pilot: after long video completes, enqueue shorts automatically
+            pilot_cycle_key = (theme_entry.custom_settings or {}).get("pilot_cycle_key")
+            if pilot_cycle_key and schedule.video_type == "music":
+                try:
+                    await _enqueue_pilot_shorts_from_long(
+                        theme_entry_id=theme_entry.id,
+                        project_id=project_id,
+                        schedule_id=auto_schedule_id,
+                    )
+                except Exception as pilot_err:
+                    logger.error(
+                        "Pilot shorts enqueue failed: schedule=%d, theme=%d, error=%s",
+                        auto_schedule_id, theme_entry.id, pilot_err,
+                    )
         else:
             async with async_session() as db:
                 theme = await db.get(AutoScheduleTheme, theme_entry.id)
@@ -714,6 +729,9 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
         project_tags = {
             "audio_source": "tevoxi",
             "force_karaoke_two_line": True,
+            "tevoxi_audio_url": music_result.get("audio_url", ""),
+            "tevoxi_job_id": music_result.get("job_id", ""),
+            "tevoxi_duration": music_duration,
         }
         project = VideoProject(
             user_id=user_id,
@@ -1263,6 +1281,316 @@ async def _create_musical_short(
     await _combine_short_audio(project_id, segment_audio_path, clip_duration)
 
     return project_id
+
+
+async def _extract_emotional_segments(
+    lyrics_text: str,
+    lyrics_words: list[dict],
+    num_segments: int = 3,
+    clip_duration: float = 10.0,
+) -> list[dict]:
+    """Use GPT to pick the most emotionally powerful segments from transcribed lyrics.
+
+    Returns list of {"clip_start": float, "clip_duration": float,
+                      "lyrics_snippet": str, "segment_index": int}
+    """
+    import json
+    import openai
+
+    if not lyrics_text or not lyrics_words:
+        return []
+
+    total_duration = 0.0
+    for w in reversed(lyrics_words):
+        if isinstance(w, dict) and w.get("end"):
+            total_duration = float(w["end"])
+            break
+
+    if total_duration < clip_duration * 2:
+        return []
+
+    word_timeline = []
+    for w in lyrics_words:
+        if isinstance(w, dict) and w.get("word") and w.get("start") is not None:
+            word_timeline.append(f"{w['start']:.1f}s: {w['word']}")
+    timeline_text = "\n".join(word_timeline[:300])
+
+    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+    prompt = (
+        f"Analise a letra da musica abaixo com timestamps e selecione exatamente "
+        f"{num_segments} trechos de ~{clip_duration} segundos cada que contem as "
+        f"palavras mais FORTES EMOCIONALMENTE.\n\n"
+        f"Priorize: momentos de climax emocional, palavras de fe/esperanca/forca/"
+        f"amor/superacao, refroes impactantes, frases que tocam o coracao.\n"
+        f"Evite: trechos instrumentais (sem palavras), repeticoes da mesma parte, "
+        f"inicio e fim da musica.\n"
+        f"Os trechos devem ser de partes DIFERENTES da musica, bem espacados entre si.\n\n"
+        f"LETRA COM TIMESTAMPS:\n{timeline_text}\n\n"
+        f"DURACAO TOTAL: {total_duration:.1f}s\n\n"
+        f"Retorne SOMENTE um JSON com a chave \"segments\" contendo um array de "
+        f"{num_segments} objetos:\n"
+        f'{{"segments": [{{"clip_start": <segundo float>, '
+        f'"lyrics_snippet": "<trecho de 5-15 palavras>"}}]}}\n\n'
+        f"Regras para clip_start:\n"
+        f"- Cada clip tera {clip_duration}s de duracao\n"
+        f"- clip_start + {clip_duration} nao pode ultrapassar {total_duration:.1f}\n"
+        f"- Espacar os clips em pelo menos {clip_duration + 5}s entre si\n"
+        f"- Comecar o clip ~1s antes da primeira palavra emocional do trecho"
+    )
+
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5,
+            max_tokens=500,
+            response_format={"type": "json_object"},
+        )
+        raw = json.loads(resp.choices[0].message.content or "{}")
+
+        items = raw
+        if isinstance(raw, dict):
+            for key in ("segments", "trechos", "clips", "results"):
+                if isinstance(raw.get(key), list):
+                    items = raw[key]
+                    break
+            else:
+                vals = list(raw.values())
+                items = vals[0] if vals and isinstance(vals[0], list) else []
+
+        if not isinstance(items, list):
+            return _fallback_emotional_segments(lyrics_words, total_duration, num_segments, clip_duration)
+
+        segments = []
+        for i, seg in enumerate(items[:num_segments]):
+            clip_start = max(0, float(seg.get("clip_start", 0)))
+            if clip_start + clip_duration > total_duration:
+                clip_start = max(0, total_duration - clip_duration - 1)
+            segments.append({
+                "clip_start": round(clip_start, 1),
+                "clip_duration": clip_duration,
+                "lyrics_snippet": str(seg.get("lyrics_snippet", "")).strip(),
+                "segment_index": i,
+            })
+
+        return segments if segments else _fallback_emotional_segments(
+            lyrics_words, total_duration, num_segments, clip_duration,
+        )
+    except Exception as e:
+        logger.warning("GPT emotional segment extraction failed: %s", e)
+        return _fallback_emotional_segments(lyrics_words, total_duration, num_segments, clip_duration)
+
+
+def _fallback_emotional_segments(
+    lyrics_words: list[dict],
+    total_duration: float,
+    num_segments: int,
+    clip_duration: float,
+) -> list[dict]:
+    """Evenly space segments through the song, skipping intro/outro."""
+    if total_duration < clip_duration * 2:
+        return []
+
+    start_bound = total_duration * 0.15
+    end_bound = total_duration * 0.90 - clip_duration
+    usable = end_bound - start_bound
+    if usable < clip_duration:
+        return []
+
+    step = usable / max(1, num_segments)
+    segments = []
+    for i in range(num_segments):
+        clip_start = round(start_bound + i * step, 1)
+        if clip_start + clip_duration > total_duration:
+            break
+
+        snippet_words = []
+        for w in lyrics_words:
+            if isinstance(w, dict) and w.get("start") is not None:
+                ws = float(w["start"])
+                if clip_start <= ws <= clip_start + clip_duration:
+                    snippet_words.append(w.get("word", ""))
+
+        segments.append({
+            "clip_start": clip_start,
+            "clip_duration": clip_duration,
+            "lyrics_snippet": " ".join(snippet_words[:15]),
+            "segment_index": i,
+        })
+    return segments
+
+
+async def _enqueue_pilot_shorts_from_long(
+    theme_entry_id: int,
+    project_id: int,
+    schedule_id: int,
+):
+    """After a long pilot video completes, extract emotional segments and enqueue shorts."""
+    from app.models import AutoPilotCycleRun
+
+    async with async_session() as db:
+        project = await db.get(VideoProject, project_id)
+        if not project:
+            logger.warning("Project %d not found for pilot shorts", project_id)
+            return
+
+        theme_entry = await db.get(AutoScheduleTheme, theme_entry_id)
+        if not theme_entry:
+            return
+
+        custom = theme_entry.custom_settings or {}
+        pilot_cycle_key = custom.get("pilot_cycle_key")
+        if not pilot_cycle_key:
+            return
+
+        shorts_per_cycle = int(custom.get("pilot_shorts_per_cycle", 3))
+
+        long_schedule = await db.get(AutoSchedule, schedule_id)
+        if not long_schedule:
+            return
+
+        long_settings = long_schedule.default_settings or {}
+        shorts_schedule_id = long_settings.get("pilot_short_schedule_id")
+        if not shorts_schedule_id:
+            logger.warning("No shorts schedule ID in pilot long schedule %d", schedule_id)
+            return
+
+        shorts_schedule = await db.get(AutoSchedule, shorts_schedule_id)
+        if not shorts_schedule:
+            logger.warning("Shorts schedule %d not found", shorts_schedule_id)
+            return
+
+        tags = project.tags if isinstance(project.tags, dict) else {}
+        audio_url = tags.get("tevoxi_audio_url", "")
+        job_id = tags.get("tevoxi_job_id", "")
+
+        if not audio_url:
+            logger.warning("No Tevoxi audio URL in project %d, cannot enqueue shorts", project_id)
+            return
+
+        lyrics_text = project.lyrics_text or ""
+        lyrics_words = project.lyrics_words or []
+
+        segments = await _extract_emotional_segments(
+            lyrics_text=lyrics_text,
+            lyrics_words=lyrics_words,
+            num_segments=shorts_per_cycle,
+            clip_duration=10.0,
+        )
+
+        if not segments:
+            logger.warning("No emotional segments extracted for project %d", project_id)
+            return
+
+        shorts_defaults = shorts_schedule.default_settings or {}
+        interaction_persona = (
+            shorts_defaults.get("interaction_persona")
+            or long_settings.get("interaction_persona")
+            or "natureza"
+        )
+        persona_profile_id = (
+            shorts_defaults.get("persona_profile_id")
+            or long_settings.get("persona_profile_id")
+            or 0
+        )
+        persona_profile_ids = (
+            shorts_defaults.get("persona_profile_ids")
+            or long_settings.get("persona_profile_ids")
+            or []
+        )
+
+        result = await db.execute(
+            select(AutoScheduleTheme)
+            .where(AutoScheduleTheme.auto_schedule_id == shorts_schedule_id)
+            .order_by(AutoScheduleTheme.position.desc())
+        )
+        existing = result.scalars().all()
+        max_pos = max([t.position for t in existing], default=-1)
+
+        for seg in segments:
+            max_pos += 1
+            short_custom = {
+                "tevoxi_audio_url": audio_url,
+                "tevoxi_job_id": job_id,
+                "tevoxi_title": project.track_title or project.title or "",
+                "tevoxi_lyrics": lyrics_text,
+                "clip_start": seg["clip_start"],
+                "clip_duration": seg["clip_duration"],
+                "segment_index": seg["segment_index"],
+                "interaction_persona": interaction_persona,
+                "persona_profile_id": persona_profile_id,
+                "persona_profile_ids": persona_profile_ids,
+                "pilot_cycle_key": pilot_cycle_key,
+                "lyrics_snippet": seg["lyrics_snippet"],
+            }
+
+            short_theme = AutoScheduleTheme(
+                auto_schedule_id=shorts_schedule_id,
+                theme=f"{project.track_title or project.title} — Trecho {seg['segment_index'] + 1}",
+                status="pending",
+                position=max_pos,
+                custom_settings=short_custom,
+            )
+            db.add(short_theme)
+
+        cycle_result = await db.execute(
+            select(AutoPilotCycleRun)
+            .where(AutoPilotCycleRun.cycle_key == pilot_cycle_key)
+        )
+        cycle_run = cycle_result.scalar_one_or_none()
+        if cycle_run:
+            cycle_run.status = "running"
+            cycle_run.started_at = datetime.utcnow()
+
+        await db.commit()
+
+        logger.info(
+            "Pilot shorts enqueued: project=%d, shorts_schedule=%d, segments=%d",
+            project_id, shorts_schedule_id, len(segments),
+        )
+
+        asyncio.create_task(
+            _trigger_pilot_shorts_creation(shorts_schedule_id, len(segments), pilot_cycle_key)
+        )
+
+
+async def _trigger_pilot_shorts_creation(
+    shorts_schedule_id: int, count: int, cycle_key: str,
+):
+    """Run shorts creation sequentially with a delay after the long video finishes."""
+    from app.models import AutoPilotCycleRun
+
+    await asyncio.sleep(120)
+    logger.info("Pilot shorts creation starting: schedule=%d, count=%d", shorts_schedule_id, count)
+
+    completed = 0
+    for i in range(count):
+        try:
+            await run_auto_creation(shorts_schedule_id)
+            completed += 1
+        except Exception as e:
+            logger.error("Pilot short %d/%d creation failed: %s", i + 1, count, e)
+        if i < count - 1:
+            await asyncio.sleep(30)
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(AutoPilotCycleRun)
+            .where(AutoPilotCycleRun.cycle_key == cycle_key)
+        )
+        cycle_run = result.scalar_one_or_none()
+        if cycle_run:
+            cycle_run.completed_shorts = completed
+            cycle_run.status = "completed" if completed > 0 else "failed"
+            cycle_run.completed_at = datetime.utcnow()
+            if completed == 0:
+                cycle_run.error_message = "All shorts failed"
+            await db.commit()
+
+    logger.info(
+        "Pilot shorts creation finished: schedule=%d, completed=%d/%d",
+        shorts_schedule_id, completed, count,
+    )
 
 
 async def _combine_short_audio(project_id: int, segment_audio_path: str, clip_duration: float):
