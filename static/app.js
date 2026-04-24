@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v210 loaded");
+console.log("[CriaVideo] app.js v211 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -11459,9 +11459,9 @@ function _editorResetSourceWaveformState() {
 function _editorBuildWaveformSvg(peaks = [], color = "rgba(239,191,255,0.85)") {
     if (!Array.isArray(peaks) || !peaks.length) return "";
 
-    const width = 1200;
-    const height = 54;
-    const barCount = Math.max(48, Math.min(280, peaks.length));
+    const width = 2400;
+    const height = 80;
+    const barCount = Math.max(120, Math.min(800, peaks.length));
     const gap = 1;
     const barWidth = Math.max(1, Math.floor((width - ((barCount - 1) * gap)) / barCount));
     let x = 0;
@@ -11481,15 +11481,15 @@ function _editorBuildWaveformSvg(peaks = [], color = "rgba(239,191,255,0.85)") {
 }
 
 function _editorBuildMusicWaveformSvg(peaks = []) {
-    return _editorBuildWaveformSvg(peaks, "rgba(255,236,255,0.95)");
+    return _editorBuildWaveformSvg(peaks, "rgba(255,180,220,0.95)");
 }
 
 function _editorBuildSourceVideoWaveformSvg(peaks = []) {
-    return _editorBuildWaveformSvg(peaks, "rgba(238,250,255,0.96)");
+    return _editorBuildWaveformSvg(peaks, "rgba(160,255,200,0.92)");
 }
 
 function _editorBuildSourceAudioWaveformSvg(peaks = []) {
-    return _editorBuildWaveformSvg(peaks, "rgba(247,233,255,0.95)");
+    return _editorBuildWaveformSvg(peaks, "rgba(220,160,255,0.92)");
 }
 
 function _editorBuildFallbackWaveformPeaks(bucketCount = 320) {
@@ -15349,7 +15349,7 @@ function _editorRenderTimeline() {
     _editorRefreshTrackSelectionUI();
 
     const isMobile = window.innerWidth <= 768;
-    const rowHeight = 32;
+    const rowHeight = 44;
     const trackCount = Math.max(rows.length, 1);
     const idealHeight = 24 + (trackCount * rowHeight) + 8;
     const minHeight = isMobile ? 116 : 160;
@@ -15873,7 +15873,7 @@ function _editorOnTimelineDragMove(event) {
             if (drag.mode === "move") {
                 const layer = _editorGetMediaLayerById(drag.id);
                 if (layer) {
-                    const rowStepPx = 32;
+                    const rowStepPx = 44;
                     const rowDelta = Math.round(dy / rowStepPx);
                     const maxTrackIndex = _editorGetMaxMediaLayerTrackIndex(drag.id) + 1;
                     const nextTrackIndex = Math.max(0, Math.min(maxTrackIndex, drag.baseTrackIndex + rowDelta));
