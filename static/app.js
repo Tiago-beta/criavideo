@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v214 loaded");
+console.log("[CriaVideo] app.js v215 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -15644,7 +15644,7 @@ function _editorDuplicateSelectedClip() {
 window._editorDuplicateSelectedClip = _editorDuplicateSelectedClip;
 
 function _editorTimelineCanDrag(kind) {
-    return ["segment", "text", "subtitle", "sticker", "media-layer"].includes(kind);
+    return ["text", "subtitle", "sticker", "media-layer"].includes(kind);
 }
 
 function _editorTimelineCanResize(kind) {
@@ -15857,9 +15857,15 @@ function _editorOnTimelineDragMove(event) {
     if (drag.mode === "resize-start") {
         const maxStart = drag.baseEnd - drag.minDuration;
         nextStart = Math.max(0, Math.min(maxStart, drag.baseStart + deltaSec));
+        if (drag.kind === "segment") {
+            nextStart = Math.max(drag.baseStart, nextStart);
+        }
     } else if (drag.mode === "resize-end") {
         const minEnd = drag.baseStart + drag.minDuration;
         nextEnd = Math.max(minEnd, Math.min(drag.duration, drag.baseEnd + deltaSec));
+        if (drag.kind === "segment") {
+            nextEnd = Math.min(drag.baseEnd, nextEnd);
+        }
     } else {
         const maxStart = Math.max(0, drag.duration - baseSpan);
         nextStart = Math.max(0, Math.min(maxStart, drag.baseStart + deltaSec));
