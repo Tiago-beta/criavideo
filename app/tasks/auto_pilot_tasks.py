@@ -287,7 +287,7 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         shorts_schedule.default_settings = short_settings
 
     long_settings["pilot_short_schedule_id"] = shorts_schedule.id
-    long_schedule.default_settings = long_settings
+    long_schedule.default_settings = dict(long_settings)
 
     pilot.auto_schedule_id = long_schedule.id
     pilot.long_schedule_id = long_schedule.id

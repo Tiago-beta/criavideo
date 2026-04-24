@@ -1494,6 +1494,22 @@ async def _enqueue_pilot_shorts_from_long(
             logger.warning("No emotional segments extracted for project %d", project_id)
             return
 
+        existing_cycle_result = await db.execute(
+            select(AutoScheduleTheme)
+            .where(AutoScheduleTheme.auto_schedule_id == shorts_schedule_id)
+        )
+        existing_cycle_themes = [
+            theme for theme in existing_cycle_result.scalars().all()
+            if (theme.custom_settings or {}).get("pilot_cycle_key") == pilot_cycle_key
+        ]
+        if existing_cycle_themes:
+            logger.info(
+                "Pilot shorts already enqueued for cycle=%s, skipping duplicate enqueue (%d existing)",
+                pilot_cycle_key,
+                len(existing_cycle_themes),
+            )
+            return
+
         shorts_defaults = shorts_schedule.default_settings or {}
         interaction_persona = (
             shorts_defaults.get("interaction_persona")
