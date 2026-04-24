@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v215 loaded");
+console.log("[CriaVideo] app.js v216 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -11299,6 +11299,52 @@ function _editorFindVideoSegment(id) {
     return _editorFindSegment("video", id);
 }
 
+function _editorSegSourceStart(seg) {
+    return seg.sourceStart != null ? Number(seg.sourceStart) : Number(seg.start);
+}
+
+function _editorSegSourceEnd(seg) {
+    return _editorSegSourceStart(seg) + Math.max(0, Number(seg.end) - Number(seg.start));
+}
+
+function _editorTimelineToSourceTime(timelineTime) {
+    if (!_editor.videoSegments.length) return timelineTime;
+    const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
+    for (const seg of sorted) {
+        if (timelineTime >= Number(seg.start) - 0.01 && timelineTime <= Number(seg.end) + 0.01) {
+            return _editorSegSourceStart(seg) + (timelineTime - Number(seg.start));
+        }
+    }
+    return timelineTime;
+}
+
+function _editorSourceToTimelineTime(sourceTime) {
+    if (!_editor.videoSegments.length) return sourceTime;
+    const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
+    for (const seg of sorted) {
+        const ss = _editorSegSourceStart(seg);
+        const se = _editorSegSourceEnd(seg);
+        if (sourceTime >= ss - 0.01 && sourceTime <= se + 0.01) {
+            return Number(seg.start) + (sourceTime - ss);
+        }
+    }
+    return sourceTime;
+}
+
+function _editorRippleCloseGaps(track) {
+    const segs = _editorGetSegments(track);
+    if (!segs.length) return;
+    segs.sort((a, b) => a.start - b.start);
+    let cursor = 0;
+    segs.forEach(seg => {
+        if (seg.sourceStart == null) seg.sourceStart = seg.start;
+        const duration = Math.max(0, Number(seg.end) - Number(seg.start));
+        seg.start = cursor;
+        seg.end = cursor + duration;
+        cursor = seg.end;
+    });
+}
+
 function _editorShouldShowAudioTrack() {
     return Boolean(_editor.musicUrl || _editor._musicFile || _editor._musicServerPath);
 }
@@ -11355,6 +11401,12 @@ function _editorGetVideoPlaybackEndTime() {
 function _editorGetVideoTailAnchorTime() {
     const video = document.getElementById("editor-video");
     const mediaDuration = Math.max(0, Number(video?.duration || _editor.duration || 0));
+    if (_editor.videoSegments.length) {
+        const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
+        const last = sorted[sorted.length - 1];
+        const sourceEnd = _editorSegSourceEnd(last);
+        return Math.max(0, Math.min(sourceEnd, mediaDuration) - 0.03);
+    }
     const playbackEnd = _editorGetVideoPlaybackEndTime();
     const anchor = mediaDuration > 0 ? Math.min(playbackEnd, mediaDuration) : playbackEnd;
     return Math.max(0, anchor - 0.03);
@@ -12028,11 +12080,15 @@ function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
 }
 
 function _editorCloneVideoSegmentsForAudio() {
-    return _editor.videoSegments.map((seg, idx) => ({
-        id: `auto-audio-${idx + 1}`,
-        start: Number(seg.start || 0),
-        end: Number(seg.end || 0),
-    }));
+    return _editor.videoSegments.map((seg, idx) => {
+        const clone = {
+            id: `auto-audio-${idx + 1}`,
+            start: Number(seg.start || 0),
+            end: Number(seg.end || 0),
+        };
+        if (seg.sourceStart != null) clone.sourceStart = Number(seg.sourceStart);
+        return clone;
+    });
 }
 
 function _editorSyncAudioSegmentsWithVideoIfNoExternalAudio() {
@@ -13536,7 +13592,7 @@ function _editorTogglePlay() {
     } else {
         _editor._virtualPlaybackActive = false;
         _editorStopVirtualTimelinePlayback();
-        video.currentTime = startTime;
+        video.currentTime = _editorTimelineToSourceTime(startTime);
         const playPromise = video.play();
         if (playPromise?.catch) {
             playPromise.catch(() => {
@@ -13576,16 +13632,17 @@ function _editorTimeUpdate() {
     const video = document.getElementById("editor-video");
     if (!video || _editor._virtualPlaybackActive) return;
 
-    let t = Number(video.currentTime || 0);
+    const sourceT = Number(video.currentTime || 0);
 
-    // Enforce segment boundaries: skip removed gaps and stop after last segment.
     if (_editor.videoSegments.length) {
         const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
         const last = sorted[sorted.length - 1];
-        if (_editor.playing && last && t >= (last.end - 0.02)) {
+        const lastSourceEnd = _editorSegSourceEnd(last);
+
+        if (_editor.playing && last && sourceT >= (lastSourceEnd - 0.02)) {
             const timelineDuration = _editorGetTimelineDuration();
             if (timelineDuration > Number(last.end || 0) + 0.02) {
-                _editorStartVirtualTimelinePlayback(Number(last.end || t));
+                _editorStartVirtualTimelinePlayback(Number(last.end || 0));
             } else {
                 _editorResetPlaybackToStart();
             }
@@ -13593,18 +13650,24 @@ function _editorTimeUpdate() {
         }
 
         if (_editor.playing) {
-            const inSegment = sorted.some(seg => t >= seg.start && t < seg.end);
-            if (!inSegment) {
-                const next = sorted.find(seg => seg.start > t);
+            const currentSeg = sorted.find(seg => {
+                const ss = _editorSegSourceStart(seg);
+                const se = _editorSegSourceEnd(seg);
+                return sourceT >= ss - 0.01 && sourceT < se;
+            });
+            if (!currentSeg) {
+                const next = sorted.find(seg => _editorSegSourceStart(seg) > sourceT);
                 if (next) {
-                    video.currentTime = next.start;
-                    t = next.start;
-                    _editorApplyTimelineFrame(t, true);
+                    video.currentTime = _editorSegSourceStart(next);
+                    _editorApplyTimelineFrame(Number(next.start), true);
                     return;
                 }
             }
         }
-    } else if (_editor.playing && _editor.trimEnd > 0 && t >= _editor.trimEnd) {
+
+        const tl = _editorSourceToTimelineTime(sourceT);
+        _editorApplyTimelineFrame(tl, _editor.playing);
+    } else if (_editor.playing && _editor.trimEnd > 0 && sourceT >= _editor.trimEnd) {
         const timelineDuration = _editorGetTimelineDuration();
         if (timelineDuration > _editor.trimEnd + 0.02) {
             _editorStartVirtualTimelinePlayback(_editor.trimEnd);
@@ -13612,9 +13675,9 @@ function _editorTimeUpdate() {
             _editorResetPlaybackToStart();
         }
         return;
+    } else {
+        _editorApplyTimelineFrame(sourceT, _editor.playing);
     }
-
-    _editorApplyTimelineFrame(t, _editor.playing);
 }
 
 function _editorMovePlayhead(t) {
@@ -13657,7 +13720,7 @@ function _editorSeekByClientX(clientX) {
         const nextTime = _editorClampToVideoSegments(rawTime);
         _editorStopVirtualTimelinePlayback();
         _editor._virtualPlaybackActive = false;
-        video.currentTime = nextTime;
+        video.currentTime = _editorTimelineToSourceTime(nextTime);
         if (_editor.playing && video.paused) {
             const playPromise = video.play();
             if (playPromise?.catch) {
@@ -14694,8 +14757,9 @@ function _editorSplitAtCurrentTime() {
         if (!seg) return null;
 
         ensureSaved();
-        const first = { id: _editorGenId(), start: seg.start, end: t };
-        const second = { id: _editorGenId(), start: t, end: seg.end };
+        const origSrc = _editorSegSourceStart(seg);
+        const first = { id: _editorGenId(), start: seg.start, end: t, sourceStart: origSrc };
+        const second = { id: _editorGenId(), start: t, end: seg.end, sourceStart: origSrc + (t - Number(seg.start)) };
         const nextSegments = segments
             .filter(item => item !== seg)
             .concat([first, second]);
@@ -15566,7 +15630,9 @@ function _editorDeleteSelectedClip() {
         const next = _editorGetSegments(selTrack).filter(seg => String(seg.id) !== selId);
         _editorSetSegments(selTrack, next);
         _editorSortSegments(selTrack);
+        _editorRippleCloseGaps(selTrack);
         if (selTrack === "video") {
+            _editorRippleCloseGaps("audio");
             _editorRecomputeTrimBounds();
             _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
         }
@@ -16002,13 +16068,16 @@ async function _editorExport() {
         trim_start: _editor.trimStart,
         trim_end: _editor.trimEnd,
         trim_video_segments: _editor.videoSegments
-            .map(seg => ({ start: Number(seg.start || 0), end: Number(seg.end || 0) }))
+            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg) }))
+            .sort((a, b) => a.start - b.start)
             .filter(seg => seg.end > seg.start + 0.05),
         trim_audio_segments: _editor.audioSegments
-            .map(seg => ({ start: Number(seg.start || 0), end: Number(seg.end || 0) }))
+            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg) }))
+            .sort((a, b) => a.start - b.start)
             .filter(seg => seg.end > seg.start + 0.05),
         trim_segments: _editor.videoSegments
-            .map(seg => ({ start: Number(seg.start || 0), end: Number(seg.end || 0) }))
+            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg) }))
+            .sort((a, b) => a.start - b.start)
             .filter(seg => seg.end > seg.start + 0.05),
         filter: _editor.filter,
         quality: _editor.quality,
