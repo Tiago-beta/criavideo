@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v212 loaded");
+console.log("[CriaVideo] app.js v213 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -11756,7 +11756,7 @@ function _editorGetSourceWaveformInlineStyle(kind = "video", timelineDuration = 
         ? "repeat-x"
         : "no-repeat";
 
-    return `--editor-track-wave-image:url("${waveUrl}");--editor-track-wave-size:${sizePct.toFixed(3)}% 100%;--editor-track-wave-repeat:${repeatMode};`;
+    return `--editor-track-wave-image:url('${waveUrl}');--editor-track-wave-size:${sizePct.toFixed(3)}% 100%;--editor-track-wave-repeat:${repeatMode};`;
 }
 
 function _editorGetMusicWaveformInlineStyle(timelineDuration = 0) {
@@ -11772,7 +11772,7 @@ function _editorGetMusicWaveformInlineStyle(timelineDuration = 0) {
         ? "repeat-x"
         : "no-repeat";
 
-    return `--audio-waveform-image:url("${waveUrl}");--audio-waveform-size:${sizePct.toFixed(3)}% 100%;--audio-waveform-repeat:${repeatMode};`;
+    return `--audio-waveform-image:url('${waveUrl}');--audio-waveform-size:${sizePct.toFixed(3)}% 100%;--audio-waveform-repeat:${repeatMode};`;
 }
 
 function _editorShouldIgnoreMusicPreviewError(err) {
