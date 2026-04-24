@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v206 loaded");
+console.log("[CriaVideo] app.js v207 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -13330,7 +13330,9 @@ function _editorClampTimelineZoom(value) {
 
 function _editorGetTimelineTrackWidth(durationSec = 0) {
     const timelineEl = document.getElementById("editor-timeline");
-    const viewportTrackWidth = Math.max(560, Number(timelineEl?.clientWidth || 0) - 96);
+    const parentWidth = Number(timelineEl?.parentElement?.clientWidth || 0);
+    const viewportWidth = parentWidth > 0 ? parentWidth : Number(timelineEl?.clientWidth || 0);
+    const viewportTrackWidth = Math.max(560, viewportWidth - 96);
     const zoom = _editorClampTimelineZoom(_editor.timelineZoom || 1);
     const baseWidth = Math.max(420, viewportTrackWidth);
     return Math.round(baseWidth * zoom);

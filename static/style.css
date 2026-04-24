@@ -5995,6 +5995,8 @@ th,
     flex-direction: column;
     height: calc(100vh - 56px);
     max-height: calc(100dvh - 56px);
+    width: 100%;
+    min-width: 0;
     overflow: hidden;
     background: var(--bg);
 }
@@ -6044,6 +6046,8 @@ th,
 .editor-main {
     display: flex;
     flex: 1;
+    width: 100%;
+    min-width: 0;
     min-height: 0;
     overflow: hidden;
 }
@@ -6868,6 +6872,8 @@ th,
     display: flex;
     align-items: center;
     gap: 8px;
+    width: 100%;
+    min-width: 0;
     padding: 8px 12px;
     border-top: 1px solid var(--border);
     background: rgba(5, 20, 36, 0.7);
@@ -6959,6 +6965,9 @@ th,
 .editor-timeline {
     flex-shrink: 0;
     height: 160px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
     background: linear-gradient(0deg, rgba(8, 25, 42, 0.98), rgba(15, 42, 70, 0.92));
     border-top: 1px solid var(--border);
     position: relative;
