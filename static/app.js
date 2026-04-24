@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v216 loaded");
+console.log("[CriaVideo] app.js v217 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -12194,9 +12194,17 @@ function _editorClampSegmentRange(track, segmentId, nextStart, span) {
 
     const prev = sorted[idx - 1] || null;
     const next = sorted[idx + 1] || null;
-    const minStart = prev ? prev.end + 0.02 : 0;
-    const maxStart = next ? Math.max(minStart, next.start - span - 0.02) : Math.max(minStart, dur - span);
-    const clampedStart = Math.max(minStart, Math.min(maxStart, nextStart));
+    const minStart = prev ? Number(prev.end || 0) : 0;
+    const maxStart = next ? Math.max(minStart, Number(next.start || 0) - span) : Math.max(minStart, dur - span);
+    let clampedStart = Math.max(minStart, Math.min(maxStart, nextStart));
+    const snapWindow = Math.max(0.04, Math.min(0.25, span * 0.08));
+    if (prev && Math.abs(clampedStart - Number(prev.end || 0)) <= snapWindow) {
+        clampedStart = Number(prev.end || 0);
+    }
+    if (next && Math.abs((clampedStart + span) - Number(next.start || 0)) <= snapWindow) {
+        clampedStart = Number(next.start || 0) - span;
+    }
+    clampedStart = Math.max(minStart, Math.min(maxStart, clampedStart));
     return [clampedStart, clampedStart + span];
 }
 
@@ -15710,7 +15718,7 @@ function _editorDuplicateSelectedClip() {
 window._editorDuplicateSelectedClip = _editorDuplicateSelectedClip;
 
 function _editorTimelineCanDrag(kind) {
-    return ["text", "subtitle", "sticker", "media-layer"].includes(kind);
+    return ["segment", "text", "subtitle", "sticker", "media-layer"].includes(kind);
 }
 
 function _editorTimelineCanResize(kind) {
