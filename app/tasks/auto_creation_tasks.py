@@ -1188,6 +1188,7 @@ async def _create_musical_short(
     if persona_instruction:
         visual_prompt = f"{visual_prompt} {persona_instruction}"
     segment_transcription = ""
+    segment_transcription_words = []
     try:
         from app.services.transcriber import transcribe_audio
         lyrics_hint = cfg.get("tevoxi_lyrics", "")
@@ -1195,6 +1196,11 @@ async def _create_musical_short(
             None, lambda: transcribe_audio(segment_audio_path, prompt=lyrics_hint),
         )
         transcribed = (result.get("text", "") if isinstance(result, dict) else "").strip()
+        raw_words = result.get("words", []) if isinstance(result, dict) else []
+        if isinstance(raw_words, list):
+            segment_transcription_words = [
+                w for w in raw_words if isinstance(w, dict) and w.get("word")
+            ]
         if transcribed:
             segment_transcription = transcribed
             snippet = " ".join(transcribed.split())[:420]
@@ -1262,9 +1268,9 @@ async def _create_musical_short(
             track_artist="",
             track_duration=clip_duration,
             lyrics_text=visual_prompt,
-            lyrics_words=[],
+            lyrics_words=segment_transcription_words,
             audio_path=engine,  # engine selection stored here
-            enable_subtitles=False,
+            enable_subtitles=bool(segment_transcription_words),
             zoom_images=False,
             no_background_music=True,
             is_realistic=True,
