@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v213 loaded");
+console.log("[CriaVideo] app.js v214 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -11476,8 +11476,8 @@ function _editorBuildWaveformSvg(peaks = [], color = "rgba(239,191,255,0.85)") {
         x += barWidth + gap;
     }
 
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${width} ${height}' preserveAspectRatio='none'><style>.b{fill:${color}}</style>${rects.replace(/<rect /g,"<rect class='b' ")}</svg>`;
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects.replace(/<rect /g, `<rect fill="${color}" `)}</svg>`;
+    return `data:image/svg+xml;base64,${btoa(svg)}`;
 }
 
 function _editorBuildMusicWaveformSvg(peaks = []) {
