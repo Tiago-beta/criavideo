@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v205 loaded");
+console.log("[CriaVideo] app.js v206 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -13356,29 +13356,42 @@ function _editorCenterTimelineOnTime(timeSec) {
     });
 }
 
+function _editorPreserveTimelineFocusViewport(focusTime, previousTrackWidth = 0) {
+    const timelineEl = document.getElementById("editor-timeline");
+    const timelineDuration = _editorGetTimelineDuration();
+    if (!timelineEl || !timelineDuration) return false;
+
+    const safeFocus = Math.max(0, Math.min(timelineDuration, Number(focusTime || 0)));
+    const oldTrackWidth = Math.max(1, Number(previousTrackWidth || _editorGetTimelineTrackWidth(timelineDuration)));
+    const oldFocusX = 80 + ((safeFocus / timelineDuration) * oldTrackWidth);
+    const viewportOffset = oldFocusX - Number(timelineEl.scrollLeft || 0);
+
+    requestAnimationFrame(() => {
+        const nextTrackWidth = Math.max(1, _editorGetTimelineTrackWidth(timelineDuration));
+        const nextFocusX = 80 + ((safeFocus / timelineDuration) * nextTrackWidth);
+        const maxScroll = Math.max(0, timelineEl.scrollWidth - timelineEl.clientWidth);
+        const targetScroll = Math.max(0, Math.min(maxScroll, nextFocusX - viewportOffset));
+        timelineEl.scrollLeft = targetScroll;
+    });
+
+    return true;
+}
+
 function _editorSetTimelineZoom(nextZoom, options = {}) {
     const safeZoom = _editorClampTimelineZoom(nextZoom);
     const focusTime = Number(options.focusTime);
     const resolvedFocus = Number.isFinite(focusTime) ? focusTime : _editorGetTimelineFocusTime();
     const announce = Boolean(options.announce);
+    const previousTrackWidth = _editorGetTimelineTrackWidth(_editorGetTimelineDuration());
 
     if (Math.abs(safeZoom - Number(_editor.timelineZoom || 1)) < 0.0001) {
-        _editorCenterTimelineOnTime(resolvedFocus);
+        _editorPreserveTimelineFocusViewport(resolvedFocus, previousTrackWidth);
         return false;
     }
 
     _editor.timelineZoom = safeZoom;
     _editorRenderTimeline();
-    if (safeZoom <= _EDITOR_TIMELINE_MIN_ZOOM + 0.0001) {
-        const timelineEl = document.getElementById("editor-timeline");
-        if (timelineEl) {
-            requestAnimationFrame(() => {
-                timelineEl.scrollLeft = 0;
-            });
-        }
-    } else {
-        _editorCenterTimelineOnTime(resolvedFocus);
-    }
+    _editorPreserveTimelineFocusViewport(resolvedFocus, previousTrackWidth);
     if (announce) {
         showToast(`Zoom da timeline: ${Math.round(safeZoom * 100)}%`, "info");
     }
