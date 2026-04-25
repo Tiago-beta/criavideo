@@ -135,6 +135,7 @@ def generate_scene_image(
     reference_image_path: str = "",
     provider_preference: str = "",
     metadata: dict | None = None,
+    reference_mode: str = "",
 ) -> str:
     """Generate a single scene image using Nano Banana. Synchronous (runs in thread).
     Set allow_faces=True for realistic/multi-clip videos that need character consistency.
@@ -171,15 +172,26 @@ def generate_scene_image(
                 "Spiritual and peaceful atmosphere through nature. "
                 "No text or words in the image. No human faces. No religious symbols or objects. "
             )
+    reference_mode_normalized = str(reference_mode or "").strip().lower()
+    face_identity_only = reference_mode_normalized in {"face_identity_only", "face_only", "persona_face"}
     full_prompt = style_prefix + prompt
     has_reference_image = bool(reference_image_path and os.path.exists(reference_image_path))
     if has_reference_image:
-        full_prompt = (
-            f"{style_prefix}{prompt}\n\n"
-            "REFERENCE IMAGE LOCK (MANDATORY): Use the attached reference image as the exact subject identity anchor. "
-            "Preserve the same face, skin tone, hair color/style, age appearance, and overall likeness. "
-            "Only change scene composition, camera movement, and environment requested by the prompt."
-        )
+        if face_identity_only:
+            full_prompt = (
+                f"{style_prefix}{prompt}\n\n"
+                "FACE IDENTITY LOCK (MANDATORY): use the attached reference image only for facial identity. "
+                "Preserve face structure, eyes, nose, lips, jawline, skin tone, apparent age, and hairline/color. "
+                "Do not preserve clothing, background, pose, framing, lighting, color palette, props, or environment from the reference photo. "
+                "Generate new wardrobe, location, action, composition, and mood from the prompt."
+            )
+        else:
+            full_prompt = (
+                f"{style_prefix}{prompt}\n\n"
+                "REFERENCE IMAGE LOCK (MANDATORY): Use the attached reference image as the exact subject identity anchor. "
+                "Preserve the same face, skin tone, hair color/style, age appearance, and overall likeness. "
+                "Only change scene composition, camera movement, and environment requested by the prompt."
+            )
     provider_pref = str(provider_preference or "").strip().lower()
 
     def _set_provider_meta(provider_name: str) -> None:
@@ -378,6 +390,8 @@ def generate_scene_image(
     def _save_reference_passthrough_image() -> bool:
         if not has_reference_image:
             return False
+        if face_identity_only:
+            return False
         try:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             shutil.copy2(reference_image_path, output_path)
@@ -440,9 +454,14 @@ def generate_scene_image(
         logger.warning("OpenAI preferred provider failed; falling back to default provider chain")
 
     # Retry with a simplified prompt when provider returns metadata without inline image.
+    second_attempt = style_prefix + "Single clear cinematic composition, one focal subject, no text, no overlays."
+    if face_identity_only and has_reference_image:
+        second_attempt += (
+            " Use the reference image only for facial identity. Create new clothing, background, pose, lighting, and environment."
+        )
     prompt_attempts = [
         full_prompt,
-        style_prefix + "Single clear cinematic composition, one focal subject, no text, no overlays.",
+        second_attempt,
     ]
     last_response_text = ""
     reference_part = _build_reference_part()

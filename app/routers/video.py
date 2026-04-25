@@ -2662,14 +2662,15 @@ async def preview_grok_anchor_endpoint(
     if not persona_reference_path or not os.path.exists(persona_reference_path):
         raise HTTPException(status_code=500, detail="Falha ao montar a imagem de referência das personas.")
 
+    reference_mode = "face_identity_only"
     anchor_prompt = _inject_interaction_persona_instruction(prompt, interaction_persona)
-    anchor_prompt = _ensure_reference_image_instruction(anchor_prompt)
+    anchor_prompt = _ensure_reference_image_instruction(anchor_prompt, reference_mode=reference_mode)
 
     if len(selected_persona_profile_ids) > 1:
         anchor_prompt = (
             f"{anchor_prompt}\n\n"
             "MULTI-PERSONA REFERENCE RULE: mantenha todos os personagens selecionados juntos na mesma cena, "
-            "preservando a identidade visual de cada um."
+            "preservando apenas a identidade facial de cada um; roupas e ambiente devem vir do prompt."
         )
 
     if req.realistic_style:
@@ -2683,8 +2684,9 @@ async def preview_grok_anchor_endpoint(
             duration=duration,
             has_reference_image=True,
             tone=req.realistic_style,
+            reference_mode=reference_mode,
         )
-        optimized_prompt = _ensure_reference_image_instruction(optimized_prompt)
+        optimized_prompt = _ensure_reference_image_instruction(optimized_prompt, reference_mode=reference_mode)
     except Exception:
         optimized_prompt = anchor_prompt
 
@@ -2713,6 +2715,7 @@ async def preview_grok_anchor_endpoint(
                 persona_reference_path,
                 "openai",
                 anchor_meta,
+                reference_mode,
             )
 
             if output_path.exists() and output_path.stat().st_size > 0:
@@ -2789,6 +2792,7 @@ async def generate_realistic_prompt_endpoint(
         selected_persona_profile_ids.insert(0, selected_persona_profile_id)
 
     has_reference_image = bool(req.has_reference_image)
+    reference_mode = "face_identity_only" if selected_persona_profile_ids else ""
     prompt_for_optimizer = topic_for_optimizer
     prompt_for_optimizer = _inject_interaction_persona_instruction(prompt_for_optimizer, interaction_persona)
 
@@ -2832,7 +2836,8 @@ async def generate_realistic_prompt_endpoint(
             prompt_for_optimizer = (
                 f"{prompt_for_optimizer}\n\n"
                 "PERSONAS CADASTRADAS (OBRIGATORIO): use exatamente as personas selecionadas abaixo na cena, "
-                "sem substituir elenco, sem trocar identidade e sem fundir rostos.\n"
+                "sem substituir elenco, sem trocar identidade facial e sem fundir rostos. "
+                "Use as imagens apenas para rosto; roupas e ambiente devem ser criados pelo prompt.\n"
                 f"{personas_block}"
             )
 
@@ -2840,11 +2845,11 @@ async def generate_realistic_prompt_endpoint(
             prompt_for_optimizer = (
                 f"{prompt_for_optimizer}\n\n"
                 "MULTI-PERSONA REFERENCE RULE: mantenha todos os personagens selecionados juntos na mesma cena, "
-                "preservando a identidade visual de cada um."
+                "preservando apenas a identidade facial de cada um."
             )
 
     if has_reference_image:
-        prompt_for_optimizer = _ensure_reference_image_instruction(prompt_for_optimizer)
+        prompt_for_optimizer = _ensure_reference_image_instruction(prompt_for_optimizer, reference_mode=reference_mode)
 
     if engine == "grok":
         from app.services.grok_video import optimize_prompt_for_grok
@@ -2854,6 +2859,7 @@ async def generate_realistic_prompt_endpoint(
             duration=duration,
             has_reference_image=has_reference_image,
             tone=req.style,
+            reference_mode=reference_mode,
         )
     else:
         from app.services.seedance_video import optimize_prompt_for_seedance
@@ -2876,7 +2882,7 @@ async def generate_realistic_prompt_endpoint(
 
     final_prompt = _inject_interaction_persona_instruction(temporal_prompt, interaction_persona)
     if has_reference_image:
-        final_prompt = _ensure_reference_image_instruction(final_prompt)
+        final_prompt = _ensure_reference_image_instruction(final_prompt, reference_mode=reference_mode)
 
     return {"prompt": final_prompt}
 
@@ -3072,12 +3078,14 @@ async def generate_realistic_endpoint(
     if not has_reference_image:
         raise HTTPException(status_code=400, detail="Vídeo realista exige imagem de referência.")
 
-    prompt = _ensure_reference_image_instruction(prompt)
+    reference_mode = "full_frame" if upload_ids else "face_identity_only"
+    prompt = _ensure_reference_image_instruction(prompt, reference_mode=reference_mode)
     if reference_count > 1:
         prompt = (
             f"{prompt}\n\n"
             "MULTI-PERSONA REFERENCE RULE: Use all uploaded reference identities together in the same scene. "
-            "Preserve each face identity and visual traits without merging faces into one person."
+            "Preserve each face identity without merging faces into one person. "
+            "When references are personas, do not copy clothing, background, pose or props."
         )
 
     # Credit check — multi-clip costs more (Grok=15s blocks, Wan=8s blocks)
@@ -3115,6 +3123,7 @@ async def generate_realistic_endpoint(
         "engine": engine,
         "has_reference_image": has_reference_image,
         "reference_source": "upload" if upload_ids else "persona",
+        "reference_mode": reference_mode,
         "reference_count": max(1, reference_count),
         "add_music": req.add_music or bool(external_audio_url),
         "add_narration": req.add_narration and bool(narration_text) and not dialogue_enabled,

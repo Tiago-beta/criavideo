@@ -118,13 +118,28 @@ _GROK_IDENTITY_HINT_MARKERS = (
 )
 
 
-def _ensure_reference_image_instruction(prompt: str) -> str:
+def _is_face_identity_reference(reference_mode: str) -> bool:
+    return str(reference_mode or "").strip().lower() in {"face_identity_only", "face_only", "persona_face"}
+
+
+def _ensure_reference_image_instruction(prompt: str, reference_mode: str = "") -> str:
     """Guarantee that prompt text explicitly anchors generation to user reference image."""
     base_prompt = (prompt or "").strip()
     if not base_prompt:
         return base_prompt
 
     lowered = base_prompt.lower()
+    if _is_face_identity_reference(reference_mode):
+        if "modo rosto da persona" in lowered or "somente identidade facial" in lowered:
+            return base_prompt
+        reference_rule = (
+            "MODO ROSTO DA PERSONA (OBRIGATORIO): use a imagem de referencia somente para preservar identidade facial. "
+            "Preserve geometria do rosto, olhos, nariz, labios, mandibula, tom de pele, idade aparente e linha/cor do cabelo. "
+            "Nao preserve roupas, fundo, objetos, pose, enquadramento, iluminacao, paleta de cores ou ambiente da foto. "
+            "Crie roupa, cenario, acao, composicao e clima visual novos de acordo com o prompt atual."
+        )
+        return f"{base_prompt}\n\n{reference_rule}"
+
     if any(marker in lowered for marker in _REFERENCE_IMAGE_HINT_MARKERS):
         return base_prompt
 
@@ -135,13 +150,24 @@ def _ensure_reference_image_instruction(prompt: str) -> str:
     return f"{base_prompt}\n\n{reference_rule}"
 
 
-def _ensure_grok_identity_lock(prompt: str) -> str:
+def _ensure_grok_identity_lock(prompt: str, reference_mode: str = "") -> str:
     """Add a strict identity lock optimized for Grok close-up fidelity."""
     base_prompt = (prompt or "").strip()
     if not base_prompt:
         return base_prompt
 
     lowered = base_prompt.lower()
+    if _is_face_identity_reference(reference_mode):
+        if "trava facial grok" in lowered:
+            return base_prompt
+        identity_lock = (
+            "TRAVA FACIAL GROK (OBRIGATORIA): a imagem de referencia define apenas o rosto e a identidade humana. "
+            "Mantenha o mesmo rosto em close-up sem face swap, sem morphing e sem trocar protagonista. "
+            "Nao copie roupa, fundo, pose, objetos, iluminacao, cores ou composicao da foto de referencia. "
+            "O figurino, o ambiente, a acao e a atmosfera devem ser recriados livremente a partir do texto do prompt."
+        )
+        return f"{base_prompt}\n\n{identity_lock}"
+
     if any(marker in lowered for marker in _GROK_IDENTITY_HINT_MARKERS):
         return base_prompt
 
@@ -1314,6 +1340,10 @@ async def run_realistic_video_pipeline(project_id: int):
             external_audio_url_early = (tags_data_early.get("audio_url") or "").strip()
             segment_transcription_hint = str(tags_data_early.get("segment_transcription", "") or "").strip()
             interaction_persona = _normalize_interaction_persona(tags_data_early.get("interaction_persona", ""))
+            reference_source_early = str(tags_data_early.get("reference_source", "") or "").strip().lower()
+            reference_mode = str(tags_data_early.get("reference_mode", "") or "").strip().lower()
+            if reference_source_early == "persona" and not reference_mode:
+                reference_mode = "face_identity_only"
             clip_start_early = float(tags_data_early.get("clip_start", 0))
             clip_dur_early = float(tags_data_early.get("clip_duration", 0))
             if external_audio_url_early:
@@ -1397,15 +1427,15 @@ async def run_realistic_video_pipeline(project_id: int):
                 logger.warning("Realistic video reference image path missing on disk: %s", project.style_prompt)
             has_reference_image = bool(image_path)
 
-            if engine == "grok" and str(tags_data_early.get("reference_source", "") or "").strip().lower() == "persona" and not has_reference_image:
+            if engine == "grok" and reference_source_early == "persona" and not has_reference_image:
                 raise RuntimeError(
                     "Imagem de referencia da persona nao encontrada. Reabra as personas selecionadas e gere novamente."
                 )
 
             if has_reference_image:
-                user_prompt = _ensure_reference_image_instruction(user_prompt)
+                user_prompt = _ensure_reference_image_instruction(user_prompt, reference_mode=reference_mode)
                 if engine == "grok":
-                    user_prompt = _ensure_grok_identity_lock(user_prompt)
+                    user_prompt = _ensure_grok_identity_lock(user_prompt, reference_mode=reference_mode)
                 logger.info("Realistic video: reference-image rule injected into prompt")
 
             duration = int(project.track_duration or 7)
@@ -1525,6 +1555,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     duration=duration,
                     has_reference_image=has_reference_image,
                     tone=realistic_style,
+                    reference_mode=reference_mode,
                 )
                 logger.info(f"Grok prompt optimized: {optimized_prompt[:200]}...")
             else:
@@ -1538,9 +1569,9 @@ async def run_realistic_video_pipeline(project_id: int):
                 logger.info(f"Seedance prompt optimized: {optimized_prompt[:200]}...")
 
             if has_reference_image:
-                optimized_prompt = _ensure_reference_image_instruction(optimized_prompt)
+                optimized_prompt = _ensure_reference_image_instruction(optimized_prompt, reference_mode=reference_mode)
                 if engine == "grok":
-                    optimized_prompt = _ensure_grok_identity_lock(optimized_prompt)
+                    optimized_prompt = _ensure_grok_identity_lock(optimized_prompt, reference_mode=reference_mode)
 
             if shadow_audio_from_grok:
                 try:
@@ -1551,14 +1582,15 @@ async def run_realistic_video_pipeline(project_id: int):
                         duration=wan_effective_duration,
                         has_reference_image=has_reference_image,
                         tone=realistic_style,
+                        reference_mode=reference_mode,
                     )
                 except Exception as e:
                     logger.warning("Grok shadow prompt optimization failed, using base prompt: %s", e)
                     grok_shadow_prompt = user_prompt
 
                 if has_reference_image:
-                    grok_shadow_prompt = _ensure_reference_image_instruction(grok_shadow_prompt)
-                    grok_shadow_prompt = _ensure_grok_identity_lock(grok_shadow_prompt)
+                    grok_shadow_prompt = _ensure_reference_image_instruction(grok_shadow_prompt, reference_mode=reference_mode)
+                    grok_shadow_prompt = _ensure_grok_identity_lock(grok_shadow_prompt, reference_mode=reference_mode)
 
             project.progress = 10
             await db.commit()
@@ -1628,6 +1660,9 @@ async def run_realistic_video_pipeline(project_id: int):
                         scene_reference_path,
                         True,
                         image_path,
+                        "",
+                        None,
+                        reference_mode,
                     )
                     if os.path.exists(scene_reference_path):
                         logger.info(
@@ -1675,6 +1710,7 @@ async def run_realistic_video_pipeline(project_id: int):
                                 anchor_source_path,
                                 "openai",
                                 anchor_meta,
+                                reference_mode,
                             )
 
                             if os.path.exists(candidate_anchor_path) and os.path.getsize(candidate_anchor_path) > 0:
@@ -1742,6 +1778,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         render_dir=render_dir,
                         reuse_base_reference_for_all_clips=bool(grok_persona_anchor_path),
                         on_progress=_on_progress,
+                        reference_mode=reference_mode,
                     )
                 else:
                     # — Grok single clip (<=15s): generate image first, then video —
@@ -1781,6 +1818,7 @@ async def run_realistic_video_pipeline(project_id: int):
                             duration=duration,
                             aspect_ratio=aspect_ratio,
                             on_progress=_on_progress,
+                            reference_mode=reference_mode,
                         )
 
                 if enable_grok_persona_anchor:
@@ -1899,6 +1937,7 @@ async def run_realistic_video_pipeline(project_id: int):
                                     duration=wan_segment_duration,
                                     aspect_ratio=aspect_ratio,
                                     on_progress=None,
+                                    reference_mode=reference_mode,
                                 )
 
                                 await _extract_audio_from_video_track(clip_video_path, clip_audio_path)

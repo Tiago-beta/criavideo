@@ -77,9 +77,24 @@ def _normalize_grok_aspect_ratio(value: str) -> str:
     return "16:9"
 
 
-def _ensure_runtime_reference_lock(prompt: str) -> str:
+def _is_face_identity_reference(reference_mode: str) -> bool:
+    return str(reference_mode or "").strip().lower() in {"face_identity_only", "face_only", "persona_face"}
+
+
+def _ensure_runtime_reference_lock(prompt: str, reference_mode: str = "") -> str:
     base_prompt = (prompt or "").strip()
     lowered = base_prompt.lower()
+    if _is_face_identity_reference(reference_mode):
+        if base_prompt and ("trava facial de referencia" in lowered or "somente identidade facial" in lowered):
+            return base_prompt
+        lock = (
+            "TRAVA FACIAL DE REFERENCIA (OBRIGATORIA): use a imagem enviada somente como referencia de identidade facial. "
+            "Preserve rosto, olhos, nariz, labios, mandibula, tom de pele, idade aparente e cabelo. "
+            "Nao preserve roupas, fundo, objetos, pose, enquadramento, iluminacao, paleta de cores ou ambiente da foto. "
+            "Nao trate a imagem como primeiro frame obrigatorio. Crie uma nova cena conforme o prompt, com figurino e cenario novos."
+        )
+        return f"{base_prompt}\n\n{lock}" if base_prompt else lock
+
     if base_prompt and any(marker in lowered for marker in _RUNTIME_REFERENCE_LOCK_MARKERS):
         return base_prompt
 
@@ -97,9 +112,10 @@ def _build_payload_variants(
     image_url: str,
     duration: int,
     aspect_ratio: str,
+    reference_mode: str = "",
 ) -> list[tuple[str, dict]]:
     """Build canonical and compatibility payload variants for xAI video API."""
-    canonical_prompt = _ensure_runtime_reference_lock(prompt)
+    canonical_prompt = _ensure_runtime_reference_lock(prompt, reference_mode=reference_mode)
 
     base_payload = {
         "model": "grok-imagine-video",
@@ -309,6 +325,7 @@ async def optimize_prompt_for_grok(
     duration: int = 7,
     has_reference_image: bool = False,
     tone: str = "",
+    reference_mode: str = "",
 ) -> str:
     """Convert user's description into an optimized Grok video prompt with PT-BR audio."""
     client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
@@ -330,7 +347,14 @@ async def optimize_prompt_for_grok(
             f"{tone_hint}. Preserve este estilo durante todo o prompt."
         )
 
-    if has_reference_image:
+    if has_reference_image and _is_face_identity_reference(reference_mode):
+        user_msg += (
+            "\n\nREGRA OBRIGATORIA DE REFERENCIA FACIAL: o usuario enviou imagem de persona. "
+            "Use essa imagem somente para preservar identidade facial: geometria do rosto, olhos, nariz, labios, mandibula, tom de pele, idade aparente e cabelo. "
+            "Nao preserve roupa, fundo, pose, objetos, enquadramento, iluminacao, paleta de cores ou ambiente da foto. "
+            "O prompt final deve criar figurino, cenario, acao e atmosfera novos a partir do texto do usuario."
+        )
+    elif has_reference_image:
         user_msg += (
             "\n\nREGRA OBRIGATORIA DE REFERENCIA: o usuario enviou imagem de referencia. "
             "O prompt deve preservar a mesma identidade e os mesmos tracos visuais principais dessa imagem. "
@@ -381,6 +405,7 @@ async def generate_video_clip(
     aspect_ratio: str = "16:9",
     timeout_seconds: int = 600,
     on_progress=None,
+    reference_mode: str = "",
 ) -> str:
     """Generate a short video clip from an image using Grok grok-imagine-video.
 
@@ -426,6 +451,7 @@ async def generate_video_clip(
         image_url=image_url,
         duration=safe_duration,
         aspect_ratio=safe_aspect_ratio,
+        reference_mode=reference_mode,
     )
 
     async with httpx.AsyncClient(timeout=30) as client:

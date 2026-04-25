@@ -240,6 +240,7 @@ async def generate_multi_clip_video(
     render_dir,
     reuse_base_reference_for_all_clips: bool = False,
     on_progress=None,
+    reference_mode: str = "",
 ) -> str:
     """Generate a long Grok video by chaining multiple 15s clips.
 
@@ -287,17 +288,27 @@ async def generate_multi_clip_video(
 
     # Optimize each scene prompt for Grok
     optimized_scenes = []
-    continuity_lock = (
-        "\n\nTRAVA DE CONTINUIDADE: mantenha EXATAMENTE os mesmos personagens principais, tracos faciais, "
-        "cores de figurino, biotipo, idade e contexto relacional em todas as cenas. Nao introduza novo protagonista."
-        "\nTRAVA DE CLOSE-UP: mantenha exatamente a mesma identidade facial em planos fechados, sem face swap e sem morphing facial."
-    )
+    face_identity_only = str(reference_mode or "").strip().lower() in {"face_identity_only", "face_only", "persona_face"}
+    if face_identity_only:
+        continuity_lock = (
+            "\n\nTRAVA DE CONTINUIDADE FACIAL: mantenha os mesmos personagens principais apenas pela identidade do rosto, "
+            "idade aparente, tom de pele e cabelo. Nao introduza novo protagonista."
+            "\nTRAVA DE VARIEDADE: roupas, cenario, luz, pose, paleta e objetos devem variar conforme cada cena e nao devem copiar a foto da persona."
+            "\nTRAVA DE CLOSE-UP: mantenha exatamente a mesma identidade facial em planos fechados, sem face swap e sem morphing facial."
+        )
+    else:
+        continuity_lock = (
+            "\n\nTRAVA DE CONTINUIDADE: mantenha EXATAMENTE os mesmos personagens principais, tracos faciais, "
+            "cores de figurino, biotipo, idade e contexto relacional em todas as cenas. Nao introduza novo protagonista."
+            "\nTRAVA DE CLOSE-UP: mantenha exatamente a mesma identidade facial em planos fechados, sem face swap e sem morphing facial."
+        )
     for i, sp in enumerate(scene_prompts):
         dur = last_clip_dur if i == num_segments - 1 else max_per_clip
         opt = await optimize_prompt_for_grok(
             user_description=f"{sp}{continuity_lock}",
             duration=dur,
             has_reference_image=bool(base_reference_image),
+            reference_mode=reference_mode,
         )
         optimized_scenes.append(opt)
         logger.info(f"Scene {i+1}/{num_segments} prompt optimized ({len(opt)} chars)")
@@ -338,6 +349,9 @@ async def generate_multi_clip_video(
                 ref_path,
                 True,
                 base_reference_image,
+                "",
+                None,
+                reference_mode,
             )
             ref_images.append(ref_path)
             logger.info(f"Reference image {i+1}/{num_segments} generated: {ref_path}")
@@ -372,6 +386,7 @@ async def generate_multi_clip_video(
             duration=clip_dur,
             aspect_ratio=aspect_ratio,
             on_progress=_clip_progress,
+            reference_mode=reference_mode,
         )
 
         clip_paths.append(clip_path)
