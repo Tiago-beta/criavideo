@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v219 loaded");
+console.log("[CriaVideo] app.js v220 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -13796,9 +13796,7 @@ function _editorMovePlayhead(t) {
 }
 
 function _editorClampToVideoSegments(timeSec) {
-    if (!_editor.videoSegments.length) {
-        return Math.max(0, Math.min(_editor.duration || 0, timeSec));
-    }
+        _editor.audioSegments = [{ id: _editorGenId(), start: 0, end: _editorGetTimelineDuration(), sourceStart: 0 }];
     const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
     let t = Math.max(0, Math.min(_editor.duration || 0, timeSec));
     const inside = sorted.find(seg => t >= seg.start && t <= seg.end);
@@ -15157,9 +15155,7 @@ function _editorUploadMusic(input) {
     _editor._musicServerPath = "";
     _editor._musicSource = "audio";
     _editorSetMusicPreviewSource(_editor.musicUrl);
-    if (!_editor.audioSegments.length) {
-        _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
-    }
+    _editor.audioSegments = [{ id: _editorGenId(), start: 0, end: _editorGetTimelineDuration(), sourceStart: 0 }];
     _editor.selectedTracks = ["video", "audio"];
     _editor.selectedClip = { kind: "music", id: "music" };
     _editorRefreshQuickActions();
@@ -15194,9 +15190,7 @@ async function _editorUploadVideoForMusic(input) {
         _editor.musicUrl = mediaUrl;
         _editorSetMusicPreviewSource(_editor.musicUrl || "");
 
-        if (!_editor.audioSegments.length) {
-            _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
-        }
+        _editor.audioSegments = [{ id: _editorGenId(), start: 0, end: _editorGetTimelineDuration(), sourceStart: 0 }];
         _editor.selectedTracks = ["video", "audio"];
         _editor.selectedClip = { kind: "music", id: "music" };
         _editorRefreshQuickActions();
