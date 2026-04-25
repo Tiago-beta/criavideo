@@ -15,6 +15,20 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def _safe_error_message(err, fallback: str) -> str:
+    """Return a readable error message even when upstream exceptions stringify to '{}' or empty."""
+    try:
+        raw = str(err or "").strip()
+    except Exception:
+        raw = ""
+
+    if raw and raw not in {"{}", "[]", "None", "null", "[object Object]"}:
+        return raw
+
+    err_name = type(err).__name__ if err is not None else "ErroDesconhecido"
+    return f"{fallback} ({err_name})."
+
+
 def _aspect_to_resolution(aspect_ratio: str) -> tuple[int, int]:
     if aspect_ratio == "9:16":
         return 1080, 1920
@@ -1057,7 +1071,10 @@ async def run_video_pipeline(project_id: int, pipeline_options: dict | None = No
             project = await db.get(VideoProject, project_id)
             if project:
                 project.status = VideoStatus.FAILED
-                project.error_message = str(e)[:1000]
+                project.error_message = _safe_error_message(
+                    e,
+                    "Falha ao processar o vídeo",
+                )[:1000]
                 await db.commit()
 
 
@@ -1129,7 +1146,10 @@ async def run_video_format_copy_pipeline(project_id: int, source_video_path: str
                 project = await db.get(VideoProject, project_id)
             if project:
                 project.status = VideoStatus.FAILED
-                project.error_message = str(e)[:1000]
+                project.error_message = _safe_error_message(
+                    e,
+                    "Falha ao copiar o formato do vídeo",
+                )[:1000]
                 await db.commit()
 
 
@@ -2446,5 +2466,8 @@ async def run_realistic_video_pipeline(project_id: int):
             project = await db.get(VideoProject, project_id)
             if project:
                 project.status = VideoStatus.FAILED
-                project.error_message = str(e)[:1000]
+                project.error_message = _safe_error_message(
+                    e,
+                    "Falha ao gerar o vídeo realista",
+                )[:1000]
                 await db.commit()

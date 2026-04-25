@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 _PILOT_SCHEDULE_NAME_PREFIX = "Piloto automatico"
 _SHORT_MIX_ALLOWED = {"realistic_all", "image_all", "mixed_realistic2_image1"}
+_PILOT_LOCAL_TIMEZONE = "America/Sao_Paulo"
+_PILOT_20H_LOCAL_UTC = "23:00"
 
 
 def _safe_int(value, default: int) -> int:
@@ -339,9 +341,9 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
             platform="youtube",
             social_account_id=account.id,
             frequency="weekly",
-            time_utc="14:00",
+            time_utc=_PILOT_20H_LOCAL_UTC,
             day_of_week=long_day_of_week,
-            timezone="UTC",
+            timezone=_PILOT_LOCAL_TIMEZONE,
             default_settings=long_settings,
             is_active=bool(pilot.is_enabled),
         )
@@ -354,6 +356,8 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         long_schedule.video_type = "music"
         long_schedule.creation_mode = "auto"
         long_schedule.frequency = "weekly"
+        long_schedule.time_utc = _PILOT_20H_LOCAL_UTC
+        long_schedule.timezone = _PILOT_LOCAL_TIMEZONE
         long_schedule.day_of_week = long_day_of_week
         long_schedule.default_settings = long_settings
 
@@ -368,9 +372,9 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
             platform="youtube",
             social_account_id=account.id,
             frequency="daily",
-            time_utc="15:00",
+            time_utc=_PILOT_20H_LOCAL_UTC,
             day_of_week=pilot_short_weekdays[0] if pilot_short_weekdays else 0,
-            timezone="UTC",
+            timezone=_PILOT_LOCAL_TIMEZONE,
             default_settings=short_settings,
             is_active=bool(pilot.is_enabled),
         )
@@ -383,6 +387,8 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         shorts_schedule.video_type = "musical_shorts"
         shorts_schedule.creation_mode = "manual"
         shorts_schedule.frequency = "daily"
+        shorts_schedule.time_utc = _PILOT_20H_LOCAL_UTC
+        shorts_schedule.timezone = _PILOT_LOCAL_TIMEZONE
         shorts_schedule.day_of_week = pilot_short_weekdays[0] if pilot_short_weekdays else 0
         shorts_schedule.default_settings = short_settings
 
