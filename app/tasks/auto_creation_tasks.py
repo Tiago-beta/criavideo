@@ -2,6 +2,7 @@
 Auto-creation tasks — Automated video generation triggered by scheduler.
 """
 import asyncio
+import hashlib
 import logging
 import math
 import re
@@ -345,6 +346,64 @@ def _normalize_interaction_persona(value: str) -> str:
     if normalized in _INTERACTION_PERSONAS:
         return normalized
     return "natureza"
+
+
+def _normalize_pilot_persona_candidates(experiment: dict) -> list[dict]:
+    if not isinstance(experiment, dict) or not bool(experiment.get("enabled")):
+        return []
+    candidates = experiment.get("candidates") or []
+    normalized: list[dict] = []
+    seen = set()
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        persona_type = _normalize_interaction_persona(
+            item.get("persona_type") or item.get("type") or item.get("interaction_persona") or ""
+        )
+        if not persona_type:
+            continue
+        profile_ids: list[int] = []
+        for raw_id in (item.get("persona_profile_ids") or item.get("profile_ids") or []):
+            try:
+                pid = int(raw_id)
+            except Exception:
+                continue
+            if pid > 0 and pid not in profile_ids:
+                profile_ids.append(pid)
+        try:
+            profile_id = int(item.get("persona_profile_id") or item.get("profile_id") or 0)
+        except Exception:
+            profile_id = 0
+        if profile_id > 0 and profile_id not in profile_ids:
+            profile_ids.insert(0, profile_id)
+        key = f"{persona_type}:{','.join(str(pid) for pid in profile_ids)}"
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(
+            {
+                "persona_type": persona_type,
+                "persona_profile_id": profile_ids[0] if profile_ids else 0,
+                "persona_profile_ids": profile_ids,
+            }
+        )
+    return normalized[:8]
+
+
+def _pick_pilot_persona_candidate(experiment: dict, variant_index: int) -> dict | None:
+    candidates = _normalize_pilot_persona_candidates(experiment)
+    if not candidates:
+        return None
+    winner = experiment.get("winner") if isinstance(experiment, dict) else None
+    if isinstance(winner, dict) and str(experiment.get("phase") or "").lower() == "exploit":
+        winner_type = _normalize_interaction_persona(winner.get("persona_type") or "")
+        if winner_type:
+            return {
+                "persona_type": winner_type,
+                "persona_profile_id": int(winner.get("persona_profile_id") or 0),
+                "persona_profile_ids": winner.get("persona_profile_ids") or [],
+            }
+    return candidates[max(0, int(variant_index or 0)) % len(candidates)]
 
 
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
@@ -1284,6 +1343,8 @@ async def _create_musical_short(
                 "grok_text_only": disable_persona_reference,
                 "persona_profile_id": resolved_persona_profile_id,
                 "persona_profile_ids": resolved_persona_profile_ids,
+                "pilot_variant": custom_settings.get("pilot_variant") or {},
+                "pilot_persona_experiment": custom_settings.get("pilot_persona_experiment") or {},
             },
             style_prompt=reference_image_path,
             aspect_ratio="9:16",
@@ -1541,6 +1602,11 @@ async def _enqueue_pilot_shorts_from_long(
             or long_settings.get("persona_profile_ids")
             or []
         )
+        persona_experiment = (
+            shorts_defaults.get("pilot_persona_experiment")
+            or long_settings.get("pilot_persona_experiment")
+            or {}
+        )
 
         result = await db.execute(
             select(AutoScheduleTheme)
@@ -1549,9 +1615,35 @@ async def _enqueue_pilot_shorts_from_long(
         )
         existing = result.scalars().all()
         max_pos = max([t.position for t in existing], default=-1)
+        experiment_variant_offset = sum(
+            1
+            for theme in existing
+            if isinstance(theme.custom_settings, dict)
+            and isinstance((theme.custom_settings or {}).get("pilot_variant"), dict)
+            and ((theme.custom_settings or {}).get("pilot_variant") or {}).get("kind") == "persona"
+        )
 
         for seg in segments:
             max_pos += 1
+            variant_index = experiment_variant_offset + int(seg["segment_index"] or 0)
+            selected_persona = _pick_pilot_persona_candidate(persona_experiment, variant_index)
+            short_interaction_persona = interaction_persona
+            short_persona_profile_id = persona_profile_id
+            short_persona_profile_ids = persona_profile_ids
+            pilot_variant = {}
+            if selected_persona:
+                short_interaction_persona = selected_persona.get("persona_type") or interaction_persona
+                short_persona_profile_id = int(selected_persona.get("persona_profile_id", 0) or 0)
+                short_persona_profile_ids = selected_persona.get("persona_profile_ids") or []
+                pilot_variant = {
+                    "kind": "persona",
+                    "phase": str(persona_experiment.get("phase") or "explore"),
+                    "variant_index": variant_index,
+                    "persona_type": short_interaction_persona,
+                    "persona_profile_id": short_persona_profile_id,
+                    "persona_profile_ids": short_persona_profile_ids,
+                    "metrics_status": "pending",
+                }
             short_custom = {
                 "tevoxi_audio_url": audio_url,
                 "tevoxi_job_id": job_id,
@@ -1560,11 +1652,13 @@ async def _enqueue_pilot_shorts_from_long(
                 "clip_start": seg["clip_start"],
                 "clip_duration": seg["clip_duration"],
                 "segment_index": seg["segment_index"],
-                "interaction_persona": interaction_persona,
-                "persona_profile_id": persona_profile_id,
-                "persona_profile_ids": persona_profile_ids,
+                "interaction_persona": short_interaction_persona,
+                "persona_profile_id": short_persona_profile_id,
+                "persona_profile_ids": short_persona_profile_ids,
                 "pilot_cycle_key": pilot_cycle_key,
                 "lyrics_snippet": seg["lyrics_snippet"],
+                "pilot_persona_experiment": persona_experiment,
+                "pilot_variant": pilot_variant,
             }
 
             short_theme = AutoScheduleTheme(
@@ -1726,6 +1820,18 @@ async def _auto_publish(
                 logger.warning("AI metadata generation failed for auto-publish: %s", e)
                 description = project.description or ""
 
+            project_tags = dict(project.tags or {}) if isinstance(project.tags, dict) else {}
+            pilot_variant = dict(project_tags.get("pilot_variant") or {}) if isinstance(project_tags.get("pilot_variant"), dict) else {}
+            if pilot_variant:
+                pilot_variant["publish_title"] = title
+                pilot_variant["description_fingerprint"] = hashlib.sha1((description or "").encode("utf-8")).hexdigest()[:12]
+                pilot_variant["tags"] = tags
+                pilot_variant["thumbnail_path"] = render.thumbnail_path or ""
+                pilot_variant["publish_job_id"] = 0
+                pilot_variant["metrics_status"] = "published_pending_metrics"
+                project_tags["pilot_variant"] = pilot_variant
+                project.tags = project_tags
+
         job = PublishJob(
             user_id=user_id,
             render_id=render.id,
@@ -1740,6 +1846,14 @@ async def _auto_publish(
         await db.commit()
         await db.refresh(job)
         job_id = job.id
+        if project:
+            project_tags = dict(project.tags or {}) if isinstance(project.tags, dict) else {}
+            pilot_variant = dict(project_tags.get("pilot_variant") or {}) if isinstance(project_tags.get("pilot_variant"), dict) else {}
+            if pilot_variant:
+                pilot_variant["publish_job_id"] = job_id
+                project_tags["pilot_variant"] = pilot_variant
+                project.tags = project_tags
+                await db.commit()
 
     try:
         await run_publish_job(job_id)

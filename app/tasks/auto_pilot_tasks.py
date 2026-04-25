@@ -8,9 +8,10 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import async_session
-from app.models import AutoChannelPilot, AutoPilotCycleRun, AutoSchedule, AutoScheduleTheme, Platform
+from app.models import AutoChannelPilot, AutoPilotCycleRun, AutoSchedule, AutoScheduleTheme, Platform, VideoProject
 from app.routers.analyze import build_channel_analysis_payload
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,96 @@ def _resolve_pilot_short_weekdays(long_day_of_week: int, shorts_per_cycle: int) 
     long_day = max(0, min(_safe_int(long_day_of_week, 0), 6))
     count = max(1, min(_safe_int(shorts_per_cycle, 3), 6))
     return [int((long_day + 1 + (idx * 2)) % 7) for idx in range(count)]
+
+
+async def _refresh_persona_experiment_state(db, shorts_schedule: AutoSchedule) -> dict:
+    settings = dict(shorts_schedule.default_settings or {})
+    experiment = settings.get("pilot_persona_experiment") if isinstance(settings.get("pilot_persona_experiment"), dict) else {}
+    if not experiment or not bool(experiment.get("enabled")):
+        return {}
+
+    candidates = [
+        item for item in (experiment.get("candidates") or [])
+        if isinstance(item, dict) and item.get("persona_type")
+    ]
+    if not candidates:
+        return experiment
+
+    stats: dict[str, dict] = {}
+    result = await db.execute(
+        select(AutoScheduleTheme)
+        .where(AutoScheduleTheme.auto_schedule_id == shorts_schedule.id)
+        .where(AutoScheduleTheme.status == "completed")
+    )
+    completed_themes = result.scalars().all()
+    project_ids = [int(theme.video_project_id) for theme in completed_themes if theme.video_project_id]
+    projects_by_id = {}
+    if project_ids:
+        projects_result = await db.execute(select(VideoProject).where(VideoProject.id.in_(project_ids)))
+        projects_by_id = {int(project.id): project for project in projects_result.scalars().all()}
+
+    for theme in completed_themes:
+        custom = theme.custom_settings if isinstance(theme.custom_settings, dict) else {}
+        variant = custom.get("pilot_variant") if isinstance(custom.get("pilot_variant"), dict) else {}
+        project = projects_by_id.get(int(theme.video_project_id or 0))
+        project_tags = project.tags if project and isinstance(project.tags, dict) else {}
+        project_variant = project_tags.get("pilot_variant") if isinstance(project_tags.get("pilot_variant"), dict) else {}
+        variant = {**variant, **project_variant}
+        if variant.get("kind") != "persona":
+            continue
+        persona_type = str(variant.get("persona_type") or custom.get("interaction_persona") or "").strip().lower()
+        if not persona_type:
+            continue
+        entry = stats.setdefault(
+            persona_type,
+            {
+                "persona_type": persona_type,
+                "published_count": 0,
+                "score_sum": 0.0,
+                "score_count": 0,
+                "last_publish_job_id": 0,
+            },
+        )
+        entry["published_count"] += 1
+        entry["last_publish_job_id"] = max(
+            int(entry.get("last_publish_job_id") or 0),
+            int(variant.get("publish_job_id") or 0),
+        )
+        try:
+            score = float(variant.get("performance_score") or 0)
+        except Exception:
+            score = 0.0
+        if score > 0:
+            entry["score_sum"] += score
+            entry["score_count"] += 1
+
+    tested_types = {key for key, value in stats.items() if int(value.get("published_count") or 0) > 0}
+    candidate_types = [str(item.get("persona_type") or "").strip().lower() for item in candidates]
+    first_round_complete = bool(candidate_types) and all(persona_type in tested_types for persona_type in candidate_types)
+    scored = [value for value in stats.values() if int(value.get("score_count") or 0) > 0]
+
+    if first_round_complete and scored:
+        winner_stats = max(scored, key=lambda item: float(item.get("score_sum") or 0) / max(1, int(item.get("score_count") or 0)))
+        winner_type = str(winner_stats.get("persona_type") or "")
+        winner_candidate = next(
+            (item for item in candidates if str(item.get("persona_type") or "").strip().lower() == winner_type),
+            {"persona_type": winner_type},
+        )
+        experiment["phase"] = "exploit"
+        experiment["winner"] = winner_candidate
+        experiment["selection_reason"] = "persona_com_melhor_performance_score"
+    elif first_round_complete:
+        experiment["phase"] = "awaiting_metrics"
+        experiment["selection_reason"] = "primeira_rodada_concluida_aguardando_metricas"
+    else:
+        experiment["phase"] = "explore"
+        experiment["selection_reason"] = "testando_todas_as_personas_selecionadas"
+
+    experiment["stats"] = stats
+    settings["pilot_persona_experiment"] = experiment
+    shorts_schedule.default_settings = settings
+    flag_modified(shorts_schedule, "default_settings")
+    return experiment
 
 
 def _normalize_theme_text(value: str) -> str:
@@ -207,6 +298,15 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         "pilot_keyword_focus": (analysis_payload.get("recommendations") or {}).get("keyword_focus") or [],
         "pilot_last_generated_at": (analysis_payload.get("source") or {}).get("generated_at") or "",
     }
+
+    existing_persona_experiment = {}
+    for source_schedule in (shorts_schedule, long_schedule):
+        settings = source_schedule.default_settings if source_schedule and isinstance(source_schedule.default_settings, dict) else {}
+        if isinstance(settings.get("pilot_persona_experiment"), dict):
+            existing_persona_experiment = settings.get("pilot_persona_experiment") or {}
+            break
+    if existing_persona_experiment:
+        base_settings_common["pilot_persona_experiment"] = existing_persona_experiment
 
     long_settings = {
         **(dict(long_schedule.default_settings or {}) if long_schedule else {}),
@@ -406,6 +506,7 @@ async def run_channel_pilot_cycle(pilot_id: int) -> dict:
             )
 
             long_schedule, shorts_schedule = await _ensure_pilot_schedules(db, pilot, account, analysis_payload)
+            persona_experiment = await _refresh_persona_experiment_state(db, shorts_schedule)
             added = await _enqueue_pilot_themes(db, pilot, long_schedule, analysis_payload)
 
             pending_long_q = await db.execute(
@@ -436,6 +537,7 @@ async def run_channel_pilot_cycle(pilot_id: int) -> dict:
                 "long_schedule_id": long_schedule.id,
                 "shorts_schedule_id": shorts_schedule.id,
                 "pilot_short_weekdays": (shorts_schedule.default_settings or {}).get("pilot_short_weekdays", []),
+                "pilot_persona_experiment": persona_experiment or (shorts_schedule.default_settings or {}).get("pilot_persona_experiment", {}),
                 "pending_long_themes": pending_long,
                 "pending_short_themes": pending_shorts,
                 "tool_study": analysis_payload.get("tool_study") or [],

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v218 loaded");
+console.log("[CriaVideo] app.js v219 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -7309,6 +7309,30 @@ function _renderAutoPilotChannels() {
         const scheduleName = pilot.schedule_name || "Automacao do piloto ainda nao criada.";
         const lastRun = _autoPilotFormatDateTime(pilot.last_run_at || pilot.last_analysis_at);
         const lastError = String(pilot.last_error || "").trim();
+        const personaExperiment = (pilot.pilot_persona_experiment && typeof pilot.pilot_persona_experiment === "object")
+            ? pilot.pilot_persona_experiment
+            : {};
+        const selectedPersonaTypes = new Set(
+            (Array.isArray(personaExperiment.candidates) ? personaExperiment.candidates : [])
+                .map((item) => _normalizeRealisticPersonaType(item?.persona_type || item?.type || ""))
+                .filter((type) => !!type)
+        );
+        if (!selectedPersonaTypes.size && pilot.interaction_persona) {
+            selectedPersonaTypes.add(_normalizeRealisticPersonaType(pilot.interaction_persona));
+        }
+        const experimentPhase = String(personaExperiment.phase || (selectedPersonaTypes.size ? "explore" : "")).trim();
+        const personaOptions = ["mulher", "homem", "familia", "crianca", "natureza"].map((type) => {
+            const checked = selectedPersonaTypes.has(type) ? "checked" : "";
+            return `
+                <label class="auto-pilot-persona-option">
+                    <input type="checkbox" data-pilot-persona="${type}" data-account-id="${accountId}" ${checked}>
+                    <span>${esc(REALISTIC_PERSONA_LABELS[type] || type)}</span>
+                </label>
+            `;
+        }).join("");
+        const selectedLabels = Array.from(selectedPersonaTypes)
+            .map((type) => REALISTIC_PERSONA_LABELS[type] || type)
+            .join(", ");
 
         const actionLabel = toggling
             ? "Salvando..."
@@ -7329,9 +7353,23 @@ function _renderAutoPilotChannels() {
                         <span>Temas concluidos: <strong>${completedThemes}</strong></span>
                         <span>Ultima analise: <strong>${esc(lastRun)}</strong></span>
                     </div>
+                    <div class="auto-pilot-persona-box">
+                        <div class="auto-pilot-persona-head">
+                            <strong>Personas para teste</strong>
+                            ${experimentPhase ? `<small>${esc(experimentPhase)}</small>` : ""}
+                        </div>
+                        <div class="auto-pilot-persona-options">${personaOptions}</div>
+                        <p class="auto-pilot-meta">${selectedLabels ? `Rodada inicial: ${esc(selectedLabels)}` : "Escolha as personas que o piloto deve testar na primeira rodada."}</p>
+                    </div>
                     ${lastError ? `<p class="auto-pilot-error">Ultimo erro: ${esc(lastError)}</p>` : ""}
                 </div>
                 <div class="auto-pilot-actions">
+                    <button
+                        class="btn btn-sm btn-secondary"
+                        type="button"
+                        ${toggling ? "disabled" : ""}
+                        onclick="saveAutoPilotPersonaExperiment(${accountId})"
+                    >Salvar personas</button>
                     <button
                         class="btn btn-sm ${actionClass}"
                         type="button"
@@ -7398,9 +7436,56 @@ function openAutoPilotModal() {
     loadAutoPilotChannels(true);
 }
 
+function _getSelectedPilotPersonaTypes(accountId) {
+    const container = document.getElementById("auto-pilot-channels");
+    if (!container) return [];
+    const selected = [];
+    container.querySelectorAll(`input[data-account-id="${accountId}"][data-pilot-persona]:checked`).forEach((input) => {
+        const type = _normalizeRealisticPersonaType(input.dataset.pilotPersona || "");
+        if (type && !selected.includes(type)) {
+            selected.push(type);
+        }
+    });
+    return selected;
+}
+
+async function saveAutoPilotPersonaExperiment(socialAccountId) {
+    const accountId = parseInt(socialAccountId || "0", 10) || 0;
+    if (!accountId) return;
+    const selectedTypes = _getSelectedPilotPersonaTypes(accountId);
+    if (!selectedTypes.length) {
+        alert("Selecione pelo menos uma persona para o piloto testar.");
+        return;
+    }
+
+    _autoPilotState.togglingByAccount[accountId] = true;
+    _renderAutoPilotChannels();
+
+    try {
+        const channel = (_autoPilotState.channels || []).find((item) => (parseInt(item.social_account_id || "0", 10) || 0) === accountId);
+        const enabled = !!channel?.pilot?.enabled;
+        await api(`/automation/pilot/channels/${accountId}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+                enabled,
+                pilot_persona_types: selectedTypes,
+            }),
+        });
+        await loadAutoPilotChannels(true);
+        showToast("Personas do piloto salvas. A primeira rodada vai testar todas as selecionadas.");
+    } catch (error) {
+        alert(`Erro ao salvar personas do piloto: ${error.message}`);
+    } finally {
+        _autoPilotState.togglingByAccount[accountId] = false;
+        _renderAutoPilotChannels();
+    }
+}
+window.saveAutoPilotPersonaExperiment = saveAutoPilotPersonaExperiment;
+
 async function toggleAutoPilotChannel(socialAccountId, enabled) {
     const accountId = parseInt(socialAccountId || "0", 10) || 0;
     if (!accountId) return;
+    const selectedTypes = _getSelectedPilotPersonaTypes(accountId);
 
     _autoPilotState.togglingByAccount[accountId] = true;
     _renderAutoPilotChannels();
@@ -7408,7 +7493,10 @@ async function toggleAutoPilotChannel(socialAccountId, enabled) {
     try {
         await api(`/automation/pilot/channels/${accountId}`, {
             method: "PATCH",
-            body: JSON.stringify({ enabled: !!enabled }),
+            body: JSON.stringify({
+                enabled: !!enabled,
+                ...(selectedTypes.length ? { pilot_persona_types: selectedTypes } : {}),
+            }),
         });
         await loadAutoPilotChannels(true);
         await loadAutoSchedules();

@@ -17,6 +17,7 @@ from app.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
 from app.models import AutoChannelPilot, AutoSchedule, AutoScheduleTheme, Platform, SocialAccount
+from app.services.persona_image import normalize_persona_type
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -111,9 +112,78 @@ class ToggleChannelPilotRequest(BaseModel):
     interaction_persona: Optional[str] = None
     persona_profile_id: Optional[int] = None
     persona_profile_ids: Optional[list[int]] = None
+    pilot_persona_types: Optional[list[str]] = None
+    pilot_persona_candidates: Optional[list[dict]] = None
 
 
 # ── Helpers ──
+
+def _normalize_pilot_persona_candidates(
+    persona_types: Optional[list[str]] = None,
+    persona_candidates: Optional[list[dict]] = None,
+) -> list[dict]:
+    candidates: list[dict] = []
+    seen = set()
+
+    def _add_candidate(persona_type: str, profile_id: int = 0, profile_ids: list[int] | None = None):
+        try:
+            normalized_type = normalize_persona_type(str(persona_type or "").strip().lower())
+        except Exception:
+            return
+        if not normalized_type:
+            return
+        ids = []
+        for raw in (profile_ids or []):
+            try:
+                pid = int(raw)
+            except Exception:
+                continue
+            if pid > 0 and pid not in ids:
+                ids.append(pid)
+        if profile_id > 0 and profile_id not in ids:
+            ids.insert(0, int(profile_id))
+        key = f"{normalized_type}:{','.join(str(pid) for pid in ids)}"
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(
+            {
+                "persona_type": normalized_type,
+                "persona_profile_id": ids[0] if ids else 0,
+                "persona_profile_ids": ids,
+            }
+        )
+
+    for item in persona_candidates or []:
+        if not isinstance(item, dict):
+            continue
+        raw_profile_id = item.get("persona_profile_id") or item.get("profile_id") or 0
+        try:
+            profile_id = int(raw_profile_id or 0)
+        except Exception:
+            profile_id = 0
+        raw_ids = item.get("persona_profile_ids") or item.get("profile_ids") or []
+        _add_candidate(
+            item.get("persona_type") or item.get("type") or item.get("interaction_persona") or "",
+            profile_id=profile_id,
+            profile_ids=raw_ids if isinstance(raw_ids, list) else [],
+        )
+
+    for persona_type in persona_types or []:
+        _add_candidate(persona_type)
+
+    return candidates[:8]
+
+
+def _build_pilot_persona_experiment(candidates: list[dict]) -> dict:
+    return {
+        "enabled": bool(candidates),
+        "phase": "explore" if candidates else "off",
+        "scope": ["shorts", "title", "description", "thumbnail"],
+        "candidates": candidates,
+        "winner": None,
+        "selection_reason": "primeira_rodada_testa_todas_as_personas",
+    }
 
 def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
     account_label = ""
@@ -225,6 +295,7 @@ def _pilot_summary_dict(pilot: AutoChannelPilot | None) -> dict:
             "schedule_id": None,
             "long_schedule_id": None,
             "shorts_schedule_id": None,
+            "pilot_persona_experiment": {},
         }
 
     return {
@@ -242,6 +313,7 @@ def _pilot_summary_dict(pilot: AutoChannelPilot | None) -> dict:
         "schedule_id": pilot.auto_schedule_id,
         "long_schedule_id": pilot.long_schedule_id,
         "shorts_schedule_id": pilot.shorts_schedule_id,
+        "pilot_persona_experiment": (pilot.last_summary or {}).get("pilot_persona_experiment", {}),
     }
 
 
@@ -471,6 +543,7 @@ async def list_pilot_channels(
         pilot_data["interaction_persona"] = sched_defaults.get("interaction_persona", "")
         pilot_data["persona_profile_id"] = int(sched_defaults.get("persona_profile_id", 0) or 0)
         pilot_data["persona_profile_ids"] = sched_defaults.get("persona_profile_ids") or []
+        pilot_data["pilot_persona_experiment"] = sched_defaults.get("pilot_persona_experiment") or pilot_data.get("pilot_persona_experiment") or {}
 
         long_counts = counts_by_schedule.get(long_schedule.id if long_schedule else 0, {"pending": 0, "completed": 0})
         short_counts = counts_by_schedule.get(short_schedule.id if short_schedule else 0, {"pending": 0, "completed": 0})
@@ -566,8 +639,27 @@ async def toggle_pilot_channel(
     if req.shorts_per_cycle is not None:
         pilot.shorts_per_cycle = max(1, min(6, int(req.shorts_per_cycle)))
 
-    if req.interaction_persona is not None or req.persona_profile_id is not None or req.persona_profile_ids is not None:
+    experiment_candidates: list[dict] | None = None
+    if req.pilot_persona_types is not None or req.pilot_persona_candidates is not None:
+        experiment_candidates = _normalize_pilot_persona_candidates(
+            persona_types=req.pilot_persona_types,
+            persona_candidates=req.pilot_persona_candidates,
+        )
+
+    if (
+        req.interaction_persona is not None
+        or req.persona_profile_id is not None
+        or req.persona_profile_ids is not None
+        or experiment_candidates is not None
+    ):
         persona_patch = {}
+        if experiment_candidates is not None:
+            persona_patch["pilot_persona_experiment"] = _build_pilot_persona_experiment(experiment_candidates)
+            if experiment_candidates:
+                first_candidate = experiment_candidates[0]
+                persona_patch["interaction_persona"] = first_candidate.get("persona_type", "")
+                persona_patch["persona_profile_id"] = int(first_candidate.get("persona_profile_id", 0) or 0)
+                persona_patch["persona_profile_ids"] = first_candidate.get("persona_profile_ids") or []
         if req.interaction_persona is not None:
             persona_patch["interaction_persona"] = str(req.interaction_persona).strip().lower()
         if req.persona_profile_id is not None:
