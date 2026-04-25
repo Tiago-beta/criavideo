@@ -296,7 +296,13 @@ def _pick_seo_hook(project: VideoProject, ai_title: str) -> str:
 
 
 def _compose_seo_automation_title(project: VideoProject, ai_title: str) -> str:
+    is_short = isinstance(project.tags, dict) and bool(project.tags.get("musical_short"))
+
     raw = _clean_title_part(ai_title, max_len=90)
+
+    if is_short and raw and len(raw) >= 15:
+        return _clean_title_part(raw, max_len=90).strip(" -|,")
+
     right_part = ""
     if "|" in raw:
         parts = [p.strip() for p in raw.split("|", 1)]
@@ -1749,14 +1755,32 @@ async def _generate_publish_metadata(project: VideoProject) -> dict:
     if project.lyrics_text:
         context_parts.append(f"Letra da musica:\n{project.lyrics_text[:500]}")
 
+    tags_data = project.tags if isinstance(project.tags, dict) else {}
+    is_short = bool(tags_data.get("musical_short"))
+    segment_index = int(tags_data.get("segment_index", 0) or 0)
+    lyrics_snippet = str(tags_data.get("segment_transcription", "") or "").strip()
+
     context = "\n".join(context_parts) or "Video musical sem detalhes adicionais"
+    if is_short and lyrics_snippet:
+        context += f"\nTrecho cantado neste short: {lyrics_snippet[:300]}"
     tema = project.track_title or project.title or "Video musical"
+
+    short_instruction = ""
+    if is_short:
+        short_instruction = (
+            "\nATENCAO — Este video e um SHORT (vertical, <15s). "
+            "O titulo DEVE ser diferente de outros shorts da mesma musica. "
+            f"Este e o trecho {segment_index + 1} da musica. "
+            "Use como gancho uma frase inspirada no trecho cantado acima, "
+            "nunca repita o mesmo gancho generico. "
+            "O gancho deve refletir a emocao ESPECIFICA deste trecho.\n"
+        )
 
     prompt = f"""Voce e um estrategista de crescimento para canais novos no YouTube. Gere metadados otimizados para descoberta, clique e retencao.
 
 DADOS DO VIDEO:
 Tema: {tema}
-Contexto: {context[:2000]}
+Contexto: {context[:2000]}{short_instruction}
 
 Gere:
 1. Um titulo forte, curto, com alto potencial de CTR e clareza de busca (max 80 chars)

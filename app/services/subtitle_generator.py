@@ -229,6 +229,17 @@ def group_words_into_lines(words: list[dict], max_words_per_line: int = 8, max_g
     return lines
 
 
+def _estimate_clip_duration(words: list[dict]) -> float:
+    if not words:
+        return 0.0
+    last_end = 0.0
+    for w in reversed(words):
+        if isinstance(w, dict) and w.get("end"):
+            last_end = float(w["end"])
+            break
+    return last_end
+
+
 def generate_ass_subtitles(
     lyrics_words: list[dict],
     aspect_ratio: str = "16:9",
@@ -248,17 +259,22 @@ def generate_ass_subtitles(
     style_cfg = _normalize_ass_style(aspect_ratio, style_settings)
     header = ASS_HEADER.format(**style_cfg)
 
-    lines = group_words_into_lines(lyrics_words)
+    clip_duration = _estimate_clip_duration(lyrics_words)
+    is_short_clip = clip_duration > 0 and clip_duration <= 15.0
+    words_per_line = 4 if is_short_clip else 8
+    gap_threshold = 0.8 if is_short_clip else 1.5
+
+    lines = group_words_into_lines(lyrics_words, max_words_per_line=words_per_line, max_gap=gap_threshold)
     events = []
 
-    # Dim color for the "next line" preview (light gray)
     next_line_color = r"{\1c&H00AAAAAA&\2c&H00AAAAAA&}"
 
     for i, line_words in enumerate(lines):
         if not line_words:
             continue
-        start = max(0.0, line_words[0]["start"] - 0.3)  # appear slightly early
-        end = line_words[-1]["end"] + 0.5  # buffer after last word
+        lead_in = 0.15 if is_short_clip else 0.3
+        start = max(0.0, line_words[0]["start"] - lead_in)
+        end = line_words[-1]["end"] + (0.2 if is_short_clip else 0.5)
 
         # Clip end so it doesn't overlap with next line's start (avoids duplicate text)
         if i + 1 < len(lines) and lines[i + 1]:

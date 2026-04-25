@@ -108,6 +108,9 @@ class ToggleChannelPilotRequest(BaseModel):
     channel_mode: Optional[str] = None
     short_mix_mode: Optional[str] = None
     shorts_per_cycle: Optional[int] = None
+    interaction_persona: Optional[str] = None
+    persona_profile_id: Optional[int] = None
+    persona_profile_ids: Optional[list[int]] = None
 
 
 # ── Helpers ──
@@ -462,6 +465,13 @@ async def list_pilot_channels(
         )
         short_schedule = schedules_by_id.get(pilot_data.get("shorts_schedule_id") or 0)
 
+        sched_defaults = {}
+        if long_schedule and isinstance(long_schedule.default_settings, dict):
+            sched_defaults = long_schedule.default_settings
+        pilot_data["interaction_persona"] = sched_defaults.get("interaction_persona", "")
+        pilot_data["persona_profile_id"] = int(sched_defaults.get("persona_profile_id", 0) or 0)
+        pilot_data["persona_profile_ids"] = sched_defaults.get("persona_profile_ids") or []
+
         long_counts = counts_by_schedule.get(long_schedule.id if long_schedule else 0, {"pending": 0, "completed": 0})
         short_counts = counts_by_schedule.get(short_schedule.id if short_schedule else 0, {"pending": 0, "completed": 0})
 
@@ -555,6 +565,25 @@ async def toggle_pilot_channel(
         )
     if req.shorts_per_cycle is not None:
         pilot.shorts_per_cycle = max(1, min(6, int(req.shorts_per_cycle)))
+
+    if req.interaction_persona is not None or req.persona_profile_id is not None or req.persona_profile_ids is not None:
+        persona_patch = {}
+        if req.interaction_persona is not None:
+            persona_patch["interaction_persona"] = str(req.interaction_persona).strip().lower()
+        if req.persona_profile_id is not None:
+            persona_patch["persona_profile_id"] = int(req.persona_profile_id)
+        if req.persona_profile_ids is not None:
+            persona_patch["persona_profile_ids"] = [int(pid) for pid in req.persona_profile_ids if int(pid) > 0]
+        for sid in [pilot.long_schedule_id, pilot.shorts_schedule_id]:
+            if not sid:
+                continue
+            sched = await db.get(AutoSchedule, sid)
+            if sched and sched.user_id == user["id"]:
+                ds = dict(sched.default_settings or {})
+                ds.update(persona_patch)
+                sched.default_settings = ds
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(sched, "default_settings")
 
     schedule_ids_to_toggle = {
         int(sid)
