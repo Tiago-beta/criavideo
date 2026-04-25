@@ -5451,6 +5451,28 @@ th,
     color: var(--text-muted);
     line-height: 1.4;
 }
+
+.editor-start-selection {
+    padding-bottom: 8px;
+}
+
+.editor-start-grid {
+    max-width: 900px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.editor-start-card {
+    width: 100%;
+    appearance: none;
+    color: inherit;
+    font-family: inherit;
+}
+
+.editor-start-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
 @media (max-width: 480px) {
     .mode-selection-grid {
         grid-template-columns: 1fr;
@@ -5458,6 +5480,13 @@ th,
     }
     .mode-selection-card {
         padding: 20px 14px 16px;
+    }
+}
+
+@media (max-width: 900px) {
+    .editor-start-grid {
+        grid-template-columns: 1fr;
+        max-width: 520px;
     }
 }
 

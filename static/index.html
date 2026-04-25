@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260425-71">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260425-72">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 240;
+        var REQUIRED_VER = 241;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -203,6 +203,7 @@
                                 </div>
                             </div>
                             <input id="editor-video-upload-input" type="file" accept="video/*" hidden onchange="_editorUploadVideo(this)">
+                            <input id="editor-start-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="_editorStartWithImages(this)">
                             <input id="editor-layer-video-upload-input" type="file" accept="video/*" hidden onchange="_editorUploadLayerVideo(this)">
                             <input id="editor-layer-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="_editorUploadLayerImage(this)">
                             <input id="editor-project-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadProjectImages(this)">
@@ -654,6 +655,45 @@
                         <span>Automatizar</span>
                     </button>
                 </nav>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-editor-start" class="modal">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h3>Iniciar editor</h3>
+                <button class="modal-close" onclick="closeModal('modal-editor-start')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="create-mode-selection editor-start-selection">
+                    <h3 class="wizard-question">Como deseja iniciar?</h3>
+                    <div class="mode-selection-grid editor-start-grid">
+                        <button class="mode-selection-card editor-start-card" type="button" onclick="_editorChooseStartMode('video_pc')">
+                            <div class="mode-selection-icon">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            </div>
+                            <strong>Enviar vídeo do PC</strong>
+                            <small>Envie um vídeo e abra a edição automaticamente.</small>
+                        </button>
+
+                        <button class="mode-selection-card editor-start-card" type="button" onclick="_editorChooseStartMode('image_pc')">
+                            <div class="mode-selection-icon">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                            </div>
+                            <strong>Enviar imagem do PC</strong>
+                            <small>Prepara criação com imagens no fluxo de projeto.</small>
+                        </button>
+
+                        <button class="mode-selection-card editor-start-card" type="button" onclick="_editorChooseStartMode('library')">
+                            <div class="mode-selection-icon">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polygon points="11 11 16 14 11 17 11 11"/></svg>
+                            </div>
+                            <strong>Enviar da biblioteca</strong>
+                            <small>Escolha um vídeo finalizado da lista para editar.</small>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -2809,8 +2849,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260425-71"></script>
-    <script src="/video/static/pwa.js?v=20260425-71"></script>
+    <script src="/video/static/app.js?v=20260425-72"></script>
+    <script src="/video/static/pwa.js?v=20260425-72"></script>
 </body>
 </html>
 

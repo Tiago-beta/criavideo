@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v223 loaded");
+console.log("[CriaVideo] app.js v224 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -12711,6 +12711,81 @@ async function _editorUploadVideo(input) {
 }
 window._editorUploadVideo = _editorUploadVideo;
 
+function _editorOpenStartModal() {
+    const selectView = document.getElementById("editor-select-view");
+    if (selectView && selectView.hidden) {
+        showToast("Feche a edição atual para iniciar por este menu.", "error");
+        return;
+    }
+    openModal("modal-editor-start");
+}
+window._editorOpenStartModal = _editorOpenStartModal;
+
+function _editorChooseStartMode(mode) {
+    const selectedMode = String(mode || "").trim();
+    if (selectedMode === "video_pc") {
+        closeModal("modal-editor-start");
+        document.getElementById("editor-video-upload-input")?.click();
+        return;
+    }
+
+    if (selectedMode === "image_pc") {
+        document.getElementById("editor-start-image-upload-input")?.click();
+        return;
+    }
+
+    closeModal("modal-editor-start");
+    const list = document.getElementById("editor-videos-list");
+    if (list) {
+        list.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    showToast("Selecione um vídeo da biblioteca para abrir no editor.", "success");
+}
+window._editorChooseStartMode = _editorChooseStartMode;
+
+function _editorOpenCreateFlowWithImages(files) {
+    const imageFiles = Array.isArray(files)
+        ? files.filter((file) => file && String(file.type || "").startsWith("image/"))
+        : [];
+    if (!imageFiles.length) {
+        showToast("Selecione imagens JPG, PNG ou WebP para continuar.", "error");
+        return;
+    }
+
+    resetCreateWizard();
+    openModal("modal-new-project");
+    switchCreateMode("script");
+
+    const photoToggle = document.getElementById("script-use-photos");
+    if (photoToggle && !photoToggle.checked) {
+        photoToggle.checked = true;
+    }
+    togglePhotoUpload();
+
+    const scriptTypeGrid = document.getElementById("script-video-type-grid");
+    if (scriptTypeGrid) {
+        scriptTypeGrid.querySelectorAll(".video-type-card").forEach((card) => card.classList.remove("selected"));
+        const ownImagesCard = scriptTypeGrid.querySelector('.video-type-card[data-type="imagens_proprias"]');
+        if (ownImagesCard) {
+            ownImagesCard.classList.add("selected");
+        }
+    }
+    scriptData.videoType = "imagens_proprias";
+
+    addPhotos(imageFiles);
+    showToast(`${imageFiles.length} imagem(ns) carregada(s). Continue para criar o vídeo.`, "success");
+}
+
+function _editorStartWithImages(input) {
+    const files = Array.from(input?.files || []);
+    if (input) input.value = "";
+    if (!files.length) return;
+
+    closeModal("modal-editor-start");
+    _editorOpenCreateFlowWithImages(files);
+}
+window._editorStartWithImages = _editorStartWithImages;
+
 function _editorGetMediaLayerById(id) {
     return _editor.mediaLayers.find(layer => String(layer.id) === String(id)) || null;
 }
@@ -16699,9 +16774,7 @@ function _bindEditorEvents() {
     document.getElementById("editor-undo-btn")?.addEventListener("click", _editorUndo);
     document.getElementById("editor-redo-btn")?.addEventListener("click", _editorRedo);
     document.getElementById("editor-export-btn")?.addEventListener("click", _editorExport);
-    document.getElementById("editor-upload-btn")?.addEventListener("click", () => {
-        document.getElementById("editor-video-upload-input")?.click();
-    });
+    document.getElementById("editor-upload-btn")?.addEventListener("click", _editorOpenStartModal);
     document.getElementById("editor-side-upload-video-btn")?.addEventListener("click", () => {
         const layerVideoInput = document.getElementById("editor-layer-video-upload-input");
         if (!layerVideoInput) return;
