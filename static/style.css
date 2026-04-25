@@ -1060,6 +1060,43 @@ a {
     gap: 0.4rem;
 }
 
+.auto-pilot-persona-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.auto-pilot-persona-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    font-size: 0.76rem;
+    color: var(--text);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    padding: 0.22rem 0.5rem;
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.auto-pilot-persona-chip-remove {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.auto-pilot-persona-chip-remove:hover {
+    color: var(--text);
+}
+
+.auto-pilot-persona-empty {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
 .auto-pilot-persona-option {
     display: inline-flex;
     align-items: center;

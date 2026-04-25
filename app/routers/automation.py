@@ -125,7 +125,12 @@ def _normalize_pilot_persona_candidates(
     candidates: list[dict] = []
     seen = set()
 
-    def _add_candidate(persona_type: str, profile_id: int = 0, profile_ids: list[int] | None = None):
+    def _add_candidate(
+        persona_type: str,
+        profile_id: int = 0,
+        profile_ids: list[int] | None = None,
+        disable_persona_reference: bool = False,
+    ):
         try:
             normalized_type = normalize_persona_type(str(persona_type or "").strip().lower())
         except Exception:
@@ -142,7 +147,8 @@ def _normalize_pilot_persona_candidates(
                 ids.append(pid)
         if profile_id > 0 and profile_id not in ids:
             ids.insert(0, int(profile_id))
-        key = f"{normalized_type}:{','.join(str(pid) for pid in ids)}"
+        disable_ref = bool(disable_persona_reference)
+        key = f"{normalized_type}:{','.join(str(pid) for pid in ids)}:{1 if disable_ref else 0}"
         if key in seen:
             return
         seen.add(key)
@@ -151,6 +157,7 @@ def _normalize_pilot_persona_candidates(
                 "persona_type": normalized_type,
                 "persona_profile_id": ids[0] if ids else 0,
                 "persona_profile_ids": ids,
+                "disable_persona_reference": disable_ref,
             }
         )
 
@@ -163,10 +170,12 @@ def _normalize_pilot_persona_candidates(
         except Exception:
             profile_id = 0
         raw_ids = item.get("persona_profile_ids") or item.get("profile_ids") or []
+        disable_ref = bool(item.get("disable_persona_reference") or item.get("grok_text_only"))
         _add_candidate(
             item.get("persona_type") or item.get("type") or item.get("interaction_persona") or "",
             profile_id=profile_id,
             profile_ids=raw_ids if isinstance(raw_ids, list) else [],
+            disable_persona_reference=disable_ref,
         )
 
     for persona_type in persona_types or []:
@@ -543,6 +552,7 @@ async def list_pilot_channels(
         pilot_data["interaction_persona"] = sched_defaults.get("interaction_persona", "")
         pilot_data["persona_profile_id"] = int(sched_defaults.get("persona_profile_id", 0) or 0)
         pilot_data["persona_profile_ids"] = sched_defaults.get("persona_profile_ids") or []
+        pilot_data["disable_persona_reference"] = bool(sched_defaults.get("disable_persona_reference"))
         pilot_data["pilot_persona_experiment"] = sched_defaults.get("pilot_persona_experiment") or pilot_data.get("pilot_persona_experiment") or {}
 
         long_counts = counts_by_schedule.get(long_schedule.id if long_schedule else 0, {"pending": 0, "completed": 0})
@@ -660,6 +670,9 @@ async def toggle_pilot_channel(
                 persona_patch["interaction_persona"] = first_candidate.get("persona_type", "")
                 persona_patch["persona_profile_id"] = int(first_candidate.get("persona_profile_id", 0) or 0)
                 persona_patch["persona_profile_ids"] = first_candidate.get("persona_profile_ids") or []
+                disable_ref = bool(first_candidate.get("disable_persona_reference"))
+                persona_patch["disable_persona_reference"] = disable_ref
+                persona_patch["grok_text_only"] = disable_ref
         if req.interaction_persona is not None:
             persona_patch["interaction_persona"] = str(req.interaction_persona).strip().lower()
         if req.persona_profile_id is not None:

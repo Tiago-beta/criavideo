@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v222 loaded");
+console.log("[CriaVideo] app.js v223 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -34,6 +34,10 @@ let _autoPilotState = {
     loading: false,
     togglingByAccount: {},
 };
+let _autoPilotPersonaEditor = {
+    accountId: 0,
+    selectedTypes: [],
+};
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 
 const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
@@ -52,18 +56,21 @@ let _personaSelectionByContext = {
     script: {},
     ai: {},
     auto: {},
+    pilot: {},
 };
 let _personaMultiSelectionByContext = {
     wizard: {},
     script: {},
     ai: {},
     auto: {},
+    pilot: {},
 };
 let _personaNoReferenceByContext = {
     wizard: {},
     script: {},
     ai: {},
     auto: {},
+    pilot: {},
 };
 let _personaManagerContext = "script";
 let _personaManagerType = "natureza";
@@ -2645,7 +2652,7 @@ function initCreateWizard() {
 
     // Wizard option clicks (event delegation)
     document.getElementById("modal-new-project").addEventListener("click", (e) => {
-        const personaTag = e.target.closest("#wizard-realistic-persona-tags .style-tag, #script-realistic-persona-tags .style-tag, #ai-suggest-persona-tags .style-tag");
+        const personaTag = e.target.closest("#wizard-realistic-persona-tags .style-tag, #script-realistic-persona-tags .style-tag, #ai-suggest-persona-tags .style-tag, #pilot-realistic-persona-tags .style-tag");
         if (personaTag) {
             const group = personaTag.closest(".realistic-inspiration-tags");
             if (group) {
@@ -2659,6 +2666,8 @@ function initCreateWizard() {
                     _refreshPersonaContext("script", selectedPersona);
                 } else if (group.id === "ai-suggest-persona-tags") {
                     setSelectedRealisticPersona(selectedPersona);
+                } else if (group.id === "pilot-realistic-persona-tags") {
+                    _setAutoPilotPersonaEditorType(selectedPersona);
                 }
             }
         }
@@ -4362,6 +4371,7 @@ function _getRealisticPersonaTypeByContext(context) {
     if (key === "wizard") selector = "#wizard-realistic-persona-tags .style-tag.selected";
     if (key === "ai") selector = "#ai-suggest-persona-tags .style-tag.selected";
     if (key === "auto") selector = "#auto-realistic-persona-tags .style-tag.selected";
+    if (key === "pilot") selector = "#pilot-realistic-persona-tags .style-tag.selected";
     const selected = document.querySelector(selector);
     return _normalizeRealisticPersonaType(selected ? selected.dataset.persona : "natureza");
 }
@@ -4370,6 +4380,7 @@ function _getRealisticPersonaPreviewElement(context) {
     if (context === "wizard") return document.getElementById("wizard-realistic-persona-preview");
     if (context === "ai") return document.getElementById("ai-suggest-persona-preview");
     if (context === "auto") return document.getElementById("auto-realistic-persona-preview");
+    if (context === "pilot") return document.getElementById("pilot-realistic-persona-preview");
     return document.getElementById("script-realistic-persona-preview");
 }
 
@@ -4385,11 +4396,11 @@ function _getMultiPersonaCheckbox(context) {
 }
 
 function _supportsInlineMultiPersona(context) {
-    return context === "wizard" || context === "script" || context === "ai" || context === "auto";
+    return context === "wizard" || context === "script" || context === "ai" || context === "auto" || context === "pilot";
 }
 
 function _supportsPersonaNoReference(context) {
-    return context === "wizard" || context === "script" || context === "ai";
+    return context === "wizard" || context === "script" || context === "ai" || context === "pilot";
 }
 
 function _isPersonaNoReferenceEnabled(context, personaType) {
@@ -4421,7 +4432,7 @@ function _isMultiPersonaEnabled(context) {
 }
 
 function toggleMultiPersona(context, enabled) {
-    const ctx = ["wizard", "script", "ai", "auto"].includes(context) ? context : "script";
+    const ctx = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
     const type = _getRealisticPersonaTypeByContext(ctx);
     const selectedIds = _getSelectedPersonaProfileIds(ctx, type);
     const isEnabled = !!enabled;
@@ -4434,11 +4445,14 @@ function toggleMultiPersona(context, enabled) {
 window.toggleMultiPersona = toggleMultiPersona;
 
 function togglePersonaSelectionFromPreview(context, profileId) {
-    const ctx = ["wizard", "script", "ai", "auto"].includes(context) ? context : "script";
+    const ctx = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
     const pid = parseInt(profileId || "0", 10) || 0;
     if (!pid) return;
 
     const type = _getRealisticPersonaTypeByContext(ctx);
+    if (ctx === "pilot" && !_autoPilotPersonaEditor.selectedTypes.includes(type)) {
+        _autoPilotPersonaEditor.selectedTypes.push(type);
+    }
     _setPersonaNoReferenceEnabled(ctx, type, false);
     const selectedIds = _getSelectedPersonaProfileIds(ctx, type);
 
@@ -4456,18 +4470,27 @@ function togglePersonaSelectionFromPreview(context, profileId) {
     }
 
     _renderPersonaPreview(ctx);
+    if (ctx === "pilot") {
+        _renderAutoPilotPersonaEditorSelectedTypes();
+    }
 }
 window.togglePersonaSelectionFromPreview = togglePersonaSelectionFromPreview;
 
 function selectNoPersonaReference(context) {
-    const ctx = ["wizard", "script", "ai", "auto"].includes(context) ? context : "script";
+    const ctx = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
     const type = _getRealisticPersonaTypeByContext(ctx);
     if (!_supportsPersonaNoReference(ctx)) {
         return;
     }
+    if (ctx === "pilot" && !_autoPilotPersonaEditor.selectedTypes.includes(type)) {
+        _autoPilotPersonaEditor.selectedTypes.push(type);
+    }
     _setPersonaNoReferenceEnabled(ctx, type, true);
     _setSelectedPersonaProfileIds(ctx, type, []);
     _renderPersonaPreview(ctx);
+    if (ctx === "pilot") {
+        _renderAutoPilotPersonaEditorSelectedTypes();
+    }
 }
 window.selectNoPersonaReference = selectNoPersonaReference;
 
@@ -4746,6 +4769,8 @@ function _refreshAllPersonaPreviews() {
     _renderPersonaPreview("script");
     _renderPersonaPreview("ai");
     _renderPersonaPreview("auto");
+    _renderPersonaPreview("pilot");
+    _renderAutoPilotPersonaEditorSelectedTypes();
 }
 
 async function _ensurePersonaSelection(context, personaType) {
@@ -5397,7 +5422,7 @@ function handlePersonaReferenceImagePaste(event) {
 }
 
 async function openPersonaManager(context = "script") {
-    _personaManagerContext = ["wizard", "script", "ai", "auto"].includes(context) ? context : "script";
+    _personaManagerContext = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
     _personaManagerType = _getRealisticPersonaTypeByContext(_personaManagerContext);
     _personaManagerMulti = _isMultiPersonaEnabled(_personaManagerContext);
 
@@ -5715,7 +5740,7 @@ async function deletePersonaFromManager(profileId) {
     try {
         await api(`/persona/profiles/${pid}`, { method: "DELETE" });
 
-        ["wizard", "script", "ai", "auto"].forEach((ctx) => {
+        ["wizard", "script", "ai", "auto", "pilot"].forEach((ctx) => {
             const selectedIds = _getSelectedPersonaProfileIds(ctx, _personaManagerType);
             if (selectedIds.includes(pid)) {
                 _setSelectedPersonaProfileIds(
@@ -7395,6 +7420,236 @@ function _autoPilotFormatDateTime(value) {
     });
 }
 
+function _normalizePilotPersonaCandidates(rawCandidates) {
+    const normalized = [];
+    const seen = new Set();
+
+    (Array.isArray(rawCandidates) ? rawCandidates : []).forEach((item) => {
+        if (!item || typeof item !== "object") return;
+
+        const type = _normalizeRealisticPersonaType(item.persona_type || item.type || item.interaction_persona || "natureza");
+        const ids = [];
+        (Array.isArray(item.persona_profile_ids) ? item.persona_profile_ids : []).forEach((rawId) => {
+            const pid = parseInt(rawId || "0", 10) || 0;
+            if (pid > 0 && !ids.includes(pid)) ids.push(pid);
+        });
+        const profileId = parseInt(item.persona_profile_id || item.profile_id || "0", 10) || 0;
+        if (profileId > 0 && !ids.includes(profileId)) ids.unshift(profileId);
+
+        const disablePersonaReference = !!item.disable_persona_reference || !!item.grok_text_only;
+        const uniqueKey = `${type}:${ids.join(",")}:${disablePersonaReference ? 1 : 0}`;
+        if (seen.has(uniqueKey)) return;
+        seen.add(uniqueKey);
+
+        normalized.push({
+            persona_type: type,
+            persona_profile_id: disablePersonaReference ? 0 : (ids[0] || 0),
+            persona_profile_ids: disablePersonaReference ? [] : ids,
+            disable_persona_reference: disablePersonaReference,
+        });
+    });
+
+    return normalized;
+}
+
+function _getPilotPersonaCandidatesFromChannel(channel) {
+    const pilot = channel?.pilot || {};
+    const personaExperiment = (pilot.pilot_persona_experiment && typeof pilot.pilot_persona_experiment === "object")
+        ? pilot.pilot_persona_experiment
+        : {};
+
+    const normalizedCandidates = _normalizePilotPersonaCandidates(personaExperiment.candidates);
+    if (normalizedCandidates.length) {
+        return normalizedCandidates;
+    }
+
+    const rawInteractionPersona = String(pilot.interaction_persona || "").trim();
+    if (!rawInteractionPersona) {
+        return [];
+    }
+
+    const fallbackType = _normalizeRealisticPersonaType(rawInteractionPersona);
+    const fallbackIds = [];
+    (Array.isArray(pilot.persona_profile_ids) ? pilot.persona_profile_ids : []).forEach((rawId) => {
+        const pid = parseInt(rawId || "0", 10) || 0;
+        if (pid > 0 && !fallbackIds.includes(pid)) fallbackIds.push(pid);
+    });
+    const fallbackProfileId = parseInt(pilot.persona_profile_id || "0", 10) || 0;
+    if (fallbackProfileId > 0 && !fallbackIds.includes(fallbackProfileId)) fallbackIds.unshift(fallbackProfileId);
+
+    const disablePersonaReference = !!pilot.disable_persona_reference || !!pilot.grok_text_only;
+    return [{
+        persona_type: fallbackType,
+        persona_profile_id: disablePersonaReference ? 0 : (fallbackIds[0] || 0),
+        persona_profile_ids: disablePersonaReference ? [] : fallbackIds,
+        disable_persona_reference: disablePersonaReference,
+    }];
+}
+
+function _formatPilotPersonaCandidateLabel(candidate) {
+    const type = _normalizeRealisticPersonaType(candidate?.persona_type || "natureza");
+    const baseLabel = REALISTIC_PERSONA_LABELS[type] || type;
+    const noReference = !!candidate?.disable_persona_reference;
+    if (noReference) {
+        return `${baseLabel} (Nenhum)`;
+    }
+
+    const ids = Array.isArray(candidate?.persona_profile_ids) ? candidate.persona_profile_ids : [];
+    if (ids.length > 1) {
+        return `${baseLabel} (${ids.length} personas)`;
+    }
+    if (ids.length === 1 || parseInt(candidate?.persona_profile_id || "0", 10) > 0) {
+        return `${baseLabel} (1 persona)`;
+    }
+    return baseLabel;
+}
+
+async function _setAutoPilotPersonaEditorType(personaType) {
+    const normalizedType = _normalizeRealisticPersonaType(personaType || "natureza");
+    const tagsContainer = document.getElementById("pilot-realistic-persona-tags");
+    if (tagsContainer) {
+        tagsContainer.querySelectorAll(".style-tag").forEach((tag) => {
+            tag.classList.toggle("selected", (tag.dataset.persona || "") === normalizedType);
+        });
+    }
+
+    if (!_autoPilotPersonaEditor.selectedTypes.includes(normalizedType)) {
+        _autoPilotPersonaEditor.selectedTypes.push(normalizedType);
+    }
+
+    await _refreshPersonaContext("pilot", normalizedType);
+    _renderAutoPilotPersonaEditorSelectedTypes();
+}
+
+function selectAutoPilotPersonaType(personaType) {
+    _setAutoPilotPersonaEditorType(personaType);
+}
+window.selectAutoPilotPersonaType = selectAutoPilotPersonaType;
+
+function _renderAutoPilotPersonaEditorSelectedTypes() {
+    const container = document.getElementById("pilot-persona-selected-types");
+    if (!container) return;
+
+    const selectedTypes = (Array.isArray(_autoPilotPersonaEditor.selectedTypes) ? _autoPilotPersonaEditor.selectedTypes : [])
+        .map((type) => _normalizeRealisticPersonaType(type))
+        .filter((type, index, arr) => arr.indexOf(type) === index);
+
+    if (!selectedTypes.length) {
+        container.innerHTML = '<span class="auto-pilot-persona-empty">Nenhuma persona selecionada para teste.</span>';
+        return;
+    }
+
+    const chips = selectedTypes.map((type) => {
+        const label = REALISTIC_PERSONA_LABELS[type] || type;
+        const ids = _getSelectedPersonaProfileIds("pilot", type);
+        const noRef = _isPersonaNoReferenceEnabled("pilot", type);
+        const detail = noRef
+            ? "Nenhum"
+            : ids.length > 1
+                ? `${ids.length} personas`
+                : ids.length === 1
+                    ? "1 persona"
+                    : "sem persona fixa";
+        return `
+            <span class="auto-pilot-persona-chip">
+                ${esc(label)} • ${esc(detail)}
+                <button class="auto-pilot-persona-chip-remove" type="button" onclick="removeAutoPilotPersonaType('${type}')" title="Remover ${esc(label)}">&times;</button>
+            </span>
+        `;
+    }).join("");
+
+    container.innerHTML = chips;
+}
+
+function removeAutoPilotPersonaType(personaType) {
+    const normalizedType = _normalizeRealisticPersonaType(personaType || "natureza");
+    _autoPilotPersonaEditor.selectedTypes = (Array.isArray(_autoPilotPersonaEditor.selectedTypes) ? _autoPilotPersonaEditor.selectedTypes : [])
+        .map((type) => _normalizeRealisticPersonaType(type))
+        .filter((type, index, arr) => arr.indexOf(type) === index)
+        .filter((type) => type !== normalizedType);
+
+    _setPersonaNoReferenceEnabled("pilot", normalizedType, false);
+    _setSelectedPersonaProfileIds("pilot", normalizedType, []);
+
+    const currentType = _getRealisticPersonaTypeByContext("pilot");
+    if (currentType === normalizedType) {
+        const nextType = _autoPilotPersonaEditor.selectedTypes[0] || "natureza";
+        _setAutoPilotPersonaEditorType(nextType);
+    }
+
+    _renderAutoPilotPersonaEditorSelectedTypes();
+}
+window.removeAutoPilotPersonaType = removeAutoPilotPersonaType;
+
+function _collectAutoPilotPersonaCandidatesForSave() {
+    const selectedTypes = (Array.isArray(_autoPilotPersonaEditor.selectedTypes) ? _autoPilotPersonaEditor.selectedTypes : [])
+        .map((type) => _normalizeRealisticPersonaType(type))
+        .filter((type, index, arr) => arr.indexOf(type) === index);
+
+    return selectedTypes.map((type) => {
+        const noRef = _isPersonaNoReferenceEnabled("pilot", type);
+        const ids = noRef ? [] : _getSelectedPersonaProfileIds("pilot", type);
+        return {
+            persona_type: type,
+            persona_profile_id: noRef ? 0 : (ids[0] || 0),
+            persona_profile_ids: ids,
+            disable_persona_reference: noRef,
+        };
+    });
+}
+
+async function openAutoPilotPersonaSelector(socialAccountId) {
+    const accountId = parseInt(socialAccountId || "0", 10) || 0;
+    if (!accountId) return;
+
+    const channel = (_autoPilotState.channels || []).find((item) => (parseInt(item.social_account_id || "0", 10) || 0) === accountId);
+    if (!channel) {
+        alert("Canal não encontrado para definir personas.");
+        return;
+    }
+
+    _personaSelectionByContext.pilot = {};
+    _personaMultiSelectionByContext.pilot = {};
+    _personaNoReferenceByContext.pilot = {};
+
+    const candidates = _getPilotPersonaCandidatesFromChannel(channel);
+    _autoPilotPersonaEditor.accountId = accountId;
+    _autoPilotPersonaEditor.selectedTypes = [];
+
+    candidates.forEach((candidate) => {
+        const type = _normalizeRealisticPersonaType(candidate.persona_type || "natureza");
+        if (!_autoPilotPersonaEditor.selectedTypes.includes(type)) {
+            _autoPilotPersonaEditor.selectedTypes.push(type);
+        }
+
+        const ids = (Array.isArray(candidate.persona_profile_ids) ? candidate.persona_profile_ids : [])
+            .map((rawId) => parseInt(rawId || "0", 10) || 0)
+            .filter((pid, index, arr) => pid > 0 && arr.indexOf(pid) === index);
+
+        _setSelectedPersonaProfileIds("pilot", type, ids);
+        _setPersonaNoReferenceEnabled("pilot", type, !!candidate.disable_persona_reference);
+        if (candidate.disable_persona_reference) {
+            _setSelectedPersonaProfileIds("pilot", type, []);
+        }
+    });
+
+    const fallbackType = _normalizeRealisticPersonaType(channel?.pilot?.interaction_persona || "natureza");
+    const initialType = _autoPilotPersonaEditor.selectedTypes[0] || fallbackType || "natureza";
+    if (!_autoPilotPersonaEditor.selectedTypes.includes(initialType)) {
+        _autoPilotPersonaEditor.selectedTypes.push(initialType);
+    }
+
+    const labelEl = document.getElementById("pilot-persona-channel-label");
+    if (labelEl) {
+        const accountName = channel.account_label || channel.platform_username || `Canal ${accountId}`;
+        labelEl.textContent = accountName;
+    }
+
+    openModal("modal-auto-pilot-persona");
+    await _setAutoPilotPersonaEditorType(initialType);
+}
+window.openAutoPilotPersonaSelector = openAutoPilotPersonaSelector;
+
 function _renderAutoPilotChannels() {
     const container = document.getElementById("auto-pilot-channels");
     if (!container) return;
@@ -7436,27 +7691,12 @@ function _renderAutoPilotChannels() {
         const personaExperiment = (pilot.pilot_persona_experiment && typeof pilot.pilot_persona_experiment === "object")
             ? pilot.pilot_persona_experiment
             : {};
-        const selectedPersonaTypes = new Set(
-            (Array.isArray(personaExperiment.candidates) ? personaExperiment.candidates : [])
-                .map((item) => _normalizeRealisticPersonaType(item?.persona_type || item?.type || ""))
-                .filter((type) => !!type)
-        );
-        if (!selectedPersonaTypes.size && pilot.interaction_persona) {
-            selectedPersonaTypes.add(_normalizeRealisticPersonaType(pilot.interaction_persona));
-        }
-        const experimentPhase = String(personaExperiment.phase || (selectedPersonaTypes.size ? "explore" : "")).trim();
-        const personaOptions = ["mulher", "homem", "familia", "crianca", "natureza"].map((type) => {
-            const checked = selectedPersonaTypes.has(type) ? "checked" : "";
-            return `
-                <label class="auto-pilot-persona-option">
-                    <input type="checkbox" data-pilot-persona="${type}" data-account-id="${accountId}" ${checked}>
-                    <span>${esc(REALISTIC_PERSONA_LABELS[type] || type)}</span>
-                </label>
-            `;
-        }).join("");
-        const selectedLabels = Array.from(selectedPersonaTypes)
-            .map((type) => REALISTIC_PERSONA_LABELS[type] || type)
-            .join(", ");
+        const pilotCandidates = _getPilotPersonaCandidatesFromChannel(channel);
+        const experimentPhase = String(personaExperiment.phase || (pilotCandidates.length ? "explore" : "")).trim();
+        const selectedLabels = pilotCandidates.map((candidate) => _formatPilotPersonaCandidateLabel(candidate)).join(", ");
+        const personaSummary = pilotCandidates.length
+            ? pilotCandidates.map((candidate) => `<span class="auto-pilot-persona-chip">${esc(_formatPilotPersonaCandidateLabel(candidate))}</span>`).join("")
+            : '<span class="auto-pilot-persona-empty">Nenhuma persona definida para a rodada inicial.</span>';
 
         const actionLabel = toggling
             ? "Salvando..."
@@ -7482,8 +7722,8 @@ function _renderAutoPilotChannels() {
                             <strong>Personas para teste</strong>
                             ${experimentPhase ? `<small>${esc(experimentPhase)}</small>` : ""}
                         </div>
-                        <div class="auto-pilot-persona-options">${personaOptions}</div>
-                        <p class="auto-pilot-meta">${selectedLabels ? `Rodada inicial: ${esc(selectedLabels)}` : "Escolha as personas que o piloto deve testar na primeira rodada."}</p>
+                        <div class="auto-pilot-persona-summary">${personaSummary}</div>
+                        <p class="auto-pilot-meta">${selectedLabels ? `Rodada inicial: ${esc(selectedLabels)}` : "Defina as personas que o piloto deve testar na primeira rodada."}</p>
                     </div>
                     ${lastError ? `<p class="auto-pilot-error">Ultimo erro: ${esc(lastError)}</p>` : ""}
                 </div>
@@ -7492,8 +7732,8 @@ function _renderAutoPilotChannels() {
                         class="btn btn-sm btn-secondary"
                         type="button"
                         ${toggling ? "disabled" : ""}
-                        onclick="saveAutoPilotPersonaExperiment(${accountId})"
-                    >Salvar personas</button>
+                        onclick="openAutoPilotPersonaSelector(${accountId})"
+                    >Definir personas</button>
                     <button
                         class="btn btn-sm ${actionClass}"
                         type="button"
@@ -7560,27 +7800,17 @@ function openAutoPilotModal() {
     loadAutoPilotChannels(true);
 }
 
-function _getSelectedPilotPersonaTypes(accountId) {
-    const container = document.getElementById("auto-pilot-channels");
-    if (!container) return [];
-    const selected = [];
-    container.querySelectorAll(`input[data-account-id="${accountId}"][data-pilot-persona]:checked`).forEach((input) => {
-        const type = _normalizeRealisticPersonaType(input.dataset.pilotPersona || "");
-        if (type && !selected.includes(type)) {
-            selected.push(type);
-        }
-    });
-    return selected;
-}
-
-async function saveAutoPilotPersonaExperiment(socialAccountId) {
-    const accountId = parseInt(socialAccountId || "0", 10) || 0;
+async function saveAutoPilotPersonaExperiment() {
+    const accountId = parseInt(_autoPilotPersonaEditor.accountId || "0", 10) || 0;
     if (!accountId) return;
-    const selectedTypes = _getSelectedPilotPersonaTypes(accountId);
-    if (!selectedTypes.length) {
+    const selectedCandidates = _collectAutoPilotPersonaCandidatesForSave();
+    if (!selectedCandidates.length) {
         alert("Selecione pelo menos uma persona para o piloto testar.");
         return;
     }
+
+    const saveBtn = document.getElementById("pilot-persona-save-btn");
+    if (saveBtn) saveBtn.disabled = true;
 
     _autoPilotState.togglingByAccount[accountId] = true;
     _renderAutoPilotChannels();
@@ -7592,15 +7822,17 @@ async function saveAutoPilotPersonaExperiment(socialAccountId) {
             method: "PATCH",
             body: JSON.stringify({
                 enabled,
-                pilot_persona_types: selectedTypes,
+                pilot_persona_candidates: selectedCandidates,
             }),
         });
         await loadAutoPilotChannels(true);
+        closeModal("modal-auto-pilot-persona");
         showToast("Personas do piloto salvas. A primeira rodada vai testar todas as selecionadas.");
     } catch (error) {
         alert(`Erro ao salvar personas do piloto: ${error.message}`);
     } finally {
         _autoPilotState.togglingByAccount[accountId] = false;
+        if (saveBtn) saveBtn.disabled = false;
         _renderAutoPilotChannels();
     }
 }
@@ -7609,7 +7841,8 @@ window.saveAutoPilotPersonaExperiment = saveAutoPilotPersonaExperiment;
 async function toggleAutoPilotChannel(socialAccountId, enabled) {
     const accountId = parseInt(socialAccountId || "0", 10) || 0;
     if (!accountId) return;
-    const selectedTypes = _getSelectedPilotPersonaTypes(accountId);
+    const channel = (_autoPilotState.channels || []).find((item) => (parseInt(item.social_account_id || "0", 10) || 0) === accountId);
+    const selectedCandidates = _getPilotPersonaCandidatesFromChannel(channel);
 
     _autoPilotState.togglingByAccount[accountId] = true;
     _renderAutoPilotChannels();
@@ -7619,7 +7852,7 @@ async function toggleAutoPilotChannel(socialAccountId, enabled) {
             method: "PATCH",
             body: JSON.stringify({
                 enabled: !!enabled,
-                ...(selectedTypes.length ? { pilot_persona_types: selectedTypes } : {}),
+                ...(selectedCandidates.length ? { pilot_persona_candidates: selectedCandidates } : {}),
             }),
         });
         await loadAutoPilotChannels(true);

@@ -376,7 +376,8 @@ def _normalize_pilot_persona_candidates(experiment: dict) -> list[dict]:
             profile_id = 0
         if profile_id > 0 and profile_id not in profile_ids:
             profile_ids.insert(0, profile_id)
-        key = f"{persona_type}:{','.join(str(pid) for pid in profile_ids)}"
+        disable_ref = bool(item.get("disable_persona_reference") or item.get("grok_text_only"))
+        key = f"{persona_type}:{','.join(str(pid) for pid in profile_ids)}:{1 if disable_ref else 0}"
         if key in seen:
             continue
         seen.add(key)
@@ -385,6 +386,7 @@ def _normalize_pilot_persona_candidates(experiment: dict) -> list[dict]:
                 "persona_type": persona_type,
                 "persona_profile_id": profile_ids[0] if profile_ids else 0,
                 "persona_profile_ids": profile_ids,
+                "disable_persona_reference": disable_ref,
             }
         )
     return normalized[:8]
@@ -402,6 +404,7 @@ def _pick_pilot_persona_candidate(experiment: dict, variant_index: int) -> dict 
                 "persona_type": winner_type,
                 "persona_profile_id": int(winner.get("persona_profile_id") or 0),
                 "persona_profile_ids": winner.get("persona_profile_ids") or [],
+                "disable_persona_reference": bool(winner.get("disable_persona_reference") or winner.get("grok_text_only")),
             }
     return candidates[max(0, int(variant_index or 0)) % len(candidates)]
 
@@ -1140,8 +1143,6 @@ async def _create_musical_short(
     interaction_persona = _normalize_interaction_persona(
         custom_settings.get("interaction_persona") or cfg.get("interaction_persona", "natureza")
     )
-    if disable_persona_reference:
-        interaction_persona = ""
     requested_persona_profile_id = int(
         custom_settings.get("persona_profile_id")
         or cfg.get("persona_profile_id")
@@ -1594,6 +1595,10 @@ async def _enqueue_pilot_shorts_from_long(
             or long_settings.get("interaction_persona")
             or "natureza"
         )
+        disable_persona_reference = bool(
+            shorts_defaults.get("disable_persona_reference")
+            or long_settings.get("disable_persona_reference")
+        )
         persona_profile_id = (
             shorts_defaults.get("persona_profile_id")
             or long_settings.get("persona_profile_id")
@@ -1630,11 +1635,16 @@ async def _enqueue_pilot_shorts_from_long(
             variant_index = experiment_variant_offset + int(seg["segment_index"] or 0)
             selected_persona = _pick_pilot_persona_candidate(persona_experiment, variant_index)
             short_interaction_persona = interaction_persona
+            short_disable_persona_reference = disable_persona_reference
             short_persona_profile_id = persona_profile_id
             short_persona_profile_ids = persona_profile_ids
             pilot_variant = {}
             if selected_persona:
                 short_interaction_persona = selected_persona.get("persona_type") or interaction_persona
+                short_disable_persona_reference = bool(
+                    selected_persona.get("disable_persona_reference")
+                    or selected_persona.get("grok_text_only")
+                )
                 short_persona_profile_id = int(selected_persona.get("persona_profile_id", 0) or 0)
                 short_persona_profile_ids = selected_persona.get("persona_profile_ids") or []
                 pilot_variant = {
@@ -1644,6 +1654,7 @@ async def _enqueue_pilot_shorts_from_long(
                     "persona_type": short_interaction_persona,
                     "persona_profile_id": short_persona_profile_id,
                     "persona_profile_ids": short_persona_profile_ids,
+                    "disable_persona_reference": short_disable_persona_reference,
                     "metrics_status": "pending",
                 }
             short_custom = {
@@ -1655,6 +1666,8 @@ async def _enqueue_pilot_shorts_from_long(
                 "clip_duration": seg["clip_duration"],
                 "segment_index": seg["segment_index"],
                 "interaction_persona": short_interaction_persona,
+                "disable_persona_reference": short_disable_persona_reference,
+                "grok_text_only": short_disable_persona_reference,
                 "persona_profile_id": short_persona_profile_id,
                 "persona_profile_ids": short_persona_profile_ids,
                 "pilot_cycle_key": pilot_cycle_key,
