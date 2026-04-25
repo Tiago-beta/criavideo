@@ -5730,6 +5730,22 @@ th,
     border-radius: 10px;
 }
 
+.realistic-persona-option-none {
+    background: linear-gradient(140deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+}
+
+.realistic-persona-none-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.realistic-persona-option-none.selected .realistic-persona-none-label {
+    color: var(--text);
+}
+
 .realistic-persona-actions {
     margin-top: 8px;
     display: flex;

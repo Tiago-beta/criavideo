@@ -2927,6 +2927,7 @@ class GenerateRealisticRequest(BaseModel):
     interaction_persona: str = "natureza"
     persona_profile_id: int = 0
     persona_profile_ids: list[int] = Field(default_factory=list)
+    disable_persona_reference: bool = False
     dialogue_enabled: bool = False
     dialogue_characters: list[str] = Field(default_factory=list)
     dialogue_voice_profile_ids: list[int] = Field(default_factory=list)
@@ -3004,6 +3005,11 @@ async def generate_realistic_endpoint(
         upload_ids.insert(0, req.image_upload_id)
     upload_ids = upload_ids[:6]
 
+    disable_persona_reference = bool(req.disable_persona_reference) and engine == "grok" and not bool(upload_ids)
+    if disable_persona_reference:
+        selected_persona_profile_id = 0
+        selected_persona_profile_ids = []
+
     # Resolve reference image with precedence: uploaded images > selected personas > default persona
     image_path_str = ""
     reference_count = 0
@@ -3024,7 +3030,7 @@ async def generate_realistic_endpoint(
             prefix="upload_refs",
         )
         reference_count = len(upload_image_paths)
-    else:
+    elif not disable_persona_reference:
         try:
             resolved_personas, persona_image_paths = await resolve_persona_reference_images(
                 db=db,
@@ -3093,18 +3099,22 @@ async def generate_realistic_endpoint(
     dialogue_duration = max(1, min(duration, int(req.dialogue_duration or duration))) if dialogue_enabled else 0
 
     has_reference_image = bool(image_path_str)
-    if not has_reference_image:
+    if not has_reference_image and not (engine == "grok" and disable_persona_reference):
         raise HTTPException(status_code=400, detail="Vídeo realista exige imagem de referência.")
 
-    reference_mode = "full_frame" if upload_ids else "face_identity_only"
-    prompt = _ensure_reference_image_instruction(prompt, reference_mode=reference_mode)
-    if reference_count > 1:
-        prompt = (
-            f"{prompt}\n\n"
-            "MULTI-PERSONA REFERENCE RULE: Use all uploaded reference identities together in the same scene. "
-            "Preserve each face identity without merging faces into one person. "
-            "When references are personas, do not copy clothing, background, pose or props."
-        )
+    if disable_persona_reference:
+        prompt = _inject_interaction_persona_instruction(prompt, interaction_persona)
+
+    reference_mode = "full_frame" if upload_ids else ("face_identity_only" if has_reference_image else "")
+    if has_reference_image:
+        prompt = _ensure_reference_image_instruction(prompt, reference_mode=reference_mode)
+        if reference_count > 1:
+            prompt = (
+                f"{prompt}\n\n"
+                "MULTI-PERSONA REFERENCE RULE: Use all uploaded reference identities together in the same scene. "
+                "Preserve each face identity without merging faces into one person. "
+                "When references are personas, do not copy clothing, background, pose or props."
+            )
 
     # Credit check — multi-clip costs more (Grok=15s blocks, Wan=8s blocks)
     from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
@@ -3136,13 +3146,16 @@ async def generate_realistic_endpoint(
 
     external_audio_url = (req.audio_url or "").strip()
     external_lyrics = (req.lyrics or "").strip()
+    reference_source = "upload" if upload_ids else ("none" if disable_persona_reference else "persona")
     tags_data = {
         "type": "realista",
         "engine": engine,
         "has_reference_image": has_reference_image,
-        "reference_source": "upload" if upload_ids else "persona",
+        "reference_source": reference_source,
         "reference_mode": reference_mode,
-        "reference_count": max(1, reference_count),
+        "reference_count": max(0, reference_count),
+        "disable_persona_reference": disable_persona_reference,
+        "grok_text_only": disable_persona_reference and engine == "grok",
         "add_music": req.add_music or bool(external_audio_url),
         "add_narration": req.add_narration and bool(narration_text) and not dialogue_enabled,
         "speech_mode": speech_mode,
@@ -3151,8 +3164,8 @@ async def generate_realistic_endpoint(
         "prompt_optimized": bool(req.prompt_optimized),
         "realistic_style": (req.realistic_style or "").strip(),
         "interaction_persona": interaction_persona,
-        "persona_profile_id": 0 if upload_ids else selected_persona_profile_id,
-        "persona_profile_ids": [] if upload_ids else selected_persona_profile_ids,
+        "persona_profile_id": 0 if (upload_ids or disable_persona_reference) else selected_persona_profile_id,
+        "persona_profile_ids": [] if (upload_ids or disable_persona_reference) else selected_persona_profile_ids,
         "dialogue_enabled": dialogue_enabled,
         "dialogue_characters": dialogue_characters,
         "dialogue_voice_profile_ids": dialogue_voice_profile_ids,

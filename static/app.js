@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v221 loaded");
+console.log("[CriaVideo] app.js v222 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -54,6 +54,12 @@ let _personaSelectionByContext = {
     auto: {},
 };
 let _personaMultiSelectionByContext = {
+    wizard: {},
+    script: {},
+    ai: {},
+    auto: {},
+};
+let _personaNoReferenceByContext = {
     wizard: {},
     script: {},
     ai: {},
@@ -2230,6 +2236,8 @@ async function createSimilar(projectId) {
 
         const selectedPersona = _normalizeRealisticPersonaType(tagsData.interaction_persona || "natureza");
         setSelectedRealisticPersona(selectedPersona);
+        const disablePersonaReference = !!tagsData.disable_persona_reference
+            || String(tagsData.reference_source || "").trim().toLowerCase() === "none";
 
         const personaIds = (Array.isArray(tagsData.persona_profile_ids) ? tagsData.persona_profile_ids : [])
             .map((id) => parseInt(id || "0", 10) || 0)
@@ -2240,10 +2248,15 @@ async function createSimilar(projectId) {
         }
 
         const multiPersonaCb = document.getElementById("script-realistic-multi-persona");
-        if (multiPersonaCb) multiPersonaCb.checked = personaIds.length > 1;
+        if (multiPersonaCb) multiPersonaCb.checked = !disablePersonaReference && personaIds.length > 1;
 
+        _setPersonaNoReferenceEnabled("script", selectedPersona, false);
         await _refreshPersonaContext("script", selectedPersona);
-        if (personaIds.length) {
+        if (disablePersonaReference) {
+            _setPersonaNoReferenceEnabled("script", selectedPersona, true);
+            _setSelectedPersonaProfileIds("script", selectedPersona, []);
+            _renderPersonaPreview("script");
+        } else if (personaIds.length) {
             _setSelectedPersonaProfileIds("script", selectedPersona, personaIds);
             _renderPersonaPreview("script");
         }
@@ -2902,13 +2915,21 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
 
     try {
         const contextKey = prefix === "wizard" ? "wizard" : "script";
-        personaProfileIds = await _ensurePersonaSelections(contextKey, interactionPersona);
-        personaProfileId = personaProfileIds[0] || 0;
+        const disablePersonaReference = _isPersonaNoReferenceEnabled(contextKey, interactionPersona);
+        if (disablePersonaReference) {
+            personaProfileIds = [];
+            personaProfileId = 0;
+        } else {
+            personaProfileIds = await _ensurePersonaSelections(contextKey, interactionPersona);
+            personaProfileId = personaProfileIds[0] || 0;
+        }
 
-        const selectedPersonaProfiles = personaProfileIds
-            .map((sid) => _getPersonaProfiles(interactionPersona).find((profile) => (parseInt(profile?.id || "0", 10) || 0) === sid))
-            .filter(Boolean)
-            .slice(0, 4);
+        const selectedPersonaProfiles = disablePersonaReference
+            ? []
+            : personaProfileIds
+                .map((sid) => _getPersonaProfiles(interactionPersona).find((profile) => (parseInt(profile?.id || "0", 10) || 0) === sid))
+                .filter(Boolean)
+                .slice(0, 4);
 
         const dialogueEnabled = !!(addNarration && !narrationText);
         const dialogueCharacters = selectedPersonaProfiles
@@ -2928,7 +2949,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             ? "dialogue_auto"
             : (addNarration && narrationText ? "narration_manual" : "none");
 
-        if (!wantsReferenceImage && !personaProfileIds.length) {
+        if (!wantsReferenceImage && !disablePersonaReference && !personaProfileIds.length) {
             throw new Error("Crie uma ou mais personas de interação primeiro para gerar o vídeo realista.");
         }
 
@@ -2936,6 +2957,9 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         let imageUploadId = "";
         let imageUploadIds = [];
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
+        if (disablePersonaReference && engine !== "grok" && !shouldUploadReferenceImage) {
+            throw new Error("O modo Nenhum sem foto funciona no Cria 3.0 speed. Para outros motores, envie uma imagem de referência.");
+        }
         if (shouldUploadReferenceImage) {
             setCreateProgress(5, "Gerando vídeo realista...", "Enviando imagem de referência...");
             const photosToUpload = scriptPhotos.slice(0, 6);
@@ -3006,6 +3030,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 interaction_persona: interactionPersona,
                 persona_profile_id: personaProfileId,
                 persona_profile_ids: personaProfileIds,
+                disable_persona_reference: disablePersonaReference,
             }),
         });
 
@@ -3272,6 +3297,9 @@ function resetCreateWizard() {
     _personaMultiSelectionByContext.wizard = {};
     _personaMultiSelectionByContext.script = {};
     _personaMultiSelectionByContext.ai = {};
+    _personaNoReferenceByContext.wizard = {};
+    _personaNoReferenceByContext.script = {};
+    _personaNoReferenceByContext.ai = {};
     _refreshPersonaContext("wizard", "natureza");
     _refreshPersonaContext("script", "natureza");
     _refreshPersonaContext("ai", "natureza");
@@ -4360,6 +4388,30 @@ function _supportsInlineMultiPersona(context) {
     return context === "wizard" || context === "script" || context === "ai" || context === "auto";
 }
 
+function _supportsPersonaNoReference(context) {
+    return context === "wizard" || context === "script" || context === "ai";
+}
+
+function _isPersonaNoReferenceEnabled(context, personaType) {
+    if (!_supportsPersonaNoReference(context)) {
+        return false;
+    }
+    const type = _normalizeRealisticPersonaType(personaType);
+    const ctx = _personaNoReferenceByContext[context] || {};
+    return !!ctx[type];
+}
+
+function _setPersonaNoReferenceEnabled(context, personaType, enabled) {
+    if (!_supportsPersonaNoReference(context)) {
+        return;
+    }
+    const type = _normalizeRealisticPersonaType(personaType);
+    if (!_personaNoReferenceByContext[context]) {
+        _personaNoReferenceByContext[context] = {};
+    }
+    _personaNoReferenceByContext[context][type] = !!enabled;
+}
+
 function _isMultiPersonaEnabled(context) {
     if (_supportsInlineMultiPersona(context)) {
         return true;
@@ -4387,6 +4439,7 @@ function togglePersonaSelectionFromPreview(context, profileId) {
     if (!pid) return;
 
     const type = _getRealisticPersonaTypeByContext(ctx);
+    _setPersonaNoReferenceEnabled(ctx, type, false);
     const selectedIds = _getSelectedPersonaProfileIds(ctx, type);
 
     if (selectedIds.includes(pid)) {
@@ -4405,6 +4458,18 @@ function togglePersonaSelectionFromPreview(context, profileId) {
     _renderPersonaPreview(ctx);
 }
 window.togglePersonaSelectionFromPreview = togglePersonaSelectionFromPreview;
+
+function selectNoPersonaReference(context) {
+    const ctx = ["wizard", "script", "ai", "auto"].includes(context) ? context : "script";
+    const type = _getRealisticPersonaTypeByContext(ctx);
+    if (!_supportsPersonaNoReference(ctx)) {
+        return;
+    }
+    _setPersonaNoReferenceEnabled(ctx, type, true);
+    _setSelectedPersonaProfileIds(ctx, type, []);
+    _renderPersonaPreview(ctx);
+}
+window.selectNoPersonaReference = selectNoPersonaReference;
 
 async function _loadPersonaProfiles(personaType, ensureDefault = false) {
     const type = _normalizeRealisticPersonaType(personaType);
@@ -4439,6 +4504,9 @@ function _setSelectedPersonaProfileId(context, personaType, profileId) {
         _personaMultiSelectionByContext[context] = {};
     }
     _personaMultiSelectionByContext[context][type] = pid ? [pid] : [];
+    if (pid > 0) {
+        _setPersonaNoReferenceEnabled(context, type, false);
+    }
 }
 
 function _getSelectedPersonaProfileIds(context, personaType) {
@@ -4481,6 +4549,9 @@ function _setSelectedPersonaProfileIds(context, personaType, profileIds) {
 
     _personaMultiSelectionByContext[context][type] = normalized;
     _personaSelectionByContext[context][type] = normalized[0] || 0;
+    if (normalized.length) {
+        _setPersonaNoReferenceEnabled(context, type, false);
+    }
 }
 
 function _getSelectedPersonaProfile(context, personaType) {
@@ -4502,16 +4573,42 @@ function _renderPersonaPreview(context) {
     if (!el) return;
 
     const type = _getRealisticPersonaTypeByContext(context);
+    const supportsNoReference = _supportsPersonaNoReference(context);
+    const noReferenceEnabled = supportsNoReference && _isPersonaNoReferenceEnabled(context, type);
     const profiles = _getPersonaProfiles(type);
     if (!profiles.length) {
-        el.innerHTML = '<div class="realistic-persona-empty">Nenhuma persona disponível para este tipo ainda.</div>';
+        if (!supportsNoReference) {
+            el.innerHTML = '<div class="realistic-persona-empty">Nenhuma persona disponível para este tipo ainda.</div>';
+            return;
+        }
+
+        const noneSelectedClass = noReferenceEnabled ? " selected" : "";
+        el.innerHTML = `
+            <div class="realistic-persona-grid">
+                <button
+                    class="realistic-persona-option realistic-persona-option-none${noneSelectedClass}"
+                    type="button"
+                    onclick="selectNoPersonaReference('${context}')"
+                    title="Nenhum (IA escolhe a face pelo prompt)"
+                    aria-label="Nenhum (IA escolhe a face pelo prompt)"
+                    aria-pressed="${noReferenceEnabled ? "true" : "false"}">
+                    <span class="realistic-persona-none-label">Nenhum</span>
+                </button>
+            </div>
+            <div class="realistic-persona-empty">Sem persona fixa: a IA decide o rosto com base no prompt.</div>
+        `;
         return;
     }
 
     let selectedIds = _getSelectedPersonaProfileIds(context, type)
         .filter((sid) => profiles.some((profile) => parseInt(profile.id, 10) === sid));
 
-    if (!selectedIds.length) {
+    if (noReferenceEnabled && selectedIds.length) {
+        selectedIds = [];
+        _setSelectedPersonaProfileIds(context, type, selectedIds);
+    }
+
+    if (!selectedIds.length && !noReferenceEnabled) {
         const fallback = profiles.find((profile) => !!profile.is_default) || profiles[0] || null;
         selectedIds = fallback ? [parseInt(fallback.id, 10) || 0] : [];
         _setSelectedPersonaProfileIds(context, type, selectedIds);
@@ -4519,6 +4616,19 @@ function _renderPersonaPreview(context) {
 
     if (_supportsInlineMultiPersona(context)) {
         const selectedSet = new Set(selectedIds);
+        const noneOptionHtml = supportsNoReference
+            ? `
+                <button
+                    class="realistic-persona-option realistic-persona-option-none${noReferenceEnabled ? " selected" : ""}"
+                    type="button"
+                    onclick="selectNoPersonaReference('${context}')"
+                    title="Nenhum (IA escolhe a face pelo prompt)"
+                    aria-label="Nenhum (IA escolhe a face pelo prompt)"
+                    aria-pressed="${noReferenceEnabled ? "true" : "false"}">
+                    <span class="realistic-persona-none-label">Nenhum</span>
+                </button>
+            `
+            : "";
         const cards = profiles.map((profile) => {
             const pid = parseInt(profile.id, 10) || 0;
             const isSelected = selectedSet.has(pid);
@@ -4543,6 +4653,7 @@ function _renderPersonaPreview(context) {
 
         el.innerHTML = `
             <div class="realistic-persona-grid">
+                ${noneOptionHtml}
                 ${cards}
             </div>
         `;
@@ -4610,6 +4721,7 @@ async function _refreshPersonaContext(context, forcedPersonaType = "") {
     }
 
     const profiles = _getPersonaProfiles(type);
+    const noReferenceEnabled = _supportsPersonaNoReference(context) && _isPersonaNoReferenceEnabled(context, type);
     let selectedIds = _getSelectedPersonaProfileIds(context, type)
         .filter((sid) => profiles.some((profile) => parseInt(profile.id, 10) === sid));
 
@@ -4617,7 +4729,9 @@ async function _refreshPersonaContext(context, forcedPersonaType = "") {
         selectedIds = [selectedIds[0]];
     }
 
-    if (!selectedIds.length) {
+    if (noReferenceEnabled) {
+        selectedIds = [];
+    } else if (!selectedIds.length) {
         const fallback = profiles.find((profile) => !!profile.is_default) || profiles[0] || null;
         selectedIds = fallback ? [fallback.id] : [];
     }
@@ -4645,6 +4759,12 @@ async function _ensurePersonaSelection(context, personaType) {
 
 async function _ensurePersonaSelections(context, personaType) {
     const type = _normalizeRealisticPersonaType(personaType);
+    const noReferenceEnabled = _supportsPersonaNoReference(context) && _isPersonaNoReferenceEnabled(context, type);
+    if (noReferenceEnabled) {
+        _setSelectedPersonaProfileIds(context, type, []);
+        return [];
+    }
+
     if (!_getPersonaProfiles(type).length) {
         await _loadPersonaProfiles(type, false);
     }
@@ -5708,16 +5828,20 @@ async function generateAiScript() {
                 showToast("Ultra High 2.2 usa duracao em multiplos de 8 segundos.");
             }
         }
+        const disablePersonaReference = _isPersonaNoReferenceEnabled("ai", interactionPersona);
         let selectedPersonaIds = [];
-        try {
-            selectedPersonaIds = await _ensurePersonaSelections("ai", interactionPersona);
-        } catch (error) {
-            alert(`Erro ao carregar persona: ${error.message || "Tente novamente."}`);
-            return;
+        if (!disablePersonaReference) {
+            try {
+                selectedPersonaIds = await _ensurePersonaSelections("ai", interactionPersona);
+            } catch (error) {
+                alert(`Erro ao carregar persona: ${error.message || "Tente novamente."}`);
+                return;
+            }
         }
         const selectedPersonaId = selectedPersonaIds[0] || 0;
         const usePhotosToggle = document.getElementById("script-use-photos");
-        const hasReferenceImage = selectedPersonaIds.length > 0 || (scriptPhotos.length > 0 && (!usePhotosToggle || usePhotosToggle.checked));
+        const hasPersonaReference = !disablePersonaReference && selectedPersonaIds.length > 0;
+        const hasReferenceImage = hasPersonaReference || (scriptPhotos.length > 0 && (!usePhotosToggle || usePhotosToggle.checked));
         const engineLabel = engine === "grok"
             ? "Cria 3.0 speed"
             : engine === "minimax"
@@ -7734,6 +7858,7 @@ function openNewAutomationModal() {
     if (autoMultiPersona) autoMultiPersona.checked = false;
     _personaSelectionByContext.auto = {};
     _personaMultiSelectionByContext.auto = {};
+    _personaNoReferenceByContext.auto = {};
     _refreshPersonaContext("auto", "natureza");
 
     // reset engine selection
