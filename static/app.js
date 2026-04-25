@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v217 loaded");
+console.log("[CriaVideo] app.js v218 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -11303,6 +11303,14 @@ function _editorSegSourceStart(seg) {
     return seg.sourceStart != null ? Number(seg.sourceStart) : Number(seg.start);
 }
 
+function _editorEnsureSegmentSourceStart(seg) {
+    if (!seg) return 0;
+    if (seg.sourceStart == null) {
+        seg.sourceStart = Number(seg.start || 0);
+    }
+    return Number(seg.sourceStart || 0);
+}
+
 function _editorSegSourceEnd(seg) {
     return _editorSegSourceStart(seg) + Math.max(0, Number(seg.end) - Number(seg.start));
 }
@@ -11337,7 +11345,7 @@ function _editorRippleCloseGaps(track) {
     segs.sort((a, b) => a.start - b.start);
     let cursor = 0;
     segs.forEach(seg => {
-        if (seg.sourceStart == null) seg.sourceStart = seg.start;
+        _editorEnsureSegmentSourceStart(seg);
         const duration = Math.max(0, Number(seg.end) - Number(seg.start));
         seg.start = cursor;
         seg.end = cursor + duration;
@@ -12085,8 +12093,8 @@ function _editorCloneVideoSegmentsForAudio() {
             id: `auto-audio-${idx + 1}`,
             start: Number(seg.start || 0),
             end: Number(seg.end || 0),
+            sourceStart: _editorSegSourceStart(seg),
         };
-        if (seg.sourceStart != null) clone.sourceStart = Number(seg.sourceStart);
         return clone;
     });
 }
@@ -12176,7 +12184,7 @@ function _editorRecomputeTrimBounds() {
 
 function _editorInitVideoSegments() {
     const dur = Math.max(_editor.duration || 0, 0.1);
-    _editor.videoSegments = [{ id: _editorGenId(), start: 0, end: dur }];
+    _editor.videoSegments = [{ id: _editorGenId(), start: 0, end: dur, sourceStart: 0 }];
     _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
     _editor.selectedTracks = ["video"];
     _editor.selectedInsertTrack = "video";
@@ -15024,7 +15032,11 @@ function _editorSetTrimStart(val) {
     if (isNaN(parsed) || !_editor.videoSegments.length) return;
     _editorSortVideoSegments();
     const first = _editor.videoSegments[0];
-    first.start = Math.max(0, Math.min(first.end - 0.1, parsed));
+    const oldStart = Number(first.start || 0);
+    const nextStart = Math.max(0, Math.min(first.end - 0.1, parsed));
+    const sourceStart = _editorEnsureSegmentSourceStart(first);
+    first.start = nextStart;
+    first.sourceStart = Math.max(0, sourceStart + (nextStart - oldStart));
     _editorRecomputeTrimBounds();
     _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     const label = document.getElementById("trim-start-label");
@@ -15754,6 +15766,7 @@ function _editorApplyDraggedRange(kind, id, start, end, track = "") {
         const targetTrack = track || "video";
         const item = _editorFindSegment(targetTrack, id);
         if (!item) return;
+        _editorEnsureSegmentSourceStart(item);
         const span = Math.max(0.1, end - start);
         const [clampedStart, clampedEnd] = _editorClampSegmentRange(targetTrack, id, start, span);
         item.start = clampedStart;
