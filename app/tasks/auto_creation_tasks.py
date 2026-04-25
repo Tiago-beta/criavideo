@@ -9,6 +9,7 @@ import re
 import unicodedata
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -522,6 +523,30 @@ async def ai_select_video_settings(theme: str) -> dict:
         }
 
 
+def _parse_theme_release_date(custom_settings: dict) -> datetime.date | None:
+    raw = str(custom_settings.get("scheduled_date_override") or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _is_theme_due_today(theme: AutoScheduleTheme, schedule_timezone: str) -> bool:
+    custom_settings = theme.custom_settings if isinstance(theme.custom_settings, dict) else {}
+    release_date = _parse_theme_release_date(custom_settings)
+    if not release_date:
+        return True
+    try:
+        tz = ZoneInfo(schedule_timezone or "UTC")
+    except Exception:
+        tz = ZoneInfo("UTC")
+    return release_date <= datetime.now(tz).date()
+
+
 async def run_auto_creation(auto_schedule_id: int):
     """Main auto-creation pipeline: pick next theme, create video, publish."""
     async with async_session() as db:
@@ -553,7 +578,17 @@ async def run_auto_creation(auto_schedule_id: int):
             logger.info("Auto-schedule %d: no pending themes", auto_schedule_id)
             return
 
-        theme_entry = pending[0]
+        if schedule.video_type in {"music", "musical_shorts"}:
+            due_pending = [t for t in pending if _is_theme_due_today(t, schedule.timezone or "UTC")]
+            if not due_pending:
+                logger.info(
+                    "Auto-schedule %d: no pending themes due today (music schedule)",
+                    auto_schedule_id,
+                )
+                return
+            theme_entry = due_pending[0]
+        else:
+            theme_entry = pending[0]
         theme_entry.status = "processing"
         await db.commit()
 

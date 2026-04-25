@@ -1287,6 +1287,7 @@ a {
 .auto-theme-item {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.5rem;
     font-size: 0.85rem;
     padding: 0.35rem 0.5rem;
@@ -1324,6 +1325,54 @@ a {
     color: var(--accent);
     opacity: 0.9;
     white-space: nowrap;
+}
+
+.auto-theme-item .theme-date.theme-date-custom {
+    color: #34d399;
+    font-weight: 600;
+}
+
+.auto-theme-item .theme-date-editor {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.auto-theme-item .theme-date-input {
+    border: 1px solid rgba(96, 129, 162, 0.38);
+    background: rgba(7, 28, 52, 0.72);
+    color: var(--text);
+    border-radius: 6px;
+    height: 28px;
+    padding: 0 0.35rem;
+    font-size: 0.72rem;
+    min-width: 126px;
+}
+
+.auto-theme-item .theme-date-save,
+.auto-theme-item .theme-date-clear {
+    border-radius: 6px;
+    border: 1px solid rgba(96, 129, 162, 0.35);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-muted);
+    cursor: pointer;
+    height: 28px;
+    padding: 0 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.auto-theme-item .theme-date-save:hover,
+.auto-theme-item .theme-date-clear:hover {
+    border-color: rgba(246, 165, 47, 0.44);
+    color: var(--text);
+}
+
+.auto-theme-item .theme-date-save:disabled {
+    opacity: 0.6;
+    cursor: wait;
 }
 
 .auto-theme-item .theme-badge {
@@ -1564,6 +1613,18 @@ a {
     background: #8b5cf622;
     color: #a78bfa;
     border: 1px solid #8b5cf644;
+}
+
+.badge-duration-long {
+    background: #0ea5e922;
+    color: #7dd3fc;
+    border: 1px solid #0ea5e944;
+}
+
+.badge-duration-short {
+    background: #f59e0b22;
+    color: #fbbf24;
+    border: 1px solid #f59e0b44;
 }
 
 /* ── Automation Video Type Grid (matching project wizard) ── */
@@ -4256,6 +4317,7 @@ svg.spin {
     .auto-theme-item {
         min-width: 0;
         max-width: 100%;
+        gap: 0.35rem;
     }
 
     .auto-theme-item span {
@@ -4273,6 +4335,16 @@ svg.spin {
     .auto-theme-item .theme-error-btn {
         font-size: 0.6rem;
         padding: 1px 4px;
+    }
+
+    .auto-theme-item .theme-date-editor {
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .auto-theme-item .theme-date-input {
+        flex: 1;
+        min-width: 0;
     }
 
     .auto-theme-add {

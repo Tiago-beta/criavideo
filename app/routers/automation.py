@@ -2,7 +2,7 @@
 Automation Router — CRUD for auto-schedules (automated video creation + publishing).
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional, Union
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
@@ -101,6 +101,10 @@ class ReorderThemesRequest(BaseModel):
     theme_ids: list[int]
 
 
+class UpdateThemeRequest(BaseModel):
+    scheduled_date: Optional[str] = None  # YYYY-MM-DD (or DD/MM/YYYY)
+
+
 class ToggleChannelPilotRequest(BaseModel):
     enabled: bool
     analysis_interval_hours: Optional[int] = None
@@ -194,6 +198,27 @@ def _build_pilot_persona_experiment(candidates: list[dict]) -> dict:
         "selection_reason": "primeira_rodada_testa_todas_as_personas",
     }
 
+
+def _parse_schedule_date_value(raw_value: str) -> Optional[date]:
+    value = str(raw_value or "").strip()
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _get_theme_date_override(theme: AutoScheduleTheme) -> Optional[date]:
+    custom = theme.custom_settings if isinstance(theme.custom_settings, dict) else {}
+    raw_date = custom.get("scheduled_date_override")
+    if raw_date is None:
+        return None
+    return _parse_schedule_date_value(str(raw_date))
+
+
 def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
     account_label = ""
     if s.social_account:
@@ -224,7 +249,6 @@ def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
         except Exception:
             pass
         # Convert to local time for display
-        from datetime import timezone as dt_tz
         utc_ref = datetime.now(ZoneInfo("UTC")).replace(hour=h, minute=mn, second=0, microsecond=0)
         local_ref = utc_ref.astimezone(tz)
         local_h, local_m = local_ref.hour, local_ref.minute
@@ -244,12 +268,22 @@ def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
         for t in all_sorted:
             td = _theme_to_dict(t)
             if t.status == "pending":
-                delta = timedelta(weeks=pending_idx) if s.frequency == "weekly" else timedelta(days=pending_idx)
-                scheduled = next_run + delta
-                td["scheduled_date"] = scheduled.strftime("%d/%m/%Y")
-                pending_idx += 1
+                override_date = _get_theme_date_override(t)
+                if override_date:
+                    td["scheduled_date"] = override_date.strftime("%d/%m/%Y")
+                    td["scheduled_date_iso"] = override_date.isoformat()
+                    td["scheduled_date_overridden"] = True
+                else:
+                    delta = timedelta(weeks=pending_idx) if s.frequency == "weekly" else timedelta(days=pending_idx)
+                    scheduled = next_run + delta
+                    td["scheduled_date"] = scheduled.strftime("%d/%m/%Y")
+                    td["scheduled_date_iso"] = scheduled.date().isoformat()
+                    td["scheduled_date_overridden"] = False
+                    pending_idx += 1
             else:
                 td["scheduled_date"] = None
+                td["scheduled_date_iso"] = None
+                td["scheduled_date_overridden"] = False
             themes_with_dates.append(td)
     return {
         "id": s.id,
@@ -403,6 +437,7 @@ async def create_auto_schedule(
 ):
     if not req.name or not req.name.strip():
         raise HTTPException(status_code=400, detail="Nome da automação é obrigatório.")
+
     if req.video_type not in ("narration", "music", "musical_shorts", "realistic"):
         raise HTTPException(status_code=400, detail="Tipo de vídeo inválido.")
     if req.creation_mode not in ("auto", "manual"):
@@ -848,6 +883,41 @@ async def add_themes(
 
     await db.commit()
     return {"ok": True, "added": len(added)}
+
+
+@router.patch("/themes/{theme_id}")
+async def update_theme(
+    theme_id: int,
+    req: UpdateThemeRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(AutoScheduleTheme)
+        .join(AutoSchedule)
+        .where(AutoScheduleTheme.id == theme_id, AutoSchedule.user_id == user["id"])
+    )
+    theme = result.scalar_one_or_none()
+    if not theme:
+        raise HTTPException(status_code=404, detail="Tema não encontrado.")
+
+    fields_set = getattr(req, "model_fields_set", None) or getattr(req, "__fields_set__", set())
+    if "scheduled_date" in fields_set:
+        custom_settings = dict(theme.custom_settings or {}) if isinstance(theme.custom_settings, dict) else {}
+        raw_date = (req.scheduled_date or "").strip()
+
+        if not raw_date:
+            custom_settings.pop("scheduled_date_override", None)
+        else:
+            parsed = _parse_schedule_date_value(raw_date)
+            if not parsed:
+                raise HTTPException(status_code=400, detail="Data inválida. Use YYYY-MM-DD.")
+            custom_settings["scheduled_date_override"] = parsed.isoformat()
+
+        theme.custom_settings = custom_settings or None
+
+    await db.commit()
+    return {"ok": True}
 
 
 @router.delete("/themes/{theme_id}")

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v224 loaded");
+console.log("[CriaVideo] app.js v225 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -7880,6 +7880,49 @@ async function loadAutoSchedules() {
     }
 }
 
+function _isMusicAutoSchedule(videoType) {
+    return videoType === "music" || videoType === "musical_shorts";
+}
+
+function _getAutoScheduleLengthMeta(schedule) {
+    const defaultSettings = (schedule && typeof schedule.default_settings === "object" && schedule.default_settings)
+        ? schedule.default_settings
+        : {};
+    const pilotStream = String(defaultSettings.pilot_stream || "").trim().toLowerCase();
+    if (pilotStream === "long") {
+        return { label: "Video longo", className: "badge-duration-long" };
+    }
+    if (pilotStream === "short") {
+        return { label: "Shorts", className: "badge-duration-short" };
+    }
+
+    if (schedule.video_type === "musical_shorts") {
+        return { label: "Shorts", className: "badge-duration-short" };
+    }
+
+    const durationCandidates = [
+        defaultSettings.duration_seconds,
+        defaultSettings.music_duration,
+        defaultSettings.duration,
+        defaultSettings.tevoxi_duration,
+        defaultSettings.clip_duration,
+    ];
+    for (const raw of durationCandidates) {
+        const seconds = parseFloat(raw);
+        if (!Number.isFinite(seconds) || seconds <= 0) continue;
+        if (seconds > 60) {
+            return { label: "Video longo", className: "badge-duration-long" };
+        }
+        return { label: "Shorts", className: "badge-duration-short" };
+    }
+
+    if (schedule.video_type === "music") {
+        return { label: "Video longo", className: "badge-duration-long" };
+    }
+
+    return { label: "Shorts", className: "badge-duration-short" };
+}
+
 function renderAutoCard(s) {
     const isTestAccount = !s.social_account_id;
     let typeBadge = '<span class="badge badge-completed">Imagens IA</span>';
@@ -7891,9 +7934,12 @@ function renderAutoCard(s) {
     const modeBadge = s.creation_mode === "manual"
         ? '<span class="badge">Manual</span>'
         : '<span class="badge badge-queued">Auto</span>';
+    const lengthMeta = _getAutoScheduleLengthMeta(s);
+    const lengthBadge = `<span class="badge ${lengthMeta.className}">${lengthMeta.label}</span>`;
     const statusBadge = s.is_active
         ? '<span class="badge badge-completed">Ativo</span>'
         : '<span class="badge badge-failed">Pausado</span>';
+    const allowMusicDateEdit = _isMusicAutoSchedule(s.video_type);
 
     const themes = (s.themes || []);
     const pendingCount = themes.filter(t => t.status === "pending").length;
@@ -7910,7 +7956,18 @@ function renderAutoCard(s) {
         } else {
             icon = "📅"; statusClass = "theme-pending"; statusLabel = "";
         }
-        const dateLabel = t.scheduled_date ? `<span class="theme-date">${esc(t.scheduled_date)}</span>` : "";
+        const dateLabel = t.scheduled_date
+            ? `<span class="theme-date ${t.scheduled_date_overridden ? "theme-date-custom" : ""}">${t.scheduled_date_overridden ? "Manual" : "Previsto"}: ${esc(t.scheduled_date)}</span>`
+            : "";
+        const canEditReleaseDate = allowMusicDateEdit && t.status === "pending";
+        const dateEditor = canEditReleaseDate
+            ? `
+            <div class="theme-date-editor">
+                <input type="date" id="theme-date-input-${t.id}" class="theme-date-input" value="${esc(t.scheduled_date_iso || "")}">
+                <button class="theme-date-save" id="theme-date-save-${t.id}" onclick="saveAutoThemeDate(${t.id})" type="button" title="Salvar data">Salvar</button>
+                <button class="theme-date-clear" onclick="clearAutoThemeDate(${t.id})" type="button" title="Limpar data">Limpar</button>
+            </div>`
+            : "";
         const statusBadge = statusLabel ? `<span class="theme-badge ${statusClass}">${statusLabel}</span>` : "";
         const errorBtn = (t.status === "error" || t.status === "failed") && t.error_message
             ? `<button class="theme-error-btn" data-error="${esc(t.error_message).replace(/"/g, '&quot;')}" onclick="showThemeError(this)" type="button" title="Ver motivo">Ver motivo</button>`
@@ -7919,6 +7976,7 @@ function renderAutoCard(s) {
             <span class="theme-status">${icon}</span>
             <span class="theme-text">${esc(t.theme)}</span>
             ${dateLabel}
+            ${dateEditor}
             ${statusBadge}
             ${errorBtn}
             <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
@@ -7940,7 +7998,7 @@ function renderAutoCard(s) {
             <h4>${esc(s.name || "Automação")}</h4>
             ${statusBadge}
         </div>
-        <div class="auto-card-badges">${typeBadge} ${modeBadge}</div>
+        <div class="auto-card-badges">${typeBadge} ${modeBadge} ${lengthBadge}</div>
         <div class="auto-card-meta">
             <span>${freq} as ${esc(s.time_local || s.time_utc)}</span>
             <span>${pendingCount} pendentes / ${doneCount} feitos</span>
@@ -7983,6 +8041,42 @@ async function deleteAutoSchedule(id) {
 function showThemeError(btn) {
     const msg = btn.getAttribute("data-error") || "Erro desconhecido";
     alert(msg);
+}
+
+async function saveAutoThemeDate(themeId) {
+    const input = document.getElementById(`theme-date-input-${themeId}`);
+    const saveBtn = document.getElementById(`theme-date-save-${themeId}`);
+    if (!input) return;
+
+    const rawDate = (input.value || "").trim();
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Salvando...";
+    }
+
+    try {
+        await api(`/automation/themes/${themeId}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+                scheduled_date: rawDate || null,
+            }),
+        });
+        loadAutoSchedules();
+    } catch (error) {
+        alert(`Erro: ${error.message}`);
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = "Salvar";
+        }
+    }
+}
+
+async function clearAutoThemeDate(themeId) {
+    const input = document.getElementById(`theme-date-input-${themeId}`);
+    if (!input) return;
+    input.value = "";
+    await saveAutoThemeDate(themeId);
 }
 
 async function deleteAutoTheme(themeId, scheduleId) {
