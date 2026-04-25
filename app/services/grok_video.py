@@ -142,6 +142,25 @@ def _build_payload_variants(
     ]
 
 
+def _build_text_payload_variants(
+    prompt: str,
+    duration: int,
+    aspect_ratio: str,
+) -> list[tuple[str, dict]]:
+    """Build payload variants for prompt-only Grok video generation."""
+    base_payload = {
+        "model": "grok-imagine-video",
+        "prompt": (prompt or "").strip(),
+        "duration": duration,
+        "aspect_ratio": aspect_ratio,
+    }
+
+    return [
+        ("canonical-text-only", base_payload),
+        ("compat-input-prompt", {"model": "grok-imagine-video", "input": {"prompt": base_payload["prompt"], "duration": duration, "aspect_ratio": aspect_ratio}}),
+    ]
+
+
 def _extract_error_message(resp: httpx.Response) -> str:
     try:
         payload = resp.json()
@@ -163,6 +182,126 @@ def _extract_error_message(resp: httpx.Response) -> str:
         return str(payload)[:500]
 
     return str(payload)[:500]
+
+
+async def generate_video_from_prompt(
+    prompt: str,
+    output_path: str,
+    duration: int = 6,
+    aspect_ratio: str = "16:9",
+    timeout_seconds: int = 600,
+    on_progress=None,
+) -> str:
+    """Generate a Grok video from prompt only, without sending a reference image."""
+    headers = {
+        "Authorization": f"Bearer {settings.xai_api_key}",
+        "Content-Type": "application/json",
+    }
+
+    safe_aspect_ratio = _normalize_grok_aspect_ratio(aspect_ratio)
+    safe_duration = max(1, min(duration, 15))
+
+    logger.info(
+        "Grok prompt-only generation prepared (aspect=%s duration=%s prompt_chars=%s)",
+        safe_aspect_ratio,
+        safe_duration,
+        len(prompt or ""),
+    )
+
+    if on_progress:
+        await on_progress(20, "Iniciando geracao Grok sem imagem...")
+
+    request_id = ""
+    last_error = ""
+    payload_variants = _build_text_payload_variants(
+        prompt=prompt,
+        duration=safe_duration,
+        aspect_ratio=safe_aspect_ratio,
+    )
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        for variant_name, payload in payload_variants:
+            try:
+                resp = await client.post(f"{XAI_BASE_URL}/videos/generations", headers=headers, json=payload)
+            except Exception as e:
+                last_error = str(e)
+                logger.warning("Grok text payload variant '%s' request failed: %s", variant_name, e)
+                continue
+
+            if resp.status_code < 400:
+                data = resp.json() if resp.content else {}
+                request_id = str(data.get("request_id") or "").strip()
+                if request_id:
+                    logger.info("Grok text payload variant accepted: %s", variant_name)
+                    break
+                last_error = f"{variant_name}: resposta sem request_id"
+                logger.warning("Grok text payload variant '%s' returned no request_id", variant_name)
+                continue
+
+            error_detail = _extract_error_message(resp)
+            last_error = f"HTTP {resp.status_code}: {error_detail}"
+            logger.warning(
+                "Grok text payload variant '%s' rejected (%s): %s",
+                variant_name,
+                resp.status_code,
+                error_detail,
+            )
+            if resp.status_code not in (400, 404, 415, 422):
+                resp.raise_for_status()
+
+    if not request_id:
+        raise RuntimeError(f"Falha ao iniciar geracao Grok sem imagem: {last_error or 'sem detalhe'}")
+
+    logger.info(f"Grok prompt-only video generation started: {request_id}")
+
+    if on_progress:
+        await on_progress(30, "Grok gerando video sem imagem...")
+
+    start_time = time.time()
+    poll_count = 0
+    async with httpx.AsyncClient(timeout=30) as client:
+        while (time.time() - start_time) < timeout_seconds:
+            resp = await client.get(f"{XAI_BASE_URL}/videos/{request_id}", headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+
+            status = data.get("status")
+            if status == "done":
+                video = data.get("video") or {}
+                video_url = str(video.get("url") or "").strip()
+                if not video_url:
+                    raise RuntimeError(f"Grok retornou status=done sem URL do video: {data}")
+                logger.info(
+                    "Grok prompt-only video generation done (request_id=%s model=%s progress=%s)",
+                    request_id,
+                    data.get("model"),
+                    data.get("progress"),
+                )
+                break
+            elif status in ("failed", "expired"):
+                raise RuntimeError(f"Grok prompt-only video generation {status}: {data}")
+
+            poll_count += 1
+            if on_progress and poll_count % 3 == 0:
+                pct = min(30 + poll_count, 70)
+                await on_progress(pct, "Grok gerando video sem imagem...")
+
+            await _async_sleep(5)
+        else:
+            raise TimeoutError(f"Grok prompt-only video generation timed out after {timeout_seconds}s")
+
+    if on_progress:
+        await on_progress(75, "Baixando video gerado...")
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.get(video_url)
+        resp.raise_for_status()
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write(resp.content)
+
+    logger.info(f"Grok prompt-only video saved: {output_path}")
+    return output_path
 
 
 async def optimize_prompt_for_grok(

@@ -1421,6 +1421,9 @@ async def run_realistic_video_pipeline(project_id: int):
             prompt_optimized = tags_data.get("prompt_optimized", False)
             realistic_style = tags_data.get("realistic_style", "")
             add_music = bool(tags_data.get("add_music", False))
+            grok_text_only = engine == "grok" and bool(
+                tags_data.get("grok_text_only") or tags_data.get("disable_persona_reference")
+            )
             dialogue_enabled = bool(tags_data.get("dialogue_enabled", False))
             dialogue_characters = tags_data.get("dialogue_characters", []) if isinstance(tags_data.get("dialogue_characters", []), list) else []
             dialogue_voice_profile_ids = tags_data.get("dialogue_voice_profile_ids", []) if isinstance(tags_data.get("dialogue_voice_profile_ids", []), list) else []
@@ -1742,33 +1745,43 @@ async def run_realistic_video_pipeline(project_id: int):
                     )
                 else:
                     # — Grok single clip (<=15s): generate image first, then video —
-                    from app.services.grok_video import generate_video_clip
+                    from app.services.grok_video import generate_video_clip, generate_video_from_prompt
                     from app.services.scene_generator import generate_scene_image
 
-                    await _on_progress(16, "Gerando imagem de referencia...")
-                    grok_image_path = grok_base_image_path
-                    if not grok_image_path:
-                        img_dir = render_dir / "grok_ref"
-                        img_dir.mkdir(parents=True, exist_ok=True)
-                        grok_image_path = str(img_dir / "reference.png")
-                        img_prompt = optimized_prompt[:500]
-                        loop = asyncio.get_event_loop()
-                        await loop.run_in_executor(
-                            None, generate_scene_image, img_prompt, aspect_ratio, grok_image_path, True
+                    if grok_text_only:
+                        await _on_progress(18, "Iniciando geracao Grok apenas por prompt...")
+                        await generate_video_from_prompt(
+                            prompt=optimized_prompt,
+                            output_path=output_path,
+                            duration=duration,
+                            aspect_ratio=aspect_ratio,
+                            on_progress=_on_progress,
                         )
-                        logger.info(f"Grok reference image generated: {grok_image_path}")
                     else:
-                        logger.info(f"Grok using direct reference image: {grok_image_path}")
+                        await _on_progress(16, "Gerando imagem de referencia...")
+                        grok_image_path = grok_base_image_path
+                        if not grok_image_path:
+                            img_dir = render_dir / "grok_ref"
+                            img_dir.mkdir(parents=True, exist_ok=True)
+                            grok_image_path = str(img_dir / "reference.png")
+                            img_prompt = optimized_prompt[:500]
+                            loop = asyncio.get_event_loop()
+                            await loop.run_in_executor(
+                                None, generate_scene_image, img_prompt, aspect_ratio, grok_image_path, True
+                            )
+                            logger.info(f"Grok reference image generated: {grok_image_path}")
+                        else:
+                            logger.info(f"Grok using direct reference image: {grok_image_path}")
 
-                    await _on_progress(18, "Iniciando geracao de video Grok...")
-                    await generate_video_clip(
-                        image_path=grok_image_path,
-                        prompt=optimized_prompt,
-                        output_path=output_path,
-                        duration=duration,
-                        aspect_ratio=aspect_ratio,
-                        on_progress=_on_progress,
-                    )
+                        await _on_progress(18, "Iniciando geracao de video Grok...")
+                        await generate_video_clip(
+                            image_path=grok_image_path,
+                            prompt=optimized_prompt,
+                            output_path=output_path,
+                            duration=duration,
+                            aspect_ratio=aspect_ratio,
+                            on_progress=_on_progress,
+                        )
 
                 if enable_grok_persona_anchor:
                     tags_data["grok_persona_anchor_enabled"] = True

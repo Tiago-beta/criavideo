@@ -1073,9 +1073,15 @@ async def _create_musical_short(
     clip_start = float(custom_settings.get("clip_start", 0))
     clip_duration = float(custom_settings.get("clip_duration", 10))
     segment_index = int(custom_settings.get("segment_index", 0))
+    disable_persona_reference = bool(
+        custom_settings.get("disable_persona_reference")
+        or cfg.get("disable_persona_reference")
+    )
     interaction_persona = _normalize_interaction_persona(
         custom_settings.get("interaction_persona") or cfg.get("interaction_persona", "natureza")
     )
+    if disable_persona_reference:
+        interaction_persona = ""
     requested_persona_profile_id = int(
         custom_settings.get("persona_profile_id")
         or cfg.get("persona_profile_id")
@@ -1096,42 +1102,43 @@ async def _create_musical_short(
     reference_image_path = ""
     resolved_persona_profile_id = 0
     resolved_persona_profile_ids: list[int] = []
-    async with async_session() as db:
-        try:
-            if requested_persona_profile_ids:
-                resolved_personas, persona_image_paths = await resolve_persona_reference_images(
-                    db=db,
-                    user_id=user_id,
-                    persona_type=interaction_persona,
-                    persona_profile_ids=requested_persona_profile_ids,
-                    ensure_default=False,
-                )
-                if persona_image_paths:
-                    reference_image_path = build_persona_reference_montage(
+    if not disable_persona_reference:
+        async with async_session() as db:
+            try:
+                if requested_persona_profile_ids:
+                    resolved_personas, persona_image_paths = await resolve_persona_reference_images(
+                        db=db,
                         user_id=user_id,
-                        image_paths=persona_image_paths,
-                        prefix="short_persona_refs",
+                        persona_type=interaction_persona,
+                        persona_profile_ids=requested_persona_profile_ids,
+                        ensure_default=False,
                     )
-                    resolved_persona_profile_ids = [int(profile.id) for profile in resolved_personas]
-                    if resolved_persona_profile_ids:
-                        resolved_persona_profile_id = resolved_persona_profile_ids[0]
+                    if persona_image_paths:
+                        reference_image_path = build_persona_reference_montage(
+                            user_id=user_id,
+                            image_paths=persona_image_paths,
+                            prefix="short_persona_refs",
+                        )
+                        resolved_persona_profile_ids = [int(profile.id) for profile in resolved_personas]
+                        if resolved_persona_profile_ids:
+                            resolved_persona_profile_id = resolved_persona_profile_ids[0]
 
+                if not reference_image_path:
+                    resolved_persona, single_reference_path = await resolve_persona_reference_image(
+                        db=db,
+                        user_id=user_id,
+                        persona_type=interaction_persona,
+                        persona_profile_id=requested_persona_profile_id,
+                        ensure_default=False,
+                    )
+                    reference_image_path = single_reference_path
+                    if resolved_persona:
+                        resolved_persona_profile_id = int(resolved_persona.id)
+                        resolved_persona_profile_ids = [resolved_persona_profile_id]
+            except RuntimeError as exc:
+                raise RuntimeError(str(exc))
             if not reference_image_path:
-                resolved_persona, single_reference_path = await resolve_persona_reference_image(
-                    db=db,
-                    user_id=user_id,
-                    persona_type=interaction_persona,
-                    persona_profile_id=requested_persona_profile_id,
-                    ensure_default=False,
-                )
-                reference_image_path = single_reference_path
-                if resolved_persona:
-                    resolved_persona_profile_id = int(resolved_persona.id)
-                    resolved_persona_profile_ids = [resolved_persona_profile_id]
-        except RuntimeError as exc:
-            raise RuntimeError(str(exc))
-        if not reference_image_path:
-            raise RuntimeError("Crie uma persona de interacao antes de gerar short realista")
+                raise RuntimeError("Crie uma persona de interacao antes de gerar short realista")
 
     if not tevoxi_audio_url:
         raise RuntimeError("URL do audio Tevoxi nao configurada.")
@@ -1271,8 +1278,10 @@ async def _create_musical_short(
                 "segment_audio_path": segment_audio_path,
                 "segment_transcription": segment_transcription,
                 "interaction_persona": interaction_persona,
-                "reference_source": "persona",
-                "has_reference_image": True,
+                "reference_source": "" if disable_persona_reference else "persona",
+                "has_reference_image": bool(reference_image_path),
+                "disable_persona_reference": disable_persona_reference,
+                "grok_text_only": disable_persona_reference,
                 "persona_profile_id": resolved_persona_profile_id,
                 "persona_profile_ids": resolved_persona_profile_ids,
             },
