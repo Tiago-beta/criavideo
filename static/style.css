@@ -7285,6 +7285,10 @@ th,
     border: 1px solid rgba(55, 18, 82, 0.7);
 }
 
+.editor-track-clip.clip-audio:not(.clip-audio-master) {
+    z-index: 2;
+}
+
 .editor-track-clip.with-waveform {
     overflow: hidden;
 }
@@ -7332,6 +7336,7 @@ th,
 .editor-track-clip.clip-audio.clip-audio-master {
     top: 1px;
     height: calc(100% - 2px);
+    z-index: 1;
     border-color: rgba(80, 18, 55, 0.72);
     background: linear-gradient(135deg, #3d0e2a, #280818);
     overflow: hidden;
