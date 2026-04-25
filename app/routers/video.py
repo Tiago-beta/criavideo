@@ -112,12 +112,30 @@ _DIALOGUE_TIMING_LINE_RE = re.compile(
 )
 
 
-def _ensure_reference_image_instruction(prompt: str) -> str:
+def _ensure_reference_image_instruction(prompt: str, reference_mode: str = "") -> str:
     base_prompt = (prompt or "").strip()
     if not base_prompt:
         return base_prompt
 
     lowered = base_prompt.lower()
+
+    face_identity_mode = str(reference_mode or "").strip().lower() in {
+        "face_identity_only",
+        "face_only",
+        "persona_face",
+    }
+    if face_identity_mode:
+        if "modo rosto da persona" in lowered or "somente identidade facial" in lowered:
+            return base_prompt
+
+        reference_rule = (
+            "MODO ROSTO DA PERSONA (OBRIGATORIO): use a imagem de referencia somente para preservar identidade facial. "
+            "Preserve geometria do rosto, olhos, nariz, labios, mandibula, tom de pele, idade aparente e linha/cor do cabelo. "
+            "Nao preserve roupas, fundo, objetos, pose, enquadramento, iluminacao, paleta de cores ou ambiente da foto. "
+            "Crie roupa, cenario, acao, composicao e clima visual novos de acordo com o prompt atual."
+        )
+        return f"{base_prompt}\n\n{reference_rule}"
+
     if any(marker in lowered for marker in _REFERENCE_IMAGE_HINT_MARKERS):
         return base_prompt
 
