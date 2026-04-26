@@ -2,6 +2,7 @@
 Automation Router — CRUD for auto-schedules (automated video creation + publishing).
 """
 import logging
+import time
 from datetime import date, datetime, timedelta
 from typing import Optional, Union
 from zoneinfo import ZoneInfo
@@ -16,7 +17,7 @@ import httpx
 from app.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
-from app.models import AutoChannelPilot, AutoSchedule, AutoScheduleTheme, Platform, SocialAccount
+from app.models import AppUser, AutoChannelPilot, AutoSchedule, AutoScheduleTheme, Platform, SocialAccount
 from app.services.persona_image import normalize_persona_type
 from app.services.credit_pricing import estimate_auto_theme_credits
 
@@ -25,21 +26,117 @@ settings = get_settings()
 router = APIRouter(prefix="/api/automation", tags=["automation"])
 
 
-def _get_tevoxi_token() -> str:
-    """Generate or return Tevoxi API token."""
-    token = settings.tevoxi_api_token
-    if not token and settings.tevoxi_jwt_secret:
-        from jose import jwt as jose_jwt
-        import time
-        payload = {
-            "id": settings.tevoxi_jwt_user_id,
-            "email": settings.tevoxi_jwt_email,
-            "role": "admin",
-            "iat": int(time.time()),
-            "exp": int(time.time()) + 3600,
-        }
-        token = jose_jwt.encode(payload, settings.tevoxi_jwt_secret, algorithm="HS256")
-    return token
+def _tevoxi_base_url() -> str:
+    return str(settings.tevoxi_api_url or "https://levita.pro").strip().rstrip("/")
+
+
+def _tevoxi_signup_url() -> str:
+    configured = str(settings.tevoxi_signup_url or "").strip()
+    if configured:
+        return configured.rstrip("/")
+    return "https://tevoxi.com"
+
+
+def _tevoxi_error_detail(code: str, message: str) -> dict:
+    return {
+        "code": str(code or "tevoxi_error"),
+        "message": str(message or "Erro ao validar conta Tevoxi."),
+        "signup_url": _tevoxi_signup_url(),
+    }
+
+
+async def _resolve_tevoxi_token_for_user(user: dict, db: AsyncSession) -> tuple[str, str]:
+    if not settings.tevoxi_jwt_secret:
+        raise HTTPException(
+            status_code=500,
+            detail=_tevoxi_error_detail(
+                "tevoxi_not_configured",
+                "Integração do Tevoxi não configurada no servidor.",
+            ),
+        )
+
+    raw_user_id = user.get("id")
+    try:
+        app_user_id = int(raw_user_id or 0)
+    except (TypeError, ValueError):
+        app_user_id = 0
+
+    app_user = await db.get(AppUser, app_user_id) if app_user_id > 0 else None
+    if not app_user or not app_user.is_active:
+        raise HTTPException(status_code=401, detail="Usuário inválido.")
+
+    source = str(app_user.auth_source or "").strip().lower()
+    external_user_id = str(app_user.external_user_id or "").strip()
+    if source != "levita" or not external_user_id:
+        raise HTTPException(
+            status_code=409,
+            detail=_tevoxi_error_detail(
+                "tevoxi_account_required",
+                "Conecte sua conta Tevoxi para acessar suas músicas.",
+            ),
+        )
+
+    try:
+        tevoxi_user_id = int(external_user_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=_tevoxi_error_detail(
+                "tevoxi_account_required",
+                "Conecte sua conta Tevoxi para acessar suas músicas.",
+            ),
+        ) from exc
+
+    if tevoxi_user_id <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail=_tevoxi_error_detail(
+                "tevoxi_account_required",
+                "Conecte sua conta Tevoxi para acessar suas músicas.",
+            ),
+        )
+
+    email = str(app_user.email or user.get("email") or "").strip().lower()
+    if not email:
+        email = f"user-{tevoxi_user_id}@tevoxi.local"
+
+    from jose import jwt as jose_jwt
+
+    now = int(time.time())
+    payload = {
+        "id": tevoxi_user_id,
+        "email": email,
+        "role": "user",
+        "iat": now,
+        "exp": now + 3600,
+    }
+    token = jose_jwt.encode(payload, settings.tevoxi_jwt_secret, algorithm="HS256")
+    return token, email
+
+
+async def _probe_tevoxi_account(token: str) -> tuple[bool, str, str]:
+    api_url = _tevoxi_base_url()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{api_url}/api/auth/me", headers=headers)
+    except httpx.HTTPError as exc:
+        logger.warning("Tevoxi status probe failed: %s", exc)
+        return False, "tevoxi_unavailable", "Tevoxi indisponível no momento. Tente novamente."
+
+    if resp.status_code == 200:
+        return True, "ready", "Conta Tevoxi conectada."
+
+    if resp.status_code in (401, 403, 404):
+        return (
+            False,
+            "tevoxi_account_required",
+            "Conta Tevoxi não encontrada para este usuário.",
+        )
+
+    logger.warning("Tevoxi status probe unexpected status: %s", resp.status_code)
+    return False, "tevoxi_unavailable", "Não foi possível validar sua conta no Tevoxi agora."
 
 
 def _local_to_utc(time_local: str, tz_name: str) -> str:
@@ -396,19 +493,59 @@ def _pilot_summary_dict(pilot: AutoChannelPilot | None) -> dict:
 
 # ── Endpoints ──
 
-@router.get("/tevoxi-songs")
-async def list_tevoxi_songs(user: dict = Depends(get_current_user)):
-    """Fetch user's songs from Tevoxi/Levita."""
-    token = _get_tevoxi_token()
-    if not token:
-        raise HTTPException(status_code=500, detail="Tevoxi não configurado.")
+@router.get("/tevoxi-account-status")
+async def tevoxi_account_status(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return whether current user has an active Tevoxi account link."""
+    try:
+        token, tevoxi_email = await _resolve_tevoxi_token_for_user(user, db)
+    except HTTPException as exc:
+        if exc.status_code in (409, 500):
+            detail = exc.detail if isinstance(exc.detail, dict) else {
+                "code": "tevoxi_account_required",
+                "message": str(exc.detail or "Conta Tevoxi não conectada."),
+            }
+            return {
+                "connected": False,
+                "reason": str(detail.get("code") or "tevoxi_account_required"),
+                "message": str(detail.get("message") or "Conta Tevoxi não conectada."),
+                "signup_url": str(detail.get("signup_url") or _tevoxi_signup_url()),
+            }
+        raise
 
-    api_url = settings.tevoxi_api_url.rstrip("/")
+    connected, reason, message = await _probe_tevoxi_account(token)
+    return {
+        "connected": bool(connected),
+        "reason": str(reason),
+        "message": str(message),
+        "signup_url": _tevoxi_signup_url(),
+        "tevoxi_email": tevoxi_email if connected else "",
+    }
+
+@router.get("/tevoxi-songs")
+async def list_tevoxi_songs(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch user's songs from Tevoxi/Levita."""
+    token, _tevoxi_email = await _resolve_tevoxi_token_for_user(user, db)
+
+    api_url = _tevoxi_base_url()
     headers = {"Authorization": f"Bearer {token}"}
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(f"{api_url}/api/feed/my-created-music", headers=headers)
+            if resp.status_code in (401, 403, 404):
+                raise HTTPException(
+                    status_code=409,
+                    detail=_tevoxi_error_detail(
+                        "tevoxi_account_required",
+                        "Conta Tevoxi não conectada para este usuário.",
+                    ),
+                )
             if resp.status_code != 200:
                 raise HTTPException(status_code=502, detail="Erro ao buscar músicas do Tevoxi.")
             data = resp.json()
@@ -433,21 +570,31 @@ async def list_tevoxi_songs(user: dict = Depends(get_current_user)):
 
 
 @router.get("/tevoxi-audio/{job_id}")
-async def proxy_tevoxi_audio(job_id: str, user: dict = Depends(get_current_user)):
+async def proxy_tevoxi_audio(
+    job_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Proxy Tevoxi audio through this backend to avoid browser CORS/auth issues."""
-    token = _get_tevoxi_token()
-    if not token:
-        raise HTTPException(status_code=500, detail="Tevoxi não configurado.")
+    token, _tevoxi_email = await _resolve_tevoxi_token_for_user(user, db)
     if not job_id or not job_id.strip():
         raise HTTPException(status_code=400, detail="job_id inválido.")
 
-    api_url = settings.tevoxi_api_url.rstrip("/")
+    api_url = _tevoxi_base_url()
     headers = {"Authorization": f"Bearer {token}"}
     audio_url = f"{api_url}/api/create-music/audio/{job_id.strip()}"
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(audio_url, headers=headers)
+            if resp.status_code in (401, 403, 404):
+                raise HTTPException(
+                    status_code=409,
+                    detail=_tevoxi_error_detail(
+                        "tevoxi_account_required",
+                        "Conta Tevoxi não conectada para este usuário.",
+                    ),
+                )
             if resp.status_code != 200:
                 logger.warning("Tevoxi audio proxy failed for %s with status %s", job_id, resp.status_code)
                 raise HTTPException(status_code=502, detail="Erro ao buscar áudio do Tevoxi.")

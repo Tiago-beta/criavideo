@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     levita_uploads_dir: str = "/opt/olevita/backend/uploads"
     media_dir: str = "/opt/levita-video/media"
     tevoxi_api_url: str = "https://levita.pro"
+    tevoxi_signup_url: str = "https://tevoxi.com"
     tevoxi_api_token: str = ""
     tevoxi_jwt_secret: str = ""
     tevoxi_jwt_user_id: int = 5

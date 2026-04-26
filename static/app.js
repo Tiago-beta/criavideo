@@ -1,8 +1,9 @@
-console.log("[CriaVideo] app.js v239 loaded");
+console.log("[CriaVideo] app.js v240 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
 const LEVITA_TOKEN_KEY = "levita_token";
+const TEVOXI_DEFAULT_SIGNUP_URL = "https://tevoxi.com";
 
 let token = localStorage.getItem(APP_TOKEN_KEY) || "";
 let levitaToken = localStorage.getItem(LEVITA_TOKEN_KEY) || "";
@@ -26,6 +27,14 @@ let _publishRenderLibrary = {
 };
 let _pendingConnectPlatform = "";
 let _editingSocialAccountId = 0;
+let _tevoxiPendingToggleContext = "";
+let _tevoxiAccountStatusCache = {
+    loaded: false,
+    connected: false,
+    reason: "",
+    message: "",
+    signup_url: TEVOXI_DEFAULT_SIGNUP_URL,
+};
 let _analyzeState = {
     accounts: [],
     selectedAccountId: 0,
@@ -284,6 +293,7 @@ function setSession(accessToken, user, rawLevitaToken = null) {
     token = accessToken;
     currentUser = user;
     localStorage.setItem(APP_TOKEN_KEY, accessToken);
+    _resetTevoxiRuntimeState();
     if (rawLevitaToken) {
         levitaToken = rawLevitaToken;
         localStorage.setItem(LEVITA_TOKEN_KEY, rawLevitaToken);
@@ -295,11 +305,13 @@ function clearSession() {
     token = "";
     currentUser = null;
     localStorage.removeItem(APP_TOKEN_KEY);
+    _resetTevoxiRuntimeState();
 }
 
 function clearLevitaSession() {
     levitaToken = "";
     localStorage.removeItem(LEVITA_TOKEN_KEY);
+    _resetTevoxiRuntimeState();
 }
 
 function renderSession() {
@@ -1619,6 +1631,14 @@ function closeModal(id) {
         if (secretInput) secretInput.value = "";
         const tiktokKeys = document.getElementById("connect-tiktok-keys");
         if (tiktokKeys) tiktokKeys.hidden = true;
+    }
+    if (id === "modal-tevoxi-about") {
+        _tevoxiPendingToggleContext = "";
+        const retryBtn = document.getElementById("tevoxi-about-retry-btn");
+        if (retryBtn) {
+            retryBtn.disabled = false;
+            retryBtn.textContent = "Ja tenho conta / Ja conectei";
+        }
     }
     if (id === "modal-edit-account") {
         _editingSocialAccountId = 0;
@@ -9201,11 +9221,252 @@ document.addEventListener("DOMContentLoaded", () => {
 
 /* ── Tevoxi Song Selection (for Realistic + Tevoxi music) ── */
 
-function toggleScriptTevoxiSongs() {
-    const checked = document.getElementById("script-realistic-tevoxi")?.checked;
+function _defaultTevoxiAccountStatus() {
+    return {
+        loaded: false,
+        connected: false,
+        reason: "",
+        message: "",
+        signup_url: TEVOXI_DEFAULT_SIGNUP_URL,
+    };
+}
+
+function _resetTevoxiRuntimeState() {
+    _tevoxiPendingToggleContext = "";
+    _tevoxiAccountStatusCache = _defaultTevoxiAccountStatus();
+
+    _scriptTevoxiSongs = [];
+    _scriptSelectedSong = null;
+    _scriptSelectedClip = null;
+
+    _wizardTevoxiSongs = [];
+    _wizardSelectedSong = null;
+    _wizardSelectedClip = null;
+
+    _autoTevoxiSongs = [];
+    _autoSelectedSong = null;
+}
+
+function _setTevoxiAccountStatusFromPayload(payload = {}) {
+    _tevoxiAccountStatusCache = {
+        loaded: true,
+        connected: !!payload.connected,
+        reason: String(payload.reason || ""),
+        message: String(payload.message || ""),
+        signup_url: String(payload.signup_url || TEVOXI_DEFAULT_SIGNUP_URL),
+    };
+    return _tevoxiAccountStatusCache;
+}
+
+function _isTevoxiAccountRequiredError(error) {
+    const code = String(error?.code || "").toLowerCase();
+    if (code === "tevoxi_account_required") return true;
+    if (Number(error?.status || 0) === 409) return true;
+    const msg = String(error?.message || "").toLowerCase();
+    return msg.includes("conta tevoxi") || msg.includes("tevoxi_account_required");
+}
+
+async function _fetchTevoxiAccountStatus(forceRefresh = false) {
+    if (!forceRefresh && _tevoxiAccountStatusCache.loaded) {
+        return _tevoxiAccountStatusCache;
+    }
+    try {
+        const payload = await api("/automation/tevoxi-account-status");
+        return _setTevoxiAccountStatusFromPayload(payload);
+    } catch (error) {
+        return _setTevoxiAccountStatusFromPayload({
+            connected: false,
+            reason: "status_error",
+            message: String(error?.message || "Nao foi possivel validar a conta Tevoxi."),
+            signup_url: TEVOXI_DEFAULT_SIGNUP_URL,
+        });
+    }
+}
+
+function _buildTevoxiAboutMessage(status) {
+    const reason = String(status?.reason || "").toLowerCase();
+    if (reason === "tevoxi_unavailable") {
+        return String(status?.message || "O Tevoxi esta indisponivel no momento. Tente novamente em instantes.");
+    }
+    if (reason === "tevoxi_not_configured") {
+        return String(status?.message || "A integracao do Tevoxi ainda nao foi configurada neste servidor.");
+    }
+    return "Tevoxi e o aplicativo de criacao de musicas usado para buscar suas faixas e trechos dentro do CriaVideo. Para continuar, abra o Tevoxi e crie sua conta.";
+}
+
+function _openTevoxiAboutModal(context, status = null) {
+    _tevoxiPendingToggleContext = String(context || "");
+    const activeStatus = status || _tevoxiAccountStatusCache || _defaultTevoxiAccountStatus();
+
+    const titleEl = document.getElementById("tevoxi-about-title");
+    if (titleEl) titleEl.textContent = "Conecte sua conta Tevoxi";
+
+    const textEl = document.getElementById("tevoxi-about-text");
+    if (textEl) textEl.textContent = _buildTevoxiAboutMessage(activeStatus);
+
+    const tipEl = document.getElementById("tevoxi-about-tip");
+    if (tipEl) {
+        tipEl.textContent = "Ao abrir o Tevoxi, clique em \"Criar conta\". Depois volte aqui e toque em \"Ja tenho conta / Ja conectei\".";
+    }
+
+    openModal("modal-tevoxi-about");
+}
+
+function goToTevoxiSignup() {
+    const configuredUrl = String(_tevoxiAccountStatusCache?.signup_url || TEVOXI_DEFAULT_SIGNUP_URL).trim();
+    const target = configuredUrl || TEVOXI_DEFAULT_SIGNUP_URL;
+    window.location.href = target;
+}
+
+async function retryTevoxiAccountCheck() {
+    const retryBtn = document.getElementById("tevoxi-about-retry-btn");
+    if (retryBtn) {
+        retryBtn.disabled = true;
+        retryBtn.textContent = "Validando...";
+    }
+
+    const status = await _fetchTevoxiAccountStatus(true);
+    if (!status.connected) {
+        const textEl = document.getElementById("tevoxi-about-text");
+        if (textEl) textEl.textContent = _buildTevoxiAboutMessage(status);
+        if (retryBtn) {
+            retryBtn.disabled = false;
+            retryBtn.textContent = "Ja tenho conta / Ja conectei";
+        }
+        return;
+    }
+
+    const context = _tevoxiPendingToggleContext;
+    closeModal("modal-tevoxi-about");
+    showToast("Conta Tevoxi encontrada. Voce ja pode ativar o Tevoxi.", "success");
+
+    if (context === "script") {
+        const cb = document.getElementById("script-realistic-tevoxi");
+        if (cb) {
+            cb.checked = true;
+            await toggleScriptTevoxiSongs();
+        }
+    } else if (context === "wizard") {
+        const cb = document.getElementById("wizard-realistic-tevoxi");
+        if (cb) {
+            cb.checked = true;
+            await toggleWizardTevoxiSongs();
+        }
+    } else if (context === "auto") {
+        const cb = document.getElementById("auto-realistic-tevoxi");
+        if (cb) {
+            cb.checked = true;
+            await toggleAutoTevoxiSongs();
+        }
+    }
+}
+
+function _disableScriptTevoxiMode() {
+    const cb = document.getElementById("script-realistic-tevoxi");
+    if (cb) cb.checked = false;
+
     const panel = document.getElementById("script-tevoxi-panel");
+    if (panel) panel.hidden = true;
+
+    scriptData.useTevoxiAudio = false;
+    _scriptTevoxiSongs = [];
+    _scriptSelectedSong = null;
+    _scriptSelectedClip = null;
+    _renderScriptTevoxiSongs();
+    _updateScriptTevoxiSelectionUI();
+    _updateScriptDetailsForTevoxiMode();
+    scheduleScriptCreditEstimate();
+}
+
+function _disableWizardTevoxiMode() {
+    const cb = document.getElementById("wizard-realistic-tevoxi");
+    if (cb) cb.checked = false;
+
+    const panel = document.getElementById("wizard-tevoxi-panel");
+    if (panel) panel.hidden = true;
+
+    _wizardTevoxiSongs = [];
+    _wizardSelectedSong = null;
+    _wizardSelectedClip = null;
+    _renderWizardTevoxiSongs();
+    _updateWizardTevoxiSelectionUI();
+    scheduleWizardCreditEstimate();
+}
+
+function _disableAutoTevoxiMode() {
+    const cb = document.getElementById("auto-realistic-tevoxi");
+    if (cb) cb.checked = false;
+
+    const panel = document.getElementById("auto-tevoxi-panel");
+    if (panel) panel.hidden = true;
+
+    _autoTevoxiSongs = [];
+    _autoSelectedSong = null;
+    _renderTevoxiSongs();
+    _applyAutoRealisticEngineRules();
+    scheduleAutoCreditEstimate();
+}
+
+async function _ensureTevoxiAccountOrPrompt(context) {
+    const status = await _fetchTevoxiAccountStatus(false);
+    if (status.connected) {
+        return true;
+    }
+
+    const reason = String(status.reason || "").toLowerCase();
+    if (reason === "tevoxi_unavailable" || reason === "tevoxi_not_configured" || reason === "status_error") {
+        showToast(_buildTevoxiAboutMessage(status), "error");
+        return false;
+    }
+
+    _openTevoxiAboutModal(context, status);
+    return false;
+}
+
+async function _fetchTevoxiSongs() {
+    const response = await fetch(`${API}/automation/tevoxi-songs`, {
+        method: "GET",
+        headers: getHeaders(),
+        credentials: "same-origin",
+    });
+
+    if (response.status === 401) {
+        clearSession();
+        showAuth("Sua sessao expirou. Entre novamente.");
+        throw new Error("Unauthorized");
+    }
+
+    const body = await response.json().catch(() => ([]));
+    if (!response.ok) {
+        const error = new Error(getApiErrorMessage(body, response.statusText || "Erro ao buscar musicas do Tevoxi"));
+        error.status = response.status;
+        if (body && typeof body === "object" && body.detail && typeof body.detail === "object") {
+            error.code = String(body.detail.code || "");
+            error.signup_url = String(body.detail.signup_url || "");
+        }
+        throw error;
+    }
+
+    return Array.isArray(body) ? body : [];
+}
+
+async function toggleScriptTevoxiSongs() {
+    const tevoxiCb = document.getElementById("script-realistic-tevoxi");
+    const checked = !!tevoxiCb?.checked;
+    const panel = document.getElementById("script-tevoxi-panel");
+
+    if (checked) {
+        const allowed = await _ensureTevoxiAccountOrPrompt("script");
+        if (!allowed) {
+            _disableScriptTevoxiMode();
+            return;
+        }
+    }
+
     if (panel) panel.hidden = !checked;
-    if (checked) _loadScriptTevoxiSongsIfNeeded();
+    if (checked) {
+        await _loadScriptTevoxiSongsIfNeeded();
+    }
     if (checked) {
         const musicCb = document.getElementById("script-realistic-music");
         if (musicCb) musicCb.checked = false;
@@ -9217,11 +9478,23 @@ function toggleScriptTevoxiSongs() {
     scheduleScriptCreditEstimate();
 }
 
-function toggleWizardTevoxiSongs() {
-    const checked = document.getElementById("wizard-realistic-tevoxi")?.checked;
+async function toggleWizardTevoxiSongs() {
+    const tevoxiCb = document.getElementById("wizard-realistic-tevoxi");
+    const checked = !!tevoxiCb?.checked;
     const panel = document.getElementById("wizard-tevoxi-panel");
+
+    if (checked) {
+        const allowed = await _ensureTevoxiAccountOrPrompt("wizard");
+        if (!allowed) {
+            _disableWizardTevoxiMode();
+            return;
+        }
+    }
+
     if (panel) panel.hidden = !checked;
-    if (checked) _loadWizardTevoxiSongsIfNeeded();
+    if (checked) {
+        await _loadWizardTevoxiSongsIfNeeded();
+    }
     if (checked) {
         const musicCb = document.getElementById("wizard-realistic-music");
         if (musicCb) musicCb.checked = false;
@@ -9642,9 +9915,20 @@ async function _loadScriptTevoxiSongsIfNeeded() {
     }
     list.innerHTML = '<p class="loading">Carregando músicas do Tevoxi...</p>';
     try {
-        _scriptTevoxiSongs = await api("/automation/tevoxi-songs");
+        _scriptTevoxiSongs = await _fetchTevoxiSongs();
         _renderScriptTevoxiSongs();
     } catch (e) {
+        if (_isTevoxiAccountRequiredError(e)) {
+            _setTevoxiAccountStatusFromPayload({
+                connected: false,
+                reason: "tevoxi_account_required",
+                message: String(e?.message || "Conecte sua conta Tevoxi para continuar."),
+                signup_url: String(e?.signup_url || _tevoxiAccountStatusCache.signup_url || TEVOXI_DEFAULT_SIGNUP_URL),
+            });
+            _disableScriptTevoxiMode();
+            _openTevoxiAboutModal("script", _tevoxiAccountStatusCache);
+            return;
+        }
         list.innerHTML = `<p class="loading">Erro: ${esc(e.message)}</p>`;
     }
 }
@@ -9694,9 +9978,20 @@ async function _loadWizardTevoxiSongsIfNeeded() {
     }
     list.innerHTML = '<p class="loading">Carregando músicas do Tevoxi...</p>';
     try {
-        _wizardTevoxiSongs = await api("/automation/tevoxi-songs");
+        _wizardTevoxiSongs = await _fetchTevoxiSongs();
         _renderWizardTevoxiSongs();
     } catch (e) {
+        if (_isTevoxiAccountRequiredError(e)) {
+            _setTevoxiAccountStatusFromPayload({
+                connected: false,
+                reason: "tevoxi_account_required",
+                message: String(e?.message || "Conecte sua conta Tevoxi para continuar."),
+                signup_url: String(e?.signup_url || _tevoxiAccountStatusCache.signup_url || TEVOXI_DEFAULT_SIGNUP_URL),
+            });
+            _disableWizardTevoxiMode();
+            _openTevoxiAboutModal("wizard", _tevoxiAccountStatusCache);
+            return;
+        }
         list.innerHTML = `<p class="loading">Erro: ${esc(e.message)}</p>`;
     }
 }
@@ -9737,11 +10032,21 @@ function selectWizardTevoxiSong(index) {
     }
 }
 
-function toggleAutoTevoxiSongs() {
-    const checked = document.getElementById("auto-realistic-tevoxi")?.checked;
+async function toggleAutoTevoxiSongs() {
+    const tevoxiCb = document.getElementById("auto-realistic-tevoxi");
+    const checked = !!tevoxiCb?.checked;
     const panel = document.getElementById("auto-tevoxi-panel");
+
+    if (checked) {
+        const allowed = await _ensureTevoxiAccountOrPrompt("auto");
+        if (!allowed) {
+            _disableAutoTevoxiMode();
+            return;
+        }
+    }
+
     if (panel) panel.hidden = !checked;
-    if (checked) _loadTevoxiSongsIfNeeded();
+    if (checked) await _loadTevoxiSongsIfNeeded();
     // When Tevoxi is checked, uncheck generic music
     if (checked) {
         const musicCb = document.getElementById("auto-realistic-music");
@@ -9761,13 +10066,24 @@ async function _loadTevoxiSongsIfNeeded() {
     }
     list.innerHTML = '<p class="loading">Carregando músicas do Tevoxi...</p>';
     try {
-        _autoTevoxiSongs = await api("/automation/tevoxi-songs");
+        _autoTevoxiSongs = await _fetchTevoxiSongs();
         if (!_autoTevoxiSongs.length) {
             list.innerHTML = '<p class="loading">Nenhuma música encontrada no Tevoxi.</p>';
             return;
         }
         _renderTevoxiSongs();
     } catch (e) {
+        if (_isTevoxiAccountRequiredError(e)) {
+            _setTevoxiAccountStatusFromPayload({
+                connected: false,
+                reason: "tevoxi_account_required",
+                message: String(e?.message || "Conecte sua conta Tevoxi para continuar."),
+                signup_url: String(e?.signup_url || _tevoxiAccountStatusCache.signup_url || TEVOXI_DEFAULT_SIGNUP_URL),
+            });
+            _disableAutoTevoxiMode();
+            _openTevoxiAboutModal("auto", _tevoxiAccountStatusCache);
+            return;
+        }
         list.innerHTML = `<p class="loading">Erro: ${esc(e.message)}</p>`;
     }
 }

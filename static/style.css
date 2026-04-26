@@ -4032,9 +4032,103 @@ svg.spin {
     color: var(--text-muted);
 }
 
+.media-toggle-row {
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.media-toggle-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.media-toggle-chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.media-toggle-chip input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    pointer-events: none;
+}
+
+.media-toggle-chip-body {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 13px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+    transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.media-toggle-chip-body svg {
+    flex-shrink: 0;
+}
+
+.media-toggle-chip input:checked + .media-toggle-chip-body {
+    border-color: rgba(var(--accent-rgb), 0.7);
+    background: rgba(var(--accent-rgb), 0.2);
+    color: var(--text);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.16);
+}
+
+.media-toggle-chip input:focus-visible + .media-toggle-chip-body {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.22), 0 0 0 4px rgba(var(--accent-rgb), 0.18);
+}
+
+.media-toggle-chip--compact .media-toggle-chip-body {
+    min-width: 104px;
+    justify-content: center;
+}
+
+@media (max-width: 720px) {
+    .media-toggle-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .media-toggle-group {
+        width: 100%;
+    }
+
+    .media-toggle-chip--compact .media-toggle-chip-body {
+        min-width: 0;
+    }
+}
+
 .photo-upload-area {
     margin-top: 12px;
     animation: wizardFadeIn 0.25s ease-out;
+}
+
+.tevoxi-about-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.tevoxi-about-body p {
+    margin: 0;
+}
+
+.tevoxi-about-tip {
+    font-size: 0.84rem;
+    color: var(--text-muted);
+    background: rgba(var(--accent-rgb), 0.08);
+    border: 1px solid rgba(var(--accent-rgb), 0.24);
+    border-radius: 10px;
+    padding: 10px 12px;
+    line-height: 1.45;
 }
 
 .photo-dropzone {
