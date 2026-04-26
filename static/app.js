@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v229 loaded");
+console.log("[CriaVideo] app.js v230 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2151,6 +2151,7 @@ async function createSimilar(projectId) {
     const realisticArtists = new Set([
         "MiniMax Hailuo",
         "Wan 2.2",
+        "Ultra High 1.0",
         "Ultra High 2.2",
         "Mega 2.0 Ultra",
         "Seedance 2.0",
@@ -2926,13 +2927,13 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             duration = normalizedDuration;
             _syncCreateRealisticDurationOptions(prefix, duration);
             _syncAiSuggestRealisticDurationOptions(duration);
-            showToast("Ultra High 2.2 usa duracao em multiplos de 8 segundos.");
+            showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
         }
     }
     const engineLabel = engine === "minimax"
         ? "MiniMax Hailuo"
         : engine === "wan2"
-            ? "Ultra High 2.2"
+            ? "Ultra High 1.0"
             : engine === "grok"
                 ? "Cria 3.0 speed"
                 : "Mega 2.0 Ultra";
@@ -5888,7 +5889,7 @@ async function generateAiScript() {
             if (normalized !== realisticDuration) {
                 realisticDuration = normalized;
                 _syncAiSuggestRealisticDurationOptions(realisticDuration);
-                showToast("Ultra High 2.2 usa duracao em multiplos de 8 segundos.");
+                showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
             }
         }
         const disablePersonaReference = _isPersonaNoReferenceEnabled("ai", interactionPersona);
@@ -5910,7 +5911,7 @@ async function generateAiScript() {
             : engine === "minimax"
                 ? "MiniMax"
                 : engine === "wan2"
-                    ? "Ultra High 2.2"
+                    ? "Ultra High 1.0"
                     : "Mega 2.0 Ultra";
         showCreateProgress("Gerando prompt cinematográfico com IA...", {
             progress: 30,

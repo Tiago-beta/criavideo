@@ -3132,8 +3132,8 @@ async def generate_realistic_endpoint(
     if not project_title:
         project_title = prompt[:100]
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Ultra High 2.2", "seedance": "Mega 2.0 Ultra", "grok": "Cria 3.0 speed"}
-    engine_label = engine_labels.get(engine, "Ultra High 2.2")
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Ultra High 1.0", "seedance": "Mega 2.0 Ultra", "grok": "Cria 3.0 speed"}
+    engine_label = engine_labels.get(engine, "Ultra High 1.0")
 
     # Narration config stored in tags JSON
     narration_text = (req.narration_text or "").strip() if req.add_narration and not dialogue_enabled else ""
