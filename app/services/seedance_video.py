@@ -6,6 +6,7 @@ import os
 import time
 import logging
 import asyncio
+import base64
 import mimetypes
 import httpx
 import openai
@@ -83,6 +84,57 @@ def _retry_delay_from_header(retry_after: str | None, default_seconds: int = 5) 
         return max(1, min(int(float(retry_after)), 90))
     except Exception:
         return default_seconds
+
+
+def _file_to_data_uri(file_path: str) -> str:
+    mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+    with open(file_path, "rb") as source:
+        encoded = base64.b64encode(source.read()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def _extract_upload_reference(payload: dict) -> str:
+    if not isinstance(payload, dict):
+        return ""
+
+    url_keys = (
+        "url",
+        "image",
+        "image_url",
+        "file_url",
+        "media_url",
+        "public_url",
+        "secure_url",
+        "download_url",
+        "asset",
+        "asset_ref",
+    )
+    id_keys = ("asset_id", "assetId", "media_id", "file_id", "id")
+
+    nodes: list[dict] = [payload]
+    data_node = payload.get("data")
+    if isinstance(data_node, dict):
+        nodes.append(data_node)
+
+    for node in nodes:
+        for key in url_keys:
+            value = node.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    for node in nodes:
+        for key in id_keys:
+            value = node.get(key)
+            if value is None:
+                continue
+            raw = str(value).strip()
+            if not raw:
+                continue
+            if raw.startswith(("asset://", "http://", "https://", "data:")):
+                return raw
+            return f"asset://{raw}"
+
+    return ""
 
 
 def _clamp_prompt_temperature(value: float | None, default_value: float = 0.7) -> float:
@@ -295,18 +347,13 @@ async def _upload_media_to_atlas(file_path: str, api_key: str) -> str:
                 raise RuntimeError(f"Falha no upload da imagem de referencia (HTTP {resp.status_code}): {message}")
 
             data = resp.json() if resp.content else {}
-            uploaded_url = ""
-            if isinstance(data, dict):
-                uploaded_url = str(data.get("url") or "").strip()
-                if not uploaded_url:
-                    inner = data.get("data")
-                    if isinstance(inner, dict):
-                        uploaded_url = str(inner.get("url") or "").strip()
+            uploaded_reference = _extract_upload_reference(data) if isinstance(data, dict) else ""
+            if uploaded_reference:
+                return uploaded_reference
 
-            if not uploaded_url:
-                raise RuntimeError("Upload da imagem de referencia retornou URL vazia")
-
-            return uploaded_url
+            # Atlas can also receive Base64 directly in the image field.
+            logger.warning("Seedance upload sem URL/asset. Usando fallback Base64 inline.")
+            return _file_to_data_uri(file_path)
 
     raise RuntimeError("Nao foi possivel enviar a imagem de referencia para o Atlas Cloud")
 
@@ -340,7 +387,7 @@ async def generate_realistic_video(
         "model": model_id,
         "prompt": prompt,
         "duration": duration,
-        "aspect_ratio": aspect_ratio,
+        "ratio": aspect_ratio,
         "resolution": resolution,
         "generate_audio": generate_audio,
     }
@@ -350,9 +397,9 @@ async def generate_realistic_video(
 
     # Add reference image URL if provided.
     if image_path and os.path.exists(image_path):
-        uploaded_image_url = await _upload_media_to_atlas(image_path, api_key)
+        uploaded_image_ref = await _upload_media_to_atlas(image_path, api_key)
         payload["model"] = SEEDANCE_I2V_MODEL
-        payload["image_url"] = uploaded_image_url
+        payload["image"] = uploaded_image_ref
         logger.info("Seedance image-to-video: uploaded %s", image_path)
 
     # Step 1: Create prediction.
