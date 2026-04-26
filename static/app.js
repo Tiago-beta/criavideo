@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v234 loaded");
+console.log("[CriaVideo] app.js v235 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -11916,9 +11916,15 @@ function _renderGlobalBalance() {
     if (countEl) countEl.textContent = balanceText;
 
     const globalChipEl = document.getElementById("global-balance-chip");
+    const globalValueEl = document.getElementById("global-balance-value");
     if (globalChipEl) {
         globalChipEl.hidden = false;
-        globalChipEl.textContent = `Saldo: ${balanceText}`;
+        globalChipEl.setAttribute("aria-label", `Saldo atual ${balanceText}. Clique para adicionar saldo.`);
+    }
+    if (globalValueEl) {
+        globalValueEl.textContent = balanceText;
+    } else if (globalChipEl) {
+        globalChipEl.textContent = balanceText;
     }
 }
 
