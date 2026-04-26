@@ -3132,7 +3132,7 @@ async def generate_realistic_endpoint(
     if not project_title:
         project_title = prompt[:100]
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Ultra High 2.2", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Ultra High 2.2", "seedance": "Mega 2.0 Ultra", "grok": "Cria 3.0 speed"}
     engine_label = engine_labels.get(engine, "Ultra High 2.2")
 
     # Narration config stored in tags JSON

@@ -3640,6 +3640,42 @@ th {
     color: var(--accent);
 }
 
+#wizard-realistic-engine,
+#script-realistic-engine,
+#auto-realistic-engine {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#wizard-realistic-engine .engine-option,
+#script-realistic-engine .engine-option,
+#auto-realistic-engine .engine-option {
+    min-height: 78px;
+    padding: 10px 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+}
+
+#wizard-realistic-engine .engine-option strong,
+#script-realistic-engine .engine-option strong,
+#auto-realistic-engine .engine-option strong {
+    line-height: 1.2;
+}
+
+.engine-option-desc {
+    display: block;
+    font-size: 0.66rem;
+    line-height: 1.28;
+    color: var(--text-muted);
+}
+
+.engine-option.selected .engine-option-desc {
+    color: rgba(var(--accent-rgb), 0.95);
+}
+
 /* Realistic narration options */
 .realistic-narration-options {
     margin-top: 4px;
@@ -4431,6 +4467,22 @@ svg.spin {
 
     .engine-option strong {
         font-size: 0.72rem;
+    }
+
+    #wizard-realistic-engine,
+    #script-realistic-engine,
+    #auto-realistic-engine {
+        grid-template-columns: 1fr;
+    }
+
+    #wizard-realistic-engine .engine-option,
+    #script-realistic-engine .engine-option,
+    #auto-realistic-engine .engine-option {
+        min-height: 0;
+    }
+
+    .engine-option-desc {
+        font-size: 0.64rem;
     }
 
     .realistic-inspiration-tags {

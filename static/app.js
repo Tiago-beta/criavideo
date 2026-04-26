@@ -112,6 +112,7 @@ function showToast(msg, type = "info") {
 
 const WAN_REALISTIC_DURATION_OPTIONS = [8, 16, 24, 32, 40, 48, 56];
 const DEFAULT_REALISTIC_DURATION_OPTIONS = [5, 10, 15, 20, 45, 60];
+const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10];
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
 
 function _normalizeWanDurationMultiple(value) {
@@ -148,7 +149,11 @@ function _renderDurationButtons(containerId, options, preferredValue = null) {
 
 function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
     const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
-    const options = engine === "wan2" ? WAN_REALISTIC_DURATION_OPTIONS : DEFAULT_REALISTIC_DURATION_OPTIONS;
+    const options = engine === "wan2"
+        ? WAN_REALISTIC_DURATION_OPTIONS
+        : engine === "seedance"
+            ? SEEDANCE_REALISTIC_DURATION_OPTIONS
+            : DEFAULT_REALISTIC_DURATION_OPTIONS;
     _renderDurationButtons(`${prefix}-realistic-duration`, options, preferredValue);
 }
 
@@ -156,13 +161,21 @@ function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected")
         || document.querySelector("#wizard-realistic-engine .engine-option.selected");
     const engine = engineBtn?.dataset.value || "wan2";
-    const options = engine === "wan2" ? WAN_REALISTIC_DURATION_OPTIONS : DEFAULT_REALISTIC_DURATION_OPTIONS;
+    const options = engine === "wan2"
+        ? WAN_REALISTIC_DURATION_OPTIONS
+        : engine === "seedance"
+            ? SEEDANCE_REALISTIC_DURATION_OPTIONS
+            : DEFAULT_REALISTIC_DURATION_OPTIONS;
     _renderDurationButtons("ai-suggest-realistic-duration", options, preferredValue);
 }
 
 function _syncAutoRealisticDurationOptions(preferredValue = null) {
     const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "wan2";
-    const options = engine === "grok" ? AUTO_GROK_DURATION_OPTIONS : WAN_REALISTIC_DURATION_OPTIONS;
+    const options = engine === "grok"
+        ? AUTO_GROK_DURATION_OPTIONS
+        : engine === "seedance"
+            ? SEEDANCE_REALISTIC_DURATION_OPTIONS
+            : WAN_REALISTIC_DURATION_OPTIONS;
     _renderDurationButtons("auto-realistic-duration", options, preferredValue);
 }
 
@@ -2139,6 +2152,7 @@ async function createSimilar(projectId) {
         "MiniMax Hailuo",
         "Wan 2.2",
         "Ultra High 2.2",
+        "Mega 2.0 Ultra",
         "Seedance 2.0",
         "Grok",
         "Cria 3.0 speed",
@@ -2163,6 +2177,7 @@ async function createSimilar(projectId) {
             return raw;
         }
         if (raw.includes("minimax")) return "minimax";
+        if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
         if (raw.includes("cria 3.0") || raw.includes("grok")) return "grok";
         if (raw.includes("wan") || raw.includes("ultra high")) return "wan2";
@@ -2920,7 +2935,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             ? "Ultra High 2.2"
             : engine === "grok"
                 ? "Cria 3.0 speed"
-                : "Seedance 2.0";
+                : "Mega 2.0 Ultra";
     const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
     const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
     let personaProfileId = 0;
@@ -5896,7 +5911,7 @@ async function generateAiScript() {
                 ? "MiniMax"
                 : engine === "wan2"
                     ? "Ultra High 2.2"
-                    : "Seedance";
+                    : "Mega 2.0 Ultra";
         showCreateProgress("Gerando prompt cinematográfico com IA...", {
             progress: 30,
             stage: `Otimizando prompt ${engineLabel} com timeline por segundos...`,

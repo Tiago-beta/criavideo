@@ -649,7 +649,7 @@
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                             </div>
-                            <strong>Enviar vídeo do PC</strong>
+                            <strong>Enviar vídeo</strong>
                             <small>Envie um vídeo e abra a edição automaticamente.</small>
                         </button>
 
@@ -657,7 +657,7 @@
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                             </div>
-                            <strong>Enviar imagem do PC</strong>
+                            <strong>Enviar imagem</strong>
                             <small>Prepara criação com imagens no fluxo de projeto.</small>
                         </button>
 
@@ -749,7 +749,7 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Vídeo realista até 60s com Cria 3.0 speed e Ultra High 2.2</small>
+                                <small>Vídeo realista com Cria 3.0 speed, Ultra High 2.2 e Mega 2.0 Ultra</small>
                                 <span class="credit-badge credit-high">Créditos: Alto</span>
                             </div>
                         </div>
@@ -924,17 +924,20 @@
                         <div class="form-group" id="wizard-realistic-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="wizard-realistic-engine">
-                                <button class="engine-option" data-value="seedance" type="button" hidden>
-                                    <strong>Seedance 2.0</strong>
-                                </button>
-                                <button class="engine-option" data-value="minimax" type="button" hidden>
-                                    <strong>MiniMax</strong>
-                                </button>
                                 <button class="engine-option selected" data-value="wan2" type="button">
                                     <strong>Ultra High 2.2</strong>
+                                    <small class="engine-option-desc">720p, alta definição, velocidade normal e sem áudio nativo.</small>
                                 </button>
                                 <button class="engine-option" data-value="grok" type="button">
                                     <strong>Cria 3.0 speed</strong>
+                                    <small class="engine-option-desc">720p, áudio nativo e velocidade rápida.</small>
+                                </button>
+                                <button class="engine-option" data-value="seedance" type="button">
+                                    <strong>Mega 2.0 Ultra</strong>
+                                    <small class="engine-option-desc">1080p, áudio nativo e velocidade normal.</small>
+                                </button>
+                                <button class="engine-option" data-value="minimax" type="button" hidden>
+                                    <strong>MiniMax</strong>
                                 </button>
                             </div>
                         </div>
@@ -1209,7 +1212,7 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Vídeo realista até 60s com Cria 3.0 speed e Ultra High 2.2</small>
+                                <small>Vídeo realista com Cria 3.0 speed, Ultra High 2.2 e Mega 2.0 Ultra</small>
                                 <span class="credit-badge credit-high">Créditos: Alto</span>
                             </div>
                         </div>
@@ -1438,17 +1441,20 @@
                         <div class="form-group" id="script-realistic-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="script-realistic-engine">
-                                <button class="engine-option" data-value="seedance" type="button" hidden>
-                                    <strong>Seedance 2.0</strong>
-                                </button>
-                                <button class="engine-option" data-value="minimax" type="button" hidden>
-                                    <strong>MiniMax</strong>
-                                </button>
                                 <button class="engine-option selected" data-value="wan2" type="button">
                                     <strong>Ultra High 2.2</strong>
+                                    <small class="engine-option-desc">720p, alta definição, velocidade normal e sem áudio nativo.</small>
                                 </button>
                                 <button class="engine-option" data-value="grok" type="button">
                                     <strong>Cria 3.0 speed</strong>
+                                    <small class="engine-option-desc">720p, áudio nativo e velocidade rápida.</small>
+                                </button>
+                                <button class="engine-option" data-value="seedance" type="button">
+                                    <strong>Mega 2.0 Ultra</strong>
+                                    <small class="engine-option-desc">1080p, áudio nativo e velocidade normal.</small>
+                                </button>
+                                <button class="engine-option" data-value="minimax" type="button" hidden>
+                                    <strong>MiniMax</strong>
                                 </button>
                             </div>
                         </div>
@@ -2232,9 +2238,19 @@
                         <div class="form-group" id="auto-realistic-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="auto-realistic-engine">
+                                <button class="engine-option selected" data-value="wan2" type="button">
+                                    <strong>Ultra High 2.2</strong>
+                                    <small class="engine-option-desc">720p, alta definição, velocidade normal e sem áudio nativo.</small>
+                                </button>
+                                <button class="engine-option" data-value="grok" type="button">
+                                    <strong>Cria 3.0 speed</strong>
+                                    <small class="engine-option-desc">720p, áudio nativo e velocidade rápida.</small>
+                                </button>
+                                <button class="engine-option" data-value="seedance" type="button">
+                                    <strong>Mega 2.0 Ultra</strong>
+                                    <small class="engine-option-desc">1080p, áudio nativo e velocidade normal.</small>
+                                </button>
                                 <button class="engine-option" data-value="minimax" type="button" hidden><strong>MiniMax</strong></button>
-                                <button class="engine-option selected" data-value="wan2" type="button"><strong>Ultra High 2.2</strong></button>
-                                <button class="engine-option" data-value="grok" type="button"><strong>Cria 3.0 speed</strong></button>
                             </div>
                         </div>
                         <div class="form-group">

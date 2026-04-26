@@ -1339,7 +1339,7 @@ async def run_realistic_video_pipeline(project_id: int):
             engine = (project.audio_path or "").strip()
             if engine not in ("seedance", "minimax", "wan2", "grok"):
                 engine = "wan2"
-            engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Ultra High 2.2", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
+            engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Ultra High 2.2", "seedance": "Mega 2.0 Ultra", "grok": "Cria 3.0 speed"}
             engine_label = engine_labels.get(engine, "Ultra High 2.2")
             logger.info(f"Realistic video pipeline for project {project_id} using engine: {engine}")
 
@@ -1479,7 +1479,8 @@ async def run_realistic_video_pipeline(project_id: int):
             dialogue_voice_profile_ids = tags_data.get("dialogue_voice_profile_ids", []) if isinstance(tags_data.get("dialogue_voice_profile_ids", []), list) else []
             dialogue_tone = str(tags_data.get("dialogue_tone", "informativo") or "informativo").strip() or "informativo"
             dialogue_duration = float(tags_data.get("dialogue_duration", 0) or 0)
-            shadow_audio_from_grok = engine == "wan2" and bool(tags_data.get("wan_shadow_grok_audio", True))
+            # Ultra High 2.2 now runs video-only (no legacy Grok shadow audio).
+            shadow_audio_from_grok = False
             shadow_grok_retry_limit = max(0, int(tags_data.get("wan_shadow_grok_retry_limit", 2) or 2))
             wan_effective_duration = _resolve_wan_effective_duration(duration) if engine == "wan2" else duration
             grok_shadow_prompt = ""
@@ -1487,9 +1488,8 @@ async def run_realistic_video_pipeline(project_id: int):
             grok_shadow_audio_path = ""
             grok_shadow_duration = 0.0
 
-            if shadow_audio_from_grok:
-                tags_data["wan_shadow_grok_audio"] = True
-                tags_data["wan_shadow_grok_retry_limit"] = shadow_grok_retry_limit
+            if engine == "wan2":
+                tags_data["wan_shadow_grok_audio"] = False
                 tags_data["wan_effective_duration"] = wan_effective_duration
                 project.tags = tags_data
                 await db.commit()
