@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v230 loaded");
+console.log("[CriaVideo] app.js v231 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -148,7 +148,7 @@ function _renderDurationButtons(containerId, options, preferredValue = null) {
 }
 
 function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
-    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
+    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "grok";
     const options = engine === "wan2"
         ? WAN_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
@@ -160,7 +160,7 @@ function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected")
         || document.querySelector("#wizard-realistic-engine .engine-option.selected");
-    const engine = engineBtn?.dataset.value || "wan2";
+    const engine = engineBtn?.dataset.value || "grok";
     const options = engine === "wan2"
         ? WAN_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
@@ -170,7 +170,7 @@ function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
 }
 
 function _syncAutoRealisticDurationOptions(preferredValue = null) {
-    const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "wan2";
+    const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "grok";
     const options = engine === "grok"
         ? AUTO_GROK_DURATION_OPTIONS
         : engine === "seedance"
@@ -2226,7 +2226,7 @@ async function createSimilar(projectId) {
     if (sourceLooksRealistic) {
         const desiredDuration = Math.max(1, Math.round(Number(projectDetail?.track_duration || project.track_duration || tagsData.dialogue_duration || 8)));
 
-        const selectedEngine = normalizeEngine(tagsData.engine || project.track_artist || projectDetail?.track_artist || "wan2");
+        const selectedEngine = normalizeEngine(tagsData.engine || project.track_artist || projectDetail?.track_artist || "grok");
         const engineOptions = Array.from(document.querySelectorAll("#script-realistic-engine .engine-option"));
         let selectedEngineBtn = engineOptions.find((btn) => (btn.dataset.value || "") === selectedEngine);
         if (!selectedEngineBtn) {
@@ -2920,7 +2920,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const addMusic = musicEl ? musicEl.checked : true;
     const addMusicRequested = useTevoxi ? false : addMusic;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
-    let engine = engineBtn ? engineBtn.dataset.value : "wan2";
+    let engine = engineBtn ? engineBtn.dataset.value : "grok";
     if (engine === "wan2") {
         const normalizedDuration = _normalizeWanDurationMultiple(duration);
         if (normalizedDuration !== duration) {
@@ -5883,7 +5883,7 @@ async function generateAiScript() {
         const realisticDurationBtn = document.querySelector("#ai-suggest-realistic-duration .duration-option.selected");
         let realisticDuration = realisticDurationBtn ? parseInt(realisticDurationBtn.dataset.value, 10) : 8;
         let engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected") || document.querySelector("#wizard-realistic-engine .engine-option.selected");
-        let engine = engineBtn ? engineBtn.dataset.value : "wan2";
+        let engine = engineBtn ? engineBtn.dataset.value : "grok";
         if (engine === "wan2") {
             const normalized = _normalizeWanDurationMultiple(realisticDuration);
             if (normalized !== realisticDuration) {
@@ -8492,7 +8492,7 @@ function openNewAutomationModal() {
     _refreshPersonaContext("auto", "natureza");
 
     // reset engine selection
-    _setAutoRealisticEngine("wan2");
+    _setAutoRealisticEngine("grok");
 
     // reset duration selection
     _syncAutoRealisticDurationOptions(8);
@@ -8593,7 +8593,7 @@ function _setAutoRealisticEngine(engineValue) {
     });
 
     if (!selected) {
-        selected = document.querySelector('#auto-realistic-engine [data-value="wan2"]');
+        selected = document.querySelector('#auto-realistic-engine [data-value="grok"]');
         if (selected) selected.classList.add("selected");
     }
 
@@ -8611,7 +8611,7 @@ function _applyAutoRealisticEngineRules() {
     }
 
     const selected = document.querySelector("#auto-realistic-engine .engine-option.selected");
-    if (!selected) _setAutoRealisticEngine("wan2");
+    if (!selected) _setAutoRealisticEngine("grok");
 }
 
 function autoStepNext() {
@@ -8662,7 +8662,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (_isAutoTevoxiShortMode()) {
                 _setAutoRealisticEngine("grok");
             } else {
-                _setAutoRealisticEngine(eng.dataset.value || "wan2");
+                _setAutoRealisticEngine(eng.dataset.value || "grok");
             }
         }
         // Duration option click

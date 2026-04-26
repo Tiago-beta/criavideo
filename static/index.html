@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260425-78">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260425-79">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 247;
+        var REQUIRED_VER = 248;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -924,11 +924,11 @@
                         <div class="form-group" id="wizard-realistic-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="wizard-realistic-engine">
-                                <button class="engine-option selected" data-value="wan2" type="button">
+                                <button class="engine-option" data-value="wan2" type="button">
                                     <strong>Ultra High 1.0</strong>
-                                    <small class="engine-option-desc">720p, velocidade normal e sem áudio nativo.</small>
+                                    <small class="engine-option-desc">720p, sem áudio nativo e velocidade normal.</small>
                                 </button>
-                                <button class="engine-option" data-value="grok" type="button">
+                                <button class="engine-option selected" data-value="grok" type="button">
                                     <strong>Cria 3.0 speed</strong>
                                     <small class="engine-option-desc">720p, áudio nativo e velocidade rápida.</small>
                                 </button>
@@ -1441,11 +1441,11 @@
                         <div class="form-group" id="script-realistic-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="script-realistic-engine">
-                                <button class="engine-option selected" data-value="wan2" type="button">
+                                <button class="engine-option" data-value="wan2" type="button">
                                     <strong>Ultra High 1.0</strong>
-                                    <small class="engine-option-desc">720p, velocidade normal e sem áudio nativo.</small>
+                                    <small class="engine-option-desc">720p, sem áudio nativo e velocidade normal.</small>
                                 </button>
-                                <button class="engine-option" data-value="grok" type="button">
+                                <button class="engine-option selected" data-value="grok" type="button">
                                     <strong>Cria 3.0 speed</strong>
                                     <small class="engine-option-desc">720p, áudio nativo e velocidade rápida.</small>
                                 </button>
@@ -2238,11 +2238,11 @@
                         <div class="form-group" id="auto-realistic-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="auto-realistic-engine">
-                                <button class="engine-option selected" data-value="wan2" type="button">
+                                <button class="engine-option" data-value="wan2" type="button">
                                     <strong>Ultra High 1.0</strong>
-                                    <small class="engine-option-desc">720p, velocidade normal e sem áudio nativo.</small>
+                                    <small class="engine-option-desc">720p, sem áudio nativo e velocidade normal.</small>
                                 </button>
-                                <button class="engine-option" data-value="grok" type="button">
+                                <button class="engine-option selected" data-value="grok" type="button">
                                     <strong>Cria 3.0 speed</strong>
                                     <small class="engine-option-desc">720p, áudio nativo e velocidade rápida.</small>
                                 </button>
@@ -2841,8 +2841,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260425-78"></script>
-    <script src="/video/static/pwa.js?v=20260425-78"></script>
+    <script src="/video/static/app.js?v=20260425-79"></script>
+    <script src="/video/static/pwa.js?v=20260425-79"></script>
 </body>
 </html>
 
