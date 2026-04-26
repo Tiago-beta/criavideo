@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v238 loaded");
+console.log("[CriaVideo] app.js v239 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -397,7 +397,7 @@ function initGoogleLogin(remainingAttempts = 20) {
         });
         window.google.accounts.id.renderButton(
             document.getElementById("google-login-button"),
-            { type: "standard", theme: "outline", size: "large", text: "signin_with", shape: "pill", width: 320 },
+            { type: "standard", theme: "outline", size: "large", text: "signin_with", shape: "pill", width: 300 },
         );
         return;
     }

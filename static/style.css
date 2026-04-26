@@ -273,11 +273,25 @@ a {
 .provider-stack {
     display: grid;
     gap: 0.85rem;
+    justify-items: center;
 }
 
 .google-login {
+    width: min(100%, 300px);
     display: grid;
     place-items: center;
+    justify-self: center;
+}
+
+#google-login-button {
+    width: 100%;
+    display: grid;
+    place-items: center;
+}
+
+.provider-stack .btn-provider.btn-block {
+    width: min(100%, 300px);
+    justify-self: center;
 }
 
 .auth-switch {
