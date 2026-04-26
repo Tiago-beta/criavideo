@@ -607,6 +607,38 @@ a {
     background: rgba(var(--accent-rgb), 0.14);
     border-color: rgba(var(--accent-rgb), 0.42);
 }
+
+.global-balance-chip {
+    position: fixed;
+    top: 14px;
+    right: 18px;
+    z-index: 920;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 13px;
+    border-radius: 999px;
+    border: 1px solid rgba(var(--accent-rgb), 0.36);
+    background: rgba(7, 28, 52, 0.9);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(2, 10, 18, 0.42);
+    transition: all 0.2s ease;
+}
+
+.global-balance-chip:hover {
+    border-color: rgba(var(--accent-rgb), 0.52);
+    background: rgba(10, 35, 64, 0.94);
+    transform: translateY(-1px);
+}
+
+.global-balance-chip:active {
+    transform: translateY(0);
+}
+
 #credits-count {
     font-weight: 700;
     font-size: 15px;
@@ -1627,8 +1659,16 @@ a {
     border: 1px solid #f59e0b44;
 }
 
-.credit-estimate-pill {
+.credit-estimate-row {
     margin-top: 0.6rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.credit-estimate-pill {
+    margin-top: 0;
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
@@ -1663,6 +1703,28 @@ a {
     border-color: rgba(231, 76, 60, 0.52);
     background: rgba(231, 76, 60, 0.12);
     color: #ffb0a8;
+}
+
+.credit-add-btn {
+    border: 1px solid rgba(var(--accent-rgb), 0.48);
+    background: rgba(var(--accent-rgb), 0.14);
+    color: #ffd997;
+    border-radius: 999px;
+    padding: 0.32rem 0.66rem;
+    font-size: 0.72rem;
+    line-height: 1;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.credit-add-btn:hover {
+    background: rgba(var(--accent-rgb), 0.22);
+    border-color: rgba(var(--accent-rgb), 0.62);
+}
+
+.credit-add-btn:active {
+    transform: translateY(1px);
 }
 
 .auto-theme-item .theme-credit-tag {
@@ -4301,6 +4363,13 @@ svg.spin {
         font-size: 24px;
     }
 
+    .global-balance-chip {
+        top: 10px;
+        right: 12px;
+        padding: 7px 10px;
+        font-size: 11px;
+    }
+
     .cards-grid {
         grid-template-columns: 1fr;
     }
@@ -5692,6 +5761,11 @@ th,
     }
     .mode-selection-card {
         padding: 20px 14px 16px;
+    }
+
+    .credit-add-btn {
+        padding: 0.28rem 0.58rem;
+        font-size: 0.66rem;
     }
 }
 

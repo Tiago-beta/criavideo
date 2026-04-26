@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v233 loaded");
+console.log("[CriaVideo] app.js v234 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2061,6 +2061,11 @@ let scriptData = {
 const _creditEstimateTimers = {};
 const _creditEstimateSeq = { wizard: 0, script: 0, auto: 0 };
 let _latestCreditEstimate = { wizard: null, script: null, auto: null };
+const _creditEstimateAddButtonByBadge = {
+    "wizard-credit-estimate": "wizard-credit-add-btn",
+    "script-credit-estimate": "script-credit-add-btn",
+    "auto-credit-estimate": "auto-credit-add-btn",
+};
 
 function _formatCreditsInt(value) {
     const parsed = parseInt(value || "0", 10);
@@ -2097,16 +2102,26 @@ function _extractEstimateCostBrl(estimate) {
     return _creditsToBrl(_extractEstimateCredits(estimate));
 }
 
+function _setCreditEstimateAddButton(targetId, show = false) {
+    const btnId = _creditEstimateAddButtonByBadge[targetId];
+    if (!btnId) return;
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.hidden = !show;
+}
+
 function _setCreditEstimateBadge(targetId, message = "", kind = "ready", hidden = false) {
     const el = document.getElementById(targetId);
     if (!el) return;
     if (hidden) {
         el.hidden = true;
+        _setCreditEstimateAddButton(targetId, false);
         return;
     }
     el.hidden = false;
     el.className = `credit-estimate-pill is-${kind}`;
     el.textContent = message;
+    _setCreditEstimateAddButton(targetId, kind === "warning");
 }
 
 function _queueCreditEstimate(key, fn, delayMs = 260) {
@@ -2325,7 +2340,7 @@ function _buildAutoEstimatePayload() {
     };
 }
 
-async function _refreshCreditEstimate(key, badgeId, payload, messageBuilder) {
+async function _refreshCreditEstimate(key, badgeId, payload, messageBuilder, warningCostResolver = null) {
     const seq = (_creditEstimateSeq[key] || 0) + 1;
     _creditEstimateSeq[key] = seq;
     _setCreditEstimateBadge(badgeId, "Calculando custo...", "loading");
@@ -2337,8 +2352,14 @@ async function _refreshCreditEstimate(key, badgeId, payload, messageBuilder) {
         _latestCreditEstimate[key] = estimate;
         const creditsNeeded = _extractEstimateCredits(estimate);
         const estimatedCostBrl = _extractEstimateCostBrl(estimate);
+        const warningCostCandidate = typeof warningCostResolver === "function"
+            ? Number(warningCostResolver(estimate, estimatedCostBrl) || 0)
+            : estimatedCostBrl;
+        const warningCostBrl = Number.isFinite(warningCostCandidate) && warningCostCandidate > 0
+            ? warningCostCandidate
+            : estimatedCostBrl;
         const message = messageBuilder(creditsNeeded, estimate, estimatedCostBrl);
-        const kind = (estimatedCostBrl > 0 && _creditsToBrl(_userCredits) < estimatedCostBrl) ? "warning" : "ready";
+        const kind = (warningCostBrl > 0 && _creditsToBrl(_userCredits) < warningCostBrl) ? "warning" : "ready";
         _setCreditEstimateBadge(badgeId, message, kind);
         return estimate;
     } catch {
@@ -2411,6 +2432,7 @@ async function updateAutoCreditEstimate() {
             const balanceChunk = _buildBalanceSuffix(totalCostBrl);
             return `Custo por video: ${_formatBrl(estimatedCostBrl)}${totalChunk}${balanceChunk}`;
         },
+        (_estimate, estimatedCostBrl) => estimatedCostBrl * themeCount,
     );
 }
 
@@ -8716,11 +8738,6 @@ function renderAutoCard(s) {
     const themes = (s.themes || []);
     const pendingCount = themes.filter(t => t.status === "pending").length;
     const doneCount = themes.filter(t => t.status === "done" || t.status === "completed").length;
-    const pendingEstimatedCredits = parseInt(s.pending_estimated_credits || "0", 10) || 0;
-    const pendingEstimatedCost = Number(s.pending_estimated_cost_brl || 0) || _creditsToBrl(pendingEstimatedCredits);
-    const pendingCostLabel = pendingEstimatedCost > 0
-        ? _formatBrl(pendingEstimatedCost)
-        : "";
 
     const themeListHtml = themes.map(t => {
         let icon, statusClass, statusLabel;
@@ -8786,7 +8803,6 @@ function renderAutoCard(s) {
             <span>${freq} as ${esc(s.time_local || s.time_utc)}</span>
             <span>${pendingCount} pendentes / ${doneCount} feitos</span>
             <span>Conta: ${esc(s.account_label || (isTestAccount ? "Conta de teste (sem publicação)" : "Conta conectada"))}</span>
-            ${pendingCostLabel ? `<span>Custo pendente: ${pendingCostLabel}</span>` : ""}
         </div>
         <div class="auto-card-detail">
             <strong>Temas:</strong>
@@ -11894,9 +11910,20 @@ let _selectedCreditPkg = 0;
 let _creditValueBrl = 0;
 let _creditPricingVersion = "";
 
-async function updateCreditsDisplay() {
+function _renderGlobalBalance() {
+    const balanceText = _formatBrl(_creditsToBrl(_userCredits));
     const countEl = document.getElementById("credits-count");
-    if (countEl) countEl.textContent = _formatBrl(_creditsToBrl(_userCredits));
+    if (countEl) countEl.textContent = balanceText;
+
+    const globalChipEl = document.getElementById("global-balance-chip");
+    if (globalChipEl) {
+        globalChipEl.hidden = false;
+        globalChipEl.textContent = `Saldo: ${balanceText}`;
+    }
+}
+
+async function updateCreditsDisplay() {
+    _renderGlobalBalance();
     try {
         const data = await api("/credits");
         _userCredits = data.credits;
@@ -11904,7 +11931,7 @@ async function updateCreditsDisplay() {
         _creditPackages = data.packages || [];
         _creditValueBrl = Number(data.creditValueBrl || 0);
         _creditPricingVersion = String(data.pricingVersion || "");
-        if (countEl) countEl.textContent = _formatBrl(_creditsToBrl(_userCredits));
+        _renderGlobalBalance();
 
         scheduleWizardCreditEstimate();
         scheduleScriptCreditEstimate();
@@ -12034,6 +12061,9 @@ async function pollCreditStatus(reference) {
 
 // Wire up sidebar credits click
 document.getElementById("sidebar-credits")?.addEventListener("click", () => {
+    showCreditsPurchaseModal();
+});
+document.getElementById("global-balance-chip")?.addEventListener("click", () => {
     showCreditsPurchaseModal();
 });
 
