@@ -168,7 +168,7 @@ def _normalize_interaction_persona(value: str) -> str:
 
 
 def _normalize_wan_duration_seconds(value: int) -> int:
-    """Ultra High (Wan 2.2) works in 8-second blocks.
+    """Wan 2.7 mode works in 8-second blocks.
 
     The realistic UI now offers multiples of 8s up to 56s. This helper keeps
     API behavior consistent for older clients that still send legacy values.
@@ -2695,7 +2695,7 @@ async def generate_audio_endpoint(
         raise HTTPException(status_code=500, detail=f"Erro ao gerar áudio: {e}")
 
 
-# ── Realistic Video (Seedance 2.0) ──────────────────────────────
+# ── Realistic Video ──────────────────────────────
 
 
 class GenerateRealisticPromptRequest(BaseModel):
@@ -3239,8 +3239,8 @@ async def generate_realistic_endpoint(
     if not project_title:
         project_title = prompt[:100]
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Ultra High 1.0", "seedance": "Mega 2.0 Ultra", "grok": "Cria 3.0 speed"}
-    engine_label = engine_labels.get(engine, "Ultra High 1.0")
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.7", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
+    engine_label = engine_labels.get(engine, "Wan 2.7")
 
     # Narration config stored in tags JSON
     narration_voice = req.narration_voice or "onyx"

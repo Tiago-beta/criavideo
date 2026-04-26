@@ -1,11 +1,12 @@
 """
-Seedance Video — Uses Replicate API to call ByteDance Seedance 2.0
-for realistic AI video generation (text-to-video).
+Seedance Video — Uses Atlas Cloud API to call ByteDance Seedance 2.0
+for realistic AI video generation (text-to-video and image-to-video).
 """
 import os
 import time
 import logging
 import asyncio
+import mimetypes
 import httpx
 import openai
 from app.config import get_settings
@@ -13,12 +14,66 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-REPLICATE_API_URL = "https://api.replicate.com/v1/predictions"
-SEEDANCE_MODEL_VERSION = "bytedance/seedance-2.0"
+ATLAS_VIDEO_API_BASE_URL = (settings.atlascloud_api_base_url or "https://api.atlascloud.ai/api/v1").rstrip("/")
+SEEDANCE_T2V_MODEL = (settings.atlascloud_seedance_t2v_model or "bytedance/seedance-2.0/text-to-video").strip()
+SEEDANCE_I2V_MODEL = (settings.atlascloud_seedance_i2v_model or "bytedance/seedance-2.0/image-to-video").strip()
 SEEDANCE_RATE_LIMIT_MSG = (
     "Seedance 2.0 esta com alta demanda no momento (429). "
-    "Tente novamente em alguns segundos ou use MiniMax/Wan 2.2."
+    "Tente novamente em alguns segundos ou use MiniMax/Wan 2.7."
 )
+_ALLOWED_ASPECT_RATIOS = {"16:9", "9:16", "1:1", "4:3", "3:4"}
+
+
+def _atlas_api_key() -> str:
+    key = (settings.atlascloud_api_key or "").strip()
+    if key:
+        return key
+    return (os.getenv("ATLASCLOUD_API_KEY") or "").strip()
+
+
+def _resolve_aspect_ratio(aspect_ratio: str) -> str:
+    candidate = str(aspect_ratio or "16:9").strip()
+    if candidate in _ALLOWED_ASPECT_RATIOS:
+        return candidate
+    return "16:9"
+
+
+def _extract_atlas_error_message(resp: httpx.Response) -> str:
+    body_text = (resp.text or "").strip()
+    try:
+        payload = resp.json()
+    except Exception:
+        return body_text
+
+    if isinstance(payload, dict):
+        detail = payload.get("detail") or payload.get("message") or payload.get("error")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+        if isinstance(detail, dict):
+            nested = detail.get("message") or detail.get("error")
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+        if isinstance(detail, list) and detail:
+            parts: list[str] = []
+            for item in detail:
+                if isinstance(item, str):
+                    parts.append(item.strip())
+                elif isinstance(item, dict):
+                    msg = item.get("msg") or item.get("message") or str(item)
+                    parts.append(str(msg).strip())
+                else:
+                    parts.append(str(item).strip())
+            joined = " | ".join(part for part in parts if part)
+            if joined:
+                return joined
+
+        data = payload.get("data")
+        if isinstance(data, dict):
+            nested = data.get("error") or data.get("message")
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+
+    return body_text
 
 
 def _retry_delay_from_header(retry_after: str | None, default_seconds: int = 5) -> int:
@@ -193,6 +248,69 @@ async def sanitize_prompt_for_retry(rejected_prompt: str) -> str:
         raise RuntimeError("Nao foi possivel reformular o prompt para evitar o filtro de conteudo.")
 
 
+async def _upload_media_to_atlas(file_path: str, api_key: str) -> str:
+    if not file_path or not os.path.exists(file_path):
+        raise RuntimeError("Arquivo de referencia nao encontrado para upload")
+
+    endpoint = f"{ATLAS_VIDEO_API_BASE_URL}/model/uploadMedia"
+    mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        for attempt in range(4):
+            try:
+                with open(file_path, "rb") as source:
+                    resp = await client.post(
+                        endpoint,
+                        headers=headers,
+                        files={"file": (os.path.basename(file_path), source, mime_type)},
+                    )
+            except httpx.RequestError as e:
+                if attempt >= 3:
+                    raise RuntimeError(f"Falha no upload da imagem de referencia: {e}")
+                wait_s = min(12, 2 ** (attempt + 1))
+                logger.warning(
+                    "Seedance upload request error (attempt %d/4): %s. Retrying in %ds",
+                    attempt + 1,
+                    e,
+                    wait_s,
+                )
+                await asyncio.sleep(wait_s)
+                continue
+
+            if resp.status_code == 429:
+                if attempt >= 3:
+                    raise RuntimeError(SEEDANCE_RATE_LIMIT_MSG)
+                wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(20, 2 ** (attempt + 2)))
+                logger.warning(
+                    "Seedance upload rate-limited (attempt %d/4). Retrying in %ds",
+                    attempt + 1,
+                    wait_s,
+                )
+                await asyncio.sleep(wait_s)
+                continue
+
+            if resp.is_error:
+                message = _extract_atlas_error_message(resp)
+                raise RuntimeError(f"Falha no upload da imagem de referencia (HTTP {resp.status_code}): {message}")
+
+            data = resp.json() if resp.content else {}
+            uploaded_url = ""
+            if isinstance(data, dict):
+                uploaded_url = str(data.get("url") or "").strip()
+                if not uploaded_url:
+                    inner = data.get("data")
+                    if isinstance(inner, dict):
+                        uploaded_url = str(inner.get("url") or "").strip()
+
+            if not uploaded_url:
+                raise RuntimeError("Upload da imagem de referencia retornou URL vazia")
+
+            return uploaded_url
+
+    raise RuntimeError("Nao foi possivel enviar a imagem de referencia para o Atlas Cloud")
+
+
 async def generate_realistic_video(
     prompt: str,
     duration: int = 7,
@@ -205,57 +323,50 @@ async def generate_realistic_video(
     timeout_seconds: int = 600,
     on_progress=None,
 ) -> str:
-    """Generate a realistic video using Seedance 2.0 via Replicate API.
+    """Generate a realistic video using Seedance 2.0 via Atlas Cloud API.
 
     Returns the local path to the downloaded MP4 video.
     """
-    token = settings.replicate_api_token
-    if not token:
-        raise RuntimeError("REPLICATE_API_TOKEN not configured")
+    api_key = _atlas_api_key()
+    if not api_key:
+        raise RuntimeError("ATLASCLOUD_API_KEY not configured")
 
     duration = max(1, min(duration, 10))
+    aspect_ratio = _resolve_aspect_ratio(aspect_ratio)
+    resolution = str(resolution or "720p").strip() or "720p"
+    model_id = SEEDANCE_T2V_MODEL
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Prefer": "wait",
-    }
-
-    input_data = {
+    payload = {
+        "model": model_id,
         "prompt": prompt,
         "duration": duration,
         "aspect_ratio": aspect_ratio,
         "resolution": resolution,
         "generate_audio": generate_audio,
     }
+
     if seed is not None:
-        input_data["seed"] = seed
+        payload["seed"] = int(seed)
 
-    # Add reference image as base64 data URI if provided
+    # Add reference image URL if provided.
     if image_path and os.path.exists(image_path):
-        import base64
-        import mimetypes
-        mime_type = mimetypes.guess_type(image_path)[0] or "image/jpeg"
-        with open(image_path, "rb") as img_f:
-            b64 = base64.b64encode(img_f.read()).decode("utf-8")
-        input_data["image"] = f"data:{mime_type};base64,{b64}"
-        logger.info(f"Seedance image-to-video: attached {image_path} as base64 ({len(b64)} chars)")
+        uploaded_image_url = await _upload_media_to_atlas(image_path, api_key)
+        payload["model"] = SEEDANCE_I2V_MODEL
+        payload["image_url"] = uploaded_image_url
+        logger.info("Seedance image-to-video: uploaded %s", image_path)
 
-    payload = {
-        "version": SEEDANCE_MODEL_VERSION,
-        "input": input_data,
+    # Step 1: Create prediction.
+    prediction_id = ""
+    submit_url = f"{ATLAS_VIDEO_API_BASE_URL}/model/generateVideo"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
     }
 
-    # Step 1: Create prediction
-    prediction = None
     async with httpx.AsyncClient(timeout=120) as client:
         for attempt in range(5):
             try:
-                resp = await client.post(
-                    "https://api.replicate.com/v1/models/bytedance/seedance-2.0/predictions",
-                    headers=headers,
-                    json={"input": input_data},
-                )
+                resp = await client.post(submit_url, headers=headers, json=payload)
             except httpx.RequestError as e:
                 if attempt >= 4:
                     raise RuntimeError(f"Falha de conexao ao iniciar Seedance: {e}")
@@ -281,31 +392,28 @@ async def generate_realistic_video(
                 await asyncio.sleep(wait_s)
                 continue
 
-            try:
-                resp.raise_for_status()
-            except httpx.HTTPStatusError as e:
-                body = (e.response.text or "").strip()[:300] if e.response is not None else ""
-                msg = f"Erro ao iniciar Seedance (HTTP {e.response.status_code if e.response is not None else '??'})"
-                if body:
-                    msg += f": {body}"
-                raise RuntimeError(msg)
+            if resp.is_error:
+                details = _extract_atlas_error_message(resp)
+                raise RuntimeError(f"Erro ao iniciar Seedance (HTTP {resp.status_code}): {details}")
 
-            prediction = resp.json()
+            response_payload = resp.json() if resp.content else {}
+            data_node = response_payload.get("data") if isinstance(response_payload, dict) else None
+            prediction_id = str((data_node or {}).get("id") or response_payload.get("id") or "").strip()
+            if not prediction_id:
+                raise RuntimeError("Atlas Cloud nao retornou prediction id para o Seedance")
             break
 
-    if not prediction:
+    if not prediction_id:
         raise RuntimeError("Nao foi possivel iniciar a geracao no Seedance.")
 
-    prediction_id = prediction["id"]
-    status = prediction.get("status", "starting")
-    logger.info(f"Seedance prediction created: {prediction_id} (status={status})")
+    logger.info("Seedance prediction created: %s", prediction_id)
 
     if on_progress:
         await on_progress(20, "Gerando video realista com Seedance 2.0...")
 
-    # Step 2: Poll for completion
-    poll_url = prediction.get("urls", {}).get("get", f"https://api.replicate.com/v1/predictions/{prediction_id}")
-    poll_headers = {"Authorization": f"Bearer {token}"}
+    # Step 2: Poll for completion.
+    poll_url = f"{ATLAS_VIDEO_API_BASE_URL}/model/prediction/{prediction_id}"
+    poll_headers = {"Authorization": f"Bearer {api_key}"}
 
     start_time = time.time()
     last_progress = 20
@@ -324,19 +432,29 @@ async def generate_realistic_video(
                 await asyncio.sleep(wait_s)
                 continue
 
-            resp.raise_for_status()
-            data = resp.json()
+            if resp.is_error:
+                details = _extract_atlas_error_message(resp)
+                raise RuntimeError(f"Erro ao consultar status do Seedance (HTTP {resp.status_code}): {details}")
 
-            status = data.get("status", "")
-            if status == "succeeded":
-                output = data.get("output")
-                if not output:
+            data = resp.json() if resp.content else {}
+            data_node = data.get("data") if isinstance(data, dict) else {}
+            status = str((data_node or {}).get("status") or data.get("status") or "").strip().lower()
+
+            if status in {"completed", "succeeded", "success"}:
+                outputs = (data_node or {}).get("outputs")
+                if isinstance(outputs, list) and outputs:
+                    video_url = str(outputs[0]).strip()
+                elif isinstance(outputs, str):
+                    video_url = outputs.strip()
+                else:
+                    fallback_output = (data_node or {}).get("output") or data.get("output")
+                    video_url = str(fallback_output or "").strip()
+
+                if not video_url:
                     raise RuntimeError("Seedance returned empty output")
-                # output is a URL to the video file
-                video_url = output if isinstance(output, str) else str(output)
                 break
-            elif status in ("failed", "canceled"):
-                error = data.get("error", "Unknown error")
+            elif status in {"failed", "error", "canceled", "cancelled"}:
+                error = (data_node or {}).get("error") or data.get("error") or "Unknown error"
                 raise RuntimeError(f"Seedance generation failed: {error}")
 
             # Update progress based on elapsed time
@@ -353,8 +471,11 @@ async def generate_realistic_video(
     if on_progress:
         await on_progress(80, "Baixando video gerado...")
 
-    # Step 3: Download the video
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    # Step 3: Download the video.
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
     async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
         downloaded = False
         for attempt in range(4):
