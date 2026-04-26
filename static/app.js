@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v226 loaded");
+console.log("[CriaVideo] app.js v227 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -17,6 +17,13 @@ let levitaSongs = [];
 let _socialAccountsCache = [];
 let _publishAccountSelection = {};
 let _publishRenderOptions = {};
+let _publishRenderLibrary = {
+    open: false,
+    loading: false,
+    error: "",
+    items: [],
+    selectedRenderId: 0,
+};
 let _pendingConnectPlatform = "";
 let _editingSocialAccountId = 0;
 let _analyzeState = {
@@ -639,12 +646,22 @@ function bindDashboardEvents() {
     document.getElementById("btn-schedule-publish").addEventListener("click", openPublishScheduleModal);
     document.getElementById("pub-links-toggle").addEventListener("click", togglePublishLinks);
     document.getElementById("btn-save-links").addEventListener("click", savePublishLinksForAccount);
-    document.getElementById("pub-render-select").addEventListener("change", (e) => {
-        const renderId = e.target.value;
-        if (renderId) {
-            onRenderSelected(parseInt(renderId, 10));
-        }
-    });
+    const renderPickerBtn = document.getElementById("pub-render-picker-btn");
+    if (renderPickerBtn) {
+        renderPickerBtn.addEventListener("click", () => {
+            _publishOpenRenderLibrary();
+        });
+    }
+    const renderSelect = document.getElementById("pub-render-select");
+    if (renderSelect) {
+        renderSelect.addEventListener("change", (e) => {
+            const renderId = parseInt(e.target.value || "", 10);
+            _publishSyncRenderPicker();
+            if (renderId) {
+                onRenderSelected(renderId);
+            }
+        });
+    }
     const draftSelect = document.getElementById("pub-draft-select");
     if (draftSelect) {
         draftSelect.addEventListener("change", async (event) => {
@@ -713,6 +730,12 @@ function bindDashboardEvents() {
             loadAnalyzeHistoryList(true);
         });
     }
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && _publishRenderLibrary.open) {
+            _publishCloseRenderLibrary();
+        }
+    });
+    _publishSyncRenderPicker();
     const analyzeHistoryRefreshBtn = document.getElementById("analyze-history-refresh-btn");
     if (analyzeHistoryRefreshBtn) {
         analyzeHistoryRefreshBtn.addEventListener("click", () => {
@@ -6208,57 +6231,309 @@ async function watchVideo(projectId) {
     }
 }
 
+function _publishSyncRenderPicker() {
+    const select = document.getElementById("pub-render-select");
+    const pickerBtn = document.getElementById("pub-render-picker-btn");
+    if (!select || !pickerBtn) {
+        return;
+    }
+
+    const selectedRenderId = String(select.value || "");
+    const selectedItem = (_publishRenderLibrary.items || []).find(
+        (item) => String(item.render_id) === selectedRenderId
+    );
+    const fallbackLabel = selectedRenderId ? getPublishRenderLabel(selectedRenderId) : "Selecione aqui...";
+    const rawLabel = selectedItem?.picker_label || fallbackLabel || "Selecione aqui...";
+    const compactLabel = rawLabel.length > 84 ? `${rawLabel.slice(0, 84)}...` : rawLabel;
+
+    pickerBtn.textContent = compactLabel;
+    pickerBtn.classList.toggle("has-value", Boolean(selectedRenderId));
+}
+
+function _publishCloseRenderLibrary() {
+    _publishRenderLibrary.open = false;
+    _publishRenderLibrary.loading = false;
+    _publishRenderLibrary.error = "";
+    _publishRenderLibrary.selectedRenderId = 0;
+    document.getElementById("publish-render-library-overlay")?.remove();
+}
+window._publishCloseRenderLibrary = _publishCloseRenderLibrary;
+
+function _publishRenderLibraryModal() {
+    const existing = document.getElementById("publish-render-library-overlay");
+    if (!_publishRenderLibrary.open) {
+        if (existing) existing.remove();
+        return;
+    }
+
+    const selectedRenderId = Number(_publishRenderLibrary.selectedRenderId || 0);
+    const items = Array.isArray(_publishRenderLibrary.items) ? _publishRenderLibrary.items : [];
+    const selectedLabel = selectedRenderId ? "1 video selecionado" : "0 videos selecionados";
+    const errorHtml = _publishRenderLibrary.error
+        ? `<div class="editor-layer-library-error">${esc(_publishRenderLibrary.error)}</div>`
+        : "";
+    const loadingHtml = '<div class="editor-layer-library-loading">Carregando videos da biblioteca...</div>';
+    const emptyHtml = '<div class="editor-layer-library-empty">Nenhum video finalizado disponivel na biblioteca.</div>';
+
+    const cardsHtml = items.map((item) => {
+        const renderId = Number(item.render_id || 0);
+        if (!renderId) {
+            return "";
+        }
+        const isSelected = renderId === selectedRenderId;
+        const title = esc(String(item.title || item.picker_label || `Render #${renderId}`));
+        const subtitle = esc(String(item.subtitle || `Projeto #${Number(item.project_id || 0)}`));
+        const formatLabel = esc(String(item.format_label || "--"));
+        const durationLabel = esc(String(item.duration_label || "--:--"));
+        const thumb = item.thumbnail_url
+            ? `<img class="editor-layer-library-thumb" src="${item.thumbnail_url}" alt="${title}" loading="lazy">`
+            : '<div class="editor-layer-library-thumb placeholder">Sem thumbnail</div>';
+
+        return `
+            <button
+                class="editor-layer-library-card${isSelected ? " selected" : ""}"
+                type="button"
+                onclick="_publishToggleRenderSelection(${renderId})"
+            >
+                <div class="editor-layer-library-thumb-wrap">
+                    ${thumb}
+                    <div class="editor-layer-library-top-meta">
+                        <span class="editor-layer-library-chip">${formatLabel}</span>
+                        <span class="editor-layer-library-chip">${durationLabel}</span>
+                    </div>
+                    <span class="editor-layer-library-check">${isSelected ? "✓" : ""}</span>
+                </div>
+                <div class="editor-layer-library-meta">
+                    <strong>${title}</strong>
+                    <span>${subtitle}</span>
+                </div>
+            </button>
+        `;
+    }).join("");
+
+    const bodyHtml = _publishRenderLibrary.loading
+        ? loadingHtml
+        : (cardsHtml.trim() ? cardsHtml : emptyHtml);
+    const sendDisabled = _publishRenderLibrary.loading || !selectedRenderId;
+    const sendLabel = selectedRenderId ? "Selecionar video" : "Selecione um video";
+
+    const overlayHtml = `
+        <div class="editor-layer-library-backdrop" onclick="_publishCloseRenderLibrary()"></div>
+        <div class="editor-layer-library-modal publish-render-library-modal" role="dialog" aria-modal="true" aria-label="Biblioteca de videos para publicar">
+            <div class="editor-layer-library-header">
+                <h3>Biblioteca de videos</h3>
+                <span class="editor-layer-library-selected-count">${selectedLabel}</span>
+                <button class="editor-layer-library-close" type="button" onclick="_publishCloseRenderLibrary()">×</button>
+            </div>
+            ${errorHtml}
+            <div class="editor-layer-library-list">${bodyHtml}</div>
+            <div class="editor-layer-library-footer">
+                <button
+                    class="editor-add-btn editor-layer-library-send-btn"
+                    type="button"
+                    onclick="_publishConfirmRenderSelection()"
+                    ${sendDisabled ? "disabled" : ""}
+                >
+                    ${sendLabel}
+                </button>
+            </div>
+        </div>
+    `;
+
+    if (!existing) {
+        const wrapper = document.createElement("div");
+        wrapper.id = "publish-render-library-overlay";
+        wrapper.className = "editor-layer-library-overlay publish-render-library-overlay";
+        wrapper.innerHTML = overlayHtml;
+        document.body.appendChild(wrapper);
+        return;
+    }
+
+    existing.innerHTML = overlayHtml;
+}
+
+function _publishToggleRenderSelection(renderId) {
+    const parsedRenderId = Number(renderId || 0);
+    if (!parsedRenderId || _publishRenderLibrary.loading) {
+        return;
+    }
+    _publishRenderLibrary.selectedRenderId = parsedRenderId;
+    _publishRenderLibrary.error = "";
+    _publishRenderLibraryModal();
+}
+window._publishToggleRenderSelection = _publishToggleRenderSelection;
+
+async function _publishConfirmRenderSelection() {
+    const parsedRenderId = Number(_publishRenderLibrary.selectedRenderId || 0);
+    if (!parsedRenderId) {
+        showToast("Selecione um video da biblioteca.", "error");
+        return;
+    }
+
+    const select = document.getElementById("pub-render-select");
+    if (!select) {
+        _publishCloseRenderLibrary();
+        return;
+    }
+
+    const targetRenderId = String(parsedRenderId);
+    const hasRenderOption = () => Array.from(select.options).some((option) => option.value === targetRenderId);
+    if (!hasRenderOption()) {
+        await loadRenders();
+    }
+    if (!hasRenderOption()) {
+        _publishRenderLibrary.error = "Este video nao esta mais disponivel para publicar.";
+        _publishRenderLibraryModal();
+        return;
+    }
+
+    select.value = targetRenderId;
+    _publishSyncRenderPicker();
+    _publishCloseRenderLibrary();
+    await onRenderSelected(parsedRenderId);
+}
+window._publishConfirmRenderSelection = _publishConfirmRenderSelection;
+
+async function _publishOpenRenderLibrary(forceReload = false) {
+    const select = document.getElementById("pub-render-select");
+    if (!select) {
+        return;
+    }
+
+    _publishRenderLibrary.open = true;
+    _publishRenderLibrary.error = "";
+    _publishRenderLibrary.selectedRenderId = Number(parseInt(select.value || "", 10) || 0);
+    _publishRenderLibrary.loading = Boolean(forceReload) || !_publishRenderLibrary.items.length;
+    _publishRenderLibraryModal();
+
+    if (!_publishRenderLibrary.loading) {
+        return;
+    }
+
+    await loadRenders();
+    if (!_publishRenderLibrary.open) {
+        return;
+    }
+    _publishRenderLibrary.selectedRenderId = Number(parseInt(select.value || "", 10) || 0);
+    _publishRenderLibrary.loading = false;
+    _publishRenderLibraryModal();
+}
+window._publishOpenRenderLibrary = _publishOpenRenderLibrary;
+
 async function loadRenders(preselectProjectId = 0) {
+    const select = document.getElementById("pub-render-select");
+    const pickerBtn = document.getElementById("pub-render-picker-btn");
+    if (!select) {
+        _publishRenderOptions = {};
+        _publishRenderLibrary.items = [];
+        _publishRenderLibrary.error = "";
+        return false;
+    }
+
+    if (pickerBtn) {
+        pickerBtn.disabled = true;
+    }
+
     try {
         const projects = await api("/video/projects");
-        const select = document.getElementById("pub-render-select");
-        if (!select) {
-            _publishRenderOptions = {};
-            return false;
-        }
         const wantedProjectId = parseInt(preselectProjectId, 10) || 0;
         let preselectRenderId = "";
         const renderOptions = {};
+        const renderLibraryItems = [];
         select.innerHTML = "<option value=''>Selecione aqui...</option>";
         for (const project of projects) {
-            if (project.status !== "completed") {
+            if (project.status !== "completed" || project.video_expired) {
                 continue;
             }
             try {
                 const detail = await api(`/video/projects/${project.id}`);
                 const orderedRenders = _sortRendersNewestFirst(detail.renders || []);
+                const projectTitle = String(project.title || detail.title || "Sem titulo");
+                const projectId = Number(project.id || 0);
+                const thumbnailUrl = String(detail.thumbnail_url || project.thumbnail_url || "").trim();
                 for (const render of orderedRenders) {
                     if (!render.video_url) {
                         continue;
                     }
-                    const duration = render.duration != null
-                        ? `${Math.floor(render.duration / 60)}:${String(Math.round(render.duration % 60)).padStart(2, "0")}`
-                        : "?";
-                    const optionLabel = `[${project.title || "Sem título"}] ${render.format} - ${duration}`;
-                    select.innerHTML += `<option value="${render.id}">${esc(optionLabel)}</option>`;
-                    renderOptions[String(render.id)] = optionLabel;
+                    const renderId = Number(parseInt(render.id || "", 10) || 0);
+                    if (!renderId) {
+                        continue;
+                    }
+                    const durationSeconds = Number(render.duration || 0);
+                    const durationLabel = durationSeconds > 0 ? _fmtTime(durationSeconds) : "--:--";
+                    const formatRaw = String(render.format || detail.aspect_ratio || project.aspect_ratio || "--");
+                    const formatLabel = formatRaw.toUpperCase();
+                    const optionLabel = `[${projectTitle}] ${formatRaw} - ${durationLabel}`;
+                    select.innerHTML += `<option value="${renderId}">${esc(optionLabel)}</option>`;
+                    renderOptions[String(renderId)] = optionLabel;
+                    renderLibraryItems.push({
+                        render_id: renderId,
+                        project_id: projectId,
+                        title: projectTitle,
+                        subtitle: projectId ? `Projeto #${projectId}` : "Projeto",
+                        picker_label: projectTitle,
+                        option_label: optionLabel,
+                        format_label: formatLabel,
+                        duration_label: durationLabel,
+                        thumbnail_url: thumbnailUrl,
+                        sort_id: renderId,
+                    });
                     if (wantedProjectId && project.id === wantedProjectId && !preselectRenderId) {
-                        preselectRenderId = String(render.id);
+                        preselectRenderId = String(renderId);
                     }
                 }
             } catch (_) {
                 // ignore one broken project and continue
             }
         }
+
+        renderLibraryItems.sort((a, b) => {
+            const byRender = Number(b.sort_id || 0) - Number(a.sort_id || 0);
+            if (byRender) {
+                return byRender;
+            }
+            return Number(b.project_id || 0) - Number(a.project_id || 0);
+        });
+
         _publishRenderOptions = renderOptions;
+        _publishRenderLibrary.items = renderLibraryItems;
+        _publishRenderLibrary.error = "";
         renderPublishDraftList();
         if (preselectRenderId) {
             select.value = preselectRenderId;
             renderPublishDraftPicker();
+            _publishSyncRenderPicker();
+            if (_publishRenderLibrary.open) {
+                _publishRenderLibrary.selectedRenderId = Number(parseInt(preselectRenderId, 10) || 0);
+            }
             return true;
         }
+        if (select.value && !renderOptions[String(select.value)]) {
+            select.value = "";
+        }
         renderPublishDraftPicker();
+        _publishSyncRenderPicker();
+        if (_publishRenderLibrary.open) {
+            _publishRenderLibrary.selectedRenderId = Number(parseInt(select.value || "", 10) || 0);
+        }
         return false;
     } catch (_) {
         _publishRenderOptions = {};
+        _publishRenderLibrary.items = [];
+        _publishRenderLibrary.error = "Falha ao carregar videos da biblioteca.";
+        select.innerHTML = "<option value=''>Selecione aqui...</option>";
+        select.value = "";
         renderPublishDraftList();
-        // keep select empty if request fails
+        _publishSyncRenderPicker();
         return false;
+    } finally {
+        if (pickerBtn) {
+            pickerBtn.disabled = false;
+        }
+        if (_publishRenderLibrary.open) {
+            _publishRenderLibrary.loading = false;
+            _publishRenderLibraryModal();
+        }
     }
 }
 
@@ -6514,6 +6789,13 @@ function getPublishRenderLabel(renderId) {
         return mappedLabel;
     }
 
+    const libraryItem = (_publishRenderLibrary.items || []).find(
+        (item) => String(item.render_id) === String(renderId)
+    );
+    if (libraryItem?.option_label) {
+        return libraryItem.option_label;
+    }
+
     const select = document.getElementById("pub-render-select");
     if (select) {
         const match = Array.from(select.options).find((option) => option.value === String(renderId));
@@ -6714,6 +6996,11 @@ async function openPublishDraftFromList(renderId) {
     }
 
     select.value = String(parsedRenderId);
+    _publishSyncRenderPicker();
+    if (_publishRenderLibrary.open) {
+        _publishRenderLibrary.selectedRenderId = parsedRenderId;
+        _publishRenderLibraryModal();
+    }
     await onRenderSelected(parsedRenderId);
 
     const draftSelect = document.getElementById("pub-draft-select");

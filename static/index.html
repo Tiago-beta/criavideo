@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260425-74">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260425-75">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 243;
+        var REQUIRED_VER = 244;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -361,7 +361,16 @@
                                 <div id="publish-form-area">
                                     <div class="publish-select-row">
                                         <div class="form-group publish-form-group">
-                                            <select id="pub-render-select" class="input" aria-label="Selecione o vídeo renderizado">
+                                            <button
+                                                id="pub-render-picker-btn"
+                                                class="input pub-render-picker-btn"
+                                                type="button"
+                                                aria-label="Selecione o vídeo renderizado"
+                                                aria-haspopup="dialog"
+                                            >
+                                                Selecione aqui...
+                                            </button>
+                                            <select id="pub-render-select" class="input pub-render-select-native" aria-label="Selecione o vídeo renderizado" hidden tabindex="-1">
                                                 <option value="">Selecione aqui...</option>
                                             </select>
                                         </div>
@@ -2816,8 +2825,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260425-74"></script>
-    <script src="/video/static/pwa.js?v=20260425-74"></script>
+    <script src="/video/static/app.js?v=20260425-75"></script>
+    <script src="/video/static/pwa.js?v=20260425-75"></script>
 </body>
 </html>
 
