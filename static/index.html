@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260426-89">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260426-90">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 258;
+        var REQUIRED_VER = 259;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1420,7 +1420,7 @@
                             <span>A IA vai otimizar seu roteiro em um prompt cinematográfico profissional para gerar o melhor vídeo possível</span>
                         </div>
 
-                        <div class="form-group">
+                        <div class="form-group" id="script-realistic-persona-group">
                             <label>Persona de interação</label>
                             <div class="realistic-inspiration-tags" id="script-realistic-persona-tags">
                                 <button class="style-tag" type="button" data-persona="homem">Homem</button>
@@ -2874,8 +2874,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260426-89"></script>
-    <script src="/video/static/pwa.js?v=20260426-89"></script>
+    <script src="/video/static/app.js?v=20260426-90"></script>
+    <script src="/video/static/pwa.js?v=20260426-90"></script>
 </body>
 </html>
 

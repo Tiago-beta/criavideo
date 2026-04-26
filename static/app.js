@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v241 loaded");
+console.log("[CriaVideo] app.js v242 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4615,6 +4615,15 @@ function toggleAudioMusicOptions() {
     scheduleScriptCreditEstimate();
 }
 
+function _updateScriptRealisticPersonaVisibility() {
+    const personaGroup = document.getElementById("script-realistic-persona-group");
+    if (!personaGroup) return;
+
+    const usePhotosToggle = document.getElementById("script-use-photos");
+    const usingUploadedPhotos = !!(usePhotosToggle && usePhotosToggle.checked && scriptPhotos.length > 0);
+    personaGroup.hidden = scriptData.videoType === "realista" && usingUploadedPhotos;
+}
+
 function handleUserAudioSelect(event) {
     const file = event.target.files && event.target.files[0] ? event.target.files[0] : null;
     if (!file) return;
@@ -4650,6 +4659,7 @@ function toggleScriptPhotoDependentFields() {
     const subtitlesGroup = document.getElementById("script-subtitles-group");
     if (imageSecondsGroup) imageSecondsGroup.hidden = !usePhotos || useVideo;
     // Subtitles group is always visible so user can toggle subtitles for any mode
+    _updateScriptRealisticPersonaVisibility();
 }
 
 function toggleScriptNarration() {
@@ -4809,6 +4819,7 @@ function renderPhotoPreview() {
     countEl.hidden = scriptPhotos.length === 0;
     numEl.textContent = scriptPhotos.length;
     updateNarrationChoiceVisibility();
+    _updateScriptRealisticPersonaVisibility();
     scheduleScriptCreditEstimate();
 }
 
@@ -4897,6 +4908,7 @@ function adaptScriptStepForVideoType(videoType) {
     }
     _updateScriptDetailsForTevoxiMode();
     _updateScriptSubtitlePositionVisibility();
+    _updateScriptRealisticPersonaVisibility();
 }
 
 function _normalizeRealisticPersonaType(value) {
