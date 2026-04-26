@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v231 loaded");
+console.log("[CriaVideo] app.js v232 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2058,6 +2058,346 @@ let scriptData = {
     imageDisplaySeconds: 0,
     promptOptimized: false,
 };
+const _creditEstimateTimers = {};
+const _creditEstimateSeq = { wizard: 0, script: 0, auto: 0 };
+let _latestCreditEstimate = { wizard: null, script: null, auto: null };
+
+function _formatCreditsInt(value) {
+    const parsed = parseInt(value || "0", 10);
+    if (!Number.isFinite(parsed)) return "0";
+    return parsed.toLocaleString("pt-BR");
+}
+
+function _extractEstimateCredits(estimate) {
+    const parsed = parseInt(estimate?.credits_needed || "0", 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function _setCreditEstimateBadge(targetId, message = "", kind = "ready", hidden = false) {
+    const el = document.getElementById(targetId);
+    if (!el) return;
+    if (hidden) {
+        el.hidden = true;
+        return;
+    }
+    el.hidden = false;
+    el.className = `credit-estimate-pill is-${kind}`;
+    el.textContent = message;
+}
+
+function _queueCreditEstimate(key, fn, delayMs = 260) {
+    if (_creditEstimateTimers[key]) {
+        clearTimeout(_creditEstimateTimers[key]);
+    }
+    _creditEstimateTimers[key] = setTimeout(() => {
+        fn().catch(() => {});
+    }, delayMs);
+}
+
+async function _fetchCreditEstimate(payload) {
+    return api("/video/estimate-credits", {
+        method: "POST",
+        body: JSON.stringify(payload),
+    });
+}
+
+function _buildBalanceSuffix(creditsNeeded) {
+    const needed = Math.max(0, parseInt(creditsNeeded || "0", 10) || 0);
+    if (_userCredits <= 0 || needed <= 0) return "";
+    if (_userCredits >= needed) {
+        return ` • saldo: ${_formatCreditsInt(_userCredits)}`;
+    }
+    return ` • faltam ${_formatCreditsInt(needed - _userCredits)}`;
+}
+
+function _getSelectedDurationSeconds(containerId, fallbackSeconds = 8) {
+    const btn = document.querySelector(`#${containerId} .duration-option.selected`);
+    const raw = parseInt(btn?.dataset.value || String(fallbackSeconds), 10);
+    if (Number.isFinite(raw) && raw > 0) return raw;
+    return fallbackSeconds;
+}
+
+function _buildRealisticEstimatePayload(prefix) {
+    const useTevoxi = !!document.getElementById(`${prefix}-realistic-tevoxi`)?.checked;
+    const selectedEngine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "grok";
+    const engine = (prefix === "auto" && useTevoxi) ? "grok" : selectedEngine;
+
+    let durationSeconds = _getSelectedDurationSeconds(`${prefix}-realistic-duration`, 8);
+    if (engine === "wan2") {
+        durationSeconds = _normalizeWanDurationMultiple(durationSeconds);
+    }
+
+    const addMusicChecked = !!document.getElementById(`${prefix}-realistic-music`)?.checked;
+    const addMusic = useTevoxi ? false : addMusicChecked;
+
+    const narrationChecked = !!document.getElementById(`${prefix}-realistic-narration`)?.checked;
+    const narrationText = (document.getElementById(`${prefix}-realistic-narration-text`)?.value || "").trim();
+    const addNarration = narrationChecked && !!narrationText;
+
+    const enableSubtitles = prefix === "auto"
+        ? !!document.getElementById("auto-realistic-subtitles")?.checked
+        : false;
+
+    const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
+    const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
+    const contextKey = prefix === "auto" ? "auto" : prefix;
+    const disablePersonaReference = _isPersonaNoReferenceEnabled(contextKey, interactionPersona);
+    const hasScriptPhotoReference = prefix === "script"
+        ? (!!document.getElementById("script-use-photos")?.checked && scriptPhotos.length > 0)
+        : false;
+    const hasReferenceImage = hasScriptPhotoReference || !disablePersonaReference;
+
+    const hasSelectedSong = prefix === "wizard"
+        ? !!_wizardSelectedSong
+        : prefix === "script"
+            ? !!_scriptSelectedSong
+            : !!_autoSelectedSong;
+
+    return {
+        mode: "realistic",
+        engine,
+        duration_seconds: durationSeconds,
+        has_reference_image: hasReferenceImage,
+        add_music: addMusic,
+        add_narration: addNarration,
+        enable_subtitles: enableSubtitles,
+        use_external_audio: useTevoxi && (prefix === "auto" ? true : hasSelectedSong),
+    };
+}
+
+function _buildWizardEstimatePayload() {
+    if (wizardData.videoType === "realista") {
+        return _buildRealisticEstimatePayload("wizard");
+    }
+
+    const durBtn = document.querySelector("#create-panel-wizard .wizard-step[data-step='6'] .duration-option.selected");
+    const durationSeconds = parseInt(durBtn?.dataset.value || String(wizardData.duration || 60), 10) || 60;
+    return {
+        mode: "standard",
+        duration_seconds: durationSeconds,
+        has_ai_images: true,
+        has_custom_images: false,
+        has_custom_video: false,
+        use_custom_audio: false,
+        use_tevoxi_audio: false,
+        enable_subtitles: true,
+        add_narration: true,
+        add_music: true,
+        audio_is_music: false,
+        remove_vocals: false,
+    };
+}
+
+function _buildScriptEstimatePayload() {
+    if (scriptData.videoType === "realista") {
+        return _buildRealisticEstimatePayload("script");
+    }
+
+    const scriptText = (document.getElementById("script-text")?.value || "").trim();
+    const wordCount = scriptText ? scriptText.split(/\s+/).filter(Boolean).length : 0;
+
+    const usePhotosSelected = !!document.getElementById("script-use-photos")?.checked;
+    const useVideoSelected = !!document.getElementById("script-use-video")?.checked;
+    const useAudioSelected = !!document.getElementById("script-use-user-audio")?.checked;
+
+    const useTevoxiAudio = _isScriptTevoxiMainAudioMode() && !!_scriptSelectedSong && !!_scriptSelectedClip;
+    const hasCustomVideo = useVideoSelected && !!scriptUserVideoFile;
+    const hasCustomImages = !hasCustomVideo && usePhotosSelected && scriptPhotos.length > 0;
+    const hasCustomAudio = !hasCustomVideo && !useTevoxiAudio && useAudioSelected && !!scriptUserAudioFile;
+
+    const imageSeconds = parseFloat(document.getElementById("script-image-seconds")?.value || "0") || 0;
+    const tevoxiDurationSeconds = useTevoxiAudio
+        ? Math.max(1, Number(_scriptSelectedClip?.clip_duration || _scriptSelectedClip?.song_duration || _scriptSelectedSong?.duration || 60))
+        : 0;
+
+    let durationSeconds = 60;
+    if (tevoxiDurationSeconds > 0) {
+        durationSeconds = tevoxiDurationSeconds;
+    } else if (wordCount > 0) {
+        durationSeconds = Math.max(8, Math.round(wordCount / 2.5));
+    } else if (hasCustomImages && imageSeconds > 0) {
+        durationSeconds = Math.max(8, Math.round(imageSeconds * scriptPhotos.length));
+    }
+
+    const createNarration = hasCustomVideo
+        ? (!!document.getElementById("script-video-create-narration")?.checked && !!scriptText)
+        : (hasCustomAudio || useTevoxiAudio)
+            ? false
+            : ((!hasCustomImages || !!document.getElementById("script-create-narration")?.checked) && !!scriptText);
+
+    const bgmEnabled = useTevoxiAudio
+        ? false
+        : (document.getElementById("script-enable-bgm")?.checked ?? true);
+    const addMusic = !(hasCustomAudio || hasCustomVideo || useTevoxiAudio || !bgmEnabled);
+    const enableSubtitles = !!document.getElementById("script-enable-subtitles")?.checked;
+
+    const audioIsMusic = useTevoxiAudio
+        ? true
+        : (hasCustomAudio ? !!document.getElementById("script-audio-is-music")?.checked : false);
+    const removeVocals = hasCustomAudio && audioIsMusic;
+
+    return {
+        mode: "standard",
+        duration_seconds: durationSeconds,
+        word_count: wordCount,
+        has_ai_images: !hasCustomImages && !hasCustomVideo,
+        has_custom_images: hasCustomImages,
+        has_custom_video: hasCustomVideo,
+        use_custom_audio: hasCustomAudio,
+        use_tevoxi_audio: useTevoxiAudio,
+        enable_subtitles: enableSubtitles,
+        add_narration: createNarration,
+        add_music: addMusic,
+        audio_is_music: audioIsMusic,
+        remove_vocals: removeVocals,
+    };
+}
+
+function _buildAutoEstimatePayload() {
+    const videoType = getSelectedAutoVideoType();
+    const creationMode = getSelectedAutoCreationMode();
+    const imageAudioSource = getSelectedAutoImageAudioSource();
+
+    if (videoType === "realista") {
+        return _buildRealisticEstimatePayload("auto");
+    }
+
+    if (videoType === "imagens_ia" && imageAudioSource === "tevoxi") {
+        const musicDuration = parseInt(document.getElementById("auto-music-duration")?.value || "120", 10) || 120;
+        return {
+            mode: "standard",
+            duration_seconds: musicDuration,
+            has_ai_images: true,
+            has_custom_images: false,
+            has_custom_video: false,
+            use_custom_audio: false,
+            use_tevoxi_audio: false,
+            enable_subtitles: true,
+            add_narration: false,
+            add_music: true,
+            audio_is_music: true,
+            remove_vocals: false,
+        };
+    }
+
+    const defaultDuration = creationMode === "manual"
+        ? (parseInt(document.getElementById("auto-duration")?.value || "60", 10) || 60)
+        : 60;
+    return {
+        mode: "standard",
+        duration_seconds: defaultDuration,
+        has_ai_images: true,
+        has_custom_images: false,
+        has_custom_video: false,
+        use_custom_audio: false,
+        use_tevoxi_audio: false,
+        enable_subtitles: true,
+        add_narration: true,
+        add_music: true,
+        audio_is_music: false,
+        remove_vocals: false,
+    };
+}
+
+async function _refreshCreditEstimate(key, badgeId, payload, messageBuilder) {
+    const seq = (_creditEstimateSeq[key] || 0) + 1;
+    _creditEstimateSeq[key] = seq;
+    _setCreditEstimateBadge(badgeId, "Calculando custo...", "loading");
+
+    try {
+        const estimate = await _fetchCreditEstimate(payload);
+        if (_creditEstimateSeq[key] !== seq) return null;
+
+        _latestCreditEstimate[key] = estimate;
+        const creditsNeeded = _extractEstimateCredits(estimate);
+        const message = messageBuilder(creditsNeeded, estimate);
+        const kind = (_userCredits > 0 && creditsNeeded > _userCredits) ? "warning" : "ready";
+        _setCreditEstimateBadge(badgeId, message, kind);
+        return estimate;
+    } catch {
+        if (_creditEstimateSeq[key] === seq) {
+            _setCreditEstimateBadge(badgeId, "Nao foi possivel calcular agora", "error");
+        }
+        return null;
+    }
+}
+
+function scheduleWizardCreditEstimate() {
+    _queueCreditEstimate("wizard", updateWizardCreditEstimate);
+}
+
+function scheduleScriptCreditEstimate() {
+    _queueCreditEstimate("script", updateScriptCreditEstimate);
+}
+
+function scheduleAutoCreditEstimate() {
+    _queueCreditEstimate("auto", updateAutoCreditEstimate);
+}
+
+async function updateWizardCreditEstimate() {
+    const createBtn = document.getElementById("wizard-create-btn");
+    if (!createBtn || createBtn.hidden) {
+        _setCreditEstimateBadge("wizard-credit-estimate", "", "ready", true);
+        return;
+    }
+    const payload = _buildWizardEstimatePayload();
+    await _refreshCreditEstimate(
+        "wizard",
+        "wizard-credit-estimate",
+        payload,
+        (creditsNeeded) => `Custo estimado: ${_formatCreditsInt(creditsNeeded)} creditos${_buildBalanceSuffix(creditsNeeded)}`,
+    );
+}
+
+async function updateScriptCreditEstimate() {
+    const createBtn = document.getElementById("script-create-btn");
+    if (!createBtn || createBtn.hidden) {
+        _setCreditEstimateBadge("script-credit-estimate", "", "ready", true);
+        return;
+    }
+    const payload = _buildScriptEstimatePayload();
+    await _refreshCreditEstimate(
+        "script",
+        "script-credit-estimate",
+        payload,
+        (creditsNeeded) => `Custo estimado: ${_formatCreditsInt(creditsNeeded)} creditos${_buildBalanceSuffix(creditsNeeded)}`,
+    );
+}
+
+async function updateAutoCreditEstimate() {
+    const createBtn = document.getElementById("auto-btn-create");
+    if (!createBtn || createBtn.hidden) {
+        _setCreditEstimateBadge("auto-credit-estimate", "", "ready", true);
+        return;
+    }
+    const payload = _buildAutoEstimatePayload();
+    const themeCount = Math.max(1, (_autoWizardThemes || []).length || 0);
+    await _refreshCreditEstimate(
+        "auto",
+        "auto-credit-estimate",
+        payload,
+        (creditsNeeded) => {
+            const totalCredits = creditsNeeded * themeCount;
+            const totalChunk = themeCount > 1
+                ? ` • total da fila: ${_formatCreditsInt(totalCredits)} creditos`
+                : "";
+            const balanceChunk = _buildBalanceSuffix(totalCredits);
+            return `Custo por video: ${_formatCreditsInt(creditsNeeded)} creditos${totalChunk}${balanceChunk}`;
+        },
+    );
+}
+
+async function _resolveCreditsNeededForAction(payload, cacheKey = "") {
+    try {
+        const estimate = await _fetchCreditEstimate(payload);
+        if (cacheKey) _latestCreditEstimate[cacheKey] = estimate;
+        return _extractEstimateCredits(estimate);
+    } catch {
+        const cached = cacheKey ? _latestCreditEstimate[cacheKey] : null;
+        return _extractEstimateCredits(cached);
+    }
+}
+
 let _scriptTevoxiSongs = []; // cached Tevoxi songs for script realistic mode
 let _scriptSelectedSong = null; // selected Tevoxi song for script realistic mode
 let _scriptSelectedClip = null; // selected clip/full metadata for script mode
@@ -2639,6 +2979,7 @@ function initCreateWizard() {
         const len = document.getElementById("script-text").value.length;
         document.getElementById("script-char-count").textContent = len.toLocaleString("pt-BR");
         _scriptTevoxiPromptAuto = false;
+        scheduleScriptCreditEstimate();
     });
 
     // AI suggestion buttons
@@ -2660,6 +3001,7 @@ function initCreateWizard() {
                 const fi = document.getElementById("script-bgm-file");
                 if (fi) fi.value = "";
             }
+            scheduleScriptCreditEstimate();
         });
     }
 
@@ -2667,6 +3009,7 @@ function initCreateWizard() {
     if (subtitleToggle) {
         subtitleToggle.addEventListener("change", () => {
             _updateScriptSubtitlePositionVisibility();
+            scheduleScriptCreditEstimate();
         });
     }
 
@@ -2701,8 +3044,10 @@ function initCreateWizard() {
                 const selectedPersona = _normalizeRealisticPersonaType(personaTag.dataset.persona || "natureza");
                 if (group.id === "wizard-realistic-persona-tags") {
                     _refreshPersonaContext("wizard", selectedPersona);
+                    scheduleWizardCreditEstimate();
                 } else if (group.id === "script-realistic-persona-tags") {
                     _refreshPersonaContext("script", selectedPersona);
+                    scheduleScriptCreditEstimate();
                 } else if (group.id === "ai-suggest-persona-tags") {
                     setSelectedRealisticPersona(selectedPersona);
                 } else if (group.id === "pilot-realistic-persona-tags") {
@@ -2731,8 +3076,32 @@ function initCreateWizard() {
         }
         const dur = e.target.closest(".duration-option");
         if (dur) {
-            dur.closest(".duration-options").querySelectorAll(".duration-option").forEach((d) => d.classList.remove("selected"));
+            const durationGroup = dur.closest(".duration-options");
+            durationGroup.querySelectorAll(".duration-option").forEach((d) => d.classList.remove("selected"));
             dur.classList.add("selected");
+            const durationGroupId = durationGroup?.id || "";
+            if (durationGroupId === "wizard-realistic-duration") {
+                scheduleWizardCreditEstimate();
+            } else if (durationGroupId === "script-realistic-duration") {
+                scheduleScriptCreditEstimate();
+            } else if (durationGroupId === "auto-realistic-duration") {
+                scheduleAutoCreditEstimate();
+            } else if (durationGroupId.includes("wizard") || durationGroupId === "wizard-duration-options") {
+                scheduleWizardCreditEstimate();
+            } else {
+                const wizardStep = dur.closest("#create-panel-wizard .wizard-step[data-step='6']");
+                if (wizardStep) {
+                    scheduleWizardCreditEstimate();
+                }
+                const autoStep = dur.closest("#modal-new-automation");
+                if (autoStep) {
+                    scheduleAutoCreditEstimate();
+                }
+                const scriptStep = dur.closest("#create-panel-script");
+                if (scriptStep) {
+                    scheduleScriptCreditEstimate();
+                }
+            }
         }
         const eng = e.target.closest(".engine-option");
         if (eng) {
@@ -2757,11 +3126,14 @@ function initCreateWizard() {
             if (engineGroupId === "wizard-realistic-engine") {
                 _syncCreateRealisticDurationOptions("wizard");
                 _syncAiSuggestRealisticDurationOptions();
+                scheduleWizardCreditEstimate();
             } else if (engineGroupId === "script-realistic-engine") {
                 _syncCreateRealisticDurationOptions("script");
                 _syncAiSuggestRealisticDurationOptions();
+                scheduleScriptCreditEstimate();
             } else if (engineGroupId === "auto-realistic-engine") {
                 _syncAutoRealisticDurationOptions();
+                scheduleAutoCreditEstimate();
             }
         }
         const vbtn = e.target.closest(".voice-btn");
@@ -2777,6 +3149,48 @@ function initCreateWizard() {
             const prefix = cb.id.replace("-realistic-narration", "");
             const opts = document.getElementById(`${prefix}-realistic-narration-options`);
             if (opts) opts.hidden = !cb.checked;
+            if (prefix === "wizard") {
+                scheduleWizardCreditEstimate();
+            } else if (prefix === "script") {
+                scheduleScriptCreditEstimate();
+            }
+        });
+    });
+
+    ["wizard-realistic-narration-text", "script-realistic-narration-text"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("input", () => {
+            if (id.startsWith("wizard")) {
+                scheduleWizardCreditEstimate();
+            } else {
+                scheduleScriptCreditEstimate();
+            }
+        });
+    });
+
+    [
+        "wizard-realistic-music",
+        "wizard-realistic-tevoxi",
+        "script-realistic-music",
+        "script-realistic-tevoxi",
+        "script-use-photos",
+        "script-use-video",
+        "script-use-user-audio",
+        "script-create-narration",
+        "script-video-create-narration",
+        "script-audio-is-music",
+        "script-image-seconds",
+    ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const eventName = el.tagName === "INPUT" && el.type === "number" ? "input" : "change";
+        el.addEventListener(eventName, () => {
+            if (id.startsWith("wizard")) {
+                scheduleWizardCreditEstimate();
+            } else {
+                scheduleScriptCreditEstimate();
+            }
         });
     });
 
@@ -2787,6 +3201,8 @@ function initCreateWizard() {
 
     _updateScriptSubtitlePositionVisibility();
     _updateScriptDetailsForTevoxiMode();
+    scheduleWizardCreditEstimate();
+    scheduleScriptCreditEstimate();
 }
 
 function switchCreateMode(mode) {
@@ -2853,6 +3269,16 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
     if (backBtn) backBtn.hidden = false; // Always show — step 1 goes back to mode selection
     if (nextBtn) nextBtn.hidden = stepIndex >= flow.length;
     if (createBtn) createBtn.hidden = stepIndex < flow.length;
+
+    const estimateBadge = document.getElementById(`${prefix}-credit-estimate`);
+    if (estimateBadge) {
+        estimateBadge.hidden = !(createBtn && !createBtn.hidden);
+    }
+    if (prefix === "wizard") {
+        scheduleWizardCreditEstimate();
+    } else if (prefix === "script") {
+        scheduleScriptCreditEstimate();
+    }
 }
 
 // ── Shared Realistic Create Logic ──
@@ -2949,6 +3375,14 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const narrationText = addNarration ? (narrationTextEl ? narrationTextEl.value.trim() : "") : "";
     const voiceBtn = document.querySelector(`#${prefix}-realistic-voices .voice-btn.selected`);
     const narrationVoice = voiceBtn ? voiceBtn.dataset.value : "onyx";
+
+    const realisticEstimatePayload = _buildRealisticEstimatePayload(prefix);
+    const realisticEstimateKey = prefix === "wizard" ? "wizard" : "script";
+    const realisticCreditsNeeded = await _resolveCreditsNeededForAction(realisticEstimatePayload, realisticEstimateKey);
+    if (realisticCreditsNeeded > 0 && _userCredits < realisticCreditsNeeded) {
+        showCreditsPurchaseModal();
+        return;
+    }
 
     // Show progress, hide create buttons
     const progressEl = document.getElementById("create-progress");
@@ -3470,6 +3904,13 @@ async function handleWizardCreate() {
     wizardData.style = getSelectedStyles("wizard-style-tags");
     wizardData.pauseLevel = getSelectedPause("wizard-pause-options");
 
+    const wizardEstimatePayload = _buildWizardEstimatePayload();
+    const wizardCreditsNeeded = await _resolveCreditsNeededForAction(wizardEstimatePayload, "wizard");
+    if (wizardCreditsNeeded > 0 && _userCredits < wizardCreditsNeeded) {
+        showCreditsPurchaseModal();
+        return;
+    }
+
     showCreateProgress("Gerando roteiro com IA...");
 
     try {
@@ -3790,15 +4231,9 @@ async function handleScriptCreate() {
         return;
     }
 
-    // Credit check: estimate minutes from word count
-    const wordCount = scriptData.text ? scriptData.text.split(/\s+/).filter(Boolean).length : 0;
-    const tevoxiDurationSeconds = scriptData.useTevoxiAudio
-        ? Math.max(1, Number(selectedTevoxiClip?.clip_duration || selectedTevoxiClip?.song_duration || selectedTevoxiSong?.duration || 60))
-        : 0;
-    const estMinutes = scriptData.useTevoxiAudio
-        ? Math.max(1, Math.ceil(tevoxiDurationSeconds / 60))
-        : Math.max(1, Math.ceil(wordCount / 150));
-    const creditsNeeded = estMinutes * _creditsPerMinute;
+    // Credit check
+    const scriptEstimatePayload = _buildScriptEstimatePayload();
+    const creditsNeeded = await _resolveCreditsNeededForAction(scriptEstimatePayload, "script");
     if (_userCredits < creditsNeeded) {
         showCreditsPurchaseModal();
         return;
@@ -3989,6 +4424,7 @@ function togglePhotoUpload() {
         if (narCb) narCb.checked = true;
     }
     updateNarrationChoiceVisibility();
+    scheduleScriptCreditEstimate();
 }
 
 function toggleVideoUpload() {
@@ -4013,6 +4449,7 @@ function toggleVideoUpload() {
         if (narChoice) narChoice.hidden = true;
     }
     toggleScriptPhotoDependentFields();
+    scheduleScriptCreditEstimate();
 }
 
 function handleUserVideoSelect(event) {
@@ -4039,6 +4476,7 @@ function handleUserVideoSelect(event) {
     }
     const narChoice = document.getElementById("script-video-narration-choice");
     if (narChoice) narChoice.hidden = false;
+    scheduleScriptCreditEstimate();
 }
 
 function toggleScriptVideoNarration() {
@@ -4099,6 +4537,7 @@ function toggleUserAudioUpload() {
     }
 
     toggleAudioMusicOptions();
+    scheduleScriptCreditEstimate();
 }
 
 function toggleAudioMusicOptions() {
@@ -4106,6 +4545,7 @@ function toggleAudioMusicOptions() {
     const isMusic = !!document.getElementById("script-audio-is-music")?.checked;
     scriptData.audioIsMusic = useAudio && isMusic;
     scriptData.removeVocals = useAudio && isMusic;
+    scheduleScriptCreditEstimate();
 }
 
 function handleUserAudioSelect(event) {
@@ -4130,6 +4570,7 @@ function handleUserAudioSelect(event) {
         nameEl.textContent = `Audio selecionado: ${file.name}`;
     }
     toggleAudioMusicOptions();
+    scheduleScriptCreditEstimate();
 }
 
 function toggleScriptPhotoDependentFields() {
@@ -4301,6 +4742,7 @@ function renderPhotoPreview() {
     countEl.hidden = scriptPhotos.length === 0;
     numEl.textContent = scriptPhotos.length;
     updateNarrationChoiceVisibility();
+    scheduleScriptCreditEstimate();
 }
 
 // Drag and drop support
@@ -8247,6 +8689,11 @@ function renderAutoCard(s) {
     const themes = (s.themes || []);
     const pendingCount = themes.filter(t => t.status === "pending").length;
     const doneCount = themes.filter(t => t.status === "done" || t.status === "completed").length;
+    const pendingEstimatedCredits = parseInt(s.pending_estimated_credits || "0", 10) || 0;
+    const pendingEstimatedCost = Number(s.pending_estimated_cost_brl || 0);
+    const pendingCostLabel = pendingEstimatedCredits > 0
+        ? `${pendingEstimatedCredits.toLocaleString("pt-BR")} creditos${pendingEstimatedCost > 0 ? ` (R$ ${pendingEstimatedCost.toFixed(2).replace(".", ",")})` : ""}`
+        : "";
 
     const themeListHtml = themes.map(t => {
         let icon, statusClass, statusLabel;
@@ -8272,6 +8719,11 @@ function renderAutoCard(s) {
             </div>`
             : "";
         const statusBadge = statusLabel ? `<span class="theme-badge ${statusClass}">${statusLabel}</span>` : "";
+        const estimatedCredits = parseInt(t.estimated_credits || "0", 10) || 0;
+        const estimatedCost = Number(t.estimated_cost_brl || 0);
+        const creditBadge = estimatedCredits > 0
+            ? `<span class="theme-credit-tag" title="Custo estimado por video">${estimatedCredits.toLocaleString("pt-BR")} creditos${estimatedCost > 0 ? ` • R$ ${estimatedCost.toFixed(2).replace(".", ",")}` : ""}</span>`
+            : "";
         const errorBtn = (t.status === "error" || t.status === "failed") && t.error_message
             ? `<button class="theme-error-btn" data-error="${esc(t.error_message).replace(/"/g, '&quot;')}" onclick="showThemeError(this)" type="button" title="Ver motivo">Ver motivo</button>`
             : "";
@@ -8281,6 +8733,7 @@ function renderAutoCard(s) {
             ${dateLabel}
             ${dateEditor}
             ${statusBadge}
+            ${creditBadge}
             ${errorBtn}
             <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
         </li>`;
@@ -8306,6 +8759,7 @@ function renderAutoCard(s) {
             <span>${freq} as ${esc(s.time_local || s.time_utc)}</span>
             <span>${pendingCount} pendentes / ${doneCount} feitos</span>
             <span>Conta: ${esc(s.account_label || (isTestAccount ? "Conta de teste (sem publicação)" : "Conta conectada"))}</span>
+            ${pendingCostLabel ? `<span>Custo pendente: ${pendingCostLabel}</span>` : ""}
         </div>
         <div class="auto-card-detail">
             <strong>Temas:</strong>
@@ -8567,6 +9021,14 @@ function showAutoStep(step) {
     if (btnBack) btnBack.hidden = step === 1;
     if (btnNext) btnNext.hidden = step === totalSteps;
     if (btnCreate) btnCreate.hidden = step !== totalSteps;
+
+    const estimateBadge = document.getElementById("auto-credit-estimate");
+    if (estimateBadge) {
+        estimateBadge.hidden = step !== totalSteps;
+    }
+    if (step === totalSteps) {
+        scheduleAutoCreditEstimate();
+    }
 }
 
 function _isAutoTevoxiClipMode() {
@@ -8598,6 +9060,7 @@ function _setAutoRealisticEngine(engineValue) {
     }
 
     _syncAutoRealisticDurationOptions();
+    scheduleAutoCreditEstimate();
 }
 
 function _applyAutoRealisticEngineRules() {
@@ -8649,12 +9112,14 @@ document.addEventListener("DOMContentLoaded", () => {
         if (tag) {
             document.querySelectorAll("#auto-realistic-style-tags .style-tag").forEach(t => t.classList.remove("selected"));
             tag.classList.add("selected");
+            scheduleAutoCreditEstimate();
         }
         const persona = e.target.closest("#auto-realistic-persona-tags .style-tag");
         if (persona) {
             document.querySelectorAll("#auto-realistic-persona-tags .style-tag").forEach(t => t.classList.remove("selected"));
             persona.classList.add("selected");
             _refreshPersonaContext("auto", persona.dataset.persona || "natureza");
+            scheduleAutoCreditEstimate();
         }
         // Engine option click
         const eng = e.target.closest("#auto-realistic-engine .engine-option");
@@ -8670,7 +9135,27 @@ document.addEventListener("DOMContentLoaded", () => {
         if (dur) {
             document.querySelectorAll("#auto-realistic-duration .duration-option").forEach(o => o.classList.remove("selected"));
             dur.classList.add("selected");
+            scheduleAutoCreditEstimate();
         }
+    });
+
+    [
+        "auto-realistic-music",
+        "auto-realistic-tevoxi",
+        "auto-realistic-subtitles",
+        "auto-music-mode",
+        "auto-music-duration",
+        "auto-music-genre",
+        "auto-music-vocalist",
+        "auto-music-language",
+        "auto-duration",
+    ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const eventName = (el.tagName === "INPUT" && (el.type === "number" || el.type === "text")) ? "input" : "change";
+        el.addEventListener(eventName, () => {
+            scheduleAutoCreditEstimate();
+        });
     });
 });
 
@@ -8689,6 +9174,7 @@ function toggleScriptTevoxiSongs() {
     }
     _updateScriptTevoxiSelectionUI();
     _updateScriptDetailsForTevoxiMode();
+    scheduleScriptCreditEstimate();
 }
 
 function toggleWizardTevoxiSongs() {
@@ -8701,6 +9187,7 @@ function toggleWizardTevoxiSongs() {
         if (musicCb) musicCb.checked = false;
     }
     _updateWizardTevoxiSelectionUI();
+    scheduleWizardCreditEstimate();
 }
 
 function _formatTevoxiClipLabel(song, clip) {
@@ -8826,6 +9313,7 @@ function _applyScriptTevoxiPrompt(promptText, signature) {
     }
     _scriptTevoxiPromptAuto = true;
     _scriptTevoxiPromptSignature = String(signature || "");
+    scheduleScriptCreditEstimate();
 }
 
 async function _refreshScriptTevoxiClipTranscription(song, clip, signature) {
@@ -9088,6 +9576,7 @@ function _updateScriptTevoxiSelectionUI() {
     }
 
     _updateScriptDetailsForTevoxiMode();
+    scheduleScriptCreditEstimate();
 }
 
 function _updateWizardTevoxiSelectionUI() {
@@ -9101,6 +9590,7 @@ function _updateWizardTevoxiSelectionUI() {
     }
     summaryEl.hidden = false;
     summaryEl.textContent = _formatTevoxiClipLabel(_wizardSelectedSong, _wizardSelectedClip);
+    scheduleWizardCreditEstimate();
 }
 
 async function _loadScriptTevoxiSongsIfNeeded() {
@@ -9149,6 +9639,7 @@ function selectScriptTevoxiSong(index) {
     _scriptSelectedClip = null;
     _renderScriptTevoxiSongs();
     _updateScriptTevoxiSelectionUI();
+    scheduleScriptCreditEstimate();
     if (_scriptSelectedSong) {
         openClipSelector("script", _scriptSelectedSong);
     }
@@ -9200,6 +9691,7 @@ function selectWizardTevoxiSong(index) {
     _wizardSelectedClip = null;
     _renderWizardTevoxiSongs();
     _updateWizardTevoxiSelectionUI();
+    scheduleWizardCreditEstimate();
     if (_wizardSelectedSong) {
         openClipSelector("wizard", _wizardSelectedSong);
     }
@@ -9217,6 +9709,7 @@ function toggleAutoTevoxiSongs() {
     }
 
     _applyAutoRealisticEngineRules();
+    scheduleAutoCreditEstimate();
 }
 
 async function _loadTevoxiSongsIfNeeded() {
@@ -9269,6 +9762,7 @@ function _formatDuration(seconds) {
 function selectTevoxiSong(index) {
     _autoSelectedSong = _autoTevoxiSongs[index] || null;
     _renderTevoxiSongs();
+    scheduleAutoCreditEstimate();
 }
 
 /* ══════════════════════════════════════════
@@ -10088,6 +10582,7 @@ async function addClipToThemes() {
         _renderScriptTevoxiSongs();
         _updateScriptTevoxiSelectionUI();
         _updateScriptDetailsForTevoxiMode();
+        scheduleScriptCreditEstimate();
         closeClipSelector();
         return;
     }
@@ -10105,6 +10600,7 @@ async function addClipToThemes() {
         }
         _renderWizardTevoxiSongs();
         _updateWizardTevoxiSelectionUI();
+        scheduleWizardCreditEstimate();
         closeClipSelector();
         return;
     }
@@ -10138,6 +10634,7 @@ async function addClipToThemes() {
         },
     });
     renderAutoWizardThemes();
+    scheduleAutoCreditEstimate();
     closeClipSelector();
 }
 
@@ -10164,6 +10661,7 @@ function selectAutoVideoType(type) {
     });
     // update manual settings visibility based on current mode
     updateAutoManualPanels();
+    scheduleAutoCreditEstimate();
 }
 
 function selectAutoCreationMode(mode) {
@@ -10171,6 +10669,7 @@ function selectAutoCreationMode(mode) {
         c.classList.toggle("active", c.dataset.creationMode === mode);
     });
     updateAutoManualPanels();
+    scheduleAutoCreditEstimate();
 }
 
 function getSelectedAutoImageAudioSource() {
@@ -10184,6 +10683,7 @@ function selectAutoImageAudioSource(source) {
         c.classList.toggle("selected", c.dataset.value === _autoImageAudioSource);
     });
     updateAutoManualPanels();
+    scheduleAutoCreditEstimate();
 }
 
 function updateAutoManualPanels() {
@@ -10202,6 +10702,7 @@ function updateAutoManualPanels() {
         toggleAutoMusicLyrics();
     }
     _applyAutoRealisticEngineRules();
+    scheduleAutoCreditEstimate();
 }
 
 function toggleAutoMusicLyrics() {
@@ -10210,6 +10711,7 @@ function toggleAutoMusicLyrics() {
     const vocalistGroup = document.getElementById("auto-music-vocalist-group");
     if (lyricsGroup) lyricsGroup.hidden = mode !== "lyrics";
     if (vocalistGroup) vocalistGroup.hidden = mode === "instrumental";
+    scheduleAutoCreditEstimate();
 }
 
 function getSelectedAutoVideoType() {
@@ -10249,6 +10751,7 @@ function renderAutoWizardThemes() {
             <button class="theme-remove" onclick="removeAutoWizardTheme(${i})" type="button">&times;</button>
         </li>`;
     }).join("");
+    scheduleAutoCreditEstimate();
 }
 
 async function loadAutoAccountOptions() {
@@ -10423,6 +10926,14 @@ async function createAutoSchedule() {
             defaultSettings.tevoxi_lyrics = _autoSelectedSong.lyrics || "";
             defaultSettings.tevoxi_duration = _autoSelectedSong.duration || 120;
         }
+    }
+
+    const autoEstimatePayload = _buildAutoEstimatePayload();
+    const perVideoCredits = await _resolveCreditsNeededForAction(autoEstimatePayload, "auto");
+    const totalCreditsNeeded = perVideoCredits * Math.max(1, themes.length || 0);
+    if (totalCreditsNeeded > 0 && _userCredits < totalCreditsNeeded) {
+        showCreditsPurchaseModal();
+        return;
     }
 
     const btn = document.getElementById("auto-btn-create");
@@ -10722,8 +11233,10 @@ async function disconnectAccount(id) {
 
 async function quickCreate(songData) {
     // Credit check
-    const estMinutes = Math.max(1, Math.ceil((songData.duration || 60) / 60));
-    const creditsNeeded = estMinutes * _creditsPerMinute;
+    const creditsNeeded = await _resolveCreditsNeededForAction({
+        mode: "quick-create",
+        duration_seconds: Number(songData.duration || 60),
+    });
     if (_userCredits < creditsNeeded) {
         showCreditsPurchaseModal();
         return;
@@ -11351,6 +11864,8 @@ let _userCredits = 0;
 let _creditsPerMinute = 5;
 let _creditPackages = [];
 let _selectedCreditPkg = 0;
+let _creditValueBrl = 0;
+let _creditPricingVersion = "";
 
 async function updateCreditsDisplay() {
     const countEl = document.getElementById("credits-count");
@@ -11360,7 +11875,13 @@ async function updateCreditsDisplay() {
         _userCredits = data.credits;
         _creditsPerMinute = data.creditsPerMinute || 5;
         _creditPackages = data.packages || [];
+        _creditValueBrl = Number(data.creditValueBrl || 0);
+        _creditPricingVersion = String(data.pricingVersion || "");
         if (countEl) countEl.textContent = _userCredits;
+
+        scheduleWizardCreditEstimate();
+        scheduleScriptCreditEstimate();
+        scheduleAutoCreditEstimate();
     } catch {}
 }
 
@@ -11369,10 +11890,14 @@ function showCreditsPurchaseModal() {
     if (existing) existing.remove();
 
     const pkgs = _creditPackages.length ? _creditPackages : [
-        { credits: 100, price: 4.99 },
-        { credits: 250, price: 9.99 },
-        { credits: 600, price: 19.99 },
+        { credits: 520, price: 19.99 },
+        { credits: 1350, price: 49.99 },
+        { credits: 2800, price: 99.99 },
     ];
+
+    const creditUnitText = _creditValueBrl > 0
+        ? _creditValueBrl.toFixed(4).replace(".", ",")
+        : "--";
 
     let pkgHtml = "";
     pkgs.forEach((p, i) => {
@@ -11410,7 +11935,7 @@ function showCreditsPurchaseModal() {
                     Pagar com Cartão
                 </button>
             </div>
-            <p class="credits-hint">Cada minuto de vídeo consome ${_creditsPerMinute} créditos</p>
+            <p class="credits-hint">Preco por credito desde R$ ${creditUnitText} (${_creditPricingVersion || "v2.0"}). O custo exato aparece ao lado dos botoes de gerar.</p>
         </div>
     `;
     document.body.appendChild(overlay);

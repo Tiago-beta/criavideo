@@ -30,6 +30,11 @@ from app.services.persona_registry import (
     resolve_persona_reference_image,
     resolve_persona_reference_images,
 )
+from app.services.credit_pricing import (
+    estimate_quick_create_credits,
+    estimate_realistic_credits,
+    estimate_standard_credits,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/video", tags=["video"])
@@ -1589,10 +1594,10 @@ JSON apenas, sem markdown."""
     # ── Credit check: deduct based on song duration ──
     # Skip for Levita users (credits handled by Levita backend)
     if user.get("source") != "levita":
-        from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
-        import math
-        est_minutes = max(1, math.ceil((req.duration or 60) / 60))
-        credits_needed = est_minutes * CREDITS_PER_MINUTE
+        from app.routers.credits import deduct_credits
+
+        estimate = estimate_quick_create_credits(req.duration or 60)
+        credits_needed = int(estimate.get("credits_needed", 0) or 0)
         await deduct_credits(db, user["id"], credits_needed)
 
     project = VideoProject(
@@ -1670,6 +1675,68 @@ class GenerateTTSRequest(BaseModel):
     tevoxi_lyrics: str = ""
     tevoxi_clip_start: float = 0
     tevoxi_clip_duration: float = 0
+
+
+class EstimateCreditsRequest(BaseModel):
+    mode: str = "standard"  # standard | realistic | quick-create
+    duration_seconds: float = 0
+    word_count: int = 0
+
+    # Standard mode
+    has_ai_images: bool = True
+    has_custom_images: bool = False
+    has_custom_video: bool = False
+    use_custom_audio: bool = False
+    use_tevoxi_audio: bool = False
+    enable_subtitles: bool = True
+    add_narration: bool = True
+    add_music: bool = True
+    audio_is_music: bool = False
+    remove_vocals: bool = False
+
+    # Realistic mode
+    engine: str = "wan2"
+    has_reference_image: bool = True
+    use_external_audio: bool = False
+
+
+@router.post("/estimate-credits")
+async def estimate_credits_endpoint(
+    req: EstimateCreditsRequest,
+    user: dict = Depends(get_current_user),
+):
+    # Keep endpoint authenticated so estimates match user session/package context.
+    _ = user
+    mode = str(req.mode or "standard").strip().lower()
+
+    if mode == "realistic":
+        return estimate_realistic_credits(
+            engine=req.engine,
+            duration_seconds=req.duration_seconds,
+            has_reference_image=req.has_reference_image,
+            add_music=req.add_music,
+            add_narration=req.add_narration,
+            enable_subtitles=req.enable_subtitles,
+            use_external_audio=req.use_external_audio,
+        )
+
+    if mode == "quick-create":
+        return estimate_quick_create_credits(req.duration_seconds)
+
+    return estimate_standard_credits(
+        duration_seconds=req.duration_seconds,
+        word_count=req.word_count,
+        has_ai_images=req.has_ai_images,
+        has_custom_images=req.has_custom_images,
+        has_custom_video=req.has_custom_video,
+        use_custom_audio=req.use_custom_audio,
+        use_tevoxi_audio=req.use_tevoxi_audio,
+        enable_subtitles=req.enable_subtitles,
+        add_narration=req.add_narration,
+        add_music=req.add_music,
+        audio_is_music=req.audio_is_music,
+        remove_vocals=req.remove_vocals,
+    )
 
 
 class TranscribeTevoxiClipRequest(BaseModel):
@@ -2132,25 +2199,55 @@ async def generate_audio_endpoint(
     if not script_text and not custom_image_uploads and not custom_image_ids and not has_uploaded_custom_audio and not use_tevoxi_audio:
         raise HTTPException(status_code=400, detail="Sem narração, envie fotos ou áudio para criar um vídeo personalizado.")
 
-    # ── Credit check: estimate duration → deduct credits ──
-    from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
-    import math
+    # ── Credit check: centralized estimator (same rule used by frontend calculator) ──
+    from app.routers.credits import deduct_credits
+
+    has_custom_video = bool(custom_video_id)
+    has_custom_images = (len(custom_image_uploads) > 0 or len(custom_image_ids) > 0) and not has_custom_video
+    has_ai_images = not has_custom_images and not has_custom_video
+
+    word_count = len(script_text.split()) if script_text else 0
+    estimated_duration_seconds = 0.0
+
     if has_uploaded_custom_audio and custom_audio_id:
-        from app.services.video_composer import _get_duration as get_audio_duration
+        from app.services.video_composer import _get_duration as get_media_duration
 
         src_audio = _resolve_temp_file(user["id"], custom_audio_id, AUDIO_EXTS)
-        audio_seconds = get_audio_duration(str(src_audio)) if src_audio else 0
-        est_minutes = max(1, math.ceil(audio_seconds / 60)) if audio_seconds > 0 else 1
+        estimated_duration_seconds = get_media_duration(str(src_audio)) if src_audio else 0.0
+    elif has_custom_video and custom_video_id:
+        from app.services.video_composer import _get_duration as get_media_duration
+
+        src_video = _resolve_temp_file(user["id"], custom_video_id, VIDEO_EXTS)
+        estimated_duration_seconds = get_media_duration(str(src_video)) if src_video else 0.0
     elif use_tevoxi_audio:
         clip_duration = max(0.0, float(req.tevoxi_clip_duration or 0))
-        audio_seconds = clip_duration if clip_duration > 0 else 60.0
-        est_minutes = max(1, math.ceil(audio_seconds / 60))
-    elif script_text:
-        word_count = len(script_text.split())
-        est_minutes = max(1, math.ceil(word_count / 150))  # ~150 words/min narration
+        estimated_duration_seconds = clip_duration if clip_duration > 0 else 60.0
+    elif word_count > 0:
+        estimated_duration_seconds = max(8.0, word_count / 2.5)
     else:
-        est_minutes = 1  # photo-only / audio-only fallback: minimum 1 min
-    credits_needed = est_minutes * CREDITS_PER_MINUTE
+        image_seconds = float(req.image_display_seconds or 0)
+        image_count = len(custom_image_uploads) + len(custom_image_ids)
+        if has_custom_images and image_seconds > 0 and image_count > 0:
+            estimated_duration_seconds = image_seconds * image_count
+
+    if estimated_duration_seconds <= 0:
+        estimated_duration_seconds = 60.0
+
+    estimate = estimate_standard_credits(
+        duration_seconds=estimated_duration_seconds,
+        word_count=word_count,
+        has_ai_images=has_ai_images,
+        has_custom_images=has_custom_images,
+        has_custom_video=has_custom_video,
+        use_custom_audio=has_uploaded_custom_audio,
+        use_tevoxi_audio=use_tevoxi_audio,
+        enable_subtitles=req.enable_subtitles,
+        add_narration=bool(script_text and not has_uploaded_custom_audio and not use_tevoxi_audio),
+        add_music=not (req.no_background_music or has_uploaded_custom_audio or has_custom_video or use_tevoxi_audio),
+        audio_is_music=bool(req.audio_is_music),
+        remove_vocals=bool(req.remove_vocals),
+    )
+    credits_needed = int(estimate.get("credits_needed", 0) or 0)
     await deduct_credits(db, user["id"], credits_needed)
 
     # Resolve voice from profile or direct parameter
@@ -3116,15 +3213,25 @@ async def generate_realistic_endpoint(
                 "When references are personas, do not copy clothing, background, pose or props."
             )
 
-    # Credit check — multi-clip costs more (Grok=15s blocks, Wan=8s blocks)
-    from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
-    if engine == "grok" and duration > 15:
-        num_clips = -(-duration // 15)
-    elif engine == "wan2" and duration > 8:
-        num_clips = -(-duration // 8)
-    else:
-        num_clips = 1
-    credits_needed = CREDITS_PER_MINUTE * num_clips
+    external_audio_url = (req.audio_url or "").strip()
+    external_lyrics = (req.lyrics or "").strip()
+    narration_text = (req.narration_text or "").strip() if req.add_narration and not dialogue_enabled else ""
+    effective_add_narration = bool(req.add_narration and narration_text and not dialogue_enabled)
+    effective_add_music = bool(req.add_music or external_audio_url)
+
+    # Credit check — centralized realistic estimator.
+    from app.routers.credits import deduct_credits
+
+    estimate = estimate_realistic_credits(
+        engine=engine,
+        duration_seconds=duration,
+        has_reference_image=has_reference_image,
+        add_music=effective_add_music,
+        add_narration=effective_add_narration,
+        enable_subtitles=False,
+        use_external_audio=bool(external_audio_url),
+    )
+    credits_needed = int(estimate.get("credits_needed", 0) or 0)
     await deduct_credits(db, user["id"], credits_needed)
 
     # Use custom title if provided
@@ -3136,7 +3243,6 @@ async def generate_realistic_endpoint(
     engine_label = engine_labels.get(engine, "Ultra High 1.0")
 
     # Narration config stored in tags JSON
-    narration_text = (req.narration_text or "").strip() if req.add_narration and not dialogue_enabled else ""
     narration_voice = req.narration_voice or "onyx"
     speech_mode = "none"
     if dialogue_enabled:
@@ -3144,8 +3250,6 @@ async def generate_realistic_endpoint(
     elif req.add_narration and bool(narration_text):
         speech_mode = "narration_manual"
 
-    external_audio_url = (req.audio_url or "").strip()
-    external_lyrics = (req.lyrics or "").strip()
     reference_source = "upload" if upload_ids else ("none" if disable_persona_reference else "persona")
     tags_data = {
         "type": "realista",
@@ -3156,8 +3260,8 @@ async def generate_realistic_endpoint(
         "reference_count": max(0, reference_count),
         "disable_persona_reference": disable_persona_reference,
         "grok_text_only": disable_persona_reference and engine == "grok",
-        "add_music": req.add_music or bool(external_audio_url),
-        "add_narration": req.add_narration and bool(narration_text) and not dialogue_enabled,
+        "add_music": effective_add_music,
+        "add_narration": effective_add_narration,
         "speech_mode": speech_mode,
         "speech_auto_requested": auto_dialogue_requested,
         "narration_voice": narration_voice,

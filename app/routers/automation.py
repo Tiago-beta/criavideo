@@ -18,6 +18,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import AutoChannelPilot, AutoSchedule, AutoScheduleTheme, Platform, SocialAccount
 from app.services.persona_image import normalize_persona_type
+from app.services.credit_pricing import estimate_auto_theme_credits
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -219,6 +220,30 @@ def _get_theme_date_override(theme: AutoScheduleTheme) -> Optional[date]:
     return _parse_schedule_date_value(str(raw_date))
 
 
+def _get_theme_credit_estimate(schedule: AutoSchedule, theme: AutoScheduleTheme) -> dict:
+    default_settings = schedule.default_settings if isinstance(schedule.default_settings, dict) else {}
+    custom_settings = theme.custom_settings if isinstance(theme.custom_settings, dict) else {}
+    try:
+        estimate = estimate_auto_theme_credits(
+            video_type=schedule.video_type,
+            default_settings=default_settings,
+            custom_settings=custom_settings,
+        )
+        credits = int(estimate.get("credits_needed", 0) or 0)
+        billed_cost_brl = round(float(estimate.get("billed_cost_brl", 0.0) or 0.0), 2)
+        return {
+            "estimated_credits": credits,
+            "estimated_cost_brl": billed_cost_brl,
+            "estimated_pricing_version": str(estimate.get("rules_version") or ""),
+        }
+    except Exception:
+        return {
+            "estimated_credits": 0,
+            "estimated_cost_brl": 0.0,
+            "estimated_pricing_version": "",
+        }
+
+
 def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
     account_label = ""
     if s.social_account:
@@ -227,6 +252,8 @@ def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
         account_label = "Conta de teste (sem publicacao)"
     next_theme = ""
     pending_count = 0
+    pending_estimated_credits = 0
+    pending_estimated_cost_brl = 0.0
     themes_with_dates = []
     if s.themes:
         all_sorted = sorted(s.themes, key=lambda t: t.position)
@@ -266,8 +293,10 @@ def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
 
         pending_idx = 0
         for t in all_sorted:
-            td = _theme_to_dict(t)
+            td = _theme_to_dict(t, s)
             if t.status == "pending":
+                pending_estimated_credits += int(td.get("estimated_credits", 0) or 0)
+                pending_estimated_cost_brl += float(td.get("estimated_cost_brl", 0.0) or 0.0)
                 override_date = _get_theme_date_override(t)
                 if override_date:
                     td["scheduled_date"] = override_date.strftime("%d/%m/%Y")
@@ -303,13 +332,15 @@ def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
         "themes": themes_with_dates,
         "theme_count": theme_count or len(s.themes) if s.themes else 0,
         "pending_count": pending_count,
+        "pending_estimated_credits": pending_estimated_credits,
+        "pending_estimated_cost_brl": round(pending_estimated_cost_brl, 2),
         "next_theme": next_theme,
         "created_at": s.created_at.isoformat() if s.created_at else None,
     }
 
 
-def _theme_to_dict(t: AutoScheduleTheme) -> dict:
-    return {
+def _theme_to_dict(t: AutoScheduleTheme, schedule: AutoSchedule | None = None) -> dict:
+    payload = {
         "id": t.id,
         "theme": t.theme,
         "status": t.status,
@@ -319,6 +350,9 @@ def _theme_to_dict(t: AutoScheduleTheme) -> dict:
         "error_message": t.error_message,
         "created_at": t.created_at.isoformat() if t.created_at else None,
     }
+    if schedule is not None:
+        payload.update(_get_theme_credit_estimate(schedule, t))
+    return payload
 
 
 def _pilot_summary_dict(pilot: AutoChannelPilot | None) -> dict:
@@ -770,7 +804,7 @@ async def get_auto_schedule(
 
     data = _schedule_to_dict(schedule)
     data["themes"] = sorted(
-        [_theme_to_dict(t) for t in schedule.themes],
+        [_theme_to_dict(t, schedule) for t in schedule.themes],
         key=lambda t: t["position"],
     )
     return data

@@ -17,6 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
+from app.services.credit_pricing import (
+    CREDIT_PACKAGES,
+    CREDIT_PRICING_RULES_VERSION,
+    get_credit_value_brl,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/credits", tags=["credits"])
@@ -24,12 +29,6 @@ settings = get_settings()
 
 INITIAL_CREDITS = 50
 CREDITS_PER_MINUTE = 5
-
-CREDIT_PACKAGES = [
-    {"credits": 100, "price": 4.99, "label": "100 créditos"},
-    {"credits": 250, "price": 9.99, "label": "250 créditos"},
-    {"credits": 600, "price": 19.99, "label": "600 créditos"},
-]
 
 
 def _generate_reference() -> str:
@@ -73,6 +72,8 @@ async def get_credits(
         "credits": credits,
         "creditsPerMinute": CREDITS_PER_MINUTE,
         "packages": CREDIT_PACKAGES,
+        "creditValueBrl": round(get_credit_value_brl(CREDIT_PACKAGES), 6),
+        "pricingVersion": CREDIT_PRICING_RULES_VERSION,
     }
 
 

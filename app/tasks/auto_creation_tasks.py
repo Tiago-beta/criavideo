@@ -25,6 +25,7 @@ from app.services.persona_registry import (
     resolve_persona_reference_image,
     resolve_persona_reference_images,
 )
+from app.services.credit_pricing import estimate_auto_theme_credits
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -729,10 +730,13 @@ async def _create_video_for_theme(
     # 2. Create project
     async with async_session() as db:
         # Credit check
-        from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
-        word_count = len(script_text.split())
-        est_minutes = max(1, math.ceil(word_count / 150))
-        credits_needed = est_minutes * CREDITS_PER_MINUTE
+        from app.routers.credits import deduct_credits
+
+        estimate = estimate_auto_theme_credits(
+            video_type="narration",
+            default_settings=cfg,
+        )
+        credits_needed = int(estimate.get("credits_needed", 0) or 0)
         await deduct_credits(db, user_id, credits_needed)
 
         project = VideoProject(
@@ -790,9 +794,13 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
 
     # Credit check
     async with async_session() as db:
-        from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
-        est_minutes = max(1, math.ceil(cfg.get("duration_seconds", 120) / 60))
-        credits_needed = est_minutes * CREDITS_PER_MINUTE
+        from app.routers.credits import deduct_credits
+
+        estimate = estimate_auto_theme_credits(
+            video_type="music",
+            default_settings=cfg,
+        )
+        credits_needed = int(estimate.get("credits_needed", 0) or 0)
         await deduct_credits(db, user_id, credits_needed)
 
     # 1. Generate music via Tevoxi
@@ -988,8 +996,13 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
 
     # Credit check
     async with async_session() as db:
-        from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
-        credits_needed = CREDITS_PER_MINUTE  # 1 credit unit per realistic video
+        from app.routers.credits import deduct_credits
+
+        estimate = estimate_auto_theme_credits(
+            video_type="realistic",
+            default_settings=cfg,
+        )
+        credits_needed = int(estimate.get("credits_needed", 0) or 0)
         await deduct_credits(db, user_id, credits_needed)
 
     # Build tags for the project
@@ -1239,10 +1252,16 @@ async def _create_musical_short(
     if not tevoxi_audio_url:
         raise RuntimeError("URL do audio Tevoxi nao configurada.")
 
-    # Credit check (1 credit per short)
+    # Credit check
     async with async_session() as db:
-        from app.routers.credits import CREDITS_PER_MINUTE, deduct_credits
-        credits_needed = CREDITS_PER_MINUTE  # 1 minute worth for each short
+        from app.routers.credits import deduct_credits
+
+        estimate = estimate_auto_theme_credits(
+            video_type="musical_shorts",
+            default_settings=cfg,
+            custom_settings=custom_settings,
+        )
+        credits_needed = int(estimate.get("credits_needed", 0) or 0)
         await deduct_credits(db, user_id, credits_needed)
 
     # 1. Download full audio from Tevoxi
