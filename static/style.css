@@ -4091,10 +4091,37 @@ svg.spin {
     justify-content: center;
 }
 
+.script-media-toggle-group {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    width: 100%;
+}
+
+.script-media-toggle-group .media-toggle-chip {
+    width: 100%;
+}
+
+.media-toggle-chip--full .media-toggle-chip-body {
+    width: 100%;
+    justify-content: center;
+    min-height: 40px;
+}
+
+.script-media-panel {
+    border-top: 0;
+    padding-top: 4px;
+    margin-top: 8px;
+}
+
 @media (max-width: 720px) {
     .media-toggle-row {
         align-items: flex-start;
         flex-direction: column;
+    }
+
+    .script-media-toggle-group {
+        grid-template-columns: 1fr;
     }
 
     .media-toggle-group {
@@ -4129,6 +4156,22 @@ svg.spin {
     border-radius: 10px;
     padding: 10px 12px;
     line-height: 1.45;
+}
+
+.tevoxi-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 4px 0;
+}
+
+.tevoxi-empty-state .loading {
+    margin: 0;
+}
+
+.tevoxi-empty-cta-btn {
+    align-self: flex-start;
 }
 
 .photo-dropzone {

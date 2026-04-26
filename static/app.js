@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v240 loaded");
+console.log("[CriaVideo] app.js v241 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -9450,6 +9450,15 @@ async function _fetchTevoxiSongs() {
     return Array.isArray(body) ? body : [];
 }
 
+function _tevoxiEmptyStateHtml(message = "Nenhuma musica encontrada no Tevoxi.") {
+    return `
+        <div class="tevoxi-empty-state">
+            <p class="loading">${esc(message)}</p>
+            <button class="btn btn-secondary btn-sm tevoxi-empty-cta-btn" type="button" onclick="goToTevoxiSignup()">Criar conta no Tevoxi</button>
+        </div>
+    `;
+}
+
 async function toggleScriptTevoxiSongs() {
     const tevoxiCb = document.getElementById("script-realistic-tevoxi");
     const checked = !!tevoxiCb?.checked;
@@ -9937,7 +9946,7 @@ function _renderScriptTevoxiSongs() {
     const list = document.getElementById("script-song-list");
     if (!list) return;
     if (!_scriptTevoxiSongs.length) {
-        list.innerHTML = '<p class="loading">Nenhuma música encontrada no Tevoxi.</p>';
+        list.innerHTML = _tevoxiEmptyStateHtml("Nenhuma musica encontrada no Tevoxi.");
         return;
     }
     list.innerHTML = _scriptTevoxiSongs.map((s, i) => {
@@ -10000,7 +10009,7 @@ function _renderWizardTevoxiSongs() {
     const list = document.getElementById("wizard-song-list");
     if (!list) return;
     if (!_wizardTevoxiSongs.length) {
-        list.innerHTML = '<p class="loading">Nenhuma música encontrada no Tevoxi.</p>';
+        list.innerHTML = _tevoxiEmptyStateHtml("Nenhuma musica encontrada no Tevoxi.");
         return;
     }
     list.innerHTML = _wizardTevoxiSongs.map((s, i) => {
@@ -10068,7 +10077,7 @@ async function _loadTevoxiSongsIfNeeded() {
     try {
         _autoTevoxiSongs = await _fetchTevoxiSongs();
         if (!_autoTevoxiSongs.length) {
-            list.innerHTML = '<p class="loading">Nenhuma música encontrada no Tevoxi.</p>';
+            list.innerHTML = _tevoxiEmptyStateHtml("Nenhuma musica encontrada no Tevoxi.");
             return;
         }
         _renderTevoxiSongs();
