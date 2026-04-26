@@ -608,37 +608,6 @@ a {
     border-color: rgba(var(--accent-rgb), 0.42);
 }
 
-.global-balance-chip {
-    position: fixed;
-    top: 6px;
-    right: 10px;
-    z-index: 920;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    padding: 5px 9px;
-    border-radius: 999px;
-    border: 1px solid rgba(var(--accent-rgb), 0.36);
-    background: rgba(7, 28, 52, 0.9);
-    color: var(--accent);
-    font-size: 10px;
-    font-weight: 700;
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(2, 10, 18, 0.34);
-    transition: all 0.2s ease;
-}
-
-.global-balance-chip:hover {
-    border-color: rgba(var(--accent-rgb), 0.52);
-    background: rgba(10, 35, 64, 0.94);
-    transform: translateY(-1px);
-}
-
-.global-balance-chip:active {
-    transform: translateY(0);
-}
-
 #credits-count {
     font-weight: 700;
     font-size: 15px;
@@ -4361,13 +4330,6 @@ svg.spin {
 
     .page-header h1 {
         font-size: 24px;
-    }
-
-    .global-balance-chip {
-        top: 4px;
-        right: 8px;
-        padding: 4px 8px;
-        font-size: 9px;
     }
 
     .cards-grid {

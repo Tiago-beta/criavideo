@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260426-83">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260426-84">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 252;
+        var REQUIRED_VER = 253;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -608,8 +608,6 @@
                         </div>
                     </section>
                 </main>
-
-                <button id="global-balance-chip" class="global-balance-chip" type="button" title="Adicionar saldo" hidden>R$ 0,00</button>
 
                 <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
                     <button class="mobile-nav-tab active" data-mobile-page="projects">
@@ -2855,8 +2853,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260426-83"></script>
-    <script src="/video/static/pwa.js?v=20260426-83"></script>
+    <script src="/video/static/app.js?v=20260426-84"></script>
+    <script src="/video/static/pwa.js?v=20260426-84"></script>
 </body>
 </html>
 
