@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v228 loaded");
+console.log("[CriaVideo] app.js v229 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2741,8 +2741,8 @@ function initCreateWizard() {
             const engineGroupId = eng.closest(".engine-options")?.id || "";
             const container = eng.closest(".form-group")?.parentElement;
             if (container) {
-                // Auto-toggle music checkbox: engines with native audio → uncheck
-                const hasNativeAudio = (engineVal === "grok" || engineVal === "seedance");
+                // Keep realistic engines without auto music by default (user can still enable manually).
+                const hasNativeAudio = (engineVal === "grok" || engineVal === "seedance" || engineVal === "wan2");
                 const musicCb = container.querySelector("[id$='-realistic-music']");
                 if (musicCb) {
                     const useScriptTevoxi = musicCb.id === "script-realistic-music"
