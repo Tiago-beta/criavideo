@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260426-80">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260426-81">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 249;
+        var REQUIRED_VER = 250;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -183,9 +183,9 @@
                                 <h1>Criar vídeos</h1>
                                 <button id="btn-new-project" class="btn btn-primary btn-add-project" type="button" title="Adicionar novo projeto" aria-label="Adicionar novo projeto">+</button>
                             </div>
-                            <div class="sidebar-credits" id="sidebar-credits" title="Clique para comprar créditos">
+                            <div class="sidebar-credits" id="sidebar-credits" title="Clique para adicionar saldo">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="#f0a030" stroke="#f0a030" stroke-width="1.5"><circle cx="12" cy="12" r="10" fill="none" stroke-width="2"/><text x="12" y="16.5" text-anchor="middle" font-size="14" font-weight="bold" fill="#f0a030" stroke="none">C</text></svg>
-                                <span id="credits-count">0</span> créditos
+                                <span id="credits-count">R$ 0,00</span>
                             </div>
                         </div>
                         <div id="projects-list" class="cards-grid">
@@ -742,7 +742,7 @@
                                 </div>
                                 <strong>Imagens IA</strong>
                                 <small>Imagens geradas por inteligência artificial com narração</small>
-                                <span class="credit-badge credit-moderate">Créditos: Moderado</span>
+                                <span class="credit-badge credit-moderate">Custo: Moderado</span>
                             </div>
                             <div class="video-type-card" data-type="realista" tabindex="0">
                                 <div class="video-type-icon">
@@ -750,7 +750,7 @@
                                 </div>
                                 <strong>Realista</strong>
                                 <small>Vídeo realista com Cria 3.0 speed, Ultra High 1.0 e Mega 2.0 Ultra</small>
-                                <span class="credit-badge credit-high">Créditos: Alto</span>
+                                <span class="credit-badge credit-high">Custo: Alto</span>
                             </div>
                         </div>
                     </div>
@@ -1198,7 +1198,7 @@
                                 </div>
                                 <strong>Imagens Próprias</strong>
                                 <small>Envie suas fotos e a IA cria o vídeo com narração</small>
-                                <span class="credit-badge credit-regular">Créditos: Regular</span>
+                                <span class="credit-badge credit-regular">Custo: Regular</span>
                             </div>
                             <div class="video-type-card" data-type="imagens_ia" tabindex="0">
                                 <div class="video-type-icon">
@@ -1206,7 +1206,7 @@
                                 </div>
                                 <strong>Imagens IA</strong>
                                 <small>Imagens geradas por inteligência artificial com narração</small>
-                                <span class="credit-badge credit-moderate">Créditos: Moderado</span>
+                                <span class="credit-badge credit-moderate">Custo: Moderado</span>
                             </div>
                             <div class="video-type-card" data-type="realista" tabindex="0">
                                 <div class="video-type-icon">
@@ -1214,7 +1214,7 @@
                                 </div>
                                 <strong>Realista</strong>
                                 <small>Vídeo realista com Cria 3.0 speed, Ultra High 1.0 e Mega 2.0 Ultra</small>
-                                <span class="credit-badge credit-high">Créditos: Alto</span>
+                                <span class="credit-badge credit-high">Custo: Alto</span>
                             </div>
                         </div>
                     </div>
@@ -2038,7 +2038,7 @@
                             </div>
                             <strong>Imagens IA</strong>
                             <small>Imagens geradas por inteligência artificial com narração ou música</small>
-                            <span class="credit-badge credit-moderate">Créditos: Moderado</span>
+                            <span class="credit-badge credit-moderate">Custo: Moderado</span>
                         </div>
                         <div class="video-type-card" data-video-type="realista" tabindex="0" onclick="selectAutoVideoType('realista')">
                             <div class="video-type-icon">
@@ -2046,7 +2046,7 @@
                             </div>
                             <strong>Realista</strong>
                             <small>Vídeo realista com as melhores tecnologias de IA</small>
-                            <span class="credit-badge credit-high">Créditos: Alto</span>
+                            <span class="credit-badge credit-high">Custo: Alto</span>
                         </div>
                     </div>
                 </div>
@@ -2844,8 +2844,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260426-80"></script>
-    <script src="/video/static/pwa.js?v=20260426-80"></script>
+    <script src="/video/static/app.js?v=20260426-81"></script>
+    <script src="/video/static/pwa.js?v=20260426-81"></script>
 </body>
 </html>
 

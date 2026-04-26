@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v232 loaded");
+console.log("[CriaVideo] app.js v233 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2073,6 +2073,30 @@ function _extractEstimateCredits(estimate) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+function _resolveCreditUnitBrl() {
+    return _creditValueBrl > 0 ? _creditValueBrl : (19.99 / 520);
+}
+
+function _creditsToBrl(credits) {
+    const parsed = parseInt(credits || "0", 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+    return parsed * _resolveCreditUnitBrl();
+}
+
+function _formatBrl(value) {
+    const parsed = Number(value || 0);
+    const safe = Number.isFinite(parsed) ? parsed : 0;
+    return `R$ ${safe.toFixed(2).replace(".", ",")}`;
+}
+
+function _extractEstimateCostBrl(estimate) {
+    const billed = Number(estimate?.billed_cost_brl || 0);
+    if (Number.isFinite(billed) && billed > 0) {
+        return billed;
+    }
+    return _creditsToBrl(_extractEstimateCredits(estimate));
+}
+
 function _setCreditEstimateBadge(targetId, message = "", kind = "ready", hidden = false) {
     const el = document.getElementById(targetId);
     if (!el) return;
@@ -2101,13 +2125,15 @@ async function _fetchCreditEstimate(payload) {
     });
 }
 
-function _buildBalanceSuffix(creditsNeeded) {
-    const needed = Math.max(0, parseInt(creditsNeeded || "0", 10) || 0);
-    if (_userCredits <= 0 || needed <= 0) return "";
-    if (_userCredits >= needed) {
-        return ` • saldo: ${_formatCreditsInt(_userCredits)}`;
+function _buildBalanceSuffix(costBrl) {
+    const needed = Number(costBrl || 0);
+    const safeNeeded = Number.isFinite(needed) ? Math.max(0, needed) : 0;
+    const balanceBrl = _creditsToBrl(_userCredits);
+
+    if (balanceBrl >= safeNeeded) {
+        return ` • saldo: ${_formatBrl(balanceBrl)}`;
     }
-    return ` • faltam ${_formatCreditsInt(needed - _userCredits)}`;
+    return ` • saldo: ${_formatBrl(balanceBrl)} • faltam ${_formatBrl(safeNeeded - balanceBrl)}`;
 }
 
 function _getSelectedDurationSeconds(containerId, fallbackSeconds = 8) {
@@ -2310,8 +2336,9 @@ async function _refreshCreditEstimate(key, badgeId, payload, messageBuilder) {
 
         _latestCreditEstimate[key] = estimate;
         const creditsNeeded = _extractEstimateCredits(estimate);
-        const message = messageBuilder(creditsNeeded, estimate);
-        const kind = (_userCredits > 0 && creditsNeeded > _userCredits) ? "warning" : "ready";
+        const estimatedCostBrl = _extractEstimateCostBrl(estimate);
+        const message = messageBuilder(creditsNeeded, estimate, estimatedCostBrl);
+        const kind = (estimatedCostBrl > 0 && _creditsToBrl(_userCredits) < estimatedCostBrl) ? "warning" : "ready";
         _setCreditEstimateBadge(badgeId, message, kind);
         return estimate;
     } catch {
@@ -2345,7 +2372,7 @@ async function updateWizardCreditEstimate() {
         "wizard",
         "wizard-credit-estimate",
         payload,
-        (creditsNeeded) => `Custo estimado: ${_formatCreditsInt(creditsNeeded)} creditos${_buildBalanceSuffix(creditsNeeded)}`,
+        (_creditsNeeded, _estimate, estimatedCostBrl) => `Custo estimado: ${_formatBrl(estimatedCostBrl)}${_buildBalanceSuffix(estimatedCostBrl)}`,
     );
 }
 
@@ -2360,7 +2387,7 @@ async function updateScriptCreditEstimate() {
         "script",
         "script-credit-estimate",
         payload,
-        (creditsNeeded) => `Custo estimado: ${_formatCreditsInt(creditsNeeded)} creditos${_buildBalanceSuffix(creditsNeeded)}`,
+        (_creditsNeeded, _estimate, estimatedCostBrl) => `Custo estimado: ${_formatBrl(estimatedCostBrl)}${_buildBalanceSuffix(estimatedCostBrl)}`,
     );
 }
 
@@ -2376,13 +2403,13 @@ async function updateAutoCreditEstimate() {
         "auto",
         "auto-credit-estimate",
         payload,
-        (creditsNeeded) => {
-            const totalCredits = creditsNeeded * themeCount;
+        (_creditsNeeded, _estimate, estimatedCostBrl) => {
+            const totalCostBrl = estimatedCostBrl * themeCount;
             const totalChunk = themeCount > 1
-                ? ` • total da fila: ${_formatCreditsInt(totalCredits)} creditos`
+                ? ` • total da fila: ${_formatBrl(totalCostBrl)}`
                 : "";
-            const balanceChunk = _buildBalanceSuffix(totalCredits);
-            return `Custo por video: ${_formatCreditsInt(creditsNeeded)} creditos${totalChunk}${balanceChunk}`;
+            const balanceChunk = _buildBalanceSuffix(totalCostBrl);
+            return `Custo por video: ${_formatBrl(estimatedCostBrl)}${totalChunk}${balanceChunk}`;
         },
     );
 }
@@ -8690,9 +8717,9 @@ function renderAutoCard(s) {
     const pendingCount = themes.filter(t => t.status === "pending").length;
     const doneCount = themes.filter(t => t.status === "done" || t.status === "completed").length;
     const pendingEstimatedCredits = parseInt(s.pending_estimated_credits || "0", 10) || 0;
-    const pendingEstimatedCost = Number(s.pending_estimated_cost_brl || 0);
-    const pendingCostLabel = pendingEstimatedCredits > 0
-        ? `${pendingEstimatedCredits.toLocaleString("pt-BR")} creditos${pendingEstimatedCost > 0 ? ` (R$ ${pendingEstimatedCost.toFixed(2).replace(".", ",")})` : ""}`
+    const pendingEstimatedCost = Number(s.pending_estimated_cost_brl || 0) || _creditsToBrl(pendingEstimatedCredits);
+    const pendingCostLabel = pendingEstimatedCost > 0
+        ? _formatBrl(pendingEstimatedCost)
         : "";
 
     const themeListHtml = themes.map(t => {
@@ -8720,9 +8747,9 @@ function renderAutoCard(s) {
             : "";
         const statusBadge = statusLabel ? `<span class="theme-badge ${statusClass}">${statusLabel}</span>` : "";
         const estimatedCredits = parseInt(t.estimated_credits || "0", 10) || 0;
-        const estimatedCost = Number(t.estimated_cost_brl || 0);
-        const creditBadge = estimatedCredits > 0
-            ? `<span class="theme-credit-tag" title="Custo estimado por video">${estimatedCredits.toLocaleString("pt-BR")} creditos${estimatedCost > 0 ? ` • R$ ${estimatedCost.toFixed(2).replace(".", ",")}` : ""}</span>`
+        const estimatedCost = Number(t.estimated_cost_brl || 0) || _creditsToBrl(estimatedCredits);
+        const creditBadge = estimatedCost > 0
+            ? `<span class="theme-credit-tag" title="Custo estimado por video">${_formatBrl(estimatedCost)}</span>`
             : "";
         const errorBtn = (t.status === "error" || t.status === "failed") && t.error_message
             ? `<button class="theme-error-btn" data-error="${esc(t.error_message).replace(/"/g, '&quot;')}" onclick="showThemeError(this)" type="button" title="Ver motivo">Ver motivo</button>`
@@ -11869,7 +11896,7 @@ let _creditPricingVersion = "";
 
 async function updateCreditsDisplay() {
     const countEl = document.getElementById("credits-count");
-    if (countEl && _userCredits > 0) countEl.textContent = _userCredits;
+    if (countEl) countEl.textContent = _formatBrl(_creditsToBrl(_userCredits));
     try {
         const data = await api("/credits");
         _userCredits = data.credits;
@@ -11877,7 +11904,7 @@ async function updateCreditsDisplay() {
         _creditPackages = data.packages || [];
         _creditValueBrl = Number(data.creditValueBrl || 0);
         _creditPricingVersion = String(data.pricingVersion || "");
-        if (countEl) countEl.textContent = _userCredits;
+        if (countEl) countEl.textContent = _formatBrl(_creditsToBrl(_userCredits));
 
         scheduleWizardCreditEstimate();
         scheduleScriptCreditEstimate();
