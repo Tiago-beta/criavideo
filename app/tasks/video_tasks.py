@@ -63,6 +63,55 @@ async def _normalize_video_aspect(input_path: str, aspect_ratio: str, output_pat
     return output_path
 
 
+async def _trim_video_duration(input_path: str, duration_seconds: float, output_path: str) -> str:
+    """Trim video duration while keeping the original audio track if present."""
+    target = max(1.0, float(duration_seconds or 0))
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-t", f"{target:.3f}",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "20",
+        "-pix_fmt", "yuv420p",
+        "-map", "0:v:0",
+        "-map", "0:a?",
+        "-c:a", "copy",
+        output_path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+    if proc.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+        raise RuntimeError(f"Video trim failed for {input_path}")
+    return output_path
+
+
+async def _video_has_audio_stream(video_path: str) -> bool:
+    if not video_path or not os.path.exists(video_path):
+        return False
+
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "stream=codec_type",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        video_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    stdout, _ = await proc.communicate()
+    if proc.returncode != 0:
+        return False
+
+    return "audio" in (stdout or b"").decode(errors="ignore").lower()
+
+
 def _find_custom_background_music(project_id: int) -> str:
     """Return custom uploaded background music path if present."""
     audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
@@ -1628,9 +1677,21 @@ async def run_realistic_video_pipeline(project_id: int):
                 grok_shadow_video_path = str(render_dir / "realistic_video_grok_shadow.mp4")
 
             aspect_ratio = project.aspect_ratio or "16:9"
-            generate_audio = not getattr(project, "no_background_music", False)
+            generate_audio = bool(tags_data.get("provider_generate_audio", not getattr(project, "no_background_music", False)))
+            if engine == "seedance" and not generate_audio:
+                generate_audio = True
             scene_reference_path = image_path
             grok_direct_reference_path = image_path if (image_path and os.path.exists(image_path)) else ""
+            seedance_uploaded_reference_paths: list[str] = []
+            if engine == "seedance":
+                raw_refs = tags_data.get("reference_upload_image_paths", []) if isinstance(tags_data, dict) else []
+                if isinstance(raw_refs, list):
+                    for raw_path in raw_refs[:6]:
+                        candidate = str(raw_path or "").strip()
+                        if candidate and os.path.exists(candidate) and candidate not in seedance_uploaded_reference_paths:
+                            seedance_uploaded_reference_paths.append(candidate)
+            use_seedance_multi_reference = engine == "seedance" and len(seedance_uploaded_reference_paths) > 1
+
             reference_source = str(tags_data.get("reference_source", "") or "").strip().lower()
             raw_persona_ids = tags_data.get("persona_profile_ids", []) if isinstance(tags_data.get("persona_profile_ids", []), list) else []
             has_persona_selection = False
@@ -1662,7 +1723,7 @@ async def run_realistic_video_pipeline(project_id: int):
 
             # Build a scene-locked reference frame with Nano Banana for engines other than Grok.
             # Grok max-fidelity mode uses the original persona image directly.
-            if has_reference_image and image_path and engine != "grok":
+            if has_reference_image and image_path and engine != "grok" and not use_seedance_multi_reference:
                 from app.services.scene_generator import generate_scene_image
 
                 try:
@@ -2048,32 +2109,92 @@ async def run_realistic_video_pipeline(project_id: int):
                     await _generate_wan_sequence()
             else:
                 # ── Seedance 2.0 (with auto-retry on content filter) ──
+                from app.services.multi_clip import concatenate_clips
+
                 final_prompt = optimized_prompt
                 max_retries = 2
-                for attempt in range(max_retries + 1):
-                    try:
-                        await generate_realistic_video(
-                            prompt=final_prompt,
-                            duration=duration,
-                            aspect_ratio=aspect_ratio,
-                            output_path=output_path,
-                            generate_audio=generate_audio,
-                            image_path=scene_reference_path,
-                            on_progress=_on_progress,
-                        )
-                        break  # Success
-                    except RuntimeError as e:
-                        error_msg = str(e)
-                        if ("flagged as sensitive" in error_msg or "E005" in error_msg) and attempt < max_retries:
-                            logger.warning(f"Seedance content filter triggered (attempt {attempt+1}/{max_retries+1}), sanitizing prompt...")
-                            project.progress = 10
-                            await db.commit()
-                            final_prompt = await sanitize_prompt_for_retry(final_prompt)
-                            logger.info(f"Retrying with sanitized prompt: {final_prompt[:200]}...")
-                            project.progress = 15
-                            await db.commit()
-                        else:
+
+                async def _generate_seedance_clip_with_retry(
+                    clip_output_path: str,
+                    clip_duration: int,
+                    clip_image_path: str | None,
+                    clip_progress,
+                ) -> None:
+                    nonlocal final_prompt
+                    prompt_for_attempt = final_prompt
+                    for attempt in range(max_retries + 1):
+                        try:
+                            await generate_realistic_video(
+                                prompt=prompt_for_attempt,
+                                duration=clip_duration,
+                                aspect_ratio=aspect_ratio,
+                                output_path=clip_output_path,
+                                generate_audio=generate_audio,
+                                image_path=clip_image_path,
+                                on_progress=clip_progress,
+                            )
+                            final_prompt = prompt_for_attempt
+                            return
+                        except RuntimeError as e:
+                            error_msg = str(e)
+                            if ("flagged as sensitive" in error_msg or "E005" in error_msg) and attempt < max_retries:
+                                logger.warning(
+                                    "Seedance content filter triggered (attempt %d/%d), sanitizing prompt...",
+                                    attempt + 1,
+                                    max_retries + 1,
+                                )
+                                project.progress = 10
+                                await db.commit()
+                                prompt_for_attempt = await sanitize_prompt_for_retry(prompt_for_attempt)
+                                final_prompt = prompt_for_attempt
+                                logger.info("Retrying Seedance with sanitized prompt (%d chars)", len(prompt_for_attempt))
+                                project.progress = 15
+                                await db.commit()
+                                continue
                             raise
+
+                if use_seedance_multi_reference:
+                    clip_paths: list[str] = []
+                    clip_count = len(seedance_uploaded_reference_paths)
+                    clip_duration = max(4, min(10, int(round(max(1, float(duration)) / max(1, clip_count)))))
+                    logger.info(
+                        "Seedance multi-reference mode: %d images, %ds per clip",
+                        clip_count,
+                        clip_duration,
+                    )
+
+                    for idx, reference_path in enumerate(seedance_uploaded_reference_paths):
+                        clip_path = str(render_dir / f"realistic_video_seedance_clip_{idx:02d}.mp4")
+                        await _generate_seedance_clip_with_retry(
+                            clip_output_path=clip_path,
+                            clip_duration=clip_duration,
+                            clip_image_path=reference_path,
+                            clip_progress=None,
+                        )
+
+                        if not os.path.exists(clip_path) or os.path.getsize(clip_path) <= 0:
+                            raise RuntimeError(f"Seedance clip {idx + 1}/{clip_count} ficou vazio")
+
+                        clip_paths.append(clip_path)
+                        await _on_progress(
+                            18 + int(52 * (idx + 1) / clip_count),
+                            f"Gerando Seedance clip {idx + 1}/{clip_count}...",
+                        )
+
+                    await concatenate_clips(clip_paths, output_path)
+
+                    try:
+                        trimmed_path = str(render_dir / "realistic_video_seedance_trim.mp4")
+                        output_path = await _trim_video_duration(output_path, duration, trimmed_path)
+                    except Exception as e:
+                        logger.warning("Seedance multi-reference trim failed, keeping concatenated output: %s", e)
+                else:
+                    await _generate_seedance_clip_with_retry(
+                        clip_output_path=output_path,
+                        clip_duration=duration,
+                        clip_image_path=scene_reference_path,
+                        clip_progress=_on_progress,
+                    )
 
             await db.rollback()
             project = await db.get(VideoProject, project_id)
@@ -2129,6 +2250,14 @@ async def run_realistic_video_pipeline(project_id: int):
 
             final_video_path = output_path
             has_audio = False
+            provider_has_audio = await _video_has_audio_stream(output_path)
+            provider_generate_audio = bool(tags.get("provider_generate_audio", False))
+            seedance_missing_audio = engine == "seedance" and provider_generate_audio and not provider_has_audio
+            if seedance_missing_audio:
+                logger.warning(
+                    "Seedance returned video without audio for project %s; enabling generated-audio fallback.",
+                    project_id,
+                )
 
             if shadow_audio_from_grok:
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
@@ -2183,12 +2312,18 @@ async def run_realistic_video_pipeline(project_id: int):
                     grok_shadow_audio_path,
                 )
 
-            elif engine in ("minimax", "wan2", "grok") and (add_narration or add_music or dialogue_enabled):
+            elif engine in ("minimax", "wan2", "grok", "seedance") and (add_narration or add_music or dialogue_enabled or seedance_missing_audio):
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
                 audio_dir.mkdir(parents=True, exist_ok=True)
 
                 narration_path = prebuilt_narration_path or ""
                 music_path = (prebuilt_music_path or "") if add_music else ""
+
+                if seedance_missing_audio and not (add_narration or add_music or dialogue_enabled):
+                    add_music = True
+                    tags["seedance_audio_fallback"] = "generated_music"
+                    project.tags = tags
+                    await db.commit()
 
                 # Dialogue mode: generate multi-speaker spoken track (+ optional separate BGM)
                 if dialogue_enabled:
