@@ -9,8 +9,10 @@ import logging
 import math
 import mimetypes
 import os
+import shutil
 import uuid
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 import openai
 from sqlalchemy import delete, select
@@ -54,6 +56,95 @@ def _safe_error_message(err: Exception, fallback: str) -> str:
     if raw and raw not in {"{}", "[]", "None", "null", "[object Object]"}:
         return raw
     return fallback
+
+
+def _normalize_source_url(raw_url: object) -> str:
+    raw = str(raw_url or "").strip()
+    if not raw:
+        return ""
+
+    try:
+        parsed = urlparse(raw)
+        scheme = (parsed.scheme or "https").lower()
+        host = (parsed.netloc or "").lower()
+        path = parsed.path or "/"
+        if path != "/":
+            path = path.rstrip("/")
+
+        keep_query: list[tuple[str, str]] = []
+        for key, value in parse_qsl(parsed.query, keep_blank_values=False):
+            key_l = (key or "").lower().strip()
+            if key_l in {"v", "video_id", "story_fbid", "id", "reel_id"} and value:
+                keep_query.append((key_l, value))
+
+        query = urlencode(keep_query)
+        normalized = f"{scheme}://{host}{path}"
+        if query:
+            normalized = f"{normalized}?{query}"
+        return normalized
+    except Exception:
+        return raw.lower().rstrip("/")
+
+
+async def _try_reuse_cached_reference_video(
+    db,
+    *,
+    project_id: int,
+    user_id: int,
+    source_url: str,
+    target_output_path: str,
+) -> dict | None:
+    normalized_target = _normalize_source_url(source_url)
+    if not normalized_target:
+        return None
+
+    result = await db.execute(
+        select(VideoProject.id, VideoProject.tags)
+        .where(VideoProject.user_id == int(user_id), VideoProject.id != int(project_id))
+        .order_by(VideoProject.id.desc())
+        .limit(120)
+    )
+    rows = result.all()
+
+    target_file = Path(target_output_path)
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+
+    for row in rows:
+        candidate_id = int(row[0])
+        tags = _safe_tags_dict(row[1])
+        if str(tags.get("type") or "").strip().lower() != "similar":
+            continue
+
+        candidate_norm = _normalize_source_url(tags.get("similar_normalized_url"))
+        candidate_src = _normalize_source_url(tags.get("similar_source_url"))
+        if normalized_target not in {candidate_norm, candidate_src}:
+            continue
+
+        cached_path_raw = str(tags.get("similar_local_video_path") or "").strip()
+        if not cached_path_raw:
+            continue
+
+        cached_path = Path(cached_path_raw)
+        if not cached_path.exists() or cached_path.stat().st_size <= 0:
+            continue
+
+        try:
+            if cached_path.resolve() != target_file.resolve():
+                shutil.copy2(cached_path, target_file)
+            if not target_file.exists() or target_file.stat().st_size <= 0:
+                continue
+        except Exception:
+            continue
+
+        return {
+            "output_path": str(target_file),
+            "task_id": f"reused:{candidate_id}",
+            "source_url": str(tags.get("similar_source_url") or source_url),
+            "normalized_url": str(tags.get("similar_normalized_url") or source_url),
+            "reused_project_id": candidate_id,
+        }
+
+    return None
 
 
 async def _ffprobe_duration(video_path: str) -> float:
@@ -342,36 +433,69 @@ async def run_similar_reference_analysis(project_id: int, source_url: str) -> No
             work_dir.mkdir(parents=True, exist_ok=True)
             frames_dir.mkdir(parents=True, exist_ok=True)
 
-            client = BaixaTudoClient(
-                base_url=settings.baixatudo_api_url,
-                api_key=settings.baixatudo_api_key,
-                timeout_seconds=settings.baixatudo_timeout_seconds,
-                poll_interval_seconds=settings.baixatudo_poll_interval_seconds,
-                max_wait_seconds=settings.baixatudo_max_wait_seconds,
+            resolved_video_path = str(work_dir / "reference_video.mp4")
+            download_task_id = ""
+            resolved_source_url = source_url
+            resolved_normalized_url = source_url
+            reused_project_id = 0
+
+            reused_video = await _try_reuse_cached_reference_video(
+                db,
+                project_id=project_id,
+                user_id=int(project.user_id or 0),
+                source_url=source_url,
+                target_output_path=resolved_video_path,
             )
 
-            download_result = await client.download_video(
-                source_url=source_url,
-                output_path=str(work_dir / "reference_video.mp4"),
-                formato="video_melhor",
-            )
+            if reused_video:
+                resolved_video_path = str(reused_video.get("output_path") or resolved_video_path)
+                download_task_id = str(reused_video.get("task_id") or "")
+                resolved_source_url = str(reused_video.get("source_url") or source_url)
+                resolved_normalized_url = str(reused_video.get("normalized_url") or source_url)
+                reused_project_id = int(reused_video.get("reused_project_id") or 0)
+                logger.info(
+                    "Similar project %s reused cached reference video from project %s",
+                    project_id,
+                    reused_project_id,
+                )
+            else:
+                client = BaixaTudoClient(
+                    base_url=settings.baixatudo_api_url,
+                    api_key=settings.baixatudo_api_key,
+                    timeout_seconds=settings.baixatudo_timeout_seconds,
+                    poll_interval_seconds=settings.baixatudo_poll_interval_seconds,
+                    max_wait_seconds=settings.baixatudo_max_wait_seconds,
+                )
+
+                download_result = await client.download_video(
+                    source_url=source_url,
+                    output_path=resolved_video_path,
+                    formato="video_melhor",
+                )
+                resolved_video_path = str(download_result.output_path)
+                download_task_id = str(download_result.task_id)
+                resolved_source_url = str(download_result.source_url or source_url)
+                resolved_normalized_url = str(download_result.normalized_url or source_url)
 
             tags = _safe_tags_dict(project.tags)
             tags.update(
                 {
                     "type": "similar",
                     "similar_stage": "analyzing_reference",
-                    "similar_download_task_id": download_result.task_id,
-                    "similar_source_url": download_result.source_url,
-                    "similar_normalized_url": download_result.normalized_url,
-                    "similar_local_video_path": download_result.output_path,
+                    "similar_download_task_id": download_task_id,
+                    "similar_source_url": resolved_source_url,
+                    "similar_normalized_url": resolved_normalized_url,
+                    "similar_local_video_path": resolved_video_path,
+                    "similar_reused_cache": bool(reused_video),
                 }
             )
+            if reused_project_id > 0:
+                tags["similar_reused_from_project_id"] = reused_project_id
             project.tags = tags
             project.progress = 15
             await db.commit()
 
-            duration_seconds = await _ffprobe_duration(download_result.output_path)
+            duration_seconds = await _ffprobe_duration(resolved_video_path)
             scene_seconds = max(
                 int(settings.similar_scene_default_seconds or 5),
                 int(settings.similar_scene_min_seconds or 5),
@@ -393,7 +517,7 @@ async def run_similar_reference_analysis(project_id: int, source_url: str) -> No
                     midpoint = 0
 
                 frame_path = str(frames_dir / f"frame_{idx:03d}.jpg")
-                await _extract_frame(download_result.output_path, midpoint, frame_path)
+                await _extract_frame(resolved_video_path, midpoint, frame_path)
                 prompt = await _analyze_frame_prompt(
                     client=openai_client,
                     frame_path=frame_path,

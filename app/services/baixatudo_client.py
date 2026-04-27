@@ -158,23 +158,187 @@ class BaixaTudoClient:
 
         return str(target)
 
+    @staticmethod
+    def _is_retryable_missing_final_file_error(err: Exception) -> bool:
+        text = str(err or "").lower()
+        markers = (
+            "nao foi possivel localizar o arquivo final",
+            "não foi possível localizar o arquivo final",
+            "arquivo final",
+            "arquivo nao encontrado",
+            "arquivo não encontrado",
+            "404",
+            "not found",
+        )
+        return any(marker in text for marker in markers)
+
+    def _download_with_ytdlp_sync(self, source_url: str, output_path: str) -> tuple[str, str, str]:
+        try:
+            import yt_dlp
+        except Exception as exc:
+            raise BaixaTudoError("Fallback yt-dlp indisponivel no servidor") from exc
+
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        outtmpl = str(target.with_suffix(".%(ext)s"))
+
+        normalized_url = str(source_url or "").strip()
+        title = ""
+
+        ydl_opts = {
+            "format": "bv*+ba/b",
+            "merge_output_format": "mp4",
+            "outtmpl": outtmpl,
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+            "retries": 3,
+            "fragment_retries": 3,
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0",
+            },
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(source_url, download=True)
+            if isinstance(info, dict):
+                normalized_url = str(
+                    info.get("webpage_url") or info.get("original_url") or info.get("url") or normalized_url
+                ).strip()
+                title = str(info.get("title") or "").strip()
+
+                try:
+                    prepared = Path(ydl.prepare_filename(info))
+                except Exception:
+                    prepared = None
+            else:
+                prepared = None
+
+        candidates: list[Path] = []
+        candidates.append(target)
+        candidates.append(target.with_suffix(".mp4"))
+
+        if prepared is not None:
+            candidates.append(prepared)
+            if prepared.suffix.lower() != ".mp4":
+                candidates.append(prepared.with_suffix(".mp4"))
+
+        try:
+            stem_candidates = sorted(
+                target.parent.glob(f"{target.stem}.*"),
+                key=lambda item: item.stat().st_size if item.exists() else 0,
+                reverse=True,
+            )
+            candidates.extend(stem_candidates)
+        except Exception:
+            pass
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            key = str(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                if candidate.exists() and candidate.stat().st_size > 0:
+                    file_name = candidate.name
+                    if title and not file_name.strip():
+                        file_name = f"{title}.mp4"
+                    return str(candidate), file_name, normalized_url
+            except Exception:
+                continue
+
+        raise BaixaTudoError("Fallback yt-dlp nao gerou arquivo de video valido")
+
     async def download_video(self, source_url: str, output_path: str, formato: str = "video_melhor") -> BaixaTudoDownloadResult:
         await self.ensure_ready()
-        started = await self.start_download(source_url, formato=formato)
-        task_id = str(started.get("task_id", "")).strip()
-        if not task_id:
-            raise BaixaTudoError("Baixa Tudo nao retornou task_id")
+        last_error: Exception | None = None
 
-        done_state = await self.wait_until_completed(task_id)
-        final_path = await self.fetch_file(task_id, output_path)
+        for task_attempt in range(1, 4):
+            started = await self.start_download(source_url, formato=formato)
+            task_id = str(started.get("task_id", "")).strip()
+            if not task_id:
+                raise BaixaTudoError("Baixa Tudo nao retornou task_id")
 
-        file_name = str(done_state.get("nome_arquivo") or Path(final_path).name).strip() or Path(final_path).name
-        normalized_url = str(started.get("url_final") or source_url).strip()
+            try:
+                done_state = await self.wait_until_completed(task_id)
+            except Exception as exc:
+                last_error = exc
+                if self._is_retryable_missing_final_file_error(exc) and task_attempt < 3:
+                    logger.warning(
+                        "Baixa Tudo task %s terminou sem arquivo final (tentativa %s/3). Reenfileirando download...",
+                        task_id,
+                        task_attempt,
+                    )
+                    await asyncio.sleep(min(1.2 + task_attempt, 4.0))
+                    continue
+                raise
 
-        return BaixaTudoDownloadResult(
-            task_id=task_id,
-            output_path=final_path,
-            file_name=file_name,
-            source_url=str(source_url or "").strip(),
-            normalized_url=normalized_url,
-        )
+            final_path = ""
+            last_fetch_error: Exception | None = None
+
+            for fetch_attempt in range(1, 8):
+                try:
+                    final_path = await self.fetch_file(task_id, output_path)
+                    break
+                except Exception as exc:
+                    last_fetch_error = exc
+                    if not self._is_retryable_missing_final_file_error(exc):
+                        raise
+
+                    state = await self.get_download_status(task_id)
+                    status = str(state.get("status", "")).strip().lower()
+                    if status in {"error", "failed"}:
+                        raise BaixaTudoError(self._extract_error(state) or "Falha no download do Baixa Tudo")
+                    done_state = state
+
+                    if fetch_attempt >= 7:
+                        break
+                    await asyncio.sleep(min(1.5 + (fetch_attempt * 0.5), 4.0))
+
+            if final_path:
+                file_name = str(done_state.get("nome_arquivo") or Path(final_path).name).strip() or Path(final_path).name
+                normalized_url = str(started.get("url_final") or source_url).strip()
+
+                return BaixaTudoDownloadResult(
+                    task_id=task_id,
+                    output_path=final_path,
+                    file_name=file_name,
+                    source_url=str(source_url or "").strip(),
+                    normalized_url=normalized_url,
+                )
+
+            if last_fetch_error is not None:
+                last_error = last_fetch_error
+            if task_attempt < 3:
+                logger.warning(
+                    "Baixa Tudo task %s nao entregou arquivo final apos retries locais (tentativa %s/3). Reenfileirando...",
+                    task_id,
+                    task_attempt,
+                )
+                await asyncio.sleep(min(1.2 + task_attempt, 4.0))
+                continue
+
+        if last_error is not None and self._is_retryable_missing_final_file_error(last_error):
+            logger.warning("Baixa Tudo falhou com arquivo final ausente. Tentando fallback com yt-dlp...")
+            try:
+                loop = asyncio.get_event_loop()
+                fallback_path, fallback_name, fallback_url = await loop.run_in_executor(
+                    None,
+                    self._download_with_ytdlp_sync,
+                    source_url,
+                    output_path,
+                )
+                return BaixaTudoDownloadResult(
+                    task_id="fallback:ytdlp",
+                    output_path=fallback_path,
+                    file_name=fallback_name,
+                    source_url=str(source_url or "").strip(),
+                    normalized_url=str(fallback_url or source_url).strip(),
+                )
+            except Exception as fallback_exc:
+                raise BaixaTudoError(f"{last_error} | Fallback yt-dlp falhou: {fallback_exc}")
+
+        if last_error is not None:
+            raise BaixaTudoError(str(last_error))
+        raise BaixaTudoError("Download terminou, mas nao foi possivel baixar o arquivo final")
