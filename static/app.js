@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v242 loaded");
+console.log("[CriaVideo] app.js v243 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -119,16 +119,15 @@ function showToast(msg, type = "info") {
     setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .3s"; setTimeout(() => el.remove(), 300); }, 3500);
 }
 
-const WAN_REALISTIC_DURATION_OPTIONS = [8, 16, 24, 32, 40, 48, 56];
+const WAN_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const DEFAULT_REALISTIC_DURATION_OPTIONS = [5, 10, 15, 20, 45, 60];
 const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10];
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
 
 function _normalizeWanDurationMultiple(value) {
     const raw = parseInt(value || 0, 10);
-    if (!raw || raw <= 8) return 8;
-    const capped = Math.min(raw, 56);
-    return Math.max(8, Math.floor(capped / 8) * 8);
+    if (!raw) return WAN_REALISTIC_DURATION_OPTIONS[0];
+    return _pickClosestDurationOption(WAN_REALISTIC_DURATION_OPTIONS, raw);
 }
 
 function _pickClosestDurationOption(options, targetValue) {
@@ -2182,7 +2181,7 @@ function _buildRealisticEstimatePayload(prefix) {
     const selectedEngine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "grok";
     const engine = (prefix === "auto" && useTevoxi) ? "grok" : selectedEngine;
 
-    let durationSeconds = _getSelectedDurationSeconds(`${prefix}-realistic-duration`, 8);
+    let durationSeconds = _getSelectedDurationSeconds(`${prefix}-realistic-duration`, 5);
     if (engine === "wan2") {
         durationSeconds = _normalizeWanDurationMultiple(durationSeconds);
     }

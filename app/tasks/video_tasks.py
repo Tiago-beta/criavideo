@@ -1299,9 +1299,12 @@ async def _combine_realistic_audio(
 
 
 def _resolve_wan_effective_duration(duration: int) -> int:
-    """Normalize WAN duration to a safe range for I2V workflows."""
+    """Normalize WAN duration to supported presets (5s, 10s, 15s)."""
     raw = max(1, int(duration or 0))
-    return max(5, min(raw, 60))
+    allowed = (5, 10, 15)
+    if raw in allowed:
+        return raw
+    return min(allowed, key=lambda candidate: (abs(candidate - raw), candidate))
 
 
 async def _extract_audio_from_video_track(video_path: str, audio_output_path: str) -> str:
@@ -1966,50 +1969,19 @@ async def run_realistic_video_pipeline(project_id: int):
                 from app.services.runpod_video import generate_wan_video
                 from app.services.multi_clip import concatenate_clips, extract_last_frame
 
-                wan_segment_duration = 5
-                wan_segment_count = max(1, -(-wan_effective_duration // wan_segment_duration))
+                wan_segment_duration = wan_effective_duration
+                wan_segment_count = 1
 
                 async def _generate_wan_sequence() -> None:
-                    nonlocal output_path
-                    if wan_segment_count <= 1:
-                        await generate_wan_video(
-                            prompt=optimized_prompt,
-                            duration=wan_segment_duration,
-                            aspect_ratio=aspect_ratio,
-                            output_path=output_path,
-                            image_path=scene_reference_path,
-                            generate_audio=generate_audio,
-                            on_progress=_on_progress,
-                        )
-                        return
-
-                    local_ref = scene_reference_path
-                    wan_clip_paths: list[str] = []
-                    for idx in range(wan_segment_count):
-                        clip_path = str(render_dir / f"realistic_video_wan_clip_{idx:02d}.mp4")
-                        await generate_wan_video(
-                            prompt=optimized_prompt,
-                            duration=wan_segment_duration,
-                            aspect_ratio=aspect_ratio,
-                            output_path=clip_path,
-                            image_path=local_ref,
-                            generate_audio=generate_audio,
-                            on_progress=None,
-                        )
-
-                        if not os.path.exists(clip_path) or os.path.getsize(clip_path) <= 0:
-                            raise RuntimeError(f"Wan clip {idx + 1}/{wan_segment_count} ficou vazio")
-
-                        wan_clip_paths.append(clip_path)
-
-                        if idx < wan_segment_count - 1:
-                            next_ref = str(render_dir / f"realistic_video_wan_ref_{idx:02d}.png")
-                            await extract_last_frame(clip_path, next_ref)
-                            local_ref = next_ref
-
-                        await _on_progress(18 + int(52 * (idx + 1) / wan_segment_count), f"Gerando WAN clip {idx + 1}/{wan_segment_count}...")
-
-                    await concatenate_clips(wan_clip_paths, output_path)
+                    await generate_wan_video(
+                        prompt=optimized_prompt,
+                        duration=wan_segment_duration,
+                        aspect_ratio=aspect_ratio,
+                        output_path=output_path,
+                        image_path=scene_reference_path,
+                        generate_audio=generate_audio,
+                        on_progress=_on_progress,
+                    )
 
                 if shadow_audio_from_grok:
                     from app.services.grok_video import generate_video_clip

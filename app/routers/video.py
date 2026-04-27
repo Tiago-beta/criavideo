@@ -168,9 +168,12 @@ def _normalize_interaction_persona(value: str) -> str:
 
 
 def _normalize_wan_duration_seconds(value: int) -> int:
-    """Normalize Wan duration to a safe range for I2V workflows."""
+    """Normalize Wan duration to supported presets (5s, 10s, 15s)."""
     raw = max(1, int(value or 0))
-    return max(5, min(raw, 60))
+    allowed = (5, 10, 15)
+    if raw in allowed:
+        return raw
+    return min(allowed, key=lambda candidate: (abs(candidate - raw), candidate))
 
 
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
@@ -2696,7 +2699,7 @@ class GenerateRealisticPromptRequest(BaseModel):
     context_hint: str = ""
     style: str = "cinematic"
     engine: str = "wan2"
-    duration: int = 8
+    duration: int = 5
     interaction_persona: str = "natureza"
     persona_profile_id: int = 0
     persona_profile_ids: list[int] = Field(default_factory=list)
@@ -2997,7 +3000,7 @@ async def generate_realistic_prompt_endpoint(
 
 class GenerateRealisticRequest(BaseModel):
     prompt: str
-    duration: int = 8
+    duration: int = 5
     aspect_ratio: str = "16:9"
     generate_audio: bool = True
     add_music: bool = True
