@@ -18,9 +18,13 @@ settings = get_settings()
 
 ATLAS_VIDEO_API_BASE_URL = (settings.atlascloud_api_base_url or "https://api.atlascloud.ai/api/v1").rstrip("/")
 SEEDANCE_T2V_MODEL = (settings.atlascloud_seedance_t2v_model or "bytedance/seedance-2.0/text-to-video").strip()
-_SEEDANCE_I2V_DEFAULT_MODEL = "bytedance/seedance-v1.5-pro/image-to-video-fast"
+_SEEDANCE_I2V_DEFAULT_MODEL = "bytedance/seedance-v1.5-pro/image-to-video"
 _seedance_i2v_cfg = (settings.atlascloud_seedance_i2v_model or "").strip()
-if _seedance_i2v_cfg in {"", "bytedance/seedance-2.0/image-to-video"}:
+if _seedance_i2v_cfg in {
+    "",
+    "bytedance/seedance-2.0/image-to-video",
+    "bytedance/seedance-v1.5-pro/image-to-video-fast",
+}:
     SEEDANCE_I2V_MODEL = _SEEDANCE_I2V_DEFAULT_MODEL
 else:
     SEEDANCE_I2V_MODEL = _seedance_i2v_cfg
