@@ -3219,9 +3219,14 @@ async def generate_realistic_endpoint(
     effective_add_narration = bool(req.add_narration and narration_text and not dialogue_enabled)
     effective_add_music = bool(req.add_music or external_audio_url)
     provider_generate_audio = bool(req.generate_audio)
+    seedance_native_audio_only = False
     if engine == "seedance":
         # Seedance should always request native model audio when available.
         provider_generate_audio = True
+        if provider_generate_audio and not external_audio_url and not effective_add_narration and not dialogue_enabled:
+            # Prefer native SFX from Seedance unless user explicitly supplied another audio source.
+            effective_add_music = False
+            seedance_native_audio_only = True
 
     # Credit check — centralized realistic estimator.
     from app.routers.credits import deduct_credits
@@ -3267,6 +3272,7 @@ async def generate_realistic_endpoint(
         "add_music": effective_add_music,
         "add_narration": effective_add_narration,
         "provider_generate_audio": provider_generate_audio,
+        "seedance_native_audio_only": seedance_native_audio_only,
         "speech_mode": speech_mode,
         "speech_auto_requested": auto_dialogue_requested,
         "narration_voice": narration_voice,

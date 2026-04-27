@@ -243,6 +243,33 @@ def _ensure_grok_identity_lock(prompt: str, reference_mode: str = "") -> str:
     return f"{base_prompt}\n\n{identity_lock}"
 
 
+def _ensure_seedance_audio_instruction(prompt: str) -> str:
+    """Bias Seedance toward native diegetic SFX instead of soundtrack music."""
+    base_prompt = (prompt or "").strip()
+    if not base_prompt:
+        return base_prompt
+
+    lowered = base_prompt.lower()
+    audio_markers = (
+        "audio:",
+        "sound effect",
+        "diegetic",
+        "som ambiente",
+        "efeitos sonoros",
+        "no soundtrack",
+        "sem trilha musical",
+    )
+    if any(marker in lowered for marker in audio_markers):
+        return base_prompt
+
+    audio_rule = (
+        "AUDIO (OBRIGATORIO): incluir efeitos sonoros diegeticos realistas sincronizados com as acoes da cena "
+        "(motor, pneu, vento, rua, passos, tecido, etc. quando fizer sentido). "
+        "Sem trilha musical de fundo, sem canto e sem narracao."
+    )
+    return f"{base_prompt}\n\n{audio_rule}"
+
+
 def _normalize_interaction_persona(value: str) -> str:
     raw = str(value or "").strip().lower()
     mapping = {
@@ -1520,6 +1547,9 @@ async def run_realistic_video_pipeline(project_id: int):
             prompt_optimized = tags_data.get("prompt_optimized", False)
             realistic_style = tags_data.get("realistic_style", "")
             add_music = bool(tags_data.get("add_music", False))
+            provider_generate_audio_requested = bool(tags_data.get("provider_generate_audio", False))
+            seedance_native_audio_only = bool(tags_data.get("seedance_native_audio_only", False))
+            external_audio_url_for_prompt = str(tags_data.get("audio_url", "") or "").strip()
             grok_text_only = engine == "grok" and bool(
                 tags_data.get("grok_text_only") or tags_data.get("disable_persona_reference")
             )
@@ -1546,6 +1576,13 @@ async def run_realistic_video_pipeline(project_id: int):
             prebuilt_dialogue_result = None
             prebuilt_narration_path = ""
             prebuilt_music_path = ""
+            seedance_expect_native_audio = (
+                engine == "seedance"
+                and provider_generate_audio_requested
+                and seedance_native_audio_only
+                and not external_audio_url_for_prompt
+                and not dialogue_enabled
+            )
 
             if dialogue_enabled and not shadow_audio_from_grok:
                 project.progress = 7
@@ -1597,6 +1634,9 @@ async def run_realistic_video_pipeline(project_id: int):
                     project.tags = tags_data
                     await db.commit()
 
+            if seedance_expect_native_audio:
+                user_prompt = _ensure_seedance_audio_instruction(user_prompt)
+
             # If user selected a style, prepend it as context for the optimizer
             if realistic_style and not prompt_optimized:
                 style_labels = {
@@ -1641,6 +1681,8 @@ async def run_realistic_video_pipeline(project_id: int):
                 optimized_prompt = _ensure_reference_image_instruction(optimized_prompt, reference_mode=reference_mode)
                 if engine == "grok":
                     optimized_prompt = _ensure_grok_identity_lock(optimized_prompt, reference_mode=reference_mode)
+            if seedance_expect_native_audio:
+                optimized_prompt = _ensure_seedance_audio_instruction(optimized_prompt)
 
             if shadow_audio_from_grok:
                 try:
@@ -2155,6 +2197,7 @@ async def run_realistic_video_pipeline(project_id: int):
 
                 if use_seedance_multi_reference:
                     clip_paths: list[str] = []
+                    clip_audio_paths: list[str] = []
                     clip_count = len(seedance_uploaded_reference_paths)
                     clip_duration = max(4, min(10, int(round(max(1, float(duration)) / max(1, clip_count)))))
                     logger.info(
@@ -2176,6 +2219,14 @@ async def run_realistic_video_pipeline(project_id: int):
                             raise RuntimeError(f"Seedance clip {idx + 1}/{clip_count} ficou vazio")
 
                         clip_paths.append(clip_path)
+                        if await _video_has_audio_stream(clip_path):
+                            try:
+                                clip_audio_path = str(render_dir / f"realistic_video_seedance_clip_{idx:02d}.m4a")
+                                await _extract_audio_from_video_track(clip_path, clip_audio_path)
+                                clip_audio_paths.append(clip_audio_path)
+                            except Exception as e:
+                                logger.warning("Seedance clip %d audio extraction failed: %s", idx + 1, e)
+
                         await _on_progress(
                             18 + int(52 * (idx + 1) / clip_count),
                             f"Gerando Seedance clip {idx + 1}/{clip_count}...",
@@ -2188,6 +2239,30 @@ async def run_realistic_video_pipeline(project_id: int):
                         output_path = await _trim_video_duration(output_path, duration, trimmed_path)
                     except Exception as e:
                         logger.warning("Seedance multi-reference trim failed, keeping concatenated output: %s", e)
+
+                    if clip_audio_paths and len(clip_audio_paths) == clip_count:
+                        try:
+                            merged_audio_path = await _concatenate_audio_tracks(
+                                clip_audio_paths,
+                                str(render_dir / "realistic_video_seedance_audio.m4a"),
+                            )
+                            output_with_audio = str(render_dir / "realistic_video_seedance_with_audio.mp4")
+                            merged_duration = get_duration(output_path) if os.path.exists(output_path) else float(duration)
+                            if merged_duration <= 0:
+                                merged_duration = float(duration)
+
+                            await _combine_realistic_audio(
+                                video_path=output_path,
+                                narration_path=merged_audio_path,
+                                music_path="",
+                                output_path=output_with_audio,
+                                video_duration=merged_duration,
+                            )
+
+                            if os.path.exists(output_with_audio) and os.path.getsize(output_with_audio) > 0:
+                                output_path = output_with_audio
+                        except Exception as e:
+                            logger.warning("Seedance multi-reference native audio merge failed: %s", e)
                 else:
                     await _generate_seedance_clip_with_retry(
                         clip_output_path=output_path,
@@ -2255,7 +2330,7 @@ async def run_realistic_video_pipeline(project_id: int):
             seedance_missing_audio = engine == "seedance" and provider_generate_audio and not provider_has_audio
             if seedance_missing_audio:
                 logger.warning(
-                    "Seedance returned video without audio for project %s; enabling generated-audio fallback.",
+                    "Seedance returned video without native audio for project %s.",
                     project_id,
                 )
 
@@ -2320,8 +2395,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 music_path = (prebuilt_music_path or "") if add_music else ""
 
                 if seedance_missing_audio and not (add_narration or add_music or dialogue_enabled):
-                    add_music = True
-                    tags["seedance_audio_fallback"] = "generated_music"
+                    tags["seedance_audio_fallback"] = "native_missing_no_overlay"
                     project.tags = tags
                     await db.commit()
 
