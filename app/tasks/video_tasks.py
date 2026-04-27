@@ -1299,12 +1299,9 @@ async def _combine_realistic_audio(
 
 
 def _resolve_wan_effective_duration(duration: int) -> int:
-    """Normalize WAN duration to 8-second blocks (8..56)."""
+    """Normalize WAN duration to a safe range for I2V workflows."""
     raw = max(1, int(duration or 0))
-    if raw <= 8:
-        return 8
-    capped = min(raw, 56)
-    return max(8, (capped // 8) * 8)
+    return max(5, min(raw, 60))
 
 
 async def _extract_audio_from_video_track(video_path: str, audio_output_path: str) -> str:
@@ -1417,8 +1414,8 @@ async def run_realistic_video_pipeline(project_id: int):
             engine = (project.audio_path or "").strip()
             if engine not in ("seedance", "minimax", "wan2", "grok"):
                 engine = "wan2"
-            engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.7", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
-            engine_label = engine_labels.get(engine, "Wan 2.7")
+            engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
+            engine_label = engine_labels.get(engine, "Wan 2.6")
             logger.info(f"Realistic video pipeline for project {project_id} using engine: {engine}")
 
             # ── Step 1: Optimize prompt via GPT ──
@@ -1560,7 +1557,7 @@ async def run_realistic_video_pipeline(project_id: int):
             dialogue_voice_profile_ids = tags_data.get("dialogue_voice_profile_ids", []) if isinstance(tags_data.get("dialogue_voice_profile_ids", []), list) else []
             dialogue_tone = str(tags_data.get("dialogue_tone", "informativo") or "informativo").strip() or "informativo"
             dialogue_duration = float(tags_data.get("dialogue_duration", 0) or 0)
-            # Wan 2.7 now runs video-only (no legacy Grok shadow audio).
+            # Wan now runs video-only (no legacy Grok shadow audio).
             shadow_audio_from_grok = False
             shadow_grok_retry_limit = max(0, int(tags_data.get("wan_shadow_grok_retry_limit", 2) or 2))
             wan_effective_duration = _resolve_wan_effective_duration(duration) if engine == "wan2" else duration
@@ -1965,11 +1962,11 @@ async def run_realistic_video_pipeline(project_id: int):
                     on_progress=_on_progress,
                 )
             elif engine == "wan2":
-                # ── Wan 2.7 via Atlas Cloud ──
+                # ── Wan via Atlas Cloud ──
                 from app.services.runpod_video import generate_wan_video
                 from app.services.multi_clip import concatenate_clips, extract_last_frame
 
-                wan_segment_duration = 8
+                wan_segment_duration = 5
                 wan_segment_count = max(1, -(-wan_effective_duration // wan_segment_duration))
 
                 async def _generate_wan_sequence() -> None:
@@ -1981,6 +1978,7 @@ async def run_realistic_video_pipeline(project_id: int):
                             aspect_ratio=aspect_ratio,
                             output_path=output_path,
                             image_path=scene_reference_path,
+                            generate_audio=generate_audio,
                             on_progress=_on_progress,
                         )
                         return
@@ -1995,6 +1993,7 @@ async def run_realistic_video_pipeline(project_id: int):
                             aspect_ratio=aspect_ratio,
                             output_path=clip_path,
                             image_path=local_ref,
+                            generate_audio=generate_audio,
                             on_progress=None,
                         )
 
@@ -2016,7 +2015,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     from app.services.grok_video import generate_video_clip
                     from app.services.scene_generator import generate_scene_image
 
-                    await _on_progress(18, "Gerando WAN 2.7 e Grok em paralelo...")
+                    await _on_progress(18, "Gerando WAN e Grok em paralelo...")
                     grok_image_path = grok_direct_reference_path or scene_reference_path
 
                     if not grok_image_path:
@@ -2230,6 +2229,22 @@ async def run_realistic_video_pipeline(project_id: int):
                     )
                 except Exception as e:
                     logger.warning(f"Grok shadow aspect normalization skipped: {e}")
+
+            if engine == "wan2":
+                try:
+                    wan_target_duration = float(wan_effective_duration or duration)
+                    wan_current_duration = get_duration(output_path) if os.path.exists(output_path) else 0.0
+                    if wan_current_duration > (wan_target_duration + 0.35):
+                        trimmed_path = str(render_dir / "realistic_video_wan_trimmed.mp4")
+                        output_path = await _trim_video_duration(output_path, wan_target_duration, trimmed_path)
+                        logger.info(
+                            "Wan output trimmed from %.2fs to %.2fs: %s",
+                            wan_current_duration,
+                            wan_target_duration,
+                            output_path,
+                        )
+                except Exception as e:
+                    logger.warning("Wan duration trim skipped: %s", e)
 
             file_size = os.path.getsize(output_path)
             video_duration = get_duration(output_path) if os.path.exists(output_path) else float(duration)

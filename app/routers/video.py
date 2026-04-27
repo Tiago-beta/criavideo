@@ -168,16 +168,9 @@ def _normalize_interaction_persona(value: str) -> str:
 
 
 def _normalize_wan_duration_seconds(value: int) -> int:
-    """Wan 2.7 mode works in 8-second blocks.
-
-    The realistic UI now offers multiples of 8s up to 56s. This helper keeps
-    API behavior consistent for older clients that still send legacy values.
-    """
+    """Normalize Wan duration to a safe range for I2V workflows."""
     raw = max(1, int(value or 0))
-    if raw <= 8:
-        return 8
-    capped = min(raw, 56)
-    return max(8, (capped // 8) * 8)
+    return max(5, min(raw, 60))
 
 
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
@@ -2888,7 +2881,7 @@ async def generate_realistic_prompt_endpoint(
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
-        duration = _normalize_wan_duration_seconds(int(req.duration or 8))
+        duration = _normalize_wan_duration_seconds(int(req.duration or 5))
     else:
         duration = max(1, min(int(req.duration or 10), 10))
 
@@ -3050,7 +3043,7 @@ async def generate_realistic_endpoint(
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
-        duration = _normalize_wan_duration_seconds(int(req.duration or 8))
+        duration = _normalize_wan_duration_seconds(int(req.duration or 5))
     else:
         duration = max(1, min(int(req.duration or 10), 10))
 
@@ -3227,6 +3220,9 @@ async def generate_realistic_endpoint(
             # Prefer native SFX from Seedance unless user explicitly supplied another audio source.
             effective_add_music = False
             seedance_native_audio_only = True
+    elif engine == "wan2":
+        # Wan I2V should request native audio by default for better first-playback UX.
+        provider_generate_audio = True
 
     # Credit check — centralized realistic estimator.
     from app.routers.credits import deduct_credits
@@ -3248,8 +3244,8 @@ async def generate_realistic_endpoint(
     if not project_title:
         project_title = prompt[:100]
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.7", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
-    engine_label = engine_labels.get(engine, "Wan 2.7")
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
+    engine_label = engine_labels.get(engine, "Wan 2.6")
 
     # Narration config stored in tags JSON
     narration_voice = req.narration_voice or "onyx"
