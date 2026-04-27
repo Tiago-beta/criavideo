@@ -7,6 +7,7 @@ import time
 import logging
 import asyncio
 import base64
+import subprocess
 import mimetypes
 import httpx
 import openai
@@ -135,6 +136,120 @@ def _extract_upload_reference(payload: dict) -> str:
             return f"asset://{raw}"
 
     return ""
+
+
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for raw in values:
+        value = str(raw or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    return ordered
+
+
+def _is_http_url(value: str) -> bool:
+    lowered = str(value or "").strip().lower()
+    return lowered.startswith("http://") or lowered.startswith("https://")
+
+
+def _looks_like_video_url(value: str) -> bool:
+    lowered = str(value or "").strip().lower()
+    if not _is_http_url(lowered):
+        return False
+    if any(ext in lowered for ext in (".mp4", ".mov", ".webm", ".m3u8", "/video")):
+        return True
+    return True
+
+
+def _collect_video_url_candidates(node, output: list[str]) -> None:
+    if isinstance(node, str):
+        candidate = node.strip()
+        if _looks_like_video_url(candidate):
+            output.append(candidate)
+        return
+
+    if isinstance(node, list):
+        for item in node:
+            _collect_video_url_candidates(item, output)
+        return
+
+    if isinstance(node, dict):
+        preferred_keys = (
+            "video_url",
+            "video",
+            "output",
+            "outputs",
+            "url",
+            "urls",
+            "result",
+            "data",
+            "files",
+            "artifacts",
+        )
+        for key in preferred_keys:
+            if key in node:
+                _collect_video_url_candidates(node.get(key), output)
+
+        for key, value in node.items():
+            if key in preferred_keys:
+                continue
+            key_lower = str(key).lower()
+            if any(token in key_lower for token in ("video", "output", "result", "file", "url")):
+                _collect_video_url_candidates(value, output)
+
+
+async def _fetch_result_video_candidates(prediction_id: str, api_key: str) -> list[str]:
+    endpoint = f"{ATLAS_VIDEO_API_BASE_URL}/model/result/{prediction_id}"
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(endpoint, headers=headers)
+    except Exception as e:
+        logger.warning("Seedance result lookup request failed: %s", e)
+        return []
+
+    if resp.is_error:
+        logger.warning("Seedance result lookup failed (HTTP %s)", resp.status_code)
+        return []
+
+    payload = resp.json() if resp.content else {}
+    candidates: list[str] = []
+    _collect_video_url_candidates(payload, candidates)
+    return _dedupe_preserve_order(candidates)
+
+
+def _file_has_audio_stream(file_path: str) -> bool:
+    if not file_path or not os.path.exists(file_path):
+        return False
+
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                file_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except Exception:
+        return False
+
+    if proc.returncode != 0:
+        return False
+    return "audio" in (proc.stdout or "").lower()
 
 
 def _clamp_prompt_temperature(value: float | None, default_value: float = 0.7) -> float:
@@ -461,6 +576,7 @@ async def generate_realistic_video(
     # Step 2: Poll for completion.
     poll_url = f"{ATLAS_VIDEO_API_BASE_URL}/model/prediction/{prediction_id}"
     poll_headers = {"Authorization": f"Bearer {api_key}"}
+    candidate_urls: list[str] = []
 
     start_time = time.time()
     last_progress = 20
@@ -488,16 +604,12 @@ async def generate_realistic_video(
             status = str((data_node or {}).get("status") or data.get("status") or "").strip().lower()
 
             if status in {"completed", "succeeded", "success"}:
-                outputs = (data_node or {}).get("outputs")
-                if isinstance(outputs, list) and outputs:
-                    video_url = str(outputs[0]).strip()
-                elif isinstance(outputs, str):
-                    video_url = outputs.strip()
-                else:
-                    fallback_output = (data_node or {}).get("output") or data.get("output")
-                    video_url = str(fallback_output or "").strip()
+                poll_candidates: list[str] = []
+                _collect_video_url_candidates(data_node, poll_candidates)
+                _collect_video_url_candidates(data, poll_candidates)
+                candidate_urls = _dedupe_preserve_order(poll_candidates)
 
-                if not video_url:
+                if not candidate_urls:
                     raise RuntimeError("Seedance returned empty output")
                 break
             elif status in {"failed", "error", "canceled", "cancelled"}:
@@ -515,6 +627,13 @@ async def generate_realistic_video(
         else:
             raise TimeoutError(f"Seedance generation timed out after {timeout_seconds}s")
 
+    result_candidates = await _fetch_result_video_candidates(prediction_id, api_key)
+    if result_candidates:
+        candidate_urls = _dedupe_preserve_order(result_candidates + candidate_urls)
+
+    if not candidate_urls:
+        raise RuntimeError("Seedance nao retornou URL de video valida")
+
     if on_progress:
         await on_progress(80, "Baixando video gerado...")
 
@@ -523,44 +642,77 @@ async def generate_realistic_video(
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
+    selected_url = ""
+    downloaded_without_audio = False
     async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
-        downloaded = False
-        for attempt in range(4):
-            try:
-                resp = await client.get(video_url)
-            except httpx.RequestError as e:
-                if attempt >= 3:
-                    raise RuntimeError(f"Falha ao baixar video gerado: {e}")
-                wait_s = min(12, 2 ** (attempt + 1))
-                logger.warning(
-                    "Seedance download request error (attempt %d/4): %s. Retrying in %ds",
-                    attempt + 1,
-                    e,
-                    wait_s,
-                )
-                await asyncio.sleep(wait_s)
+        for idx, video_url in enumerate(candidate_urls):
+            downloaded = False
+            for attempt in range(4):
+                try:
+                    resp = await client.get(video_url)
+                except httpx.RequestError as e:
+                    if attempt >= 3:
+                        logger.warning("Falha ao baixar Seedance URL %s: %s", video_url, e)
+                        break
+                    wait_s = min(12, 2 ** (attempt + 1))
+                    logger.warning(
+                        "Seedance download request error (url %d/%d, attempt %d/4): %s. Retrying in %ds",
+                        idx + 1,
+                        len(candidate_urls),
+                        attempt + 1,
+                        e,
+                        wait_s,
+                    )
+                    await asyncio.sleep(wait_s)
+                    continue
+
+                if resp.status_code == 429:
+                    if attempt >= 3:
+                        logger.warning("Seedance candidate URL rate-limited too many times: %s", video_url)
+                        break
+                    wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(20, 2 ** (attempt + 2)))
+                    logger.warning(
+                        "Seedance rate-limited on download (url %d/%d, attempt %d/4). Retrying in %ds",
+                        idx + 1,
+                        len(candidate_urls),
+                        attempt + 1,
+                        wait_s,
+                    )
+                    await asyncio.sleep(wait_s)
+                    continue
+
+                resp.raise_for_status()
+                content_type = str(resp.headers.get("Content-Type") or "").lower().strip()
+                if content_type.startswith("audio/"):
+                    logger.warning("Skipping Seedance non-video candidate URL (%s): %s", content_type, video_url)
+                    break
+
+                with open(output_path, "wb") as f:
+                    f.write(resp.content)
+                downloaded = True
+                break
+
+            if not downloaded:
                 continue
 
-            if resp.status_code == 429:
-                if attempt >= 3:
-                    raise RuntimeError(SEEDANCE_RATE_LIMIT_MSG)
-                wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(20, 2 ** (attempt + 2)))
+            if generate_audio and not _file_has_audio_stream(output_path):
+                downloaded_without_audio = True
                 logger.warning(
-                    "Seedance rate-limited on download (attempt %d/4). Retrying in %ds",
-                    attempt + 1,
-                    wait_s,
+                    "Seedance candidate URL %d/%d has no audio stream. Trying next candidate.",
+                    idx + 1,
+                    len(candidate_urls),
                 )
-                await asyncio.sleep(wait_s)
                 continue
 
-            resp.raise_for_status()
-            with open(output_path, "wb") as f:
-                f.write(resp.content)
-            downloaded = True
+            selected_url = video_url
             break
 
-        if not downloaded:
-            raise RuntimeError("Nao foi possivel baixar o video do Seedance.")
+    if not selected_url and not downloaded_without_audio:
+        raise RuntimeError("Nao foi possivel baixar o video do Seedance.")
+    if selected_url:
+        logger.info("Seedance downloaded using candidate URL: %s", selected_url)
+    elif downloaded_without_audio:
+        logger.warning("Seedance video baixado sem trilha de audio apos testar todas as URLs candidatas.")
 
     file_size = os.path.getsize(output_path)
     logger.info(f"Seedance video downloaded: {output_path} ({file_size} bytes)")
