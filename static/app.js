@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v246 loaded");
+console.log("[CriaVideo] app.js v247 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2084,10 +2084,15 @@ let similarState = {
     progress: 0,
     activeUploadSceneId: 0,
     pollingTimer: null,
+    engineManuallySelected: false,
+    selectedEngine: "grok",
     sceneDraftsBySceneId: {},
     sceneMergeSelectionBySceneId: {},
     pendingImageUploadsBySceneId: {},
     lastProjectSnapshot: null,
+    detectedMode: "",
+    detectedReason: "",
+    detectedConfidence: 0,
 };
 const SIMILAR_STAGE_LABELS = {
     queued_analysis: "Video recebido. Preparando analise...",
@@ -2105,6 +2110,16 @@ const SIMILAR_STAGE_LABELS = {
     preview_failed: "Falha ao gerar previas.",
     regenerate_failed: "Falha ao regenerar a cena.",
     merge_failed: "Falha ao unir as cenas.",
+};
+const SIMILAR_DETECTED_MODE_LABELS = {
+    static_narrated: "Detectado: vídeo com foco em imagens estáticas com narração.",
+    realistic: "Detectado: vídeo com estilo realista/cinematográfico.",
+    unknown: "Não foi possível identificar com confiança o perfil visual do vídeo.",
+};
+const SIMILAR_MODE_ENGINE_DEFAULT = {
+    static_narrated: "grok",
+    realistic: "wan2",
+    unknown: "grok",
 };
 const _creditEstimateTimers = {};
 const _creditEstimateSeq = { wizard: 0, script: 0, auto: 0 };
@@ -3269,6 +3284,9 @@ function initCreateWizard() {
             } else if (engineGroupId === "auto-realistic-engine") {
                 _syncAutoRealisticDurationOptions();
                 scheduleAutoCreditEstimate();
+            } else if (engineGroupId === "similar-engine-options") {
+                similarState.engineManuallySelected = true;
+                similarState.selectedEngine = _normalizeSimilarEngine(engineVal);
             }
         }
         const vbtn = e.target.closest(".voice-btn");
@@ -3483,6 +3501,105 @@ function _similarSceneDuration(scene) {
         return Math.max(5, Math.min(15, Math.round(raw)));
     }
     return 5;
+}
+
+function _normalizeSimilarEngine(rawValue) {
+    const value = String(rawValue || "").trim().toLowerCase();
+    if (value === "wan2" || value === "minimax" || value === "seedance") {
+        return value;
+    }
+    return "grok";
+}
+
+function _setSimilarEngineSelection(engineValue, options = {}) {
+    const markManual = !!options.markManual;
+    const normalized = _normalizeSimilarEngine(engineValue);
+    const optionNodes = document.querySelectorAll("#similar-engine-options .engine-option");
+    if (!optionNodes.length) {
+        similarState.selectedEngine = normalized;
+        if (markManual) {
+            similarState.engineManuallySelected = true;
+        }
+        return normalized;
+    }
+
+    let found = false;
+    optionNodes.forEach((node) => {
+        const isSelected = String(node.dataset.value || "").trim().toLowerCase() === normalized;
+        node.classList.toggle("selected", isSelected);
+        if (isSelected) {
+            found = true;
+        }
+    });
+
+    if (!found) {
+        const fallback = document.querySelector("#similar-engine-options .engine-option[data-value='grok']");
+        if (fallback) {
+            fallback.classList.add("selected");
+        }
+    }
+
+    similarState.selectedEngine = found ? normalized : "grok";
+    if (markManual) {
+        similarState.engineManuallySelected = true;
+    }
+    return similarState.selectedEngine;
+}
+
+function _getSimilarSelectedEngine() {
+    const selected = document.querySelector("#similar-engine-options .engine-option.selected");
+    if (selected) {
+        return _normalizeSimilarEngine(selected.dataset.value);
+    }
+    return _normalizeSimilarEngine(similarState.selectedEngine || "grok");
+}
+
+function _resolveSimilarDetectedMode(tags) {
+    const rawMode = String(tags?.similar_detected_mode || "").trim().toLowerCase();
+    if (rawMode === "static_narrated" || rawMode === "realistic") {
+        return rawMode;
+    }
+    return "unknown";
+}
+
+function _updateSimilarGenerationStep(project, tags) {
+    const generationStepEl = document.getElementById("similar-generation-step");
+    const profileEl = document.getElementById("similar-detected-profile");
+    if (!generationStepEl) return;
+
+    const stage = String(tags?.similar_stage || "").trim();
+    const scenes = Array.isArray(project?.scenes) ? project.scenes : [];
+    const canConfigure = scenes.length > 0 && !["queued_analysis", "downloading_reference", "analyzing_reference"].includes(stage);
+    generationStepEl.hidden = !canConfigure;
+    if (!canConfigure) {
+        return;
+    }
+
+    const detectedMode = _resolveSimilarDetectedMode(tags);
+    const detectedLabel = SIMILAR_DETECTED_MODE_LABELS[detectedMode] || SIMILAR_DETECTED_MODE_LABELS.unknown;
+    const confidenceRaw = Number(tags?.similar_detected_confidence || 0);
+    const confidence = Number.isFinite(confidenceRaw) ? Math.max(0, Math.min(1, confidenceRaw)) : 0;
+    const confidenceLabel = confidence > 0 ? `${Math.round(confidence * 100)}%` : "-";
+    const reason = String(tags?.similar_detected_reason || "").trim();
+
+    similarState.detectedMode = detectedMode;
+    similarState.detectedReason = reason;
+    similarState.detectedConfidence = confidence;
+
+    if (profileEl) {
+        profileEl.textContent = reason
+            ? `${detectedLabel} Confiança: ${confidenceLabel}. ${reason}`
+            : `${detectedLabel} Confiança: ${confidenceLabel}.`;
+    }
+
+    const suggestedEngine = _normalizeSimilarEngine(
+        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "grok"
+    );
+    if (!similarState.engineManuallySelected) {
+        _setSimilarEngineSelection(suggestedEngine, { markManual: false });
+    } else {
+        _setSimilarEngineSelection(_getSimilarSelectedEngine(), { markManual: false });
+    }
 }
 
 function _similarSceneStateKey(sceneId) {
@@ -3767,6 +3884,8 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         const tags = _safeSimilarTags(project.tags);
         const stage = String(tags.similar_stage || "").trim();
         const stageLabel = SIMILAR_STAGE_LABELS[stage] || "Processando modo semelhante...";
+        const detectedMode = _resolveSimilarDetectedMode(tags);
+        const detectedModeLabel = SIMILAR_DETECTED_MODE_LABELS[detectedMode] || "";
         const status = String(project.status || "").toLowerCase();
         const progress = Number(project.progress || 0);
         const isProcessing = ["generating_scenes", "generating_clips", "rendering"].includes(status);
@@ -3786,6 +3905,8 @@ async function _refreshSimilarProject({ silent = false } = {}) {
             message = project.error_message;
         } else if (status === "completed") {
             message = "Video final pronto. Voce pode assistir na lista de projetos.";
+        } else if (stage === "analysis_ready" && detectedModeLabel) {
+            message = `${stageLabel} ${detectedModeLabel}`;
         } else if (progress > 0) {
             message = `${stageLabel} (${progress}%)`;
         }
@@ -3793,6 +3914,7 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         _setSimilarStatus(message, kind);
         similarState.lastProjectSnapshot = project;
         _renderSimilarScenes(project);
+        _updateSimilarGenerationStep(project, tags);
         _refreshSimilarButtonsDisabled(isProcessing);
 
         if (status === "completed" || status === "failed") {
@@ -3822,7 +3944,12 @@ function _resetSimilarModeState() {
     similarState.status = "";
     similarState.progress = 0;
     similarState.activeUploadSceneId = 0;
+    similarState.engineManuallySelected = false;
+    similarState.selectedEngine = "grok";
     similarState.lastProjectSnapshot = null;
+    similarState.detectedMode = "";
+    similarState.detectedReason = "";
+    similarState.detectedConfidence = 0;
     similarState.sceneDraftsBySceneId = {};
     similarState.sceneMergeSelectionBySceneId = {};
     _clearAllSimilarScenePendingUploads();
@@ -3834,8 +3961,7 @@ function _resetSimilarModeState() {
     if (titleEl) titleEl.value = "";
     const aspectEl = document.getElementById("similar-aspect");
     if (aspectEl) aspectEl.value = "16:9";
-    const engineEl = document.getElementById("similar-engine");
-    if (engineEl) engineEl.value = "grok";
+    _setSimilarEngineSelection("grok", { markManual: false });
     const uploadInput = document.getElementById("similar-scene-image-input");
     if (uploadInput) uploadInput.value = "";
 
@@ -3843,6 +3969,10 @@ function _resetSimilarModeState() {
     if (listEl) listEl.innerHTML = "";
     const scenesContainer = document.getElementById("similar-scenes-container");
     if (scenesContainer) scenesContainer.hidden = true;
+    const generationStepEl = document.getElementById("similar-generation-step");
+    if (generationStepEl) generationStepEl.hidden = true;
+    const profileEl = document.getElementById("similar-detected-profile");
+    if (profileEl) profileEl.textContent = "Perfil do vídeo sendo analisado...";
     _setSimilarStatus("", "running");
     _refreshSimilarButtonsDisabled(false);
 }
@@ -3863,6 +3993,12 @@ async function similarStartAnalysis() {
         title: String(titleEl?.value || "").trim(),
         aspect_ratio: aspectEl?.value || "16:9",
     };
+
+    similarState.engineManuallySelected = false;
+    similarState.detectedMode = "";
+    similarState.detectedReason = "";
+    similarState.detectedConfidence = 0;
+    _setSimilarEngineSelection("grok", { markManual: false });
 
     _refreshSimilarButtonsDisabled(true);
     _setSimilarStatus("Iniciando analise do video de referencia...", "running");
@@ -4081,7 +4217,7 @@ async function similarRegenerateScene(sceneId) {
             method: "POST",
             body: JSON.stringify({
                 scene_id: Number(sceneId || 0),
-                engine: document.getElementById("similar-engine")?.value || "grok",
+                engine: _getSimilarSelectedEngine(),
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });
@@ -4106,7 +4242,7 @@ async function similarGenerateAllPreviews() {
         await api(`/video/projects/${projectId}/similar/generate-previews`, {
             method: "POST",
             body: JSON.stringify({
-                engine: document.getElementById("similar-engine")?.value || "grok",
+                engine: _getSimilarSelectedEngine(),
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });

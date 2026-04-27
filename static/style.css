@@ -5930,6 +5930,44 @@ th,
     margin-bottom: 12px;
 }
 
+.similar-generation-step {
+    margin-top: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.similar-generation-head h4 {
+    margin: 0;
+    color: var(--text);
+}
+
+.similar-detected-profile {
+    margin: 6px 0 0;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+}
+
+#similar-engine-options {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+#similar-engine-options .engine-option {
+    width: 100%;
+    min-width: 0;
+}
+
+.similar-generation-actions {
+    margin-top: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
 .similar-scenes-list {
     display: grid;
     gap: 12px;
@@ -6120,6 +6158,18 @@ th,
     }
 
     .similar-scenes-toolbar .btn {
+        width: 100%;
+    }
+
+    #similar-engine-options {
+        grid-template-columns: 1fr;
+    }
+
+    .similar-generation-actions {
+        flex-direction: column;
+    }
+
+    .similar-generation-actions .btn {
         width: 100%;
     }
 

@@ -275,6 +275,173 @@ def _build_temporal_prompt(scenes: list[dict]) -> str:
     return "\n\n".join(chunks).strip()
 
 
+def _normalize_detected_mode(value: object) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in {"static_narrated", "static", "slideshow", "static_images_narration"}:
+        return "static_narrated"
+    if raw in {"realistic", "live_action", "cinematic", "real"}:
+        return "realistic"
+    return "unknown"
+
+
+def _suggest_engine_for_detected_mode(mode: str) -> str:
+    normalized = _normalize_detected_mode(mode)
+    if normalized == "realistic":
+        return "wan2"
+    return "grok"
+
+
+def _heuristic_detect_reference_mode(scene_payloads: list[dict]) -> tuple[str, float, str]:
+    prompts = [str(item.get("prompt") or "").lower() for item in scene_payloads]
+    combined = "\n".join(prompts)
+    if not combined.strip():
+        return (
+            "unknown",
+            0.45,
+            "Nao houve texto suficiente para identificar com seguranca o estilo visual.",
+        )
+
+    static_terms = (
+        "imagem estatica",
+        "foto estatica",
+        "slideshow",
+        "carrossel",
+        "colagem",
+        "ilustracao",
+        "ilustração",
+        "anime",
+        "render 3d",
+        "desenho",
+        "arte digital",
+        "still frame",
+        "sem movimento",
+    )
+    realistic_terms = (
+        "live action",
+        "fotorealista",
+        "cinematograf",
+        "cinematográf",
+        "camera handheld",
+        "camera tracking",
+        "plano sequencia",
+        "plano sequência",
+        "movimento de camera",
+        "movimento de câmera",
+        "personagem real",
+        "filmagem real",
+    )
+
+    static_score = sum(combined.count(term) for term in static_terms)
+    realistic_score = sum(combined.count(term) for term in realistic_terms)
+
+    if static_score >= realistic_score + 2:
+        confidence = min(0.9, 0.56 + 0.05 * float(static_score - realistic_score))
+        return (
+            "static_narrated",
+            confidence,
+            "As cenas indicam composicoes de imagem parada/ilustrada com pouca progressao de acao.",
+        )
+
+    if realistic_score >= static_score + 2:
+        confidence = min(0.9, 0.56 + 0.05 * float(realistic_score - static_score))
+        return (
+            "realistic",
+            confidence,
+            "As cenas mostram progressao de acao e movimento de camera tipicos de fluxo realista.",
+        )
+
+    return (
+        "unknown",
+        0.5,
+        "Os sinais visuais ficaram mistos entre composicao estatica e fluxo cinematografico.",
+    )
+
+
+async def _detect_reference_mode(
+    client: openai.AsyncOpenAI,
+    scene_payloads: list[dict],
+) -> dict:
+    heuristic_mode, heuristic_confidence, heuristic_reason = _heuristic_detect_reference_mode(scene_payloads)
+    if not scene_payloads:
+        return {
+            "mode": heuristic_mode,
+            "confidence": heuristic_confidence,
+            "reason": heuristic_reason,
+            "suggested_engine": _suggest_engine_for_detected_mode(heuristic_mode),
+        }
+
+    model_name = (settings.similar_analysis_model or "gpt-4o").strip() or "gpt-4o"
+    samples: list[str] = []
+    for item in scene_payloads[:12]:
+        start = float(item.get("start_time") or 0)
+        end = float(item.get("end_time") or start)
+        prompt = str(item.get("prompt") or "").strip()
+        if not prompt:
+            continue
+        samples.append(f"{start:.1f}s-{end:.1f}s: {prompt[:420]}")
+
+    if not samples:
+        return {
+            "mode": heuristic_mode,
+            "confidence": heuristic_confidence,
+            "reason": heuristic_reason,
+            "suggested_engine": _suggest_engine_for_detected_mode(heuristic_mode),
+        }
+
+    try:
+        resp = await client.chat.completions.create(
+            model=model_name,
+            temperature=0,
+            max_tokens=220,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Classifique o estilo dominante de um video em uma destas classes: "
+                        "'static_narrated', 'realistic', 'unknown'. "
+                        "Use static_narrated quando parecer video de imagens estaticas/ilustradas com narracao. "
+                        "Use realistic quando parecer fluxo continuo cinematografico/live action. "
+                        "Retorne JSON com mode, confidence (0-1) e reason (maximo 140 caracteres)."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": "\n\n".join(samples),
+                },
+            ],
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        parsed = json.loads(raw) if raw else {}
+        mode = _normalize_detected_mode(parsed.get("mode"))
+
+        confidence_raw = parsed.get("confidence", heuristic_confidence)
+        try:
+            confidence = float(confidence_raw)
+        except Exception:
+            confidence = heuristic_confidence
+        confidence = max(0.0, min(1.0, confidence))
+
+        reason = str(parsed.get("reason") or "").strip()
+        if not reason:
+            reason = heuristic_reason
+
+        return {
+            "mode": mode,
+            "confidence": confidence,
+            "reason": reason[:220],
+            "suggested_engine": _suggest_engine_for_detected_mode(mode),
+        }
+    except Exception as exc:
+        logger.warning("Similar mode detection fallback activated: %s", exc)
+        return {
+            "mode": heuristic_mode,
+            "confidence": heuristic_confidence,
+            "reason": heuristic_reason,
+            "suggested_engine": _suggest_engine_for_detected_mode(heuristic_mode),
+        }
+
+
 def _scene_duration(scene: VideoScene) -> int:
     start = float(scene.start_time or 0)
     end = float(scene.end_time or start)
@@ -542,6 +709,18 @@ async def run_similar_reference_analysis(project_id: int, source_url: str) -> No
             if not scene_payloads:
                 raise RuntimeError("Nenhuma cena foi extraida do video de referencia")
 
+            detected_profile = await _detect_reference_mode(openai_client, scene_payloads)
+            detected_mode = _normalize_detected_mode(detected_profile.get("mode"))
+            detected_engine = _normalize_engine(
+                str(detected_profile.get("suggested_engine") or _suggest_engine_for_detected_mode(detected_mode))
+            )
+            try:
+                detected_confidence = float(detected_profile.get("confidence", 0.5) or 0.5)
+            except Exception:
+                detected_confidence = 0.5
+            detected_confidence = max(0.0, min(1.0, detected_confidence))
+            detected_reason = str(detected_profile.get("reason") or "").strip()[:220]
+
             await db.execute(delete(VideoScene).where(VideoScene.project_id == project_id))
 
             for payload in scene_payloads:
@@ -568,8 +747,13 @@ async def run_similar_reference_analysis(project_id: int, source_url: str) -> No
                     "similar_scene_seconds": scene_seconds,
                     "similar_scene_count": len(scene_payloads),
                     "similar_total_duration": duration_seconds,
+                    "similar_detected_mode": detected_mode,
+                    "similar_detected_confidence": detected_confidence,
+                    "similar_detected_reason": detected_reason,
+                    "similar_engine_suggested": detected_engine,
                 }
             )
+            tags.setdefault("similar_engine", detected_engine)
             project.tags = tags
             project.track_duration = float(duration_seconds)
             project.lyrics_text = _build_temporal_prompt(scene_payloads)
