@@ -52,7 +52,8 @@ async def _normalize_video_aspect(input_path: str, aspect_ratio: str, output_pat
         "-pix_fmt", "yuv420p",
         "-map", "0:v:0",
         "-map", "0:a?",
-        "-c:a", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
         output_path,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
@@ -76,7 +77,8 @@ async def _trim_video_duration(input_path: str, duration_seconds: float, output_
         "-pix_fmt", "yuv420p",
         "-map", "0:v:0",
         "-map", "0:a?",
-        "-c:a", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
         output_path,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
@@ -2240,7 +2242,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     except Exception as e:
                         logger.warning("Seedance multi-reference trim failed, keeping concatenated output: %s", e)
 
-                    if clip_audio_paths and len(clip_audio_paths) == clip_count:
+                    if clip_audio_paths:
                         try:
                             merged_audio_path = await _concatenate_audio_tracks(
                                 clip_audio_paths,
