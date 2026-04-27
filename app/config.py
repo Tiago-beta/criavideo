@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     tevoxi_jwt_secret: str = ""
     tevoxi_jwt_user_id: int = 5
     tevoxi_jwt_email: str = "tgsantos66@hotmail.com"
+    baixatudo_api_url: str = "https://baixatudo.pro"
+    baixatudo_api_key: str = ""
+    baixatudo_timeout_seconds: int = 120
+    baixatudo_poll_interval_seconds: float = 2.5
+    baixatudo_max_wait_seconds: int = 900
+    similar_analysis_model: str = "gpt-4o"
+    similar_scene_default_seconds: int = 5
+    similar_scene_min_seconds: int = 5
+    similar_scene_max_seconds: int = 15
 
     class Config:
         env_file = ".env"

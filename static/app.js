@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v243 loaded");
+console.log("[CriaVideo] app.js v244 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1614,6 +1614,7 @@ function closeModal(id) {
     modal.style.display = "";
     if (id === "modal-new-project") {
         stopKaraokeProgressPolling();
+        _stopSimilarPolling();
     }
     if (id === "modal-edit-project") {
         _renameProjectId = 0;
@@ -2052,7 +2053,7 @@ function _updateCardInPlace(project) {
 }
 
 // ═══ Creation Wizard State ═══
-let createMode = "wizard"; // "wizard" | "script" | "library"
+let createMode = "wizard"; // "wizard" | "script" | "similar" | "library"
 let wizardStep = 1;
 let wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
 let scriptStep = 1;
@@ -2076,6 +2077,30 @@ let scriptData = {
     zoomImages: true,
     imageDisplaySeconds: 0,
     promptOptimized: false,
+};
+let similarState = {
+    projectId: 0,
+    status: "",
+    progress: 0,
+    activeUploadSceneId: 0,
+    pollingTimer: null,
+};
+const SIMILAR_STAGE_LABELS = {
+    queued_analysis: "Video recebido. Preparando analise...",
+    downloading_reference: "Baixando video de referencia...",
+    analyzing_reference: "Analisando frames e criando prompts por cena...",
+    analysis_ready: "Analise concluida. Revise as cenas abaixo.",
+    scene_edited: "Cena atualizada. Gere a previa para validar.",
+    scene_image_ready: "Imagem da cena atualizada. Gere a previa desta cena.",
+    generating_previews: "Gerando previas das cenas...",
+    regenerating_scene: "Regenerando a cena selecionada...",
+    preview_ready: "Previas prontas. Ajuste e regenere somente o necessario.",
+    merging_scenes: "Unindo cenas selecionadas...",
+    merged: "Video final pronto.",
+    analysis_failed: "Falha ao analisar o video de referencia.",
+    preview_failed: "Falha ao gerar previas.",
+    regenerate_failed: "Falha ao regenerar a cena.",
+    merge_failed: "Falha ao unir as cenas.",
 };
 const _creditEstimateTimers = {};
 const _creditEstimateSeq = { wizard: 0, script: 0, auto: 0 };
@@ -3017,9 +3042,10 @@ async function saveProjectEdit() {
 
 function initCreateWizard() {
     // Mode selection cards
-    document.querySelectorAll(".mode-selection-card").forEach((card) => {
+    document.querySelectorAll("#create-mode-selection .mode-selection-card").forEach((card) => {
         card.addEventListener("click", () => {
             const mode = card.dataset.createMode;
+            if (!mode) return;
             document.getElementById("create-mode-selection").hidden = true;
             switchCreateMode(mode);
         });
@@ -3039,6 +3065,45 @@ function initCreateWizard() {
     document.getElementById("script-next").addEventListener("click", scriptNext);
     document.getElementById("script-back").addEventListener("click", scriptBack);
     document.getElementById("script-create-btn").addEventListener("click", handleScriptCreate);
+
+    // Similar mode controls
+    const similarStartBtn = document.getElementById("similar-start-analysis");
+    if (similarStartBtn) {
+        similarStartBtn.addEventListener("click", similarStartAnalysis);
+    }
+
+    const similarGenerateAllBtn = document.getElementById("similar-generate-all");
+    if (similarGenerateAllBtn) {
+        similarGenerateAllBtn.addEventListener("click", similarGenerateAllPreviews);
+    }
+
+    const similarMergeBtn = document.getElementById("similar-merge-selected");
+    if (similarMergeBtn) {
+        similarMergeBtn.addEventListener("click", similarMergeSelectedScenes);
+    }
+
+    const similarBackBtn = document.getElementById("similar-back");
+    if (similarBackBtn) {
+        similarBackBtn.addEventListener("click", () => {
+            document.getElementById("create-panel-similar").hidden = true;
+            document.getElementById("create-mode-selection").hidden = false;
+        });
+    }
+
+    const similarUploadInput = document.getElementById("similar-scene-image-input");
+    if (similarUploadInput) {
+        similarUploadInput.addEventListener("change", _handleSimilarSceneImageInput);
+    }
+
+    const similarSourceInput = document.getElementById("similar-source-url");
+    if (similarSourceInput) {
+        similarSourceInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                similarStartAnalysis();
+            }
+        });
+    }
 
     // Script char count
     document.getElementById("script-text").addEventListener("input", () => {
@@ -3272,7 +3337,11 @@ function initCreateWizard() {
 }
 
 function switchCreateMode(mode) {
+    if (!mode) return;
     console.log("[switchCreateMode] mode=", mode);
+    if (mode !== "similar") {
+        _stopSimilarPolling();
+    }
     createMode = mode;
     document.querySelectorAll(".create-tab").forEach((t) => {
         t.classList.toggle("active", t.dataset.createMode === mode);
@@ -3299,6 +3368,13 @@ function switchCreateMode(mode) {
     } else if (mode === "script") {
         _updateScriptSubtitlePositionVisibility();
         _updateScriptDetailsForTevoxiMode();
+    } else if (mode === "similar") {
+        if (similarState.projectId > 0) {
+            _refreshSimilarProject({ silent: true });
+            _startSimilarPolling();
+        } else {
+            _setSimilarStatus("Cole um link e clique em Analisar video para montar as cenas.", "running");
+        }
     }
 }
 
@@ -3344,6 +3420,457 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
         scheduleWizardCreditEstimate();
     } else if (prefix === "script") {
         scheduleScriptCreditEstimate();
+    }
+}
+
+function _safeSimilarTags(rawTags) {
+    if (rawTags && typeof rawTags === "object" && !Array.isArray(rawTags)) {
+        return rawTags;
+    }
+    if (typeof rawTags === "string") {
+        try {
+            const parsed = JSON.parse(rawTags);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                return parsed;
+            }
+        } catch (_) {
+            return {};
+        }
+    }
+    return {};
+}
+
+function _stopSimilarPolling() {
+    if (similarState.pollingTimer) {
+        clearInterval(similarState.pollingTimer);
+        similarState.pollingTimer = null;
+    }
+}
+
+function _setSimilarStatus(message, kind = "running") {
+    const statusEl = document.getElementById("similar-status");
+    if (!statusEl) return;
+
+    const text = String(message || "").trim();
+    if (!text) {
+        statusEl.hidden = true;
+        statusEl.textContent = "";
+        statusEl.className = "similar-status";
+        return;
+    }
+
+    statusEl.hidden = false;
+    statusEl.textContent = text;
+    statusEl.className = "similar-status";
+    if (kind === "error") {
+        statusEl.classList.add("status-error");
+    } else if (kind === "success") {
+        statusEl.classList.add("status-success");
+    } else {
+        statusEl.classList.add("status-running");
+    }
+}
+
+function _similarSceneDuration(scene) {
+    const start = Number(scene?.start_time || 0);
+    const end = Number(scene?.end_time || start);
+    const raw = end - start;
+    if (Number.isFinite(raw) && raw > 0) {
+        return Math.max(5, Math.min(15, Math.round(raw)));
+    }
+    return 5;
+}
+
+function _renderSimilarScenes(project) {
+    const listEl = document.getElementById("similar-scenes-list");
+    const containerEl = document.getElementById("similar-scenes-container");
+    if (!listEl || !containerEl) return;
+
+    const scenes = Array.isArray(project?.scenes)
+        ? [...project.scenes].sort((a, b) => (Number(a.scene_index || 0) - Number(b.scene_index || 0)))
+        : [];
+
+    if (!scenes.length) {
+        containerEl.hidden = true;
+        listEl.innerHTML = "";
+        return;
+    }
+
+    containerEl.hidden = false;
+    listEl.innerHTML = scenes.map((scene, idx) => {
+        const sceneId = Number(scene.id || 0);
+        const start = Number(scene.start_time || 0);
+        const end = Number(scene.end_time || start);
+        const duration = _similarSceneDuration(scene);
+        const promptValue = esc(scene.prompt || "");
+        const imagePreview = scene.image_url
+            ? `<img src="${scene.image_url}" alt="Preview imagem cena ${idx + 1}" loading="lazy">`
+            : '<div class="similar-preview-empty">Sem imagem</div>';
+        const clipPreview = scene.clip_url
+            ? `<video src="${scene.clip_url}" controls preload="metadata"></video>`
+            : '<div class="similar-preview-empty">Sem previa</div>';
+
+        return `
+            <article class="similar-scene-card">
+                <div class="similar-scene-head">
+                    <strong>Cena ${idx + 1}</strong>
+                    <span class="similar-scene-time">${start.toFixed(1)}s - ${end.toFixed(1)}s</span>
+                </div>
+
+                <div class="similar-scene-preview">
+                    <div class="similar-preview-box">${imagePreview}</div>
+                    <div class="similar-preview-box">${clipPreview}</div>
+                </div>
+
+                <div class="form-group">
+                    <label>Prompt da cena</label>
+                    <textarea id="similar-scene-prompt-${sceneId}" class="input" rows="4" maxlength="2000">${promptValue}</textarea>
+                </div>
+
+                <div class="similar-scene-row">
+                    <label for="similar-scene-duration-${sceneId}">Duracao</label>
+                    <input id="similar-scene-duration-${sceneId}" class="input similar-scene-duration" type="number" min="5" max="15" step="1" value="${duration}">
+                    <span class="similar-scene-time">segundos</span>
+                    <label class="similar-scene-merge">
+                        <input id="similar-scene-merge-${sceneId}" type="checkbox" checked>
+                        Incluir na uniao
+                    </label>
+                </div>
+
+                <div class="similar-scene-actions">
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="similarSaveScene(${sceneId})">Salvar cena</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="similarUploadSceneImage(${sceneId})">Enviar imagem</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="similarGenerateSceneImage(${sceneId})">Gerar imagem IA</button>
+                    <button class="btn btn-primary btn-sm" type="button" onclick="similarRegenerateScene(${sceneId})">Gerar previa da cena</button>
+                </div>
+            </article>
+        `;
+    }).join("");
+}
+
+function _refreshSimilarButtonsDisabled(disabled) {
+    [
+        "similar-start-analysis",
+        "similar-generate-all",
+        "similar-merge-selected",
+    ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !!disabled;
+    });
+}
+
+async function _refreshSimilarProject({ silent = false } = {}) {
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) return;
+
+    try {
+        const project = await api(`/video/projects/${projectId}`);
+        const tags = _safeSimilarTags(project.tags);
+        const stage = String(tags.similar_stage || "").trim();
+        const stageLabel = SIMILAR_STAGE_LABELS[stage] || "Processando modo semelhante...";
+        const status = String(project.status || "").toLowerCase();
+        const progress = Number(project.progress || 0);
+        const isProcessing = ["generating_scenes", "generating_clips", "rendering"].includes(status);
+
+        similarState.status = status;
+        similarState.progress = progress;
+
+        let kind = "running";
+        if (status === "failed") {
+            kind = "error";
+        } else if (status === "completed") {
+            kind = "success";
+        }
+
+        let message = stageLabel;
+        if (status === "failed" && project.error_message) {
+            message = project.error_message;
+        } else if (status === "completed") {
+            message = "Video final pronto. Voce pode assistir na lista de projetos.";
+        } else if (progress > 0) {
+            message = `${stageLabel} (${progress}%)`;
+        }
+
+        _setSimilarStatus(message, kind);
+        _renderSimilarScenes(project);
+        _refreshSimilarButtonsDisabled(isProcessing);
+
+        if (status === "completed" || status === "failed") {
+            _stopSimilarPolling();
+            loadProjects();
+            _refreshSimilarButtonsDisabled(false);
+        }
+    } catch (error) {
+        if (!silent) {
+            _setSimilarStatus(`Erro ao atualizar projeto semelhante: ${error.message}`, "error");
+        }
+        _stopSimilarPolling();
+        _refreshSimilarButtonsDisabled(false);
+    }
+}
+
+function _startSimilarPolling() {
+    _stopSimilarPolling();
+    similarState.pollingTimer = setInterval(() => {
+        _refreshSimilarProject({ silent: true });
+    }, 4000);
+}
+
+function _resetSimilarModeState() {
+    _stopSimilarPolling();
+    similarState.projectId = 0;
+    similarState.status = "";
+    similarState.progress = 0;
+    similarState.activeUploadSceneId = 0;
+
+    const sourceEl = document.getElementById("similar-source-url");
+    if (sourceEl) sourceEl.value = "";
+    const titleEl = document.getElementById("similar-title");
+    if (titleEl) titleEl.value = "";
+    const aspectEl = document.getElementById("similar-aspect");
+    if (aspectEl) aspectEl.value = "16:9";
+    const engineEl = document.getElementById("similar-engine");
+    if (engineEl) engineEl.value = "grok";
+    const uploadInput = document.getElementById("similar-scene-image-input");
+    if (uploadInput) uploadInput.value = "";
+
+    const listEl = document.getElementById("similar-scenes-list");
+    if (listEl) listEl.innerHTML = "";
+    const scenesContainer = document.getElementById("similar-scenes-container");
+    if (scenesContainer) scenesContainer.hidden = true;
+    _setSimilarStatus("", "running");
+    _refreshSimilarButtonsDisabled(false);
+}
+
+async function similarStartAnalysis() {
+    const sourceEl = document.getElementById("similar-source-url");
+    const titleEl = document.getElementById("similar-title");
+    const aspectEl = document.getElementById("similar-aspect");
+
+    const sourceUrl = String(sourceEl?.value || "").trim();
+    if (!sourceUrl) {
+        alert("Cole o link do video de referencia.");
+        return;
+    }
+
+    const payload = {
+        source_url: sourceUrl,
+        title: String(titleEl?.value || "").trim(),
+        aspect_ratio: aspectEl?.value || "16:9",
+    };
+
+    _refreshSimilarButtonsDisabled(true);
+    _setSimilarStatus("Iniciando analise do video de referencia...", "running");
+
+    try {
+        const response = await api("/video/similar/analyze", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+
+        const projectId = Number(response?.project_id || 0);
+        if (!projectId) {
+            throw new Error("Resposta invalida ao iniciar analise");
+        }
+
+        similarState.projectId = projectId;
+        _setSimilarStatus("Analise iniciada. Aguardando retorno da IA...", "running");
+        _startSimilarPolling();
+        await _refreshSimilarProject();
+    } catch (error) {
+        _setSimilarStatus(`Erro ao iniciar analise: ${error.message}`, "error");
+    } finally {
+        _refreshSimilarButtonsDisabled(false);
+    }
+}
+
+async function similarSaveScene(sceneId) {
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Inicie a analise antes de editar cenas.");
+        return;
+    }
+
+    const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+    const durationEl = document.getElementById(`similar-scene-duration-${sceneId}`);
+    const prompt = String(promptEl?.value || "").trim();
+    const durationRaw = parseInt(durationEl?.value || "0", 10);
+    const duration = Number.isFinite(durationRaw) ? Math.max(5, Math.min(15, durationRaw)) : 5;
+
+    try {
+        await api(`/video/projects/${projectId}/similar/scenes/${sceneId}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+                prompt,
+                duration_seconds: duration,
+            }),
+        });
+        showToast("Cena atualizada.", "success");
+        await _refreshSimilarProject();
+    } catch (error) {
+        showToast(`Erro ao salvar cena: ${error.message}`, "error");
+    }
+}
+
+function similarUploadSceneImage(sceneId) {
+    const input = document.getElementById("similar-scene-image-input");
+    if (!input) return;
+    similarState.activeUploadSceneId = Number(sceneId || 0);
+    input.value = "";
+    input.click();
+}
+
+async function _handleSimilarSceneImageInput(event) {
+    const projectId = Number(similarState.projectId || 0);
+    const sceneId = Number(similarState.activeUploadSceneId || 0);
+    const file = event.target?.files?.[0];
+    event.target.value = "";
+
+    if (!projectId || !sceneId || !file) {
+        similarState.activeUploadSceneId = 0;
+        return;
+    }
+
+    if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+        showToast("Use imagem JPG, PNG ou WebP.", "error");
+        similarState.activeUploadSceneId = 0;
+        return;
+    }
+
+    try {
+        _setSimilarStatus("Enviando imagem da cena...", "running");
+        const uploaded = await uploadTempFileWithRetry(file, "image", "imagem da cena");
+        await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/image`, {
+            method: "POST",
+            body: JSON.stringify({
+                image_upload_id: uploaded.upload_id,
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+        showToast("Imagem da cena atualizada.", "success");
+        await _refreshSimilarProject();
+    } catch (error) {
+        showToast(`Erro ao enviar imagem: ${error.message}`, "error");
+    } finally {
+        similarState.activeUploadSceneId = 0;
+    }
+}
+
+async function similarGenerateSceneImage(sceneId) {
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Inicie a analise antes de gerar imagem de cena.");
+        return;
+    }
+
+    try {
+        _setSimilarStatus("Gerando imagem com IA para a cena...", "running");
+        await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/image`, {
+            method: "POST",
+            body: JSON.stringify({
+                generate_from_prompt: true,
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+        showToast("Imagem da cena gerada.", "success");
+        await _refreshSimilarProject();
+    } catch (error) {
+        showToast(`Erro ao gerar imagem: ${error.message}`, "error");
+    }
+}
+
+async function similarRegenerateScene(sceneId) {
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Inicie a analise antes de regenerar uma cena.");
+        return;
+    }
+
+    try {
+        _refreshSimilarButtonsDisabled(true);
+        await api(`/video/projects/${projectId}/similar/regenerate-scene`, {
+            method: "POST",
+            body: JSON.stringify({
+                scene_id: Number(sceneId || 0),
+                engine: document.getElementById("similar-engine")?.value || "grok",
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+        _setSimilarStatus("Regeneracao da cena iniciada...", "running");
+        _startSimilarPolling();
+        await _refreshSimilarProject();
+    } catch (error) {
+        showToast(`Erro ao regenerar cena: ${error.message}`, "error");
+        _refreshSimilarButtonsDisabled(false);
+    }
+}
+
+async function similarGenerateAllPreviews() {
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Inicie a analise do video primeiro.");
+        return;
+    }
+
+    try {
+        _refreshSimilarButtonsDisabled(true);
+        await api(`/video/projects/${projectId}/similar/generate-previews`, {
+            method: "POST",
+            body: JSON.stringify({
+                engine: document.getElementById("similar-engine")?.value || "grok",
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+        _setSimilarStatus("Geracao de previas iniciada...", "running");
+        _startSimilarPolling();
+        await _refreshSimilarProject();
+    } catch (error) {
+        showToast(`Erro ao gerar previas: ${error.message}`, "error");
+        _refreshSimilarButtonsDisabled(false);
+    }
+}
+
+function _getSimilarSelectedSceneIds() {
+    const ids = [];
+    document.querySelectorAll("[id^='similar-scene-merge-']").forEach((checkbox) => {
+        if (!checkbox.checked) return;
+        const rawId = String(checkbox.id || "").replace("similar-scene-merge-", "");
+        const parsed = parseInt(rawId, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+            ids.push(parsed);
+        }
+    });
+    return ids;
+}
+
+async function similarMergeSelectedScenes() {
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Inicie a analise do video primeiro.");
+        return;
+    }
+
+    const selectedSceneIds = _getSimilarSelectedSceneIds();
+    if (!selectedSceneIds.length) {
+        alert("Selecione pelo menos uma cena para unir.");
+        return;
+    }
+
+    try {
+        _refreshSimilarButtonsDisabled(true);
+        await api(`/video/projects/${projectId}/similar/merge`, {
+            method: "POST",
+            body: JSON.stringify({
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+                scene_ids: selectedSceneIds,
+            }),
+        });
+        _setSimilarStatus("Uniao das cenas iniciada...", "running");
+        _startSimilarPolling();
+        await _refreshSimilarProject();
+    } catch (error) {
+        showToast(`Erro ao unir cenas: ${error.message}`, "error");
+        _refreshSimilarButtonsDisabled(false);
     }
 }
 
@@ -3692,6 +4219,7 @@ function resetCreateWizard() {
     _smoothProgressTarget = CREATE_PROGRESS_BASE;
     _smoothProgressCurrent = CREATE_PROGRESS_BASE;
     setCreateProgress(CREATE_PROGRESS_BASE, "Processando...", "Gerando roteiro com IA...");
+    _resetSimilarModeState();
 
     // Reset wizard steps
     updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
@@ -11713,6 +12241,10 @@ window.deleteProject = deleteProject;
 window.watchVideo = watchVideo;
 window.openPublishForProject = openPublishForProject;
 window.createSimilar = createSimilar;
+window.similarSaveScene = similarSaveScene;
+window.similarUploadSceneImage = similarUploadSceneImage;
+window.similarGenerateSceneImage = similarGenerateSceneImage;
+window.similarRegenerateScene = similarRegenerateScene;
 window.openRenameProjectModal = openRenameProjectModal;
 window.saveProjectTitle = saveProjectEdit;
 window.openCopyChoiceModal = openCopyChoiceModal;

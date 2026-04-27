@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Any
 import openai
 from app.auth import get_current_user
 from app.database import get_db
@@ -1010,6 +1010,28 @@ def _to_media_url(path: str | None) -> str | None:
     return None
 
 
+def _safe_tags_dict(raw: object) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+    return {}
+
+
+def _project_type(project: VideoProject) -> str:
+    tags = _safe_tags_dict(getattr(project, "tags", {}) or {})
+    return str(tags.get("type") or "").strip().lower()
+
+
+def _is_similar_project(project: VideoProject) -> bool:
+    return _project_type(project) == "similar"
+
+
 class CreateProjectRequest(BaseModel):
     track_id: int = 0
     title: str = ""
@@ -1058,6 +1080,39 @@ class ProjectResponse(BaseModel):
     created_at: str
 
 
+class StartSimilarAnalysisRequest(BaseModel):
+    source_url: str
+    title: str = ""
+    aspect_ratio: str = "16:9"
+
+
+class SimilarUpdateSceneRequest(BaseModel):
+    prompt: str = ""
+    duration_seconds: int = 0
+
+
+class SimilarSceneImageRequest(BaseModel):
+    image_upload_id: str = ""
+    generate_from_prompt: bool = False
+    aspect_ratio: str = "16:9"
+
+
+class SimilarGeneratePreviewsRequest(BaseModel):
+    engine: str = "grok"
+    aspect_ratio: str = "16:9"
+
+
+class SimilarRegenerateSceneRequest(BaseModel):
+    scene_id: int
+    engine: str = "grok"
+    aspect_ratio: str = "16:9"
+
+
+class SimilarMergeRequest(BaseModel):
+    aspect_ratio: str = "16:9"
+    scene_ids: list[int] = Field(default_factory=list)
+
+
 @router.post("/projects", response_model=dict)
 async def create_project(
     req: CreateProjectRequest,
@@ -1086,6 +1141,62 @@ async def create_project(
     return {"id": project.id, "status": project.status.value}
 
 
+@router.post("/similar/analyze")
+async def start_similar_analysis(
+    req: StartSimilarAnalysisRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    source_url = str(req.source_url or "").strip()
+    if not source_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Informe uma URL valida para analisar")
+
+    if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
+        raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1")
+
+    if not (settings.baixatudo_api_url and settings.baixatudo_api_key):
+        raise HTTPException(status_code=503, detail="Integracao Baixa Tudo nao configurada no servidor")
+
+    title = (req.title or "").strip() or "Video Semelhante"
+    tags_data = {
+        "type": "similar",
+        "similar_stage": "queued_analysis",
+        "similar_source_url": source_url,
+        "similar_scene_seconds": max(int(settings.similar_scene_default_seconds or 5), 1),
+    }
+
+    project = VideoProject(
+        user_id=user["id"],
+        track_id=0,
+        title=title,
+        description=f"Referencia: {source_url[:220]}",
+        tags=tags_data,
+        style_prompt="",
+        aspect_ratio=req.aspect_ratio,
+        track_title=title,
+        track_artist="Semelhante",
+        track_duration=0,
+        lyrics_text="",
+        lyrics_words=[],
+        audio_path="",
+        status=VideoStatus.GENERATING_SCENES,
+        progress=1,
+        error_message=None,
+    )
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+
+    from app.tasks.similar_tasks import run_similar_reference_analysis
+
+    background_tasks.add_task(run_similar_reference_analysis, project.id, source_url)
+    return {
+        "project_id": project.id,
+        "status": "analysis_started",
+    }
+
+
 @router.get("/projects")
 async def list_projects(
     user: dict = Depends(get_current_user),
@@ -1109,6 +1220,7 @@ async def list_projects(
 
     payload = []
     for p in projects:
+        tags_data = _safe_tags_dict(p.tags)
         ordered = _ordered_renders(list(p.renders or []))
         latest_any = ordered[0] if ordered else None
         latest_active = next((r for r in ordered if r.file_path), None)
@@ -1131,6 +1243,8 @@ async def list_projects(
                 "style_prompt": p.style_prompt or "",
                 "thumbnail_url": _to_media_url(display_render.thumbnail_path) if display_render else None,
                 "duration": float(display_render.duration) if display_render and display_render.duration else float(p.track_duration or 0),
+                "workflow_type": str(tags_data.get("type") or "").strip().lower() or "standard",
+                "workflow_stage": str(tags_data.get("similar_stage") or "").strip(),
             }
         )
 
@@ -1180,9 +1294,13 @@ async def get_project(
                 "scene_type": s.scene_type,
                 "prompt": s.prompt,
                 "image_path": s.image_path,
+                "image_url": _to_media_url(s.image_path),
+                "clip_path": s.clip_path,
+                "clip_url": _to_media_url(s.clip_path),
                 "start_time": s.start_time,
                 "end_time": s.end_time,
                 "lyrics_segment": s.lyrics_segment,
+                "is_user_uploaded": bool(s.is_user_uploaded),
             }
             for s in scenes
         ],
@@ -1200,6 +1318,265 @@ async def get_project(
             }
             for r in renders
         ],
+    }
+
+
+@router.patch("/projects/{project_id}/similar/scenes/{scene_id}")
+async def update_similar_scene(
+    project_id: int,
+    scene_id: int,
+    req: SimilarUpdateSceneRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not _is_similar_project(project):
+        raise HTTPException(status_code=400, detail="Projeto nao esta no modo Semelhante")
+
+    scene = await db.get(VideoScene, scene_id)
+    if not scene or scene.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Cena nao encontrada")
+
+    changed = False
+    new_prompt = (req.prompt or "").strip()
+    if new_prompt:
+        if len(new_prompt) > 2000:
+            raise HTTPException(status_code=400, detail="Prompt da cena muito longo (maximo 2000 caracteres)")
+        if new_prompt != (scene.prompt or ""):
+            scene.prompt = new_prompt
+            changed = True
+
+    if int(req.duration_seconds or 0) > 0:
+        min_seconds = max(1, int(settings.similar_scene_min_seconds or 5))
+        max_seconds = max(min_seconds, int(settings.similar_scene_max_seconds or 15))
+        duration_seconds = max(min_seconds, min(max_seconds, int(req.duration_seconds)))
+        new_end_time = float(scene.start_time or 0) + float(duration_seconds)
+        if abs(float(scene.end_time or 0) - new_end_time) > 0.01:
+            scene.end_time = new_end_time
+            changed = True
+
+    if changed:
+        scene.clip_path = ""
+        scene.scene_type = "image"
+        tags_data = _safe_tags_dict(project.tags)
+        tags_data.update({"type": "similar", "similar_stage": "scene_edited"})
+        project.tags = tags_data
+        project.status = VideoStatus.PENDING
+        project.progress = 0
+        project.error_message = None
+        await db.commit()
+
+    return {
+        "scene": {
+            "id": scene.id,
+            "scene_index": scene.scene_index,
+            "prompt": scene.prompt,
+            "image_path": scene.image_path,
+            "image_url": _to_media_url(scene.image_path),
+            "clip_path": scene.clip_path,
+            "clip_url": _to_media_url(scene.clip_path),
+            "start_time": scene.start_time,
+            "end_time": scene.end_time,
+            "is_user_uploaded": bool(scene.is_user_uploaded),
+        }
+    }
+
+
+@router.post("/projects/{project_id}/similar/scenes/{scene_id}/image")
+async def upsert_similar_scene_image(
+    project_id: int,
+    scene_id: int,
+    req: SimilarSceneImageRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not _is_similar_project(project):
+        raise HTTPException(status_code=400, detail="Projeto nao esta no modo Semelhante")
+
+    scene = await db.get(VideoScene, scene_id)
+    if not scene or scene.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Cena nao encontrada")
+
+    effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
+    image_dir = Path(settings.media_dir) / "images" / str(project.id)
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    if req.image_upload_id:
+        source_file = _resolve_temp_file(user["id"], req.image_upload_id, IMAGE_EXTS)
+        if not source_file:
+            raise HTTPException(status_code=400, detail="Imagem enviada nao encontrada. Envie novamente")
+        ext = source_file.suffix.lower() or ".png"
+        target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}{ext}"
+        shutil.copyfile(source_file, target_file)
+        scene.image_path = str(target_file)
+        scene.is_user_uploaded = True
+    elif req.generate_from_prompt:
+        from app.services.scene_generator import generate_scene_image
+
+        target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.png"
+        loop = asyncio.get_event_loop()
+        prompt = (scene.prompt or "").strip() or "Cena cinematografica detalhada."
+        await loop.run_in_executor(
+            None,
+            generate_scene_image,
+            prompt[:1200],
+            effective_aspect_ratio,
+            str(target_file),
+        )
+        if not target_file.exists() or target_file.stat().st_size <= 0:
+            raise HTTPException(status_code=500, detail="Falha ao gerar imagem da cena")
+        scene.image_path = str(target_file)
+        scene.is_user_uploaded = False
+    else:
+        raise HTTPException(status_code=400, detail="Informe image_upload_id ou generate_from_prompt=true")
+
+    scene.clip_path = ""
+    scene.scene_type = "image"
+
+    tags_data = _safe_tags_dict(project.tags)
+    tags_data.update({"type": "similar", "similar_stage": "scene_image_ready"})
+    project.tags = tags_data
+    project.status = VideoStatus.PENDING
+    project.progress = 0
+    project.error_message = None
+    await db.commit()
+
+    return {
+        "scene": {
+            "id": scene.id,
+            "scene_index": scene.scene_index,
+            "image_path": scene.image_path,
+            "image_url": _to_media_url(scene.image_path),
+            "clip_path": scene.clip_path,
+            "clip_url": _to_media_url(scene.clip_path),
+            "is_user_uploaded": bool(scene.is_user_uploaded),
+        }
+    }
+
+
+@router.post("/projects/{project_id}/similar/generate-previews")
+async def generate_similar_previews(
+    project_id: int,
+    req: SimilarGeneratePreviewsRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not _is_similar_project(project):
+        raise HTTPException(status_code=400, detail="Projeto nao esta no modo Semelhante")
+
+    if project.status in {VideoStatus.GENERATING_SCENES, VideoStatus.GENERATING_CLIPS, VideoStatus.RENDERING}:
+        raise HTTPException(status_code=400, detail="Projeto ainda esta processando")
+
+    result = await db.execute(
+        select(VideoScene)
+        .where(VideoScene.project_id == project_id)
+        .order_by(VideoScene.scene_index.asc())
+    )
+    scenes = result.scalars().all()
+    if not scenes:
+        raise HTTPException(status_code=400, detail="Projeto nao possui cenas para gerar")
+
+    engine = str(req.engine or "grok").strip().lower() or "grok"
+    if engine not in {"grok", "wan2", "minimax", "seedance"}:
+        raise HTTPException(status_code=400, detail="Engine invalida")
+
+    aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
+    project.aspect_ratio = aspect_ratio
+    project.status = VideoStatus.GENERATING_CLIPS
+    project.progress = 1
+    project.error_message = None
+    await db.commit()
+
+    from app.tasks.similar_tasks import run_similar_generate_previews
+
+    background_tasks.add_task(run_similar_generate_previews, project_id, engine, aspect_ratio)
+    return {"status": "preview_generation_started", "project_id": project_id}
+
+
+@router.post("/projects/{project_id}/similar/regenerate-scene")
+async def regenerate_similar_scene(
+    project_id: int,
+    req: SimilarRegenerateSceneRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not _is_similar_project(project):
+        raise HTTPException(status_code=400, detail="Projeto nao esta no modo Semelhante")
+
+    scene = await db.get(VideoScene, int(req.scene_id or 0))
+    if not scene or scene.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Cena nao encontrada")
+
+    engine = str(req.engine or "grok").strip().lower() or "grok"
+    if engine not in {"grok", "wan2", "minimax", "seedance"}:
+        raise HTTPException(status_code=400, detail="Engine invalida")
+
+    aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
+    project.aspect_ratio = aspect_ratio
+    project.status = VideoStatus.GENERATING_CLIPS
+    project.progress = 1
+    project.error_message = None
+    await db.commit()
+
+    from app.tasks.similar_tasks import run_similar_regenerate_scene
+
+    background_tasks.add_task(run_similar_regenerate_scene, project_id, scene.id, engine, aspect_ratio)
+    return {"status": "scene_regeneration_started", "project_id": project_id, "scene_id": scene.id}
+
+
+@router.post("/projects/{project_id}/similar/merge")
+async def merge_similar_scenes(
+    project_id: int,
+    req: SimilarMergeRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not _is_similar_project(project):
+        raise HTTPException(status_code=400, detail="Projeto nao esta no modo Semelhante")
+
+    if project.status in {VideoStatus.GENERATING_SCENES, VideoStatus.GENERATING_CLIPS, VideoStatus.RENDERING}:
+        raise HTTPException(status_code=400, detail="Projeto ainda esta processando")
+
+    aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
+    scene_ids: list[int] = []
+    for raw_id in (req.scene_ids or []):
+        try:
+            parsed_id = int(raw_id)
+        except Exception:
+            continue
+        if parsed_id > 0 and parsed_id not in scene_ids:
+            scene_ids.append(parsed_id)
+
+    project.aspect_ratio = aspect_ratio
+    project.status = VideoStatus.RENDERING
+    project.progress = 1
+    project.error_message = None
+    await db.commit()
+
+    from app.tasks.similar_tasks import run_similar_merge
+
+    background_tasks.add_task(run_similar_merge, project_id, aspect_ratio, scene_ids or None)
+    return {
+        "status": "merge_started",
+        "project_id": project_id,
+        "selected_scene_count": len(scene_ids),
     }
 
 
