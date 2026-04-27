@@ -1726,15 +1726,6 @@ async def run_realistic_video_pipeline(project_id: int):
                 generate_audio = True
             scene_reference_path = image_path
             grok_direct_reference_path = image_path if (image_path and os.path.exists(image_path)) else ""
-            seedance_uploaded_reference_paths: list[str] = []
-            if engine == "seedance":
-                raw_refs = tags_data.get("reference_upload_image_paths", []) if isinstance(tags_data, dict) else []
-                if isinstance(raw_refs, list):
-                    for raw_path in raw_refs[:6]:
-                        candidate = str(raw_path or "").strip()
-                        if candidate and os.path.exists(candidate) and candidate not in seedance_uploaded_reference_paths:
-                            seedance_uploaded_reference_paths.append(candidate)
-            use_seedance_multi_reference = engine == "seedance" and len(seedance_uploaded_reference_paths) > 1
 
             reference_source = str(tags_data.get("reference_source", "") or "").strip().lower()
             raw_persona_ids = tags_data.get("persona_profile_ids", []) if isinstance(tags_data.get("persona_profile_ids", []), list) else []
@@ -1767,7 +1758,7 @@ async def run_realistic_video_pipeline(project_id: int):
 
             # Build a scene-locked reference frame with Nano Banana for engines other than Grok.
             # Grok max-fidelity mode uses the original persona image directly.
-            if has_reference_image and image_path and engine != "grok" and not use_seedance_multi_reference:
+            if has_reference_image and image_path and engine != "grok":
                 from app.services.scene_generator import generate_scene_image
 
                 try:
@@ -2153,8 +2144,6 @@ async def run_realistic_video_pipeline(project_id: int):
                     await _generate_wan_sequence()
             else:
                 # ── Seedance 2.0 (with auto-retry on content filter) ──
-                from app.services.multi_clip import concatenate_clips
-
                 final_prompt = optimized_prompt
                 max_retries = 2
 
@@ -2196,82 +2185,12 @@ async def run_realistic_video_pipeline(project_id: int):
                                 await db.commit()
                                 continue
                             raise
-
-                if use_seedance_multi_reference:
-                    clip_paths: list[str] = []
-                    clip_audio_paths: list[str] = []
-                    clip_count = len(seedance_uploaded_reference_paths)
-                    clip_duration = max(4, min(10, int(round(max(1, float(duration)) / max(1, clip_count)))))
-                    logger.info(
-                        "Seedance multi-reference mode: %d images, %ds per clip",
-                        clip_count,
-                        clip_duration,
-                    )
-
-                    for idx, reference_path in enumerate(seedance_uploaded_reference_paths):
-                        clip_path = str(render_dir / f"realistic_video_seedance_clip_{idx:02d}.mp4")
-                        await _generate_seedance_clip_with_retry(
-                            clip_output_path=clip_path,
-                            clip_duration=clip_duration,
-                            clip_image_path=reference_path,
-                            clip_progress=None,
-                        )
-
-                        if not os.path.exists(clip_path) or os.path.getsize(clip_path) <= 0:
-                            raise RuntimeError(f"Seedance clip {idx + 1}/{clip_count} ficou vazio")
-
-                        clip_paths.append(clip_path)
-                        if await _video_has_audio_stream(clip_path):
-                            try:
-                                clip_audio_path = str(render_dir / f"realistic_video_seedance_clip_{idx:02d}.m4a")
-                                await _extract_audio_from_video_track(clip_path, clip_audio_path)
-                                clip_audio_paths.append(clip_audio_path)
-                            except Exception as e:
-                                logger.warning("Seedance clip %d audio extraction failed: %s", idx + 1, e)
-
-                        await _on_progress(
-                            18 + int(52 * (idx + 1) / clip_count),
-                            f"Gerando Seedance clip {idx + 1}/{clip_count}...",
-                        )
-
-                    await concatenate_clips(clip_paths, output_path)
-
-                    try:
-                        trimmed_path = str(render_dir / "realistic_video_seedance_trim.mp4")
-                        output_path = await _trim_video_duration(output_path, duration, trimmed_path)
-                    except Exception as e:
-                        logger.warning("Seedance multi-reference trim failed, keeping concatenated output: %s", e)
-
-                    if clip_audio_paths:
-                        try:
-                            merged_audio_path = await _concatenate_audio_tracks(
-                                clip_audio_paths,
-                                str(render_dir / "realistic_video_seedance_audio.m4a"),
-                            )
-                            output_with_audio = str(render_dir / "realistic_video_seedance_with_audio.mp4")
-                            merged_duration = get_duration(output_path) if os.path.exists(output_path) else float(duration)
-                            if merged_duration <= 0:
-                                merged_duration = float(duration)
-
-                            await _combine_realistic_audio(
-                                video_path=output_path,
-                                narration_path=merged_audio_path,
-                                music_path="",
-                                output_path=output_with_audio,
-                                video_duration=merged_duration,
-                            )
-
-                            if os.path.exists(output_with_audio) and os.path.getsize(output_with_audio) > 0:
-                                output_path = output_with_audio
-                        except Exception as e:
-                            logger.warning("Seedance multi-reference native audio merge failed: %s", e)
-                else:
-                    await _generate_seedance_clip_with_retry(
-                        clip_output_path=output_path,
-                        clip_duration=duration,
-                        clip_image_path=scene_reference_path,
-                        clip_progress=_on_progress,
-                    )
+                await _generate_seedance_clip_with_retry(
+                    clip_output_path=output_path,
+                    clip_duration=duration,
+                    clip_image_path=scene_reference_path,
+                    clip_progress=_on_progress,
+                )
 
             await db.rollback()
             project = await db.get(VideoProject, project_id)
