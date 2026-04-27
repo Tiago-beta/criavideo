@@ -1,5 +1,5 @@
 """
-Seedance Video — Uses Atlas Cloud API to call ByteDance Seedance 2.0
+Seedance Video — Uses Atlas Cloud API to call ByteDance Seedance
 for realistic AI video generation (text-to-video and image-to-video).
 """
 import os
@@ -18,12 +18,17 @@ settings = get_settings()
 
 ATLAS_VIDEO_API_BASE_URL = (settings.atlascloud_api_base_url or "https://api.atlascloud.ai/api/v1").rstrip("/")
 SEEDANCE_T2V_MODEL = (settings.atlascloud_seedance_t2v_model or "bytedance/seedance-2.0/text-to-video").strip()
-SEEDANCE_I2V_MODEL = (settings.atlascloud_seedance_i2v_model or "bytedance/seedance-2.0/image-to-video").strip()
+_SEEDANCE_I2V_DEFAULT_MODEL = "bytedance/seedance-v1.5-pro/image-to-video-fast"
+_seedance_i2v_cfg = (settings.atlascloud_seedance_i2v_model or "").strip()
+if _seedance_i2v_cfg in {"", "bytedance/seedance-2.0/image-to-video"}:
+    SEEDANCE_I2V_MODEL = _SEEDANCE_I2V_DEFAULT_MODEL
+else:
+    SEEDANCE_I2V_MODEL = _seedance_i2v_cfg
 SEEDANCE_RATE_LIMIT_MSG = (
-    "Seedance 2.0 esta com alta demanda no momento (429). "
-    "Tente novamente em alguns segundos ou use MiniMax/Wan 2.7."
+    "Seedance esta com alta demanda no momento (429). "
+    "Tente novamente em alguns segundos ou use MiniMax/Wan 2.6."
 )
-_ALLOWED_ASPECT_RATIOS = {"16:9", "9:16", "1:1", "4:3", "3:4"}
+_ALLOWED_ASPECT_RATIOS = {"21:9", "16:9", "9:16", "1:1", "4:3", "3:4"}
 
 
 def _atlas_api_key() -> str:
@@ -485,7 +490,7 @@ async def generate_realistic_video(
     timeout_seconds: int = 600,
     on_progress=None,
 ) -> str:
-    """Generate a realistic video using Seedance 2.0 via Atlas Cloud API.
+    """Generate a realistic video using Seedance via Atlas Cloud API.
 
     Returns the local path to the downloaded MP4 video.
     """
@@ -493,29 +498,33 @@ async def generate_realistic_video(
     if not api_key:
         raise RuntimeError("ATLASCLOUD_API_KEY not configured")
 
-    duration = max(1, min(duration, 10))
+    use_i2v = bool(image_path and os.path.exists(image_path))
+    # Seedance v1.5 I2V fast uses 4..12s according to Atlas docs.
+    duration = max(4, min(int(duration or 5), 12)) if use_i2v else max(1, min(int(duration or 7), 10))
     aspect_ratio = _resolve_aspect_ratio(aspect_ratio)
     resolution = str(resolution or "720p").strip() or "720p"
-    model_id = SEEDANCE_T2V_MODEL
+    model_id = SEEDANCE_I2V_MODEL if use_i2v else SEEDANCE_T2V_MODEL
 
     payload = {
         "model": model_id,
         "prompt": prompt,
         "duration": duration,
+        "aspect_ratio": aspect_ratio,
         "ratio": aspect_ratio,
         "resolution": resolution,
         "generate_audio": generate_audio,
+        "camera_fixed": False,
     }
 
     if seed is not None:
         payload["seed"] = int(seed)
 
     # Add reference image URL if provided.
-    if image_path and os.path.exists(image_path):
+    if use_i2v:
         uploaded_image_ref = await _upload_media_to_atlas(image_path, api_key)
         payload["model"] = SEEDANCE_I2V_MODEL
         payload["image"] = uploaded_image_ref
-        logger.info("Seedance image-to-video: uploaded %s", image_path)
+        logger.info("Seedance I2V fast: uploaded %s", image_path)
 
     # Step 1: Create prediction.
     prediction_id = ""
@@ -568,10 +577,10 @@ async def generate_realistic_video(
     if not prediction_id:
         raise RuntimeError("Nao foi possivel iniciar a geracao no Seedance.")
 
-    logger.info("Seedance prediction created: %s", prediction_id)
+    logger.info("Seedance prediction created: %s (model=%s)", prediction_id, payload.get("model"))
 
     if on_progress:
-        await on_progress(20, "Gerando video realista com Seedance 2.0...")
+        await on_progress(20, "Gerando video realista com Seedance...")
 
     # Step 2: Poll for completion.
     poll_url = f"{ATLAS_VIDEO_API_BASE_URL}/model/prediction/{prediction_id}"
@@ -621,7 +630,7 @@ async def generate_realistic_video(
             progress = min(75, 20 + int((elapsed / timeout_seconds) * 55))
             if progress > last_progress and on_progress:
                 last_progress = progress
-                await on_progress(progress, "Gerando video realista com Seedance 2.0...")
+                await on_progress(progress, "Gerando video realista com Seedance...")
 
             await asyncio.sleep(5)
         else:
