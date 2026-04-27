@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v245 loaded");
+console.log("[CriaVideo] app.js v246 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2084,6 +2084,10 @@ let similarState = {
     progress: 0,
     activeUploadSceneId: 0,
     pollingTimer: null,
+    sceneDraftsBySceneId: {},
+    sceneMergeSelectionBySceneId: {},
+    pendingImageUploadsBySceneId: {},
+    lastProjectSnapshot: null,
 };
 const SIMILAR_STAGE_LABELS = {
     queued_analysis: "Video recebido. Preparando analise...",
@@ -3481,14 +3485,153 @@ function _similarSceneDuration(scene) {
     return 5;
 }
 
-function _renderSimilarScenes(project) {
+function _similarSceneStateKey(sceneId) {
+    const parsed = Number(sceneId || 0);
+    return Number.isFinite(parsed) && parsed > 0 ? String(parsed) : "";
+}
+
+function _formatSimilarUploadFileName(fileName) {
+    const raw = String(fileName || "").trim();
+    if (!raw) return "imagem";
+    if (raw.length <= 26) return raw;
+    return `${raw.slice(0, 23)}...`;
+}
+
+function _revokeSimilarPreviewUrl(previewUrl) {
+    const raw = String(previewUrl || "").trim();
+    if (!raw || !raw.startsWith("blob:")) return;
+    try {
+        URL.revokeObjectURL(raw);
+    } catch (_) {
+        // Ignore revoke failures for already-disposed URLs.
+    }
+}
+
+function _getSimilarScenePendingUploads(sceneId) {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return [];
+    if (!Array.isArray(similarState.pendingImageUploadsBySceneId[key])) {
+        similarState.pendingImageUploadsBySceneId[key] = [];
+    }
+    return similarState.pendingImageUploadsBySceneId[key];
+}
+
+function _clearSimilarScenePendingUploads(sceneId) {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return;
+    const items = Array.isArray(similarState.pendingImageUploadsBySceneId[key])
+        ? similarState.pendingImageUploadsBySceneId[key]
+        : [];
+    items.forEach((item) => _revokeSimilarPreviewUrl(item?.preview_url));
+    delete similarState.pendingImageUploadsBySceneId[key];
+}
+
+function _clearAllSimilarScenePendingUploads() {
+    Object.keys(similarState.pendingImageUploadsBySceneId || {}).forEach((sceneKey) => {
+        _clearSimilarScenePendingUploads(sceneKey);
+    });
+}
+
+function _forgetSimilarSceneDraft(sceneId) {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return;
+    delete similarState.sceneDraftsBySceneId[key];
+}
+
+function _syncSimilarDraftsFromDom() {
+    const promptInputs = document.querySelectorAll("[id^='similar-scene-prompt-']");
+    if (!promptInputs.length) return;
+
+    promptInputs.forEach((promptEl) => {
+        const sceneId = Number(String(promptEl.id || "").replace("similar-scene-prompt-", ""));
+        const sceneKey = _similarSceneStateKey(sceneId);
+        if (!sceneKey) return;
+
+        const startEl = document.getElementById(`similar-scene-start-${sceneId}`);
+        const durationEl = document.getElementById(`similar-scene-duration-${sceneId}`);
+        const mergeEl = document.getElementById(`similar-scene-merge-${sceneId}`);
+
+        const promptValue = String(promptEl.value || "");
+        const startValue = String(startEl?.value || "");
+        const durationValue = String(durationEl?.value || "");
+
+        let serverPrompt = "";
+        const serverPromptRaw = String(promptEl.dataset.serverValue || "");
+        try {
+            serverPrompt = decodeURIComponent(serverPromptRaw);
+        } catch (_) {
+            serverPrompt = serverPromptRaw;
+        }
+        const serverStart = String(startEl?.dataset.serverValue || "");
+        const serverDuration = String(durationEl?.dataset.serverValue || "");
+
+        const hasPromptDraft = promptValue !== serverPrompt;
+        const hasStartDraft = startValue !== serverStart;
+        const hasDurationDraft = durationValue !== serverDuration;
+
+        if (hasPromptDraft || hasStartDraft || hasDurationDraft) {
+            similarState.sceneDraftsBySceneId[sceneKey] = {
+                prompt: promptValue,
+                start: startValue,
+                duration: durationValue,
+            };
+        } else {
+            delete similarState.sceneDraftsBySceneId[sceneKey];
+        }
+
+        if (mergeEl) {
+            similarState.sceneMergeSelectionBySceneId[sceneKey] = !!mergeEl.checked;
+        }
+    });
+}
+
+function _similarSceneEditorHasFocus() {
+    const active = document.activeElement;
+    if (!active || !active.id) return false;
+    return /^similar-scene-(prompt|start|duration)-\d+$/.test(String(active.id));
+}
+
+function _cleanupSimilarSceneTransientState(sceneIds) {
+    const keep = new Set((sceneIds || []).map((id) => _similarSceneStateKey(id)).filter(Boolean));
+
+    Object.keys(similarState.sceneDraftsBySceneId || {}).forEach((sceneKey) => {
+        if (!keep.has(sceneKey)) {
+            delete similarState.sceneDraftsBySceneId[sceneKey];
+        }
+    });
+
+    Object.keys(similarState.sceneMergeSelectionBySceneId || {}).forEach((sceneKey) => {
+        if (!keep.has(sceneKey)) {
+            delete similarState.sceneMergeSelectionBySceneId[sceneKey];
+        }
+    });
+
+    Object.keys(similarState.pendingImageUploadsBySceneId || {}).forEach((sceneKey) => {
+        if (!keep.has(sceneKey)) {
+            _clearSimilarScenePendingUploads(sceneKey);
+        }
+    });
+}
+
+function _renderSimilarScenes(project, options = {}) {
+    const force = !!options.force;
     const listEl = document.getElementById("similar-scenes-list");
     const containerEl = document.getElementById("similar-scenes-container");
     if (!listEl || !containerEl) return;
 
+    if (!force) {
+        _syncSimilarDraftsFromDom();
+    }
+
     const scenes = Array.isArray(project?.scenes)
         ? [...project.scenes].sort((a, b) => (Number(a.scene_index || 0) - Number(b.scene_index || 0)))
         : [];
+
+    _cleanupSimilarSceneTransientState(scenes.map((scene) => Number(scene.id || 0)));
+
+    if (!force && _similarSceneEditorHasFocus()) {
+        return;
+    }
 
     if (!scenes.length) {
         containerEl.hidden = true;
@@ -3497,12 +3640,56 @@ function _renderSimilarScenes(project) {
     }
 
     containerEl.hidden = false;
+    similarState.lastProjectSnapshot = project;
     listEl.innerHTML = scenes.map((scene, idx) => {
         const sceneId = Number(scene.id || 0);
+        const sceneKey = _similarSceneStateKey(sceneId);
+        const draft = similarState.sceneDraftsBySceneId[sceneKey] || {};
+
         const start = Number(scene.start_time || 0);
         const end = Number(scene.end_time || start);
         const duration = _similarSceneDuration(scene);
-        const promptValue = esc(scene.prompt || "");
+        const startServer = start.toFixed(1);
+        const durationServer = String(duration);
+        const promptServerEncoded = encodeURIComponent(String(scene.prompt || ""));
+
+        const draftStart = Number.parseFloat(draft.start);
+        const startInput = Number.isFinite(draftStart) ? draftStart : start;
+
+        const draftDuration = Number.parseInt(draft.duration, 10);
+        const durationInput = Number.isFinite(draftDuration) ? Math.max(5, Math.min(15, draftDuration)) : duration;
+
+        const promptRaw = Object.prototype.hasOwnProperty.call(draft, "prompt")
+            ? String(draft.prompt || "")
+            : String(scene.prompt || "");
+        const promptValue = esc(promptRaw);
+
+        const mergeChecked = Object.prototype.hasOwnProperty.call(similarState.sceneMergeSelectionBySceneId, sceneKey)
+            ? !!similarState.sceneMergeSelectionBySceneId[sceneKey]
+            : true;
+        const mergeCheckedAttr = mergeChecked ? "checked" : "";
+
+        const pendingUploads = _getSimilarScenePendingUploads(sceneId);
+        const pendingCount = pendingUploads.length;
+        const applyDisabledAttr = pendingCount ? "" : "disabled";
+        const clearDisabledAttr = pendingCount ? "" : "disabled";
+        const applyUploadedLabel = pendingCount > 1
+            ? "Aplicar imagens (Nano Banana)"
+            : "Aplicar imagem enviada";
+
+        const uploadsMarkup = pendingCount
+            ? pendingUploads.map((item, uploadIdx) => {
+                const previewUrl = esc(item?.preview_url || "");
+                const fileName = esc(_formatSimilarUploadFileName(item?.file_name || `imagem-${uploadIdx + 1}`));
+                return `
+                    <figure class="similar-upload-thumb">
+                        <img src="${previewUrl}" alt="Referencia cena ${idx + 1} upload ${uploadIdx + 1}" loading="lazy">
+                        <figcaption>${fileName}</figcaption>
+                    </figure>
+                `;
+            }).join("")
+            : '<div class="similar-upload-empty">Nenhuma imagem enviada ainda.</div>';
+
         const imagePreview = scene.image_url
             ? `<img src="${scene.image_url}" alt="Preview imagem cena ${idx + 1}" loading="lazy">`
             : '<div class="similar-preview-empty">Sem imagem</div>';
@@ -3524,25 +3711,34 @@ function _renderSimilarScenes(project) {
 
                 <div class="form-group">
                     <label>Prompt da cena</label>
-                    <textarea id="similar-scene-prompt-${sceneId}" class="input" rows="4" maxlength="2000">${promptValue}</textarea>
+                    <textarea id="similar-scene-prompt-${sceneId}" class="input" rows="4" maxlength="2000" data-server-value="${promptServerEncoded}">${promptValue}</textarea>
                 </div>
 
                 <div class="similar-scene-row">
                     <label for="similar-scene-start-${sceneId}">Inicio</label>
-                    <input id="similar-scene-start-${sceneId}" class="input similar-scene-time-input" type="number" min="0" step="0.1" value="${start.toFixed(1)}">
+                    <input id="similar-scene-start-${sceneId}" class="input similar-scene-time-input" type="number" min="0" step="0.1" value="${startInput.toFixed(1)}" data-server-value="${startServer}">
                     <span class="similar-scene-time">s</span>
                     <label for="similar-scene-duration-${sceneId}">Duracao</label>
-                    <input id="similar-scene-duration-${sceneId}" class="input similar-scene-duration" type="number" min="5" max="15" step="1" value="${duration}">
+                    <input id="similar-scene-duration-${sceneId}" class="input similar-scene-duration" type="number" min="5" max="15" step="1" value="${durationInput}" data-server-value="${durationServer}">
                     <span class="similar-scene-time">segundos</span>
                     <label class="similar-scene-merge">
-                        <input id="similar-scene-merge-${sceneId}" type="checkbox" checked>
+                        <input id="similar-scene-merge-${sceneId}" type="checkbox" ${mergeCheckedAttr}>
                         Incluir na uniao
                     </label>
+                </div>
+
+                <div class="similar-scene-upload-panel">
+                    <div class="similar-scene-upload-head">
+                        <span>Imagens enviadas para esta cena: ${pendingCount}/6</span>
+                        <button class="similar-upload-clear" type="button" onclick="similarClearSceneUploads(${sceneId})" ${clearDisabledAttr}>Limpar</button>
+                    </div>
+                    <div class="similar-scene-upload-grid">${uploadsMarkup}</div>
                 </div>
 
                 <div class="similar-scene-actions">
                     <button class="btn btn-secondary btn-sm" type="button" onclick="similarSaveScene(${sceneId})">Salvar cena</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="similarUploadSceneImage(${sceneId})">Enviar imagens</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" ${applyDisabledAttr}>${applyUploadedLabel}</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="similarGenerateSceneImage(${sceneId})">Gerar imagem IA</button>
                     <button class="btn btn-primary btn-sm" type="button" onclick="similarRegenerateScene(${sceneId})">Gerar previa da cena</button>
                 </div>
@@ -3595,6 +3791,7 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         }
 
         _setSimilarStatus(message, kind);
+        similarState.lastProjectSnapshot = project;
         _renderSimilarScenes(project);
         _refreshSimilarButtonsDisabled(isProcessing);
 
@@ -3625,6 +3822,11 @@ function _resetSimilarModeState() {
     similarState.status = "";
     similarState.progress = 0;
     similarState.activeUploadSceneId = 0;
+    similarState.lastProjectSnapshot = null;
+    similarState.sceneDraftsBySceneId = {};
+    similarState.sceneMergeSelectionBySceneId = {};
+    _clearAllSimilarScenePendingUploads();
+    similarState.pendingImageUploadsBySceneId = {};
 
     const sourceEl = document.getElementById("similar-source-url");
     if (sourceEl) sourceEl.value = "";
@@ -3677,6 +3879,11 @@ async function similarStartAnalysis() {
         }
 
         similarState.projectId = projectId;
+        similarState.lastProjectSnapshot = null;
+        similarState.sceneDraftsBySceneId = {};
+        similarState.sceneMergeSelectionBySceneId = {};
+        _clearAllSimilarScenePendingUploads();
+        similarState.pendingImageUploadsBySceneId = {};
         _setSimilarStatus("Analise iniciada. Aguardando retorno da IA...", "running");
         _startSimilarPolling();
         await _refreshSimilarProject();
@@ -3712,6 +3919,7 @@ async function similarSaveScene(sceneId) {
                 duration_seconds: duration,
             }),
         });
+        _forgetSimilarSceneDraft(sceneId);
         showToast("Cena atualizada.", "success");
         await _refreshSimilarProject();
     } catch (error) {
@@ -3739,26 +3947,75 @@ async function _handleSimilarSceneImageInput(event) {
     }
 
     try {
-        const selectedFiles = files.slice(0, 6);
-        if (files.length > selectedFiles.length) {
-            showToast("Limite de 6 imagens por cena. As primeiras foram selecionadas.", "error");
+        const existingUploads = _getSimilarScenePendingUploads(sceneId);
+        const remainingSlots = Math.max(0, 6 - existingUploads.length);
+        if (!remainingSlots) {
+            showToast("Esta cena ja possui 6 imagens enviadas. Aplique ou limpe antes de enviar novas.", "error");
+            return;
         }
 
-        const uploadIds = [];
+        const selectedFiles = files.slice(0, remainingSlots);
+        if (files.length > selectedFiles.length) {
+            showToast(`Limite de 6 imagens por cena. So ${selectedFiles.length} nova(s) imagem(ns) foi(ram) adicionada(s).`, "error");
+        }
         for (let index = 0; index < selectedFiles.length; index += 1) {
             const file = selectedFiles[index];
             if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
                 throw new Error("Use somente imagens JPG, PNG ou WebP.");
             }
             _setSimilarStatus(`Enviando imagem ${index + 1}/${selectedFiles.length} da cena...`, "running");
-            const uploaded = await uploadTempFileWithRetry(file, "image", "imagem da cena");
-            uploadIds.push(uploaded.upload_id);
+            const uploaded = await uploadTempFileWithRetry(file, "image", "imagem da cena", { showProgress: false });
+            const uploadId = String(uploaded?.upload_id || "").trim();
+            if (!uploadId) {
+                throw new Error("Upload da imagem retornou sem identificador. Tente novamente.");
+            }
+
+            existingUploads.push({
+                upload_id: uploadId,
+                file_name: String(file.name || `imagem-${existingUploads.length + 1}`),
+                preview_url: URL.createObjectURL(file),
+            });
         }
 
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+
+        _setSimilarStatus("Imagem(ns) enviada(s). Envie mais se quiser e depois clique em Aplicar imagens.", "running");
+        showToast("Imagem(ns) enviada(s) para a cena. Agora voce pode aplicar/unir quando quiser.", "success");
+    } catch (error) {
+        showToast(`Erro ao enviar imagem: ${error.message}`, "error");
+    } finally {
+        similarState.activeUploadSceneId = 0;
+    }
+}
+
+async function similarApplyUploadedSceneImages(sceneId) {
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Inicie a analise antes de aplicar imagens na cena.");
+        return;
+    }
+
+    const staged = _getSimilarScenePendingUploads(sceneId);
+    const uploadIds = [];
+    staged.forEach((item) => {
+        const id = String(item?.upload_id || "").trim();
+        if (id && !uploadIds.includes(id)) {
+            uploadIds.push(id);
+        }
+    });
+
+    if (!uploadIds.length) {
+        showToast("Envie pelo menos uma imagem antes de aplicar na cena.", "error");
+        return;
+    }
+
+    try {
         if (uploadIds.length > 1) {
-            _setSimilarStatus("Unindo referencias da cena com Nano Banana...", "running");
+            _setSimilarStatus("Unindo imagens enviadas com Nano Banana...", "running");
         } else {
-            _setSimilarStatus("Aplicando imagem da cena...", "running");
+            _setSimilarStatus("Aplicando imagem enviada na cena...", "running");
         }
 
         await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/image`, {
@@ -3768,13 +4025,24 @@ async function _handleSimilarSceneImageInput(event) {
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });
-        showToast(uploadIds.length > 1 ? "Imagens da cena unidas e aplicadas." : "Imagem da cena atualizada.", "success");
+
+        _clearSimilarScenePendingUploads(sceneId);
+        showToast(uploadIds.length > 1 ? "Imagens unidas e aplicadas na cena." : "Imagem aplicada na cena.", "success");
         await _refreshSimilarProject();
     } catch (error) {
-        showToast(`Erro ao enviar imagem: ${error.message}`, "error");
-    } finally {
-        similarState.activeUploadSceneId = 0;
+        showToast(`Erro ao aplicar imagens da cena: ${error.message}`, "error");
     }
+}
+
+function similarClearSceneUploads(sceneId) {
+    const pending = _getSimilarScenePendingUploads(sceneId);
+    if (!pending.length) return;
+
+    _clearSimilarScenePendingUploads(sceneId);
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+    showToast("Imagens enviadas da cena foram limpas.", "success");
 }
 
 async function similarGenerateSceneImage(sceneId) {
@@ -3852,6 +4120,7 @@ async function similarGenerateAllPreviews() {
 }
 
 function _getSimilarSelectedSceneIds() {
+    _syncSimilarDraftsFromDom();
     const ids = [];
     document.querySelectorAll("[id^='similar-scene-merge-']").forEach((checkbox) => {
         if (!checkbox.checked) return;
@@ -4986,16 +5255,19 @@ async function handleScriptCreate() {
     }
 }
 
-async function uploadTempFileWithRetry(file, kind, label) {
+async function uploadTempFileWithRetry(file, kind, label, options = {}) {
     // Try simple direct upload first (most reliable)
     const endpoint = kind === "audio" ? "/video/upload-temp-audio" : kind === "video" ? "/video/upload-temp-video" : "/video/upload-temp-image";
     const maxRetries = 5;
+    const showProgress = options.showProgress !== false;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const fd = new FormData();
             fd.append("file", file);
-            showCreateProgress(`Enviando ${label}...`, { stage: "Enviando arquivos..." });
+            if (showProgress) {
+                showCreateProgress(`Enviando ${label}...`, { stage: "Enviando arquivos..." });
+            }
             const result = await apiForm(endpoint, fd);
             return result;
         } catch (error) {
@@ -5003,7 +5275,9 @@ async function uploadTempFileWithRetry(file, kind, label) {
                 throw new Error(`Falha ao enviar ${label} apos ${maxRetries} tentativas. Verifique sua conexao.`);
             }
             const delay = Math.min(5000, 500 * Math.pow(2, attempt - 1));
-            showCreateProgress(`Reenviando ${label} (${attempt}/${maxRetries})...`, { stage: "Enviando arquivos..." });
+            if (showProgress) {
+                showCreateProgress(`Reenviando ${label} (${attempt}/${maxRetries})...`, { stage: "Enviando arquivos..." });
+            }
             await new Promise((resolve) => setTimeout(resolve, delay));
         }
     }
@@ -12264,6 +12538,8 @@ window.openPublishForProject = openPublishForProject;
 window.createSimilar = createSimilar;
 window.similarSaveScene = similarSaveScene;
 window.similarUploadSceneImage = similarUploadSceneImage;
+window.similarApplyUploadedSceneImages = similarApplyUploadedSceneImages;
+window.similarClearSceneUploads = similarClearSceneUploads;
 window.similarGenerateSceneImage = similarGenerateSceneImage;
 window.similarRegenerateScene = similarRegenerateScene;
 window.openRenameProjectModal = openRenameProjectModal;
