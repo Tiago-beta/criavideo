@@ -9,6 +9,7 @@ import asyncio
 import logging
 import uuid
 import mimetypes
+import re
 import httpx
 from pathlib import Path
 from google import genai
@@ -23,6 +24,11 @@ settings = get_settings()
 
 google_client = genai.Client(api_key=settings.google_ai_api_key)
 openai_client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+
+_TEMPORAL_PROMPT_HINT_RE = re.compile(
+    r"(\bshot\s*\d+\b|\bcena\s*\d+\b|\bscene\s*\d+\b|\bsegundo(?:s)?\b|\bsecond(?:s)?\b|\b\d+(?:[.,]\d+)?\s*s\s*:|\[\s*\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}\s*\])",
+    re.IGNORECASE,
+)
 
 
 async def analyze_lyrics_for_scenes(lyrics_text: str, lyrics_words: list, duration: float, style_hint: str = "") -> list[dict]:
@@ -125,6 +131,141 @@ Respond ONLY with a JSON array. No markdown, no explanation."""
 
     scenes = normalized
     return scenes
+
+
+def _clean_prompt_line_for_scene_merge(line: str) -> str:
+    cleaned = str(line or "").strip()
+    if not cleaned:
+        return ""
+
+    strip_patterns = (
+        r"^\s*\[\s*\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}\s*\]\s*",
+        r"^\s*\d+\s*(?:segundo(?:s)?|second(?:s)?|sec|s)\s*[:\-]\s*",
+        r"^\s*(?:shot|scene|cena)\s*\d+\s*[:\-]\s*",
+        r"^\s*\d+\s*[\)\.\-:]\s*",
+    )
+    for pattern in strip_patterns:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -;,.")
+    return cleaned
+
+
+def _extract_prompt_beats(prompt: str) -> list[str]:
+    raw_text = str(prompt or "").replace("\r", "\n")
+    lines = [line.strip() for line in raw_text.split("\n") if line and line.strip()]
+
+    if len(lines) == 1 and _TEMPORAL_PROMPT_HINT_RE.search(lines[0]):
+        chunks = re.split(
+            r"(?:(?<=\.)\s+)?(?=\d+\s*(?:segundo(?:s)?|second(?:s)?|s)\s*:)",
+            lines[0],
+            flags=re.IGNORECASE,
+        )
+        split_lines = [chunk.strip() for chunk in chunks if chunk and chunk.strip()]
+        if split_lines:
+            lines = split_lines
+
+    beats: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        cleaned = _clean_prompt_line_for_scene_merge(line)
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        beats.append(cleaned)
+
+    return beats
+
+
+def _build_single_scene_anchor_fallback(prompt: str, duration_seconds: int = 0) -> str:
+    beats = _extract_prompt_beats(prompt)
+    if beats:
+        merged = "; ".join(beats[:6])
+    else:
+        merged = re.sub(r"\s+", " ", str(prompt or "")).strip()
+
+    if len(merged) > 1000:
+        merged = merged[:1000].rsplit(" ", 1)[0].strip() or merged[:1000]
+
+    duration_hint = f"{int(duration_seconds)}s" if duration_seconds else "short"
+    return (
+        "Single coherent cinematic frame. "
+        "Do not create collage, split screen, storyboard, grid, triptych, diptych, or multiple panels. "
+        "All key elements must appear naturally in the same place and same moment of the story. "
+        f"Story context ({duration_hint}): {merged}. "
+        "Keep one clear protagonist identity and realistic proportions. "
+        "If multiple cars are required, place them in one believable composition "
+        "(for example rear-view mirror, side window, or deep background), never as separate tiles. "
+        "No text, no logos, no captions."
+    )
+
+
+async def build_single_scene_anchor_prompt(source_prompt: str, duration_seconds: int = 0) -> str:
+    """Convert temporal/multi-shot prompt into one coherent still-frame prompt for Nano Banana."""
+    base_prompt = str(source_prompt or "").strip()
+    fallback_prompt = _build_single_scene_anchor_fallback(base_prompt, duration_seconds=duration_seconds)
+    if not base_prompt:
+        return fallback_prompt
+
+    should_rewrite = bool(_TEMPORAL_PROMPT_HINT_RE.search(base_prompt)) or len(base_prompt) > 420
+    if not should_rewrite:
+        return fallback_prompt
+
+    if not (settings.openai_api_key or "").strip():
+        return fallback_prompt
+
+    system_prompt = (
+        "You rewrite temporal video prompts into one coherent still-frame prompt for an image model. "
+        "Return only one paragraph in English. "
+        "Keep all critical entities and actions, but merge them into one plausible instant. "
+        "Never output collage, split-screen, storyboard, panel grid, triptych, or diptych. "
+        "Use one camera viewpoint and one physically coherent environment. "
+        "No markdown, no bullet points, no explanations."
+    )
+    user_prompt = (
+        f"Duration: {int(duration_seconds) if duration_seconds else 0}s\n\n"
+        f"Source prompt:\n{base_prompt}\n\n"
+        "Return the final single-frame prompt now."
+    )
+
+    try:
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+        )
+        rewritten = (response.choices[0].message.content or "").strip()
+        rewritten = re.sub(r"\s+", " ", rewritten).strip()
+        if not rewritten:
+            return fallback_prompt
+
+        forbidden_tokens = (
+            "split screen",
+            "split-screen",
+            "storyboard",
+            "multi-panel",
+            "multi panel",
+            "collage",
+            "panel grid",
+            "triptych",
+            "diptych",
+        )
+        lowered = rewritten.lower()
+        if any(token in lowered for token in forbidden_tokens):
+            return fallback_prompt
+
+        if len(rewritten) > 1800:
+            rewritten = rewritten[:1800].rsplit(" ", 1)[0].strip() or rewritten[:1800]
+        return rewritten
+    except Exception as e:
+        logger.warning("Single-scene prompt rewrite failed; using fallback merge: %s", e)
+        return fallback_prompt
 
 
 def generate_scene_image(

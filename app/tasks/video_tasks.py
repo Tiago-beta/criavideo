@@ -1759,14 +1759,19 @@ async def run_realistic_video_pipeline(project_id: int):
             # Build a scene-locked reference frame with Nano Banana for engines other than Grok.
             # Grok max-fidelity mode uses the original persona image directly.
             if has_reference_image and image_path and engine != "grok":
-                from app.services.scene_generator import generate_scene_image
+                from app.services.scene_generator import build_single_scene_anchor_prompt, generate_scene_image
 
                 try:
                     await _on_progress(16, "Montando cena base com Nano Banana...")
                     scene_ref_dir = render_dir / "scene_ref"
                     scene_ref_dir.mkdir(parents=True, exist_ok=True)
                     scene_reference_path = str(scene_ref_dir / "persona_scene.png")
-                    nano_prompt = optimized_prompt[:800]
+                    nano_source_prompt = (optimized_prompt or user_prompt or "").strip()
+                    nano_prompt = await build_single_scene_anchor_prompt(
+                        source_prompt=nano_source_prompt,
+                        duration_seconds=duration,
+                    )
+                    nano_prompt = (nano_prompt or nano_source_prompt)[:1400]
                     loop = asyncio.get_event_loop()
                     await loop.run_in_executor(
                         None,
@@ -1782,8 +1787,10 @@ async def run_realistic_video_pipeline(project_id: int):
                     )
                     if os.path.exists(scene_reference_path):
                         logger.info(
-                            "Realistic video: Nano Banana scene anchor created from persona image (%s)",
+                            "Realistic video: Nano Banana scene anchor created from persona image (%s) [source=%s chars, anchor=%s chars]",
                             scene_reference_path,
+                            len(nano_source_prompt),
+                            len(nano_prompt),
                         )
                     else:
                         scene_reference_path = image_path
