@@ -18,11 +18,13 @@ settings = get_settings()
 
 ATLAS_VIDEO_API_BASE_URL = (settings.atlascloud_api_base_url or "https://api.atlascloud.ai/api/v1").rstrip("/")
 SEEDANCE_T2V_MODEL = (settings.atlascloud_seedance_t2v_model or "bytedance/seedance-2.0/text-to-video").strip()
-_SEEDANCE_I2V_DEFAULT_MODEL = "bytedance/seedance-v1.5-pro/image-to-video"
+_SEEDANCE_I2V_DEFAULT_MODEL = "bytedance/seedance-2.0/image-to-video"
+_SEEDANCE_I2V_TARGET_RESOLUTION = "480p"
 _seedance_i2v_cfg = (settings.atlascloud_seedance_i2v_model or "").strip()
 if _seedance_i2v_cfg in {
     "",
     "bytedance/seedance-2.0/image-to-video",
+    "bytedance/seedance-v1.5-pro/image-to-video",
     "bytedance/seedance-v1.5-pro/image-to-video-fast",
 }:
     SEEDANCE_I2V_MODEL = _SEEDANCE_I2V_DEFAULT_MODEL
@@ -47,6 +49,20 @@ def _resolve_aspect_ratio(aspect_ratio: str) -> str:
     if candidate in _ALLOWED_ASPECT_RATIOS:
         return candidate
     return "16:9"
+
+
+def _ensure_seedance_resolution_instruction(prompt: str, resolution: str) -> str:
+    normalized_resolution = str(resolution or "").strip()
+    base_prompt = str(prompt or "").strip()
+    if not normalized_resolution:
+        return base_prompt
+    if not base_prompt:
+        return f"Resolution requirement: render output in {normalized_resolution}."
+
+    if normalized_resolution.lower() in base_prompt.lower():
+        return base_prompt
+
+    return f"{base_prompt}\n\nResolution requirement: render output in {normalized_resolution}."
 
 
 def _extract_atlas_error_message(resp: httpx.Response) -> str:
@@ -503,15 +519,19 @@ async def generate_realistic_video(
         raise RuntimeError("ATLASCLOUD_API_KEY not configured")
 
     use_i2v = bool(image_path and os.path.exists(image_path))
-    # Seedance v1.5 I2V fast uses 4..12s according to Atlas docs.
+    # Atlas I2V endpoint currently accepts 4..12s durations.
     duration = max(4, min(int(duration or 5), 12)) if use_i2v else max(1, min(int(duration or 7), 10))
     aspect_ratio = _resolve_aspect_ratio(aspect_ratio)
-    resolution = str(resolution or "720p").strip() or "720p"
+    if use_i2v:
+        resolution = _SEEDANCE_I2V_TARGET_RESOLUTION
+    else:
+        resolution = str(resolution or "720p").strip() or "720p"
     model_id = SEEDANCE_I2V_MODEL if use_i2v else SEEDANCE_T2V_MODEL
+    prompt_for_model = _ensure_seedance_resolution_instruction(prompt, resolution) if use_i2v else prompt
 
     payload = {
         "model": model_id,
-        "prompt": prompt,
+        "prompt": prompt_for_model,
         "duration": duration,
         "aspect_ratio": aspect_ratio,
         "ratio": aspect_ratio,
@@ -528,7 +548,7 @@ async def generate_realistic_video(
         uploaded_image_ref = await _upload_media_to_atlas(image_path, api_key)
         payload["model"] = SEEDANCE_I2V_MODEL
         payload["image"] = uploaded_image_ref
-        logger.info("Seedance I2V fast: uploaded %s", image_path)
+        logger.info("Seedance I2V: uploaded %s", image_path)
 
     # Step 1: Create prediction.
     prediction_id = ""
