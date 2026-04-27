@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v244 loaded");
+console.log("[CriaVideo] app.js v245 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -3528,6 +3528,9 @@ function _renderSimilarScenes(project) {
                 </div>
 
                 <div class="similar-scene-row">
+                    <label for="similar-scene-start-${sceneId}">Inicio</label>
+                    <input id="similar-scene-start-${sceneId}" class="input similar-scene-time-input" type="number" min="0" step="0.1" value="${start.toFixed(1)}">
+                    <span class="similar-scene-time">s</span>
                     <label for="similar-scene-duration-${sceneId}">Duracao</label>
                     <input id="similar-scene-duration-${sceneId}" class="input similar-scene-duration" type="number" min="5" max="15" step="1" value="${duration}">
                     <span class="similar-scene-time">segundos</span>
@@ -3539,7 +3542,7 @@ function _renderSimilarScenes(project) {
 
                 <div class="similar-scene-actions">
                     <button class="btn btn-secondary btn-sm" type="button" onclick="similarSaveScene(${sceneId})">Salvar cena</button>
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="similarUploadSceneImage(${sceneId})">Enviar imagem</button>
+                    <button class="btn btn-secondary btn-sm" type="button" onclick="similarUploadSceneImage(${sceneId})">Enviar imagens</button>
                     <button class="btn btn-secondary btn-sm" type="button" onclick="similarGenerateSceneImage(${sceneId})">Gerar imagem IA</button>
                     <button class="btn btn-primary btn-sm" type="button" onclick="similarRegenerateScene(${sceneId})">Gerar previa da cena</button>
                 </div>
@@ -3692,8 +3695,11 @@ async function similarSaveScene(sceneId) {
     }
 
     const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+    const startEl = document.getElementById(`similar-scene-start-${sceneId}`);
     const durationEl = document.getElementById(`similar-scene-duration-${sceneId}`);
     const prompt = String(promptEl?.value || "").trim();
+    const startRaw = Number.parseFloat(startEl?.value || "0");
+    const startTime = Number.isFinite(startRaw) ? Math.max(0, startRaw) : 0;
     const durationRaw = parseInt(durationEl?.value || "0", 10);
     const duration = Number.isFinite(durationRaw) ? Math.max(5, Math.min(15, durationRaw)) : 5;
 
@@ -3702,6 +3708,7 @@ async function similarSaveScene(sceneId) {
             method: "PATCH",
             body: JSON.stringify({
                 prompt,
+                start_time: startTime,
                 duration_seconds: duration,
             }),
         });
@@ -3723,31 +3730,45 @@ function similarUploadSceneImage(sceneId) {
 async function _handleSimilarSceneImageInput(event) {
     const projectId = Number(similarState.projectId || 0);
     const sceneId = Number(similarState.activeUploadSceneId || 0);
-    const file = event.target?.files?.[0];
+    const files = Array.from(event.target?.files || []);
     event.target.value = "";
 
-    if (!projectId || !sceneId || !file) {
-        similarState.activeUploadSceneId = 0;
-        return;
-    }
-
-    if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
-        showToast("Use imagem JPG, PNG ou WebP.", "error");
+    if (!projectId || !sceneId || !files.length) {
         similarState.activeUploadSceneId = 0;
         return;
     }
 
     try {
-        _setSimilarStatus("Enviando imagem da cena...", "running");
-        const uploaded = await uploadTempFileWithRetry(file, "image", "imagem da cena");
+        const selectedFiles = files.slice(0, 6);
+        if (files.length > selectedFiles.length) {
+            showToast("Limite de 6 imagens por cena. As primeiras foram selecionadas.", "error");
+        }
+
+        const uploadIds = [];
+        for (let index = 0; index < selectedFiles.length; index += 1) {
+            const file = selectedFiles[index];
+            if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+                throw new Error("Use somente imagens JPG, PNG ou WebP.");
+            }
+            _setSimilarStatus(`Enviando imagem ${index + 1}/${selectedFiles.length} da cena...`, "running");
+            const uploaded = await uploadTempFileWithRetry(file, "image", "imagem da cena");
+            uploadIds.push(uploaded.upload_id);
+        }
+
+        if (uploadIds.length > 1) {
+            _setSimilarStatus("Unindo referencias da cena com Nano Banana...", "running");
+        } else {
+            _setSimilarStatus("Aplicando imagem da cena...", "running");
+        }
+
         await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/image`, {
             method: "POST",
             body: JSON.stringify({
-                image_upload_id: uploaded.upload_id,
+                image_upload_ids: uploadIds,
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });
-        showToast("Imagem da cena atualizada.", "success");
+        showToast(uploadIds.length > 1 ? "Imagens da cena unidas e aplicadas." : "Imagem da cena atualizada.", "success");
         await _refreshSimilarProject();
     } catch (error) {
         showToast(`Erro ao enviar imagem: ${error.message}`, "error");

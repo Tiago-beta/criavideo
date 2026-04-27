@@ -6005,6 +6005,10 @@ th,
     width: 96px;
 }
 
+.similar-scene-time-input {
+    width: 112px;
+}
+
 .similar-scene-merge {
     display: inline-flex;
     align-items: center;

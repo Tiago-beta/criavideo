@@ -1089,10 +1089,13 @@ class StartSimilarAnalysisRequest(BaseModel):
 class SimilarUpdateSceneRequest(BaseModel):
     prompt: str = ""
     duration_seconds: int = 0
+    start_time: float | None = None
+    end_time: float | None = None
 
 
 class SimilarSceneImageRequest(BaseModel):
     image_upload_id: str = ""
+    image_upload_ids: list[str] = Field(default_factory=list)
     generate_from_prompt: bool = False
     aspect_ratio: str = "16:9"
 
@@ -1348,14 +1351,45 @@ async def update_similar_scene(
             scene.prompt = new_prompt
             changed = True
 
-    if int(req.duration_seconds or 0) > 0:
+    base_start = float(scene.start_time or 0)
+    base_end = float(scene.end_time or base_start)
+    current_duration = max(0.1, base_end - base_start)
+
+    new_start = base_start
+    new_end = base_end
+
+    if req.start_time is not None:
+        try:
+            parsed_start = float(req.start_time)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Inicio da cena invalido")
+        new_start = max(0.0, parsed_start)
+
+    if req.end_time is not None:
+        try:
+            parsed_end = float(req.end_time)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Fim da cena invalido")
+        new_end = max(0.0, parsed_end)
+
+    if int(req.duration_seconds or 0) > 0 and req.end_time is None:
         min_seconds = max(1, int(settings.similar_scene_min_seconds or 5))
         max_seconds = max(min_seconds, int(settings.similar_scene_max_seconds or 15))
         duration_seconds = max(min_seconds, min(max_seconds, int(req.duration_seconds)))
-        new_end_time = float(scene.start_time or 0) + float(duration_seconds)
-        if abs(float(scene.end_time or 0) - new_end_time) > 0.01:
-            scene.end_time = new_end_time
-            changed = True
+        new_end = float(new_start) + float(duration_seconds)
+    elif req.start_time is not None and req.end_time is None:
+        # Preserve current duration when only start time changes.
+        new_end = float(new_start) + float(current_duration)
+
+    if new_end <= new_start + 0.05:
+        raise HTTPException(status_code=400, detail="Fim da cena deve ser maior que o inicio")
+
+    if abs(float(scene.start_time or 0) - float(new_start)) > 0.001:
+        scene.start_time = float(new_start)
+        changed = True
+    if abs(float(scene.end_time or 0) - float(new_end)) > 0.001:
+        scene.end_time = float(new_end)
+        changed = True
 
     if changed:
         scene.clip_path = ""
@@ -1406,15 +1440,49 @@ async def upsert_similar_scene_image(
     image_dir = Path(settings.media_dir) / "images" / str(project.id)
     image_dir.mkdir(parents=True, exist_ok=True)
 
-    if req.image_upload_id:
-        source_file = _resolve_temp_file(user["id"], req.image_upload_id, IMAGE_EXTS)
-        if not source_file:
-            raise HTTPException(status_code=400, detail="Imagem enviada nao encontrada. Envie novamente")
-        ext = source_file.suffix.lower() or ".png"
-        target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}{ext}"
-        shutil.copyfile(source_file, target_file)
-        scene.image_path = str(target_file)
-        scene.is_user_uploaded = True
+    upload_ids: list[str] = []
+    for raw_id in (req.image_upload_ids or []):
+        value = str(raw_id or "").strip()
+        if value and value not in upload_ids:
+            upload_ids.append(value)
+
+    single_upload_id = str(req.image_upload_id or "").strip()
+    if single_upload_id and single_upload_id not in upload_ids:
+        upload_ids.append(single_upload_id)
+
+    if upload_ids:
+        resolved_files: list[Path] = []
+        for upload_id in upload_ids:
+            source_file = _resolve_temp_file(user["id"], upload_id, IMAGE_EXTS)
+            if not source_file:
+                raise HTTPException(status_code=400, detail="Uma das imagens enviadas nao foi encontrada. Envie novamente")
+            resolved_files.append(source_file)
+
+        if len(resolved_files) == 1:
+            source_file = resolved_files[0]
+            ext = source_file.suffix.lower() or ".png"
+            target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}{ext}"
+            shutil.copyfile(source_file, target_file)
+            scene.image_path = str(target_file)
+            scene.is_user_uploaded = True
+        else:
+            from app.services.scene_generator import merge_reference_images_with_nano_banana
+
+            target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.png"
+            loop = asyncio.get_event_loop()
+            prompt = (scene.prompt or "").strip() or "Cena cinematografica detalhada."
+            await loop.run_in_executor(
+                None,
+                merge_reference_images_with_nano_banana,
+                [str(item) for item in resolved_files],
+                prompt[:1200],
+                effective_aspect_ratio,
+                str(target_file),
+            )
+            if not target_file.exists() or target_file.stat().st_size <= 0:
+                raise HTTPException(status_code=500, detail="Falha ao unir as imagens da cena")
+            scene.image_path = str(target_file)
+            scene.is_user_uploaded = True
     elif req.generate_from_prompt:
         from app.services.scene_generator import generate_scene_image
 
@@ -1433,7 +1501,7 @@ async def upsert_similar_scene_image(
         scene.image_path = str(target_file)
         scene.is_user_uploaded = False
     else:
-        raise HTTPException(status_code=400, detail="Informe image_upload_id ou generate_from_prompt=true")
+        raise HTTPException(status_code=400, detail="Informe image_upload_id/image_upload_ids ou generate_from_prompt=true")
 
     scene.clip_path = ""
     scene.scene_type = "image"

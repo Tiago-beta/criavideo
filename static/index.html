@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260427-92">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260427-93">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 261;
+        var REQUIRED_VER = 262;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1593,7 +1593,7 @@
                         <button class="btn btn-secondary" id="similar-back" type="button">Voltar</button>
                     </div>
 
-                    <input id="similar-scene-image-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+                    <input id="similar-scene-image-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
 
                     <div id="similar-status" class="similar-status" hidden></div>
 
@@ -2940,8 +2940,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260427-92"></script>
-    <script src="/video/static/pwa.js?v=20260427-92"></script>
+    <script src="/video/static/app.js?v=20260427-93"></script>
+    <script src="/video/static/pwa.js?v=20260427-93"></script>
 </body>
 </html>
 
