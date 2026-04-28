@@ -412,6 +412,61 @@ async def ai_suggest(
 
         return True
 
+    def _normalize_ptbr_copy(text: str) -> str:
+        content = str(text or "").strip()
+        if not content:
+            return ""
+
+        accent_map = {
+            r"\bvoce\b": "você",
+            r"\bsessao\b": "sessão",
+            r"\bconteudos\b": "conteúdos",
+            r"\batencao\b": "atenção",
+            r"\bconcentracao\b": "concentração",
+            r"\bconfianca\b": "confiança",
+            r"\bmemoria\b": "memória",
+            r"\bmusica\b": "música",
+            r"\bpublico\b": "público",
+            r"\bemocao\b": "emoção",
+            r"\bdescricao\b": "descrição",
+            r"\bvideo\b": "vídeo",
+            r"\baudio\b": "áudio",
+            r"\breprogramacao\b": "reprogramação",
+            r"\bequilibrio\b": "equilíbrio",
+        }
+
+        def _replace_with_case(match: re.Match[str], replacement: str) -> str:
+            token = match.group(0)
+            if token.isupper():
+                return replacement.upper()
+            if token[:1].isupper():
+                return replacement[:1].upper() + replacement[1:]
+            return replacement
+
+        for pattern, replacement in accent_map.items():
+            content = re.sub(
+                pattern,
+                lambda m, rep=replacement: _replace_with_case(m, rep),
+                content,
+                flags=re.IGNORECASE,
+            )
+
+        normalized_lines = []
+        for raw_line in content.splitlines():
+            line = re.sub(r"\s+", " ", raw_line).strip()
+            if not line:
+                normalized_lines.append("")
+                continue
+            if line.startswith("-") or line.startswith("#") or line.endswith((".", "!", "?", ":")):
+                normalized_lines.append(line)
+                continue
+            normalized_lines.append(f"{line}.")
+
+        content = "\n".join(normalized_lines)
+        content = re.sub(r"([,;:.!?])(?!\s|$)", r"\1 ", content)
+        content = re.sub(r"\s{2,}", " ", content)
+        return content.strip()
+
     def _build_description_template(
         main_keyword: str,
         angle_text: str,
@@ -424,34 +479,34 @@ async def ai_suggest(
 
         angle_clean = re.sub(r"\s+", " ", str(angle_text or "")).strip()
         if not angle_clean:
-            angle_clean = "mais foco, memoria e clareza mental"
+            angle_clean = "mais foco, memória e clareza mental"
 
         audience_clean = re.sub(r"\s+", " ", str(audience_text or "")).strip()
         if not audience_clean:
-            audience_clean = "quem busca concentracao, aprendizado e equilibrio emocional"
+            audience_clean = "quem busca concentração, aprendizado e equilíbrio emocional"
 
         extra_keywords = [k for k in (keywords_list or []) if k and k.lower() != keyword.lower()][:4]
         bullets = [
             f"{keyword}",
-            extra_keywords[0] if len(extra_keywords) >= 1 else "Reprogramacao mental positiva",
+            extra_keywords[0] if len(extra_keywords) >= 1 else "Reprogramação mental positiva",
             extra_keywords[1] if len(extra_keywords) >= 2 else "Relaxamento profundo para clareza",
-            extra_keywords[2] if len(extra_keywords) >= 3 else "Fortalecimento de foco e memoria",
+            extra_keywords[2] if len(extra_keywords) >= 3 else "Fortalecimento de foco e memória",
         ]
 
         lines = [
             f"{keyword}: {angle_clean}.",
-            f"Nesta sessao guiada, voce entra em estado de relaxamento para melhorar concentracao, confianca e desempenho mental.",
+            f"Nesta sessão guiada, você entra em estado de relaxamento para melhorar concentração, confiança e desempenho mental.",
             f"Ideal para {audience_clean}.",
             "",
-            "Neste video voce encontra:",
+            "Neste vídeo você encontra:",
             *[f"- {item}" for item in bullets],
             "",
-            "Use fones, fique em local tranquilo e permita que sua mente absorva cada sugestao positiva.",
-            "Use este audio apenas em local seguro, nunca dirigindo ou realizando atividades que exigem atencao.",
-            "Inscreva-se no canal para receber novos conteudos de foco, memoria e reprogramacao mental.",
+            "Use fones, fique em local tranquilo e permita que sua mente absorva cada sugestão positiva.",
+            "Use este áudio apenas em local seguro; nunca dirigindo ou realizando atividades que exigem atenção.",
+            "Inscreva-se no canal para receber novos conteúdos de foco, memória e reprogramação mental.",
         ]
 
-        return "\n".join(lines).strip()
+        return _normalize_ptbr_copy("\n".join(lines).strip())
 
     context_parts = []
     if project.title:
@@ -481,9 +536,9 @@ async def ai_suggest(
     objetivo = "Maximizar CTR sem clickbait enganoso e melhorar descoberta em busca/sugeridos."
     tom_desejado = project.style_prompt or "envolvente, premium e humano"
 
-    stage1_prompt = f"""Voce e um estrategista senior de YouTube SEO + CTR no Brasil.
+    stage1_prompt = f"""Você é um estrategista sênior de YouTube SEO + CTR no Brasil.
 
-Sua tarefa e criar metadados que maximizem descoberta em busca e cliques qualificados sem enganar.
+Sua tarefa é criar metadados que maximizem descoberta em busca e cliques qualificados sem enganar.
 
 GUIDE OBRIGATORIO DE THUMBNAIL (seguir estritamente):
 - a thumbnail precisa ter 1 ideia principal e ser entendida em menos de 1 segundo
@@ -513,12 +568,13 @@ Objetivo: {objetivo}
 Tom desejado: {tom_desejado}
 
 Regras de saida:
-- portugues brasileiro
+- portugues brasileiro com acentuacao e pontuacao corretas
 - titulo final ate 80 caracteres
 - gerar 5 opcoes de titulo
 - descricao pronta para colar no YouTube
 - thumbnail_hook com 2 a 5 palavras
 - thumbnail_prompt pronto para gerar arte
+- nunca remover acentos (ex.: vídeo, você, sessão, descrição)
 
 Retorne SOMENTE JSON (sem markdown):
 {{
@@ -597,9 +653,9 @@ Retorne SOMENTE JSON (sem markdown):
         titles_block = "\n".join(
             f"{idx + 1}) {title}" for idx, title in enumerate(title_options)
         )
-        stage2_prompt = f"""Voce e o editor-chefe de performance de um canal no YouTube.
+        stage2_prompt = f"""Você é o editor-chefe de performance de um canal no YouTube.
 
-Revise tudo com rigor e selecione a versao final mais forte para SEO + CTR + retencao.
+    Revise tudo com rigor e selecione a versão final mais forte para SEO + CTR + retenção.
 
 CONTEXTO DO VIDEO:
 {context}
@@ -634,6 +690,7 @@ REGRAS FINAIS OBRIGATORIAS:
 - descricao sem letra completa
 - thumbnail_hook com 2 a 5 palavras em portugues
 - thumbnail_prompt com foco em 1 ideia principal, contraste forte e texto grande legivel
+- ortografia revisada em pt-BR, com acentuacao e pontuacao natural
 
 Retorne SOMENTE JSON:
 {{
@@ -689,6 +746,7 @@ Retorne SOMENTE JSON:
             final_description = (
                 final_description[:1800].rsplit(" ", 1)[0].strip() or final_description[:1800]
             )
+        final_description = _normalize_ptbr_copy(final_description)
 
         if not _description_looks_strong(final_description, primary_keyword):
             final_description = _build_description_template(
@@ -697,6 +755,7 @@ Retorne SOMENTE JSON:
                 audience_text=audience,
                 keywords_list=keywords,
             )
+            final_description = _normalize_ptbr_copy(final_description)
 
         tags = _normalize_tags(stage2_data.get("tags", []))
         if not tags:
