@@ -361,7 +361,7 @@ async def ai_suggest(
 
         fallback = re.sub(r"\s+", " ", str(theme_seed or "")).strip(" #")
         if not fallback:
-            return "hipnose guiada"
+            return "vídeo"
         if len(fallback) > 48:
             fallback = (fallback[:48].rsplit(" ", 1)[0] or fallback[:48]).strip()
         return fallback.lower()
@@ -370,9 +370,9 @@ async def ai_suggest(
         title = re.sub(r"\s+", " ", str(raw_title or "")).strip(" -|:")
         keyword = re.sub(r"\s+", " ", str(primary_keyword or "")).strip(" -|:")
         if not keyword:
-            keyword = "hipnose guiada"
+            keyword = "vídeo"
 
-        benefit_fallback = "Desperte Seu Potencial Mental"
+        benefit_fallback = "Entenda a Mensagem Principal"
         if not title:
             title = benefit_fallback
 
@@ -390,7 +390,7 @@ async def ai_suggest(
             title = (title[:80].rsplit(" ", 1)[0] or title[:80]).strip()
 
         if len(title) < 45:
-            extension = " | Foco, Memoria e Clareza"
+            extension = " | Mensagem, Emoção e Contexto"
             if len(title) + len(extension) <= 80:
                 title = title + extension
 
@@ -411,6 +411,23 @@ async def ai_suggest(
             return False
 
         return True
+
+    def _has_off_context_niche_terms(text: str, source_context: str) -> bool:
+        body = str(text or "").lower()
+        context_lower = str(source_context or "").lower()
+        niche_terms = [
+            "hipnose",
+            "hipnótico",
+            "hipnotico",
+            "reprogramação mental",
+            "reprogramacao mental",
+            "mente poderosa",
+            "sessão guiada",
+            "sessao guiada",
+            "sugestão positiva",
+            "sugestao positiva",
+        ]
+        return any(term in body and term not in context_lower for term in niche_terms)
 
     def _normalize_ptbr_copy(text: str) -> str:
         content = str(text or "").strip()
@@ -472,38 +489,38 @@ async def ai_suggest(
         angle_text: str,
         audience_text: str,
         keywords_list: list[str],
+        theme_text: str,
     ) -> str:
         keyword = re.sub(r"\s+", " ", str(main_keyword or "")).strip()
         if not keyword:
-            keyword = "Hipnose guiada para foco"
+            keyword = re.sub(r"\s+", " ", str(theme_text or "")).strip() or "Vídeo"
 
         angle_clean = re.sub(r"\s+", " ", str(angle_text or "")).strip()
         if not angle_clean:
-            angle_clean = "mais foco, memória e clareza mental"
+            angle_clean = "uma mensagem envolvente ligada ao tema do vídeo"
 
         audience_clean = re.sub(r"\s+", " ", str(audience_text or "")).strip()
         if not audience_clean:
-            audience_clean = "quem busca concentração, aprendizado e equilíbrio emocional"
+            audience_clean = "quem se interessa por esse assunto e quer entender a mensagem com mais profundidade"
 
         extra_keywords = [k for k in (keywords_list or []) if k and k.lower() != keyword.lower()][:4]
         bullets = [
             f"{keyword}",
-            extra_keywords[0] if len(extra_keywords) >= 1 else "Reprogramação mental positiva",
-            extra_keywords[1] if len(extra_keywords) >= 2 else "Relaxamento profundo para clareza",
-            extra_keywords[2] if len(extra_keywords) >= 3 else "Fortalecimento de foco e memória",
+            extra_keywords[0] if len(extra_keywords) >= 1 else "Mensagem principal do conteúdo",
+            extra_keywords[1] if len(extra_keywords) >= 2 else "Contexto e emoção do vídeo",
+            extra_keywords[2] if len(extra_keywords) >= 3 else "Pontos mais importantes para o público",
         ]
 
         lines = [
             f"{keyword}: {angle_clean}.",
-            f"Nesta sessão guiada, você entra em estado de relaxamento para melhorar concentração, confiança e desempenho mental.",
+            f"Neste vídeo, você acompanha uma abordagem direta e envolvente sobre {keyword}.",
             f"Ideal para {audience_clean}.",
             "",
             "Neste vídeo você encontra:",
             *[f"- {item}" for item in bullets],
             "",
-            "Use fones, fique em local tranquilo e permita que sua mente absorva cada sugestão positiva.",
-            "Use este áudio apenas em local seguro; nunca dirigindo ou realizando atividades que exigem atenção.",
-            "Inscreva-se no canal para receber novos conteúdos de foco, memória e reprogramação mental.",
+            "Assista até o final para acompanhar a ideia completa e perceber os detalhes mais importantes.",
+            "Inscreva-se no canal para receber novos conteúdos sobre temas como este.",
         ]
 
         return _normalize_ptbr_copy("\n".join(lines).strip())
@@ -525,12 +542,12 @@ async def ai_suggest(
     if project.tags:
         context_parts.append(f"Tags base: {', '.join(str(tag) for tag in project.tags[:12])}")
 
-    context = "\n".join(context_parts) or "Video musical sem detalhes adicionais."
+    context = "\n".join(context_parts) or "Vídeo musical sem detalhes adicionais."
 
-    tema = project.track_title or project.title or "Video musical"
+    tema = project.track_title or project.title or "Vídeo musical"
     resumo = context[:2800]
     project_tags = [str(tag).strip() for tag in (project.tags or []) if str(tag).strip()]
-    publico = "Publico brasileiro do YouTube interessado em musica, foco e bem-estar."
+    publico = "Público brasileiro do YouTube interessado no tema específico deste vídeo."
     if project_tags:
         publico = f"Publico principal ligado a: {', '.join(project_tags[:6])}."
     objetivo = "Maximizar CTR sem clickbait enganoso e melhorar descoberta em busca/sugeridos."
@@ -556,9 +573,11 @@ GUIDE OBRIGATORIO DE TITULO E DESCRICAO:
 - linha 1 deve repetir a palavra-chave principal
 - incluir CTA e hashtags relevantes sem excesso
 
-BANCO DE TERMOS SEO (usar quando fizer sentido):
-hipnose para foco, hipnose para estudar, hipnose para inteligencia, hipnose guiada,
-reprogramacao mental, aumentar concentracao, memoria e foco, mente poderosa
+MODELO EDITORIAL (usar como estrutura, nunca como texto fixo):
+- identificar a palavra-chave real do vídeo a partir de título, letra, descrição e tags
+- transformar o tema em benefício claro para o público certo
+- criar curiosidade sem trocar o assunto e sem copiar exemplos de outros nichos
+- nunca inserir termos que não aparecem no contexto do vídeo
 
 DADOS DO VIDEO:
 Tema: {tema}
@@ -568,13 +587,14 @@ Objetivo: {objetivo}
 Tom desejado: {tom_desejado}
 
 Regras de saida:
-- portugues brasileiro com acentuacao e pontuacao corretas
-- titulo final ate 80 caracteres
-- gerar 5 opcoes de titulo
-- descricao pronta para colar no YouTube
+- português brasileiro com acentuação e pontuação corretas
+- título final até 80 caracteres
+- gerar 5 opções de título
+- descrição pronta para colar no YouTube
 - thumbnail_hook com 2 a 5 palavras
 - thumbnail_prompt pronto para gerar arte
 - nunca remover acentos (ex.: vídeo, você, sessão, descrição)
+- usar o modelo editorial apenas como estrutura, sem copiar nichos ou termos de exemplo
 
 Retorne SOMENTE JSON (sem markdown):
 {{
@@ -609,6 +629,7 @@ Retorne SOMENTE JSON (sem markdown):
             keywords = [str(k).strip() for k in raw_keywords if str(k).strip()]
         else:
             keywords = []
+        keywords = [item for item in keywords if not _has_off_context_niche_terms(item, context)]
 
         angle = str(stage1_data.get("angle") or stage1_data.get("promise") or "").strip()
         audience = str(stage1_data.get("audience") or publico).strip()
@@ -655,7 +676,7 @@ Retorne SOMENTE JSON (sem markdown):
         )
         stage2_prompt = f"""Você é o editor-chefe de performance de um canal no YouTube.
 
-    Revise tudo com rigor e selecione a versão final mais forte para SEO + CTR + retenção.
+Revise tudo com rigor e selecione a versão final mais forte para SEO + CTR + retenção.
 
 CONTEXTO DO VIDEO:
 {context}
@@ -691,6 +712,8 @@ REGRAS FINAIS OBRIGATORIAS:
 - thumbnail_hook com 2 a 5 palavras em portugues
 - thumbnail_prompt com foco em 1 ideia principal, contraste forte e texto grande legivel
 - ortografia revisada em pt-BR, com acentuacao e pontuacao natural
+- proibido inserir assuntos, terapias, benefícios ou comandos que não estejam no contexto do vídeo
+- se o vídeo for religioso, musical, infantil, educativo, produto ou outro nicho, adaptar tudo ao nicho real
 
 Retorne SOMENTE JSON:
 {{
@@ -728,7 +751,7 @@ Retorne SOMENTE JSON:
             ).strip(),
             80,
         )
-        if not chosen_title:
+        if not chosen_title or _has_off_context_niche_terms(chosen_title, context):
             chosen_title = _trim_title(project.title or project.track_title or "Novo video", 80)
 
         primary_keyword = _pick_primary_keyword(keywords, tema)
@@ -748,12 +771,16 @@ Retorne SOMENTE JSON:
             )
         final_description = _normalize_ptbr_copy(final_description)
 
+        if _has_off_context_niche_terms(final_description, context):
+            final_description = ""
+
         if not _description_looks_strong(final_description, primary_keyword):
             final_description = _build_description_template(
                 main_keyword=primary_keyword,
                 angle_text=angle,
                 audience_text=audience,
                 keywords_list=keywords,
+                theme_text=tema,
             )
             final_description = _normalize_ptbr_copy(final_description)
 
