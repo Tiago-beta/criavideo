@@ -7,6 +7,7 @@ import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import select
@@ -124,6 +125,34 @@ def _is_tevoxi_music_project(project: Optional[VideoProject]) -> bool:
     return str(project.track_artist or "").strip().lower() == "tevoxi"
 
 
+def _parse_theme_override_date(raw_value: object):
+    value = str(raw_value or "").strip()
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _has_pending_theme_due_today(schedule: AutoSchedule, pending_themes: list[AutoScheduleTheme]) -> bool:
+    try:
+        tz = ZoneInfo(schedule.timezone or "UTC")
+    except Exception:
+        tz = ZoneInfo("UTC")
+    today_local = datetime.now(tz).date()
+
+    for theme in pending_themes:
+        custom_settings = theme.custom_settings if isinstance(theme.custom_settings, dict) else {}
+        override_date = _parse_theme_override_date(custom_settings.get("scheduled_date_override"))
+        if override_date and override_date <= today_local:
+            return True
+
+    return False
+
+
 async def check_auto_schedules():
     """Runs every minute. Checks for auto-schedules that are due and triggers video creation."""
     now = datetime.utcnow()
@@ -139,20 +168,6 @@ async def check_auto_schedules():
         for schedule in schedules:
             if schedule.time_utc != current_time:
                 continue
-
-            if schedule.frequency == "weekly" and schedule.day_of_week != current_dow:
-                continue
-
-            active_weekdays = None
-            if isinstance(schedule.default_settings, dict):
-                active_weekdays = schedule.default_settings.get("active_weekdays")
-            if schedule.frequency == "daily" and active_weekdays:
-                try:
-                    allowed_days = {int(day) for day in active_weekdays}
-                except Exception:
-                    allowed_days = set()
-                if allowed_days and current_dow not in allowed_days:
-                    continue
 
             # Check if there are pending themes
             theme_result = await db.execute(
@@ -173,6 +188,27 @@ async def check_auto_schedules():
             if not pending:
                 logger.info(f"Auto-schedule {schedule.id}: no pending themes")
                 continue
+
+            has_manual_due_today = _has_pending_theme_due_today(schedule, pending)
+
+            if schedule.frequency == "weekly" and schedule.day_of_week != current_dow:
+                if not has_manual_due_today:
+                    continue
+                logger.info(
+                    "Auto-schedule %d: triggering outside weekly day due to manual theme date",
+                    schedule.id,
+                )
+
+            active_weekdays = None
+            if isinstance(schedule.default_settings, dict):
+                active_weekdays = schedule.default_settings.get("active_weekdays")
+            if schedule.frequency == "daily" and active_weekdays:
+                try:
+                    allowed_days = {int(day) for day in active_weekdays}
+                except Exception:
+                    allowed_days = set()
+                if allowed_days and current_dow not in allowed_days:
+                    continue
 
             logger.info(f"Auto-schedule {schedule.id} triggered at {current_time}")
 
