@@ -1256,43 +1256,54 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         job["progress"] = 20
         job["message"] = "Renderizando vídeo..."
 
-        # Video filter
-        if vfilters:
-            cmd += ["-vf", ",".join(vfilters)]
+        video_filter_chain = ",".join(vfilters)
 
         # Audio handling
         if has_music:
             orig_vol = req.original_volume / 100
             music_vol = req.music_volume / 100
+            filter_complex_parts: list[str] = []
+            video_map = "0:v"
+
+            # Keep video filtering inside filter_complex when mixing audio so the
+            # mapped video stream always comes from the edited (trimmed) output.
+            if video_filter_chain:
+                filter_complex_parts.append(f"[0:v]{video_filter_chain}[vout]")
+                video_map = "[vout]"
+
             if source_has_audio:
                 base_audio_label = "[0:a]"
-                audio_chain: list[str] = []
                 if use_audio_segment_filter:
-                    audio_chain.append(f"[0:a]aselect='{audio_select_expr}',asetpts=N/SR/TB[a_src]")
+                    filter_complex_parts.append(f"[0:a]aselect='{audio_select_expr}',asetpts=N/SR/TB[a_src]")
                     base_audio_label = "[a_src]"
-                audio_chain.append(f"{base_audio_label}volume={orig_vol}[a0]")
-                audio_chain.append(f"[1:a]volume={music_vol}[a1]")
-                audio_chain.append("[a0][a1]amix=inputs=2:duration=longest[a_mix]")
+                filter_complex_parts.append(f"{base_audio_label}volume={orig_vol}[a0]")
+                filter_complex_parts.append(f"[1:a]volume={music_vol}[a1]")
+                filter_complex_parts.append("[a0][a1]amix=inputs=2:duration=longest[a_mix]")
                 if final_output_duration > 0:
-                    audio_chain.append(f"[a_mix]atrim=0:{final_output_duration:.6f}[aout]")
+                    filter_complex_parts.append(f"[a_mix]atrim=0:{final_output_duration:.6f}[aout]")
                 else:
-                    audio_chain.append("[a_mix]anull[aout]")
+                    filter_complex_parts.append("[a_mix]anull[aout]")
                 cmd += [
-                    "-filter_complex", ";".join(audio_chain),
-                    "-map", "0:v",
+                    "-filter_complex", ";".join(filter_complex_parts),
+                    "-map", video_map,
                     "-map", "[aout]",
                 ]
             else:
                 if final_output_duration > 0:
-                    music_chain = f"[1:a]volume={music_vol}[a1];[a1]atrim=0:{final_output_duration:.6f}[aout]"
+                    filter_complex_parts.append(f"[1:a]volume={music_vol}[a1]")
+                    filter_complex_parts.append(f"[a1]atrim=0:{final_output_duration:.6f}[aout]")
                 else:
-                    music_chain = f"[1:a]volume={music_vol}[aout]"
+                    filter_complex_parts.append(f"[1:a]volume={music_vol}[aout]")
                 cmd += [
-                    "-filter_complex", music_chain,
-                    "-map", "0:v",
+                    "-filter_complex", ";".join(filter_complex_parts),
+                    "-map", video_map,
                     "-map", "[aout]",
                 ]
         else:
+            # Simple path: no external music mixing required.
+            if video_filter_chain:
+                cmd += ["-vf", video_filter_chain]
+
             orig_vol = req.original_volume / 100
             afilters: list[str] = []
             if source_has_audio and use_audio_segment_filter:
