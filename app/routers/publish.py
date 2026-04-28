@@ -4,6 +4,8 @@ Publish Router — Endpoints for publishing videos to social platforms.
 import os
 import logging
 import json
+import re
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -20,6 +22,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/publish", tags=["publish"])
 settings = get_settings()
 _openai = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+TEMP_UPLOAD_DIR = Path(settings.media_dir) / "temp_uploads"
+TEMP_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 class PublishRequest(BaseModel):
@@ -187,13 +191,26 @@ class AISuggestRequest(BaseModel):
     render_id: int
 
 
+def _resolve_temp_image_upload(user_id: int, upload_id: str) -> Path | None:
+    token = str(upload_id or "").strip()
+    if not token or "/" in token or "\\" in token:
+        return None
+
+    ext = Path(token).suffix.lower()
+    if ext not in TEMP_IMAGE_EXTS:
+        return None
+
+    candidate = TEMP_UPLOAD_DIR / str(int(user_id)) / token
+    return candidate if candidate.exists() else None
+
+
 @router.post("/ai-suggest")
 async def ai_suggest(
     req: AISuggestRequest,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate title/description suggestions using a 2-step AI review flow."""
+    """Generate stronger title/description/thumbnail prompts using a 2-step AI editorial flow."""
     render = await db.get(VideoRender, req.render_id)
     if not render:
         raise HTTPException(status_code=404, detail="Render not found")
@@ -225,8 +242,9 @@ async def ai_suggest(
             return ""
 
         markers = [
+            "🎵 letra da musica",
             "🎵 letra da música",
-            "letra da música",
+            "letra da musica",
             "letra da música",
             "[verso",
             "[refr",
@@ -244,125 +262,221 @@ async def ai_suggest(
             cleaned = cleaned[:cut_idx].strip()
 
         lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
-        return "\n".join(lines[:5]).strip()
+        return "\n".join(lines[:8]).strip()
 
-    # Build context for AI
+    def _trim_title(raw: str, max_len: int = 80) -> str:
+        title = re.sub(r"\s+", " ", str(raw or "")).strip()
+        if len(title) <= max_len:
+            return title
+        return (title[:max_len].rsplit(" ", 1)[0] or title[:max_len]).strip()
+
+    def _normalize_tags(raw_tags, max_items: int = 15) -> list[str]:
+        if isinstance(raw_tags, str):
+            candidates = re.split(r"[,\n;|]", raw_tags)
+        elif isinstance(raw_tags, list):
+            candidates = [str(item) for item in raw_tags]
+        else:
+            candidates = []
+
+        seen = set()
+        final = []
+        for item in candidates:
+            tag = re.sub(r"\s+", " ", str(item or "")).strip().lstrip("#")
+            if not tag:
+                continue
+            key = tag.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            final.append(tag)
+            if len(final) >= max_items:
+                break
+        return final
+
+    def _normalize_hashtags(raw_hashtags: str, fallback_tags: list[str], max_items: int = 15) -> str:
+        tokens = re.findall(r"#?[\wÀ-ÿ]+", str(raw_hashtags or ""), flags=re.UNICODE)
+        if not tokens and fallback_tags:
+            tokens = [f"#{tag.replace(' ', '')}" for tag in fallback_tags]
+
+        seen = set()
+        cleaned = []
+        for token in tokens:
+            label = token.lstrip("#").strip()
+            if not label:
+                continue
+            key = label.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(f"#{label}")
+            if len(cleaned) >= max_items:
+                break
+        return " ".join(cleaned)
+
+    def _derive_thumbnail_hook(seed: str) -> str:
+        words = re.findall(r"[\wÀ-ÿ]+", str(seed or ""), flags=re.UNICODE)
+        stopwords = {
+            "de", "da", "do", "das", "dos", "e", "em", "na", "no", "nas", "nos",
+            "com", "por", "para", "um", "uma", "o", "a", "os", "as", "que",
+        }
+        chosen = [w for w in words if len(w) > 1 and w.lower() not in stopwords]
+        if not chosen:
+            chosen = words
+        hook = " ".join(chosen[:5]).upper().strip()
+        if len(hook) > 32:
+            hook = (hook[:32].rsplit(" ", 1)[0] or hook[:32]).strip()
+        return hook or "ALTA PERFORMANCE"
+
+    def _build_thumbnail_prompt_template(
+        theme: str,
+        audience: str,
+        emotion: str,
+        element: str,
+        hook_text: str,
+    ) -> str:
+        return (
+            "Crie uma thumbnail profissional para YouTube em formato 16:9, resolucao 1280x720, "
+            "estilo altamente clicavel, com composicao limpa e forte contraste.\n\n"
+            f"Tema do video: {theme}\n"
+            f"Publico-alvo: {audience}\n"
+            f"Emocao principal: {emotion}\n"
+            f"Elemento central: {element}\n"
+            f"Texto grande na imagem: \"{hook_text}\"\n\n"
+            "A imagem deve ter:\n"
+            "- fundo simples e impactante\n"
+            "- rosto ou objeto principal em destaque\n"
+            "- iluminacao dramatica/profissional\n"
+            "- cores com alto contraste\n"
+            "- texto grande, legivel no celular\n"
+            "- espaco livre sem poluicao visual\n"
+            "- composicao que desperte curiosidade sem parecer falsa\n"
+            "- aparencia moderna, viral e profissional"
+        )
+
     context_parts = []
     if project.title:
-        context_parts.append(f"Título do projeto: {project.title}")
+        context_parts.append(f"Titulo do projeto: {project.title}")
     if project.track_title:
-        context_parts.append(f"Música: {project.track_title}")
+        context_parts.append(f"Musica: {project.track_title}")
     if project.track_artist:
         context_parts.append(f"Artista: {project.track_artist}")
     if project.style_prompt:
         context_parts.append(f"Estilo visual: {project.style_prompt}")
     if project.lyrics_text:
-        lyrics_preview = project.lyrics_text[:500]
-        context_parts.append(f"Letra da música:\n{lyrics_preview}")
+        lyrics_preview = project.lyrics_text[:700]
+        context_parts.append(f"Trecho da letra:\n{lyrics_preview}")
     if project.description:
-        context_parts.append(f"Descrição do projeto: {project.description}")
+        context_parts.append(f"Descricao do projeto: {project.description}")
+    if project.tags:
+        context_parts.append(f"Tags base: {', '.join(str(tag) for tag in project.tags[:12])}")
 
-    context = "\n".join(context_parts) or "Vídeo musical sem detalhes adicionais"
+    context = "\n".join(context_parts) or "Video musical sem detalhes adicionais."
 
-    tema = project.track_title or project.title or "Vídeo musical"
-    resumo = context[:2200]
-    tags = [str(tag).strip() for tag in (project.tags or []) if str(tag).strip()]
-    publico = "Público brasileiro do YouTube interessado em música e conteúdo emocional."
-    if tags:
-        publico = f"Público principal ligado a: {', '.join(tags[:6])}."
-    objetivo = "Maximizar CTR sem clickbait enganoso e melhorar clareza para o algoritmo."
+    tema = project.track_title or project.title or "Video musical"
+    resumo = context[:2800]
+    project_tags = [str(tag).strip() for tag in (project.tags or []) if str(tag).strip()]
+    publico = "Publico brasileiro do YouTube interessado em musica, foco e bem-estar."
+    if project_tags:
+        publico = f"Publico principal ligado a: {', '.join(project_tags[:6])}."
+    objetivo = "Maximizar CTR sem clickbait enganoso e melhorar descoberta em busca/sugeridos."
     tom_desejado = project.style_prompt or "envolvente, premium e humano"
 
-    stage1_prompt = f"""Você é um estrategista de crescimento para canais pequenos de música no YouTube.
+    stage1_prompt = f"""Voce e um estrategista senior de YouTube SEO + CTR no Brasil.
 
-Sua tarefa é transformar o conteúdo de um vídeo em:
-- 3 títulos fortes com potencial de CTR e clareza de busca
-- 1 descrição final enxuta para descoberta
+Sua tarefa e criar metadados de alto desempenho para um video, equilibrando descoberta (SEO) e clique (CTR) sem promessas falsas.
 
-Antes de escrever, descubra:
-- promessa principal da música
-- emoção principal (força, cura, esperança, fé, etc)
-- palavras-chave de busca mais naturais para esse tema
-- melhor ângulo para gerar clique sem enganar
+PRINCIPIOS:
+- titulo forte responde ao mesmo tempo: "sobre o que e" + "por que clicar"
+- primeiro bloco da descricao precisa vender o clique antes do "mostrar mais"
+- usar palavras de busca naturais e especificas do tema
 
-REGRAS DE TÍTULO:
-- sempre em português brasileiro
-- formato preferencial: "<identidade da música> | <frase de busca clara>"
-- combinar nome/identidade da música com intenção de busca
-- máximo 80 caracteres
+REGRAS DE TITULO:
+- portugues brasileiro
+- ate 80 caracteres
+- preferir estrutura: "palavra-chave principal + beneficio forte + curiosidade/promessa"
+- evitar exageros tipo "genio em 5 minutos"
 - sem nomes de IA/plataforma/marca
-- sem clickbait enganoso
 
-REGRAS DE DESCRIÇÃO:
-- 3 a 5 linhas curtas
-- linha 1: gancho emocional forte
-- linha 2: reforço com 2 ou 3 palavras-chave naturais
-- linha 3: CTA simples (ouça completa, curta, compartilhe, inscreva-se)
-- não incluir letra completa da música
-- não iniciar com bloco de letra
-- não usar texto técnico sobre produção
+REGRAS DE DESCRICAO:
+- 4 a 8 linhas curtas e objetivas
+- linha 1 com promessa e palavra-chave principal
+- linhas seguintes com beneficio pratico e contexto de uso
+- incluir CTA simples no final
+- nao colar letra completa da musica
+- nao usar texto tecnico de producao
 
-Entregue:
-1. palavras-chave principais
-2. ângulo central
-3. 3 títulos
-4. melhor título escolhido
-5. descrição final pronta para colar no YouTube
+REGRAS DE THUMBNAIL:
+- criar frase curta de capa (2 a 5 palavras)
+- propor prompt pronto no formato solicitado pelo usuario
+- foco em contraste alto, composicao limpa e curiosidade real
 
 DADOS DO VIDEO:
 Tema: {tema}
 Resumo: {resumo}
-Público: {publico}
+Publico: {publico}
 Objetivo: {objetivo}
 Tom desejado: {tom_desejado}
 
-Retorne SOMENTE JSON (sem markdown) neste formato:
+Retorne SOMENTE JSON (sem markdown):
 {{
   "keywords": ["...", "..."],
   "angle": "...",
-    "titles": ["título 1", "título 2", "título 3"],
+  "audience": "...",
+  "emotion": "...",
+  "element": "...",
+  "titles": ["...", "...", "...", "...", "..."],
   "selected_title": "...",
-  "description": "..."
+  "description": "...",
+  "hashtags": "#... #...",
+  "tags": ["...", "...", "..."],
+  "thumbnail_hook": "...",
+  "thumbnail_prompt": "..."
 }}"""
 
     try:
-        # Step 1: ideation model generates 3 title options + first description.
         stage1_resp = await _openai.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[{"role": "user", "content": stage1_prompt}],
-            temperature=0.9,
-            max_tokens=1400,
+            temperature=0.85,
+            max_tokens=1800,
         )
 
         stage1_data = _parse_json_response(stage1_resp.choices[0].message.content or "{}")
 
         raw_keywords = stage1_data.get("keywords", [])
         if isinstance(raw_keywords, str):
-            keywords = [k.strip() for k in raw_keywords.split(",") if k.strip()]
+            keywords = [k.strip() for k in re.split(r"[,\n;]", raw_keywords) if k.strip()]
         elif isinstance(raw_keywords, list):
             keywords = [str(k).strip() for k in raw_keywords if str(k).strip()]
         else:
             keywords = []
 
-        angle = str(stage1_data.get("angle", "")).strip()
+        angle = str(stage1_data.get("angle") or stage1_data.get("promise") or "").strip()
+        audience = str(stage1_data.get("audience") or publico).strip()
+        emotion = str(stage1_data.get("emotion") or "impacto").strip()
+        element = str(stage1_data.get("element") or "pessoa ou elemento do tema").strip()
 
-        raw_titles = stage1_data.get("titles", [])
+        raw_titles = stage1_data.get("titles", stage1_data.get("title_options", []))
         if isinstance(raw_titles, str):
             raw_titles = [raw_titles]
-        title_options = [str(t).strip() for t in raw_titles if str(t).strip()]
+        title_options = [_trim_title(str(t).strip(), 80) for t in raw_titles if str(t).strip()]
         if not title_options:
-            title_options = [project.title or project.track_title or "Novo vídeo"]
+            title_options = [_trim_title(project.title or project.track_title or "Novo video", 80)]
         while len(title_options) < 3:
             title_options.append(title_options[-1])
-        title_options = title_options[:3]
+        title_options = title_options[:5]
 
-        selected_title_stage1 = str(
-            stage1_data.get("selected_title")
-            or stage1_data.get("best_title")
-            or ""
-        ).strip()
+        selected_title_stage1 = _trim_title(
+            str(
+                stage1_data.get("selected_title")
+                or stage1_data.get("best_title")
+                or ""
+            ).strip(),
+            80,
+        )
         if selected_title_stage1 and selected_title_stage1 not in title_options:
-            title_options[0] = selected_title_stage1
+            title_options.insert(0, selected_title_stage1)
+            title_options = title_options[:5]
 
         draft_description = str(
             stage1_data.get("description")
@@ -372,76 +486,90 @@ Retorne SOMENTE JSON (sem markdown) neste formato:
         ).strip()
         draft_description = _strip_lyrics_blocks(draft_description)
 
-        stage2_prompt = f"""Você é uma segunda IA de revisão editorial para YouTube.
+        stage1_hashtags = str(stage1_data.get("hashtags") or "").strip()
+        stage1_tags = _normalize_tags(stage1_data.get("tags", []))
+        stage1_thumbnail_hook = str(stage1_data.get("thumbnail_hook") or "").strip()
+        stage1_thumbnail_prompt = str(stage1_data.get("thumbnail_prompt") or "").strip()
 
-    Sua função é revisar e pontuar 3 títulos gerados por uma IA anterior, depois escolher o melhor e refinar a descrição final.
+        titles_block = "\n".join(
+            f"{idx + 1}) {title}" for idx, title in enumerate(title_options)
+        )
+        stage2_prompt = f"""Voce e o editor-chefe de performance de um canal no YouTube.
 
-CONTEXTO REAL DO VIDEO:
+Revise os candidatos e escolha a melhor combinacao de titulo + descricao + thumbnail brief.
+
+CONTEXTO DO VIDEO:
 {context}
 
-    PALAVRAS-CHAVE (IA 1): {', '.join(keywords[:6]) if keywords else 'não informado'}
-    ÂNGULO CENTRAL (IA 1): {angle or 'não informado'}
+PALAVRAS-CHAVE BASE: {', '.join(keywords[:10]) if keywords else 'nao informado'}
+ANGULO BASE: {angle or 'nao informado'}
+PUBLICO: {audience or 'nao informado'}
+EMOCAO: {emotion or 'nao informado'}
 
 TITULOS CANDIDATOS:
-1) {title_options[0]}
-2) {title_options[1]}
-3) {title_options[2]}
+{titles_block}
 
-DESCRIÇÃO CANDIDATA:
-{draft_description or 'não informado'}
+DESCRICAO CANDIDATA:
+{draft_description or 'nao informado'}
 
-CRITÉRIOS DE REVISÃO:
-- clareza da promessa
-- potencial de CTR sem clickbait enganoso
-- leitura em mobile
-- aderência ao conteúdo real
-- combinação entre identidade da música e intenção de busca
-- uso estratégico de maiúsculas/minúsculas para destaque natural
-- descrição curta, objetiva e sem letra completa
+THUMBNAIL HOOK CANDIDATO:
+{stage1_thumbnail_hook or 'nao informado'}
 
-REGRAS OBRIGATÓRIAS DE SAÍDA:
-- tudo em português brasileiro
-- título final com no máximo 80 caracteres
-- priorize formato "identidade da música | frase de busca"
-- não incluir letra completa da música na descrição
-- sem nomes de IA/plataforma/marca
+THUMBNAIL PROMPT CANDIDATO:
+{stage1_thumbnail_prompt or 'nao informado'}
 
-Retorne SOMENTE JSON (sem markdown) neste formato:
+CRITERIOS DE NOTA (0-10):
+- relevancia para busca
+- vontade de clicar sem enganar
+- clareza em mobile
+- aderencia ao conteudo real
+
+REGRAS DE SAIDA:
+- tudo em portugues brasileiro
+- titulo final ate 80 caracteres
+- descricao objetiva (4 a 8 linhas) sem letra completa
+- hashtags limpas (formato #tag #tag)
+- thumbnail_hook com 2 a 5 palavras
+- thumbnail_prompt pronto para gerador de imagem
+
+Retorne SOMENTE JSON:
 {{
   "title_scores": [
-    {{"title": "...", "score": 0, "why": "..."}},
-    {{"title": "...", "score": 0, "why": "..."}},
     {{"title": "...", "score": 0, "why": "..."}}
   ],
   "chosen_title": "...",
   "description": "...",
   "hashtags": "#... #...",
-  "tags": ["...", "...", "..."]
+  "tags": ["...", "..."],
+  "thumbnail_hook": "...",
+  "thumbnail_prompt": "..."
 }}"""
 
-        # Step 2: reviewer model scores and selects the best title/description.
         stage2_data: dict = {}
         try:
             stage2_resp = await _openai.chat.completions.create(
                 model="gpt-4o",
                 messages=[{"role": "user", "content": stage2_prompt}],
-                temperature=0.6,
-                max_tokens=1200,
+                temperature=0.35,
+                max_tokens=1600,
             )
             stage2_data = _parse_json_response(stage2_resp.choices[0].message.content or "{}")
+            if not isinstance(stage2_data, dict):
+                stage2_data = {}
         except Exception as review_err:
             logger.warning(f"AI second-pass review failed, using first-pass result: {review_err}")
 
-        chosen_title = str(
-            stage2_data.get("chosen_title")
-            or stage2_data.get("best_title")
-            or selected_title_stage1
-            or title_options[0]
-        ).strip()
-        if len(chosen_title) > 90:
-            chosen_title = (chosen_title[:90].rsplit(" ", 1)[0] or chosen_title[:90]).strip()
+        chosen_title = _trim_title(
+            str(
+                stage2_data.get("chosen_title")
+                or stage2_data.get("best_title")
+                or selected_title_stage1
+                or title_options[0]
+            ).strip(),
+            80,
+        )
         if not chosen_title:
-            chosen_title = project.title or project.track_title or "Novo video"
+            chosen_title = _trim_title(project.title or project.track_title or "Novo video", 80)
 
         final_description = str(
             stage2_data.get("description")
@@ -451,21 +579,44 @@ Retorne SOMENTE JSON (sem markdown) neste formato:
             or ""
         ).strip()
         final_description = _strip_lyrics_blocks(final_description)
+        if len(final_description) > 1800:
+            final_description = (
+                final_description[:1800].rsplit(" ", 1)[0].strip() or final_description[:1800]
+            )
 
-        hashtags = str(stage2_data.get("hashtags") or "").strip()
-        raw_tags = stage2_data.get("tags", [])
-        if isinstance(raw_tags, str):
-            tags = [item.strip() for item in raw_tags.split(",") if item.strip()]
-        elif isinstance(raw_tags, list):
-            tags = [str(item).strip() for item in raw_tags if str(item).strip()]
-        else:
-            tags = []
+        tags = _normalize_tags(stage2_data.get("tags", []))
+        if not tags:
+            tags = _normalize_tags(stage1_tags or keywords)
+        if not tags:
+            tags = _normalize_tags(project_tags)
 
-        if not tags and keywords:
-            tags = keywords[:12]
+        hashtags = _normalize_hashtags(str(stage2_data.get("hashtags") or "").strip(), tags)
+        if not hashtags:
+            hashtags = _normalize_hashtags(stage1_hashtags, tags)
 
-        if not hashtags and tags:
-            hashtags = " ".join(f"#{tag.replace(' ', '')}" for tag in tags[:15])
+        thumbnail_hook = str(
+            stage2_data.get("thumbnail_hook")
+            or stage1_thumbnail_hook
+            or ""
+        ).strip()
+        thumbnail_hook = _derive_thumbnail_hook(thumbnail_hook or chosen_title)
+
+        fallback_thumbnail_prompt = _build_thumbnail_prompt_template(
+            theme=chosen_title,
+            audience=audience or publico,
+            emotion=emotion or "impacto",
+            element=element or "pessoa ou elemento central do tema",
+            hook_text=thumbnail_hook,
+        )
+        thumbnail_prompt = str(
+            stage2_data.get("thumbnail_prompt")
+            or stage1_thumbnail_prompt
+            or fallback_thumbnail_prompt
+        ).strip()
+        if len(thumbnail_prompt) > 2600:
+            thumbnail_prompt = (
+                thumbnail_prompt[:2600].rsplit(" ", 1)[0].strip() or thumbnail_prompt[:2600]
+            )
 
         title_reviews = stage2_data.get("title_scores", [])
         if not isinstance(title_reviews, list):
@@ -480,6 +631,10 @@ Retorne SOMENTE JSON (sem markdown) neste formato:
             "title_reviews": title_reviews,
             "keywords": keywords,
             "angle": angle,
+            "audience": audience,
+            "emotion": emotion,
+            "thumbnail_hook": thumbnail_hook,
+            "thumbnail_prompt": thumbnail_prompt,
         }
     except Exception as e:
         logger.error(f"AI suggest failed: {e}", exc_info=True)
@@ -490,6 +645,8 @@ class ThumbnailRequest(BaseModel):
     render_id: int
     custom_title: str = ""  # Optional override for thumbnail text
     custom_description: str = ""  # Optional override for description/context
+    thumbnail_prompt: str = ""  # Optional ready-to-use prompt/brief
+    reference_image_upload_id: str = ""  # Optional temp image id uploaded by user
 
 
 @router.post("/generate-thumbnail")
@@ -526,6 +683,17 @@ async def generate_publish_thumbnail(
     style_hint = project.style_prompt or ""
     raw_description = req.custom_description or project.description or ""
     clean_description = (raw_description or "").strip()[:1200]
+    custom_prompt = (req.thumbnail_prompt or "").strip()
+    if len(custom_prompt) > 2200:
+        custom_prompt = custom_prompt[:2200].rsplit(" ", 1)[0].strip() or custom_prompt[:2200]
+
+    reference_image_path = ""
+    reference_upload_id = str(req.reference_image_upload_id or "").strip()
+    if reference_upload_id:
+        resolved_ref = _resolve_temp_image_upload(user["id"], reference_upload_id)
+        if not resolved_ref:
+            raise HTTPException(status_code=400, detail="Imagem de referencia nao encontrada. Reenvie a imagem.")
+        reference_image_path = str(resolved_ref)
 
     # If we have lyrics, extract a mood hint (just first line)
     if project.lyrics_text:
@@ -544,6 +712,8 @@ async def generate_publish_thumbnail(
                 artist=artist,
                 mood=mood,
                 style_hint=style_hint,
+                strategy_prompt=custom_prompt,
+                reference_image_path=reference_image_path,
                 output_path=output_path,
             ),
         )
@@ -562,6 +732,12 @@ async def generate_publish_thumbnail(
 
     except Exception as e:
         logger.error(f"Thumbnail generation failed: {e}", exc_info=True)
+        if reference_image_path:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao gerar thumbnail com imagem de referencia: {e}",
+            )
+
         # Fallback: try frame extraction if render has a video file
         if render.file_path and os.path.exists(render.file_path):
             try:

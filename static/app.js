@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v249 loaded");
+console.log("[CriaVideo] app.js v250 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -25,6 +25,9 @@ let _publishRenderLibrary = {
     items: [],
     selectedRenderId: 0,
 };
+let _publishThumbReferenceUploadId = "";
+let _publishThumbReferenceObjectUrl = "";
+let _publishLastThumbnailPrompt = "";
 let _pendingConnectPlatform = "";
 let _editingSocialAccountId = 0;
 let _tevoxiPendingToggleContext = "";
@@ -701,9 +704,26 @@ function bindDashboardEvents() {
         if (renderId) {
             const currentTitle = document.getElementById("pub-title").value;
             const currentDescription = document.getElementById("pub-description").value;
-            generatePublishThumbnail(parseInt(renderId, 10), currentTitle, currentDescription);
+            generatePublishThumbnail(
+                parseInt(renderId, 10),
+                currentTitle,
+                currentDescription,
+                _publishLastThumbnailPrompt,
+            );
         }
     });
+    const thumbRefBtn = document.getElementById("btn-upload-thumb-reference");
+    const thumbRefInput = document.getElementById("pub-thumb-reference-input");
+    const thumbRefRemoveBtn = document.getElementById("btn-remove-thumb-reference");
+    if (thumbRefBtn && thumbRefInput) {
+        thumbRefBtn.addEventListener("click", () => thumbRefInput.click());
+    }
+    if (thumbRefInput) {
+        thumbRefInput.addEventListener("change", handlePublishThumbReferenceSelect);
+    }
+    if (thumbRefRemoveBtn) {
+        thumbRefRemoveBtn.addEventListener("click", removePublishThumbReference);
+    }
     document.getElementById("btn-new-schedule").addEventListener("click", async () => {
         await loadAccountsForSelect();
         openModal("modal-new-schedule");
@@ -8256,6 +8276,136 @@ function getPublishDraftStorageKey(renderId) {
     return `${PUBLISH_DRAFT_STORAGE_PREFIX}${renderId}`;
 }
 
+function _revokePublishThumbReferenceObjectUrl() {
+    if (_publishThumbReferenceObjectUrl) {
+        URL.revokeObjectURL(_publishThumbReferenceObjectUrl);
+        _publishThumbReferenceObjectUrl = "";
+    }
+}
+
+function _setPublishThumbReferenceStatus(message = "", kind = "") {
+    const statusEl = document.getElementById("pub-thumb-reference-status");
+    const metaEl = document.getElementById("pub-thumb-reference-meta");
+    if (!statusEl || !metaEl) {
+        return;
+    }
+
+    const text = String(message || "").trim();
+    statusEl.textContent = text;
+    statusEl.classList.remove("is-ready", "is-error");
+    if (kind === "ready") {
+        statusEl.classList.add("is-ready");
+    } else if (kind === "error") {
+        statusEl.classList.add("is-error");
+    }
+
+    const previewEl = document.getElementById("pub-thumb-reference-preview");
+    const hasPreview = !!(previewEl && !previewEl.hidden && previewEl.src);
+    metaEl.hidden = !(text || hasPreview);
+}
+
+function clearPublishThumbReference(options = {}) {
+    const { keepStatus = false } = options;
+
+    _publishThumbReferenceUploadId = "";
+    _revokePublishThumbReferenceObjectUrl();
+
+    const input = document.getElementById("pub-thumb-reference-input");
+    if (input) {
+        input.value = "";
+    }
+
+    const previewEl = document.getElementById("pub-thumb-reference-preview");
+    if (previewEl) {
+        previewEl.hidden = true;
+        previewEl.src = "";
+    }
+
+    const removeBtn = document.getElementById("btn-remove-thumb-reference");
+    if (removeBtn) {
+        removeBtn.hidden = true;
+    }
+
+    if (keepStatus) {
+        const metaEl = document.getElementById("pub-thumb-reference-meta");
+        if (metaEl) {
+            metaEl.hidden = false;
+        }
+    } else {
+        _setPublishThumbReferenceStatus("", "");
+    }
+}
+
+function removePublishThumbReference() {
+    clearPublishThumbReference();
+    showToast("Imagem de referencia removida.", "info");
+}
+
+async function handlePublishThumbReferenceSelect(event) {
+    const input = event?.target;
+    const file = input?.files && input.files[0] ? input.files[0] : null;
+    if (!file) {
+        return;
+    }
+
+    const validTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!validTypes.includes(file.type)) {
+        alert("Use JPG, PNG ou WebP.");
+        if (input) input.value = "";
+        return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        alert("Imagem excede 10MB.");
+        if (input) input.value = "";
+        return;
+    }
+
+    const uploadBtn = document.getElementById("btn-upload-thumb-reference");
+    if (uploadBtn) {
+        uploadBtn.disabled = true;
+    }
+    _setPublishThumbReferenceStatus("Enviando imagem de referencia...", "");
+
+    try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const data = await apiForm("/video/upload-temp-image", fd);
+        const uploadId = String(data?.upload_id || "").trim();
+        if (!uploadId) {
+            throw new Error("Falha ao receber id da imagem enviada.");
+        }
+
+        _publishThumbReferenceUploadId = uploadId;
+        _revokePublishThumbReferenceObjectUrl();
+        _publishThumbReferenceObjectUrl = URL.createObjectURL(file);
+
+        const previewEl = document.getElementById("pub-thumb-reference-preview");
+        if (previewEl) {
+            previewEl.src = _publishThumbReferenceObjectUrl;
+            previewEl.hidden = false;
+        }
+
+        const removeBtn = document.getElementById("btn-remove-thumb-reference");
+        if (removeBtn) {
+            removeBtn.hidden = false;
+        }
+
+        _setPublishThumbReferenceStatus("Imagem pronta: sera usada na proxima geracao de thumbnail.", "ready");
+        showToast("Imagem de referencia anexada na thumbnail.", "success");
+    } catch (error) {
+        clearPublishThumbReference({ keepStatus: true });
+        _setPublishThumbReferenceStatus(`Erro ao enviar imagem: ${error.message || error}`, "error");
+        alert(`Erro ao enviar imagem de referencia: ${error.message || error}`);
+    } finally {
+        if (uploadBtn) {
+            uploadBtn.disabled = false;
+        }
+        if (input) {
+            input.value = "";
+        }
+    }
+}
+
 function clearPublishThumbnail() {
     const thumbArea = document.getElementById("pub-thumbnail-area");
     const thumbLoading = document.getElementById("pub-thumbnail-loading");
@@ -8398,6 +8548,7 @@ function collectPublishDraftFromForm() {
         description: document.getElementById("pub-description")?.value || "",
         hashtags: document.getElementById("pub-hashtags")?.value || "",
         thumbnail_url: getPublishThumbnailUrlFromForm(),
+        thumbnail_prompt: _publishLastThumbnailPrompt || "",
         platforms,
         account_ids: accountIds,
         updated_at: new Date().toISOString(),
@@ -8524,6 +8675,7 @@ async function applyPublishDraft(renderId) {
         });
     }
 
+    _publishLastThumbnailPrompt = String(draft.thumbnail_prompt || "").trim();
     applyPublishDraftThumbnail(draft.thumbnail_url || "");
 
     return true;
@@ -8710,7 +8862,9 @@ async function onRenderSelected(renderId) {
 
     // Show AI loading
     aiLoading.hidden = false;
+    _publishLastThumbnailPrompt = "";
     clearPublishThumbnail();
+    clearPublishThumbReference();
 
     const draftApplied = await applyPublishDraft(renderId);
     if (draftApplied) {
@@ -8730,17 +8884,23 @@ async function onRenderSelected(renderId) {
         descInput.value = data.description || "";
         hashtagsInput.value = data.hashtags || "";
         aiTitle = data.title || "";
+        _publishLastThumbnailPrompt = String(data.thumbnail_prompt || "").trim();
     } catch (err) {
         console.warn("AI suggest failed:", err);
     }
 
     // Then: generate thumbnail using the AI title for impactful text
-    await generatePublishThumbnail(renderId, aiTitle, descInput.value || "");
+    await generatePublishThumbnail(
+        renderId,
+        aiTitle,
+        descInput.value || "",
+        _publishLastThumbnailPrompt,
+    );
     aiLoading.hidden = true;
     renderPublishDraftPicker();
 }
 
-async function generatePublishThumbnail(renderId, customTitle, customDescription = "") {
+async function generatePublishThumbnail(renderId, customTitle, customDescription = "", thumbnailPrompt = "") {
     const thumbArea = document.getElementById("pub-thumbnail-area");
     const thumbLoading = document.getElementById("pub-thumbnail-loading");
     const thumbPreview = document.getElementById("pub-thumbnail-preview");
@@ -8755,6 +8915,10 @@ async function generatePublishThumbnail(renderId, customTitle, customDescription
         const body = { render_id: renderId };
         if (customTitle) body.custom_title = customTitle;
         if (customDescription) body.custom_description = customDescription;
+        if (thumbnailPrompt) body.thumbnail_prompt = thumbnailPrompt;
+        if (_publishThumbReferenceUploadId) {
+            body.reference_image_upload_id = _publishThumbReferenceUploadId;
+        }
         const data = await api("/publish/generate-thumbnail", {
             method: "POST",
             body: JSON.stringify(body),
@@ -8767,6 +8931,7 @@ async function generatePublishThumbnail(renderId, customTitle, customDescription
         }
     } catch (err) {
         console.warn("Thumbnail generation failed:", err);
+        showToast(`Erro ao gerar thumbnail: ${err.message || err}`, "error");
     } finally {
         thumbLoading.hidden = true;
     }

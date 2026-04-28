@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260427-97">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260427-98">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 266;
+        var REQUIRED_VER = 267;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -410,6 +410,15 @@
                                         </div>
                                     </div>
                                     <div id="pub-thumbnail-area" class="pub-thumbnail-area" hidden>
+                                        <div class="pub-thumbnail-tools">
+                                            <input id="pub-thumb-reference-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+                                            <button id="btn-upload-thumb-reference" class="btn btn-secondary btn-sm" type="button">Incluir imagem na thumbnail</button>
+                                            <button id="btn-remove-thumb-reference" class="btn btn-secondary btn-sm" type="button" hidden>Remover imagem</button>
+                                        </div>
+                                        <div id="pub-thumb-reference-meta" class="pub-thumb-reference-meta" hidden>
+                                            <img id="pub-thumb-reference-preview" class="pub-thumb-reference-preview" alt="Imagem de referencia da thumbnail" hidden>
+                                            <span id="pub-thumb-reference-status" class="pub-thumb-reference-status"></span>
+                                        </div>
                                         <div id="pub-thumbnail-loading" class="pub-thumbnail-loading" hidden>
                                             <div class="spinner-small"></div>
                                             <span>Gerando thumbnail com IA...</span>
@@ -2992,8 +3001,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260427-97"></script>
-    <script src="/video/static/pwa.js?v=20260427-97"></script>
+    <script src="/video/static/app.js?v=20260427-98"></script>
+    <script src="/video/static/pwa.js?v=20260427-98"></script>
 </body>
 </html>
 

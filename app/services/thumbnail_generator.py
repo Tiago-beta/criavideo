@@ -2,9 +2,11 @@
 Thumbnail Generator — Uses Google Nano Banana to generate
 YouTube/social media thumbnails (1280x720).
 """
+import base64
+import mimetypes
 import os
 import logging
-from pathlib import Path
+import re
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -37,12 +39,120 @@ def _build_thumbnail_hook(title: str, mood: str = "") -> str:
     return hook[:32].strip() or "FE PARA VENCER"
 
 
+def _extract_inline_image_bytes(response: object) -> bytes:
+    parts = []
+
+    direct_parts = getattr(response, "parts", None)
+    if isinstance(direct_parts, list):
+        parts.extend(direct_parts)
+
+    candidates = getattr(response, "candidates", None) or []
+    for cand in candidates:
+        content = getattr(cand, "content", None)
+        cand_parts = getattr(content, "parts", None) if content is not None else None
+        if isinstance(cand_parts, list):
+            parts.extend(cand_parts)
+
+    for part in parts:
+        inline_data = getattr(part, "inline_data", None)
+        if inline_data is None:
+            continue
+
+        data = getattr(inline_data, "data", None)
+        if not data:
+            continue
+
+        try:
+            return base64.b64decode(data) if isinstance(data, str) else bytes(data)
+        except Exception:
+            continue
+
+    return b""
+
+
+def _build_thumbnail_prompt(
+    title_text: str,
+    description_text: str,
+    hook_text: str,
+    mood: str,
+    style_hint: str,
+    strategy_prompt: str,
+    has_reference_image: bool,
+) -> str:
+    mood_short = re.sub(r"\s+", " ", str(mood or "")).strip()
+    style_short = re.sub(r"\s+", " ", str(style_hint or "")).strip()
+    strategy_short = str(strategy_prompt or "").strip()
+    audience_hint = "Publico brasileiro do YouTube interessado nesse tema."
+    emotion_hint = mood_short[:120] if mood_short else "curiosidade, impacto e vontade de clicar"
+    central_element_hint = "pessoa ou elemento principal ligado ao tema"
+
+    base_prompt = f"""Voce e um diretor de arte especialista em thumbnails de alta performance para YouTube.
+
+Crie uma thumbnail profissional para YouTube em formato 16:9, resolucao 1280x720, estilo altamente clicavel, com composicao limpa e forte contraste.
+
+Tema do video: {title_text}
+Publico-alvo: {audience_hint}
+Emocao principal: {emotion_hint}
+Elemento central: {central_element_hint}
+Texto grande na imagem: \"{hook_text}\"
+
+A imagem deve ter:
+- fundo simples e impactante
+- rosto ou objeto principal em destaque
+- iluminacao dramatica/profissional
+- cores com alto contraste
+- texto grande, legivel no celular
+- espaco livre sem poluicao visual
+- composicao que desperte curiosidade sem parecer falsa
+- aparencia moderna, viral e profissional
+
+REGRAS OBRIGATORIAS:
+- TODO texto renderizado na imagem deve ser em portugues brasileiro
+- use entre 2 e 5 palavras no texto principal
+- evitar frases longas
+- sem logos, marcas d'agua, interfaces ou textos pequenos
+- sem clickbait mentiroso
+- legibilidade maxima em tela de celular
+
+CONTEXTO DO VIDEO:
+Titulo: {title_text}
+Descricao resumida: {description_text}
+Tom/estilo visual: {style_short or 'cinematico, moderno e emocional'}
+"""
+
+    if strategy_short:
+        base_prompt += f"""
+
+BRIEF DE ESTRATEGIA (usar como prioridade):
+{strategy_short}
+"""
+
+    if has_reference_image:
+        base_prompt += """
+
+IMAGEM DE REFERENCIA ANEXADA:
+- use a pessoa/produto da imagem como elemento principal
+- manter identidade facial/visual reconhecivel
+- integrar naturalmente ao novo fundo, sem recortes artificiais
+- preservar aparencia profissional e realista
+"""
+
+    base_prompt += """
+
+Gere a imagem final agora. Nao explique e nao descreva. Retorne somente a thumbnail.
+"""
+
+    return base_prompt
+
+
 def generate_thumbnail(
     title: str,
     artist: str = "",
     description: str = "",
     mood: str = "",
     style_hint: str = "",
+    strategy_prompt: str = "",
+    reference_image_path: str = "",
     output_path: str = "",
 ) -> str:
     """Generate a thumbnail image using Nano Banana and a high-CTR prompt template."""
@@ -63,50 +173,36 @@ def generate_thumbnail(
 
     description_text = "\n".join(description_parts).strip() or "Sem descricao informada."
 
-    # Keep the prompt structure requested by the user while injecting real title/description values.
-    prompt = f"""Voce e um especialista em design de thumbnails para YouTube com profundo conhecimento em psicologia visual, CTR e engenharia de prompts para IA.
+    strategy_text = str(strategy_prompt or "").strip()
+    if len(strategy_text) > 2200:
+        strategy_text = strategy_text[:2200].rsplit(" ", 1)[0].strip() or strategy_text[:2200]
 
-Analise o titulo e descricao do video abaixo e gere DIRETAMENTE uma imagem de thumbnail profissional para YouTube com as seguintes especificacoes:
+    ref_path = str(reference_image_path or "").strip()
+    has_reference_image = bool(ref_path and os.path.exists(ref_path))
 
-TITULO DO VIDEO: {title_text}
-DESCRICAO DO VIDEO: {description_text}
-TEXTO CURTO SUGERIDO PARA A CAPA: {hook_text}
+    prompt = _build_thumbnail_prompt(
+        title_text=title_text,
+        description_text=description_text,
+        hook_text=hook_text,
+        mood=mood,
+        style_hint=style_hint,
+        strategy_prompt=strategy_text,
+        has_reference_image=has_reference_image,
+    )
 
-REGRAS OBRIGATORIAS para a thumbnail gerada:
-- TODO texto na imagem DEVE ser em PORTUGUES BRASILEIRO — NUNCA use ingles
-- A thumbnail deve funcionar como um outdoor de 1 segundo
-- Texto principal curto e memoravel: 2 a 4 palavras (maximo 32 caracteres), em CAIXA ALTA
-- NUNCA usar frase longa no texto da imagem
-- Formato: 16:9, proporcao widescreen, alta resolucao 4K
-- Ponto focal unico e dominante, sem poluicao visual
-- Alto contraste entre foreground e background para visibilidade mobile
-- Hierarquia visual: elemento principal ocupa 60-70% do frame
-- Iluminacao dramatica com volumetric lighting e profundidade
-- Cores saturadas e vibrantes que se destacam na interface do YouTube
-- Sensacao de urgencia ou curiosidade que forca o clique em 0.3 segundos
-- Legibilidade perfeita em tela de 300px (celular)
-- Estilo fotorrealista ou cinematografico de alto impacto
-- NUNCA coloque nomes de marcas, IA ou plataformas na imagem
-
-INSTRUCOES DE COMPOSICAO baseadas no conteudo analisado:
-- Se o tema envolve dinheiro/resultado: inclua numero ou valor especifico em destaque dourado/amarelo
-- Se e tutorial/como fazer: mostre o resultado final ou transformacao
-- Se e entretenimento/viral: rosto humano com expressao exagerada em close-up
-- Se e review/produto: produto centralizado com iluminacao dramatica + expressao de surpresa
-- Se e educacional: elemento visual que representa a pergunta ou curiosidade do tema
-- Se e lifestyle/vlog: atmosfera calorosa, cores quentes, energia positiva
-- Se e musica/inspiracional: imagem emocional e impactante que transmita o sentimento do tema
-- Se e gospel/religioso: natureza grandiosa + luz dramatica + atmosfera de fe, esperanca e superacao
-
-TEXTO NA IMAGEM (se aplicavel):
-Renderize o texto principal EM PORTUGUES com fonte bold, sans-serif, cor altamente contrastante ao fundo, tamanho que ocupe no minimo 25% da largura da imagem, com stroke/sombra leve para legibilidade. O texto deve ser chamativo e despertar curiosidade.
-Use o TEXTO CURTO SUGERIDO como base e, se ajustar, altere no maximo 1 palavra para aumentar impacto.
-
-Gere a thumbnail agora. Nao descreva, crie a imagem diretamente."""
+    contents_payload: list = []
+    if has_reference_image:
+        mime_type = mimetypes.guess_type(ref_path)[0] or "image/jpeg"
+        with open(ref_path, "rb") as ref_file:
+            ref_bytes = ref_file.read()
+        if not ref_bytes:
+            raise RuntimeError("Reference image is empty")
+        contents_payload.append(types.Part.from_bytes(data=ref_bytes, mime_type=mime_type))
+    contents_payload.append(prompt)
 
     response = google_client.models.generate_content(
         model="gemini-2.5-flash-image",
-        contents=[prompt],
+        contents=contents_payload,
         config=types.GenerateContentConfig(
             response_modalities=["IMAGE"],
             image_config=types.ImageConfig(
@@ -115,17 +211,17 @@ Gere a thumbnail agora. Nao descreva, crie a imagem diretamente."""
         )
     )
 
-    for part in response.parts:
-        if part.inline_data is not None:
-            # Convert raw bytes to PIL Image (part.as_image() returns SDK Image, not PIL)
-            import io
-            image = Image.open(io.BytesIO(part.inline_data.data))
-            # Resize to standard YouTube thumbnail size
-            image = image.resize((1280, 720), Image.LANCZOS)
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            image.save(output_path, "JPEG", quality=95)
-            logger.info(f"Thumbnail saved: {output_path}")
-            return output_path
+    image_bytes = _extract_inline_image_bytes(response)
+    if image_bytes:
+        import io
+
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        image = image.resize((1280, 720), Image.LANCZOS)
+        output_dir = os.path.dirname(output_path) or "."
+        os.makedirs(output_dir, exist_ok=True)
+        image.save(output_path, "JPEG", quality=95)
+        logger.info(f"Thumbnail saved: {output_path}")
+        return output_path
 
     raise RuntimeError("Nano Banana did not return a thumbnail image")
 
