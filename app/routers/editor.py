@@ -999,6 +999,25 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             src_duration,
         )
 
+        def _is_full_source_range(segments: list[tuple[float, float]]) -> bool:
+            if len(segments) != 1:
+                return False
+            seg_start, seg_end = segments[0]
+            if seg_start > 0.01:
+                return False
+            if src_duration <= 0:
+                return True
+            return seg_end >= max(0.0, src_duration - 0.01)
+
+        # If the user cut the video but left audio track untouched, keep base audio
+        # synchronized with the same cuts to avoid perceived "reinserted" sections.
+        if source_has_audio:
+            video_has_cuts = not _is_full_source_range(video_segments)
+            audio_is_untouched = _is_full_source_range(audio_segments)
+            if video_has_cuts and audio_is_untouched:
+                audio_segments = list(video_segments)
+                logger.info("[editor] Auto-syncing audio segments to video cuts")
+
         use_video_segment_filter = not (
             len(video_segments) == 1
             and video_segments[0][0] <= 0.01
