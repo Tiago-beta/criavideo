@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v247 loaded");
+console.log("[CriaVideo] app.js v248 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -18929,6 +18929,9 @@ async function _editorExport() {
     `;
     document.body.appendChild(overlay);
 
+    const fill = document.getElementById("editor-export-fill");
+    const status = document.getElementById("editor-export-status");
+
     try {
         // Upload music file if any
         let musicPath = String(_editor._musicServerPath || "").trim();
@@ -18974,8 +18977,6 @@ async function _editorExport() {
         const jobId = res.job_id;
 
         // Poll progress
-        const fill = document.getElementById("editor-export-fill");
-        const status = document.getElementById("editor-export-status");
         let done = false;
         while (!done) {
             await new Promise(r => setTimeout(r, 2000));
