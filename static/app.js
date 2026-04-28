@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v248 loaded");
+console.log("[CriaVideo] app.js v249 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -673,7 +673,7 @@ function bindDashboardEvents() {
     const renderPickerBtn = document.getElementById("pub-render-picker-btn");
     if (renderPickerBtn) {
         renderPickerBtn.addEventListener("click", () => {
-            _publishOpenRenderLibrary();
+            _publishOpenRenderSourceModal();
         });
     }
     const renderSelect = document.getElementById("pub-render-select");
@@ -755,8 +755,16 @@ function bindDashboardEvents() {
         });
     }
     document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && _publishRenderLibrary.open) {
+        if (event.key !== "Escape") {
+            return;
+        }
+        if (_publishRenderLibrary.open) {
             _publishCloseRenderLibrary();
+            return;
+        }
+        const sourceModal = document.getElementById("modal-publish-render-source");
+        if (sourceModal?.classList.contains("open")) {
+            closeModal("modal-publish-render-source");
         }
     });
     _publishSyncRenderPicker();
@@ -7744,6 +7752,71 @@ function _publishSyncRenderPicker() {
     pickerBtn.textContent = compactLabel;
     pickerBtn.classList.toggle("has-value", Boolean(selectedRenderId));
 }
+
+function _publishOpenRenderSourceModal() {
+    const select = document.getElementById("pub-render-select");
+    if (!select) {
+        return;
+    }
+    _publishCloseRenderLibrary();
+    openModal("modal-publish-render-source");
+}
+window._publishOpenRenderSourceModal = _publishOpenRenderSourceModal;
+
+function _publishChooseRenderSource(mode) {
+    const source = String(mode || "").trim();
+    if (source === "upload") {
+        closeModal("modal-publish-render-source");
+        const input = document.getElementById("pub-upload-video-input");
+        if (!input) {
+            showToast("Nao foi possivel abrir o seletor de video.", "error");
+            return;
+        }
+        input.click();
+        return;
+    }
+
+    closeModal("modal-publish-render-source");
+    _publishOpenRenderLibrary();
+}
+window._publishChooseRenderSource = _publishChooseRenderSource;
+
+async function _publishUploadVideoAndSelect(input) {
+    const file = input?.files?.[0];
+    if (!file) {
+        return;
+    }
+
+    const contentType = String(file.type || "").toLowerCase();
+    if (contentType && !contentType.startsWith("video/")) {
+        showToast("Selecione um arquivo de video valido.", "error");
+        input.value = "";
+        return;
+    }
+
+    try {
+        showToast("Enviando video para publicar...");
+        const formData = new FormData();
+        formData.append("file", file);
+        const payload = await apiForm("/video/editor/upload-video", formData, { method: "POST" });
+        const uploadedProjectId = parseInt(payload?.project_id || "0", 10) || 0;
+
+        await loadRenders(uploadedProjectId);
+        const selectedRenderId = parseInt(document.getElementById("pub-render-select")?.value || "", 10) || 0;
+        if (!selectedRenderId) {
+            showToast("Video enviado, mas nao foi possivel selecionar automaticamente.", "error");
+            return;
+        }
+
+        await onRenderSelected(selectedRenderId);
+        showToast("Video enviado e selecionado para publicar.", "success");
+    } catch (error) {
+        showToast(`Erro ao enviar video: ${error.message}`, "error");
+    } finally {
+        input.value = "";
+    }
+}
+window._publishUploadVideoAndSelect = _publishUploadVideoAndSelect;
 
 function _publishCloseRenderLibrary() {
     _publishRenderLibrary.open = false;

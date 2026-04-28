@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260427-96">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260427-97">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 265;
+        var REQUIRED_VER = 266;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -373,6 +373,7 @@
                                             <select id="pub-render-select" class="input pub-render-select-native" aria-label="Selecione o vídeo renderizado" hidden tabindex="-1">
                                                 <option value="">Selecione aqui...</option>
                                             </select>
+                                            <input id="pub-upload-video-input" type="file" accept="video/*" hidden onchange="_publishUploadVideoAndSelect(this)">
                                         </div>
                                         <div class="form-group publish-form-group">
                                             <select id="pub-draft-select" class="input" aria-label="Selecionar rascunho salvo">
@@ -667,6 +668,37 @@
                             </div>
                             <strong>Enviar da biblioteca</strong>
                             <small>Escolha um vídeo finalizado da lista para editar.</small>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-publish-render-source" class="modal">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h3>Selecionar video para publicar</h3>
+                <button class="modal-close" onclick="closeModal('modal-publish-render-source')" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="create-mode-selection editor-start-selection">
+                    <h3 class="wizard-question">De onde voce quer publicar?</h3>
+                    <div class="mode-selection-grid">
+                        <button class="mode-selection-card editor-start-card" type="button" onclick="_publishChooseRenderSource('upload')">
+                            <div class="mode-selection-icon">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            </div>
+                            <strong>Enviar video</strong>
+                            <small>Escolha um video do seu dispositivo para publicar.</small>
+                        </button>
+
+                        <button class="mode-selection-card editor-start-card" type="button" onclick="_publishChooseRenderSource('library')">
+                            <div class="mode-selection-icon">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polygon points="11 11 16 14 11 17 11 11"/></svg>
+                            </div>
+                            <strong>Enviar da biblioteca</strong>
+                            <small>Abra a biblioteca e escolha um video finalizado.</small>
                         </button>
                     </div>
                 </div>
@@ -2960,8 +2992,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260427-96"></script>
-    <script src="/video/static/pwa.js?v=20260427-96"></script>
+    <script src="/video/static/app.js?v=20260427-97"></script>
+    <script src="/video/static/pwa.js?v=20260427-97"></script>
 </body>
 </html>
 
