@@ -6,9 +6,11 @@ import os
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from app.database import async_session
 from app.models import PublishSchedule, PublishJob, PublishStatus, VideoRender, VideoProject, Platform, AutoSchedule, AutoScheduleTheme
 from app.config import get_settings
@@ -99,6 +101,29 @@ async def check_pending_publish_jobs():
 RENDER_EXPIRY_HOURS = 48
 
 
+def _is_tevoxi_music_project(project: Optional[VideoProject]) -> bool:
+    """Return True when the project uses music sourced from Tevoxi."""
+    if not project:
+        return False
+
+    tags = project.tags if isinstance(project.tags, dict) else {}
+
+    if str(tags.get("audio_source", "")).strip().lower() == "tevoxi":
+        return True
+    if str(tags.get("tevoxi_audio_url", "")).strip():
+        return True
+    if str(tags.get("tevoxi_job_id", "")).strip():
+        return True
+    if bool(tags.get("musical_short")):
+        return True
+
+    audio_url = str(tags.get("audio_url", "")).strip().lower()
+    if "/api/create-music/audio/" in audio_url or "tevoxi" in audio_url:
+        return True
+
+    return str(project.track_artist or "").strip().lower() == "tevoxi"
+
+
 async def check_auto_schedules():
     """Runs every minute. Checks for auto-schedules that are due and triggers video creation."""
     now = datetime.utcnow()
@@ -168,13 +193,19 @@ async def check_auto_channel_pilots():
 
 
 async def cleanup_expired_renders():
-    """Delete render files older than 48 hours to free server storage."""
+    """Delete render files older than 48 hours to free server storage.
+
+    Tevoxi-music projects are excluded from automatic cleanup and can only be
+    removed by explicit user deletion.
+    """
     cutoff = datetime.utcnow() - timedelta(hours=RENDER_EXPIRY_HOURS)
     media_dir = settings.media_dir
 
     async with async_session() as db:
         result = await db.execute(
-            select(VideoRender).where(
+            select(VideoRender)
+            .options(selectinload(VideoRender.project))
+            .where(
                 VideoRender.created_at < cutoff,
                 VideoRender.file_path.isnot(None),
             )
@@ -182,7 +213,12 @@ async def cleanup_expired_renders():
         expired_renders = result.scalars().all()
 
         deleted_count = 0
+        skipped_tevoxi_count = 0
         for render in expired_renders:
+            if _is_tevoxi_music_project(render.project):
+                skipped_tevoxi_count += 1
+                continue
+
             # Delete video file
             if render.file_path and os.path.exists(render.file_path):
                 try:
@@ -212,6 +248,9 @@ async def cleanup_expired_renders():
             await db.commit()
             logger.info(f"Cleanup: removed files for {deleted_count} expired render(s)")
 
+        if skipped_tevoxi_count:
+            logger.info(f"Cleanup: skipped {skipped_tevoxi_count} Tevoxi render(s) from auto-deletion")
+
         # Also clean up source assets (images, clips, subtitles, audio) for projects
         # where ALL renders have expired (file_path is None)
         result2 = await db.execute(
@@ -219,6 +258,9 @@ async def cleanup_expired_renders():
         )
         projects = result2.scalars().all()
         for project in projects:
+            if _is_tevoxi_music_project(project):
+                continue
+
             # Check if project has any render with files still on disk
             r_result = await db.execute(
                 select(VideoRender).where(
