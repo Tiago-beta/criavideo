@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v250 loaded");
+console.log("[CriaVideo] app.js v251 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -8549,6 +8549,7 @@ function collectPublishDraftFromForm() {
         hashtags: document.getElementById("pub-hashtags")?.value || "",
         thumbnail_url: getPublishThumbnailUrlFromForm(),
         thumbnail_prompt: _publishLastThumbnailPrompt || "",
+        thumbnail_provider: document.getElementById("pub-thumb-provider")?.value || "auto",
         platforms,
         account_ids: accountIds,
         updated_at: new Date().toISOString(),
@@ -8673,6 +8674,13 @@ async function applyPublishDraft(renderId) {
                 _publishAccountSelection[platform] = target;
             }
         });
+    }
+
+    const thumbProviderSelect = document.getElementById("pub-thumb-provider");
+    if (thumbProviderSelect) {
+        const provider = String(draft.thumbnail_provider || "auto");
+        const hasProviderOption = Array.from(thumbProviderSelect.options || []).some((opt) => opt.value === provider);
+        thumbProviderSelect.value = hasProviderOption ? provider : "auto";
     }
 
     _publishLastThumbnailPrompt = String(draft.thumbnail_prompt || "").trim();
@@ -8916,6 +8924,10 @@ async function generatePublishThumbnail(renderId, customTitle, customDescription
         if (customTitle) body.custom_title = customTitle;
         if (customDescription) body.custom_description = customDescription;
         if (thumbnailPrompt) body.thumbnail_prompt = thumbnailPrompt;
+        const providerPreference = String(document.getElementById("pub-thumb-provider")?.value || "auto").trim();
+        if (providerPreference) {
+            body.provider_preference = providerPreference;
+        }
         if (_publishThumbReferenceUploadId) {
             body.reference_image_upload_id = _publishThumbReferenceUploadId;
         }

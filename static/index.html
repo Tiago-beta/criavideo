@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260427-98">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260427-99">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 267;
+        var REQUIRED_VER = 268;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -410,6 +410,14 @@
                                         </div>
                                     </div>
                                     <div id="pub-thumbnail-area" class="pub-thumbnail-area" hidden>
+                                        <div class="pub-thumbnail-provider">
+                                            <label for="pub-thumb-provider">Modelo da thumbnail</label>
+                                            <select id="pub-thumb-provider" class="input" aria-label="Modelo da thumbnail">
+                                                <option value="auto">Auto (GPT Image + Nano Banana)</option>
+                                                <option value="openai">GPT Image</option>
+                                                <option value="google">Nano Banana</option>
+                                            </select>
+                                        </div>
                                         <div class="pub-thumbnail-tools">
                                             <input id="pub-thumb-reference-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
                                             <button id="btn-upload-thumb-reference" class="btn btn-secondary btn-sm" type="button">Incluir imagem na thumbnail</button>
@@ -3001,8 +3009,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260427-98"></script>
-    <script src="/video/static/pwa.js?v=20260427-98"></script>
+    <script src="/video/static/app.js?v=20260427-99"></script>
+    <script src="/video/static/pwa.js?v=20260427-99"></script>
 </body>
 </html>
 

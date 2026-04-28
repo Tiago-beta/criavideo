@@ -353,6 +353,106 @@ async def ai_suggest(
             "- aparencia moderna, viral e profissional"
         )
 
+    def _pick_primary_keyword(keywords_list: list[str], theme_seed: str) -> str:
+        for candidate in (keywords_list or []):
+            value = re.sub(r"\s+", " ", str(candidate or "")).strip(" #")
+            if len(value) >= 4:
+                return value
+
+        fallback = re.sub(r"\s+", " ", str(theme_seed or "")).strip(" #")
+        if not fallback:
+            return "hipnose guiada"
+        if len(fallback) > 48:
+            fallback = (fallback[:48].rsplit(" ", 1)[0] or fallback[:48]).strip()
+        return fallback.lower()
+
+    def _enforce_title_formula(raw_title: str, primary_keyword: str) -> str:
+        title = re.sub(r"\s+", " ", str(raw_title or "")).strip(" -|:")
+        keyword = re.sub(r"\s+", " ", str(primary_keyword or "")).strip(" -|:")
+        if not keyword:
+            keyword = "hipnose guiada"
+
+        benefit_fallback = "Desperte Seu Potencial Mental"
+        if not title:
+            title = benefit_fallback
+
+        title_lower = title.lower()
+        keyword_lower = keyword.lower()
+
+        if keyword_lower not in title_lower:
+            title = f"{keyword}: {title}"
+
+        if ":" not in title and "|" not in title:
+            title = f"{keyword}: {title if title.lower() != keyword_lower else benefit_fallback}"
+
+        title = re.sub(r"\s+", " ", title).strip()
+        if len(title) > 80:
+            title = (title[:80].rsplit(" ", 1)[0] or title[:80]).strip()
+
+        if len(title) < 45:
+            extension = " | Foco, Memoria e Clareza"
+            if len(title) + len(extension) <= 80:
+                title = title + extension
+
+        return title
+
+    def _description_looks_strong(text: str, primary_keyword: str) -> bool:
+        body = str(text or "").strip()
+        if len(body) < 260:
+            return False
+
+        lines = [line.strip() for line in body.splitlines() if line.strip()]
+        if len(lines) < 4:
+            return False
+
+        first_block = " ".join(lines[:2]).lower()
+        keyword = str(primary_keyword or "").strip().lower()
+        if keyword and keyword not in first_block:
+            return False
+
+        return True
+
+    def _build_description_template(
+        main_keyword: str,
+        angle_text: str,
+        audience_text: str,
+        keywords_list: list[str],
+    ) -> str:
+        keyword = re.sub(r"\s+", " ", str(main_keyword or "")).strip()
+        if not keyword:
+            keyword = "Hipnose guiada para foco"
+
+        angle_clean = re.sub(r"\s+", " ", str(angle_text or "")).strip()
+        if not angle_clean:
+            angle_clean = "mais foco, memoria e clareza mental"
+
+        audience_clean = re.sub(r"\s+", " ", str(audience_text or "")).strip()
+        if not audience_clean:
+            audience_clean = "quem busca concentracao, aprendizado e equilibrio emocional"
+
+        extra_keywords = [k for k in (keywords_list or []) if k and k.lower() != keyword.lower()][:4]
+        bullets = [
+            f"{keyword}",
+            extra_keywords[0] if len(extra_keywords) >= 1 else "Reprogramacao mental positiva",
+            extra_keywords[1] if len(extra_keywords) >= 2 else "Relaxamento profundo para clareza",
+            extra_keywords[2] if len(extra_keywords) >= 3 else "Fortalecimento de foco e memoria",
+        ]
+
+        lines = [
+            f"{keyword}: {angle_clean}.",
+            f"Nesta sessao guiada, voce entra em estado de relaxamento para melhorar concentracao, confianca e desempenho mental.",
+            f"Ideal para {audience_clean}.",
+            "",
+            "Neste video voce encontra:",
+            *[f"- {item}" for item in bullets],
+            "",
+            "Use fones, fique em local tranquilo e permita que sua mente absorva cada sugestao positiva.",
+            "Use este audio apenas em local seguro, nunca dirigindo ou realizando atividades que exigem atencao.",
+            "Inscreva-se no canal para receber novos conteudos de foco, memoria e reprogramacao mental.",
+        ]
+
+        return "\n".join(lines).strip()
+
     context_parts = []
     if project.title:
         context_parts.append(f"Titulo do projeto: {project.title}")
@@ -381,34 +481,29 @@ async def ai_suggest(
     objetivo = "Maximizar CTR sem clickbait enganoso e melhorar descoberta em busca/sugeridos."
     tom_desejado = project.style_prompt or "envolvente, premium e humano"
 
-    stage1_prompt = f"""Voce e um estrategista senior de YouTube SEO + CTR no Brasil.
+        stage1_prompt = f"""Voce e um estrategista senior de YouTube SEO + CTR no Brasil.
 
-Sua tarefa e criar metadados de alto desempenho para um video, equilibrando descoberta (SEO) e clique (CTR) sem promessas falsas.
+Sua tarefa e criar metadados que maximizem descoberta em busca e cliques qualificados sem enganar.
 
-PRINCIPIOS:
-- titulo forte responde ao mesmo tempo: "sobre o que e" + "por que clicar"
-- primeiro bloco da descricao precisa vender o clique antes do "mostrar mais"
-- usar palavras de busca naturais e especificas do tema
+GUIDE OBRIGATORIO DE THUMBNAIL (seguir estritamente):
+- a thumbnail precisa ter 1 ideia principal e ser entendida em menos de 1 segundo
+- usar rosto/personagem com emocao clara
+- usar poucas palavras grandes (2 a 5)
+- contraste forte para funcionar no celular
+- incluir elemento de curiosidade visual
+- promessa verdadeira e fiel ao video
 
-REGRAS DE TITULO:
-- portugues brasileiro
-- ate 80 caracteres
-- preferir estrutura: "palavra-chave principal + beneficio forte + curiosidade/promessa"
-- evitar exageros tipo "genio em 5 minutos"
-- sem nomes de IA/plataforma/marca
+GUIDE OBRIGATORIO DE TITULO E DESCRICAO:
+- titulo com palavra-chave principal no comeco
+- formula do titulo: [palavra-chave principal] + [beneficio forte] + [curiosidade ou promessa]
+- evitar exageros falsos
+- descricao com 2 a 3 primeiras linhas fortes para vender o clique antes do "mostrar mais"
+- linha 1 deve repetir a palavra-chave principal
+- incluir CTA e hashtags relevantes sem excesso
 
-REGRAS DE DESCRICAO:
-- 4 a 8 linhas curtas e objetivas
-- linha 1 com promessa e palavra-chave principal
-- linhas seguintes com beneficio pratico e contexto de uso
-- incluir CTA simples no final
-- nao colar letra completa da musica
-- nao usar texto tecnico de producao
-
-REGRAS DE THUMBNAIL:
-- criar frase curta de capa (2 a 5 palavras)
-- propor prompt pronto no formato solicitado pelo usuario
-- foco em contraste alto, composicao limpa e curiosidade real
+BANCO DE TERMOS SEO (usar quando fizer sentido):
+hipnose para foco, hipnose para estudar, hipnose para inteligencia, hipnose guiada,
+reprogramacao mental, aumentar concentracao, memoria e foco, mente poderosa
 
 DADOS DO VIDEO:
 Tema: {tema}
@@ -417,20 +512,28 @@ Publico: {publico}
 Objetivo: {objetivo}
 Tom desejado: {tom_desejado}
 
+Regras de saida:
+- portugues brasileiro
+- titulo final ate 80 caracteres
+- gerar 5 opcoes de titulo
+- descricao pronta para colar no YouTube
+- thumbnail_hook com 2 a 5 palavras
+- thumbnail_prompt pronto para gerar arte
+
 Retorne SOMENTE JSON (sem markdown):
 {{
-  "keywords": ["...", "..."],
-  "angle": "...",
-  "audience": "...",
-  "emotion": "...",
-  "element": "...",
-  "titles": ["...", "...", "...", "...", "..."],
-  "selected_title": "...",
-  "description": "...",
-  "hashtags": "#... #...",
-  "tags": ["...", "...", "..."],
-  "thumbnail_hook": "...",
-  "thumbnail_prompt": "..."
+    "keywords": ["...", "..."],
+    "angle": "...",
+    "audience": "...",
+    "emotion": "...",
+    "element": "...",
+    "titles": ["...", "...", "...", "...", "..."],
+    "selected_title": "...",
+    "description": "...",
+    "hashtags": "#... #...",
+    "tags": ["...", "...", "..."],
+    "thumbnail_hook": "...",
+    "thumbnail_prompt": "..."
 }}"""
 
     try:
@@ -494,9 +597,9 @@ Retorne SOMENTE JSON (sem markdown):
         titles_block = "\n".join(
             f"{idx + 1}) {title}" for idx, title in enumerate(title_options)
         )
-        stage2_prompt = f"""Voce e o editor-chefe de performance de um canal no YouTube.
+                stage2_prompt = f"""Voce e o editor-chefe de performance de um canal no YouTube.
 
-Revise os candidatos e escolha a melhor combinacao de titulo + descricao + thumbnail brief.
+Revise tudo com rigor e selecione a versao final mais forte para SEO + CTR + retencao.
 
 CONTEXTO DO VIDEO:
 {context}
@@ -519,30 +622,30 @@ THUMBNAIL PROMPT CANDIDATO:
 {stage1_thumbnail_prompt or 'nao informado'}
 
 CRITERIOS DE NOTA (0-10):
-- relevancia para busca
-- vontade de clicar sem enganar
-- clareza em mobile
-- aderencia ao conteudo real
+- SEO: palavra-chave forte no comeco
+- CTR: beneficio claro + curiosidade sem mentira
+- Mobile: leitura rapida de titulo e thumbnail
+- Aderencia: total fidelidade ao conteudo
 
-REGRAS DE SAIDA:
-- tudo em portugues brasileiro
-- titulo final ate 80 caracteres
-- descricao objetiva (4 a 8 linhas) sem letra completa
-- hashtags limpas (formato #tag #tag)
-- thumbnail_hook com 2 a 5 palavras
-- thumbnail_prompt pronto para gerador de imagem
+REGRAS FINAIS OBRIGATORIAS:
+- titulo entre 45 e 80 caracteres
+- titulo no formato: [palavra-chave] + [beneficio] + [promessa]
+- descricao com primeiras 2 linhas muito fortes para clique
+- descricao sem letra completa
+- thumbnail_hook com 2 a 5 palavras em portugues
+- thumbnail_prompt com foco em 1 ideia principal, contraste forte e texto grande legivel
 
 Retorne SOMENTE JSON:
 {{
-  "title_scores": [
-    {{"title": "...", "score": 0, "why": "..."}}
-  ],
-  "chosen_title": "...",
-  "description": "...",
-  "hashtags": "#... #...",
-  "tags": ["...", "..."],
-  "thumbnail_hook": "...",
-  "thumbnail_prompt": "..."
+    "title_scores": [
+        {{"title": "...", "score": 0, "why": "..."}}
+    ],
+    "chosen_title": "...",
+    "description": "...",
+    "hashtags": "#... #...",
+    "tags": ["...", "..."],
+    "thumbnail_hook": "...",
+    "thumbnail_prompt": "..."
 }}"""
 
         stage2_data: dict = {}
@@ -571,6 +674,9 @@ Retorne SOMENTE JSON:
         if not chosen_title:
             chosen_title = _trim_title(project.title or project.track_title or "Novo video", 80)
 
+        primary_keyword = _pick_primary_keyword(keywords, tema)
+        chosen_title = _enforce_title_formula(chosen_title, primary_keyword)
+
         final_description = str(
             stage2_data.get("description")
             or stage2_data.get("final_description")
@@ -582,6 +688,14 @@ Retorne SOMENTE JSON:
         if len(final_description) > 1800:
             final_description = (
                 final_description[:1800].rsplit(" ", 1)[0].strip() or final_description[:1800]
+            )
+
+        if not _description_looks_strong(final_description, primary_keyword):
+            final_description = _build_description_template(
+                main_keyword=primary_keyword,
+                angle_text=angle,
+                audience_text=audience,
+                keywords_list=keywords,
             )
 
         tags = _normalize_tags(stage2_data.get("tags", []))
@@ -599,15 +713,20 @@ Retorne SOMENTE JSON:
             or stage1_thumbnail_hook
             or ""
         ).strip()
-        thumbnail_hook = _derive_thumbnail_hook(thumbnail_hook or chosen_title)
+        thumbnail_hook = _derive_thumbnail_hook(thumbnail_hook or chosen_title or primary_keyword)
 
-        fallback_thumbnail_prompt = _build_thumbnail_prompt_template(
+        base_thumbnail_prompt = _build_thumbnail_prompt_template(
             theme=chosen_title,
             audience=audience or publico,
             emotion=emotion or "impacto",
             element=element or "pessoa ou elemento central do tema",
             hook_text=thumbnail_hook,
         )
+        extra_thumbnail_notes = str(stage2_data.get("thumbnail_prompt") or stage1_thumbnail_prompt or "").strip()
+        fallback_thumbnail_prompt = base_thumbnail_prompt
+        if extra_thumbnail_notes:
+            fallback_thumbnail_prompt = f"{base_thumbnail_prompt}\n\nDirecoes extras do editor:\n{extra_thumbnail_notes}"
+
         thumbnail_prompt = str(
             stage2_data.get("thumbnail_prompt")
             or stage1_thumbnail_prompt
@@ -647,6 +766,7 @@ class ThumbnailRequest(BaseModel):
     custom_description: str = ""  # Optional override for description/context
     thumbnail_prompt: str = ""  # Optional ready-to-use prompt/brief
     reference_image_upload_id: str = ""  # Optional temp image id uploaded by user
+    provider_preference: str = "auto"  # auto | openai | google
 
 
 @router.post("/generate-thumbnail")
@@ -714,6 +834,7 @@ async def generate_publish_thumbnail(
                 style_hint=style_hint,
                 strategy_prompt=custom_prompt,
                 reference_image_path=reference_image_path,
+                provider_preference=req.provider_preference,
                 output_path=output_path,
             ),
         )

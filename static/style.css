@@ -5629,6 +5629,15 @@ th,
 .pub-thumbnail-area {
     margin-bottom: 12px;
 }
+.pub-thumbnail-provider {
+    margin-bottom: 8px;
+}
+.pub-thumbnail-provider label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
 .pub-thumbnail-tools {
     display: flex;
     flex-wrap: wrap;
