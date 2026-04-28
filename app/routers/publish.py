@@ -481,7 +481,7 @@ async def ai_suggest(
     objetivo = "Maximizar CTR sem clickbait enganoso e melhorar descoberta em busca/sugeridos."
     tom_desejado = project.style_prompt or "envolvente, premium e humano"
 
-        stage1_prompt = f"""Voce e um estrategista senior de YouTube SEO + CTR no Brasil.
+    stage1_prompt = f"""Voce e um estrategista senior de YouTube SEO + CTR no Brasil.
 
 Sua tarefa e criar metadados que maximizem descoberta em busca e cliques qualificados sem enganar.
 
@@ -597,7 +597,7 @@ Retorne SOMENTE JSON (sem markdown):
         titles_block = "\n".join(
             f"{idx + 1}) {title}" for idx, title in enumerate(title_options)
         )
-                stage2_prompt = f"""Voce e o editor-chefe de performance de um canal no YouTube.
+        stage2_prompt = f"""Voce e o editor-chefe de performance de um canal no YouTube.
 
 Revise tudo com rigor e selecione a versao final mais forte para SEO + CTR + retencao.
 
