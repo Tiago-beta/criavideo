@@ -737,7 +737,7 @@ async def _generate_persona_image_with_prompt(
     has_openai_key = bool((settings.openai_api_key or "").strip())
     has_google_key = bool((settings.google_ai_api_key or "").strip())
 
-    if not has_openai_key and not (normalized_type == "desenho" and has_google_key):
+    if not has_openai_key and not has_google_key:
         raise RuntimeError("Nenhuma chave de IA configurada para gerar imagem de persona")
 
     output_dir = _persona_storage_dir(user_id, normalized_type)
@@ -766,7 +766,7 @@ async def _generate_persona_image_with_prompt(
                 )
                 image_response = None
 
-        if image_response is None and normalized_type == "desenho" and has_google_key:
+        if image_response is None and has_google_key:
             google_bytes, google_mime = await asyncio.to_thread(
                 _generate_with_google_image,
                 prompt,

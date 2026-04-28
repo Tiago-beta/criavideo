@@ -1,6 +1,6 @@
 """
-Thumbnail Generator — Uses Google Nano Banana to generate
-YouTube/social media thumbnails (1280x720).
+Thumbnail Generator — Uses GPT Image as default and
+Google Nano Banana as fallback for YouTube/social thumbnails (1280x720).
 """
 import base64
 import io
@@ -27,11 +27,11 @@ except Exception as exc:
 
 def _normalize_provider_preference(provider_preference: str) -> str:
     value = str(provider_preference or "").strip().lower()
-    if value in {"openai", "gpt", "gpt-image", "gpt-image-1"}:
+    if value in {"", "auto", "openai", "gpt", "gpt-image", "gpt-image-1"}:
         return "openai"
     if value in {"google", "gemini", "nano", "nano-banana", "banana"}:
         return "google"
-    return "auto"
+    return "openai"
 
 
 def _build_thumbnail_hook(title: str, mood: str = "") -> str:
@@ -212,7 +212,7 @@ def generate_thumbnail(
     style_hint: str = "",
     strategy_prompt: str = "",
     reference_image_path: str = "",
-    provider_preference: str = "auto",
+    provider_preference: str = "openai",
     output_path: str = "",
 ) -> str:
     """Generate a thumbnail image using GPT Image and/or Nano Banana."""
@@ -254,10 +254,10 @@ def generate_thumbnail(
     has_openai_key = bool((settings.openai_api_key or "").strip())
     has_google_key = google_client is not None
 
-    if normalized_provider == "openai":
-        provider_order = ["openai"]
-    elif normalized_provider == "google":
+    if normalized_provider == "google":
         provider_order = ["google"]
+        if has_openai_key:
+            provider_order.append("openai")
     else:
         provider_order = []
         if has_openai_key:

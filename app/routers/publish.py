@@ -766,7 +766,7 @@ class ThumbnailRequest(BaseModel):
     custom_description: str = ""  # Optional override for description/context
     thumbnail_prompt: str = ""  # Optional ready-to-use prompt/brief
     reference_image_upload_id: str = ""  # Optional temp image id uploaded by user
-    provider_preference: str = "auto"  # auto | openai | google
+    provider_preference: str = "openai"  # openai (default) | google
 
 
 @router.post("/generate-thumbnail")
@@ -775,7 +775,7 @@ async def generate_publish_thumbnail(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate a viral thumbnail for the video using Nano Banana (Gemini)."""
+    """Generate a viral thumbnail for the video (GPT Image default, Nano Banana fallback)."""
     render = await db.get(VideoRender, req.render_id)
     if not render:
         raise HTTPException(status_code=404, detail="Render not found")

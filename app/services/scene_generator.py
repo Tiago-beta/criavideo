@@ -1,6 +1,6 @@
 """
-Scene Generator — Uses Google Nano Banana (Gemini 3.1 Flash Image)
-to generate background images for each scene of the music video.
+Scene Generator — Uses GPT Image as the default provider,
+with Google Nano Banana as fallback for scene image generation.
 Includes Image Bank: reuses previously generated images via semantic tags.
 """
 import os
@@ -386,13 +386,13 @@ def generate_scene_image(
     output_path: str = "",
     allow_faces: bool = False,
     reference_image_path: str = "",
-    provider_preference: str = "",
+    provider_preference: str = "openai",
     metadata: dict | None = None,
     reference_mode: str = "",
 ) -> str:
-    """Generate a single scene image using Nano Banana. Synchronous (runs in thread).
+    """Generate a single scene image with GPT Image as default and Nano Banana as fallback.
     Set allow_faces=True for realistic/multi-clip videos that need character consistency.
-    If reference_image_path is provided, Nano Banana receives that exact image as identity anchor."""
+    If reference_image_path is provided, the provider receives that image as identity anchor."""
     if allow_faces:
         style_prefix = (
             "Cinematic, high quality, professional lighting, photorealistic. "
@@ -445,7 +445,13 @@ def generate_scene_image(
                 "Preserve the same face, skin tone, hair color/style, age appearance, and overall likeness. "
                 "Only change scene composition, camera movement, and environment requested by the prompt."
             )
-    provider_pref = str(provider_preference or "").strip().lower()
+    provider_pref_raw = str(provider_preference or "openai").strip().lower()
+    if provider_pref_raw in {"", "auto", "openai", "gpt", "gpt-image", "gpt-image-1"}:
+        provider_pref = "openai"
+    elif provider_pref_raw in {"google", "gemini", "nano", "nano-banana", "banana"}:
+        provider_pref = "google"
+    else:
+        provider_pref = "openai"
 
     def _set_provider_meta(provider_name: str) -> None:
         if isinstance(metadata, dict):
@@ -594,7 +600,7 @@ def generate_scene_image(
         try:
             client = openai.OpenAI(api_key=settings.openai_api_key)
             img_resp = client.images.generate(
-                model="gpt-image-1",
+                model=(settings.persona_image_openai_model or "gpt-image-1"),
                 prompt=(source_prompt or "")[:3800],
                 size=_openai_image_size(aspect_ratio),
             )
@@ -771,12 +777,12 @@ def generate_scene_image(
             len(prompt_attempts),
         )
 
-    # Fallback 1: OpenAI image generation if Gemini image returns empty payload.
+    # Fallback 1: Preserve uploaded reference image when identity lock is enabled.
     if _save_reference_passthrough_image():
         logger.warning(f"Scene image saved via reference passthrough fallback: {output_path}")
         return output_path
 
-    # Fallback 2: OpenAI image generation if Gemini image returns empty payload.
+    # Fallback 2: Try OpenAI one more time after provider-chain failures.
     if _save_openai_fallback_image(full_prompt):
         logger.info(f"Scene image saved via OpenAI fallback: {output_path}")
         return output_path
