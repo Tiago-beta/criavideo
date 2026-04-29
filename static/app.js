@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v256 loaded");
+console.log("[CriaVideo] app.js v257 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2137,6 +2137,10 @@ let workflowState = {
     selectedNodeId: "",
     selectedConnectionIndex: -1,
     pendingPort: "",
+    portDrag: null,
+    undoStack: [],
+    redoStack: [],
+    restoringHistory: false,
     templateKey: "",
     connections: [
         ["prompt-out", "model-prompt-in"],
@@ -3977,6 +3981,10 @@ function initWorkflowBuilder() {
     if (deleteTemplateBtn) deleteTemplateBtn.addEventListener("click", workflowDeleteTemplate);
     const disconnectBtn = document.getElementById("workflow-disconnect-link");
     if (disconnectBtn) disconnectBtn.addEventListener("click", workflowDeleteSelectedConnection);
+    const undoBtn = document.getElementById("workflow-undo");
+    if (undoBtn) undoBtn.addEventListener("click", workflowUndo);
+    const redoBtn = document.getElementById("workflow-redo");
+    if (redoBtn) redoBtn.addEventListener("click", workflowRedo);
 
     const addMainBtn = document.getElementById("workflow-add-main");
     if (addMainBtn) addMainBtn.addEventListener("click", workflowToggleAddMenu);
@@ -4051,6 +4059,7 @@ function initWorkflowBuilder() {
     workflowRenderVideoPreview();
     workflowRenderAudioPreview();
     workflowRenderConnections();
+    workflowRecordHistory();
     setTimeout(workflowFitCanvas, 50);
 }
 
@@ -4072,6 +4081,8 @@ function workflowBindNodeDragging(root) {
         if (port.dataset.portBound === "1") return;
         port.dataset.portBound = "1";
         port.addEventListener("click", workflowHandlePortClick);
+        port.addEventListener("pointerdown", workflowStartPortDrag);
+        port.addEventListener("pointerup", workflowEndPortDrag);
     });
 }
 
@@ -4106,6 +4117,50 @@ function workflowHandleKeydown(event) {
     }
 }
 
+function workflowRecordHistory() {
+    if (workflowState.restoringHistory) return;
+    const snapshot = workflowSerializeTemplate();
+    const encoded = JSON.stringify(snapshot);
+    if (workflowState.undoStack[workflowState.undoStack.length - 1] === encoded) return;
+    workflowState.undoStack.push(encoded);
+    if (workflowState.undoStack.length > 80) workflowState.undoStack.shift();
+    workflowState.redoStack = [];
+    workflowUpdateHistoryButtons();
+}
+
+function workflowUpdateHistoryButtons() {
+    const undoBtn = document.getElementById("workflow-undo");
+    const redoBtn = document.getElementById("workflow-redo");
+    if (undoBtn) undoBtn.disabled = workflowState.undoStack.length <= 1;
+    if (redoBtn) redoBtn.disabled = workflowState.redoStack.length === 0;
+}
+
+function workflowRestoreHistorySnapshot(encoded) {
+    if (!encoded) return;
+    workflowState.restoringHistory = true;
+    try {
+        workflowApplyTemplateData(JSON.parse(encoded), { fit: false });
+    } catch (_) {
+    } finally {
+        workflowState.restoringHistory = false;
+        workflowUpdateHistoryButtons();
+    }
+}
+
+function workflowUndo() {
+    if (workflowState.undoStack.length <= 1) return;
+    const current = workflowState.undoStack.pop();
+    workflowState.redoStack.push(current);
+    workflowRestoreHistorySnapshot(workflowState.undoStack[workflowState.undoStack.length - 1]);
+}
+
+function workflowRedo() {
+    const next = workflowState.redoStack.pop();
+    if (!next) return;
+    workflowState.undoStack.push(next);
+    workflowRestoreHistorySnapshot(next);
+}
+
 function workflowDeleteSelectedNode() {
     const nodeId = workflowState.selectedNodeId;
     if (!nodeId || ["model", "output"].includes(nodeId)) return;
@@ -4117,6 +4172,7 @@ function workflowDeleteSelectedNode() {
     workflowState.selectedNodeId = "";
     workflowState.pendingPort = "";
     workflowRenderConnections();
+    workflowRecordHistory();
 }
 
 function workflowHandlePortClick(event) {
@@ -4135,6 +4191,31 @@ function workflowHandlePortClick(event) {
     document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.remove("pending"));
 }
 
+function workflowStartPortDrag(event) {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    const port = event.currentTarget?.dataset?.port || "";
+    if (!port) return;
+    workflowState.portDrag = { port, pointerId: event.pointerId };
+    workflowState.pendingPort = port;
+    document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.toggle("pending", el.dataset.port === port));
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+}
+
+function workflowEndPortDrag(event) {
+    const drag = workflowState.portDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.stopPropagation();
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".workflow-port");
+    const targetPort = target?.dataset?.port || "";
+    if (targetPort && targetPort !== drag.port) {
+        workflowConnectPorts(drag.port, targetPort);
+    }
+    workflowState.portDrag = null;
+    workflowState.pendingPort = "";
+    document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.remove("pending"));
+}
+
 function workflowConnectPorts(firstPort, secondPort) {
     const firstIsOut = workflowPortDirection(firstPort) === "out";
     const from = firstIsOut ? firstPort : secondPort;
@@ -4143,6 +4224,7 @@ function workflowConnectPorts(firstPort, secondPort) {
     if (workflowState.connections.some(([a, b]) => a === from && b === to)) return;
     workflowState.connections.push([from, to]);
     workflowRenderConnections();
+    workflowRecordHistory();
 }
 
 function workflowPortDirection(portName) {
@@ -4222,6 +4304,7 @@ function workflowGetNodeBounds() {
 
 function workflowStartDrag(event, node) {
     if (!node || event.button !== 0) return;
+    if (event.target.closest(".workflow-port")) return;
     if (event.target.closest("textarea, input, select, button, label") && !event.target.closest(".workflow-port")) return;
     workflowSelectNode(node.dataset.nodeId || "");
     event.stopPropagation();
@@ -4264,6 +4347,7 @@ function workflowEndDrag(event) {
     drag.node.removeEventListener("pointercancel", workflowEndDrag);
     workflowState.drag = null;
     workflowRenderConnections();
+    workflowRecordHistory();
 }
 
 function workflowStartPan(event) {
@@ -4468,7 +4552,6 @@ function workflowAddNode(kind) {
             <div class="workflow-node-actions"><button class="workflow-mini-btn" type="button" onclick="document.getElementById('workflow-video-input')?.click()">Enviar vídeo</button></div>
             <span class="workflow-port workflow-port-out" data-port="${nodeId}-out"></span>
         `;
-        workflowState.connections.push([`${nodeId}-out`, "model-video-in"]);
     } else if (kind === "audio") {
         section.innerHTML = `
             <header>Novo áudio</header>
@@ -4476,20 +4559,20 @@ function workflowAddNode(kind) {
             <div class="workflow-node-actions"><button class="workflow-mini-btn" type="button" onclick="document.getElementById('workflow-audio-input')?.click()">Enviar áudio</button></div>
             <span class="workflow-port workflow-port-out" data-port="${nodeId}-out"></span>
         `;
-        workflowState.connections.push([`${nodeId}-out`, "model-audio-in"]);
     } else {
         section.innerHTML = `
             <header>Novo prompt</header>
             <textarea class="workflow-textarea" rows="5" placeholder="Digite uma variação, fase ou instrução adicional..."></textarea>
             <span class="workflow-port workflow-port-out" data-port="${nodeId}-out"></span>
         `;
-        workflowState.connections.push([`${nodeId}-out`, "model-prompt-in"]);
     }
 
     canvas.appendChild(section);
     workflowBindNodeDragging(section);
     workflowCloseAddMenu();
     workflowRenderConnections();
+    workflowSelectNode(nodeId);
+    workflowRecordHistory();
 }
 
 async function workflowGenerateNodeImage(button) {
@@ -4529,6 +4612,7 @@ async function workflowGenerateNodeImage(button) {
         if (outPort && !workflowState.connections.some(([from, to]) => from === outPort && to === "model-images-in")) {
             workflowState.connections.push([outPort, "model-images-in"]);
             workflowRenderConnections();
+            workflowRecordHistory();
         }
         showToast("Imagem gerada e ligada ao Seedance.", "success");
     } catch (error) {
@@ -4603,7 +4687,7 @@ function workflowControlSelector(el) {
     return `${el.tagName.toLowerCase()}:nth-of-type(${Math.max(1, all.indexOf(el) + 1)})`;
 }
 
-function workflowApplyTemplateData(data) {
+function workflowApplyTemplateData(data, options = {}) {
     const canvas = document.getElementById("workflow-canvas");
     const lines = document.getElementById("workflow-lines");
     if (!canvas || !data?.nodes) return;
@@ -4634,7 +4718,7 @@ function workflowApplyTemplateData(data) {
     workflowRenderVideoPreview();
     workflowRenderAudioPreview();
     workflowRenderConnections();
-    workflowFitCanvas();
+    if (options.fit !== false) workflowFitCanvas();
 }
 
 function workflowSaveTemplate() {
@@ -4700,6 +4784,7 @@ async function workflowHandleImageInput(event) {
     workflowState.images = workflowState.images.concat(files.slice(0, remaining)).slice(0, 9);
     workflowState.imageUploadIds = [];
     workflowRenderImagePreview();
+    workflowRecordHistory();
     event.target.value = "";
 }
 
@@ -4707,6 +4792,7 @@ function workflowClearImages() {
     workflowState.images = [];
     workflowState.imageUploadIds = [];
     workflowRenderImagePreview();
+    workflowRecordHistory();
 }
 
 function workflowRenderImagePreview() {
@@ -4766,6 +4852,7 @@ async function workflowGenerateImage() {
         workflowState.images = workflowState.images.concat(generatedFile).slice(0, 9);
         workflowState.imageUploadIds = workflowState.images.map((item) => item.upload_id).filter(Boolean);
         workflowRenderImagePreview();
+        workflowRecordHistory();
         showToast("Imagem gerada e adicionada ao workflow.", "success");
     } catch (error) {
         showToast(`Erro ao gerar imagem: ${error.message}`, "error");
@@ -4781,6 +4868,7 @@ function workflowHandleVideoInput(event) {
     workflowState.videos = workflowState.videos.concat(files.slice(0, remaining)).slice(0, 9);
     workflowState.videoUploadIds = [];
     workflowRenderVideoPreview();
+    workflowRecordHistory();
     event.target.value = "";
 }
 
@@ -4788,6 +4876,7 @@ function workflowClearVideos() {
     workflowState.videos = [];
     workflowState.videoUploadIds = [];
     workflowRenderVideoPreview();
+    workflowRecordHistory();
 }
 
 function workflowRenderVideoPreview() {
@@ -4806,6 +4895,7 @@ function workflowHandleAudioInput(event) {
     workflowState.audio = file;
     workflowState.audioUploadId = "";
     workflowRenderAudioPreview();
+    workflowRecordHistory();
     event.target.value = "";
 }
 
@@ -4813,6 +4903,7 @@ function workflowClearAudio() {
     workflowState.audio = null;
     workflowState.audioUploadId = "";
     workflowRenderAudioPreview();
+    workflowRecordHistory();
 }
 
 function workflowRenderAudioPreview() {
@@ -4901,29 +4992,27 @@ async function workflowRunSeedance() {
         return;
     }
     if (!workflowState.images.length) {
-        alert("Adicione pelo menos uma imagem em Ref Images para rodar o workflow no Seedance 2.0.");
+        alert("Adicione pelo menos uma imagem em Ref Images para criar o vídeo.");
         workflowFocusNode("images");
         return;
     }
 
     const runBtn = document.getElementById("workflow-run");
     if (runBtn) runBtn.disabled = true;
-    const progressEl = document.getElementById("create-progress");
-    if (progressEl) progressEl.hidden = false;
-    setCreateProgress(CREATE_PROGRESS_BASE, "Executando workflow...", "Preparando Seedance 2.0...");
-    _smoothProgressTarget = 10;
-    _startSmoothProgress();
+    workflowSetOutputProgress(8, "Preparando criação do vídeo...");
 
     try {
         const imageUploadIds = await workflowEnsureUploadedImages();
         await workflowEnsureUploadedVideos();
         await workflowEnsureUploadedAudio();
-        _smoothProgressTarget = 18;
+        workflowSetOutputProgress(16, "Enviando referências para o gerador...");
 
         const duration = parseInt(document.getElementById("workflow-duration")?.value || "8", 10) || 8;
         const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
         const resolution = document.getElementById("workflow-resolution")?.value || "720p";
+        const workflowEngine = "grok";
+        const workflowEngineLabel = "Cria 3.0 speed";
 
         const resp = await api("/video/generate-realistic", {
             method: "POST",
@@ -4934,39 +5023,79 @@ async function workflowRunSeedance() {
                 generate_audio: generateAudio,
                 add_music: false,
                 add_narration: false,
-                title: "Workflow Seedance 2.0",
+                title: "Workflow de vídeo",
                 image_upload_id: imageUploadIds[0] || "",
                 image_upload_ids: imageUploadIds,
-                engine: "seedance",
+                engine: workflowEngine,
                 prompt_optimized: false,
-                realistic_style: `workflow_seedance_${resolution}`,
+                realistic_style: `workflow_visual_${resolution}`,
                 interaction_persona: "nenhum",
                 disable_persona_reference: true,
             }),
         });
 
         const projectId = resp.id;
-        _smoothProgressTarget = 25;
-        setCreateProgress(25, "Executando workflow...", "Seedance 2.0 está criando seu vídeo...");
-        await pollRealisticProgress(projectId, "Seedance 2.0");
+        workflowSetOutputProgress(25, `${workflowEngineLabel} está criando seu vídeo...`);
+        await workflowPollVideoProgress(projectId, workflowEngineLabel);
 
-        _stopSmoothProgress();
-        setCreateProgress(100, "Concluído!", "Workflow executado com sucesso.");
-        const outputBox = document.getElementById("workflow-output-box");
-        if (outputBox) outputBox.innerHTML = `<strong>Workflow enviado.</strong><span>O vídeo aparece na lista de projetos.</span>`;
-
-        setTimeout(() => {
-            closeModal("modal-new-project");
-            resetCreateWizard();
-            loadProjects();
-        }, 1200);
+        await workflowRenderCompletedVideo(projectId);
+        loadProjects();
     } catch (error) {
-        _stopSmoothProgress();
         const message = error?.message || "Erro ao executar workflow.";
-        setCreateProgress(0, "Erro", message);
-        alert(message);
+        workflowSetOutputError(message);
     } finally {
         if (runBtn) runBtn.disabled = false;
+    }
+}
+
+function workflowSetOutputProgress(percent, message) {
+    const outputBox = document.getElementById("workflow-output-box");
+    if (!outputBox) return;
+    const safePercent = Math.max(0, Math.min(100, Number(percent || 0)));
+    outputBox.innerHTML = `
+        <div class="workflow-output-loader"></div>
+        <strong>${workflowEscapeHtml(message || "Criando vídeo...")}</strong>
+        <div class="workflow-output-progress"><span style="width:${safePercent}%"></span></div>
+        <small>${safePercent}%</small>
+    `;
+}
+
+function workflowSetOutputError(message) {
+    const outputBox = document.getElementById("workflow-output-box");
+    if (!outputBox) return;
+    outputBox.innerHTML = `<strong>Não foi possível criar o vídeo.</strong><span>${workflowEscapeHtml(message || "Erro desconhecido.")}</span>`;
+}
+
+async function workflowPollVideoProgress(projectId, engineLabel) {
+    const maxWait = 12 * 60 * 1000;
+    const pollInterval = 4000;
+    const start = Date.now();
+    while (Date.now() - start < maxWait) {
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        const resp = await fetch(`${API}/video/projects/${projectId}`, { headers: getHeaders() });
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        const progress = Number(data.progress || 0);
+        const status = data.status || "";
+        workflowSetOutputProgress(
+            progress,
+            progress < 80 ? `${engineLabel} está criando seu vídeo...` : progress < 95 ? "Finalizando vídeo..." : "Preparando resultado..."
+        );
+        if (status === "completed") return data;
+        if (status === "failed") throw new Error(data.error_message || "Falha na geração do vídeo.");
+    }
+    throw new Error("Tempo limite excedido. O vídeo pode ainda estar sendo gerado na lista de projetos.");
+}
+
+async function workflowRenderCompletedVideo(projectId) {
+    const outputBox = document.getElementById("workflow-output-box");
+    if (!outputBox) return;
+    const detail = await api(`/video/projects/${projectId}`);
+    const render = _pickLatestAvailableRender(detail.renders || []);
+    if (render?.video_url) {
+        outputBox.innerHTML = `<video class="workflow-output-video" src="${render.video_url}" controls playsinline></video><strong>Vídeo pronto.</strong>`;
+    } else {
+        outputBox.innerHTML = `<strong>Vídeo pronto.</strong><span>O resultado apareceu na lista de projetos.</span>`;
     }
 }
 

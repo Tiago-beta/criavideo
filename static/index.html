@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260429-04">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260429-05">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 273;
+        var REQUIRED_VER = 274;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1696,6 +1696,8 @@
                             <button class="btn btn-secondary btn-sm" id="workflow-save-template" type="button">Salvar template</button>
                             <button class="btn btn-secondary btn-sm" id="workflow-duplicate-template" type="button">Duplicar</button>
                             <button class="btn btn-secondary btn-sm" id="workflow-delete-template" type="button">Excluir</button>
+                            <button class="btn btn-secondary btn-sm" id="workflow-undo" type="button" title="Desfazer" aria-label="Desfazer">↶</button>
+                            <button class="btn btn-secondary btn-sm" id="workflow-redo" type="button" title="Refazer" aria-label="Refazer">↷</button>
                             <button class="btn btn-secondary btn-sm" id="workflow-fit" type="button" title="Centralizar canvas" aria-label="Centralizar canvas">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
                             </button>
@@ -1771,7 +1773,7 @@
                                 </section>
 
                                 <section class="workflow-node workflow-node-model" data-node-id="model" style="left: 2420px; top: 1136px;">
-                                    <header>Seedance 2.0</header>
+                                    <header>Gerador de vídeo</header>
                                     <label>Duração</label>
                                     <select id="workflow-duration" class="input workflow-input">
                                         <option value="5">5s</option>
@@ -1791,7 +1793,7 @@
                                         <option value="1:1">1:1</option>
                                     </select>
                                     <label class="workflow-switch"><input id="workflow-generate-audio" type="checkbox" checked> Gerar áudio</label>
-                                    <button class="btn btn-primary btn-sm" id="workflow-run" type="button">Run Seedance</button>
+                                    <button class="btn btn-primary btn-sm" id="workflow-run" type="button">Criar vídeo</button>
                                     <span class="workflow-port workflow-port-in workflow-port-in-prompt" data-port="model-prompt-in"></span>
                                     <span class="workflow-port workflow-port-in workflow-port-in-images" data-port="model-images-in"></span>
                                     <span class="workflow-port workflow-port-in workflow-port-in-video" data-port="model-video-in"></span>
@@ -3146,8 +3148,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260429-04"></script>
-    <script src="/video/static/pwa.js?v=20260429-04"></script>
+    <script src="/video/static/app.js?v=20260429-05"></script>
+    <script src="/video/static/pwa.js?v=20260429-05"></script>
 </body>
 </html>
 
