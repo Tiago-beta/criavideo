@@ -43,8 +43,25 @@ app = FastAPI(
 )
 
 
+def _apply_html_no_cache_headers(response) -> None:
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
+
 def static_file_response(filename: str) -> FileResponse:
-    return FileResponse(str(static_path / filename))
+    response = FileResponse(str(static_path / filename))
+    if filename.lower().endswith(".html"):
+        _apply_html_no_cache_headers(response)
+    return response
+
+
+class DashboardStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if str(path or "").lower().endswith(".html"):
+            _apply_html_no_cache_headers(response)
+        return response
 
 # CORS
 app.add_middleware(
@@ -103,7 +120,7 @@ if media_path.exists():
 # ── Serve static dashboard ──
 static_path = Path(__file__).parent.parent / "static"
 if static_path.exists():
-    app.mount("/video/static", StaticFiles(directory=str(static_path)), name="static")
+    app.mount("/video/static", DashboardStaticFiles(directory=str(static_path)), name="static")
 
 
 @app.get("/")
