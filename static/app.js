@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v258 loaded");
+console.log("[CriaVideo] app.js v259 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2141,6 +2141,8 @@ let workflowState = {
     undoStack: [],
     redoStack: [],
     restoringHistory: false,
+    autosaveTimer: null,
+    templateModalResolve: null,
     templateKey: "",
     connections: [
         ["prompt-out", "model-prompt-in"],
@@ -3465,6 +3467,7 @@ function switchCreateMode(mode) {
         }
     } else if (mode === "workflow") {
         initWorkflowBuilder();
+        workflowLoadDraft();
         requestAnimationFrame(() => {
             workflowFitCanvas();
             workflowRenderConnections();
@@ -3973,6 +3976,15 @@ function initWorkflowBuilder() {
 
     const saveTemplateBtn = document.getElementById("workflow-save-template");
     if (saveTemplateBtn) saveTemplateBtn.addEventListener("click", workflowSaveTemplate);
+    const templateCancelBtn = document.getElementById("workflow-template-cancel");
+    if (templateCancelBtn) templateCancelBtn.addEventListener("click", () => workflowCloseTemplateModal(""));
+    const templateConfirmBtn = document.getElementById("workflow-template-confirm");
+    if (templateConfirmBtn) templateConfirmBtn.addEventListener("click", workflowConfirmTemplateModal);
+    const templateNameInput = document.getElementById("workflow-template-name-input");
+    if (templateNameInput) templateNameInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") workflowConfirmTemplateModal();
+        if (event.key === "Escape") workflowCloseTemplateModal("");
+    });
     const templateSelect = document.getElementById("workflow-template-select");
     if (templateSelect) templateSelect.addEventListener("change", () => workflowLoadTemplate(templateSelect.value));
     const duplicateTemplateBtn = document.getElementById("workflow-duplicate-template");
@@ -4045,6 +4057,9 @@ function initWorkflowBuilder() {
         wrap.addEventListener("scroll", workflowRenderConnections, { passive: true });
     }
 
+    panel.addEventListener("input", workflowQueueAutosave);
+    panel.addEventListener("change", workflowQueueAutosave);
+
     document.addEventListener("keydown", workflowHandleKeydown);
 
     window.addEventListener("resize", () => {
@@ -4054,6 +4069,7 @@ function initWorkflowBuilder() {
     });
 
     workflowApplyZoom();
+    workflowLoadDraft();
     workflowLoadTemplateList();
     workflowRenderImagePreview();
     workflowRenderVideoPreview();
@@ -4126,6 +4142,39 @@ function workflowRecordHistory() {
     if (workflowState.undoStack.length > 80) workflowState.undoStack.shift();
     workflowState.redoStack = [];
     workflowUpdateHistoryButtons();
+    workflowQueueAutosave();
+}
+
+function workflowDraftStorageKey() {
+    return "criavideo.workflow.draft.v2";
+}
+
+function workflowQueueAutosave() {
+    if (workflowState.restoringHistory) return;
+    clearTimeout(workflowState.autosaveTimer);
+    workflowState.autosaveTimer = setTimeout(workflowSaveDraft, 350);
+}
+
+function workflowSaveDraft() {
+    if (workflowState.restoringHistory) return;
+    try {
+        localStorage.setItem(workflowDraftStorageKey(), JSON.stringify({
+            updatedAt: Date.now(),
+            data: workflowSerializeTemplate(),
+        }));
+    } catch (_) {}
+}
+
+function workflowLoadDraft() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(workflowDraftStorageKey()) || "null");
+        if (!saved?.data?.nodes?.length) return;
+        workflowState.restoringHistory = true;
+        workflowApplyTemplateData(saved.data, { fit: true });
+    } catch (_) {
+    } finally {
+        workflowState.restoringHistory = false;
+    }
 }
 
 function workflowUpdateHistoryButtons() {
@@ -4457,11 +4506,22 @@ function workflowRenderConnections() {
         if (!start || !end) return "";
         const mid = Math.max(80, Math.abs(end.x - start.x) * 0.5);
         const selected = index === workflowState.selectedConnectionIndex ? " selected" : "";
-        return `<path class="workflow-link${selected}" data-connection-index="${index}" d="M ${start.x} ${start.y} C ${start.x + mid} ${start.y}, ${end.x - mid} ${end.y}, ${end.x} ${end.y}" />`;
+        const type = workflowConnectionType(from, to);
+        return `<path class="workflow-link workflow-link-${type}${selected}" data-connection-index="${index}" d="M ${start.x} ${start.y} C ${start.x + mid} ${start.y}, ${end.x - mid} ${end.y}, ${end.x} ${end.y}" />`;
     }).join("");
     svg.querySelectorAll("[data-connection-index]").forEach((path) => {
         path.addEventListener("click", workflowSelectConnectionFromEvent);
     });
+}
+
+function workflowConnectionType(from, to) {
+    const joined = `${from || ""} ${to || ""}`.toLowerCase();
+    if (joined.includes("audio")) return "audio";
+    if (joined.includes("video")) return "video";
+    if (joined.includes("image") || joined.includes("images")) return "image";
+    if (joined.includes("prompt")) return "prompt";
+    if (joined.includes("output") || joined.includes("model")) return "output";
+    return "default";
 }
 
 function workflowSelectConnectionFromEvent(event) {
@@ -4721,9 +4781,34 @@ function workflowApplyTemplateData(data, options = {}) {
     if (options.fit !== false) workflowFitCanvas();
 }
 
-function workflowSaveTemplate() {
+function workflowOpenTemplateModal(defaultName = "") {
+    const modal = document.getElementById("workflow-template-modal");
+    const input = document.getElementById("workflow-template-name-input");
+    if (!modal || !input) return Promise.resolve(defaultName || "Workflow");
+    input.value = defaultName || "";
+    modal.hidden = false;
+    setTimeout(() => input.focus(), 30);
+    return new Promise((resolve) => {
+        workflowState.templateModalResolve = resolve;
+    });
+}
+
+function workflowCloseTemplateModal(value) {
+    const modal = document.getElementById("workflow-template-modal");
+    if (modal) modal.hidden = true;
+    const resolve = workflowState.templateModalResolve;
+    workflowState.templateModalResolve = null;
+    if (resolve) resolve(value || "");
+}
+
+function workflowConfirmTemplateModal() {
+    const input = document.getElementById("workflow-template-name-input");
+    workflowCloseTemplateModal(String(input?.value || "").trim());
+}
+
+async function workflowSaveTemplate() {
     const current = workflowReadTemplates().find((tpl) => tpl.key === workflowState.templateKey);
-    const name = prompt("Nome do template", current?.name || "Workflow Seedance");
+    const name = await workflowOpenTemplateModal(current?.name || "Workflow de vídeo");
     if (!name) return;
     const templates = workflowReadTemplates();
     const key = current?.key || `tpl-${Date.now()}`;
@@ -4732,6 +4817,7 @@ function workflowSaveTemplate() {
     workflowWriteTemplates(next);
     workflowState.templateKey = key;
     workflowLoadTemplateList();
+    workflowSaveDraft();
     showToast("Template salvo.", "success");
 }
 
@@ -4956,7 +5042,8 @@ async function workflowEnsureUploadedImages() {
     const uploadIds = existingIds.slice();
     for (let index = 0; index < workflowState.images.length; index += 1) {
         if (workflowState.images[index]?.upload_id) continue;
-        const uploaded = await uploadTempFileWithRetry(workflowState.images[index], "image", `imagem workflow ${index + 1}`);
+        workflowSetOutputProgress(8 + index, `Enviando imagem ${index + 1}/${workflowState.images.length}...`);
+        const uploaded = await uploadTempFileWithRetry(workflowState.images[index], "image", `imagem workflow ${index + 1}`, { showProgress: false });
         if (uploaded?.upload_id) uploadIds.push(uploaded.upload_id);
     }
     workflowState.imageUploadIds = uploadIds;
@@ -4969,7 +5056,8 @@ async function workflowEnsureUploadedVideos() {
     }
     const uploadIds = [];
     for (let index = 0; index < workflowState.videos.length; index += 1) {
-        const uploaded = await uploadTempFileWithRetry(workflowState.videos[index], "video", `vídeo workflow ${index + 1}`);
+        workflowSetOutputProgress(12 + index, `Enviando vídeo ${index + 1}/${workflowState.videos.length}...`);
+        const uploaded = await uploadTempFileWithRetry(workflowState.videos[index], "video", `vídeo workflow ${index + 1}`, { showProgress: false });
         if (uploaded?.upload_id) uploadIds.push(uploaded.upload_id);
     }
     workflowState.videoUploadIds = uploadIds;
@@ -4979,7 +5067,8 @@ async function workflowEnsureUploadedVideos() {
 async function workflowEnsureUploadedAudio() {
     if (!workflowState.audio) return "";
     if (workflowState.audioUploadId) return workflowState.audioUploadId;
-    const uploaded = await uploadTempFileWithRetry(workflowState.audio, "audio", "áudio workflow");
+    workflowSetOutputProgress(15, "Enviando áudio do workflow...");
+    const uploaded = await uploadTempFileWithRetry(workflowState.audio, "audio", "áudio workflow", { showProgress: false });
     workflowState.audioUploadId = uploaded?.upload_id || "";
     return workflowState.audioUploadId;
 }
@@ -4999,6 +5088,9 @@ async function workflowRunSeedance() {
 
     const runBtn = document.getElementById("workflow-run");
     if (runBtn) runBtn.disabled = true;
+    const progressEl = document.getElementById("create-progress");
+    if (progressEl) progressEl.hidden = true;
+    _stopSmoothProgress();
     workflowSetOutputProgress(8, "Preparando criação do vídeo...");
 
     try {
