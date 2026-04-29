@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v254 loaded");
+console.log("[CriaVideo] app.js v255 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2127,6 +2127,13 @@ let workflowState = {
     initialized: false,
     images: [],
     imageUploadIds: [],
+    videos: [],
+    videoUploadIds: [],
+    audio: null,
+    audioUploadId: "",
+    nodeSeq: 1,
+    addMenuOpen: false,
+    addPosition: { left: 120, top: 120 },
     connections: [
         ["prompt-out", "model-prompt-in"],
         ["images-out", "model-images-in"],
@@ -3956,6 +3963,13 @@ function initWorkflowBuilder() {
     const fitBtn = document.getElementById("workflow-fit");
     if (fitBtn) fitBtn.addEventListener("click", workflowFitCanvas);
 
+    const addMainBtn = document.getElementById("workflow-add-main");
+    if (addMainBtn) addMainBtn.addEventListener("click", workflowToggleAddMenu);
+
+    document.querySelectorAll("#workflow-add-popover [data-workflow-add]").forEach((btn) => {
+        btn.addEventListener("click", () => workflowAddNode(btn.dataset.workflowAdd));
+    });
+
     const addImagesBtn = document.getElementById("workflow-add-images");
     const imageInput = document.getElementById("workflow-image-input");
     if (addImagesBtn && imageInput) {
@@ -3963,8 +3977,31 @@ function initWorkflowBuilder() {
         imageInput.addEventListener("change", workflowHandleImageInput);
     }
 
+    const generateImageBtn = document.getElementById("workflow-generate-image");
+    if (generateImageBtn) generateImageBtn.addEventListener("click", workflowGenerateImage);
+
     const clearImagesBtn = document.getElementById("workflow-clear-images");
     if (clearImagesBtn) clearImagesBtn.addEventListener("click", workflowClearImages);
+
+    const addVideosBtn = document.getElementById("workflow-add-videos");
+    const videoInput = document.getElementById("workflow-video-input");
+    if (addVideosBtn && videoInput) {
+        addVideosBtn.addEventListener("click", () => videoInput.click());
+        videoInput.addEventListener("change", workflowHandleVideoInput);
+    }
+
+    const clearVideosBtn = document.getElementById("workflow-clear-videos");
+    if (clearVideosBtn) clearVideosBtn.addEventListener("click", workflowClearVideos);
+
+    const addAudioBtn = document.getElementById("workflow-add-audio");
+    const audioInput = document.getElementById("workflow-audio-input");
+    if (addAudioBtn && audioInput) {
+        addAudioBtn.addEventListener("click", () => audioInput.click());
+        audioInput.addEventListener("change", workflowHandleAudioInput);
+    }
+
+    const clearAudioBtn = document.getElementById("workflow-clear-audio");
+    if (clearAudioBtn) clearAudioBtn.addEventListener("click", workflowClearAudio);
 
     const runBtn = document.getElementById("workflow-run");
     if (runBtn) runBtn.addEventListener("click", workflowRunSeedance);
@@ -3973,15 +4010,7 @@ function initWorkflowBuilder() {
         btn.addEventListener("click", () => workflowApplyTemplate(btn.dataset.workflowTemplate));
     });
 
-    document.querySelectorAll("[data-workflow-add]").forEach((btn) => {
-        btn.addEventListener("click", () => workflowFocusNode(btn.dataset.workflowAdd));
-    });
-
-    document.querySelectorAll("#create-panel-workflow .workflow-node").forEach((node) => {
-        const header = node.querySelector("header");
-        const dragHandle = header || node;
-        dragHandle.addEventListener("pointerdown", (event) => workflowStartDrag(event, node));
-    });
+    workflowBindNodeDragging(document.getElementById("create-panel-workflow"));
 
     const wrap = document.getElementById("workflow-canvas-wrap");
     if (wrap) {
@@ -4001,7 +4030,32 @@ function initWorkflowBuilder() {
 
     workflowApplyZoom();
     workflowRenderImagePreview();
+    workflowRenderVideoPreview();
+    workflowRenderAudioPreview();
     workflowRenderConnections();
+}
+
+function workflowBindNodeDragging(root) {
+    const scope = root || document;
+    scope.querySelectorAll("#create-panel-workflow .workflow-node").forEach((node) => {
+        if (node.dataset.dragBound === "1") return;
+        node.dataset.dragBound = "1";
+        node.addEventListener("pointerdown", (event) => workflowStartDrag(event, node));
+    });
+}
+
+function workflowToggleAddMenu(event) {
+    event?.stopPropagation?.();
+    const popover = document.getElementById("workflow-add-popover");
+    if (!popover) return;
+    workflowState.addMenuOpen = !workflowState.addMenuOpen;
+    popover.hidden = !workflowState.addMenuOpen;
+}
+
+function workflowCloseAddMenu() {
+    workflowState.addMenuOpen = false;
+    const popover = document.getElementById("workflow-add-popover");
+    if (popover) popover.hidden = true;
 }
 
 function workflowApplyZoom() {
@@ -4033,7 +4087,7 @@ function workflowFitCanvas() {
 
 function workflowStartDrag(event, node) {
     if (!node || event.button !== 0) return;
-    if (event.target.closest("textarea, input, select, button, label")) return;
+    if (event.target.closest("textarea, input, select, button, label") && !event.target.closest(".workflow-port")) return;
     event.stopPropagation();
     const startLeft = parseFloat(node.style.left || "0") || 0;
     const startTop = parseFloat(node.style.top || "0") || 0;
@@ -4080,6 +4134,8 @@ function workflowStartPan(event) {
     const wrap = document.getElementById("workflow-canvas-wrap");
     if (!wrap || event.button !== 0) return;
     if (event.target.closest(".workflow-node, textarea, input, select, button, label")) return;
+    workflowSetAddPositionFromEvent(event);
+    workflowCloseAddMenu();
     workflowState.pan = {
         pointerId: event.pointerId,
         startX: event.clientX,
@@ -4090,6 +4146,17 @@ function workflowStartPan(event) {
     wrap.classList.add("panning");
     wrap.setPointerCapture?.(event.pointerId);
     event.preventDefault();
+}
+
+function workflowSetAddPositionFromEvent(event) {
+    const canvas = document.getElementById("workflow-canvas");
+    if (!canvas || !event) return;
+    const zoom = Math.max(0.01, Number(workflowState.zoom || 1));
+    const rect = canvas.getBoundingClientRect();
+    workflowState.addPosition = {
+        left: Math.max(20, (event.clientX - rect.left) / zoom),
+        top: Math.max(20, (event.clientY - rect.top) / zoom),
+    };
 }
 
 function workflowPanMove(event) {
@@ -4184,6 +4251,57 @@ function workflowFocusNode(kind) {
     setTimeout(() => node.classList.remove("workflow-node-pulse"), 600);
 }
 
+function workflowAddNode(kind) {
+    const canvas = document.getElementById("workflow-canvas");
+    if (!canvas) return;
+    const nodeId = `${kind || "node"}-${++workflowState.nodeSeq}`;
+    const left = Math.max(20, Number(workflowState.addPosition?.left || 140));
+    const top = Math.max(20, Number(workflowState.addPosition?.top || 140));
+    const section = document.createElement("section");
+    section.className = `workflow-node workflow-node-${kind || "prompt"}`;
+    section.dataset.nodeId = nodeId;
+    section.style.left = `${left}px`;
+    section.style.top = `${top}px`;
+
+    if (kind === "images") {
+        section.innerHTML = `
+            <header>Nova imagem</header>
+            <textarea class="workflow-textarea workflow-textarea-small" rows="3" placeholder="Prompt, função ou descrição desta imagem..."></textarea>
+            <div class="workflow-node-actions"><button class="workflow-mini-btn" type="button" onclick="document.getElementById('workflow-image-input')?.click()">Adicionar ao Ref Images</button></div>
+            <span class="workflow-port workflow-port-out" data-port="${nodeId}-out"></span>
+        `;
+        workflowState.connections.push([`${nodeId}-out`, "model-images-in"]);
+    } else if (kind === "video") {
+        section.innerHTML = `
+            <header>Novo vídeo</header>
+            <textarea class="workflow-textarea workflow-textarea-small" rows="3" placeholder="Movimento, enquadramento ou referência deste vídeo..."></textarea>
+            <div class="workflow-node-actions"><button class="workflow-mini-btn" type="button" onclick="document.getElementById('workflow-video-input')?.click()">Enviar vídeo</button></div>
+            <span class="workflow-port workflow-port-out" data-port="${nodeId}-out"></span>
+        `;
+        workflowState.connections.push([`${nodeId}-out`, "model-video-in"]);
+    } else if (kind === "audio") {
+        section.innerHTML = `
+            <header>Novo áudio</header>
+            <textarea class="workflow-textarea workflow-textarea-small" rows="3" placeholder="Trilha, narração, ritmo ou efeitos sonoros..."></textarea>
+            <div class="workflow-node-actions"><button class="workflow-mini-btn" type="button" onclick="document.getElementById('workflow-audio-input')?.click()">Enviar áudio</button></div>
+            <span class="workflow-port workflow-port-out" data-port="${nodeId}-out"></span>
+        `;
+        workflowState.connections.push([`${nodeId}-out`, "model-audio-in"]);
+    } else {
+        section.innerHTML = `
+            <header>Novo prompt</header>
+            <textarea class="workflow-textarea" rows="5" placeholder="Digite uma variação, fase ou instrução adicional..."></textarea>
+            <span class="workflow-port workflow-port-out" data-port="${nodeId}-out"></span>
+        `;
+        workflowState.connections.push([`${nodeId}-out`, "model-prompt-in"]);
+    }
+
+    canvas.appendChild(section);
+    workflowBindNodeDragging(section);
+    workflowCloseAddMenu();
+    workflowRenderConnections();
+}
+
 function workflowApplyTemplate(type) {
     const promptEl = document.getElementById("workflow-prompt");
     if (!promptEl) return;
@@ -4198,8 +4316,8 @@ function workflowApplyTemplate(type) {
 async function workflowHandleImageInput(event) {
     const files = Array.from(event.target?.files || []).filter((file) => file && file.type.startsWith("image/"));
     if (!files.length) return;
-    const remaining = Math.max(0, 6 - workflowState.images.length);
-    workflowState.images = workflowState.images.concat(files.slice(0, remaining)).slice(0, 6);
+    const remaining = Math.max(0, 9 - workflowState.images.length);
+    workflowState.images = workflowState.images.concat(files.slice(0, remaining)).slice(0, 9);
     workflowState.imageUploadIds = [];
     workflowRenderImagePreview();
     event.target.value = "";
@@ -4214,43 +4332,185 @@ function workflowClearImages() {
 function workflowRenderImagePreview() {
     const preview = document.getElementById("workflow-image-preview");
     const count = document.getElementById("workflow-image-count");
-    if (count) count.textContent = `${workflowState.images.length}/6`;
+    if (count) count.textContent = `${workflowState.images.length}/9`;
     if (!preview) return;
     if (!workflowState.images.length) {
         preview.innerHTML = `<button class="workflow-thumb-add" type="button" onclick="document.getElementById('workflow-image-input')?.click()">+</button>`;
         return;
     }
     preview.innerHTML = workflowState.images.map((file, index) => {
-        const url = URL.createObjectURL(file);
+        const url = file.preview_url || URL.createObjectURL(file);
         return `<figure class="workflow-thumb"><img src="${url}" alt="Referência ${index + 1}"><figcaption>${index + 1}</figcaption></figure>`;
-    }).join("") + (workflowState.images.length < 6 ? `<button class="workflow-thumb-add" type="button" onclick="document.getElementById('workflow-image-input')?.click()">+</button>` : "");
+    }).join("") + (workflowState.images.length < 9 ? `<button class="workflow-thumb-add" type="button" onclick="document.getElementById('workflow-image-input')?.click()">+</button>` : "");
+}
+
+function workflowEscapeHtml(value) {
+    return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+async function workflowGenerateImage() {
+    const promptEl = document.getElementById("workflow-image-prompt");
+    const prompt = String(promptEl?.value || document.getElementById("workflow-prompt")?.value || "").trim();
+    if (!prompt) {
+        alert("Descreva a imagem antes de gerar.");
+        return;
+    }
+    if (workflowState.images.length >= 9) {
+        alert("O workflow aceita no máximo 9 imagens de referência.");
+        return;
+    }
+    const btn = document.getElementById("workflow-generate-image");
+    if (btn) btn.disabled = true;
+    try {
+        showCreateProgress("Gerando imagem do workflow...", { stage: "Criando imagem IA..." });
+        const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
+        const response = await api("/video/workflow/generate-image", {
+            method: "POST",
+            body: JSON.stringify({ prompt, aspect_ratio: aspect }),
+        });
+        if (!response?.upload_id || !response?.image_url) {
+            throw new Error("A imagem foi gerada, mas não retornou referência válida.");
+        }
+        const generatedFile = {
+            name: "imagem-gerada-workflow.png",
+            type: "image/generated",
+            generated: true,
+            upload_id: response.upload_id,
+            preview_url: response.image_url,
+        };
+        workflowState.images = workflowState.images.concat(generatedFile).slice(0, 9);
+        workflowState.imageUploadIds = workflowState.images.map((item) => item.upload_id).filter(Boolean);
+        workflowRenderImagePreview();
+        showToast("Imagem gerada e adicionada ao workflow.", "success");
+    } catch (error) {
+        showToast(`Erro ao gerar imagem: ${error.message}`, "error");
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+function workflowHandleVideoInput(event) {
+    const files = Array.from(event.target?.files || []).filter((file) => file && file.type.startsWith("video/"));
+    if (!files.length) return;
+    const remaining = Math.max(0, 9 - workflowState.videos.length);
+    workflowState.videos = workflowState.videos.concat(files.slice(0, remaining)).slice(0, 9);
+    workflowState.videoUploadIds = [];
+    workflowRenderVideoPreview();
+    event.target.value = "";
+}
+
+function workflowClearVideos() {
+    workflowState.videos = [];
+    workflowState.videoUploadIds = [];
+    workflowRenderVideoPreview();
+}
+
+function workflowRenderVideoPreview() {
+    const preview = document.getElementById("workflow-video-preview");
+    const count = document.getElementById("workflow-video-count");
+    if (count) count.textContent = `${workflowState.videos.length}/9`;
+    if (!preview) return;
+    preview.innerHTML = workflowState.videos.length
+        ? workflowState.videos.map((file, index) => `<span>${index + 1}. ${workflowEscapeHtml(file.name || "vídeo")}</span>`).join("")
+        : `<span>Nenhum vídeo enviado.</span>`;
+}
+
+function workflowHandleAudioInput(event) {
+    const file = Array.from(event.target?.files || []).find((item) => item && item.type.startsWith("audio/"));
+    if (!file) return;
+    workflowState.audio = file;
+    workflowState.audioUploadId = "";
+    workflowRenderAudioPreview();
+    event.target.value = "";
+}
+
+function workflowClearAudio() {
+    workflowState.audio = null;
+    workflowState.audioUploadId = "";
+    workflowRenderAudioPreview();
+}
+
+function workflowRenderAudioPreview() {
+    const preview = document.getElementById("workflow-audio-preview");
+    const count = document.getElementById("workflow-audio-count");
+    if (count) count.textContent = `${workflowState.audio ? 1 : 0}/1`;
+    if (!preview) return;
+    preview.innerHTML = workflowState.audio
+        ? `<span>${workflowEscapeHtml(workflowState.audio.name || "áudio")}</span>`
+        : `<span>Nenhum áudio enviado.</span>`;
 }
 
 function workflowBuildPrompt() {
-    const prompt = String(document.getElementById("workflow-prompt")?.value || "").trim();
+    const promptTexts = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node-prompt textarea"))
+        .map((el) => String(el.value || "").trim())
+        .filter(Boolean);
+    const prompt = promptTexts.join("\n\n");
     const videoUrl = String(document.getElementById("workflow-video-url")?.value || "").trim();
     const videoNotes = String(document.getElementById("workflow-video-notes")?.value || "").trim();
     const audioUrl = String(document.getElementById("workflow-audio-url")?.value || "").trim();
     const audioNotes = String(document.getElementById("workflow-audio-notes")?.value || "").trim();
+    const extraVideoNotes = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node-video textarea"))
+        .map((el) => String(el.value || "").trim())
+        .filter(Boolean)
+        .join(" | ");
+    const extraAudioNotes = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node-audio textarea"))
+        .map((el) => String(el.value || "").trim())
+        .filter(Boolean)
+        .join(" | ");
+    const imageNotes = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node-images textarea"))
+        .map((el) => String(el.value || "").trim())
+        .filter(Boolean)
+        .join(" | ");
     const parts = [];
     if (prompt) parts.push(prompt);
-    if (videoUrl || videoNotes) parts.push(`Referencia de video: ${[videoUrl, videoNotes].filter(Boolean).join(" | ")}`);
-    if (audioUrl || audioNotes) parts.push(`Referencia de audio/clima sonoro: ${[audioUrl, audioNotes].filter(Boolean).join(" | ")}`);
+    if (imageNotes) parts.push(`Referencia de imagens/geracao visual: ${imageNotes}`);
+    if (workflowState.videos.length) parts.push(`Videos enviados como referencia: ${workflowState.videos.map((file) => file.name || "video").join(", ")}`);
+    if (videoUrl || videoNotes || extraVideoNotes) parts.push(`Referencia de video: ${[videoUrl, videoNotes, extraVideoNotes].filter(Boolean).join(" | ")}`);
+    if (workflowState.audio) parts.push(`Audio enviado como referencia: ${workflowState.audio.name || "audio"}`);
+    if (audioUrl || audioNotes || extraAudioNotes) parts.push(`Referencia de audio/clima sonoro: ${[audioUrl, audioNotes, extraAudioNotes].filter(Boolean).join(" | ")}`);
     parts.push("Use as imagens de referencia como base visual quando fornecidas. Evite colagem; gere uma cena unica e coesa.");
     return parts.join("\n\n").trim();
 }
 
 async function workflowEnsureUploadedImages() {
-    if (workflowState.imageUploadIds.length === workflowState.images.length) {
+    const existingIds = workflowState.images.map((item) => item.upload_id).filter(Boolean);
+    if (workflowState.imageUploadIds.length === workflowState.images.length && workflowState.imageUploadIds.length > 0) {
         return workflowState.imageUploadIds.slice();
     }
-    const uploadIds = [];
+    const uploadIds = existingIds.slice();
     for (let index = 0; index < workflowState.images.length; index += 1) {
+        if (workflowState.images[index]?.upload_id) continue;
         const uploaded = await uploadTempFileWithRetry(workflowState.images[index], "image", `imagem workflow ${index + 1}`);
         if (uploaded?.upload_id) uploadIds.push(uploaded.upload_id);
     }
     workflowState.imageUploadIds = uploadIds;
     return uploadIds;
+}
+
+async function workflowEnsureUploadedVideos() {
+    if (workflowState.videoUploadIds.length === workflowState.videos.length) {
+        return workflowState.videoUploadIds.slice();
+    }
+    const uploadIds = [];
+    for (let index = 0; index < workflowState.videos.length; index += 1) {
+        const uploaded = await uploadTempFileWithRetry(workflowState.videos[index], "video", `vídeo workflow ${index + 1}`);
+        if (uploaded?.upload_id) uploadIds.push(uploaded.upload_id);
+    }
+    workflowState.videoUploadIds = uploadIds;
+    return uploadIds;
+}
+
+async function workflowEnsureUploadedAudio() {
+    if (!workflowState.audio) return "";
+    if (workflowState.audioUploadId) return workflowState.audioUploadId;
+    const uploaded = await uploadTempFileWithRetry(workflowState.audio, "audio", "áudio workflow");
+    workflowState.audioUploadId = uploaded?.upload_id || "";
+    return workflowState.audioUploadId;
 }
 
 async function workflowRunSeedance() {
@@ -4276,6 +4536,8 @@ async function workflowRunSeedance() {
 
     try {
         const imageUploadIds = await workflowEnsureUploadedImages();
+        await workflowEnsureUploadedVideos();
+        await workflowEnsureUploadedAudio();
         _smoothProgressTarget = 18;
 
         const duration = parseInt(document.getElementById("workflow-duration")?.value || "8", 10) || 8;

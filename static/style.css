@@ -5946,40 +5946,10 @@ th,
 }
 
 .workflow-shell {
-    display: grid;
-    grid-template-columns: 112px minmax(0, 1fr);
-    gap: 10px;
+    display: block;
     min-height: 620px;
     flex: 1;
     min-height: 0;
-}
-
-.workflow-palette {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.025);
-}
-
-.workflow-tool {
-    width: 100%;
-    min-height: 34px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.035);
-    color: var(--text-muted);
-    font-size: 0.74rem;
-    cursor: pointer;
-}
-
-.workflow-tool:hover,
-.workflow-tool.active {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: var(--accent-soft);
 }
 
 .workflow-canvas-wrap {
@@ -5989,11 +5959,71 @@ th,
     overflow: auto;
     border: 1px solid var(--border);
     border-radius: 14px;
-    background-color: rgba(255, 255, 255, 0.98);
-    background-image: radial-gradient(rgba(15, 23, 42, 0.16) 1px, transparent 1px);
+    background-color: rgba(12, 38, 68, 0.96);
+    background-image: radial-gradient(rgba(148, 199, 255, 0.22) 1px, transparent 1px);
     background-size: 18px 18px;
     cursor: grab;
     touch-action: none;
+}
+
+.workflow-add-menu {
+    position: sticky;
+    top: 14px;
+    left: 14px;
+    z-index: 20;
+    width: max-content;
+    padding: 12px 0 0 12px;
+    pointer-events: none;
+}
+
+.workflow-add-main {
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(0, 212, 255, 0.42);
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.18), rgba(246, 165, 47, 0.2));
+    color: var(--text);
+    font-size: 1.35rem;
+    font-weight: 800;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+}
+
+.workflow-add-popover {
+    margin-top: 8px;
+    display: grid;
+    gap: 8px;
+    width: 220px;
+    padding: 10px;
+    border: 1px solid rgba(0, 212, 255, 0.24);
+    border-radius: 12px;
+    background: rgba(10, 35, 62, 0.96);
+    pointer-events: auto;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+}
+
+.workflow-add-card {
+    display: grid;
+    gap: 3px;
+    width: 100%;
+    border: 1px solid rgba(0, 212, 255, 0.22);
+    border-radius: 10px;
+    background: rgba(23, 58, 94, 0.82);
+    color: var(--text);
+    text-align: left;
+    padding: 10px;
+    cursor: pointer;
+}
+
+.workflow-add-card:hover {
+    border-color: var(--accent);
+    background: rgba(31, 73, 115, 0.92);
+}
+
+.workflow-add-card span {
+    color: var(--text-muted);
+    font-size: 0.72rem;
 }
 
 .workflow-canvas-wrap.panning {
@@ -6010,7 +6040,7 @@ th,
     position: relative;
     width: 1320px;
     height: 880px;
-    color: #0f172a;
+    color: var(--text);
     transform-origin: top left;
 }
 
@@ -6042,11 +6072,11 @@ th,
     position: absolute;
     z-index: 2;
     width: 330px;
-    border: 1px solid #d7dde7;
+    border: 1px solid rgba(0, 212, 255, 0.18);
     border-left: 4px solid #14b8a6;
     border-radius: 8px;
-    background: #fff;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+    background: linear-gradient(158deg, rgba(19, 47, 76, 0.96), rgba(23, 58, 94, 0.9));
+    box-shadow: 0 10px 26px rgba(1, 8, 20, 0.34);
     padding: 12px;
     user-select: none;
 }
@@ -6066,14 +6096,14 @@ th,
 
 .workflow-node header {
     margin: -2px 0 10px;
-    color: #0f172a;
+    color: var(--text);
     font-weight: 700;
     cursor: grab;
 }
 
 .workflow-node header span {
     float: right;
-    color: #64748b;
+    color: var(--text-muted);
     font-size: 0.76rem;
     font-weight: 600;
 }
@@ -6081,7 +6111,7 @@ th,
 .workflow-node label {
     display: block;
     margin: 7px 0 4px;
-    color: #64748b;
+    color: var(--text-muted);
     font-size: 0.76rem;
 }
 
@@ -6110,10 +6140,10 @@ th,
 .workflow-textarea,
 .workflow-input {
     width: 100%;
-    border: 1px solid #d7dde7;
+    border: 1px solid rgba(130, 173, 213, 0.32);
     border-radius: 7px;
-    background: #fff;
-    color: #0f172a;
+    background: rgba(6, 22, 40, 0.5);
+    color: var(--text);
     font-size: 0.82rem;
 }
 
@@ -6145,10 +6175,10 @@ th,
 .workflow-mini-btn,
 .workflow-upload-btn,
 .workflow-thumb-add {
-    border: 1px solid #d7dde7;
+    border: 1px solid rgba(130, 173, 213, 0.32);
     border-radius: 7px;
-    background: #f8fafc;
-    color: #0f172a;
+    background: rgba(6, 22, 40, 0.38);
+    color: var(--text);
     padding: 7px 10px;
     font-size: 0.76rem;
     cursor: pointer;
@@ -6163,12 +6193,12 @@ th,
 
 .workflow-thumb-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 8px;
     min-height: 72px;
     margin-top: 10px;
     padding: 8px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid rgba(130, 173, 213, 0.24);
     border-radius: 8px;
 }
 
@@ -6182,7 +6212,7 @@ th,
 .workflow-thumb {
     position: relative;
     overflow: hidden;
-    border: 1px solid #d7dde7;
+    border: 1px solid rgba(130, 173, 213, 0.32);
     border-radius: 7px;
 }
 
@@ -6212,7 +6242,7 @@ th,
     display: flex !important;
     align-items: center;
     gap: 8px;
-    color: #64748b !important;
+    color: var(--text-muted) !important;
 }
 
 .workflow-switch input {
@@ -6247,7 +6277,7 @@ th,
 
 .workflow-output-box {
     min-height: 150px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid rgba(130, 173, 213, 0.24);
     border-radius: 8px;
     background: #0f172a;
     color: #e2e8f0;
@@ -6259,6 +6289,25 @@ th,
     text-align: center;
     padding: 16px;
     font-size: 0.82rem;
+}
+
+.workflow-media-list {
+    display: grid;
+    gap: 5px;
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+}
+
+.workflow-media-list span {
+    display: block;
+    padding: 5px 7px;
+    border: 1px solid rgba(130, 173, 213, 0.2);
+    border-radius: 7px;
+    background: rgba(6, 22, 40, 0.28);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .editor-start-selection {

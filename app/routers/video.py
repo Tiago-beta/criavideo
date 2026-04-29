@@ -857,6 +857,46 @@ async def upload_temp_video(
     return {"upload_id": upload_id, "size": len(content)}
 
 
+class WorkflowGenerateImageRequest(BaseModel):
+    prompt: str
+    aspect_ratio: str = "16:9"
+
+
+@router.post("/workflow/generate-image")
+async def workflow_generate_image(
+    req: WorkflowGenerateImageRequest,
+    user: dict = Depends(get_current_user),
+):
+    prompt = (req.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Descreva a imagem antes de gerar.")
+    if len(prompt) > 3000:
+        raise HTTPException(status_code=400, detail="Prompt de imagem muito longo.")
+    if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
+        raise HTTPException(status_code=400, detail="Formato inválido. Use 16:9, 9:16 ou 1:1.")
+
+    upload_id = f"{uuid.uuid4().hex}.png"
+    output_path = _temp_user_dir(user["id"]) / upload_id
+
+    from app.services.scene_generator import generate_scene_image
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None,
+        generate_scene_image,
+        prompt[:1200],
+        req.aspect_ratio,
+        str(output_path),
+    )
+
+    if not output_path.exists() or output_path.stat().st_size <= 0:
+        raise HTTPException(status_code=500, detail="Falha ao gerar imagem do workflow.")
+
+    raw = output_path.read_bytes()
+    image_data_url = f"data:image/png;base64,{base64.b64encode(raw).decode('ascii')}"
+    return {"upload_id": upload_id, "image_url": image_data_url, "size": len(raw)}
+
+
 @router.post("/upload-temp-chunk/start")
 async def upload_temp_chunk_start(
     request: Request,
@@ -3330,6 +3370,8 @@ async def generate_realistic_prompt_endpoint(
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
+    elif engine == "seedance":
+        duration = max(1, min(int(req.duration or 10), 15))
     else:
         duration = max(1, min(int(req.duration or 10), 10))
 
@@ -3543,7 +3585,7 @@ async def generate_realistic_endpoint(
         upload_ids.insert(0, req.image_upload_id)
     upload_ids = upload_ids[:6]
 
-    disable_persona_reference = bool(req.disable_persona_reference) and not bool(upload_ids)
+    disable_persona_reference = bool(req.disable_persona_reference) and engine == "grok" and not bool(upload_ids)
     if disable_persona_reference:
         selected_persona_profile_id = 0
         selected_persona_profile_ids = []
@@ -3637,7 +3679,7 @@ async def generate_realistic_endpoint(
     dialogue_duration = max(1, min(duration, int(req.dialogue_duration or duration))) if dialogue_enabled else 0
 
     has_reference_image = bool(image_path_str)
-    if not has_reference_image and not disable_persona_reference:
+    if not has_reference_image and not (engine == "grok" and disable_persona_reference):
         raise HTTPException(status_code=400, detail="Vídeo realista exige imagem de referência.")
 
     if disable_persona_reference:

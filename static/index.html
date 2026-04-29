@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260429-02">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260429-03">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 271;
+        var REQUIRED_VER = 272;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1698,17 +1698,16 @@
                     </div>
 
                     <div class="workflow-shell">
-                        <aside class="workflow-palette">
-                            <button class="workflow-tool active" data-workflow-tool="select" type="button">Selecionar</button>
-                            <button class="workflow-tool" data-workflow-add="prompt" type="button">Prompt</button>
-                            <button class="workflow-tool" data-workflow-add="images" type="button">Ref Images</button>
-                            <button class="workflow-tool" data-workflow-add="video" type="button">Ref Video</button>
-                            <button class="workflow-tool" data-workflow-add="audio" type="button">Ref Audio</button>
-                            <button class="workflow-tool" data-workflow-add="model" type="button">Seedance 2.0</button>
-                            <button class="workflow-tool" data-workflow-add="output" type="button">Output</button>
-                        </aside>
-
                         <div class="workflow-canvas-wrap" id="workflow-canvas-wrap">
+                            <div class="workflow-add-menu" id="workflow-add-menu">
+                                <button class="workflow-add-main" id="workflow-add-main" type="button" title="Adicionar bloco" aria-label="Adicionar bloco">+</button>
+                                <div class="workflow-add-popover" id="workflow-add-popover" hidden>
+                                    <button class="workflow-add-card" data-workflow-add="prompt" type="button"><strong>Novo prompt</strong><span>Texto e direção de cena</span></button>
+                                    <button class="workflow-add-card" data-workflow-add="images" type="button"><strong>Nova imagem</strong><span>Upload ou imagem IA</span></button>
+                                    <button class="workflow-add-card" data-workflow-add="video" type="button"><strong>Novo vídeo</strong><span>Referência visual</span></button>
+                                    <button class="workflow-add-card" data-workflow-add="audio" type="button"><strong>Novo áudio</strong><span>Trilha ou voz</span></button>
+                                </div>
+                            </div>
                             <div class="workflow-canvas-surface" id="workflow-canvas-surface">
                                 <div class="workflow-canvas" id="workflow-canvas">
                                 <svg class="workflow-lines" id="workflow-lines" aria-hidden="true"></svg>
@@ -1724,26 +1723,40 @@
                                 </section>
 
                                 <section class="workflow-node workflow-node-images" data-node-id="images" style="left: 40px; top: 280px;">
-                                    <header>Ref Images <span id="workflow-image-count">0/6</span></header>
+                                    <header>Ref Images <span id="workflow-image-count">0/9</span></header>
                                     <div class="workflow-upload-row">
                                         <button class="workflow-upload-btn" id="workflow-add-images" type="button">Adicionar imagens</button>
+                                        <button class="workflow-mini-btn" id="workflow-generate-image" type="button">Gerar imagem IA</button>
                                         <button class="workflow-mini-btn" id="workflow-clear-images" type="button">Limpar</button>
                                     </div>
+                                    <textarea id="workflow-image-prompt" class="workflow-textarea workflow-textarea-small" rows="2" placeholder="Prompt para criar imagem dentro do workflow..."></textarea>
                                     <div class="workflow-thumb-grid" id="workflow-image-preview"></div>
                                     <input id="workflow-image-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
                                     <span class="workflow-port workflow-port-out" data-port="images-out"></span>
                                 </section>
 
                                 <section class="workflow-node workflow-node-video" data-node-id="video" style="left: 40px; top: 482px;">
-                                    <header>Ref Videos</header>
+                                    <header>Ref Videos <span id="workflow-video-count">0/9</span></header>
                                     <input id="workflow-video-url" class="input workflow-input" type="url" placeholder="https://example.com/video.mp4">
+                                    <div class="workflow-upload-row">
+                                        <button class="workflow-upload-btn" id="workflow-add-videos" type="button">Enviar vídeos</button>
+                                        <button class="workflow-mini-btn" id="workflow-clear-videos" type="button">Limpar</button>
+                                    </div>
+                                    <div class="workflow-media-list" id="workflow-video-preview"></div>
+                                    <input id="workflow-video-input" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-msvideo" multiple hidden>
                                     <textarea id="workflow-video-notes" class="workflow-textarea workflow-textarea-small" rows="3" placeholder="O que aproveitar deste vídeo: movimento, enquadramento, ritmo..."></textarea>
                                     <span class="workflow-port workflow-port-out" data-port="video-out"></span>
                                 </section>
 
                                 <section class="workflow-node workflow-node-audio" data-node-id="audio" style="left: 40px; top: 660px;">
-                                    <header>Ref Audio</header>
+                                    <header>Ref Audio <span id="workflow-audio-count">0/1</span></header>
                                     <input id="workflow-audio-url" class="input workflow-input" type="url" placeholder="https://example.com/audio.mp3">
+                                    <div class="workflow-upload-row">
+                                        <button class="workflow-upload-btn" id="workflow-add-audio" type="button">Enviar áudio</button>
+                                        <button class="workflow-mini-btn" id="workflow-clear-audio" type="button">Limpar</button>
+                                    </div>
+                                    <div class="workflow-media-list" id="workflow-audio-preview"></div>
+                                    <input id="workflow-audio-input" type="file" accept="audio/mpeg,audio/wav,audio/mp3,audio/mp4,audio/aac,audio/ogg" hidden>
                                     <textarea id="workflow-audio-notes" class="workflow-textarea workflow-textarea-small" rows="3" placeholder="Clima sonoro, narração, trilha ou efeitos desejados..."></textarea>
                                     <span class="workflow-port workflow-port-out" data-port="audio-out"></span>
                                 </section>
@@ -1753,11 +1766,12 @@
                                     <label>Duração</label>
                                     <select id="workflow-duration" class="input workflow-input">
                                         <option value="5">5s</option>
-                                        <option value="8" selected>8s</option>
                                         <option value="10">10s</option>
+                                        <option value="15" selected>15s</option>
                                     </select>
                                     <label>Resolução</label>
                                     <select id="workflow-resolution" class="input workflow-input">
+                                        <option value="480p">480p</option>
                                         <option value="720p" selected>720p</option>
                                         <option value="1080p">1080p</option>
                                     </select>
@@ -3123,8 +3137,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260429-02"></script>
-    <script src="/video/static/pwa.js?v=20260429-02"></script>
+    <script src="/video/static/app.js?v=20260429-03"></script>
+    <script src="/video/static/pwa.js?v=20260429-03"></script>
 </body>
 </html>
 
