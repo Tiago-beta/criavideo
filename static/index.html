@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260429-12">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260429-13">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 281;
+        var REQUIRED_VER = 282;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1616,6 +1616,15 @@
                             <label>Link do vídeo de referência</label>
                             <input id="similar-source-url" type="url" class="input" placeholder="https://www.youtube.com/watch?v=...">
                             <small class="field-hint">Aceita URL pública de vídeo. O sistema baixa e analisa automaticamente em blocos.</small>
+
+                            <div id="similar-source-preview-wrap" class="similar-source-preview" hidden>
+                                <div class="similar-source-preview-head">
+                                    <strong>Prévia do vídeo de referência</strong>
+                                    <a id="similar-source-open-link" class="similar-source-open-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Abrir original</a>
+                                </div>
+                                <div id="similar-source-preview-stage" class="similar-source-preview-stage"></div>
+                                <small id="similar-source-preview-hint" class="field-hint" hidden></small>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>Título do projeto</label>
@@ -3162,8 +3171,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260429-12"></script>
-    <script src="/video/static/pwa.js?v=20260429-12"></script>
+    <script src="/video/static/app.js?v=20260429-13"></script>
+    <script src="/video/static/pwa.js?v=20260429-13"></script>
 </body>
 </html>
 

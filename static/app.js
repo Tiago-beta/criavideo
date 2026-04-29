@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v264 loaded");
+console.log("[CriaVideo] app.js v265 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -3191,6 +3191,17 @@ function initCreateWizard() {
                 similarStartAnalysis();
             }
         });
+        similarSourceInput.addEventListener("input", () => {
+            _renderSimilarSourcePreview();
+        });
+        similarSourceInput.addEventListener("blur", () => {
+            _renderSimilarSourcePreview();
+        });
+        similarSourceInput.addEventListener("paste", () => {
+            window.setTimeout(() => {
+                _renderSimilarSourcePreview();
+            }, 0);
+        });
     }
 
     // Script char count
@@ -3461,6 +3472,7 @@ function switchCreateMode(mode) {
         _updateScriptSubtitlePositionVisibility();
         _updateScriptDetailsForTevoxiMode();
     } else if (mode === "similar") {
+        _renderSimilarSourcePreview();
         if (similarState.projectId > 0) {
             _refreshSimilarProject({ silent: true });
             _startSimilarPolling();
@@ -3568,6 +3580,196 @@ function _setSimilarStatus(message, kind = "running") {
     } else {
         statusEl.classList.add("status-running");
     }
+}
+
+function _normalizeSimilarSourceUrl(rawValue) {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return "";
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (/^[\w.-]+\.[a-z]{2,}([/:?#]|$)/i.test(raw)) {
+        return `https://${raw}`;
+    }
+    return "";
+}
+
+function _extractYouTubeVideoId(urlObj) {
+    const host = String(urlObj?.hostname || "").toLowerCase().replace(/^www\./, "");
+    const pathParts = String(urlObj?.pathname || "").split("/").filter(Boolean);
+
+    let videoId = "";
+    if (host === "youtu.be") {
+        videoId = pathParts[0] || "";
+    } else if (host === "youtube.com" || host === "m.youtube.com" || host === "music.youtube.com" || host === "youtube-nocookie.com") {
+        if (urlObj.pathname === "/watch") {
+            videoId = urlObj.searchParams.get("v") || "";
+        } else if (["shorts", "embed", "live"].includes(pathParts[0] || "")) {
+            videoId = pathParts[1] || "";
+        }
+    }
+
+    return /^[A-Za-z0-9_-]{6,}$/.test(videoId) ? videoId : "";
+}
+
+function _extractTikTokVideoId(urlObj) {
+    const host = String(urlObj?.hostname || "").toLowerCase();
+    if (!host.includes("tiktok.com")) return "";
+    const match = String(urlObj.pathname || "").match(/\/video\/(\d+)/i);
+    return match ? String(match[1] || "") : "";
+}
+
+function _isLikelyDirectVideoSource(urlObj) {
+    const path = String(urlObj?.pathname || "").toLowerCase();
+    return /\.(mp4|webm|mov|m4v|ogv|ogg)$/i.test(path);
+}
+
+function _buildSimilarSourcePreviewPayload(rawValue) {
+    const normalizedUrl = _normalizeSimilarSourceUrl(rawValue);
+    if (!normalizedUrl) {
+        return { valid: false };
+    }
+
+    let parsedUrl = null;
+    try {
+        parsedUrl = new URL(normalizedUrl);
+    } catch (_) {
+        return { valid: false };
+    }
+
+    const host = String(parsedUrl.hostname || "").toLowerCase().replace(/^www\./, "");
+    const sourceUrl = parsedUrl.toString();
+
+    if (_isLikelyDirectVideoSource(parsedUrl)) {
+        return {
+            valid: true,
+            kind: "video",
+            sourceUrl,
+            previewUrl: sourceUrl,
+        };
+    }
+
+    const ytId = _extractYouTubeVideoId(parsedUrl);
+    if (ytId) {
+        return {
+            valid: true,
+            kind: "iframe",
+            sourceUrl,
+            previewUrl: `https://www.youtube.com/embed/${ytId}?rel=0&modestbranding=1`,
+        };
+    }
+
+    if (host === "facebook.com" || host.endsWith(".facebook.com") || host === "fb.watch") {
+        return {
+            valid: true,
+            kind: "iframe",
+            sourceUrl,
+            previewUrl: `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(sourceUrl)}&show_text=0&width=560`,
+            hint: "Se a previa nao carregar, confirme se o post e publico.",
+        };
+    }
+
+    const tikTokId = _extractTikTokVideoId(parsedUrl);
+    if (tikTokId) {
+        return {
+            valid: true,
+            kind: "iframe",
+            sourceUrl,
+            previewUrl: `https://www.tiktok.com/embed/v2/${tikTokId}`,
+        };
+    }
+
+    if (host === "instagram.com" || host.endsWith(".instagram.com")) {
+        const igMatch = String(parsedUrl.pathname || "").match(/^\/(reel|p|tv)\/([^/?#]+)/i);
+        if (igMatch) {
+            const mediaType = String(igMatch[1] || "reel").toLowerCase();
+            const mediaId = String(igMatch[2] || "").trim();
+            if (mediaId) {
+                return {
+                    valid: true,
+                    kind: "iframe",
+                    sourceUrl,
+                    previewUrl: `https://www.instagram.com/${mediaType}/${mediaId}/embed`,
+                };
+            }
+        }
+    }
+
+    return {
+        valid: true,
+        kind: "iframe",
+        sourceUrl,
+        previewUrl: sourceUrl,
+        hint: "A previa depende do site permitir incorporacao.",
+    };
+}
+
+function _clearSimilarSourcePreview() {
+    const wrapEl = document.getElementById("similar-source-preview-wrap");
+    const stageEl = document.getElementById("similar-source-preview-stage");
+    const hintEl = document.getElementById("similar-source-preview-hint");
+    const openLinkEl = document.getElementById("similar-source-open-link");
+
+    if (stageEl) {
+        stageEl.innerHTML = "";
+    }
+    if (hintEl) {
+        hintEl.hidden = true;
+        hintEl.textContent = "";
+    }
+    if (openLinkEl) {
+        openLinkEl.hidden = true;
+        openLinkEl.removeAttribute("href");
+    }
+    if (wrapEl) {
+        wrapEl.hidden = true;
+    }
+}
+
+function _renderSimilarSourcePreview(rawValue = null) {
+    const sourceEl = document.getElementById("similar-source-url");
+    const wrapEl = document.getElementById("similar-source-preview-wrap");
+    const stageEl = document.getElementById("similar-source-preview-stage");
+    const hintEl = document.getElementById("similar-source-preview-hint");
+    const openLinkEl = document.getElementById("similar-source-open-link");
+
+    if (!sourceEl || !wrapEl || !stageEl || !hintEl || !openLinkEl) {
+        return;
+    }
+
+    const raw = rawValue === null
+        ? String(sourceEl.value || "").trim()
+        : String(rawValue || "").trim();
+    const payload = _buildSimilarSourcePreviewPayload(raw);
+    if (!payload.valid) {
+        _clearSimilarSourcePreview();
+        return;
+    }
+
+    stageEl.innerHTML = "";
+    if (payload.kind === "video") {
+        const videoEl = document.createElement("video");
+        videoEl.src = payload.previewUrl;
+        videoEl.controls = true;
+        videoEl.playsInline = true;
+        videoEl.preload = "metadata";
+        stageEl.appendChild(videoEl);
+    } else {
+        const iframeEl = document.createElement("iframe");
+        iframeEl.src = payload.previewUrl;
+        iframeEl.title = "Previa do video de referencia";
+        iframeEl.loading = "lazy";
+        iframeEl.referrerPolicy = "strict-origin-when-cross-origin";
+        iframeEl.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+        iframeEl.allowFullscreen = true;
+        stageEl.appendChild(iframeEl);
+    }
+
+    openLinkEl.href = payload.sourceUrl;
+    openLinkEl.hidden = false;
+
+    const hint = String(payload.hint || "").trim();
+    hintEl.hidden = !hint;
+    hintEl.textContent = hint;
+    wrapEl.hidden = false;
 }
 
 function _similarSceneDuration(scene) {
@@ -5232,10 +5434,7 @@ function workflowRenderImagePreview() {
             </figure>
         `;
     }).join("");
-    const addButton = workflowState.images.length < 9
-        ? `<button class="workflow-thumb-add workflow-media-add" type="button" title="Adicionar imagens" aria-label="Adicionar imagens" onclick="workflowChooseGlobalImages()">+</button>`
-        : "";
-    preview.innerHTML = `${thumbs}${addButton}`;
+    preview.innerHTML = thumbs;
 }
 
 function workflowHasAllowedExtension(fileName, allowedExtensions) {
@@ -5396,10 +5595,7 @@ function workflowRenderVideoPreview() {
             <button class="workflow-item-remove" type="button" aria-label="Remover video ${index + 1}" title="Remover" onclick="workflowRemoveVideo(${index})">&times;</button>
         </div>
     `).join("");
-    const addButton = workflowState.videos.length < 9
-        ? `<button class="workflow-media-add" type="button" title="Adicionar videos" aria-label="Adicionar videos" onclick="workflowChooseVideoFiles()">+</button>`
-        : "";
-    preview.innerHTML = `${itemsMarkup}${addButton}`;
+    preview.innerHTML = itemsMarkup;
 }
 
 function workflowHandleAudioInput(event) {
@@ -5435,7 +5631,7 @@ function workflowRenderAudioPreview() {
     if (count) count.textContent = `${workflowState.audio ? 1 : 0}/1`;
     if (!preview) return;
     if (!workflowState.audio) {
-        preview.innerHTML = `<button class="workflow-media-add" type="button" title="Adicionar audio" aria-label="Adicionar audio" onclick="workflowChooseAudioFile()">+</button>`;
+        preview.innerHTML = "";
         return;
     }
     preview.innerHTML = `
@@ -5756,6 +5952,7 @@ function _resetSimilarModeState() {
 
     const sourceEl = document.getElementById("similar-source-url");
     if (sourceEl) sourceEl.value = "";
+    _clearSimilarSourcePreview();
     const titleEl = document.getElementById("similar-title");
     if (titleEl) titleEl.value = "";
     const aspectEl = document.getElementById("similar-aspect");
@@ -5786,6 +5983,8 @@ async function similarStartAnalysis() {
         alert("Cole o link do video de referencia.");
         return;
     }
+
+    _renderSimilarSourcePreview(sourceUrl);
 
     const payload = {
         source_url: sourceUrl,
