@@ -6104,6 +6104,14 @@ th,
     stroke-dasharray: 9 8;
 }
 
+.workflow-lines path.workflow-link-preview {
+    stroke: #f6a52f;
+    stroke-width: 4;
+    stroke-dasharray: 10 7;
+    pointer-events: none;
+    filter: drop-shadow(0 0 8px rgba(246, 165, 47, 0.42));
+}
+
 .workflow-node {
     position: absolute;
     z-index: 2;
@@ -6141,13 +6149,46 @@ th,
     color: var(--text);
     font-weight: 700;
     cursor: grab;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .workflow-node header span {
-    float: right;
+    margin-left: auto;
     color: var(--text-muted);
     font-size: 0.76rem;
     font-weight: 600;
+}
+
+.workflow-node header .workflow-drag-handle {
+    margin-left: 0;
+    color: #67e8f9;
+    cursor: grab;
+    letter-spacing: -1px;
+    flex: 0 0 auto;
+}
+
+.workflow-node.dragging header .workflow-drag-handle {
+    cursor: grabbing;
+}
+
+.workflow-node-name {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-weight: 700;
+    padding: 3px 5px;
+}
+
+.workflow-node-name:focus {
+    border-color: rgba(130, 173, 213, 0.42);
+    background: rgba(6, 22, 40, 0.38);
+    outline: none;
 }
 
 .workflow-node label {
@@ -6212,6 +6253,57 @@ th,
     flex-wrap: wrap;
     gap: 8px;
     margin-top: 8px;
+}
+
+.workflow-ai-tools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 8px;
+}
+
+.workflow-ai-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid rgba(34, 211, 238, 0.48);
+    border-radius: 999px;
+    background: rgba(6, 22, 40, 0.58);
+    color: #a5f3fc;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.workflow-ai-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.workflow-ai-choices[hidden] {
+    display: none;
+}
+
+.workflow-ai-choices button {
+    border: 1px solid rgba(56, 189, 248, 0.52);
+    border-radius: 999px;
+    background: rgba(6, 22, 40, 0.42);
+    color: #dbeafe;
+    padding: 6px 9px;
+    font-size: 0.72rem;
+    cursor: pointer;
+}
+
+.workflow-ai-choices button:hover,
+.workflow-ai-btn:hover {
+    border-color: #f6a52f;
+    color: #fff;
+}
+
+.workflow-model-name-hint {
+    margin: -4px 0 8px;
+    color: var(--text-muted);
+    font-size: 0.72rem;
 }
 
 .workflow-mini-btn,

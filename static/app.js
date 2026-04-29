@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v260 loaded");
+console.log("[CriaVideo] app.js v261 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2138,6 +2138,7 @@ let workflowState = {
     selectedConnectionIndex: -1,
     pendingPort: "",
     portDrag: null,
+    tempConnection: null,
     undoStack: [],
     redoStack: [],
     restoringHistory: false,
@@ -4092,6 +4093,7 @@ function workflowBindNodeDragging(root) {
     if (scope.matches?.(".workflow-node")) nodes.push(scope);
     nodes.push(...Array.from(scope.querySelectorAll?.(".workflow-node") || []));
     nodes.forEach((node) => {
+        workflowEnhanceNodeControls(node);
         if (node.dataset.dragBound === "1") return;
         node.dataset.dragBound = "1";
         node.addEventListener("click", workflowSelectNodeFromEvent);
@@ -4106,7 +4108,56 @@ function workflowBindNodeDragging(root) {
         port.addEventListener("click", workflowHandlePortClick);
         port.addEventListener("pointerdown", workflowStartPortDrag);
         port.addEventListener("pointerup", workflowEndPortDrag);
+        port.addEventListener("pointercancel", workflowEndPortDrag);
     });
+}
+
+function workflowEnhanceNodeControls(node) {
+    if (!node || node.dataset.controlsReady === "1") return;
+    node.dataset.controlsReady = "1";
+    const header = node.querySelector("header");
+    if (header && !header.querySelector(".workflow-drag-handle")) {
+        header.insertAdjacentHTML("afterbegin", `<span class="workflow-drag-handle" aria-hidden="true">::</span>`);
+    }
+    if (header && !header.querySelector(".workflow-node-name")) {
+        const titleNodes = Array.from(header.childNodes).filter((child) => child.nodeType === Node.TEXT_NODE && child.textContent?.trim());
+        const titleText = titleNodes.map((child) => child.textContent.trim()).join(" ") || node.dataset.nodeId || "Card";
+        node.dataset.title = node.dataset.title || titleText;
+        titleNodes.forEach((child) => child.remove());
+        header.insertAdjacentHTML("afterbegin", `<input class="workflow-node-name" type="text" value="${workflowEscapeHtml(node.dataset.title)}" aria-label="Nome do card">`);
+    }
+    const titleInput = header?.querySelector(".workflow-node-name");
+    if (titleInput && !titleInput._workflowBound) {
+        titleInput._workflowBound = true;
+        titleInput?.addEventListener("input", () => {
+            node.dataset.title = titleInput.value.trim() || node.dataset.nodeId || "Card";
+            workflowQueueAutosave();
+        });
+        titleInput?.addEventListener("change", workflowRecordHistory);
+    }
+    const textarea = node.querySelector("textarea");
+    if (textarea && !node.querySelector(".workflow-ai-tools")) {
+        textarea.insertAdjacentHTML("afterend", `
+            <div class="workflow-ai-tools">
+                <button class="workflow-ai-btn" type="button" title="IA para melhorar este prompt" onclick="workflowToggleAiTools(this)">IA</button>
+                <div class="workflow-ai-choices" hidden>
+                    <button type="button" data-workflow-ai-style="comercial">Comercial</button>
+                    <button type="button" data-workflow-ai-style="meme viral">Meme Viral</button>
+                    <button type="button" data-workflow-ai-style="anime">Anime</button>
+                    <button type="button" data-workflow-ai-style="drama">Drama</button>
+                    <button type="button" data-workflow-ai-style="efeitos visuais">Efeitos Visuais</button>
+                </div>
+            </div>
+        `);
+    }
+    node.querySelectorAll("[data-workflow-ai-style]").forEach((btn) => {
+        if (btn._workflowBound) return;
+        btn._workflowBound = true;
+        btn.addEventListener("click", () => workflowImproveCardPrompt(btn));
+    });
+    if (node.classList.contains("workflow-node-model") && !node.querySelector(".workflow-model-name-hint")) {
+        node.querySelector("header")?.insertAdjacentHTML("afterend", `<div class="workflow-model-name-hint">Modelo e tempo deste card</div>`);
+    }
 }
 
 function workflowSelectNodeFromEvent(event) {
@@ -4123,6 +4174,58 @@ function workflowSelectNode(nodeId) {
         node.classList.toggle("selected", !!nodeId && node.dataset.nodeId === nodeId);
     });
     workflowRenderConnections();
+}
+
+function workflowEscapeHtml(value) {
+    return String(value || "").replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char] || char));
+}
+
+function workflowToggleAiTools(button) {
+    const panel = button?.closest?.(".workflow-ai-tools")?.querySelector?.(".workflow-ai-choices");
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+}
+
+async function workflowImproveCardPrompt(button) {
+    const node = button?.closest?.(".workflow-node");
+    const textarea = node?.querySelector?.("textarea");
+    const style = button?.dataset?.workflowAiStyle || "cinematic";
+    const raw = String(textarea?.value || workflowPromptForNode(node) || "").trim();
+    if (!textarea || !raw) {
+        alert("Digite uma ideia no card antes de pedir ajuda da IA.");
+        return;
+    }
+    const oldText = button.textContent;
+    button.disabled = true;
+    button.textContent = "Gerando...";
+    try {
+        const engine = document.getElementById("workflow-engine")?.value || "grok";
+        const duration = parseInt(document.getElementById("workflow-duration")?.value || "10", 10) || 10;
+        const result = await api("/video/generate-realistic-prompt", {
+            method: "POST",
+            body: JSON.stringify({
+                topic: raw,
+                context_hint: `Sugestao para card do workflow: ${node?.dataset?.title || node?.dataset?.nodeId || "card"}`,
+                style,
+                engine,
+                duration,
+                interaction_persona: "nenhum",
+                persona_profile_id: 0,
+                persona_profile_ids: [],
+                has_reference_image: node?.classList?.contains("workflow-node-images") || workflowState.images.length > 0,
+            }),
+        });
+        if (!result?.prompt) throw new Error("A IA nao retornou um prompt valido.");
+        textarea.value = result.prompt;
+        node.querySelector(".workflow-ai-choices")?.setAttribute("hidden", "");
+        workflowRecordHistory();
+        showToast("Prompt atualizado pela IA.", "success");
+    } catch (error) {
+        showToast(`Erro ao sugerir prompt: ${error.message}`, "error");
+    } finally {
+        button.disabled = false;
+        button.textContent = oldText;
+    }
 }
 
 function workflowHandleKeydown(event) {
@@ -4253,15 +4356,40 @@ function workflowStartPortDrag(event) {
     const port = event.currentTarget?.dataset?.port || "";
     if (!port) return;
     workflowState.portDrag = { port, pointerId: event.pointerId };
+    workflowState.tempConnection = workflowTempConnectionFromEvent(port, event);
     workflowState.pendingPort = port;
     document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.toggle("pending", el.dataset.port === port));
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.currentTarget.addEventListener("pointermove", workflowPortDragMove);
+    workflowRenderConnections();
 }
 
+
+function workflowPortDragMove(event) {
+    const drag = workflowState.portDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    workflowState.tempConnection = workflowTempConnectionFromEvent(drag.port, event);
+    workflowRenderConnections();
+}
+
+function workflowTempConnectionFromEvent(portName, event) {
+    const start = workflowPortPoint(portName);
+    const canvas = document.getElementById("workflow-canvas");
+    if (!start || !canvas || !event) return null;
+    const zoom = Math.max(0.01, Number(workflowState.zoom || 1));
+    const canvasRect = canvas.getBoundingClientRect();
+    const end = {
+        x: (event.clientX - canvasRect.left) / zoom,
+        y: (event.clientY - canvasRect.top) / zoom,
+    };
+    return workflowPortDirection(portName) === "out" ? { from: start, to: end, type: workflowConnectionType(portName, "") } : { from: end, to: start, type: workflowConnectionType("", portName) };
+}
 function workflowEndPortDrag(event) {
     const drag = workflowState.portDrag;
     if (!drag || drag.pointerId !== event.pointerId) return;
+    workflowState.tempConnection = null;
     event.stopPropagation();
+    event.currentTarget?.removeEventListener?.("pointermove", workflowPortDragMove);
     const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".workflow-port");
     const targetPort = target?.dataset?.port || "";
     if (targetPort && targetPort !== drag.port) {
@@ -4270,6 +4398,7 @@ function workflowEndPortDrag(event) {
     workflowState.portDrag = null;
     workflowState.pendingPort = "";
     document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.remove("pending"));
+    workflowRenderConnections();
 }
 
 function workflowConnectPorts(firstPort, secondPort) {
@@ -4361,6 +4490,7 @@ function workflowGetNodeBounds() {
 function workflowStartDrag(event, node) {
     if (!node || event.button !== 0) return;
     if (event.target.closest(".workflow-port")) return;
+    if (event.target.closest(".workflow-node-name") && !event.target.closest(".workflow-drag-handle")) return;
     if (event.target.closest("textarea, input, select, button, label") && !event.target.closest(".workflow-port")) return;
     workflowSelectNode(node.dataset.nodeId || "");
     event.stopPropagation();
@@ -4507,7 +4637,7 @@ function workflowRenderConnections() {
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
     svg.setAttribute("width", `${width}`);
     svg.setAttribute("height", `${height}`);
-    svg.innerHTML = workflowState.connections.map(([from, to], index) => {
+    const connectionPaths = workflowState.connections.map(([from, to], index) => {
         const start = workflowPortPoint(from);
         const end = workflowPortPoint(to);
         if (!start || !end) return "";
@@ -4515,7 +4645,13 @@ function workflowRenderConnections() {
         const selected = index === workflowState.selectedConnectionIndex ? " selected" : "";
         const type = workflowConnectionType(from, to);
         return `<path class="workflow-link workflow-link-${type}${selected}" data-connection-index="${index}" d="M ${start.x} ${start.y} C ${start.x + mid} ${start.y}, ${end.x - mid} ${end.y}, ${end.x} ${end.y}" />`;
-    }).join("");
+    });
+    if (workflowState.tempConnection) {
+        const { from, to, type } = workflowState.tempConnection;
+        const mid = Math.max(80, Math.abs(to.x - from.x) * 0.5);
+        connectionPaths.push(`<path class="workflow-link workflow-link-${type || "default"} workflow-link-preview" d="M ${from.x} ${from.y} C ${from.x + mid} ${from.y}, ${to.x - mid} ${to.y}, ${to.x} ${to.y}" />`);
+    }
+    svg.innerHTML = connectionPaths.join("");
     svg.querySelectorAll("[data-connection-index]").forEach((path) => {
         path.addEventListener("click", workflowSelectConnectionFromEvent);
     });
@@ -4715,7 +4851,7 @@ function workflowLoadTemplateList() {
 function workflowSerializeTemplate() {
     const nodes = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node")).map((node) => ({
         id: node.dataset.nodeId || "",
-        dataset: { ...node.dataset },
+        dataset: workflowSerializableNodeDataset(node),
         className: node.className,
         left: parseFloat(node.style.left || "0") || 0,
         top: parseFloat(node.style.top || "0") || 0,
@@ -4732,6 +4868,14 @@ function workflowSerializeTemplate() {
         nodeSeq: workflowState.nodeSeq,
         zoom: workflowState.zoom,
     };
+}
+
+function workflowSerializableNodeDataset(node) {
+    const dataset = { ...node.dataset };
+    delete dataset.dragBound;
+    delete dataset.portBound;
+    delete dataset.controlsReady;
+    return dataset;
 }
 
 function workflowControlSelector(el) {
@@ -4786,6 +4930,7 @@ function workflowApplyTemplateData(data, options = {}) {
         node.className = savedNode.className || "workflow-node";
         node.dataset.nodeId = savedNode.id || `node-${++workflowState.nodeSeq}`;
         Object.entries(savedNode.dataset || {}).forEach(([key, value]) => {
+            if (["dragBound", "portBound", "controlsReady"].includes(key)) return;
             node.dataset[key] = value;
         });
         node.style.left = `${Number(savedNode.left || 0)}px`;
