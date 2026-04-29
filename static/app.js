@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v262 loaded");
+console.log("[CriaVideo] app.js v263 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4007,38 +4007,29 @@ function initWorkflowBuilder() {
         btn.addEventListener("click", () => workflowAddNode(btn.dataset.workflowAdd));
     });
 
-    const addImagesBtn = document.getElementById("workflow-add-images");
     const imageInput = document.getElementById("workflow-image-input");
-    if (addImagesBtn && imageInput) {
-        addImagesBtn.addEventListener("click", () => workflowChooseGlobalImages());
+    if (imageInput) {
+        const addImagesBtn = document.getElementById("workflow-add-images");
+        if (addImagesBtn) addImagesBtn.addEventListener("click", () => workflowChooseGlobalImages());
         imageInput.addEventListener("change", workflowHandleImageInput);
     }
 
     const generateImageBtn = document.getElementById("workflow-generate-image");
     if (generateImageBtn) generateImageBtn.addEventListener("click", workflowGenerateImage);
 
-    const clearImagesBtn = document.getElementById("workflow-clear-images");
-    if (clearImagesBtn) clearImagesBtn.addEventListener("click", workflowClearImages);
-
-    const addVideosBtn = document.getElementById("workflow-add-videos");
     const videoInput = document.getElementById("workflow-video-input");
-    if (addVideosBtn && videoInput) {
-        addVideosBtn.addEventListener("click", () => videoInput.click());
+    if (videoInput) {
+        const addVideosBtn = document.getElementById("workflow-add-videos");
+        if (addVideosBtn) addVideosBtn.addEventListener("click", workflowChooseVideoFiles);
         videoInput.addEventListener("change", workflowHandleVideoInput);
     }
 
-    const clearVideosBtn = document.getElementById("workflow-clear-videos");
-    if (clearVideosBtn) clearVideosBtn.addEventListener("click", workflowClearVideos);
-
-    const addAudioBtn = document.getElementById("workflow-add-audio");
     const audioInput = document.getElementById("workflow-audio-input");
-    if (addAudioBtn && audioInput) {
-        addAudioBtn.addEventListener("click", () => audioInput.click());
+    if (audioInput) {
+        const addAudioBtn = document.getElementById("workflow-add-audio");
+        if (addAudioBtn) addAudioBtn.addEventListener("click", workflowChooseAudioFile);
         audioInput.addEventListener("change", workflowHandleAudioInput);
     }
-
-    const clearAudioBtn = document.getElementById("workflow-clear-audio");
-    if (clearAudioBtn) clearAudioBtn.addEventListener("click", workflowClearAudio);
 
     const runBtn = document.getElementById("workflow-run");
     if (runBtn) runBtn.addEventListener("click", workflowRunSeedance);
@@ -5127,25 +5118,39 @@ function workflowApplyTemplate(type) {
 }
 
 async function workflowHandleImageInput(event) {
-    const files = Array.from(event.target?.files || []).filter((file) => file && file.type.startsWith("image/"));
-    if (!files.length) return;
+    const input = event?.target;
+    const selectedFiles = Array.from(input?.files || []);
+    if (!selectedFiles.length) return;
+    const files = selectedFiles.filter(workflowIsImageFile);
+    if (input) input.value = "";
+    if (!files.length) {
+        workflowState.imageUploadTargetNodeId = "";
+        showToast("Selecione imagens validas (JPG, PNG ou WEBP).", "error");
+        return;
+    }
     const targetNodeId = workflowState.imageUploadTargetNodeId || "";
+    workflowState.imageUploadTargetNodeId = "";
     if (targetNodeId) {
         const node = document.querySelector(`#create-panel-workflow .workflow-node[data-node-id="${CSS.escape(targetNodeId)}"]`);
         if (node) {
             workflowSetNodeUploadedImage(node, files[0]);
-            workflowState.imageUploadTargetNodeId = "";
-            event.target.value = "";
             workflowRecordHistory();
             return;
         }
     }
     const remaining = Math.max(0, 9 - workflowState.images.length);
-    workflowState.images = workflowState.images.concat(files.slice(0, remaining)).slice(0, 9);
+    if (!remaining) {
+        showToast("Limite de 9 imagens atingido.", "error");
+        return;
+    }
+    const acceptedFiles = files.slice(0, remaining);
+    workflowState.images = workflowState.images.concat(acceptedFiles).slice(0, 9);
     workflowState.imageUploadIds = [];
     workflowRenderImagePreview();
     workflowRecordHistory();
-    event.target.value = "";
+    if (files.length > acceptedFiles.length) {
+        showToast("Apenas 9 imagens podem ser adicionadas no workflow.", "info");
+    }
 }
 
 function workflowSetNodeUploadedImage(node, file) {
@@ -5163,8 +5168,19 @@ function workflowSetNodeUploadedImage(node, file) {
 }
 
 function workflowClearImages() {
+    workflowState.images.forEach((file) => workflowReleaseLocalPreviewUrl(file));
     workflowState.images = [];
     workflowState.imageUploadIds = [];
+    workflowRenderImagePreview();
+    workflowRecordHistory();
+}
+
+function workflowRemoveImage(index) {
+    const safeIndex = Number(index);
+    if (!Number.isInteger(safeIndex) || safeIndex < 0 || safeIndex >= workflowState.images.length) return;
+    const [removed] = workflowState.images.splice(safeIndex, 1);
+    workflowReleaseLocalPreviewUrl(removed);
+    workflowState.imageUploadIds = workflowState.images.map((item) => item.upload_id).filter(Boolean);
     workflowRenderImagePreview();
     workflowRecordHistory();
 }
@@ -5174,14 +5190,77 @@ function workflowRenderImagePreview() {
     const count = document.getElementById("workflow-image-count");
     if (count) count.textContent = `${workflowState.images.length}/9`;
     if (!preview) return;
-    if (!workflowState.images.length) {
-        preview.innerHTML = `<button class="workflow-thumb-add" type="button" onclick="workflowChooseGlobalImages()">+</button>`;
-        return;
+    const thumbs = workflowState.images.map((file, index) => {
+        const url = workflowGetLocalPreviewUrl(file);
+        const imageMarkup = url
+            ? `<img src="${workflowEscapeHtml(url)}" alt="${workflowEscapeHtml(file?.name || `Referencia ${index + 1}`)}">`
+            : `<div class="workflow-thumb-fallback">IMG</div>`;
+        return `
+            <figure class="workflow-thumb">
+                ${imageMarkup}
+                <button class="workflow-thumb-remove workflow-item-remove" type="button" aria-label="Remover imagem ${index + 1}" title="Remover" onclick="workflowRemoveImage(${index})">&times;</button>
+            </figure>
+        `;
+    }).join("");
+    const addButton = workflowState.images.length < 9
+        ? `<button class="workflow-thumb-add workflow-media-add" type="button" title="Adicionar imagens" aria-label="Adicionar imagens" onclick="workflowChooseGlobalImages()">+</button>`
+        : "";
+    preview.innerHTML = `${thumbs}${addButton}`;
+}
+
+function workflowHasAllowedExtension(fileName, allowedExtensions) {
+    const normalizedName = String(fileName || "").trim().toLowerCase();
+    return allowedExtensions.some((ext) => normalizedName.endsWith(ext));
+}
+
+function workflowIsImageFile(file) {
+    if (!file) return false;
+    const fileType = String(file.type || "").toLowerCase();
+    if (fileType.startsWith("image/")) return true;
+    return workflowHasAllowedExtension(file.name, [".jpg", ".jpeg", ".png", ".webp"]);
+}
+
+function workflowIsVideoFile(file) {
+    if (!file) return false;
+    const fileType = String(file.type || "").toLowerCase();
+    if (fileType.startsWith("video/")) return true;
+    return workflowHasAllowedExtension(file.name, [".mp4", ".mov", ".webm", ".avi", ".m4v"]);
+}
+
+function workflowIsAudioFile(file) {
+    if (!file) return false;
+    const fileType = String(file.type || "").toLowerCase();
+    if (fileType.startsWith("audio/")) return true;
+    return workflowHasAllowedExtension(file.name, [".mp3", ".wav", ".aac", ".m4a", ".ogg"]);
+}
+
+function workflowGetLocalPreviewUrl(file) {
+    if (!file) return "";
+    if (file.preview_url) return file.preview_url;
+    if (file._objectUrl) return file._objectUrl;
+    try {
+        file._objectUrl = URL.createObjectURL(file);
+    } catch (_) {
+        file._objectUrl = "";
     }
-    preview.innerHTML = workflowState.images.map((file, index) => {
-        const url = file.preview_url || URL.createObjectURL(file);
-        return `<figure class="workflow-thumb"><img src="${url}" alt="Referência ${index + 1}"><figcaption>${index + 1}</figcaption></figure>`;
-    }).join("") + (workflowState.images.length < 9 ? `<button class="workflow-thumb-add" type="button" onclick="workflowChooseGlobalImages()">+</button>` : "");
+    return file._objectUrl || "";
+}
+
+function workflowReleaseLocalPreviewUrl(file) {
+    if (!file?._objectUrl) return;
+    try {
+        URL.revokeObjectURL(file._objectUrl);
+    } catch (_) {
+    }
+    file._objectUrl = "";
+}
+
+function workflowChooseVideoFiles() {
+    document.getElementById("workflow-video-input")?.click();
+}
+
+function workflowChooseAudioFile() {
+    document.getElementById("workflow-audio-input")?.click();
 }
 
 function workflowEscapeHtml(value) {
@@ -5236,18 +5315,41 @@ async function workflowGenerateImage() {
 }
 
 function workflowHandleVideoInput(event) {
-    const files = Array.from(event.target?.files || []).filter((file) => file && file.type.startsWith("video/"));
-    if (!files.length) return;
+    const input = event?.target;
+    const selectedFiles = Array.from(input?.files || []);
+    if (!selectedFiles.length) return;
+    const files = selectedFiles.filter(workflowIsVideoFile);
+    if (input) input.value = "";
+    if (!files.length) {
+        showToast("Selecione videos validos (MP4, MOV, WEBM ou AVI).", "error");
+        return;
+    }
     const remaining = Math.max(0, 9 - workflowState.videos.length);
-    workflowState.videos = workflowState.videos.concat(files.slice(0, remaining)).slice(0, 9);
+    if (!remaining) {
+        showToast("Limite de 9 videos atingido.", "error");
+        return;
+    }
+    const acceptedFiles = files.slice(0, remaining);
+    workflowState.videos = workflowState.videos.concat(acceptedFiles).slice(0, 9);
     workflowState.videoUploadIds = [];
     workflowRenderVideoPreview();
     workflowRecordHistory();
-    event.target.value = "";
+    if (files.length > acceptedFiles.length) {
+        showToast("Apenas 9 videos podem ser adicionados no workflow.", "info");
+    }
 }
 
 function workflowClearVideos() {
     workflowState.videos = [];
+    workflowState.videoUploadIds = [];
+    workflowRenderVideoPreview();
+    workflowRecordHistory();
+}
+
+function workflowRemoveVideo(index) {
+    const safeIndex = Number(index);
+    if (!Number.isInteger(safeIndex) || safeIndex < 0 || safeIndex >= workflowState.videos.length) return;
+    workflowState.videos.splice(safeIndex, 1);
     workflowState.videoUploadIds = [];
     workflowRenderVideoPreview();
     workflowRecordHistory();
@@ -5258,19 +5360,32 @@ function workflowRenderVideoPreview() {
     const count = document.getElementById("workflow-video-count");
     if (count) count.textContent = `${workflowState.videos.length}/9`;
     if (!preview) return;
-    preview.innerHTML = workflowState.videos.length
-        ? workflowState.videos.map((file, index) => `<span>${index + 1}. ${workflowEscapeHtml(file.name || "vídeo")}</span>`).join("")
-        : `<span>Nenhum vídeo enviado.</span>`;
+    const itemsMarkup = workflowState.videos.map((file, index) => `
+        <div class="workflow-media-item">
+            <span class="workflow-media-item-label">${workflowEscapeHtml(file.name || `video-${index + 1}`)}</span>
+            <button class="workflow-item-remove" type="button" aria-label="Remover video ${index + 1}" title="Remover" onclick="workflowRemoveVideo(${index})">&times;</button>
+        </div>
+    `).join("");
+    const addButton = workflowState.videos.length < 9
+        ? `<button class="workflow-media-add" type="button" title="Adicionar videos" aria-label="Adicionar videos" onclick="workflowChooseVideoFiles()">+</button>`
+        : "";
+    preview.innerHTML = `${itemsMarkup}${addButton}`;
 }
 
 function workflowHandleAudioInput(event) {
-    const file = Array.from(event.target?.files || []).find((item) => item && item.type.startsWith("audio/"));
-    if (!file) return;
+    const input = event?.target;
+    const selectedFiles = Array.from(input?.files || []);
+    if (input) input.value = "";
+    if (!selectedFiles.length) return;
+    const file = selectedFiles.find((item) => workflowIsAudioFile(item));
+    if (!file) {
+        showToast("Selecione um audio valido (MP3, WAV, AAC, M4A ou OGG).", "error");
+        return;
+    }
     workflowState.audio = file;
     workflowState.audioUploadId = "";
     workflowRenderAudioPreview();
     workflowRecordHistory();
-    event.target.value = "";
 }
 
 function workflowClearAudio() {
@@ -5280,14 +5395,25 @@ function workflowClearAudio() {
     workflowRecordHistory();
 }
 
+function workflowRemoveAudio() {
+    workflowClearAudio();
+}
+
 function workflowRenderAudioPreview() {
     const preview = document.getElementById("workflow-audio-preview");
     const count = document.getElementById("workflow-audio-count");
     if (count) count.textContent = `${workflowState.audio ? 1 : 0}/1`;
     if (!preview) return;
-    preview.innerHTML = workflowState.audio
-        ? `<span>${workflowEscapeHtml(workflowState.audio.name || "áudio")}</span>`
-        : `<span>Nenhum áudio enviado.</span>`;
+    if (!workflowState.audio) {
+        preview.innerHTML = `<button class="workflow-media-add" type="button" title="Adicionar audio" aria-label="Adicionar audio" onclick="workflowChooseAudioFile()">+</button>`;
+        return;
+    }
+    preview.innerHTML = `
+        <div class="workflow-media-item">
+            <span class="workflow-media-item-label">${workflowEscapeHtml(workflowState.audio.name || "audio")}</span>
+            <button class="workflow-item-remove" type="button" aria-label="Remover audio" title="Remover" onclick="workflowRemoveAudio()">&times;</button>
+        </div>
+    `;
 }
 
 function workflowBuildPrompt() {
