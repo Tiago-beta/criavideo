@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v263 loaded");
+console.log("[CriaVideo] app.js v264 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4007,39 +4007,6 @@ function initWorkflowBuilder() {
         btn.addEventListener("click", () => workflowAddNode(btn.dataset.workflowAdd));
     });
 
-    const imageInput = document.getElementById("workflow-image-input");
-    if (imageInput) {
-        const addImagesBtn = document.getElementById("workflow-add-images");
-        if (addImagesBtn) addImagesBtn.addEventListener("click", () => workflowChooseGlobalImages());
-        imageInput.addEventListener("change", workflowHandleImageInput);
-    }
-
-    const generateImageBtn = document.getElementById("workflow-generate-image");
-    if (generateImageBtn) generateImageBtn.addEventListener("click", workflowGenerateImage);
-
-    const videoInput = document.getElementById("workflow-video-input");
-    if (videoInput) {
-        const addVideosBtn = document.getElementById("workflow-add-videos");
-        if (addVideosBtn) addVideosBtn.addEventListener("click", workflowChooseVideoFiles);
-        videoInput.addEventListener("change", workflowHandleVideoInput);
-    }
-
-    const audioInput = document.getElementById("workflow-audio-input");
-    if (audioInput) {
-        const addAudioBtn = document.getElementById("workflow-add-audio");
-        if (addAudioBtn) addAudioBtn.addEventListener("click", workflowChooseAudioFile);
-        audioInput.addEventListener("change", workflowHandleAudioInput);
-    }
-
-    const runBtn = document.getElementById("workflow-run");
-    if (runBtn) runBtn.addEventListener("click", workflowRunSeedance);
-
-    const engineSelect = document.getElementById("workflow-engine");
-    if (engineSelect) engineSelect.addEventListener("change", () => {
-        workflowSyncEngineDurationOptions();
-        workflowRecordHistory();
-    });
-
     document.querySelectorAll("[data-workflow-template]").forEach((btn) => {
         btn.addEventListener("click", () => workflowApplyTemplate(btn.dataset.workflowTemplate));
     });
@@ -4078,6 +4045,31 @@ function initWorkflowBuilder() {
     workflowRenderConnections();
     workflowRecordHistory();
     setTimeout(workflowFitCanvas, 50);
+}
+
+function workflowHandleEngineSelectChange() {
+    workflowSyncEngineDurationOptions();
+    workflowRecordHistory();
+}
+
+function workflowBindPrimaryNodeControls() {
+    const bindings = [
+        { id: "workflow-add-images", eventName: "click", handler: workflowChooseGlobalImages, marker: "_workflowClickBound" },
+        { id: "workflow-generate-image", eventName: "click", handler: workflowGenerateImage, marker: "_workflowClickBound" },
+        { id: "workflow-image-input", eventName: "change", handler: workflowHandleImageInput, marker: "_workflowChangeBound" },
+        { id: "workflow-add-videos", eventName: "click", handler: workflowChooseVideoFiles, marker: "_workflowClickBound" },
+        { id: "workflow-video-input", eventName: "change", handler: workflowHandleVideoInput, marker: "_workflowChangeBound" },
+        { id: "workflow-add-audio", eventName: "click", handler: workflowChooseAudioFile, marker: "_workflowClickBound" },
+        { id: "workflow-audio-input", eventName: "change", handler: workflowHandleAudioInput, marker: "_workflowChangeBound" },
+        { id: "workflow-run", eventName: "click", handler: workflowRunSeedance, marker: "_workflowClickBound" },
+        { id: "workflow-engine", eventName: "change", handler: workflowHandleEngineSelectChange, marker: "_workflowChangeBound" },
+    ];
+    bindings.forEach(({ id, eventName, handler, marker }) => {
+        const element = document.getElementById(id);
+        if (!element || element[marker]) return;
+        element.addEventListener(eventName, handler);
+        element[marker] = true;
+    });
 }
 
 function workflowBindNodeDragging(root) {
@@ -4968,7 +4960,7 @@ function workflowApplyTemplateData(data, options = {}) {
     workflowState.selectedConnectionIndex = -1;
     workflowState.pendingPort = "";
     workflowBindNodeDragging(canvas);
-    workflowMigrateWorkflowNodes();
+    workflowMigrateWorkflowNodes(defaultNodes);
     workflowCollectGeneratedNodeImages();
     workflowSyncEngineDurationOptions();
     workflowRenderImagePreview();
@@ -5012,7 +5004,49 @@ function workflowRestoreMissingDefaultNodes(canvas, defaults) {
     });
 }
 
-function workflowMigrateWorkflowNodes() {
+function workflowRefreshNodeMarkupFromDefault(node, defaultNode) {
+    if (!node || !defaultNode) return;
+    const values = Array.from(node.querySelectorAll("textarea, input, select")).map((element) => ({
+        selector: workflowControlSelector(element),
+        type: element.type,
+        value: element.type === "checkbox" ? !!element.checked : element.value,
+    }));
+    node.innerHTML = defaultNode.innerHTML;
+    values.forEach((item) => {
+        if (item.type === "file") return;
+        const control = node.querySelector(item.selector);
+        if (!control) return;
+        if (control.type === "checkbox") {
+            control.checked = !!item.value;
+        } else {
+            control.value = item.value || "";
+        }
+    });
+}
+
+function workflowNodeNeedsDefaultMarkupRefresh(nodeId, node) {
+    if (!node) return false;
+    if (nodeId === "images") {
+        return !node.querySelector(".workflow-upload-icon") || !!node.querySelector("#workflow-clear-images") || !!node.querySelector(".workflow-upload-btn");
+    }
+    if (nodeId === "video") {
+        return !node.querySelector(".workflow-upload-icon") || !!node.querySelector("#workflow-clear-videos") || !!node.querySelector(".workflow-upload-btn");
+    }
+    if (nodeId === "audio") {
+        return !node.querySelector(".workflow-upload-icon") || !!node.querySelector("#workflow-clear-audio") || !!node.querySelector(".workflow-upload-btn");
+    }
+    return false;
+}
+
+function workflowMigrateWorkflowNodes(defaultNodes = null) {
+    const defaults = defaultNodes instanceof Map ? defaultNodes : workflowCaptureDefaultNodes(document.getElementById("workflow-canvas"));
+    ["images", "video", "audio"].forEach((nodeId) => {
+        const node = document.querySelector(`#create-panel-workflow .workflow-node[data-node-id="${nodeId}"]`);
+        const defaultNode = defaults?.get?.(nodeId);
+        if (workflowNodeNeedsDefaultMarkupRefresh(nodeId, node) && defaultNode) {
+            workflowRefreshNodeMarkupFromDefault(node, defaultNode);
+        }
+    });
     const model = document.querySelector(`#create-panel-workflow .workflow-node[data-node-id="model"]`);
     if (model && !model.querySelector("#workflow-engine")) {
         const durationLabel = Array.from(model.querySelectorAll("label")).find((label) => /Duração/i.test(label.textContent || ""));
@@ -5026,13 +5060,9 @@ function workflowMigrateWorkflowNodes() {
         `;
         if (durationLabel) durationLabel.insertAdjacentHTML("beforebegin", html);
         else model.querySelector("header")?.insertAdjacentHTML("afterend", html);
-        const engineSelect = model.querySelector("#workflow-engine");
-        engineSelect?.addEventListener("change", () => {
-            workflowSyncEngineDurationOptions();
-            workflowRecordHistory();
-        });
     }
     workflowBindNodeDragging(document.getElementById("create-panel-workflow"));
+    workflowBindPrimaryNodeControls();
 }
 
 function workflowOpenTemplateModal(defaultName = "") {
