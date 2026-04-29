@@ -5945,6 +5945,13 @@ th,
     flex-shrink: 0;
 }
 
+.workflow-template-select {
+    width: 170px;
+    min-height: 34px;
+    padding: 6px 9px;
+    font-size: 0.8rem;
+}
+
 .workflow-shell {
     display: block;
     min-height: 620px;
@@ -5964,6 +5971,26 @@ th,
     background-size: 18px 18px;
     cursor: grab;
     touch-action: none;
+}
+
+.workflow-connection-menu {
+    position: absolute;
+    z-index: 30;
+    padding: 6px;
+    border: 1px solid rgba(0, 212, 255, 0.32);
+    border-radius: 9px;
+    background: rgba(7, 24, 43, 0.96);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.32);
+}
+
+.workflow-connection-menu button {
+    border: 1px solid rgba(255, 122, 108, 0.4);
+    border-radius: 7px;
+    background: rgba(255, 122, 108, 0.12);
+    color: #ffd0ca;
+    padding: 7px 10px;
+    font-size: 0.76rem;
+    cursor: pointer;
 }
 
 .workflow-add-menu {
@@ -6032,14 +6059,14 @@ th,
 
 .workflow-canvas-surface {
     position: relative;
-    width: 1320px;
-    height: 880px;
+    width: 5000px;
+    height: 3200px;
 }
 
 .workflow-canvas {
     position: relative;
-    width: 1320px;
-    height: 880px;
+    width: 5000px;
+    height: 3200px;
     color: var(--text);
     transform-origin: top left;
 }
@@ -6048,7 +6075,7 @@ th,
     position: absolute;
     inset: 0;
     z-index: 1;
-    pointer-events: none;
+    pointer-events: auto;
 }
 
 .workflow-lines path {
@@ -6056,6 +6083,14 @@ th,
     stroke: #14b8a6;
     stroke-width: 3;
     stroke-linecap: round;
+    pointer-events: stroke;
+    cursor: pointer;
+}
+
+.workflow-lines path.selected,
+.workflow-lines path:hover {
+    stroke: #f6a52f;
+    stroke-width: 5;
 }
 
 .workflow-lines path:nth-child(3),
@@ -6088,6 +6123,12 @@ th,
 
 .workflow-node.dragging header {
     cursor: grabbing;
+}
+
+.workflow-node.selected {
+    outline: 2px solid rgba(246, 165, 47, 0.78);
+    outline-offset: 3px;
+    z-index: 6;
 }
 
 .workflow-node-pulse {
@@ -6257,6 +6298,25 @@ th,
     border-radius: 50%;
     background: #14b8a6;
     box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.14);
+    cursor: crosshair;
+}
+
+.workflow-port.pending {
+    background: #f6a52f;
+    box-shadow: 0 0 0 5px rgba(246, 165, 47, 0.26);
+}
+
+.workflow-node-preview {
+    margin-top: 8px;
+    min-height: 0;
+}
+
+.workflow-node-preview img {
+    width: 100%;
+    max-height: 130px;
+    object-fit: cover;
+    border: 1px solid rgba(130, 173, 213, 0.32);
+    border-radius: 8px;
 }
 
 .workflow-port-out {

@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260429-03">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260429-04">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 272;
+        var REQUIRED_VER = 273;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1690,6 +1690,12 @@
                             <p class="wizard-hint">Arraste os blocos, conecte referências e rode o motor Seedance 2.0.</p>
                         </div>
                         <div class="workflow-head-actions">
+                            <select id="workflow-template-select" class="input workflow-template-select" title="Templates salvos">
+                                <option value="">Templates</option>
+                            </select>
+                            <button class="btn btn-secondary btn-sm" id="workflow-save-template" type="button">Salvar template</button>
+                            <button class="btn btn-secondary btn-sm" id="workflow-duplicate-template" type="button">Duplicar</button>
+                            <button class="btn btn-secondary btn-sm" id="workflow-delete-template" type="button">Excluir</button>
                             <button class="btn btn-secondary btn-sm" id="workflow-fit" type="button" title="Centralizar canvas" aria-label="Centralizar canvas">
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
                             </button>
@@ -1699,6 +1705,9 @@
 
                     <div class="workflow-shell">
                         <div class="workflow-canvas-wrap" id="workflow-canvas-wrap">
+                            <div class="workflow-connection-menu" id="workflow-connection-menu" hidden>
+                                <button type="button" id="workflow-disconnect-link">Desconectar</button>
+                            </div>
                             <div class="workflow-add-menu" id="workflow-add-menu">
                                 <button class="workflow-add-main" id="workflow-add-main" type="button" title="Adicionar bloco" aria-label="Adicionar bloco">+</button>
                                 <div class="workflow-add-popover" id="workflow-add-popover" hidden>
@@ -1712,7 +1721,7 @@
                                 <div class="workflow-canvas" id="workflow-canvas">
                                 <svg class="workflow-lines" id="workflow-lines" aria-hidden="true"></svg>
 
-                                <section class="workflow-node workflow-node-prompt" data-node-id="prompt" style="left: 40px; top: 34px;">
+                                <section class="workflow-node workflow-node-prompt" data-node-id="prompt" style="left: 1900px; top: 980px;">
                                     <header>Prompt</header>
                                     <textarea id="workflow-prompt" class="workflow-textarea" rows="7" placeholder="Descreva a cena, movimento de câmera, iluminação, personagens e atmosfera..."></textarea>
                                     <div class="workflow-node-actions">
@@ -1722,7 +1731,7 @@
                                     <span class="workflow-port workflow-port-out" data-port="prompt-out"></span>
                                 </section>
 
-                                <section class="workflow-node workflow-node-images" data-node-id="images" style="left: 40px; top: 280px;">
+                                <section class="workflow-node workflow-node-images" data-node-id="images" style="left: 1900px; top: 1226px;">
                                     <header>Ref Images <span id="workflow-image-count">0/9</span></header>
                                     <div class="workflow-upload-row">
                                         <button class="workflow-upload-btn" id="workflow-add-images" type="button">Adicionar imagens</button>
@@ -1735,7 +1744,7 @@
                                     <span class="workflow-port workflow-port-out" data-port="images-out"></span>
                                 </section>
 
-                                <section class="workflow-node workflow-node-video" data-node-id="video" style="left: 40px; top: 482px;">
+                                <section class="workflow-node workflow-node-video" data-node-id="video" style="left: 1900px; top: 1428px;">
                                     <header>Ref Videos <span id="workflow-video-count">0/9</span></header>
                                     <input id="workflow-video-url" class="input workflow-input" type="url" placeholder="https://example.com/video.mp4">
                                     <div class="workflow-upload-row">
@@ -1748,7 +1757,7 @@
                                     <span class="workflow-port workflow-port-out" data-port="video-out"></span>
                                 </section>
 
-                                <section class="workflow-node workflow-node-audio" data-node-id="audio" style="left: 40px; top: 660px;">
+                                <section class="workflow-node workflow-node-audio" data-node-id="audio" style="left: 1900px; top: 1606px;">
                                     <header>Ref Audio <span id="workflow-audio-count">0/1</span></header>
                                     <input id="workflow-audio-url" class="input workflow-input" type="url" placeholder="https://example.com/audio.mp3">
                                     <div class="workflow-upload-row">
@@ -1761,7 +1770,7 @@
                                     <span class="workflow-port workflow-port-out" data-port="audio-out"></span>
                                 </section>
 
-                                <section class="workflow-node workflow-node-model" data-node-id="model" style="left: 560px; top: 190px;">
+                                <section class="workflow-node workflow-node-model" data-node-id="model" style="left: 2420px; top: 1136px;">
                                     <header>Seedance 2.0</header>
                                     <label>Duração</label>
                                     <select id="workflow-duration" class="input workflow-input">
@@ -1790,7 +1799,7 @@
                                     <span class="workflow-port workflow-port-out workflow-port-out-model" data-port="model-out"></span>
                                 </section>
 
-                                <section class="workflow-node workflow-node-output" data-node-id="output" style="left: 970px; top: 230px;">
+                                <section class="workflow-node workflow-node-output" data-node-id="output" style="left: 2830px; top: 1176px;">
                                     <header>Output</header>
                                     <div class="workflow-output-box" id="workflow-output-box">
                                         <span>O vídeo gerado aparecerá na lista de projetos.</span>
@@ -3137,8 +3146,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260429-03"></script>
-    <script src="/video/static/pwa.js?v=20260429-03"></script>
+    <script src="/video/static/app.js?v=20260429-04"></script>
+    <script src="/video/static/pwa.js?v=20260429-04"></script>
 </body>
 </html>
 

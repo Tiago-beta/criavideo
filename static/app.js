@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v255 loaded");
+console.log("[CriaVideo] app.js v256 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2133,7 +2133,11 @@ let workflowState = {
     audioUploadId: "",
     nodeSeq: 1,
     addMenuOpen: false,
-    addPosition: { left: 120, top: 120 },
+    addPosition: { left: 2100, top: 1180 },
+    selectedNodeId: "",
+    selectedConnectionIndex: -1,
+    pendingPort: "",
+    templateKey: "",
     connections: [
         ["prompt-out", "model-prompt-in"],
         ["images-out", "model-images-in"],
@@ -2144,10 +2148,10 @@ let workflowState = {
     drag: null,
     pan: null,
     zoom: 1,
-    minZoom: 0.6,
+    minZoom: 0.25,
     maxZoom: 2.2,
-    baseWidth: 1320,
-    baseHeight: 880,
+    baseWidth: 5000,
+    baseHeight: 3200,
 };
 const SIMILAR_STAGE_LABELS = {
     queued_analysis: "Video recebido. Preparando analise...",
@@ -3963,6 +3967,17 @@ function initWorkflowBuilder() {
     const fitBtn = document.getElementById("workflow-fit");
     if (fitBtn) fitBtn.addEventListener("click", workflowFitCanvas);
 
+    const saveTemplateBtn = document.getElementById("workflow-save-template");
+    if (saveTemplateBtn) saveTemplateBtn.addEventListener("click", workflowSaveTemplate);
+    const templateSelect = document.getElementById("workflow-template-select");
+    if (templateSelect) templateSelect.addEventListener("change", () => workflowLoadTemplate(templateSelect.value));
+    const duplicateTemplateBtn = document.getElementById("workflow-duplicate-template");
+    if (duplicateTemplateBtn) duplicateTemplateBtn.addEventListener("click", workflowDuplicateTemplate);
+    const deleteTemplateBtn = document.getElementById("workflow-delete-template");
+    if (deleteTemplateBtn) deleteTemplateBtn.addEventListener("click", workflowDeleteTemplate);
+    const disconnectBtn = document.getElementById("workflow-disconnect-link");
+    if (disconnectBtn) disconnectBtn.addEventListener("click", workflowDeleteSelectedConnection);
+
     const addMainBtn = document.getElementById("workflow-add-main");
     if (addMainBtn) addMainBtn.addEventListener("click", workflowToggleAddMenu);
 
@@ -4022,6 +4037,8 @@ function initWorkflowBuilder() {
         wrap.addEventListener("scroll", workflowRenderConnections, { passive: true });
     }
 
+    document.addEventListener("keydown", workflowHandleKeydown);
+
     window.addEventListener("resize", () => {
         if (!document.getElementById("create-panel-workflow")?.hidden) {
             workflowRenderConnections();
@@ -4029,19 +4046,109 @@ function initWorkflowBuilder() {
     });
 
     workflowApplyZoom();
+    workflowLoadTemplateList();
     workflowRenderImagePreview();
     workflowRenderVideoPreview();
     workflowRenderAudioPreview();
     workflowRenderConnections();
+    setTimeout(workflowFitCanvas, 50);
 }
 
 function workflowBindNodeDragging(root) {
     const scope = root || document;
-    scope.querySelectorAll("#create-panel-workflow .workflow-node").forEach((node) => {
+    const nodes = [];
+    if (scope.matches?.(".workflow-node")) nodes.push(scope);
+    nodes.push(...Array.from(scope.querySelectorAll?.(".workflow-node") || []));
+    nodes.forEach((node) => {
         if (node.dataset.dragBound === "1") return;
         node.dataset.dragBound = "1";
+        node.addEventListener("click", workflowSelectNodeFromEvent);
         node.addEventListener("pointerdown", (event) => workflowStartDrag(event, node));
     });
+    const ports = [];
+    if (scope.matches?.(".workflow-port")) ports.push(scope);
+    ports.push(...Array.from(scope.querySelectorAll?.(".workflow-port") || []));
+    ports.forEach((port) => {
+        if (port.dataset.portBound === "1") return;
+        port.dataset.portBound = "1";
+        port.addEventListener("click", workflowHandlePortClick);
+    });
+}
+
+function workflowSelectNodeFromEvent(event) {
+    const node = event.currentTarget;
+    if (!node?.dataset?.nodeId) return;
+    workflowSelectNode(node.dataset.nodeId);
+}
+
+function workflowSelectNode(nodeId) {
+    workflowState.selectedNodeId = nodeId || "";
+    workflowState.selectedConnectionIndex = -1;
+    workflowHideConnectionMenu();
+    document.querySelectorAll("#create-panel-workflow .workflow-node").forEach((node) => {
+        node.classList.toggle("selected", !!nodeId && node.dataset.nodeId === nodeId);
+    });
+    workflowRenderConnections();
+}
+
+function workflowHandleKeydown(event) {
+    if (!document.getElementById("create-panel-workflow") || document.getElementById("create-panel-workflow")?.hidden) return;
+    if (event.target?.closest?.("textarea, input, select")) return;
+    if (event.key !== "Delete" && event.key !== "Backspace") return;
+    if (workflowState.selectedConnectionIndex >= 0) {
+        workflowDeleteSelectedConnection();
+        event.preventDefault();
+        return;
+    }
+    if (workflowState.selectedNodeId) {
+        workflowDeleteSelectedNode();
+        event.preventDefault();
+    }
+}
+
+function workflowDeleteSelectedNode() {
+    const nodeId = workflowState.selectedNodeId;
+    if (!nodeId || ["model", "output"].includes(nodeId)) return;
+    const node = document.querySelector(`#create-panel-workflow [data-node-id='${nodeId}']`);
+    if (!node) return;
+    const ports = Array.from(node.querySelectorAll("[data-port]")).map((port) => port.dataset.port);
+    workflowState.connections = workflowState.connections.filter(([from, to]) => !ports.includes(from) && !ports.includes(to));
+    node.remove();
+    workflowState.selectedNodeId = "";
+    workflowState.pendingPort = "";
+    workflowRenderConnections();
+}
+
+function workflowHandlePortClick(event) {
+    event.stopPropagation();
+    const port = event.currentTarget?.dataset?.port || "";
+    if (!port) return;
+    if (!workflowState.pendingPort) {
+        workflowState.pendingPort = port;
+        document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.toggle("pending", el.dataset.port === port));
+        return;
+    }
+    if (workflowState.pendingPort !== port) {
+        workflowConnectPorts(workflowState.pendingPort, port);
+    }
+    workflowState.pendingPort = "";
+    document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.remove("pending"));
+}
+
+function workflowConnectPorts(firstPort, secondPort) {
+    const firstIsOut = workflowPortDirection(firstPort) === "out";
+    const from = firstIsOut ? firstPort : secondPort;
+    const to = firstIsOut ? secondPort : firstPort;
+    if (!from || !to || from === to || workflowPortDirection(from) !== "out" || workflowPortDirection(to) !== "in") return;
+    if (workflowState.connections.some(([a, b]) => a === from && b === to)) return;
+    workflowState.connections.push([from, to]);
+    workflowRenderConnections();
+}
+
+function workflowPortDirection(portName) {
+    const port = document.querySelector(`#create-panel-workflow [data-port='${portName}']`);
+    if (!port) return "";
+    return port.classList.contains("workflow-port-out") ? "out" : "in";
 }
 
 function workflowToggleAddMenu(event) {
@@ -4078,16 +4185,45 @@ function workflowApplyZoom() {
 function workflowFitCanvas() {
     const wrap = document.getElementById("workflow-canvas-wrap");
     if (!wrap) return;
-    workflowState.zoom = 1;
+    const bounds = workflowGetNodeBounds();
+    const zoomX = bounds ? (wrap.clientWidth * 0.72) / Math.max(1, bounds.width) : 1;
+    const zoomY = bounds ? (wrap.clientHeight * 0.72) / Math.max(1, bounds.height) : 1;
+    workflowState.zoom = Math.max(workflowState.minZoom, Math.min(1, zoomX, zoomY));
     workflowApplyZoom();
-    wrap.scrollLeft = Math.max(0, (wrap.scrollWidth - wrap.clientWidth) / 2 - 120);
-    wrap.scrollTop = 0;
+    if (bounds) {
+        const centerX = bounds.left + bounds.width / 2;
+        const centerY = bounds.top + bounds.height / 2;
+        wrap.scrollLeft = Math.max(0, centerX * workflowState.zoom - wrap.clientWidth / 2);
+        wrap.scrollTop = Math.max(0, centerY * workflowState.zoom - wrap.clientHeight / 2);
+    } else {
+        wrap.scrollLeft = Math.max(0, (wrap.scrollWidth - wrap.clientWidth) / 2);
+        wrap.scrollTop = Math.max(0, (wrap.scrollHeight - wrap.clientHeight) / 2);
+    }
     workflowRenderConnections();
+}
+
+function workflowGetNodeBounds() {
+    const nodes = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node"));
+    if (!nodes.length) return null;
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    nodes.forEach((node) => {
+        const nodeLeft = parseFloat(node.style.left || "0") || 0;
+        const nodeTop = parseFloat(node.style.top || "0") || 0;
+        left = Math.min(left, nodeLeft);
+        top = Math.min(top, nodeTop);
+        right = Math.max(right, nodeLeft + node.offsetWidth);
+        bottom = Math.max(bottom, nodeTop + node.offsetHeight);
+    });
+    return { left, top, width: right - left, height: bottom - top };
 }
 
 function workflowStartDrag(event, node) {
     if (!node || event.button !== 0) return;
     if (event.target.closest("textarea, input, select, button, label") && !event.target.closest(".workflow-port")) return;
+    workflowSelectNode(node.dataset.nodeId || "");
     event.stopPropagation();
     const startLeft = parseFloat(node.style.left || "0") || 0;
     const startTop = parseFloat(node.style.top || "0") || 0;
@@ -4134,6 +4270,10 @@ function workflowStartPan(event) {
     const wrap = document.getElementById("workflow-canvas-wrap");
     if (!wrap || event.button !== 0) return;
     if (event.target.closest(".workflow-node, textarea, input, select, button, label")) return;
+    if (event.target.closest(".workflow-link")) return;
+    workflowSelectNode("");
+    workflowState.pendingPort = "";
+    document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.remove("pending"));
     workflowSetAddPositionFromEvent(event);
     workflowCloseAddMenu();
     workflowState.pan = {
@@ -4227,13 +4367,59 @@ function workflowRenderConnections() {
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
     svg.setAttribute("width", `${width}`);
     svg.setAttribute("height", `${height}`);
-    svg.innerHTML = workflowState.connections.map(([from, to]) => {
+    svg.innerHTML = workflowState.connections.map(([from, to], index) => {
         const start = workflowPortPoint(from);
         const end = workflowPortPoint(to);
         if (!start || !end) return "";
         const mid = Math.max(80, Math.abs(end.x - start.x) * 0.5);
-        return `<path d="M ${start.x} ${start.y} C ${start.x + mid} ${start.y}, ${end.x - mid} ${end.y}, ${end.x} ${end.y}" />`;
+        const selected = index === workflowState.selectedConnectionIndex ? " selected" : "";
+        return `<path class="workflow-link${selected}" data-connection-index="${index}" d="M ${start.x} ${start.y} C ${start.x + mid} ${start.y}, ${end.x - mid} ${end.y}, ${end.x} ${end.y}" />`;
     }).join("");
+    svg.querySelectorAll("[data-connection-index]").forEach((path) => {
+        path.addEventListener("click", workflowSelectConnectionFromEvent);
+    });
+}
+
+function workflowSelectConnectionFromEvent(event) {
+    event.stopPropagation();
+    const index = parseInt(event.currentTarget?.dataset?.connectionIndex || "-1", 10);
+    workflowSelectConnection(index, event);
+}
+
+function workflowSelectConnection(index, event) {
+    workflowState.selectedConnectionIndex = Number.isFinite(index) ? index : -1;
+    workflowState.selectedNodeId = "";
+    document.querySelectorAll("#create-panel-workflow .workflow-node").forEach((node) => node.classList.remove("selected"));
+    workflowRenderConnections();
+    if (workflowState.selectedConnectionIndex >= 0) {
+        workflowShowConnectionMenu(event);
+    } else {
+        workflowHideConnectionMenu();
+    }
+}
+
+function workflowShowConnectionMenu(event) {
+    const menu = document.getElementById("workflow-connection-menu");
+    const wrap = document.getElementById("workflow-canvas-wrap");
+    if (!menu || !wrap || !event) return;
+    const rect = wrap.getBoundingClientRect();
+    menu.style.left = `${Math.max(10, event.clientX - rect.left + wrap.scrollLeft + 8)}px`;
+    menu.style.top = `${Math.max(10, event.clientY - rect.top + wrap.scrollTop + 8)}px`;
+    menu.hidden = false;
+}
+
+function workflowHideConnectionMenu() {
+    const menu = document.getElementById("workflow-connection-menu");
+    if (menu) menu.hidden = true;
+}
+
+function workflowDeleteSelectedConnection() {
+    const index = workflowState.selectedConnectionIndex;
+    if (index < 0 || index >= workflowState.connections.length) return;
+    workflowState.connections.splice(index, 1);
+    workflowState.selectedConnectionIndex = -1;
+    workflowHideConnectionMenu();
+    workflowRenderConnections();
 }
 
 function workflowFocusNode(kind) {
@@ -4267,10 +4453,14 @@ function workflowAddNode(kind) {
         section.innerHTML = `
             <header>Nova imagem</header>
             <textarea class="workflow-textarea workflow-textarea-small" rows="3" placeholder="Prompt, função ou descrição desta imagem..."></textarea>
-            <div class="workflow-node-actions"><button class="workflow-mini-btn" type="button" onclick="document.getElementById('workflow-image-input')?.click()">Adicionar ao Ref Images</button></div>
+            <div class="workflow-node-actions">
+                <button class="workflow-mini-btn" type="button" onclick="workflowGenerateNodeImage(this)">Gerar imagem</button>
+                <button class="workflow-mini-btn" type="button" onclick="document.getElementById('workflow-image-input')?.click()">Enviar imagem</button>
+            </div>
+            <div class="workflow-node-preview"></div>
+            <span class="workflow-port workflow-port-in" data-port="${nodeId}-in"></span>
             <span class="workflow-port workflow-port-out" data-port="${nodeId}-out"></span>
         `;
-        workflowState.connections.push([`${nodeId}-out`, "model-images-in"]);
     } else if (kind === "video") {
         section.innerHTML = `
             <header>Novo vídeo</header>
@@ -4300,6 +4490,196 @@ function workflowAddNode(kind) {
     workflowBindNodeDragging(section);
     workflowCloseAddMenu();
     workflowRenderConnections();
+}
+
+async function workflowGenerateNodeImage(button) {
+    const node = button?.closest?.(".workflow-node");
+    const textarea = node?.querySelector?.("textarea");
+    const prompt = String(textarea?.value || workflowPromptForNode(node) || "").trim();
+    if (!node || !prompt) {
+        alert("Digite o prompt da imagem neste card.");
+        return;
+    }
+    if (workflowState.images.length >= 9) {
+        alert("O workflow aceita no máximo 9 imagens de referência.");
+        return;
+    }
+    button.disabled = true;
+    try {
+        showCreateProgress("Gerando imagem do card...", { stage: "Criando imagem IA..." });
+        const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
+        const response = await api("/video/workflow/generate-image", {
+            method: "POST",
+            body: JSON.stringify({ prompt, aspect_ratio: aspect }),
+        });
+        if (!response?.upload_id || !response?.image_url) throw new Error("Imagem sem referência válida.");
+        const generatedFile = {
+            name: `${node.dataset.nodeId || "imagem"}.png`,
+            type: "image/generated",
+            generated: true,
+            upload_id: response.upload_id,
+            preview_url: response.image_url,
+        };
+        workflowState.images = workflowState.images.concat(generatedFile).slice(0, 9);
+        workflowState.imageUploadIds = workflowState.images.map((item) => item.upload_id).filter(Boolean);
+        const preview = node.querySelector(".workflow-node-preview");
+        if (preview) preview.innerHTML = `<img src="${response.image_url}" alt="Imagem gerada">`;
+        workflowRenderImagePreview();
+        const outPort = node.querySelector(".workflow-port-out")?.dataset?.port;
+        if (outPort && !workflowState.connections.some(([from, to]) => from === outPort && to === "model-images-in")) {
+            workflowState.connections.push([outPort, "model-images-in"]);
+            workflowRenderConnections();
+        }
+        showToast("Imagem gerada e ligada ao Seedance.", "success");
+    } catch (error) {
+        showToast(`Erro ao gerar imagem: ${error.message}`, "error");
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function workflowPromptForNode(node) {
+    const nodeInPorts = Array.from(node?.querySelectorAll?.(".workflow-port-in") || []).map((port) => port.dataset.port);
+    if (!nodeInPorts.length) return "";
+    const incoming = workflowState.connections.filter(([, to]) => nodeInPorts.includes(to)).map(([from]) => from);
+    const texts = incoming.map((portName) => {
+        const port = document.querySelector(`#create-panel-workflow [data-port='${portName}']`);
+        const sourceNode = port?.closest?.(".workflow-node");
+        return String(sourceNode?.querySelector?.("textarea")?.value || "").trim();
+    }).filter(Boolean);
+    return texts.join("\n\n");
+}
+
+function workflowTemplateStorageKey() {
+    return "criavideo.workflow.templates.v1";
+}
+
+function workflowReadTemplates() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(workflowTemplateStorageKey()) || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function workflowWriteTemplates(templates) {
+    localStorage.setItem(workflowTemplateStorageKey(), JSON.stringify(templates || []));
+}
+
+function workflowLoadTemplateList() {
+    const select = document.getElementById("workflow-template-select");
+    if (!select) return;
+    const current = workflowState.templateKey || select.value || "";
+    const templates = workflowReadTemplates();
+    select.innerHTML = `<option value="">Templates</option>` + templates.map((tpl) => `<option value="${workflowEscapeHtml(tpl.key)}">${workflowEscapeHtml(tpl.name)}</option>`).join("");
+    select.value = templates.some((tpl) => tpl.key === current) ? current : "";
+}
+
+function workflowSerializeTemplate() {
+    const nodes = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node")).map((node) => ({
+        id: node.dataset.nodeId || "",
+        className: node.className,
+        left: parseFloat(node.style.left || "0") || 0,
+        top: parseFloat(node.style.top || "0") || 0,
+        html: node.innerHTML,
+        values: Array.from(node.querySelectorAll("textarea, input, select")).map((el) => ({
+            selector: workflowControlSelector(el),
+            value: el.type === "checkbox" ? !!el.checked : el.value,
+            checked: el.type === "checkbox" ? !!el.checked : undefined,
+        })),
+    }));
+    return {
+        nodes,
+        connections: workflowState.connections.slice(),
+        nodeSeq: workflowState.nodeSeq,
+        zoom: workflowState.zoom,
+    };
+}
+
+function workflowControlSelector(el) {
+    if (el.id) return `#${el.id}`;
+    const all = Array.from(el.closest(".workflow-node")?.querySelectorAll(el.tagName.toLowerCase()) || []);
+    return `${el.tagName.toLowerCase()}:nth-of-type(${Math.max(1, all.indexOf(el) + 1)})`;
+}
+
+function workflowApplyTemplateData(data) {
+    const canvas = document.getElementById("workflow-canvas");
+    const lines = document.getElementById("workflow-lines");
+    if (!canvas || !data?.nodes) return;
+    Array.from(canvas.querySelectorAll(".workflow-node")).forEach((node) => node.remove());
+    data.nodes.forEach((savedNode) => {
+        const node = document.createElement("section");
+        node.className = savedNode.className || "workflow-node";
+        node.dataset.nodeId = savedNode.id || `node-${++workflowState.nodeSeq}`;
+        node.style.left = `${Number(savedNode.left || 0)}px`;
+        node.style.top = `${Number(savedNode.top || 0)}px`;
+        node.innerHTML = savedNode.html || "";
+        canvas.appendChild(node);
+        (savedNode.values || []).forEach((item) => {
+            const control = node.querySelector(item.selector);
+            if (!control) return;
+            if (control.type === "checkbox") control.checked = !!item.checked;
+            else control.value = item.value || "";
+        });
+    });
+    if (lines) canvas.prepend(lines);
+    workflowState.connections = Array.isArray(data.connections) ? data.connections.slice() : [];
+    workflowState.nodeSeq = Math.max(Number(data.nodeSeq || workflowState.nodeSeq), workflowState.nodeSeq);
+    workflowState.selectedNodeId = "";
+    workflowState.selectedConnectionIndex = -1;
+    workflowState.pendingPort = "";
+    workflowBindNodeDragging(canvas);
+    workflowRenderImagePreview();
+    workflowRenderVideoPreview();
+    workflowRenderAudioPreview();
+    workflowRenderConnections();
+    workflowFitCanvas();
+}
+
+function workflowSaveTemplate() {
+    const current = workflowReadTemplates().find((tpl) => tpl.key === workflowState.templateKey);
+    const name = prompt("Nome do template", current?.name || "Workflow Seedance");
+    if (!name) return;
+    const templates = workflowReadTemplates();
+    const key = current?.key || `tpl-${Date.now()}`;
+    const saved = { key, name: name.trim(), updatedAt: Date.now(), data: workflowSerializeTemplate() };
+    const next = templates.filter((tpl) => tpl.key !== key).concat(saved);
+    workflowWriteTemplates(next);
+    workflowState.templateKey = key;
+    workflowLoadTemplateList();
+    showToast("Template salvo.", "success");
+}
+
+function workflowLoadTemplate(key) {
+    workflowState.templateKey = key || "";
+    if (!key) return;
+    const template = workflowReadTemplates().find((tpl) => tpl.key === key);
+    if (!template) return;
+    workflowApplyTemplateData(template.data);
+}
+
+function workflowDuplicateTemplate() {
+    const template = workflowReadTemplates().find((tpl) => tpl.key === workflowState.templateKey);
+    if (!template) return alert("Selecione um template para duplicar.");
+    const name = prompt("Nome da cópia", `${template.name} cópia`);
+    if (!name) return;
+    const templates = workflowReadTemplates();
+    const copy = { ...template, key: `tpl-${Date.now()}`, name: name.trim(), updatedAt: Date.now() };
+    workflowWriteTemplates(templates.concat(copy));
+    workflowState.templateKey = copy.key;
+    workflowLoadTemplateList();
+    workflowApplyTemplateData(copy.data);
+    showToast("Template duplicado.", "success");
+}
+
+function workflowDeleteTemplate() {
+    if (!workflowState.templateKey) return alert("Selecione um template para excluir.");
+    if (!confirm("Excluir este template?")) return;
+    workflowWriteTemplates(workflowReadTemplates().filter((tpl) => tpl.key !== workflowState.templateKey));
+    workflowState.templateKey = "";
+    workflowLoadTemplateList();
+    showToast("Template excluído.", "success");
 }
 
 function workflowApplyTemplate(type) {
