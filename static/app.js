@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v261 loaded");
+console.log("[CriaVideo] app.js v262 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2145,6 +2145,7 @@ let workflowState = {
     autosaveTimer: null,
     templateModalResolve: null,
     templateKey: "",
+    imageUploadTargetNodeId: "",
     connections: [
         ["prompt-out", "model-prompt-in"],
         ["images-out", "model-images-in"],
@@ -4009,7 +4010,7 @@ function initWorkflowBuilder() {
     const addImagesBtn = document.getElementById("workflow-add-images");
     const imageInput = document.getElementById("workflow-image-input");
     if (addImagesBtn && imageInput) {
-        addImagesBtn.addEventListener("click", () => imageInput.click());
+        addImagesBtn.addEventListener("click", () => workflowChooseGlobalImages());
         imageInput.addEventListener("change", workflowHandleImageInput);
     }
 
@@ -4078,6 +4079,7 @@ function initWorkflowBuilder() {
     workflowApplyZoom();
     workflowLoadDraft();
     workflowLoadTemplateList();
+    workflowMigrateWorkflowNodes();
     workflowSyncEngineDurationOptions();
     workflowRenderImagePreview();
     workflowRenderVideoPreview();
@@ -4155,9 +4157,29 @@ function workflowEnhanceNodeControls(node) {
         btn._workflowBound = true;
         btn.addEventListener("click", () => workflowImproveCardPrompt(btn));
     });
+    if (node.classList.contains("workflow-node-images") && node.dataset.nodeId !== "images") {
+        node.querySelectorAll("button").forEach((btn) => {
+            if (!/Enviar imagem/i.test(btn.textContent || "")) return;
+            btn.onclick = null;
+            if (btn._workflowUploadBound) return;
+            btn._workflowUploadBound = true;
+            btn.addEventListener("click", () => workflowChooseNodeImage(btn));
+        });
+    }
     if (node.classList.contains("workflow-node-model") && !node.querySelector(".workflow-model-name-hint")) {
         node.querySelector("header")?.insertAdjacentHTML("afterend", `<div class="workflow-model-name-hint">Modelo e tempo deste card</div>`);
     }
+}
+
+function workflowChooseGlobalImages() {
+    workflowState.imageUploadTargetNodeId = "";
+    document.getElementById("workflow-image-input")?.click();
+}
+
+function workflowChooseNodeImage(button) {
+    const node = button?.closest?.(".workflow-node");
+    workflowState.imageUploadTargetNodeId = node?.dataset?.nodeId || "";
+    document.getElementById("workflow-image-input")?.click();
 }
 
 function workflowSelectNodeFromEvent(event) {
@@ -4742,7 +4764,7 @@ function workflowAddNode(kind) {
             <textarea class="workflow-textarea workflow-textarea-small" rows="3" placeholder="Prompt, função ou descrição desta imagem..."></textarea>
             <div class="workflow-node-actions">
                 <button class="workflow-mini-btn" type="button" onclick="workflowGenerateNodeImage(this)">Gerar imagem</button>
-                <button class="workflow-mini-btn" type="button" onclick="document.getElementById('workflow-image-input')?.click()">Enviar imagem</button>
+                <button class="workflow-mini-btn" type="button" onclick="workflowChooseNodeImage(this)">Enviar imagem</button>
             </div>
             <div class="workflow-node-preview"></div>
             <span class="workflow-port workflow-port-in" data-port="${nodeId}-in"></span>
@@ -4875,6 +4897,7 @@ function workflowSerializableNodeDataset(node) {
     delete dataset.dragBound;
     delete dataset.portBound;
     delete dataset.controlsReady;
+    delete dataset.previewObjectUrl;
     return dataset;
 }
 
@@ -4924,6 +4947,7 @@ function workflowApplyTemplateData(data, options = {}) {
     const canvas = document.getElementById("workflow-canvas");
     const lines = document.getElementById("workflow-lines");
     if (!canvas || !data?.nodes) return;
+    const defaultNodes = workflowCaptureDefaultNodes(canvas);
     Array.from(canvas.querySelectorAll(".workflow-node")).forEach((node) => node.remove());
     data.nodes.forEach((savedNode) => {
         const node = document.createElement("section");
@@ -4944,13 +4968,16 @@ function workflowApplyTemplateData(data, options = {}) {
             else control.value = item.value || "";
         });
     });
+    workflowRestoreMissingDefaultNodes(canvas, defaultNodes);
     if (lines) canvas.prepend(lines);
     workflowState.connections = Array.isArray(data.connections) ? data.connections.slice() : [];
+    workflowEnsureDefaultConnections();
     workflowState.nodeSeq = Math.max(Number(data.nodeSeq || workflowState.nodeSeq), workflowState.nodeSeq);
     workflowState.selectedNodeId = "";
     workflowState.selectedConnectionIndex = -1;
     workflowState.pendingPort = "";
     workflowBindNodeDragging(canvas);
+    workflowMigrateWorkflowNodes();
     workflowCollectGeneratedNodeImages();
     workflowSyncEngineDurationOptions();
     workflowRenderImagePreview();
@@ -4958,6 +4985,63 @@ function workflowApplyTemplateData(data, options = {}) {
     workflowRenderAudioPreview();
     workflowRenderConnections();
     if (options.fit !== false) workflowFitCanvas();
+}
+
+function workflowEnsureDefaultConnections() {
+    const defaults = [
+        ["prompt-out", "model-prompt-in"],
+        ["images-out", "model-images-in"],
+        ["video-out", "model-video-in"],
+        ["audio-out", "model-audio-in"],
+        ["model-out", "output-in"],
+    ];
+    defaults.forEach(([from, to]) => {
+        if (!document.querySelector(`#create-panel-workflow [data-port="${from}"]`) || !document.querySelector(`#create-panel-workflow [data-port="${to}"]`)) return;
+        if (!workflowState.connections.some(([a, b]) => a === from && b === to)) workflowState.connections.push([from, to]);
+    });
+}
+
+function workflowCaptureDefaultNodes(canvas) {
+    const ids = ["prompt", "images", "video", "audio", "model", "output"];
+    const defaults = new Map();
+    ids.forEach((id) => {
+        const node = canvas.querySelector(`.workflow-node[data-node-id="${id}"]`);
+        if (node) defaults.set(id, node.cloneNode(true));
+    });
+    return defaults;
+}
+
+function workflowRestoreMissingDefaultNodes(canvas, defaults) {
+    defaults.forEach((node, id) => {
+        if (canvas.querySelector(`.workflow-node[data-node-id="${id}"]`)) return;
+        node.removeAttribute("data-drag-bound");
+        node.removeAttribute("data-controls-ready");
+        node.querySelectorAll("[data-port-bound]").forEach((port) => port.removeAttribute("data-port-bound"));
+        canvas.appendChild(node);
+    });
+}
+
+function workflowMigrateWorkflowNodes() {
+    const model = document.querySelector(`#create-panel-workflow .workflow-node[data-node-id="model"]`);
+    if (model && !model.querySelector("#workflow-engine")) {
+        const durationLabel = Array.from(model.querySelectorAll("label")).find((label) => /Duração/i.test(label.textContent || ""));
+        const html = `
+            <label>Motor de IA</label>
+            <select id="workflow-engine" class="input workflow-input">
+                <option value="wan2">Ultra High 1.0</option>
+                <option value="grok" selected>Cria 3.0 speed</option>
+                <option value="seedance">Mega 2.0 Ultra</option>
+            </select>
+        `;
+        if (durationLabel) durationLabel.insertAdjacentHTML("beforebegin", html);
+        else model.querySelector("header")?.insertAdjacentHTML("afterend", html);
+        const engineSelect = model.querySelector("#workflow-engine");
+        engineSelect?.addEventListener("change", () => {
+            workflowSyncEngineDurationOptions();
+            workflowRecordHistory();
+        });
+    }
+    workflowBindNodeDragging(document.getElementById("create-panel-workflow"));
 }
 
 function workflowOpenTemplateModal(defaultName = "") {
@@ -5045,12 +5129,37 @@ function workflowApplyTemplate(type) {
 async function workflowHandleImageInput(event) {
     const files = Array.from(event.target?.files || []).filter((file) => file && file.type.startsWith("image/"));
     if (!files.length) return;
+    const targetNodeId = workflowState.imageUploadTargetNodeId || "";
+    if (targetNodeId) {
+        const node = document.querySelector(`#create-panel-workflow .workflow-node[data-node-id="${CSS.escape(targetNodeId)}"]`);
+        if (node) {
+            workflowSetNodeUploadedImage(node, files[0]);
+            workflowState.imageUploadTargetNodeId = "";
+            event.target.value = "";
+            workflowRecordHistory();
+            return;
+        }
+    }
     const remaining = Math.max(0, 9 - workflowState.images.length);
     workflowState.images = workflowState.images.concat(files.slice(0, remaining)).slice(0, 9);
     workflowState.imageUploadIds = [];
     workflowRenderImagePreview();
     workflowRecordHistory();
     event.target.value = "";
+}
+
+function workflowSetNodeUploadedImage(node, file) {
+    if (!node || !file) return;
+    if (node.dataset.previewObjectUrl) URL.revokeObjectURL(node.dataset.previewObjectUrl);
+    const previewUrl = URL.createObjectURL(file);
+    node._workflowImageFile = file;
+    node.dataset.uploadId = "";
+    node.dataset.previewUrl = previewUrl;
+    node.dataset.previewObjectUrl = previewUrl;
+    const preview = node.querySelector(".workflow-node-preview");
+    if (preview) preview.innerHTML = `<img src="${previewUrl}" alt="Imagem enviada">`;
+    workflowCollectGeneratedNodeImages();
+    workflowRenderImagePreview();
 }
 
 function workflowClearImages() {
@@ -5066,13 +5175,13 @@ function workflowRenderImagePreview() {
     if (count) count.textContent = `${workflowState.images.length}/9`;
     if (!preview) return;
     if (!workflowState.images.length) {
-        preview.innerHTML = `<button class="workflow-thumb-add" type="button" onclick="document.getElementById('workflow-image-input')?.click()">+</button>`;
+        preview.innerHTML = `<button class="workflow-thumb-add" type="button" onclick="workflowChooseGlobalImages()">+</button>`;
         return;
     }
     preview.innerHTML = workflowState.images.map((file, index) => {
         const url = file.preview_url || URL.createObjectURL(file);
         return `<figure class="workflow-thumb"><img src="${url}" alt="Referência ${index + 1}"><figcaption>${index + 1}</figcaption></figure>`;
-    }).join("") + (workflowState.images.length < 9 ? `<button class="workflow-thumb-add" type="button" onclick="document.getElementById('workflow-image-input')?.click()">+</button>` : "");
+    }).join("") + (workflowState.images.length < 9 ? `<button class="workflow-thumb-add" type="button" onclick="workflowChooseGlobalImages()">+</button>` : "");
 }
 
 function workflowEscapeHtml(value) {
@@ -5250,6 +5359,17 @@ async function workflowConnectedImageUploadIds() {
         const uploadId = node?.dataset?.uploadId || "";
         if (uploadId) selectedIds.push(uploadId);
     });
+    for (const port of connectedImagePorts) {
+        if (port === "images-out") continue;
+        const node = document.querySelector(`#create-panel-workflow .workflow-port[data-port="${CSS.escape(port)}"]`)?.closest(".workflow-node");
+        if (!node?._workflowImageFile || node.dataset.uploadId) continue;
+        workflowSetOutputProgress(10, `Enviando imagem do card ${node.dataset.title || node.dataset.nodeId || "imagem"}...`);
+        const uploaded = await uploadTempFileWithRetry(node._workflowImageFile, "image", `imagem ${node.dataset.title || node.dataset.nodeId || "workflow"}`, { showProgress: false });
+        if (uploaded?.upload_id) {
+            node.dataset.uploadId = uploaded.upload_id;
+            selectedIds.push(uploaded.upload_id);
+        }
+    }
     const uniqueIds = Array.from(new Set(selectedIds.filter(Boolean)));
     return uniqueIds.length ? uniqueIds : allUploadIds;
 }
