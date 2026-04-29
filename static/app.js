@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v252 loaded");
+console.log("[CriaVideo] app.js v253 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -13874,9 +13874,11 @@ function _editorHandleEditorPageEntry() {
     loadEditorVideosList();
     const draftCount = _editorRenderSavedDraftsModal();
     if (draftCount > 0) {
+        closeModal("modal-editor-start");
         openModal("modal-editor-drafts");
     } else {
         closeModal("modal-editor-drafts");
+        _editorOpenStartModal();
     }
 }
 
