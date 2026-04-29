@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v253 loaded");
+console.log("[CriaVideo] app.js v254 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1643,6 +1643,7 @@ function closeModal(id) {
     if (id === "modal-new-project") {
         stopKaraokeProgressPolling();
         _stopSimilarPolling();
+        _setNewProjectModalWorkflowLayout(false);
     }
     if (id === "modal-edit-project") {
         _renameProjectId = 0;
@@ -2134,6 +2135,12 @@ let workflowState = {
         ["model-out", "output-in"],
     ],
     drag: null,
+    pan: null,
+    zoom: 1,
+    minZoom: 0.6,
+    maxZoom: 2.2,
+    baseWidth: 1320,
+    baseHeight: 880,
 };
 const SIMILAR_STAGE_LABELS = {
     queued_analysis: "Video recebido. Preparando analise...",
@@ -3404,6 +3411,7 @@ function initCreateWizard() {
 function switchCreateMode(mode) {
     if (!mode) return;
     console.log("[switchCreateMode] mode=", mode);
+    _setNewProjectModalWorkflowLayout(mode === "workflow");
     if (mode !== "similar") {
         _stopSimilarPolling();
     }
@@ -3924,6 +3932,12 @@ function _refreshSimilarButtonsDisabled(disabled) {
     });
 }
 
+function _setNewProjectModalWorkflowLayout(enabled) {
+    const modal = document.getElementById("modal-new-project");
+    if (!modal) return;
+    modal.classList.toggle("workflow-expanded", !!enabled);
+}
+
 function initWorkflowBuilder() {
     if (workflowState.initialized) return;
     const panel = document.getElementById("create-panel-workflow");
@@ -3935,6 +3949,7 @@ function initWorkflowBuilder() {
         backBtn.addEventListener("click", () => {
             document.getElementById("create-panel-workflow").hidden = true;
             document.getElementById("create-mode-selection").hidden = false;
+            _setNewProjectModalWorkflowLayout(false);
         });
     }
 
@@ -3968,29 +3983,61 @@ function initWorkflowBuilder() {
         dragHandle.addEventListener("pointerdown", (event) => workflowStartDrag(event, node));
     });
 
+    const wrap = document.getElementById("workflow-canvas-wrap");
+    if (wrap) {
+        wrap.addEventListener("pointerdown", workflowStartPan);
+        wrap.addEventListener("pointermove", workflowPanMove);
+        wrap.addEventListener("pointerup", workflowEndPan);
+        wrap.addEventListener("pointercancel", workflowEndPan);
+        wrap.addEventListener("wheel", workflowHandleZoom, { passive: false });
+        wrap.addEventListener("scroll", workflowRenderConnections, { passive: true });
+    }
+
     window.addEventListener("resize", () => {
         if (!document.getElementById("create-panel-workflow")?.hidden) {
             workflowRenderConnections();
         }
     });
 
+    workflowApplyZoom();
     workflowRenderImagePreview();
+    workflowRenderConnections();
+}
+
+function workflowApplyZoom() {
+    const canvas = document.getElementById("workflow-canvas");
+    const surface = document.getElementById("workflow-canvas-surface");
+    if (!canvas || !surface) return;
+    const safeZoom = Math.max(
+        Number(workflowState.minZoom || 0.6),
+        Math.min(Number(workflowState.maxZoom || 2.2), Number(workflowState.zoom || 1))
+    );
+    workflowState.zoom = safeZoom;
+    surface.style.width = `${workflowState.baseWidth * safeZoom}px`;
+    surface.style.height = `${workflowState.baseHeight * safeZoom}px`;
+    canvas.style.width = `${workflowState.baseWidth}px`;
+    canvas.style.height = `${workflowState.baseHeight}px`;
+    canvas.style.transform = `scale(${safeZoom})`;
     workflowRenderConnections();
 }
 
 function workflowFitCanvas() {
     const wrap = document.getElementById("workflow-canvas-wrap");
     if (!wrap) return;
-    wrap.scrollLeft = Math.max(0, (wrap.scrollWidth - wrap.clientWidth) / 2 - 80);
+    workflowState.zoom = 1;
+    workflowApplyZoom();
+    wrap.scrollLeft = Math.max(0, (wrap.scrollWidth - wrap.clientWidth) / 2 - 120);
     wrap.scrollTop = 0;
     workflowRenderConnections();
 }
 
 function workflowStartDrag(event, node) {
     if (!node || event.button !== 0) return;
-    if (event.target.closest("textarea, input, select, button")) return;
+    if (event.target.closest("textarea, input, select, button, label")) return;
+    event.stopPropagation();
     const startLeft = parseFloat(node.style.left || "0") || 0;
     const startTop = parseFloat(node.style.top || "0") || 0;
+    const zoom = Number(workflowState.zoom || 1);
     workflowState.drag = {
         node,
         pointerId: event.pointerId,
@@ -3998,6 +4045,7 @@ function workflowStartDrag(event, node) {
         startY: event.clientY,
         startLeft,
         startTop,
+        zoom,
     };
     node.setPointerCapture(event.pointerId);
     node.classList.add("dragging");
@@ -4009,8 +4057,8 @@ function workflowStartDrag(event, node) {
 function workflowDragMove(event) {
     const drag = workflowState.drag;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const nextLeft = Math.max(8, drag.startLeft + event.clientX - drag.startX);
-    const nextTop = Math.max(8, drag.startTop + event.clientY - drag.startY);
+    const nextLeft = Math.max(8, drag.startLeft + (event.clientX - drag.startX) / Math.max(0.01, drag.zoom || 1));
+    const nextTop = Math.max(8, drag.startTop + (event.clientY - drag.startY) / Math.max(0.01, drag.zoom || 1));
     drag.node.style.left = `${nextLeft}px`;
     drag.node.style.top = `${nextTop}px`;
     workflowRenderConnections();
@@ -4028,26 +4076,90 @@ function workflowEndDrag(event) {
     workflowRenderConnections();
 }
 
+function workflowStartPan(event) {
+    const wrap = document.getElementById("workflow-canvas-wrap");
+    if (!wrap || event.button !== 0) return;
+    if (event.target.closest(".workflow-node, textarea, input, select, button, label")) return;
+    workflowState.pan = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startScrollLeft: wrap.scrollLeft,
+        startScrollTop: wrap.scrollTop,
+    };
+    wrap.classList.add("panning");
+    wrap.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+}
+
+function workflowPanMove(event) {
+    const pan = workflowState.pan;
+    const wrap = document.getElementById("workflow-canvas-wrap");
+    if (!pan || !wrap || pan.pointerId !== event.pointerId) return;
+    const dx = event.clientX - pan.startX;
+    const dy = event.clientY - pan.startY;
+    wrap.scrollLeft = pan.startScrollLeft - dx;
+    wrap.scrollTop = pan.startScrollTop - dy;
+}
+
+function workflowEndPan(event) {
+    const pan = workflowState.pan;
+    const wrap = document.getElementById("workflow-canvas-wrap");
+    if (!pan || !wrap || pan.pointerId !== event.pointerId) return;
+    wrap.classList.remove("panning");
+    wrap.releasePointerCapture?.(event.pointerId);
+    workflowState.pan = null;
+}
+
+function workflowHandleZoom(event) {
+    const wrap = document.getElementById("workflow-canvas-wrap");
+    if (!wrap) return;
+    if (event.target.closest("textarea, input, select")) return;
+    event.preventDefault();
+
+    const currentZoom = Number(workflowState.zoom || 1);
+    const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;
+    const nextZoom = Math.max(
+        Number(workflowState.minZoom || 0.6),
+        Math.min(Number(workflowState.maxZoom || 2.2), currentZoom * zoomFactor)
+    );
+    if (Math.abs(nextZoom - currentZoom) < 0.0001) return;
+
+    const rect = wrap.getBoundingClientRect();
+    const pointerX = event.clientX - rect.left;
+    const pointerY = event.clientY - rect.top;
+    const contentX = (wrap.scrollLeft + pointerX) / currentZoom;
+    const contentY = (wrap.scrollTop + pointerY) / currentZoom;
+
+    workflowState.zoom = nextZoom;
+    workflowApplyZoom();
+
+    wrap.scrollLeft = contentX * nextZoom - pointerX;
+    wrap.scrollTop = contentY * nextZoom - pointerY;
+    workflowRenderConnections();
+}
+
 function workflowPortPoint(portName) {
     const canvas = document.getElementById("workflow-canvas");
     const port = document.querySelector(`#create-panel-workflow [data-port='${portName}']`);
     if (!canvas || !port) return null;
+    const zoom = Math.max(0.01, Number(workflowState.zoom || 1));
     const canvasRect = canvas.getBoundingClientRect();
     const portRect = port.getBoundingClientRect();
     return {
-        x: portRect.left + portRect.width / 2 - canvasRect.left,
-        y: portRect.top + portRect.height / 2 - canvasRect.top,
+        x: (portRect.left + portRect.width / 2 - canvasRect.left) / zoom,
+        y: (portRect.top + portRect.height / 2 - canvasRect.top) / zoom,
     };
 }
 
 function workflowRenderConnections() {
     const svg = document.getElementById("workflow-lines");
-    const canvas = document.getElementById("workflow-canvas");
-    if (!svg || !canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    svg.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
-    svg.setAttribute("width", `${rect.width}`);
-    svg.setAttribute("height", `${rect.height}`);
+    if (!svg) return;
+    const width = Number(workflowState.baseWidth || 1320);
+    const height = Number(workflowState.baseHeight || 880);
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("width", `${width}`);
+    svg.setAttribute("height", `${height}`);
     svg.innerHTML = workflowState.connections.map(([from, to]) => {
         const start = workflowPortPoint(from);
         const end = workflowPortPoint(to);
@@ -4061,8 +4173,13 @@ function workflowFocusNode(kind) {
     const map = { prompt: "prompt", images: "images", video: "video", audio: "audio", model: "model", output: "output" };
     const node = document.querySelector(`#create-panel-workflow [data-node-id='${map[kind] || kind}']`);
     const wrap = document.getElementById("workflow-canvas-wrap");
+    const zoom = Number(workflowState.zoom || 1);
     if (!node || !wrap) return;
-    wrap.scrollTo({ left: Math.max(0, node.offsetLeft - 80), top: Math.max(0, node.offsetTop - 50), behavior: "smooth" });
+    wrap.scrollTo({
+        left: Math.max(0, node.offsetLeft * zoom - 80),
+        top: Math.max(0, node.offsetTop * zoom - 50),
+        behavior: "smooth",
+    });
     node.classList.add("workflow-node-pulse");
     setTimeout(() => node.classList.remove("workflow-node-pulse"), 600);
 }
@@ -4940,6 +5057,7 @@ async function pollRealisticProgress(projectId, engineLabel) {
 function resetCreateWizard() {
     stopKaraokeProgressPolling();
     createMode = "wizard";
+    _setNewProjectModalWorkflowLayout(false);
     wizardStep = 1;
     wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
     scriptStep = 1;
@@ -4982,6 +5100,18 @@ function resetCreateWizard() {
     _smoothProgressCurrent = CREATE_PROGRESS_BASE;
     setCreateProgress(CREATE_PROGRESS_BASE, "Processando...", "Gerando roteiro com IA...");
     _resetSimilarModeState();
+
+    workflowState.images = [];
+    workflowState.imageUploadIds = [];
+    workflowState.zoom = 1;
+    workflowState.pan = null;
+    workflowState.drag = null;
+    const outputBox = document.getElementById("workflow-output-box");
+    if (outputBox) {
+        outputBox.innerHTML = "<span>O vídeo gerado aparecerá na lista de projetos.</span>";
+    }
+    workflowRenderImagePreview();
+    workflowApplyZoom();
 
     // Reset wizard steps
     updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");

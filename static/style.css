@@ -3382,6 +3382,25 @@ th {
     width: min(calc(100% - 1rem), 900px);
 }
 
+#modal-new-project {
+    padding: 0.35rem;
+}
+
+#modal-new-project .modal-content-wide {
+    width: calc(100vw - 0.7rem);
+    max-width: none;
+    height: calc(100vh - 0.7rem);
+    max-height: calc(100vh - 0.7rem);
+    display: flex;
+    flex-direction: column;
+}
+
+#modal-new-project .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
 .modal-header,
 .modal-footer {
     display: flex;
@@ -5909,6 +5928,12 @@ th,
     margin-bottom: 12px;
 }
 
+#create-panel-workflow {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
 .workflow-panel-head .wizard-question {
     margin-bottom: 4px;
 }
@@ -5925,6 +5950,8 @@ th,
     grid-template-columns: 112px minmax(0, 1fr);
     gap: 10px;
     min-height: 620px;
+    flex: 1;
+    min-height: 0;
 }
 
 .workflow-palette {
@@ -5957,13 +5984,26 @@ th,
 
 .workflow-canvas-wrap {
     position: relative;
-    min-height: 620px;
+    min-height: 0;
+    height: 100%;
     overflow: auto;
     border: 1px solid var(--border);
     border-radius: 14px;
     background-color: rgba(255, 255, 255, 0.98);
     background-image: radial-gradient(rgba(15, 23, 42, 0.16) 1px, transparent 1px);
     background-size: 18px 18px;
+    cursor: grab;
+    touch-action: none;
+}
+
+.workflow-canvas-wrap.panning {
+    cursor: grabbing;
+}
+
+.workflow-canvas-surface {
+    position: relative;
+    width: 1320px;
+    height: 880px;
 }
 
 .workflow-canvas {
@@ -5971,6 +6011,7 @@ th,
     width: 1320px;
     height: 880px;
     color: #0f172a;
+    transform-origin: top left;
 }
 
 .workflow-lines {
@@ -6013,6 +6054,10 @@ th,
 .workflow-node.dragging {
     z-index: 5;
     box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2);
+}
+
+.workflow-node.dragging header {
+    cursor: grabbing;
 }
 
 .workflow-node-pulse {
