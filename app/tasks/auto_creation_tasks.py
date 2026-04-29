@@ -7,7 +7,7 @@ import logging
 import math
 import re
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -524,7 +524,7 @@ async def ai_select_video_settings(theme: str) -> dict:
         }
 
 
-def _parse_theme_release_date(custom_settings: dict) -> datetime.date | None:
+def _parse_theme_release_date(custom_settings: dict) -> date | None:
     raw = str(custom_settings.get("scheduled_date_override") or "").strip()
     if not raw:
         return None
