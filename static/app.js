@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v259 loaded");
+console.log("[CriaVideo] app.js v260 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4041,6 +4041,12 @@ function initWorkflowBuilder() {
     const runBtn = document.getElementById("workflow-run");
     if (runBtn) runBtn.addEventListener("click", workflowRunSeedance);
 
+    const engineSelect = document.getElementById("workflow-engine");
+    if (engineSelect) engineSelect.addEventListener("change", () => {
+        workflowSyncEngineDurationOptions();
+        workflowRecordHistory();
+    });
+
     document.querySelectorAll("[data-workflow-template]").forEach((btn) => {
         btn.addEventListener("click", () => workflowApplyTemplate(btn.dataset.workflowTemplate));
     });
@@ -4071,6 +4077,7 @@ function initWorkflowBuilder() {
     workflowApplyZoom();
     workflowLoadDraft();
     workflowLoadTemplateList();
+    workflowSyncEngineDurationOptions();
     workflowRenderImagePreview();
     workflowRenderVideoPreview();
     workflowRenderAudioPreview();
@@ -4643,10 +4650,6 @@ async function workflowGenerateNodeImage(button) {
         alert("Digite o prompt da imagem neste card.");
         return;
     }
-    if (workflowState.images.length >= 9) {
-        alert("O workflow aceita no máximo 9 imagens de referência.");
-        return;
-    }
     button.disabled = true;
     try {
         showCreateProgress("Gerando imagem do card...", { stage: "Criando imagem IA..." });
@@ -4656,25 +4659,14 @@ async function workflowGenerateNodeImage(button) {
             body: JSON.stringify({ prompt, aspect_ratio: aspect }),
         });
         if (!response?.upload_id || !response?.image_url) throw new Error("Imagem sem referência válida.");
-        const generatedFile = {
-            name: `${node.dataset.nodeId || "imagem"}.png`,
-            type: "image/generated",
-            generated: true,
-            upload_id: response.upload_id,
-            preview_url: response.image_url,
-        };
-        workflowState.images = workflowState.images.concat(generatedFile).slice(0, 9);
-        workflowState.imageUploadIds = workflowState.images.map((item) => item.upload_id).filter(Boolean);
+        node.dataset.uploadId = response.upload_id;
+        node.dataset.previewUrl = response.image_url;
         const preview = node.querySelector(".workflow-node-preview");
         if (preview) preview.innerHTML = `<img src="${response.image_url}" alt="Imagem gerada">`;
+        workflowCollectGeneratedNodeImages();
         workflowRenderImagePreview();
-        const outPort = node.querySelector(".workflow-port-out")?.dataset?.port;
-        if (outPort && !workflowState.connections.some(([from, to]) => from === outPort && to === "model-images-in")) {
-            workflowState.connections.push([outPort, "model-images-in"]);
-            workflowRenderConnections();
-            workflowRecordHistory();
-        }
-        showToast("Imagem gerada e ligada ao Seedance.", "success");
+        workflowRecordHistory();
+        showToast("Imagem gerada no card.", "success");
     } catch (error) {
         showToast(`Erro ao gerar imagem: ${error.message}`, "error");
     } finally {
@@ -4723,6 +4715,7 @@ function workflowLoadTemplateList() {
 function workflowSerializeTemplate() {
     const nodes = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node")).map((node) => ({
         id: node.dataset.nodeId || "",
+        dataset: { ...node.dataset },
         className: node.className,
         left: parseFloat(node.style.left || "0") || 0,
         top: parseFloat(node.style.top || "0") || 0,
@@ -4747,6 +4740,42 @@ function workflowControlSelector(el) {
     return `${el.tagName.toLowerCase()}:nth-of-type(${Math.max(1, all.indexOf(el) + 1)})`;
 }
 
+function workflowGetEngineLabel(engine) {
+    const labels = { grok: "Cria 3.0 speed", wan2: "Ultra High 1.0", seedance: "Mega 2.0 Ultra" };
+    return labels[engine] || labels.grok;
+}
+
+function workflowEngineDurationOptions(engine) {
+    if (engine === "seedance") return [5, 10];
+    if (engine === "wan2") return [5, 10];
+    return [5, 10, 15, 20, 45, 60];
+}
+
+function workflowSyncEngineDurationOptions() {
+    const engineSelect = document.getElementById("workflow-engine");
+    const durationSelect = document.getElementById("workflow-duration");
+    if (!engineSelect || !durationSelect) return;
+    const current = parseInt(durationSelect.value || "15", 10) || 15;
+    const options = workflowEngineDurationOptions(engineSelect.value || "grok");
+    const nextValue = options.includes(current) ? current : options[Math.min(1, options.length - 1)];
+    durationSelect.innerHTML = options.map((value) => `<option value="${value}">${value}s</option>`).join("");
+    durationSelect.value = String(nextValue);
+}
+
+function workflowCollectGeneratedNodeImages() {
+    const generated = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node-images[data-upload-id]")).map((node) => ({
+        name: `${node.dataset.nodeId || "imagem"}.png`,
+        type: "image/generated",
+        generated: true,
+        upload_id: node.dataset.uploadId || "",
+        preview_url: node.dataset.previewUrl || "",
+    })).filter((item) => item.upload_id && item.preview_url);
+    const manual = workflowState.images.filter((item) => !item.generated || !item.upload_id);
+    const known = new Set(manual.map((item) => item.upload_id).filter(Boolean));
+    workflowState.images = manual.concat(generated.filter((item) => !known.has(item.upload_id))).slice(0, 9);
+    workflowState.imageUploadIds = workflowState.images.map((item) => item.upload_id).filter(Boolean);
+}
+
 function workflowApplyTemplateData(data, options = {}) {
     const canvas = document.getElementById("workflow-canvas");
     const lines = document.getElementById("workflow-lines");
@@ -4756,6 +4785,9 @@ function workflowApplyTemplateData(data, options = {}) {
         const node = document.createElement("section");
         node.className = savedNode.className || "workflow-node";
         node.dataset.nodeId = savedNode.id || `node-${++workflowState.nodeSeq}`;
+        Object.entries(savedNode.dataset || {}).forEach(([key, value]) => {
+            node.dataset[key] = value;
+        });
         node.style.left = `${Number(savedNode.left || 0)}px`;
         node.style.top = `${Number(savedNode.top || 0)}px`;
         node.innerHTML = savedNode.html || "";
@@ -4774,6 +4806,8 @@ function workflowApplyTemplateData(data, options = {}) {
     workflowState.selectedConnectionIndex = -1;
     workflowState.pendingPort = "";
     workflowBindNodeDragging(canvas);
+    workflowCollectGeneratedNodeImages();
+    workflowSyncEngineDurationOptions();
     workflowRenderImagePreview();
     workflowRenderVideoPreview();
     workflowRenderAudioPreview();
@@ -5035,6 +5069,7 @@ function workflowBuildPrompt() {
 }
 
 async function workflowEnsureUploadedImages() {
+    workflowCollectGeneratedNodeImages();
     const existingIds = workflowState.images.map((item) => item.upload_id).filter(Boolean);
     if (workflowState.imageUploadIds.length === workflowState.images.length && workflowState.imageUploadIds.length > 0) {
         return workflowState.imageUploadIds.slice();
@@ -5044,10 +5079,34 @@ async function workflowEnsureUploadedImages() {
         if (workflowState.images[index]?.upload_id) continue;
         workflowSetOutputProgress(8 + index, `Enviando imagem ${index + 1}/${workflowState.images.length}...`);
         const uploaded = await uploadTempFileWithRetry(workflowState.images[index], "image", `imagem workflow ${index + 1}`, { showProgress: false });
-        if (uploaded?.upload_id) uploadIds.push(uploaded.upload_id);
+        if (uploaded?.upload_id) {
+            workflowState.images[index].upload_id = uploaded.upload_id;
+            uploadIds.push(uploaded.upload_id);
+        }
     }
     workflowState.imageUploadIds = uploadIds;
     return uploadIds;
+}
+
+async function workflowConnectedImageUploadIds() {
+    const connectedImagePorts = workflowState.connections
+        .filter(([, to]) => to === "model-images-in")
+        .map(([from]) => from);
+    const allUploadIds = await workflowEnsureUploadedImages();
+    const selectedIds = [];
+    if (connectedImagePorts.includes("images-out")) {
+        workflowState.images.filter((item) => !item.generated).forEach((item) => {
+            if (item.upload_id) selectedIds.push(item.upload_id);
+        });
+    }
+    connectedImagePorts.forEach((port) => {
+        if (port === "images-out") return;
+        const node = document.querySelector(`#create-panel-workflow .workflow-port[data-port="${CSS.escape(port)}"]`)?.closest(".workflow-node");
+        const uploadId = node?.dataset?.uploadId || "";
+        if (uploadId) selectedIds.push(uploadId);
+    });
+    const uniqueIds = Array.from(new Set(selectedIds.filter(Boolean)));
+    return uniqueIds.length ? uniqueIds : allUploadIds;
 }
 
 async function workflowEnsureUploadedVideos() {
@@ -5080,8 +5139,9 @@ async function workflowRunSeedance() {
         workflowFocusNode("prompt");
         return;
     }
+    workflowCollectGeneratedNodeImages();
     if (!workflowState.images.length) {
-        alert("Adicione pelo menos uma imagem em Ref Images para criar o vídeo.");
+        alert("Adicione ou gere pelo menos uma imagem no workflow antes de criar o vídeo.");
         workflowFocusNode("images");
         return;
     }
@@ -5094,17 +5154,19 @@ async function workflowRunSeedance() {
     workflowSetOutputProgress(8, "Preparando criação do vídeo...");
 
     try {
-        const imageUploadIds = await workflowEnsureUploadedImages();
+        const imageUploadIds = await workflowConnectedImageUploadIds();
+        if (!imageUploadIds.length) throw new Error("Conecte pelo menos uma imagem à entrada do Gerador de vídeo.");
         await workflowEnsureUploadedVideos();
         await workflowEnsureUploadedAudio();
         workflowSetOutputProgress(16, "Enviando referências para o gerador...");
 
-        const duration = parseInt(document.getElementById("workflow-duration")?.value || "8", 10) || 8;
+        workflowSyncEngineDurationOptions();
+        const duration = parseInt(document.getElementById("workflow-duration")?.value || "10", 10) || 10;
         const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
         const resolution = document.getElementById("workflow-resolution")?.value || "720p";
-        const workflowEngine = "grok";
-        const workflowEngineLabel = "Cria 3.0 speed";
+        const workflowEngine = document.getElementById("workflow-engine")?.value || "grok";
+        const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
 
         const resp = await api("/video/generate-realistic", {
             method: "POST",
