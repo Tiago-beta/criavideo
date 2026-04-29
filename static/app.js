@@ -2081,7 +2081,7 @@ function _updateCardInPlace(project) {
 }
 
 // ═══ Creation Wizard State ═══
-let createMode = "wizard"; // "wizard" | "script" | "similar" | "library"
+let createMode = "wizard"; // "wizard" | "script" | "similar" | "workflow" | "library"
 let wizardStep = 1;
 let wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
 let scriptStep = 1;
@@ -2121,6 +2121,19 @@ let similarState = {
     detectedMode: "",
     detectedReason: "",
     detectedConfidence: 0,
+};
+let workflowState = {
+    initialized: false,
+    images: [],
+    imageUploadIds: [],
+    connections: [
+        ["prompt-out", "model-prompt-in"],
+        ["images-out", "model-images-in"],
+        ["video-out", "model-video-in"],
+        ["audio-out", "model-audio-in"],
+        ["model-out", "output-in"],
+    ],
+    drag: null,
 };
 const SIMILAR_STAGE_LABELS = {
     queued_analysis: "Video recebido. Preparando analise...",
@@ -3142,6 +3155,8 @@ function initCreateWizard() {
         similarUploadInput.addEventListener("change", _handleSimilarSceneImageInput);
     }
 
+    initWorkflowBuilder();
+
     const similarSourceInput = document.getElementById("similar-source-url");
     if (similarSourceInput) {
         similarSourceInput.addEventListener("keydown", (event) => {
@@ -3425,6 +3440,12 @@ function switchCreateMode(mode) {
         } else {
             _setSimilarStatus("Cole um link e clique em Analisar video para montar as cenas.", "running");
         }
+    } else if (mode === "workflow") {
+        initWorkflowBuilder();
+        requestAnimationFrame(() => {
+            workflowFitCanvas();
+            workflowRenderConnections();
+        });
     }
 }
 
@@ -3901,6 +3922,293 @@ function _refreshSimilarButtonsDisabled(disabled) {
         const el = document.getElementById(id);
         if (el) el.disabled = !!disabled;
     });
+}
+
+function initWorkflowBuilder() {
+    if (workflowState.initialized) return;
+    const panel = document.getElementById("create-panel-workflow");
+    if (!panel) return;
+    workflowState.initialized = true;
+
+    const backBtn = document.getElementById("workflow-back");
+    if (backBtn) {
+        backBtn.addEventListener("click", () => {
+            document.getElementById("create-panel-workflow").hidden = true;
+            document.getElementById("create-mode-selection").hidden = false;
+        });
+    }
+
+    const fitBtn = document.getElementById("workflow-fit");
+    if (fitBtn) fitBtn.addEventListener("click", workflowFitCanvas);
+
+    const addImagesBtn = document.getElementById("workflow-add-images");
+    const imageInput = document.getElementById("workflow-image-input");
+    if (addImagesBtn && imageInput) {
+        addImagesBtn.addEventListener("click", () => imageInput.click());
+        imageInput.addEventListener("change", workflowHandleImageInput);
+    }
+
+    const clearImagesBtn = document.getElementById("workflow-clear-images");
+    if (clearImagesBtn) clearImagesBtn.addEventListener("click", workflowClearImages);
+
+    const runBtn = document.getElementById("workflow-run");
+    if (runBtn) runBtn.addEventListener("click", workflowRunSeedance);
+
+    document.querySelectorAll("[data-workflow-template]").forEach((btn) => {
+        btn.addEventListener("click", () => workflowApplyTemplate(btn.dataset.workflowTemplate));
+    });
+
+    document.querySelectorAll("[data-workflow-add]").forEach((btn) => {
+        btn.addEventListener("click", () => workflowFocusNode(btn.dataset.workflowAdd));
+    });
+
+    document.querySelectorAll("#create-panel-workflow .workflow-node").forEach((node) => {
+        const header = node.querySelector("header");
+        const dragHandle = header || node;
+        dragHandle.addEventListener("pointerdown", (event) => workflowStartDrag(event, node));
+    });
+
+    window.addEventListener("resize", () => {
+        if (!document.getElementById("create-panel-workflow")?.hidden) {
+            workflowRenderConnections();
+        }
+    });
+
+    workflowRenderImagePreview();
+    workflowRenderConnections();
+}
+
+function workflowFitCanvas() {
+    const wrap = document.getElementById("workflow-canvas-wrap");
+    if (!wrap) return;
+    wrap.scrollLeft = Math.max(0, (wrap.scrollWidth - wrap.clientWidth) / 2 - 80);
+    wrap.scrollTop = 0;
+    workflowRenderConnections();
+}
+
+function workflowStartDrag(event, node) {
+    if (!node || event.button !== 0) return;
+    if (event.target.closest("textarea, input, select, button")) return;
+    const startLeft = parseFloat(node.style.left || "0") || 0;
+    const startTop = parseFloat(node.style.top || "0") || 0;
+    workflowState.drag = {
+        node,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startLeft,
+        startTop,
+    };
+    node.setPointerCapture(event.pointerId);
+    node.classList.add("dragging");
+    node.addEventListener("pointermove", workflowDragMove);
+    node.addEventListener("pointerup", workflowEndDrag);
+    node.addEventListener("pointercancel", workflowEndDrag);
+}
+
+function workflowDragMove(event) {
+    const drag = workflowState.drag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const nextLeft = Math.max(8, drag.startLeft + event.clientX - drag.startX);
+    const nextTop = Math.max(8, drag.startTop + event.clientY - drag.startY);
+    drag.node.style.left = `${nextLeft}px`;
+    drag.node.style.top = `${nextTop}px`;
+    workflowRenderConnections();
+}
+
+function workflowEndDrag(event) {
+    const drag = workflowState.drag;
+    if (!drag) return;
+    drag.node.classList.remove("dragging");
+    drag.node.releasePointerCapture?.(event.pointerId);
+    drag.node.removeEventListener("pointermove", workflowDragMove);
+    drag.node.removeEventListener("pointerup", workflowEndDrag);
+    drag.node.removeEventListener("pointercancel", workflowEndDrag);
+    workflowState.drag = null;
+    workflowRenderConnections();
+}
+
+function workflowPortPoint(portName) {
+    const canvas = document.getElementById("workflow-canvas");
+    const port = document.querySelector(`#create-panel-workflow [data-port='${portName}']`);
+    if (!canvas || !port) return null;
+    const canvasRect = canvas.getBoundingClientRect();
+    const portRect = port.getBoundingClientRect();
+    return {
+        x: portRect.left + portRect.width / 2 - canvasRect.left,
+        y: portRect.top + portRect.height / 2 - canvasRect.top,
+    };
+}
+
+function workflowRenderConnections() {
+    const svg = document.getElementById("workflow-lines");
+    const canvas = document.getElementById("workflow-canvas");
+    if (!svg || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    svg.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
+    svg.setAttribute("width", `${rect.width}`);
+    svg.setAttribute("height", `${rect.height}`);
+    svg.innerHTML = workflowState.connections.map(([from, to]) => {
+        const start = workflowPortPoint(from);
+        const end = workflowPortPoint(to);
+        if (!start || !end) return "";
+        const mid = Math.max(80, Math.abs(end.x - start.x) * 0.5);
+        return `<path d="M ${start.x} ${start.y} C ${start.x + mid} ${start.y}, ${end.x - mid} ${end.y}, ${end.x} ${end.y}" />`;
+    }).join("");
+}
+
+function workflowFocusNode(kind) {
+    const map = { prompt: "prompt", images: "images", video: "video", audio: "audio", model: "model", output: "output" };
+    const node = document.querySelector(`#create-panel-workflow [data-node-id='${map[kind] || kind}']`);
+    const wrap = document.getElementById("workflow-canvas-wrap");
+    if (!node || !wrap) return;
+    wrap.scrollTo({ left: Math.max(0, node.offsetLeft - 80), top: Math.max(0, node.offsetTop - 50), behavior: "smooth" });
+    node.classList.add("workflow-node-pulse");
+    setTimeout(() => node.classList.remove("workflow-node-pulse"), 600);
+}
+
+function workflowApplyTemplate(type) {
+    const promptEl = document.getElementById("workflow-prompt");
+    if (!promptEl) return;
+    const templates = {
+        cinematic: "Uma cena cinematografica ultra-realista com camera em movimento suave, profundidade de campo rasa, luz natural dramaticamente controlada, textura realista, composicao premium e atmosfera imersiva.",
+        product: "Video de produto premium com camera orbitando lentamente, reflexos controlados, fundo sofisticado, iluminacao comercial, detalhes nitidos, movimento elegante e acabamento de campanha publicitaria.",
+    };
+    promptEl.value = templates[type] || templates.cinematic;
+    promptEl.focus();
+}
+
+async function workflowHandleImageInput(event) {
+    const files = Array.from(event.target?.files || []).filter((file) => file && file.type.startsWith("image/"));
+    if (!files.length) return;
+    const remaining = Math.max(0, 6 - workflowState.images.length);
+    workflowState.images = workflowState.images.concat(files.slice(0, remaining)).slice(0, 6);
+    workflowState.imageUploadIds = [];
+    workflowRenderImagePreview();
+    event.target.value = "";
+}
+
+function workflowClearImages() {
+    workflowState.images = [];
+    workflowState.imageUploadIds = [];
+    workflowRenderImagePreview();
+}
+
+function workflowRenderImagePreview() {
+    const preview = document.getElementById("workflow-image-preview");
+    const count = document.getElementById("workflow-image-count");
+    if (count) count.textContent = `${workflowState.images.length}/6`;
+    if (!preview) return;
+    if (!workflowState.images.length) {
+        preview.innerHTML = `<button class="workflow-thumb-add" type="button" onclick="document.getElementById('workflow-image-input')?.click()">+</button>`;
+        return;
+    }
+    preview.innerHTML = workflowState.images.map((file, index) => {
+        const url = URL.createObjectURL(file);
+        return `<figure class="workflow-thumb"><img src="${url}" alt="Referência ${index + 1}"><figcaption>${index + 1}</figcaption></figure>`;
+    }).join("") + (workflowState.images.length < 6 ? `<button class="workflow-thumb-add" type="button" onclick="document.getElementById('workflow-image-input')?.click()">+</button>` : "");
+}
+
+function workflowBuildPrompt() {
+    const prompt = String(document.getElementById("workflow-prompt")?.value || "").trim();
+    const videoUrl = String(document.getElementById("workflow-video-url")?.value || "").trim();
+    const videoNotes = String(document.getElementById("workflow-video-notes")?.value || "").trim();
+    const audioUrl = String(document.getElementById("workflow-audio-url")?.value || "").trim();
+    const audioNotes = String(document.getElementById("workflow-audio-notes")?.value || "").trim();
+    const parts = [];
+    if (prompt) parts.push(prompt);
+    if (videoUrl || videoNotes) parts.push(`Referencia de video: ${[videoUrl, videoNotes].filter(Boolean).join(" | ")}`);
+    if (audioUrl || audioNotes) parts.push(`Referencia de audio/clima sonoro: ${[audioUrl, audioNotes].filter(Boolean).join(" | ")}`);
+    parts.push("Use as imagens de referencia como base visual quando fornecidas. Evite colagem; gere uma cena unica e coesa.");
+    return parts.join("\n\n").trim();
+}
+
+async function workflowEnsureUploadedImages() {
+    if (workflowState.imageUploadIds.length === workflowState.images.length) {
+        return workflowState.imageUploadIds.slice();
+    }
+    const uploadIds = [];
+    for (let index = 0; index < workflowState.images.length; index += 1) {
+        const uploaded = await uploadTempFileWithRetry(workflowState.images[index], "image", `imagem workflow ${index + 1}`);
+        if (uploaded?.upload_id) uploadIds.push(uploaded.upload_id);
+    }
+    workflowState.imageUploadIds = uploadIds;
+    return uploadIds;
+}
+
+async function workflowRunSeedance() {
+    const prompt = workflowBuildPrompt();
+    if (!prompt) {
+        alert("Preencha o bloco Prompt antes de rodar o workflow.");
+        workflowFocusNode("prompt");
+        return;
+    }
+    if (!workflowState.images.length) {
+        alert("Adicione pelo menos uma imagem em Ref Images para rodar o workflow no Seedance 2.0.");
+        workflowFocusNode("images");
+        return;
+    }
+
+    const runBtn = document.getElementById("workflow-run");
+    if (runBtn) runBtn.disabled = true;
+    const progressEl = document.getElementById("create-progress");
+    if (progressEl) progressEl.hidden = false;
+    setCreateProgress(CREATE_PROGRESS_BASE, "Executando workflow...", "Preparando Seedance 2.0...");
+    _smoothProgressTarget = 10;
+    _startSmoothProgress();
+
+    try {
+        const imageUploadIds = await workflowEnsureUploadedImages();
+        _smoothProgressTarget = 18;
+
+        const duration = parseInt(document.getElementById("workflow-duration")?.value || "8", 10) || 8;
+        const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
+        const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
+        const resolution = document.getElementById("workflow-resolution")?.value || "720p";
+
+        const resp = await api("/video/generate-realistic", {
+            method: "POST",
+            body: JSON.stringify({
+                prompt,
+                duration,
+                aspect_ratio: aspect,
+                generate_audio: generateAudio,
+                add_music: false,
+                add_narration: false,
+                title: "Workflow Seedance 2.0",
+                image_upload_id: imageUploadIds[0] || "",
+                image_upload_ids: imageUploadIds,
+                engine: "seedance",
+                prompt_optimized: false,
+                realistic_style: `workflow_seedance_${resolution}`,
+                interaction_persona: "nenhum",
+                disable_persona_reference: true,
+            }),
+        });
+
+        const projectId = resp.id;
+        _smoothProgressTarget = 25;
+        setCreateProgress(25, "Executando workflow...", "Seedance 2.0 está criando seu vídeo...");
+        await pollRealisticProgress(projectId, "Seedance 2.0");
+
+        _stopSmoothProgress();
+        setCreateProgress(100, "Concluído!", "Workflow executado com sucesso.");
+        const outputBox = document.getElementById("workflow-output-box");
+        if (outputBox) outputBox.innerHTML = `<strong>Workflow enviado.</strong><span>O vídeo aparece na lista de projetos.</span>`;
+
+        setTimeout(() => {
+            closeModal("modal-new-project");
+            resetCreateWizard();
+            loadProjects();
+        }, 1200);
+    } catch (error) {
+        _stopSmoothProgress();
+        const message = error?.message || "Erro ao executar workflow.";
+        setCreateProgress(0, "Erro", message);
+        alert(message);
+    } finally {
+        if (runBtn) runBtn.disabled = false;
+    }
 }
 
 async function _refreshSimilarProject({ silent = false } = {}) {
@@ -4486,6 +4794,9 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         let imageUploadId = "";
         let imageUploadIds = [];
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
+        if (disablePersonaReference && engine !== "grok" && !shouldUploadReferenceImage) {
+            throw new Error("O modo Nenhum sem foto funciona no Cria 3.0 speed. Para outros motores, envie uma imagem de referência.");
+        }
         if (shouldUploadReferenceImage) {
             setCreateProgress(5, "Gerando vídeo realista...", "Enviando imagem de referência...");
             const photosToUpload = scriptPhotos.slice(0, 6);
@@ -13871,11 +14182,9 @@ function _editorHandleEditorPageEntry() {
     loadEditorVideosList();
     const draftCount = _editorRenderSavedDraftsModal();
     if (draftCount > 0) {
-        closeModal("modal-editor-start");
         openModal("modal-editor-drafts");
     } else {
         closeModal("modal-editor-drafts");
-        _editorOpenStartModal();
     }
 }
 
