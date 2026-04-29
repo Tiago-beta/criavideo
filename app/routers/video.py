@@ -3543,7 +3543,7 @@ async def generate_realistic_endpoint(
         upload_ids.insert(0, req.image_upload_id)
     upload_ids = upload_ids[:6]
 
-    disable_persona_reference = bool(req.disable_persona_reference) and engine == "grok" and not bool(upload_ids)
+    disable_persona_reference = bool(req.disable_persona_reference) and not bool(upload_ids)
     if disable_persona_reference:
         selected_persona_profile_id = 0
         selected_persona_profile_ids = []
@@ -3637,7 +3637,7 @@ async def generate_realistic_endpoint(
     dialogue_duration = max(1, min(duration, int(req.dialogue_duration or duration))) if dialogue_enabled else 0
 
     has_reference_image = bool(image_path_str)
-    if not has_reference_image and not (engine == "grok" and disable_persona_reference):
+    if not has_reference_image and not disable_persona_reference:
         raise HTTPException(status_code=400, detail="Vídeo realista exige imagem de referência.")
 
     if disable_persona_reference:

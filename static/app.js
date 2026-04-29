@@ -4486,9 +4486,6 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         let imageUploadId = "";
         let imageUploadIds = [];
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
-        if (disablePersonaReference && engine !== "grok" && !shouldUploadReferenceImage) {
-            throw new Error("O modo Nenhum sem foto funciona no Cria 3.0 speed. Para outros motores, envie uma imagem de referência.");
-        }
         if (shouldUploadReferenceImage) {
             setCreateProgress(5, "Gerando vídeo realista...", "Enviando imagem de referência...");
             const photosToUpload = scriptPhotos.slice(0, 6);
