@@ -16393,6 +16393,9 @@ const _editor = {
     outputAspectRatio: "source",
     playing: false,
     activeTool: "text",
+    smartCuts: [],
+    smartCutsLoading: false,
+    smartCutsError: "",
     subtitleListOpen: false,
     selectedClip: { kind: "", id: "", track: "" },
     // Edit state
@@ -16699,6 +16702,7 @@ function _editorBuildDraftSnapshot() {
         sourceAspectRatio: String(_editor.sourceAspectRatio || "9:16"),
         outputAspectRatio: String(_editor.outputAspectRatio || "source"),
         activeTool: String(_editor.activeTool || "text"),
+        smartCuts: _editor.smartCuts || [],
         timelineTime: Number(_editor.timelineTime || 0),
         timelineZoom: Number(_editor.timelineZoom || 1),
         playbackRate: Number(_editor.playbackRate || 1),
@@ -16770,6 +16774,7 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
         }
         _editor.outputAspectRatio = _normalizeAspectValue(String(draft.outputAspectRatio || _editor.outputAspectRatio || "source"));
         _editor.activeTool = String(draft.activeTool || _editor.activeTool || "text");
+        _editor.smartCuts = Array.isArray(draft.smartCuts) ? draft.smartCuts : [];
         _editor.sourceProjectTitle = String(draft.sourceProjectTitle || _editor.sourceProjectTitle || "");
         _editor.editProjectName = _editorResolveEditProjectName(
             String(draft.editProjectName || ""),
@@ -16873,6 +16878,7 @@ function _editorSaveState() {
         duration: _editor.duration,
         texts: _editor.texts,
         subtitles: _editor.subtitles,
+        smartCuts: _editor.smartCuts,
         videoSegments: _editor.videoSegments,
         audioSegments: _editor.audioSegments,
         selectedTracks: _editor.selectedTracks,
@@ -16901,6 +16907,7 @@ function _editorUndo() {
     const current = JSON.stringify({
         duration: _editor.duration,
         texts: _editor.texts, subtitles: _editor.subtitles, trimStart: _editor.trimStart,
+        smartCuts: _editor.smartCuts,
         videoSegments: _editor.videoSegments,
         audioSegments: _editor.audioSegments,
         selectedTracks: _editor.selectedTracks,
@@ -16931,6 +16938,7 @@ function _editorRedo() {
     const current = JSON.stringify({
         duration: _editor.duration,
         texts: _editor.texts, subtitles: _editor.subtitles, trimStart: _editor.trimStart,
+        smartCuts: _editor.smartCuts,
         videoSegments: _editor.videoSegments,
         audioSegments: _editor.audioSegments,
         selectedTracks: _editor.selectedTracks,
@@ -19045,6 +19053,9 @@ async function openEditor(projectId, options = {}) {
         _editor.outputAspectRatio = "source";
         _editor.playing = false;
         _editor.activeTool = "text";
+        _editor.smartCuts = [];
+        _editor.smartCutsLoading = false;
+        _editor.smartCutsError = "";
         _editor.subtitleListOpen = false;
         _editor.selectedClip = { kind: "", id: "", track: "" };
         _editor.texts = [];
@@ -19795,6 +19806,80 @@ function _editorSelectTool(toolName) {
     }
 }
 
+function _editorGetApprovedSmartCuts() {
+    return (_editor.smartCuts || []).filter((cut) => cut && cut.approved !== false && Number(cut.end || 0) > Number(cut.start || 0));
+}
+
+async function _editorAnalyzeSmartCuts() {
+    if (!_editor.projectId || _editor.smartCutsLoading) return;
+    _editor.smartCutsLoading = true;
+    _editor.smartCutsError = "";
+    _editorRenderProps();
+    try {
+        const payload = await api("/video/editor/smart-cuts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project_id: _editor.projectId }),
+        });
+        const cuts = Array.isArray(payload?.cuts) ? payload.cuts : [];
+        _editor.smartCuts = cuts.map((cut, idx) => ({
+            id: String(cut.id || `smart-${idx + 1}`),
+            start: Math.max(0, Number(cut.start || 0)),
+            end: Math.max(0, Number(cut.end || 0)),
+            title: String(cut.title || `Short ${idx + 1}`),
+            reason: String(cut.reason || "Trecho indicado pela IA."),
+            score: Math.max(0, Math.min(100, Number(cut.score || 0))),
+            approved: cut.approved !== false,
+        })).filter((cut) => cut.end - cut.start >= 1);
+        if (!_editor.smartCuts.length) {
+            _editor.smartCutsError = "A IA não encontrou cortes bons neste vídeo.";
+        }
+        _editorScheduleDraftPersist(120);
+    } catch (err) {
+        _editor.smartCutsError = err?.message || "Erro ao criar cortes inteligentes.";
+        showToast("Erro ao criar cortes inteligentes: " + _editor.smartCutsError, "error");
+    } finally {
+        _editor.smartCutsLoading = false;
+        _editorRenderProps();
+    }
+}
+
+function _editorSeekToSmartCut(cutId) {
+    const cut = (_editor.smartCuts || []).find((item) => String(item.id) === String(cutId));
+    if (!cut) return;
+
+    _editorStopVirtualTimelinePlayback();
+    _editor.playing = false;
+    const video = document.getElementById("editor-video");
+    const target = Math.max(0, Number(cut.start || 0));
+    if (video) {
+        video.pause();
+        video.currentTime = target;
+    }
+    _editorApplyTimelineFrame(target, false);
+    _updatePlayIcon();
+}
+
+function _editorToggleSmartCut(cutId, checked) {
+    const cut = (_editor.smartCuts || []).find((item) => String(item.id) === String(cutId));
+    if (!cut) return;
+    cut.approved = Boolean(checked);
+    _editorScheduleDraftPersist(120);
+    _editorRenderProps();
+}
+
+function _editorClearSmartCuts() {
+    _editor.smartCuts = [];
+    _editor.smartCutsError = "";
+    _editorScheduleDraftPersist(120);
+    _editorRenderProps();
+}
+
+window._editorAnalyzeSmartCuts = _editorAnalyzeSmartCuts;
+window._editorSeekToSmartCut = _editorSeekToSmartCut;
+window._editorToggleSmartCut = _editorToggleSmartCut;
+window._editorClearSmartCuts = _editorClearSmartCuts;
+
 // ---------- Render properties panel based on tool ----------
 function _editorRenderProps() {
     const container = document.getElementById("editor-props-content");
@@ -19815,6 +19900,38 @@ function _editorRenderProps() {
                 `).join("")}
             </div>
             ${_editorTextEditForm()}
+        `;
+    } else if (tool === "smartcuts") {
+        const isLoading = Boolean(_editor.smartCutsLoading);
+        const cuts = Array.isArray(_editor.smartCuts) ? _editor.smartCuts : [];
+        const approvedCount = _editorGetApprovedSmartCuts().length;
+        const errorHtml = _editor.smartCutsError ? `<p class="editor-smartcuts-error">${esc(_editor.smartCutsError)}</p>` : "";
+
+        container.innerHTML = `
+            <div class="editor-props-title">Cortes IA</div>
+            <button class="editor-add-btn" onclick="_editorAnalyzeSmartCuts()" ${isLoading ? "disabled" : ""}>
+                ${isLoading
+                    ? '<div class="spinner-small" style="width:14px;height:14px"></div> Analisando vídeo...'
+                    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 4.5 16 3l1.5 1.5L19 6l-1.5 1.5L16 9l-1.5-1.5L13 6z"/><path d="M5 4v16"/><path d="M19 12v8"/><path d="M8 7h3"/><path d="M8 12h8"/><path d="M8 17h8"/></svg> Criar vários cortes inteligentes'}
+            </button>
+            ${cuts.length ? `<div class="editor-smartcuts-summary">${approvedCount} de ${cuts.length} short(s) aprovados para exportar</div>` : ""}
+            ${errorHtml}
+            <div class="editor-smartcuts-list">
+                ${cuts.map((cut) => `
+                    <div class="editor-smartcut-item${cut.approved !== false ? " approved" : ""}" onclick="_editorSeekToSmartCut('${esc(String(cut.id))}')">
+                        <div class="editor-smartcut-head">
+                            <strong>${esc(cut.title || "Short")}</strong>
+                            <label class="editor-smartcut-check" onclick="event.stopPropagation()">
+                                <input type="checkbox" ${cut.approved !== false ? "checked" : ""} onchange="_editorToggleSmartCut('${esc(String(cut.id))}', this.checked)">
+                                <span>Aprovar</span>
+                            </label>
+                        </div>
+                        <div class="editor-smartcut-time">${_fmtTime(cut.start)} até ${_fmtTime(cut.end)} · ${Math.round(Math.max(0, cut.end - cut.start))}s</div>
+                        <p>${esc(cut.reason || "Trecho forte indicado pela IA.")}</p>
+                    </div>
+                `).join("")}
+            </div>
+            ${cuts.length ? '<button class="editor-add-btn editor-smartcuts-clear" onclick="_editorClearSmartCuts()">Limpar cortes</button>' : ""}
         `;
     } else if (tool === "subtitles") {
         const isGenerating = _editor._subtitleGenerating;
@@ -21932,6 +22049,13 @@ async function _editorExport() {
             volume: Number(layer.volume ?? 100),
             audio_only: Boolean(layer.audioOnly),
         })),
+        smart_cuts: _editorGetApprovedSmartCuts().map((cut) => ({
+            start: Number(cut.start || 0),
+            end: Number(cut.end || 0),
+            title: String(cut.title || ""),
+            reason: String(cut.reason || ""),
+            score: Math.round(Number(cut.score || 0)),
+        })),
     };
 
     // Show export overlay
@@ -21939,7 +22063,7 @@ async function _editorExport() {
     overlay.className = "editor-export-overlay";
     overlay.innerHTML = `
         <div class="editor-export-card">
-            <h3>Exportando video</h3>
+            <h3>${edits.smart_cuts.length ? "Exportando shorts" : "Exportando video"}</h3>
             <div class="editor-export-progress"><div class="editor-export-progress-fill" id="editor-export-fill"></div></div>
             <p class="editor-export-status" id="editor-export-status">Enviando edicoes ao servidor...</p>
         </div>
@@ -22003,13 +22127,27 @@ async function _editorExport() {
                 if (status) status.textContent = poll.message || "Processando...";
                 if (poll.status === "completed") {
                     done = true;
-                    if (status) status.textContent = "Vídeo exportado com sucesso!";
+                    const exportedShorts = Array.isArray(poll.output_urls) ? poll.output_urls : [];
+                    if (status) status.textContent = exportedShorts.length ? "Shorts exportados com sucesso!" : "Vídeo exportado com sucesso!";
                     if (fill) fill.style.width = "100%";
                     await new Promise(r => setTimeout(r, 1500));
                     overlay.remove();
-                    showToast("Vídeo editado exportado com sucesso!", "success");
+                    showToast(exportedShorts.length ? `${exportedShorts.length} shorts exportados com sucesso!` : "Vídeo editado exportado com sucesso!", "success");
 
-                    if (poll.output_url) {
+                    if (exportedShorts.length) {
+                        for (let idx = 0; idx < exportedShorts.length; idx += 1) {
+                            const item = exportedShorts[idx];
+                            if (!item?.url) continue;
+                            const link = document.createElement("a");
+                            link.href = item.url;
+                            link.download = item.filename || `short-${String(idx + 1).padStart(2, "0")}.mp4`;
+                            link.style.display = "none";
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            await new Promise(r => setTimeout(r, 900));
+                        }
+                    } else if (poll.output_url) {
                         const link = document.createElement("a");
                         link.href = poll.output_url;
                         link.download = "video-editado.mp4";
