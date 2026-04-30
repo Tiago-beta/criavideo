@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v277 loaded");
+console.log("[CriaVideo] app.js v278 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -18184,17 +18184,19 @@ async function _editorUploadVideo(input) {
 window._editorUploadVideo = _editorUploadVideo;
 
 function _editorOpenStartModal() {
-    const selectView = document.getElementById("editor-select-view");
-    if (selectView && selectView.hidden) {
-        showToast("Feche a edição atual para iniciar por este menu.", "error");
-        return;
-    }
     openModal("modal-editor-start");
 }
 window._editorOpenStartModal = _editorOpenStartModal;
 
 function _editorChooseStartMode(mode) {
     const selectedMode = String(mode || "").trim();
+    const workspace = document.getElementById("editor-workspace");
+    const isEditingOpen = Boolean(workspace && !workspace.hidden);
+
+    if (isEditingOpen) {
+        closeEditor();
+    }
+
     if (selectedMode === "video_pc") {
         closeModal("modal-editor-start");
         document.getElementById("editor-video-upload-input")?.click();
@@ -22373,7 +22375,7 @@ function _bindEditorEvents() {
     document.getElementById("editor-overlay-canvas")?.addEventListener("click", _editorHandleOverlayClick);
     document.getElementById("editor-play-btn")?.addEventListener("click", _editorTogglePlay);
     document.getElementById("editor-back-btn")?.addEventListener("click", closeEditor);
-    document.getElementById("editor-new-btn")?.addEventListener("click", _editorStartFreshEdit);
+    document.getElementById("editor-new-btn")?.addEventListener("click", _editorOpenStartModal);
     document.getElementById("editor-undo-btn")?.addEventListener("click", _editorUndo);
     document.getElementById("editor-redo-btn")?.addEventListener("click", _editorRedo);
     document.getElementById("editor-export-btn")?.addEventListener("click", _editorExport);

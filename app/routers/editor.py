@@ -133,6 +133,22 @@ def _build_aspect_pad_filter(aspect_ratio: str | None) -> str | None:
     return "pad=w='ceil(max(iw,ih)/2)*2':h='ceil(max(iw,ih)/2)*2':x='(ow-iw)/2':y='(oh-ih)/2':color=black"
 
 
+def _get_smart_short_target_resolution(quality: str | None) -> tuple[int, int]:
+    normalized = (quality or "").strip().lower()
+    if normalized in {"fullhd", "enhance"}:
+        return 1080, 1920
+    return 720, 1280
+
+
+def _build_smart_short_vertical_filter(width: int, height: int) -> str:
+    target_w = _round_up_even(max(360, width))
+    target_h = _round_up_even(max(640, height))
+    return (
+        f"scale=-2:{target_h}:flags=lanczos,"
+        f"crop={target_w}:{target_h}:x='max(0,(iw-ow)/2)':y=0"
+    )
+
+
 def _round_up_even(value: float) -> int:
     iv = int(math.ceil(float(value or 0)))
     if iv <= 0:
@@ -1164,7 +1180,7 @@ async def export_status(job_id: str, user=Depends(get_current_user)):
 # ── Background export function ─────────────────────────
 def _run_smart_cuts_export(job: dict, project, render, req: ExportRequest, src_video: str) -> bool:
     approved = []
-    src_duration, _ = _probe_video_metadata(src_video)
+    src_duration, source_aspect = _probe_video_metadata(src_video)
     for idx, cut in enumerate(req.smart_cuts or [], start=1):
         start = max(0.0, float(cut.start or 0))
         end = max(start, float(cut.end or 0))
@@ -1181,7 +1197,14 @@ def _run_smart_cuts_export(job: dict, project, render, req: ExportRequest, src_v
     out_dir = os.path.join(settings.media_dir, str(project.id), "edited", "shorts")
     os.makedirs(out_dir, exist_ok=True)
     source_has_audio = _probe_has_audio_stream(src_video)
-    selected_aspect = _normalize_aspect_ratio(req.aspect_ratio) or _normalize_aspect_ratio(render.format) or "16:9"
+    force_vertical_short = source_aspect == "16:9"
+    selected_aspect = "9:16" if force_vertical_short else (
+        _normalize_aspect_ratio(req.aspect_ratio)
+        or _normalize_aspect_ratio(render.format)
+        or _normalize_aspect_ratio(source_aspect)
+        or "16:9"
+    )
+    short_target_w, short_target_h = _get_smart_short_target_resolution(req.quality)
 
     output_urls: list[dict] = []
     total = len(approved)
@@ -1207,14 +1230,15 @@ def _run_smart_cuts_export(job: dict, project, render, req: ExportRequest, src_v
             "cinematic": "eq=contrast=1.15:saturation=1.1:brightness=-0.05,curves=vintage",
             "retro": "curves=vintage,hue=h=-15,eq=saturation=1.2",
         }
+        if force_vertical_short:
+            vfilters.append(_build_smart_short_vertical_filter(short_target_w, short_target_h))
         if req.filter != "none" and req.filter in filter_map:
             vfilters.append(filter_map[req.filter])
-        aspect_filter = _build_aspect_pad_filter(selected_aspect)
-        if aspect_filter:
+        elif (aspect_filter := _build_aspect_pad_filter(selected_aspect)):
             vfilters.append(aspect_filter)
-        if req.quality == "hd":
+        if req.quality == "hd" and not force_vertical_short:
             vfilters.append("scale=-2:720")
-        elif req.quality == "fullhd":
+        elif req.quality == "fullhd" and not force_vertical_short:
             vfilters.append("scale=-2:1080")
         elif req.quality == "enhance":
             vfilters.append("unsharp=5:5:0.8:5:5:0.4")
