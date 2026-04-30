@@ -987,6 +987,73 @@ def _extract_audio_from_editor_video(src_video: Path, output_dir: Path, log_labe
         raise HTTPException(500, "Timeout ao extrair áudio do vídeo")
 
 
+def _normalize_editor_uploaded_video(video_path: Path, content_type: str | None = None) -> Path:
+    source_path = Path(video_path)
+    source_duration, _ = _probe_video_metadata(str(source_path))
+    source_ext = source_path.suffix.lower()
+    raw_content_type = str(content_type or "").strip().lower()
+    should_normalize = source_ext == ".webm" or "webm" in raw_content_type or source_duration <= 0.0
+    if not should_normalize:
+        return source_path
+
+    normalized_path = source_path.with_name(f"{source_path.stem}_normalized.mp4")
+    normalized_path.unlink(missing_ok=True)
+
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-fflags",
+                "+genpts",
+                "-i",
+                str(source_path),
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-c:v",
+                "libx264",
+                "-preset",
+                _EDITOR_EXPORT_PRESET,
+                "-crf",
+                _EDITOR_EXPORT_CRF,
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                _EDITOR_EXPORT_AUDIO_BITRATE,
+                "-movflags",
+                "+faststart",
+                str(normalized_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        normalized_path.unlink(missing_ok=True)
+        raise HTTPException(500, "Timeout ao processar a gravação do editor")
+
+    if proc.returncode != 0 or not normalized_path.exists() or normalized_path.stat().st_size <= 0:
+        logger.error("[editor] Failed to normalize uploaded video %s: %s", source_path, (proc.stderr or "")[-1200:])
+        normalized_path.unlink(missing_ok=True)
+        if source_duration > 0:
+            return source_path
+        raise HTTPException(500, "Falha ao preparar a gravação para o editor")
+
+    normalized_duration, _ = _probe_video_metadata(str(normalized_path))
+    if normalized_duration <= 0:
+        normalized_path.unlink(missing_ok=True)
+        if source_duration > 0:
+            return source_path
+        raise HTTPException(500, "A gravação foi enviada, mas o vídeo não ficou pronto para edição")
+
+    source_path.unlink(missing_ok=True)
+    return normalized_path
+
+
 @router.post("/upload-video-audio")
 async def upload_video_audio(
     file: UploadFile = File(...),
@@ -1107,12 +1174,14 @@ async def upload_video(
             dest.unlink(missing_ok=True)
         raise HTTPException(400, "Arquivo vazio")
 
+    normalized_dest = _normalize_editor_uploaded_video(dest, file.content_type)
+
     return await _create_editor_video_project(
         db=db,
         user_id=int(user["id"]),
-        video_path=dest,
+        video_path=normalized_dest,
         original_name=str(file.filename or "Vídeo enviado"),
-        file_size=written,
+        file_size=int(normalized_dest.stat().st_size) if normalized_dest.exists() else written,
         description="Vídeo enviado para edição",
     )
 
@@ -1484,14 +1553,6 @@ def _run_smart_cuts_export(job: dict, project, render, req: ExportRequest, src_v
         if end - start < 1.0:
             continue
         approved.append((idx, start, end, cut))
-
-    if not approved:
-        return False
-
-    out_dir = os.path.join(settings.media_dir, str(project.id), "edited", "shorts")
-    os.makedirs(out_dir, exist_ok=True)
-    source_has_audio = _probe_has_audio_stream(src_video)
-    force_vertical_short = source_aspect == "16:9"
     smart_cut_subtitle_style = req.smart_cut_subtitle_style if req.smart_cut_subtitle_style and req.smart_cut_subtitle_style.enabled else None
     smart_cut_words = list(req.smart_cut_words or [])
     if smart_cut_subtitle_style and not smart_cut_words:
