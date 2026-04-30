@@ -1406,11 +1406,18 @@ async def get_project(
     )
     renders = result_renders.scalars().all()
 
+    response_tags = project.tags
+    if _is_similar_project(project):
+        response_tags = _safe_tags_dict(project.tags)
+        reference_video_url = _to_media_url(str(response_tags.get("similar_local_video_path") or "").strip())
+        if reference_video_url:
+            response_tags["similar_reference_video_url"] = reference_video_url
+
     return {
         "id": project.id,
         "title": project.title,
         "description": project.description,
-        "tags": project.tags,
+        "tags": response_tags,
         "status": project.status.value,
         "progress": project.progress,
         "aspect_ratio": project.aspect_ratio,

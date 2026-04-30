@@ -264,14 +264,16 @@ class BaixaTudoClient:
                 done_state = await self.wait_until_completed(task_id)
             except Exception as exc:
                 last_error = exc
-                if self._is_retryable_missing_final_file_error(exc) and task_attempt < 3:
-                    logger.warning(
-                        "Baixa Tudo task %s terminou sem arquivo final (tentativa %s/3). Reenfileirando download...",
-                        task_id,
-                        task_attempt,
-                    )
-                    await asyncio.sleep(min(1.2 + task_attempt, 4.0))
-                    continue
+                if self._is_retryable_missing_final_file_error(exc):
+                    if task_attempt < 3:
+                        logger.warning(
+                            "Baixa Tudo task %s terminou sem arquivo final (tentativa %s/3). Reenfileirando download...",
+                            task_id,
+                            task_attempt,
+                        )
+                        await asyncio.sleep(min(1.2 + task_attempt, 4.0))
+                        continue
+                    break
                 raise
 
             final_path = ""

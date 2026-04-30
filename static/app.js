@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v274 loaded");
+console.log("[CriaVideo] app.js v276 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -3205,9 +3205,6 @@ function initCreateWizard() {
     if (similarSourceFileClear) {
         similarSourceFileClear.addEventListener("click", () => {
             _clearSimilarSourceFile();
-            if (String(document.getElementById("similar-source-url")?.value || "").trim()) {
-                _renderSimilarSourcePreview();
-            }
         });
     }
 
@@ -3223,22 +3220,25 @@ function initCreateWizard() {
         });
         similarSourceInput.addEventListener("input", () => {
             if (similarState.sourceVideoFile && String(similarSourceInput.value || "").trim()) {
-                _clearSimilarSourceFile({ skipPreviewReset: true });
+                _clearSimilarSourceFile();
+            } else {
+                _clearSimilarSourcePreview();
             }
-            _renderSimilarSourcePreview();
         });
         similarSourceInput.addEventListener("blur", () => {
             if (similarState.sourceVideoFile && String(similarSourceInput.value || "").trim()) {
-                _clearSimilarSourceFile({ skipPreviewReset: true });
+                _clearSimilarSourceFile();
+            } else {
+                _clearSimilarSourcePreview();
             }
-            _renderSimilarSourcePreview();
         });
         similarSourceInput.addEventListener("paste", () => {
             window.setTimeout(() => {
                 if (similarState.sourceVideoFile && String(similarSourceInput.value || "").trim()) {
-                    _clearSimilarSourceFile({ skipPreviewReset: true });
+                    _clearSimilarSourceFile();
+                } else {
+                    _clearSimilarSourcePreview();
                 }
-                _renderSimilarSourcePreview();
             }, 0);
         });
     }
@@ -3512,15 +3512,16 @@ function switchCreateMode(mode) {
         _updateScriptSubtitlePositionVisibility();
         _updateScriptDetailsForTevoxiMode();
     } else if (mode === "similar") {
-        if (similarState.sourceVideoFile) {
-            _renderSimilarUploadedSourcePreview();
-        } else {
-            _renderSimilarSourcePreview();
-        }
         if (similarState.projectId > 0) {
+            if (similarState.lastProjectSnapshot) {
+                _syncSimilarSourcePreview(similarState.lastProjectSnapshot);
+            } else {
+                _clearSimilarSourcePreview();
+            }
             _refreshSimilarProject({ silent: true });
             _startSimilarPolling();
         } else {
+            _clearSimilarSourcePreview();
             _setSimilarStatus("", "running");
         }
     } else if (mode === "workflow") {
@@ -3822,6 +3823,63 @@ function _clearSimilarSourcePreview() {
     }
 }
 
+function _renderSimilarResolvedSourcePreview(previewUrl, options = {}) {
+    const wrapEl = document.getElementById("similar-source-preview-wrap");
+    const stageEl = document.getElementById("similar-source-preview-stage");
+    const hintEl = document.getElementById("similar-source-preview-hint");
+    const openLinkEl = document.getElementById("similar-source-open-link");
+    const titleEl = document.getElementById("similar-source-preview-title");
+    const resolvedPreviewUrl = String(previewUrl || "").trim();
+    const sourceUrl = String(options.sourceUrl || "").trim();
+    const hint = String(options.hint || "").trim();
+    const title = String(options.title || "").trim() || "Prévia do vídeo de referência";
+
+    if (!wrapEl || !stageEl || !hintEl || !openLinkEl || !titleEl || !resolvedPreviewUrl) {
+        _clearSimilarSourcePreview();
+        return;
+    }
+
+    stageEl.innerHTML = "";
+    const videoEl = document.createElement("video");
+    videoEl.src = resolvedPreviewUrl;
+    videoEl.controls = true;
+    videoEl.playsInline = true;
+    videoEl.preload = "metadata";
+    stageEl.appendChild(videoEl);
+
+    titleEl.textContent = title;
+    if (sourceUrl) {
+        openLinkEl.href = sourceUrl;
+        openLinkEl.hidden = false;
+    } else {
+        openLinkEl.hidden = true;
+        openLinkEl.removeAttribute("href");
+    }
+    hintEl.hidden = !hint;
+    hintEl.textContent = hint;
+    wrapEl.hidden = false;
+}
+
+function _syncSimilarSourcePreview(projectOrTags = null) {
+    const tags = _safeSimilarTags(projectOrTags?.tags || projectOrTags);
+    const previewUrl = String(tags.similar_reference_video_url || "").trim();
+    if (!previewUrl) {
+        _clearSimilarSourcePreview();
+        return;
+    }
+
+    const sourceType = String(tags.similar_source_type || "").trim().toLowerCase();
+    const sourceUrl = String(tags.similar_source_url || "").trim();
+    const title = sourceType === "upload"
+        ? "Prévia do vídeo enviado"
+        : "Prévia do vídeo de referência";
+
+    _renderSimilarResolvedSourcePreview(previewUrl, {
+        title,
+        sourceUrl,
+    });
+}
+
 function _renderSimilarUploadedSourcePreview() {
     const wrapEl = document.getElementById("similar-source-preview-wrap");
     const stageEl = document.getElementById("similar-source-preview-stage");
@@ -3930,7 +3988,7 @@ function _handleSimilarSourceFileInput(event) {
         similarState.sourceVideoObjectUrl = "";
     }
     _syncSimilarSourceFileUi();
-    _renderSimilarUploadedSourcePreview();
+    _clearSimilarSourcePreview();
 }
 
 function _similarSceneDuration(scene) {
@@ -6781,6 +6839,7 @@ async function _refreshSimilarProject({ silent = false } = {}) {
 
         _setSimilarStatus(message, kind);
         similarState.lastProjectSnapshot = project;
+        _syncSimilarSourcePreview(project);
         _renderSimilarScenes(project);
         _updateSimilarGenerationStep(project, tags);
         _refreshSimilarButtonsDisabled(isProcessing);
@@ -6876,7 +6935,7 @@ async function similarStartAnalysis() {
 
     try {
         if (sourceFile) {
-            _renderSimilarUploadedSourcePreview();
+            _clearSimilarSourcePreview();
             _setSimilarStatus("Enviando video de referencia...", "running");
             const uploaded = await uploadTempFileWithRetry(sourceFile, "video", "video de referencia");
             const uploadId = String(uploaded?.upload_id || "").trim();
@@ -6888,7 +6947,7 @@ async function similarStartAnalysis() {
             _setSimilarStatus("Iniciando analise do video enviado...", "running");
         } else {
             payload.source_url = sourceUrl;
-            _renderSimilarSourcePreview(sourceUrl);
+            _clearSimilarSourcePreview();
             _setSimilarStatus("Iniciando analise do video de referencia...", "running");
         }
 
