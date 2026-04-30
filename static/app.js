@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v268 loaded");
+console.log("[CriaVideo] app.js v269 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4403,6 +4403,26 @@ function workflowPromptAiToolsMarkup(node) {
     `;
 }
 
+function workflowEnsurePromptAiTools(node) {
+    if (!node?.classList?.contains("workflow-node-prompt")) return;
+    const textarea = node.querySelector("textarea");
+    if (!textarea) return;
+
+    node.querySelectorAll(".workflow-node-actions").forEach((actions) => {
+        if (actions.querySelector("[data-workflow-template]")) {
+            actions.remove();
+        }
+    });
+
+    const tools = node.querySelector(".workflow-ai-tools");
+    if (tools?.querySelector("[data-workflow-ai-duration]")) return;
+
+    if (tools) {
+        tools.remove();
+    }
+    textarea.insertAdjacentHTML("afterend", workflowPromptAiToolsMarkup(node));
+}
+
 function workflowSyncPromptAiDurationButtons(node) {
     if (!node?.classList?.contains("workflow-node-prompt")) return;
     const selectedDuration = workflowResolvePromptAiDuration(node);
@@ -5307,11 +5327,6 @@ function workflowRefreshNodeMarkupFromDefault(node, defaultNode) {
 
 function workflowNodeNeedsDefaultMarkupRefresh(nodeId, node) {
     if (!node) return false;
-    if (nodeId === "prompt") {
-        return !!node.querySelector("[data-workflow-template]")
-            || !!node.querySelector(".workflow-node-actions")
-            || !node.querySelector("[data-workflow-ai-duration]");
-    }
     if (nodeId === "images") {
         return !node.querySelector(".workflow-upload-icon") || !!node.querySelector("#workflow-clear-images") || !!node.querySelector(".workflow-upload-btn");
     }
@@ -5326,7 +5341,10 @@ function workflowNodeNeedsDefaultMarkupRefresh(nodeId, node) {
 
 function workflowMigrateWorkflowNodes(defaultNodes = null) {
     const defaults = defaultNodes instanceof Map ? defaultNodes : workflowCaptureDefaultNodes(document.getElementById("workflow-canvas"));
-    ["prompt", "images", "video", "audio"].forEach((nodeId) => {
+    document.querySelectorAll("#create-panel-workflow .workflow-node-prompt").forEach((node) => {
+        workflowEnsurePromptAiTools(node);
+    });
+    ["images", "video", "audio"].forEach((nodeId) => {
         const node = document.querySelector(`#create-panel-workflow .workflow-node[data-node-id="${nodeId}"]`);
         const defaultNode = defaults?.get?.(nodeId);
         if (workflowNodeNeedsDefaultMarkupRefresh(nodeId, node) && defaultNode) {
