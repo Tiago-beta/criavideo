@@ -5943,6 +5943,24 @@ th,
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.workflow-head-btn {
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.workflow-head-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .workflow-template-select {
@@ -7094,10 +7112,20 @@ th,
         gap: 12px;
     }
 
-    .workflow-panel-head,
-    .workflow-head-actions {
+    .workflow-panel-head {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .workflow-head-actions {
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+    }
+
+    .workflow-template-select {
+        width: 100%;
+        flex: 1 1 100%;
     }
 
     .workflow-shell {

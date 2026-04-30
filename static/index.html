@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260430-03">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260430-04">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 289;
+        var REQUIRED_VER = 290;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1720,19 +1720,33 @@
                             <p class="wizard-hint">Arraste os blocos, conecte referências e rode o motor Seedance 2.0.</p>
                         </div>
                         <div class="workflow-head-actions">
-                            <button class="btn btn-secondary btn-sm" id="workflow-new-blank" type="button">Novo workflow</button>
+                            <button class="btn btn-secondary btn-sm workflow-head-btn" id="workflow-new-blank" type="button" title="Novo workflow" aria-label="Novo workflow">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                            </button>
                             <select id="workflow-template-select" class="input workflow-template-select" title="Templates salvos">
                                 <option value="">Templates</option>
                             </select>
-                            <button class="btn btn-secondary btn-sm" id="workflow-save-template" type="button">Salvar template</button>
-                            <button class="btn btn-secondary btn-sm" id="workflow-duplicate-template" type="button">Duplicar</button>
-                            <button class="btn btn-secondary btn-sm" id="workflow-delete-template" type="button">Excluir</button>
-                            <button class="btn btn-secondary btn-sm" id="workflow-undo" type="button" title="Desfazer" aria-label="Desfazer">↶</button>
-                            <button class="btn btn-secondary btn-sm" id="workflow-redo" type="button" title="Refazer" aria-label="Refazer">↷</button>
-                            <button class="btn btn-secondary btn-sm" id="workflow-fit" type="button" title="Centralizar canvas" aria-label="Centralizar canvas">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+                            <button class="btn btn-secondary btn-sm workflow-head-btn" id="workflow-save-template" type="button" title="Salvar template" aria-label="Salvar template">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M9 4v6h6"/><path d="M9 18h6"/></svg>
                             </button>
-                            <button class="btn btn-secondary btn-sm" id="workflow-back" type="button">Voltar</button>
+                            <button class="btn btn-secondary btn-sm workflow-head-btn" id="workflow-duplicate-template" type="button" title="Duplicar template" aria-label="Duplicar template">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2"/><rect x="5" y="5" width="10" height="10" rx="2"/></svg>
+                            </button>
+                            <button class="btn btn-secondary btn-sm workflow-head-btn" id="workflow-delete-template" type="button" title="Excluir template" aria-label="Excluir template">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>
+                            </button>
+                            <button class="btn btn-secondary btn-sm workflow-head-btn" id="workflow-undo" type="button" title="Desfazer" aria-label="Desfazer">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M20 20a8 8 0 0 0-8-8H4"/></svg>
+                            </button>
+                            <button class="btn btn-secondary btn-sm workflow-head-btn" id="workflow-redo" type="button" title="Refazer" aria-label="Refazer">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M4 20a8 8 0 0 1 8-8h8"/></svg>
+                            </button>
+                            <button class="btn btn-secondary btn-sm workflow-head-btn" id="workflow-fit" type="button" title="Centralizar canvas" aria-label="Centralizar canvas">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+                            </button>
+                            <button class="btn btn-secondary btn-sm workflow-head-btn" id="workflow-back" type="button" title="Voltar" aria-label="Voltar">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+                            </button>
                         </div>
                     </div>
 
@@ -3195,8 +3209,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260430-03"></script>
-    <script src="/video/static/pwa.js?v=20260430-03"></script>
+    <script src="/video/static/app.js?v=20260430-04"></script>
+    <script src="/video/static/pwa.js?v=20260430-04"></script>
 </body>
 </html>
 
