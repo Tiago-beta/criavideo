@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v273 loaded");
+console.log("[CriaVideo] app.js v274 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2130,6 +2130,7 @@ let workflowState = {
     initialized: false,
     blankMode: false,
     defaultNodes: null,
+    loadedFromDraft: false,
     images: [],
     imageUploadIds: [],
     videos: [],
@@ -5058,10 +5059,21 @@ function workflowQueueAutosave() {
 function workflowSaveDraft() {
     if (workflowState.restoringHistory) return;
     try {
+        const snapshot = workflowSerializeTemplate();
+        const currentTemplate = workflowFindTemplateByKey(workflowState.templateKey);
         localStorage.setItem(workflowDraftStorageKey(), JSON.stringify({
             updatedAt: Date.now(),
-            data: workflowSerializeTemplate(),
+            templateKey: workflowState.templateKey || "",
+            data: snapshot,
         }));
+        if (currentTemplate) {
+            workflowUpsertTemplateRecord({
+                key: currentTemplate.key,
+                name: currentTemplate.name,
+                updatedAt: Date.now(),
+                data: snapshot,
+            });
+        }
     } catch (_) {}
 }
 
@@ -5069,8 +5081,12 @@ function workflowLoadDraft() {
     try {
         const saved = JSON.parse(localStorage.getItem(workflowDraftStorageKey()) || "null");
         if (!saved?.data?.nodes?.length) return;
+        const savedTemplate = workflowFindTemplateByKey(saved.templateKey);
         workflowState.restoringHistory = true;
+        workflowState.templateKey = savedTemplate?.key || "";
+        workflowState.loadedFromDraft = !savedTemplate;
         workflowApplyTemplateData(saved.data, { fit: true });
+        workflowLoadTemplateList();
     } catch (_) {
     } finally {
         workflowState.restoringHistory = false;
@@ -5698,6 +5714,58 @@ function workflowWriteTemplates(templates) {
     localStorage.setItem(workflowTemplateStorageKey(), JSON.stringify(templates || []));
 }
 
+function workflowFindTemplateByKey(key) {
+    const safeKey = String(key || "").trim();
+    if (!safeKey) return null;
+    return workflowReadTemplates().find((tpl) => tpl.key === safeKey) || null;
+}
+
+function workflowBuildGeneratedName(prefix = "Workflow") {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, "0");
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    return `${prefix} ${day}/${month} ${hours}:${minutes}`;
+}
+
+function workflowUpsertTemplateRecord(template) {
+    const key = String(template?.key || "").trim() || `tpl-${Date.now()}`;
+    const name = String(template?.name || "").trim() || workflowBuildGeneratedName("Workflow");
+    const saved = {
+        key,
+        name,
+        updatedAt: Number(template?.updatedAt || Date.now()),
+        data: template?.data || workflowSerializeTemplate(),
+    };
+    const templates = workflowReadTemplates().filter((tpl) => tpl.key !== key).concat(saved);
+    workflowWriteTemplates(templates);
+    return saved;
+}
+
+function workflowShouldPreserveUnnamedCurrentWorkflow() {
+    if (workflowState.templateKey) return false;
+    return !!workflowState.loadedFromDraft || workflowState.undoStack.length > 1;
+}
+
+function workflowPersistCurrentWorkflow(options = {}) {
+    const currentTemplate = workflowFindTemplateByKey(workflowState.templateKey);
+    if (currentTemplate) {
+        return workflowUpsertTemplateRecord({
+            key: currentTemplate.key,
+            name: currentTemplate.name,
+            updatedAt: Date.now(),
+            data: workflowSerializeTemplate(),
+        });
+    }
+    if (!options.ensureNamed) return null;
+    return workflowUpsertTemplateRecord({
+        name: String(options.fallbackName || workflowBuildGeneratedName("Workflow anterior")).trim(),
+        updatedAt: Date.now(),
+        data: workflowSerializeTemplate(),
+    });
+}
+
 function workflowLoadTemplateList() {
     const select = document.getElementById("workflow-template-select");
     if (!select) return;
@@ -5953,26 +6021,40 @@ function workflowConfirmTemplateModal() {
 }
 
 async function workflowSaveTemplate() {
-    const current = workflowReadTemplates().find((tpl) => tpl.key === workflowState.templateKey);
+    const current = workflowFindTemplateByKey(workflowState.templateKey);
     const name = await workflowOpenTemplateModal(current?.name || "Workflow de vídeo");
     if (!name) return;
-    const templates = workflowReadTemplates();
-    const key = current?.key || `tpl-${Date.now()}`;
-    const saved = { key, name: name.trim(), updatedAt: Date.now(), data: workflowSerializeTemplate() };
-    const next = templates.filter((tpl) => tpl.key !== key).concat(saved);
-    workflowWriteTemplates(next);
-    workflowState.templateKey = key;
+    const saved = workflowUpsertTemplateRecord({
+        key: current?.key,
+        name: name.trim(),
+        updatedAt: Date.now(),
+        data: workflowSerializeTemplate(),
+    });
+    workflowState.templateKey = saved.key;
+    workflowState.loadedFromDraft = false;
     workflowLoadTemplateList();
     workflowSaveDraft();
     showToast("Template salvo.", "success");
 }
 
 function workflowLoadTemplate(key) {
-    workflowState.templateKey = key || "";
-    if (!key) return;
-    const template = workflowReadTemplates().find((tpl) => tpl.key === key);
+    const nextKey = String(key || "").trim();
+    if (nextKey === workflowState.templateKey) return;
+    workflowPersistCurrentWorkflow({
+        ensureNamed: workflowShouldPreserveUnnamedCurrentWorkflow(),
+        fallbackName: workflowBuildGeneratedName("Workflow anterior"),
+    });
+    workflowState.templateKey = nextKey;
+    workflowState.loadedFromDraft = false;
+    workflowLoadTemplateList();
+    if (!nextKey) {
+        workflowSaveDraft();
+        return;
+    }
+    const template = workflowFindTemplateByKey(nextKey);
     if (!template) return;
     workflowApplyTemplateData(template.data);
+    workflowSaveDraft();
 }
 
 function workflowDuplicateTemplate() {
@@ -5984,8 +6066,10 @@ function workflowDuplicateTemplate() {
     const copy = { ...template, key: `tpl-${Date.now()}`, name: name.trim(), updatedAt: Date.now() };
     workflowWriteTemplates(templates.concat(copy));
     workflowState.templateKey = copy.key;
+    workflowState.loadedFromDraft = false;
     workflowLoadTemplateList();
     workflowApplyTemplateData(copy.data);
+    workflowSaveDraft();
     showToast("Template duplicado.", "success");
 }
 
@@ -6015,25 +6099,46 @@ function workflowResetReferenceState() {
 }
 
 function workflowCreateBlankWorkflow() {
-    const hasNodes = document.querySelectorAll("#create-panel-workflow .workflow-node").length > 0;
-    const hasConnections = workflowState.connections.length > 0;
-    if ((hasNodes || hasConnections) && !confirm("Criar um novo workflow vazio?")) return;
+    return workflowCreateNamedBlankWorkflow();
+}
 
-    workflowState.blankMode = true;
-    workflowState.templateKey = "";
-    workflowLoadTemplateList();
-    workflowApplyTemplateData({
+async function workflowCreateNamedBlankWorkflow() {
+    const name = await workflowOpenTemplateModal("Novo workflow");
+    if (!name) return;
+
+    const shouldPreserveUnnamed = workflowShouldPreserveUnnamedCurrentWorkflow();
+    const preservedCurrent = workflowPersistCurrentWorkflow({
+        ensureNamed: shouldPreserveUnnamed,
+        fallbackName: workflowBuildGeneratedName("Workflow anterior"),
+    });
+    const blankData = {
         canvasMode: "blank",
         nodes: [],
         connections: [],
         nodeSeq: 1,
         zoom: 1,
-    }, { fit: true });
+    };
+    const created = workflowUpsertTemplateRecord({
+        name: name.trim(),
+        updatedAt: Date.now(),
+        data: blankData,
+    });
+
+    workflowState.blankMode = true;
+    workflowState.templateKey = created.key;
+    workflowState.loadedFromDraft = false;
+    workflowLoadTemplateList();
+    workflowApplyTemplateData(blankData, { fit: true });
     workflowState.undoStack = [];
     workflowState.redoStack = [];
     workflowRecordHistory();
     workflowUpdateHistoryButtons();
-    showToast("Workflow vazio criado.", "success");
+    workflowSaveDraft();
+    if (shouldPreserveUnnamed && preservedCurrent) {
+        showToast(`Workflow "${created.name}" criado. O anterior foi preservado como "${preservedCurrent.name}".`, "success");
+        return;
+    }
+    showToast(`Workflow "${created.name}" criado.`, "success");
 }
 
 function workflowApplyTemplate(type) {
