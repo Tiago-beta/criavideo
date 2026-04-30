@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v269 loaded");
+console.log("[CriaVideo] app.js v270 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4339,8 +4339,14 @@ function workflowEnhanceNodeControls(node) {
         btn._workflowBound = true;
         btn.addEventListener("click", () => workflowSelectPromptAiDuration(btn));
     });
+    node.querySelectorAll("[data-workflow-ai-persona]").forEach((btn) => {
+        if (btn._workflowBound) return;
+        btn._workflowBound = true;
+        btn.addEventListener("click", () => workflowSelectPromptAiPersona(btn));
+    });
     if (node.classList.contains("workflow-node-prompt")) {
         workflowSyncPromptAiDurationButtons(node);
+        workflowSyncPromptAiPersonaButtons(node);
     }
     if (node.classList.contains("workflow-node-images") && node.dataset.nodeId !== "images") {
         node.querySelectorAll("button").forEach((btn) => {
@@ -4382,6 +4388,7 @@ function workflowResolvePromptAiDuration(node) {
 
 function workflowPromptAiToolsMarkup(node) {
     const selectedDuration = workflowResolvePromptAiDuration(node);
+    const selectedPersona = workflowResolvePromptAiPersona(node);
     return `
         <div class="workflow-ai-tools workflow-ai-tools-prompt">
             <button class="workflow-ai-btn" type="button" title="IA para montar este prompt" onclick="workflowToggleAiTools(this)">IA</button>
@@ -4394,6 +4401,9 @@ function workflowPromptAiToolsMarkup(node) {
                 <button type="button" data-workflow-ai-style="cinematic">Cinemático</button>
                 <button type="button" data-workflow-ai-style="product">Produto</button>
                 <div style="flex-basis:100%;height:0"></div>
+                <span style="width:100%;font-size:0.68rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;">Persona de interação</span>
+                ${workflowPromptAiPersonaButtonsMarkup(selectedPersona)}
+                <div style="flex-basis:100%;height:0"></div>
                 <span style="width:100%;font-size:0.68rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;">Duração do prompt</span>
                 <button type="button" data-workflow-ai-duration="5" aria-pressed="${selectedDuration === 5 ? "true" : "false"}" style="padding:5px 8px;font-size:0.68rem;min-width:42px;">5s</button>
                 <button type="button" data-workflow-ai-duration="10" aria-pressed="${selectedDuration === 10 ? "true" : "false"}" style="padding:5px 8px;font-size:0.68rem;min-width:42px;">10s</button>
@@ -4401,6 +4411,30 @@ function workflowPromptAiToolsMarkup(node) {
             </div>
         </div>
     `;
+}
+
+function workflowPromptAiPersonaLabel(personaType) {
+    const labels = {
+        homem: "Homem",
+        mulher: "Mulher",
+        crianca: "Criança",
+        familia: "Família",
+        natureza: "Natureza",
+        desenho: "Desenho",
+        personalizado: "Personalizado",
+    };
+    return labels[personaType] || labels.natureza;
+}
+
+function workflowPromptAiPersonaButtonsMarkup(selectedPersona) {
+    return REALISTIC_PERSONA_TYPES.map((personaType) => {
+        const active = personaType === selectedPersona;
+        return `<button type="button" data-workflow-ai-persona="${personaType}" aria-pressed="${active ? "true" : "false"}">${workflowPromptAiPersonaLabel(personaType)}</button>`;
+    }).join("");
+}
+
+function workflowResolvePromptAiPersona(node) {
+    return _normalizeRealisticPersonaType(node?.dataset?.promptAiPersona || "natureza");
 }
 
 function workflowEnsurePromptAiTools(node) {
@@ -4415,7 +4449,7 @@ function workflowEnsurePromptAiTools(node) {
     });
 
     const tools = node.querySelector(".workflow-ai-tools");
-    if (tools?.querySelector("[data-workflow-ai-duration]")) return;
+    if (tools?.querySelector("[data-workflow-ai-duration]") && tools?.querySelector("[data-workflow-ai-persona]")) return;
 
     if (tools) {
         tools.remove();
@@ -4436,6 +4470,19 @@ function workflowSyncPromptAiDurationButtons(node) {
     });
 }
 
+function workflowSyncPromptAiPersonaButtons(node) {
+    if (!node?.classList?.contains("workflow-node-prompt")) return;
+    const selectedPersona = workflowResolvePromptAiPersona(node);
+    node.dataset.promptAiPersona = selectedPersona;
+    node.querySelectorAll("[data-workflow-ai-persona]").forEach((btn) => {
+        const active = String(btn.dataset.workflowAiPersona || "") === String(selectedPersona);
+        btn.setAttribute("aria-pressed", active ? "true" : "false");
+        btn.style.borderColor = active ? "#22d3ee" : "rgba(56, 189, 248, 0.52)";
+        btn.style.color = active ? "#fff" : "#dbeafe";
+        btn.style.background = active ? "rgba(34, 211, 238, 0.12)" : "rgba(6, 22, 40, 0.42)";
+    });
+}
+
 function workflowSelectPromptAiDuration(button) {
     const node = button?.closest?.(".workflow-node");
     const selectedDuration = parseInt(button?.dataset?.workflowAiDuration || "0", 10);
@@ -4446,6 +4493,15 @@ function workflowSelectPromptAiDuration(button) {
         durationSelect.value = String(selectedDuration);
     }
     workflowSyncPromptAiDurationButtons(node);
+    workflowRecordHistory();
+}
+
+function workflowSelectPromptAiPersona(button) {
+    const node = button?.closest?.(".workflow-node");
+    const selectedPersona = _normalizeRealisticPersonaType(button?.dataset?.workflowAiPersona || "natureza");
+    if (!node) return;
+    node.dataset.promptAiPersona = selectedPersona;
+    workflowSyncPromptAiPersonaButtons(node);
     workflowRecordHistory();
 }
 
@@ -4484,6 +4540,7 @@ function workflowToggleAiTools(button) {
     const node = button?.closest?.(".workflow-node");
     if (node?.classList?.contains("workflow-node-prompt")) {
         workflowSyncPromptAiDurationButtons(node);
+        workflowSyncPromptAiPersonaButtons(node);
     }
     const panel = button?.closest?.(".workflow-ai-tools")?.querySelector?.(".workflow-ai-choices");
     if (!panel) return;
@@ -4515,7 +4572,9 @@ async function workflowImproveCardPrompt(button) {
                 style,
                 engine,
                 duration,
-                interaction_persona: "nenhum",
+                interaction_persona: node?.classList?.contains("workflow-node-prompt")
+                    ? workflowResolvePromptAiPersona(node)
+                    : "nenhum",
                 persona_profile_id: 0,
                 persona_profile_ids: [],
                 has_reference_image: node?.classList?.contains("workflow-node-images") || workflowState.images.length > 0,
