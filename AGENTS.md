@@ -87,6 +87,8 @@ Se esses 4 pontos não forem sincronizados, o navegador pode continuar carregand
 ## Regras específicas de edição do editor
 
 - Ao mexer no editor (`static/app.js`, `static/index.html`, `static/style.css`), preservar recursos já restaurados anteriormente.
+- Em qualquer UI nova, priorizar visual moderno, pouco texto, mais ícones e menos blocos explicativos.
+- Evitar visual genérico/clean demais quando o pedido permitir algo mais marcante e direto.
 - Depois de qualquer hotfix no editor, validar no mínimo:
   - se houve deploy real no VPS
   - se o token novo de versão entrou no servidor

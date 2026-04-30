@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v282 loaded");
+console.log("[CriaVideo] app.js v283 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -18205,7 +18205,7 @@ function _editorSetInternetImportLoading(isLoading, message = "") {
     if (input) input.disabled = _editorInternetImportLoading;
     if (submit) {
         submit.disabled = _editorInternetImportLoading;
-        submit.textContent = _editorInternetImportLoading ? "Baixando..." : "Baixar e abrir";
+        submit.textContent = _editorInternetImportLoading ? "Carregando..." : "Carregar";
     }
     if (status) {
         status.textContent = String(message || "");
@@ -18226,8 +18226,8 @@ function _editorOpenInternetImportModal() {
 }
 window._editorOpenInternetImportModal = _editorOpenInternetImportModal;
 
-function _editorCloseInternetImportModal() {
-    if (_editorInternetImportLoading) return;
+function _editorCloseInternetImportModal(force = false) {
+    if (_editorInternetImportLoading && !force) return;
     _editorSetInternetImportLoading(false, "");
     const input = document.getElementById("editor-internet-url-input");
     if (input) input.value = "";
@@ -18259,23 +18259,23 @@ async function _editorImportVideoFromUrl() {
     }
 
     try {
-        _editorSetInternetImportLoading(true, "Baixando vídeo pelo Baixa Tudo...");
+        _editorSetInternetImportLoading(true, "Carregando vídeo...");
         const payload = await api("/video/editor/upload-video-url", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ source_url: rawUrl }),
         });
 
+        _editorCloseInternetImportModal(true);
         await loadEditorVideosList();
-        _editorCloseInternetImportModal();
 
         if (payload?.project_id) {
-            showToast("Vídeo importado! Abrindo editor...", "success");
+            showToast("Vídeo carregado! Abrindo editor...", "success");
             await openEditor(payload.project_id);
             return;
         }
 
-        showToast("Vídeo importado com sucesso.", "success");
+        showToast("Vídeo carregado com sucesso.", "success");
     } catch (err) {
         _editorSetInternetImportLoading(false, err?.message || "Erro ao importar vídeo");
         showToast("Erro ao importar vídeo da internet: " + (err?.message || "erro desconhecido"), "error");

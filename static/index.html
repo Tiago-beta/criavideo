@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260430-13">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260430-14">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 299;
+        var REQUIRED_VER = 300;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -671,7 +671,6 @@
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                             </div>
                             <strong>Enviar vídeo</strong>
-                            <small>Envie um vídeo e abra a edição automaticamente.</small>
                         </button>
 
                         <button class="mode-selection-card editor-start-card" type="button" onclick="_editorChooseStartMode('image_pc')">
@@ -679,7 +678,6 @@
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                             </div>
                             <strong>Enviar imagem</strong>
-                            <small>Prepara criação com imagens no fluxo de projeto.</small>
                         </button>
 
                         <button class="mode-selection-card editor-start-card" type="button" onclick="_editorChooseStartMode('library')">
@@ -687,7 +685,6 @@
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polygon points="11 11 16 14 11 17 11 11"/></svg>
                             </div>
                             <strong>Enviar da biblioteca</strong>
-                            <small>Escolha um vídeo finalizado da lista para editar.</small>
                         </button>
 
                         <button class="mode-selection-card editor-start-card" type="button" onclick="_editorChooseStartMode('internet')">
@@ -695,7 +692,6 @@
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 0 0 7.07 0l1.41-1.41a5 5 0 0 0-7.07-7.07L10 5"/><path d="M14 11a5 5 0 0 0-7.07 0L5.52 12.41a5 5 0 1 0 7.07 7.07L14 19"/></svg>
                             </div>
                             <strong>Carregar da internet</strong>
-                            <small>Cole um link e baixe o vídeo pelo Baixa Tudo para editar.</small>
                         </button>
                     </div>
                 </div>
@@ -712,14 +708,13 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label for="editor-internet-url-input">Link do vídeo</label>
-                    <input id="editor-internet-url-input" class="input" type="url" placeholder="https://www.youtube.com/watch?v=..." onkeydown="_editorHandleInternetImportKeydown(event)">
-                    <small class="muted">Use um link suportado pelo Baixa Tudo. O vídeo será baixado e aberto direto no editor.</small>
+                    <input id="editor-internet-url-input" class="input" type="url" placeholder="Cole o link do vídeo" onkeydown="_editorHandleInternetImportKeydown(event)">
                 </div>
                 <p id="editor-internet-url-status" class="muted" style="margin:0"></p>
             </div>
             <div class="modal-footer modal-footer-space">
                 <button class="btn btn-secondary" type="button" onclick="_editorCloseInternetImportModal()">Cancelar</button>
-                <button id="editor-internet-url-submit" class="btn btn-primary" type="button" onclick="_editorImportVideoFromUrl()">Baixar e abrir</button>
+                <button id="editor-internet-url-submit" class="btn btn-primary" type="button" onclick="_editorImportVideoFromUrl()">Carregar</button>
             </div>
         </div>
     </div>
@@ -3236,8 +3231,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260430-13"></script>
-    <script src="/video/static/pwa.js?v=20260430-13"></script>
+    <script src="/video/static/app.js?v=20260430-14"></script>
+    <script src="/video/static/pwa.js?v=20260430-14"></script>
 </body>
 </html>
 
