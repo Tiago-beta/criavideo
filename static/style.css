@@ -6693,6 +6693,11 @@ th,
     gap: 8px;
 }
 
+.similar-source-link-group .input,
+.similar-details-grid .input {
+    min-height: 54px;
+}
+
 .similar-upload-card {
     width: 100%;
     min-height: 132px;
@@ -6752,16 +6757,6 @@ th,
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-}
-
-.similar-upload-file-name {
-    min-width: 0;
-    flex: 1;
-    color: var(--text-muted);
-    font-size: 0.84rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .similar-panel-actions {

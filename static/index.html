@@ -1611,19 +1611,16 @@
                 <!-- ═══ PANEL: Semelhante ═══ -->
                 <div id="create-panel-similar" class="create-panel" hidden>
                     <div class="similar-panel-head">
-                        <h3 class="wizard-question">Criar vídeos semelhantes</h3>
                         <p class="wizard-hint">Cole um link público ou envie um vídeo do seu aparelho, analise as cenas e regenere apenas o que quiser antes de unir tudo.</p>
                     </div>
 
                     <div class="similar-source-grid">
                         <div class="form-group similar-source-link-group">
-                            <label>Link do vídeo de referência</label>
-                            <input id="similar-source-url" type="url" class="input" placeholder="https://www.youtube.com/watch?v=...">
+                            <input id="similar-source-url" type="url" class="input" placeholder="Link do vídeo de referência">
                             <small class="field-hint">Aceita URL pública de vídeo. O sistema baixa e analisa automaticamente em blocos.</small>
                         </div>
 
                         <div class="form-group similar-source-upload-group">
-                            <label>Carregar vídeo</label>
                             <button id="similar-source-upload-trigger" class="similar-upload-card" type="button">
                                 <span class="similar-upload-card-icon" aria-hidden="true">
                                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="16"/></svg>
@@ -1633,8 +1630,7 @@
                                     <small>Escolha um vídeo salvo no computador ou celular.</small>
                                 </span>
                             </button>
-                            <div class="similar-upload-meta-row">
-                                <span id="similar-source-file-name" class="similar-upload-file-name">Nenhum vídeo selecionado</span>
+                            <div id="similar-source-file-row" class="similar-upload-meta-row" hidden>
                                 <button id="similar-source-file-clear" class="btn btn-secondary btn-sm" type="button" hidden>Limpar</button>
                             </div>
                             <small class="field-hint">Formatos aceitos: MP4, MOV, AVI, WEBM e MKV.</small>
@@ -1654,11 +1650,9 @@
 
                     <div class="wizard-details-grid similar-details-grid">
                         <div class="form-group">
-                            <label>Título do projeto</label>
-                            <input id="similar-title" type="text" class="input" placeholder="Ex: Versão semelhante para campanha">
+                            <input id="similar-title" type="text" class="input" placeholder="Título do projeto">
                         </div>
                         <div class="form-group">
-                            <label>Formato final</label>
                             <select id="similar-aspect" class="input">
                                 <option value="16:9">16:9 (YouTube)</option>
                                 <option value="9:16">9:16 (TikTok/Reels)</option>

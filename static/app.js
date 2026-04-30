@@ -3645,17 +3645,15 @@ function _isSupportedSimilarSourceVideoFile(file) {
 
 function _syncSimilarSourceFileUi() {
     const triggerEl = document.getElementById("similar-source-upload-trigger");
-    const fileNameEl = document.getElementById("similar-source-file-name");
+    const rowEl = document.getElementById("similar-source-file-row");
     const clearBtn = document.getElementById("similar-source-file-clear");
     const hasFile = !!similarState.sourceVideoFile;
 
     if (triggerEl) {
         triggerEl.classList.toggle("has-file", hasFile);
     }
-    if (fileNameEl) {
-        fileNameEl.textContent = hasFile
-            ? String(similarState.sourceVideoName || similarState.sourceVideoFile?.name || "Video selecionado")
-            : "Nenhum vídeo selecionado";
+    if (rowEl) {
+        rowEl.hidden = !hasFile;
     }
     if (clearBtn) {
         clearBtn.hidden = !hasFile;
