@@ -900,6 +900,93 @@ async def upload_music(
     }
 
 
+def _build_editor_baixatudo_client() -> BaixaTudoClient:
+    return BaixaTudoClient(
+        base_url=settings.baixatudo_api_url,
+        api_key=settings.baixatudo_api_key,
+        timeout_seconds=settings.baixatudo_timeout_seconds,
+        poll_interval_seconds=settings.baixatudo_poll_interval_seconds,
+        max_wait_seconds=settings.baixatudo_max_wait_seconds,
+    )
+
+
+async def _download_editor_video_from_url(
+    user_id: int,
+    source_url: str,
+    formato: str = "video_melhor",
+    subfolder: str = "videos",
+    filename_prefix: str = "video_url",
+) -> tuple[Path, object]:
+    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user_id) / subfolder
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    temp_output = upload_dir / f"{filename_prefix}_{uuid.uuid4().hex[:10]}.mp4"
+    client = _build_editor_baixatudo_client()
+
+    try:
+        download_result = await client.download_video(
+            source_url=source_url,
+            output_path=str(temp_output),
+            formato=str(formato or "video_melhor").strip() or "video_melhor",
+        )
+    except BaixaTudoError as exc:
+        raise HTTPException(502, str(exc))
+
+    downloaded_path = Path(str(download_result.output_path or "").strip())
+    if not downloaded_path.exists() or downloaded_path.stat().st_size <= 0:
+        raise HTTPException(500, "O vídeo baixado veio vazio ou não foi encontrado")
+
+    final_ext = downloaded_path.suffix.lower() or ".mp4"
+    final_path = upload_dir / f"{filename_prefix}_{uuid.uuid4().hex[:10]}{final_ext}"
+    if downloaded_path != final_path:
+        shutil.move(str(downloaded_path), str(final_path))
+    else:
+        final_path = downloaded_path
+
+    return final_path, download_result
+
+
+def _extract_audio_from_editor_video(src_video: Path, output_dir: Path, log_label: str = "editor video") -> dict:
+    if not _probe_has_audio_stream(str(src_video)):
+        raise HTTPException(400, "Este vídeo não possui faixa de áudio")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_audio = output_dir / f"music_from_video_{uuid.uuid4().hex[:8]}.m4a"
+
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", str(src_video),
+                "-map", "0:a:0",
+                "-vn",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-movflags", "+faststart",
+                str(out_audio),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if proc.returncode != 0:
+            logger.error("[editor] Failed to extract audio from %s: %s", log_label, (proc.stderr or "")[-1200:])
+            out_audio.unlink(missing_ok=True)
+            raise HTTPException(500, "Falha ao extrair áudio do vídeo")
+
+        if not out_audio.exists() or out_audio.stat().st_size <= 0:
+            out_audio.unlink(missing_ok=True)
+            raise HTTPException(500, "Falha ao extrair áudio do vídeo")
+
+        return {
+            "path": str(out_audio),
+            "media_url": _to_media_url(str(out_audio)),
+        }
+    except subprocess.TimeoutExpired:
+        out_audio.unlink(missing_ok=True)
+        raise HTTPException(500, "Timeout ao extrair áudio do vídeo")
+
+
 @router.post("/upload-video-audio")
 async def upload_video_audio(
     file: UploadFile = File(...),
@@ -936,44 +1023,52 @@ async def upload_video_audio(
         src_video.unlink(missing_ok=True)
         raise HTTPException(400, "Arquivo vazio")
 
-    if not _probe_has_audio_stream(str(src_video)):
-        src_video.unlink(missing_ok=True)
-        raise HTTPException(400, "Este vídeo não possui faixa de áudio")
-
     try:
-        proc = subprocess.run(
-            [
-                "ffmpeg", "-y",
-                "-i", str(src_video),
-                "-map", "0:a:0",
-                "-vn",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-movflags", "+faststart",
-                str(out_audio),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-        if proc.returncode != 0:
-            logger.error("[editor] Failed to extract audio from uploaded video: %s", (proc.stderr or "")[-1200:])
-            out_audio.unlink(missing_ok=True)
-            raise HTTPException(500, "Falha ao extrair áudio do vídeo")
-
-        if not out_audio.exists() or out_audio.stat().st_size <= 0:
-            out_audio.unlink(missing_ok=True)
-            raise HTTPException(500, "Falha ao extrair áudio do vídeo")
-
-        return {
-            "path": str(out_audio),
-            "media_url": _to_media_url(str(out_audio)),
-        }
-    except subprocess.TimeoutExpired:
-        out_audio.unlink(missing_ok=True)
-        raise HTTPException(500, "Timeout ao extrair áudio do vídeo")
+        return _extract_audio_from_editor_video(src_video, upload_dir, "uploaded video")
     finally:
         src_video.unlink(missing_ok=True)
+
+
+@router.post("/upload-video-audio-url")
+async def upload_video_audio_url(
+    req: EditorImportVideoUrlRequest,
+    user=Depends(get_current_user),
+):
+    source_url = str(req.source_url or "").strip()
+    if not source_url:
+        raise HTTPException(400, "Cole um link de vídeo antes de importar")
+    if not source_url.startswith(("http://", "https://")):
+        raise HTTPException(400, "Informe uma URL válida para importar o vídeo")
+    if not (settings.baixatudo_api_url and settings.baixatudo_api_key):
+        raise HTTPException(503, "Integração Baixa Tudo não configurada no servidor")
+
+    final_video, download_result = await _download_editor_video_from_url(
+        user_id=int(user["id"]),
+        source_url=source_url,
+        formato=req.formato,
+        subfolder="audio_videos",
+        filename_prefix="music_video_url",
+    )
+
+    try:
+        payload = _extract_audio_from_editor_video(final_video, final_video.parent, "remote video")
+    except HTTPException:
+        final_video.unlink(missing_ok=True)
+        raise
+
+    preview_url = _to_media_url(str(final_video))
+    if not preview_url:
+        raise HTTPException(500, "Não foi possível gerar a prévia do vídeo importado")
+
+    payload.update(
+        {
+            "preview_url": preview_url,
+            "file_name": str(download_result.file_name or final_video.name).strip() or final_video.name,
+            "source_url": str(download_result.source_url or source_url).strip(),
+            "normalized_url": str(download_result.normalized_url or source_url).strip(),
+        }
+    )
+    return payload
 
 
 @router.post("/upload-video")
@@ -1089,37 +1184,13 @@ async def upload_video_url(
     if not (settings.baixatudo_api_url and settings.baixatudo_api_key):
         raise HTTPException(503, "Integração Baixa Tudo não configurada no servidor")
 
-    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "videos"
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    temp_output = upload_dir / f"video_url_{uuid.uuid4().hex[:10]}.mp4"
-    client = BaixaTudoClient(
-        base_url=settings.baixatudo_api_url,
-        api_key=settings.baixatudo_api_key,
-        timeout_seconds=settings.baixatudo_timeout_seconds,
-        poll_interval_seconds=settings.baixatudo_poll_interval_seconds,
-        max_wait_seconds=settings.baixatudo_max_wait_seconds,
+    final_path, download_result = await _download_editor_video_from_url(
+        user_id=int(user["id"]),
+        source_url=source_url,
+        formato=req.formato,
+        subfolder="videos",
+        filename_prefix="video_url",
     )
-
-    try:
-        download_result = await client.download_video(
-            source_url=source_url,
-            output_path=str(temp_output),
-            formato=str(req.formato or "video_melhor").strip() or "video_melhor",
-        )
-    except BaixaTudoError as exc:
-        raise HTTPException(502, str(exc))
-
-    downloaded_path = Path(str(download_result.output_path or "").strip())
-    if not downloaded_path.exists() or downloaded_path.stat().st_size <= 0:
-        raise HTTPException(500, "O vídeo baixado veio vazio ou não foi encontrado")
-
-    final_ext = downloaded_path.suffix.lower() or ".mp4"
-    final_path = upload_dir / f"video_url_{uuid.uuid4().hex[:10]}{final_ext}"
-    if downloaded_path != final_path:
-        shutil.move(str(downloaded_path), str(final_path))
-    else:
-        final_path = downloaded_path
 
     return await _create_editor_video_project(
         db=db,

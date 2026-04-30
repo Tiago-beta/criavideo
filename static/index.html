@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260430-14">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260430-15">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 300;
+        var REQUIRED_VER = 301;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -715,6 +715,57 @@
             <div class="modal-footer modal-footer-space">
                 <button class="btn btn-secondary" type="button" onclick="_editorCloseInternetImportModal()">Cancelar</button>
                 <button id="editor-internet-url-submit" class="btn btn-primary" type="button" onclick="_editorImportVideoFromUrl()">Carregar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-editor-audio-video-source" class="modal">
+        <div class="modal-content modal-content-wide editor-audio-source-modal">
+            <div class="modal-header">
+                <h3>Extrair áudio</h3>
+                <button class="modal-close" onclick="_editorCloseAudioVideoSourceModal()" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="editor-audio-source-switch">
+                    <button id="editor-audio-source-mode-local" class="editor-audio-source-choice active" type="button" onclick="_editorSetAudioVideoSourceMode('local')">
+                        <span class="editor-audio-source-choice-icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        </span>
+                        <span class="editor-audio-source-choice-label">
+                            <strong>Local</strong>
+                        </span>
+                    </button>
+                    <button id="editor-audio-source-mode-internet" class="editor-audio-source-choice" type="button" onclick="_editorSetAudioVideoSourceMode('internet')">
+                        <span class="editor-audio-source-choice-icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.07 0l1.41-1.41a5 5 0 0 0-7.07-7.07L10 5"/><path d="M14 11a5 5 0 0 0-7.07 0L5.52 12.41a5 5 0 1 0 7.07 7.07L14 19"/></svg>
+                        </span>
+                        <span class="editor-audio-source-choice-label">
+                            <strong>Internet</strong>
+                        </span>
+                    </button>
+                </div>
+
+                <div id="editor-audio-source-local-panel" class="editor-audio-source-panel">
+                    <button class="editor-audio-source-local-card" type="button" onclick="_editorChooseLocalVideoForAudio()">
+                        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="5" width="15" height="14" rx="2"/><polygon points="22 7 16 12 22 17 22 7"/></svg>
+                        <strong>Selecionar vídeo</strong>
+                    </button>
+                    <input id="editor-audio-source-local-input" type="file" accept="video/*" hidden onchange="_editorUploadVideoForMusic(this)">
+                </div>
+
+                <div id="editor-audio-source-internet-panel" class="editor-audio-source-panel" hidden>
+                    <div class="editor-audio-source-link-shell">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.07 0l1.41-1.41a5 5 0 0 0-7.07-7.07L10 5"/><path d="M14 11a5 5 0 0 0-7.07 0L5.52 12.41a5 5 0 1 0 7.07 7.07L14 19"/></svg>
+                        <input id="editor-audio-video-url-input" class="input editor-audio-video-url-input" type="url" placeholder="Cole o link do vídeo" oninput="_editorHandleAudioVideoUrlInput(this.value)" onkeydown="_editorHandleAudioVideoUrlKeydown(event)">
+                    </div>
+                    <div id="editor-audio-video-preview-host" class="editor-audio-video-preview-host"></div>
+                </div>
+
+                <p id="editor-audio-video-modal-status" class="editor-audio-video-modal-status" hidden></p>
+            </div>
+            <div class="modal-footer modal-footer-space">
+                <button class="btn btn-secondary" type="button" onclick="_editorCloseAudioVideoSourceModal()">Cancelar</button>
+                <button id="editor-audio-video-modal-submit" class="btn btn-primary" type="button" onclick="_editorSubmitAudioVideoSourceModal()">Selecionar vídeo</button>
             </div>
         </div>
     </div>
@@ -3231,8 +3282,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260430-14"></script>
-    <script src="/video/static/pwa.js?v=20260430-14"></script>
+    <script src="/video/static/app.js?v=20260430-15"></script>
+    <script src="/video/static/pwa.js?v=20260430-15"></script>
 </body>
 </html>
 

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v283 loaded");
+console.log("[CriaVideo] app.js v284 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -16675,6 +16675,14 @@ const EDITOR_DRAFT_STORAGE_PREFIX = "editor_draft_v1_";
 let _editorDraftPersistTimer = 0;
 let _editorSubtitleModalTargetId = "";
 let _editorInternetImportLoading = false;
+let _editorAudioVideoSourceModal = {
+    open: false,
+    mode: "local",
+    loading: false,
+    status: "",
+    error: "",
+    remoteResult: null,
+};
 
 function _editorGetDraftStorageKey(projectId = 0) {
     const pid = Number(projectId || _editor.projectId || 0);
@@ -19371,6 +19379,7 @@ async function openEditor(projectId, options = {}) {
         _editorResetSourceWaveformState();
         _editorCloseAIMusicModal(true);
         _editorResetAIMusicModalState();
+        _editorCloseAudioVideoSourceModal(true);
 
         document.getElementById("editor-select-view").hidden = true;
         document.getElementById("editor-workspace").hidden = false;
@@ -19457,6 +19466,7 @@ function closeEditor() {
     _editorCloseLayerVideoLibrary();
     _editorCloseAIMusicModal(true);
     _editorResetAIMusicModalState();
+    _editorCloseAudioVideoSourceModal(true);
     const video = document.getElementById("editor-video");
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = false;
@@ -20426,15 +20436,14 @@ function _editorRenderProps() {
                     Enviar arquivo de audio
                 </button>
                 <input type="file" id="editor-music-upload" accept="audio/*" hidden onchange="_editorUploadMusic(this)">
-                <button class="editor-add-btn" style="margin-top:8px" onclick="document.getElementById('editor-music-video-upload').click()">
+                <button class="editor-add-btn" style="margin-top:8px" onclick="_editorOpenAudioVideoSourceModal()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="15" height="14" rx="2"/><polygon points="22 7 16 12 22 17 22 7"/></svg>
                     Extrair audio de video
                 </button>
-                <input type="file" id="editor-music-video-upload" accept="video/*" hidden onchange="_editorUploadVideoForMusic(this)">
                 ${_editor.musicUrl ? `
                     <div class="editor-music-current">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                        <div class="editor-music-info">Audio adicionado<small>${_editor._musicSource === "video" ? "Extraido de video enviado" : _editor._musicSource === "ai" ? "Gerado por IA (Tevoxi)" : "Arquivo de audio carregado"}</small></div>
+                        <div class="editor-music-info">Audio adicionado<small>${_editor._musicSource === "video" ? "Extraido de video" : _editor._musicSource === "ai" ? "Gerado por IA (Tevoxi)" : "Arquivo de audio carregado"}</small></div>
                         <button class="sub-delete" onclick="_editorRemoveMusic()">✕</button>
                     </div>
                     <label>Volume do audio</label>
@@ -21336,43 +21345,279 @@ function _editorUploadMusic(input) {
 }
 window._editorUploadMusic = _editorUploadMusic;
 
+function _editorResolveMediaUrl(rawValue = "") {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return "";
+    return raw.startsWith("/") ? `${API.replace("/api", "")}${raw}` : raw;
+}
+
+function _editorApplyVideoAudioSource(payload) {
+    const serverPath = String(payload?.path || "").trim();
+    const mediaUrl = _editorResolveMediaUrl(payload?.media_url);
+    if (!serverPath || !mediaUrl) {
+        throw new Error("Falha ao extrair audio do video");
+    }
+
+    _editorSaveState();
+    _editor._musicSource = "video";
+    _editor._musicFile = null;
+    _editor._musicServerPath = serverPath;
+    _editor.musicUrl = mediaUrl;
+    _editorSetMusicPreviewSource(_editor.musicUrl || "");
+
+    _editor.audioSegments = [{ id: _editorGenId(), start: 0, end: _editorGetTimelineDuration(), sourceStart: 0 }];
+    _editor.selectedTracks = ["video", "audio"];
+    _editor.selectedClip = { kind: "music", id: "music" };
+    _editorRefreshQuickActions();
+    _editorRenderProps();
+    _editorRenderTimeline();
+}
+
+function _editorResetAudioVideoSourceModalState() {
+    _editorAudioVideoSourceModal.open = false;
+    _editorAudioVideoSourceModal.mode = "local";
+    _editorAudioVideoSourceModal.loading = false;
+    _editorAudioVideoSourceModal.status = "";
+    _editorAudioVideoSourceModal.error = "";
+    _editorAudioVideoSourceModal.remoteResult = null;
+
+    const input = document.getElementById("editor-audio-video-url-input");
+    if (input) input.value = "";
+    const localInput = document.getElementById("editor-audio-source-local-input");
+    if (localInput) localInput.value = "";
+}
+
+function _editorRenderAudioVideoSourceModal() {
+    const localBtn = document.getElementById("editor-audio-source-mode-local");
+    const internetBtn = document.getElementById("editor-audio-source-mode-internet");
+    const localPanel = document.getElementById("editor-audio-source-local-panel");
+    const internetPanel = document.getElementById("editor-audio-source-internet-panel");
+    const submit = document.getElementById("editor-audio-video-modal-submit");
+    const input = document.getElementById("editor-audio-video-url-input");
+    const previewHost = document.getElementById("editor-audio-video-preview-host");
+    const status = document.getElementById("editor-audio-video-modal-status");
+    const localInput = document.getElementById("editor-audio-source-local-input");
+    if (!localBtn || !internetBtn || !localPanel || !internetPanel || !submit || !previewHost || !status) return;
+
+    const mode = _editorAudioVideoSourceModal.mode === "internet" ? "internet" : "local";
+    localBtn.classList.toggle("active", mode === "local");
+    internetBtn.classList.toggle("active", mode === "internet");
+    localPanel.hidden = mode !== "local";
+    internetPanel.hidden = mode !== "internet";
+
+    if (input) input.disabled = Boolean(_editorAudioVideoSourceModal.loading);
+    if (localInput) localInput.disabled = Boolean(_editorAudioVideoSourceModal.loading);
+
+    let submitLabel = "Selecionar vídeo";
+    let submitDisabled = Boolean(_editorAudioVideoSourceModal.loading);
+    if (mode === "internet") {
+        submitLabel = _editorAudioVideoSourceModal.remoteResult ? "Usar áudio" : "Carregar";
+        submitDisabled = submitDisabled || (!_editorAudioVideoSourceModal.remoteResult && !String(input?.value || "").trim());
+    }
+    if (_editorAudioVideoSourceModal.loading) {
+        submitLabel = mode === "local" ? "Extraindo..." : "Carregando...";
+    }
+    submit.textContent = submitLabel;
+    submit.disabled = submitDisabled;
+
+    if (mode === "internet") {
+        const result = _editorAudioVideoSourceModal.remoteResult;
+        if (result?.preview_url) {
+            const previewUrl = esc(_editorResolveMediaUrl(result.preview_url));
+            const fileName = esc(String(result.file_name || "video"));
+            const sourceUrl = String(result.normalized_url || result.source_url || "").trim();
+            const sourceLink = sourceUrl
+                ? `<a class="workflow-media-item-link" href="${esc(sourceUrl)}" target="_blank" rel="noopener noreferrer">Abrir original</a>`
+                : "";
+            previewHost.innerHTML = `
+                <div class="workflow-media-item editor-audio-video-preview-card">
+                    <div class="workflow-media-item-main">
+                        <video class="workflow-media-preview" src="${previewUrl}" controls playsinline preload="metadata"></video>
+                        <span class="workflow-media-item-label">${fileName}</span>
+                        ${sourceLink}
+                    </div>
+                </div>
+            `;
+        } else {
+            previewHost.innerHTML = `
+                <div class="editor-audio-video-preview-empty">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 13a5 5 0 0 0 7.07 0l1.41-1.41a5 5 0 0 0-7.07-7.07L10 5"/><path d="M14 11a5 5 0 0 0-7.07 0L5.52 12.41a5 5 0 1 0 7.07 7.07L14 19"/></svg>
+                    <span>Cole um link</span>
+                </div>
+            `;
+        }
+    } else {
+        previewHost.innerHTML = "";
+    }
+
+    const statusMessage = String(_editorAudioVideoSourceModal.error || _editorAudioVideoSourceModal.status || "").trim();
+    status.hidden = !statusMessage;
+    status.textContent = statusMessage;
+    status.classList.toggle("error", Boolean(_editorAudioVideoSourceModal.error));
+}
+
+function _editorOpenAudioVideoSourceModal() {
+    _editorResetAudioVideoSourceModalState();
+    _editorAudioVideoSourceModal.open = true;
+    openModal("modal-editor-audio-video-source");
+    _editorRenderAudioVideoSourceModal();
+}
+window._editorOpenAudioVideoSourceModal = _editorOpenAudioVideoSourceModal;
+
+function _editorCloseAudioVideoSourceModal(forceClose = false) {
+    if (_editorAudioVideoSourceModal.loading && !forceClose) return;
+    _editorResetAudioVideoSourceModalState();
+    closeModal("modal-editor-audio-video-source");
+}
+window._editorCloseAudioVideoSourceModal = _editorCloseAudioVideoSourceModal;
+
+function _editorSetAudioVideoSourceMode(mode) {
+    if (_editorAudioVideoSourceModal.loading) return;
+    _editorAudioVideoSourceModal.mode = mode === "internet" ? "internet" : "local";
+    _editorAudioVideoSourceModal.status = "";
+    _editorAudioVideoSourceModal.error = "";
+    _editorRenderAudioVideoSourceModal();
+    if (_editorAudioVideoSourceModal.mode === "internet") {
+        requestAnimationFrame(() => document.getElementById("editor-audio-video-url-input")?.focus());
+    }
+}
+window._editorSetAudioVideoSourceMode = _editorSetAudioVideoSourceMode;
+
+function _editorChooseLocalVideoForAudio() {
+    if (_editorAudioVideoSourceModal.loading) return;
+    document.getElementById("editor-audio-source-local-input")?.click();
+}
+window._editorChooseLocalVideoForAudio = _editorChooseLocalVideoForAudio;
+
+function _editorHandleAudioVideoUrlInput(value) {
+    const nextValue = String(value || "").trim();
+    const currentResult = _editorAudioVideoSourceModal.remoteResult;
+    const currentUrl = String(currentResult?.normalized_url || currentResult?.source_url || "").trim();
+    if (currentResult && nextValue && nextValue !== currentUrl) {
+        _editorAudioVideoSourceModal.remoteResult = null;
+    }
+    _editorAudioVideoSourceModal.status = "";
+    _editorAudioVideoSourceModal.error = "";
+    _editorRenderAudioVideoSourceModal();
+}
+window._editorHandleAudioVideoUrlInput = _editorHandleAudioVideoUrlInput;
+
+function _editorHandleAudioVideoUrlKeydown(event) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    _editorSubmitAudioVideoSourceModal();
+}
+window._editorHandleAudioVideoUrlKeydown = _editorHandleAudioVideoUrlKeydown;
+
+async function _editorLoadVideoFromUrlForAudio() {
+    if (_editorAudioVideoSourceModal.loading) return;
+    const input = document.getElementById("editor-audio-video-url-input");
+    const rawUrl = String(input?.value || "").trim();
+    if (!rawUrl) {
+        _editorAudioVideoSourceModal.error = "Cole um link de vídeo.";
+        _editorRenderAudioVideoSourceModal();
+        input?.focus();
+        return;
+    }
+    if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
+        _editorAudioVideoSourceModal.error = "Informe um link válido.";
+        _editorRenderAudioVideoSourceModal();
+        input?.focus();
+        return;
+    }
+
+    _editorAudioVideoSourceModal.loading = true;
+    _editorAudioVideoSourceModal.status = "Carregando vídeo...";
+    _editorAudioVideoSourceModal.error = "";
+    _editorAudioVideoSourceModal.remoteResult = null;
+    _editorRenderAudioVideoSourceModal();
+
+    try {
+        const payload = await api("/video/editor/upload-video-audio-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ source_url: rawUrl }),
+        });
+        if (!payload?.path || !payload?.media_url || !payload?.preview_url) {
+            throw new Error("Falha ao carregar a prévia do vídeo");
+        }
+        if (input && payload?.normalized_url) {
+            input.value = String(payload.normalized_url || "").trim();
+        }
+        _editorAudioVideoSourceModal.remoteResult = {
+            ...payload,
+            media_url: _editorResolveMediaUrl(payload.media_url),
+            preview_url: _editorResolveMediaUrl(payload.preview_url),
+        };
+        _editorAudioVideoSourceModal.status = "";
+        _editorAudioVideoSourceModal.error = "";
+    } catch (err) {
+        _editorAudioVideoSourceModal.remoteResult = null;
+        _editorAudioVideoSourceModal.error = err?.message || "Erro ao carregar vídeo";
+    } finally {
+        _editorAudioVideoSourceModal.loading = false;
+        _editorRenderAudioVideoSourceModal();
+    }
+}
+window._editorLoadVideoFromUrlForAudio = _editorLoadVideoFromUrlForAudio;
+
+async function _editorSubmitAudioVideoSourceModal() {
+    if (_editorAudioVideoSourceModal.loading) return;
+    if (_editorAudioVideoSourceModal.mode === "local") {
+        _editorChooseLocalVideoForAudio();
+        return;
+    }
+    if (_editorAudioVideoSourceModal.remoteResult) {
+        try {
+            _editorApplyVideoAudioSource(_editorAudioVideoSourceModal.remoteResult);
+            _editorCloseAudioVideoSourceModal(true);
+            showToast("Áudio extraído do vídeo com sucesso!", "success");
+        } catch (err) {
+            _editorAudioVideoSourceModal.error = err?.message || "Erro ao aplicar áudio";
+            _editorRenderAudioVideoSourceModal();
+        }
+        return;
+    }
+    await _editorLoadVideoFromUrlForAudio();
+}
+window._editorSubmitAudioVideoSourceModal = _editorSubmitAudioVideoSourceModal;
+
 async function _editorUploadVideoForMusic(input) {
     const file = input.files?.[0];
     if (!file) return;
+    const isModalFlow = Boolean(_editorAudioVideoSourceModal.open);
     try {
-        _editorSaveState();
-        showToast("Extraindo áudio do vídeo...");
+        if (isModalFlow) {
+            _editorAudioVideoSourceModal.loading = true;
+            _editorAudioVideoSourceModal.status = "Extraindo áudio...";
+            _editorAudioVideoSourceModal.error = "";
+            _editorRenderAudioVideoSourceModal();
+        } else {
+            showToast("Extraindo áudio do vídeo...");
+        }
 
         const formData = new FormData();
         formData.append("file", file);
         const payload = await apiForm("/video/editor/upload-video-audio", formData, { method: "POST" });
-
-        const serverPath = String(payload?.path || "").trim();
-        const mediaUrlRaw = String(payload?.media_url || "").trim();
-        const mediaUrl = mediaUrlRaw.startsWith("/")
-            ? `${API.replace("/api", "")}${mediaUrlRaw}`
-            : mediaUrlRaw;
-        if (!serverPath) {
-            throw new Error("Falha ao extrair audio do video");
+        _editorApplyVideoAudioSource(payload);
+        if (isModalFlow) {
+            _editorCloseAudioVideoSourceModal(true);
         }
-
-        _editor._musicSource = "video";
-        _editor._musicFile = null;
-        _editor._musicServerPath = serverPath;
-        _editor.musicUrl = mediaUrl;
-        _editorSetMusicPreviewSource(_editor.musicUrl || "");
-
-        _editor.audioSegments = [{ id: _editorGenId(), start: 0, end: _editorGetTimelineDuration(), sourceStart: 0 }];
-        _editor.selectedTracks = ["video", "audio"];
-        _editor.selectedClip = { kind: "music", id: "music" };
-        _editorRefreshQuickActions();
-        _editorRenderProps();
-        _editorRenderTimeline();
         showToast("Áudio extraído do vídeo com sucesso!", "success");
     } catch (err) {
+        if (isModalFlow) {
+            _editorAudioVideoSourceModal.error = err?.message || "erro desconhecido";
+            _editorAudioVideoSourceModal.status = "";
+            _editorAudioVideoSourceModal.loading = false;
+            _editorRenderAudioVideoSourceModal();
+        }
         showToast("Erro ao extrair áudio do vídeo: " + (err?.message || "erro desconhecido"), "error");
     } finally {
         if (input) input.value = "";
+        if (isModalFlow && _editorAudioVideoSourceModal.open) {
+            _editorAudioVideoSourceModal.loading = false;
+            _editorRenderAudioVideoSourceModal();
+        }
     }
 }
 window._editorUploadVideoForMusic = _editorUploadVideoForMusic;
