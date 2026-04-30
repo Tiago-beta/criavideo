@@ -24,6 +24,7 @@ from app.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
 from app.models import VideoProject, VideoRender, VideoStatus
+from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
 from app.services.tevoxi_music import generate_music_from_theme
 
 logger = logging.getLogger(__name__)
@@ -785,6 +786,11 @@ class GenerateTevoxiMusicRequest(BaseModel):
     duration_seconds: float = 0
 
 
+class EditorImportVideoUrlRequest(BaseModel):
+    source_url: str
+    formato: str = "video_melhor"
+
+
 @router.post("/generate-tevoxi-music")
 async def generate_tevoxi_music(
     req: GenerateTevoxiMusicRequest,
@@ -1006,16 +1012,41 @@ async def upload_video(
             dest.unlink(missing_ok=True)
         raise HTTPException(400, "Arquivo vazio")
 
-    duration, detected_aspect = _probe_video_metadata(str(dest))
-    title = (Path(file.filename or "Vídeo enviado").stem or "Vídeo enviado").strip()[:500]
+    return await _create_editor_video_project(
+        db=db,
+        user_id=int(user["id"]),
+        video_path=dest,
+        original_name=str(file.filename or "Vídeo enviado"),
+        file_size=written,
+        description="Vídeo enviado para edição",
+    )
+
+
+async def _create_editor_video_project(
+    db: AsyncSession,
+    user_id: int,
+    video_path: Path,
+    original_name: str,
+    file_size: int | None = None,
+    description: str = "Vídeo enviado para edição",
+) -> dict:
+    duration, detected_aspect = _probe_video_metadata(str(video_path))
+    title = (Path(original_name or "Vídeo enviado").stem or "Vídeo enviado").strip()[:500]
     if not title:
         title = "Vídeo enviado"
 
+    resolved_size = int(file_size or 0) if file_size else 0
+    if resolved_size <= 0:
+        try:
+            resolved_size = int(video_path.stat().st_size)
+        except Exception:
+            resolved_size = 0
+
     project = VideoProject(
-        user_id=user["id"],
+        user_id=user_id,
         track_id=0,
         title=title,
-        description="Vídeo enviado para edição",
+        description=description,
         aspect_ratio=detected_aspect or "16:9",
         status=VideoStatus.COMPLETED,
         progress=100,
@@ -1028,20 +1059,76 @@ async def upload_video(
     render = VideoRender(
         project_id=project.id,
         format=project.aspect_ratio,
-        file_path=str(dest),
-        file_size=written,
+        file_path=str(video_path),
+        file_size=resolved_size or None,
         duration=duration if duration > 0 else None,
     )
     db.add(render)
     await db.commit()
 
-    video_url = _to_media_url(str(dest))
+    video_url = _to_media_url(str(video_path))
     return {
         "project_id": project.id,
         "video_url": video_url,
         "duration": duration,
         "aspect_ratio": project.aspect_ratio,
     }
+
+
+@router.post("/upload-video-url")
+async def upload_video_url(
+    req: EditorImportVideoUrlRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    source_url = str(req.source_url or "").strip()
+    if not source_url:
+        raise HTTPException(400, "Cole um link de vídeo antes de importar")
+    if not source_url.startswith(("http://", "https://")):
+        raise HTTPException(400, "Informe uma URL válida para importar o vídeo")
+    if not (settings.baixatudo_api_url and settings.baixatudo_api_key):
+        raise HTTPException(503, "Integração Baixa Tudo não configurada no servidor")
+
+    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "videos"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    temp_output = upload_dir / f"video_url_{uuid.uuid4().hex[:10]}.mp4"
+    client = BaixaTudoClient(
+        base_url=settings.baixatudo_api_url,
+        api_key=settings.baixatudo_api_key,
+        timeout_seconds=settings.baixatudo_timeout_seconds,
+        poll_interval_seconds=settings.baixatudo_poll_interval_seconds,
+        max_wait_seconds=settings.baixatudo_max_wait_seconds,
+    )
+
+    try:
+        download_result = await client.download_video(
+            source_url=source_url,
+            output_path=str(temp_output),
+            formato=str(req.formato or "video_melhor").strip() or "video_melhor",
+        )
+    except BaixaTudoError as exc:
+        raise HTTPException(502, str(exc))
+
+    downloaded_path = Path(str(download_result.output_path or "").strip())
+    if not downloaded_path.exists() or downloaded_path.stat().st_size <= 0:
+        raise HTTPException(500, "O vídeo baixado veio vazio ou não foi encontrado")
+
+    final_ext = downloaded_path.suffix.lower() or ".mp4"
+    final_path = upload_dir / f"video_url_{uuid.uuid4().hex[:10]}{final_ext}"
+    if downloaded_path != final_path:
+        shutil.move(str(downloaded_path), str(final_path))
+    else:
+        final_path = downloaded_path
+
+    return await _create_editor_video_project(
+        db=db,
+        user_id=int(user["id"]),
+        video_path=final_path,
+        original_name=str(download_result.file_name or final_path.name),
+        file_size=int(final_path.stat().st_size),
+        description="Vídeo importado da internet para edição",
+    )
 
 
 @router.post("/upload-layer-video")

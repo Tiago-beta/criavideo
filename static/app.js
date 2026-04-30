@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v281 loaded");
+console.log("[CriaVideo] app.js v282 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -16674,6 +16674,7 @@ let _editorAIMusicModal = {
 const EDITOR_DRAFT_STORAGE_PREFIX = "editor_draft_v1_";
 let _editorDraftPersistTimer = 0;
 let _editorSubtitleModalTargetId = "";
+let _editorInternetImportLoading = false;
 
 function _editorGetDraftStorageKey(projectId = 0) {
     const pid = Number(projectId || _editor.projectId || 0);
@@ -18195,6 +18196,93 @@ function _editorOpenStartModal() {
 }
 window._editorOpenStartModal = _editorOpenStartModal;
 
+function _editorSetInternetImportLoading(isLoading, message = "") {
+    _editorInternetImportLoading = Boolean(isLoading);
+    const input = document.getElementById("editor-internet-url-input");
+    const submit = document.getElementById("editor-internet-url-submit");
+    const status = document.getElementById("editor-internet-url-status");
+
+    if (input) input.disabled = _editorInternetImportLoading;
+    if (submit) {
+        submit.disabled = _editorInternetImportLoading;
+        submit.textContent = _editorInternetImportLoading ? "Baixando..." : "Baixar e abrir";
+    }
+    if (status) {
+        status.textContent = String(message || "");
+    }
+}
+
+function _editorOpenInternetImportModal() {
+    closeModal("modal-editor-start");
+    _editorSetInternetImportLoading(false, "");
+    openModal("modal-editor-import-url");
+    requestAnimationFrame(() => {
+        const input = document.getElementById("editor-internet-url-input");
+        if (input) {
+            input.focus();
+            input.select();
+        }
+    });
+}
+window._editorOpenInternetImportModal = _editorOpenInternetImportModal;
+
+function _editorCloseInternetImportModal() {
+    if (_editorInternetImportLoading) return;
+    _editorSetInternetImportLoading(false, "");
+    const input = document.getElementById("editor-internet-url-input");
+    if (input) input.value = "";
+    closeModal("modal-editor-import-url");
+}
+window._editorCloseInternetImportModal = _editorCloseInternetImportModal;
+
+function _editorHandleInternetImportKeydown(event) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    _editorImportVideoFromUrl();
+}
+window._editorHandleInternetImportKeydown = _editorHandleInternetImportKeydown;
+
+async function _editorImportVideoFromUrl() {
+    if (_editorInternetImportLoading) return;
+
+    const input = document.getElementById("editor-internet-url-input");
+    const rawUrl = String(input?.value || "").trim();
+    if (!rawUrl) {
+        showToast("Cole um link para carregar o vídeo no editor.", "error");
+        input?.focus();
+        return;
+    }
+    if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
+        showToast("Informe uma URL válida para importar o vídeo.", "error");
+        input?.focus();
+        return;
+    }
+
+    try {
+        _editorSetInternetImportLoading(true, "Baixando vídeo pelo Baixa Tudo...");
+        const payload = await api("/video/editor/upload-video-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ source_url: rawUrl }),
+        });
+
+        await loadEditorVideosList();
+        _editorCloseInternetImportModal();
+
+        if (payload?.project_id) {
+            showToast("Vídeo importado! Abrindo editor...", "success");
+            await openEditor(payload.project_id);
+            return;
+        }
+
+        showToast("Vídeo importado com sucesso.", "success");
+    } catch (err) {
+        _editorSetInternetImportLoading(false, err?.message || "Erro ao importar vídeo");
+        showToast("Erro ao importar vídeo da internet: " + (err?.message || "erro desconhecido"), "error");
+    }
+}
+window._editorImportVideoFromUrl = _editorImportVideoFromUrl;
+
 function _editorChooseStartMode(mode) {
     const selectedMode = String(mode || "").trim();
     const workspace = document.getElementById("editor-workspace");
@@ -18212,6 +18300,11 @@ function _editorChooseStartMode(mode) {
 
     if (selectedMode === "image_pc") {
         document.getElementById("editor-start-image-upload-input")?.click();
+        return;
+    }
+
+    if (selectedMode === "internet") {
+        _editorOpenInternetImportModal();
         return;
     }
 
