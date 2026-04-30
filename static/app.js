@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v285 loaded");
+console.log("[CriaVideo] app.js v286 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -20108,7 +20108,7 @@ function _editorBuildSmartCutSubtitleCfg() {
     return {
         ...cfg,
         enabled: true,
-        y: 89,
+        y: 75,
     };
 }
 
@@ -20246,7 +20246,7 @@ function _editorRenderProps() {
             <div class="editor-props-group" style="margin-top:10px">
                 <label style="display:block;margin-bottom:6px">Legenda direta nos shorts</label>
                 <p style="margin:0 0 8px;font-size:11px;color:var(--text-muted)">Escolha o estilo antes de criar ou exportar os cortes. A legenda sai no rodapé inferior do short.</p>
-                <div class="editor-smartcuts-summary" style="margin-bottom:8px">Estilo atual: ${esc(smartCutStyleLabel)} · Rodapé ${Math.round(smartCutSubtitleCfg.y || 89)}%</div>
+                <div class="editor-smartcuts-summary" style="margin-bottom:8px">Estilo atual: ${esc(smartCutStyleLabel)} · Legenda ${Math.round(smartCutSubtitleCfg.y || 75)}%</div>
                 <div class="editor-subtitle-styles-grid">
                     ${SUBTITLE_STYLES.map(st => {
                         const active = (_editor.smartCutSubtitleStyle || "destaque") === st.name;

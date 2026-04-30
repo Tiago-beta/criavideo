@@ -631,7 +631,7 @@ class SmartCutSubtitleStyle(BaseModel):
     enabled: bool = True
     style_name: str = "destaque"
     x: float = 50
-    y: float = 88
+    y: float = 75
     font_size: int = 30
     font_color: str = "#ffffff"
     bg_color: str = ""
@@ -728,7 +728,7 @@ def _build_smart_cut_subtitles(
     max_words = 6 if force_vertical else 7
     max_span = 2.8 if force_vertical else 3.2
     gap_limit = 1.1 if force_vertical else 1.35
-    base_y = 89 if force_vertical else max(5.0, min(95.0, float(style.y or 82)))
+    base_y = max(5.0, min(95.0, float(style.y or (75 if force_vertical else 82))))
     base_x = max(10.0, min(90.0, float(style.x or 50)))
     base_font_size = max(16, min(96, int(style.font_size or (32 if force_vertical else 28))))
 
@@ -1515,7 +1515,7 @@ def _run_smart_cuts_export(job: dict, project, render, req: ExportRequest, src_v
         or "16:9"
     )
     short_target_w, short_target_h = _get_smart_short_target_resolution(req.quality)
-    smart_cut_overlay_scale = (short_target_h / 720.0) if force_vertical_short and short_target_h > 0 else 1.0
+    smart_cut_overlay_scale = (short_target_w / 720.0) if force_vertical_short and short_target_w > 0 else 1.0
 
     output_urls: list[dict] = []
     total = len(approved)
