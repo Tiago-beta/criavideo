@@ -574,18 +574,26 @@ def _is_similar_project(project: VideoProject) -> bool:
     return str(tags.get("type") or "").strip().lower() == "similar"
 
 
-async def run_similar_reference_analysis(project_id: int, source_url: str) -> None:
+async def run_similar_reference_analysis(
+    project_id: int,
+    source_url: str,
+    source_upload_path: str = "",
+    source_upload_name: str = "",
+) -> None:
     async with async_session() as db:
         project = await db.get(VideoProject, project_id)
         if not project:
             return
 
+        source_type = "upload" if str(source_upload_path or "").strip() else "url"
         tags = _safe_tags_dict(project.tags)
         tags.update(
             {
                 "type": "similar",
                 "similar_stage": "downloading_reference",
                 "similar_source_url": source_url,
+                "similar_source_type": source_type,
+                "similar_source_upload_name": source_upload_name,
             }
         )
         project.tags = tags
@@ -605,14 +613,23 @@ async def run_similar_reference_analysis(project_id: int, source_url: str) -> No
             resolved_source_url = source_url
             resolved_normalized_url = source_url
             reused_project_id = 0
+            upload_source_path = Path(str(source_upload_path or "").strip()) if str(source_upload_path or "").strip() else None
 
-            reused_video = await _try_reuse_cached_reference_video(
-                db,
-                project_id=project_id,
-                user_id=int(project.user_id or 0),
-                source_url=source_url,
-                target_output_path=resolved_video_path,
-            )
+            reused_video = None
+            if upload_source_path:
+                if not upload_source_path.exists() or upload_source_path.stat().st_size <= 0:
+                    raise RuntimeError("Video enviado nao foi encontrado para analise")
+                shutil.copy2(upload_source_path, resolved_video_path)
+                resolved_source_url = ""
+                resolved_normalized_url = ""
+            else:
+                reused_video = await _try_reuse_cached_reference_video(
+                    db,
+                    project_id=project_id,
+                    user_id=int(project.user_id or 0),
+                    source_url=source_url,
+                    target_output_path=resolved_video_path,
+                )
 
             if reused_video:
                 resolved_video_path = str(reused_video.get("output_path") or resolved_video_path)
@@ -654,6 +671,8 @@ async def run_similar_reference_analysis(project_id: int, source_url: str) -> No
                     "similar_normalized_url": resolved_normalized_url,
                     "similar_local_video_path": resolved_video_path,
                     "similar_reused_cache": bool(reused_video),
+                    "similar_source_type": source_type,
+                    "similar_source_upload_name": source_upload_name,
                 }
             )
             if reused_project_id > 0:

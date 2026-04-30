@@ -1121,7 +1121,9 @@ class ProjectResponse(BaseModel):
 
 
 class StartSimilarAnalysisRequest(BaseModel):
-    source_url: str
+    source_url: str = ""
+    source_upload_id: str = ""
+    source_upload_name: str = ""
     title: str = ""
     aspect_ratio: str = "16:9"
 
@@ -1192,20 +1194,37 @@ async def start_similar_analysis(
     db: AsyncSession = Depends(get_db),
 ):
     source_url = str(req.source_url or "").strip()
-    if not source_url.startswith(("http://", "https://")):
+    source_upload_id = str(req.source_upload_id or "").strip()
+    source_upload_name = str(req.source_upload_name or "").strip()
+    source_upload_path = None
+
+    if not source_url and not source_upload_id:
+        raise HTTPException(status_code=400, detail="Informe um link ou envie um video para analisar")
+
+    if source_url and not source_url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="Informe uma URL valida para analisar")
+
+    if source_upload_id:
+        source_upload_path = _resolve_temp_file(int(user["id"]), source_upload_id, VIDEO_EXTS)
+        if not source_upload_path:
+            raise HTTPException(status_code=400, detail="Video enviado nao encontrado. Envie novamente.")
 
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
         raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1")
 
-    if not (settings.baixatudo_api_url and settings.baixatudo_api_key):
+    if source_url and not (settings.baixatudo_api_url and settings.baixatudo_api_key):
         raise HTTPException(status_code=503, detail="Integracao Baixa Tudo nao configurada no servidor")
 
     title = (req.title or "").strip() or "Video Semelhante"
+    source_type = "upload" if source_upload_path else "url"
+    source_label = source_upload_name or source_url or "video enviado"
     tags_data = {
         "type": "similar",
         "similar_stage": "queued_analysis",
         "similar_source_url": source_url,
+        "similar_source_type": source_type,
+        "similar_source_upload_id": source_upload_id,
+        "similar_source_upload_name": source_upload_name,
         "similar_scene_seconds": max(int(settings.similar_scene_default_seconds or 5), 1),
     }
 
@@ -1213,7 +1232,7 @@ async def start_similar_analysis(
         user_id=user["id"],
         track_id=0,
         title=title,
-        description=f"Referencia: {source_url[:220]}",
+        description=f"Referencia: {source_label[:220]}",
         tags=tags_data,
         style_prompt="",
         aspect_ratio=req.aspect_ratio,
@@ -1233,7 +1252,13 @@ async def start_similar_analysis(
 
     from app.tasks.similar_tasks import run_similar_reference_analysis
 
-    background_tasks.add_task(run_similar_reference_analysis, project.id, source_url)
+    background_tasks.add_task(
+        run_similar_reference_analysis,
+        project.id,
+        source_url,
+        str(source_upload_path or ""),
+        source_upload_name,
+    )
     return {
         "project_id": project.id,
         "status": "analysis_started",

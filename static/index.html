@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260430-01">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260430-02">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 287;
+        var REQUIRED_VER = 288;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -259,10 +259,6 @@
                                     <button class="editor-tool-btn" data-tool="subtitles" type="button" title="Legendas">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 12h4"/><path d="M13 12h4"/><path d="M7 16h10"/></svg>
                                         <span>Legendas</span>
-                                    </button>
-                                    <button class="editor-tool-btn" data-tool="smartcuts" type="button" title="Criar vários cortes inteligentes">
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 4.5 16 3l1.5 1.5L19 6l-1.5 1.5L16 9l-1.5-1.5L13 6z"/><path d="M5 4v16"/><path d="M19 12v8"/><path d="M8 7h3"/><path d="M8 12h8"/><path d="M8 17h8"/></svg>
-                                        <span>Cortes IA</span>
                                     </button>
                                     <button class="editor-tool-btn" data-tool="music" type="button" title="Áudio">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
@@ -1611,25 +1607,48 @@
                 <!-- ═══ PANEL: Semelhante ═══ -->
                 <div id="create-panel-similar" class="create-panel" hidden>
                     <div class="similar-panel-head">
-                        <h3 class="wizard-question">Criar vídeo semelhante por link</h3>
-                        <p class="wizard-hint">Cole um link público, analise as cenas e regenere apenas o que quiser antes de unir tudo.</p>
+                        <h3 class="wizard-question">Criar vídeos semelhantes</h3>
+                        <p class="wizard-hint">Cole um link público ou envie um vídeo do seu aparelho, analise as cenas e regenere apenas o que quiser antes de unir tudo.</p>
                     </div>
 
-                    <div class="wizard-details-grid">
-                        <div class="form-group">
+                    <div class="similar-source-grid">
+                        <div class="form-group similar-source-link-group">
                             <label>Link do vídeo de referência</label>
                             <input id="similar-source-url" type="url" class="input" placeholder="https://www.youtube.com/watch?v=...">
                             <small class="field-hint">Aceita URL pública de vídeo. O sistema baixa e analisa automaticamente em blocos.</small>
-
-                            <div id="similar-source-preview-wrap" class="similar-source-preview" hidden>
-                                <div class="similar-source-preview-head">
-                                    <strong>Prévia do vídeo de referência</strong>
-                                    <a id="similar-source-open-link" class="similar-source-open-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Abrir original</a>
-                                </div>
-                                <div id="similar-source-preview-stage" class="similar-source-preview-stage"></div>
-                                <small id="similar-source-preview-hint" class="field-hint" hidden></small>
-                            </div>
                         </div>
+
+                        <div class="form-group similar-source-upload-group">
+                            <label>Carregar vídeo</label>
+                            <button id="similar-source-upload-trigger" class="similar-upload-card" type="button">
+                                <span class="similar-upload-card-icon" aria-hidden="true">
+                                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="16"/></svg>
+                                </span>
+                                <span class="similar-upload-card-copy">
+                                    <strong>Enviar do aparelho</strong>
+                                    <small>Escolha um vídeo salvo no computador ou celular.</small>
+                                </span>
+                            </button>
+                            <div class="similar-upload-meta-row">
+                                <span id="similar-source-file-name" class="similar-upload-file-name">Nenhum vídeo selecionado</span>
+                                <button id="similar-source-file-clear" class="btn btn-secondary btn-sm" type="button" hidden>Limpar</button>
+                            </div>
+                            <small class="field-hint">Formatos aceitos: MP4, MOV, AVI, WEBM e MKV.</small>
+                        </div>
+                    </div>
+
+                    <input id="similar-source-file-input" type="file" accept="video/mp4,video/quicktime,video/x-msvideo,video/webm,video/x-matroska,.mp4,.mov,.avi,.webm,.mkv" hidden>
+
+                    <div id="similar-source-preview-wrap" class="similar-source-preview" hidden>
+                        <div class="similar-source-preview-head">
+                            <strong id="similar-source-preview-title">Prévia do vídeo de referência</strong>
+                            <a id="similar-source-open-link" class="similar-source-open-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Abrir original</a>
+                        </div>
+                        <div id="similar-source-preview-stage" class="similar-source-preview-stage"></div>
+                        <small id="similar-source-preview-hint" class="field-hint" hidden></small>
+                    </div>
+
+                    <div class="wizard-details-grid similar-details-grid">
                         <div class="form-group">
                             <label>Título do projeto</label>
                             <input id="similar-title" type="text" class="input" placeholder="Ex: Versão semelhante para campanha">
@@ -1645,11 +1664,11 @@
                     </div>
 
                     <div class="similar-panel-actions">
+                        <button class="btn btn-secondary" id="similar-back" type="button">Voltar</button>
                         <button class="btn btn-primary" id="similar-start-analysis" type="button">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15v-3"/><path d="M12 15V9"/><path d="M17 15V6"/></svg>
                             Analisar vídeo
                         </button>
-                        <button class="btn btn-secondary" id="similar-back" type="button">Voltar</button>
                     </div>
 
                     <input id="similar-scene-image-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
@@ -1739,6 +1758,10 @@
                                 <section class="workflow-node workflow-node-prompt" data-node-id="prompt" style="left: 1900px; top: 980px;">
                                     <header>Prompt</header>
                                     <textarea id="workflow-prompt" class="workflow-textarea" rows="7" placeholder="Descreva a cena, movimento de câmera, iluminação, personagens e atmosfera..."></textarea>
+                                    <div class="workflow-node-actions">
+                                        <button class="workflow-mini-btn" data-workflow-template="cinematic" type="button">Cinemático</button>
+                                        <button class="workflow-mini-btn" data-workflow-template="product" type="button">Produto</button>
+                                    </div>
                                     <span class="workflow-port workflow-port-out" data-port="prompt-out"></span>
                                 </section>
 
@@ -3171,8 +3194,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260430-01"></script>
-    <script src="/video/static/pwa.js?v=20260430-01"></script>
+    <script src="/video/static/app.js?v=20260430-02"></script>
+    <script src="/video/static/pwa.js?v=20260430-02"></script>
 </body>
 </html>
 
