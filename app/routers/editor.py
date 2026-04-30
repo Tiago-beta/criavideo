@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import subprocess
 import asyncio
@@ -198,6 +199,179 @@ def _probe_video_metadata(video_path: str) -> tuple[float, str]:
         logger.warning("[editor] Failed to probe metadata for %s: %s", video_path, exc)
 
     return duration, aspect_ratio
+
+
+def _extract_editor_audio(project_id: int, src_video: str, purpose: str = "transcribe") -> str:
+    tmp_audio_dir = os.path.join(settings.media_dir, "tmp", purpose, str(project_id))
+    os.makedirs(tmp_audio_dir, exist_ok=True)
+    tmp_audio = os.path.join(tmp_audio_dir, f"_{purpose}_{uuid.uuid4().hex[:6]}.wav")
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", src_video,
+                "-map", "0:a:0", "-vn", "-acodec", "pcm_s16le",
+                "-ar", "16000", "-ac", "1", tmp_audio,
+            ],
+            capture_output=True, timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("[editor] Audio extraction timeout project_id=%s src=%s", project_id, src_video)
+        raise HTTPException(500, "Timeout ao extrair áudio do vídeo")
+
+    if proc.returncode != 0:
+        stderr_text = (proc.stderr or b"").decode(errors="ignore")
+        logger.error(
+            "[editor] Audio extraction failed project_id=%s src=%s stderr=%s",
+            project_id,
+            src_video,
+            stderr_text[-1200:],
+        )
+        if "Stream map '0:a:0'" in stderr_text or "matches no streams" in stderr_text:
+            raise HTTPException(400, "Este vídeo não possui faixa de áudio para transcrição")
+        raise HTTPException(500, "Falha ao extrair áudio do vídeo")
+
+    return tmp_audio
+
+
+def _words_to_timed_blocks(words: list[dict], block_size: int = 70) -> list[dict]:
+    blocks: list[dict] = []
+    current: list[dict] = []
+    for word in words or []:
+        text = str(word.get("word") or "").strip()
+        if not text:
+            continue
+        current.append(word)
+        if len(current) >= block_size or text.endswith(('.', '!', '?')) and len(current) >= 32:
+            blocks.append({
+                "start": float(current[0].get("start") or 0),
+                "end": float(current[-1].get("end") or current[-1].get("start") or 0),
+                "text": " ".join(str(w.get("word") or "").strip() for w in current).strip(),
+            })
+            current = []
+    if current:
+        blocks.append({
+            "start": float(current[0].get("start") or 0),
+            "end": float(current[-1].get("end") or current[-1].get("start") or 0),
+            "text": " ".join(str(w.get("word") or "").strip() for w in current).strip(),
+        })
+    return blocks
+
+
+def _fallback_smart_cuts(words: list[dict], duration: float) -> list[dict]:
+    cuts: list[dict] = []
+    if not words:
+        total = max(0.0, float(duration or 0))
+        pos = 0.0
+        while total - pos >= 10.0 and len(cuts) < 8:
+            end = min(total, pos + 45.0)
+            if end - pos >= 10.0:
+                cuts.append({"start": pos, "end": end, "title": f"Short {len(cuts) + 1}", "reason": "Trecho sugerido automaticamente.", "score": 60})
+            pos += 45.0
+        return cuts
+
+    emotion_terms = {
+        "amor", "dor", "medo", "sonho", "nunca", "sempre", "verdade", "segredo", "incrivel", "incrível",
+        "chorei", "feliz", "triste", "forte", "impacto", "mudou", "vida", "coracao", "coração", "erro",
+        "vitoria", "vitória", "perdi", "ganhei", "importante", "emocao", "emoção", "finalmente",
+    }
+    blocks = _words_to_timed_blocks(words, 36)
+    scored = []
+    for block in blocks:
+        text = str(block.get("text") or "")
+        tokens = re.findall(r"[\wÀ-ÿ]+", text.lower())
+        score = sum(10 for token in tokens if token in emotion_terms) + min(20, len(tokens) // 3)
+        if any(mark in text for mark in ["!", "?", "..."]):
+            score += 12
+        scored.append((score, block))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    used: list[tuple[float, float]] = []
+    for score, block in scored[:16]:
+        center = (float(block["start"]) + float(block["end"])) / 2
+        start = max(0.0, center - 18.0)
+        end = min(float(duration or 0) or max(center + 18.0, start + 10.0), center + 22.0)
+        if end - start < 10.0:
+            end = min(float(duration or end), start + 10.0)
+        if end - start > 60.0:
+            end = start + 60.0
+        if any(not (end <= st or start >= et) for st, et in used):
+            continue
+        used.append((start, end))
+        cuts.append({
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "title": f"Short {len(cuts) + 1}",
+            "reason": "Trecho com maior densidade emocional na fala.",
+            "score": max(55, min(95, int(score or 60))),
+        })
+        if len(cuts) >= 8:
+            break
+    cuts.sort(key=lambda item: item["start"])
+    return cuts
+
+
+async def _analyze_smart_cuts_with_ai(transcription: dict, duration: float) -> list[dict]:
+    blocks = _words_to_timed_blocks(transcription.get("words") or [])
+    if not blocks:
+        return _fallback_smart_cuts([], duration)
+    compact_blocks = blocks[:120]
+    prompt_payload = {
+        "duration_seconds": round(float(duration or 0), 3),
+        "blocks": compact_blocks,
+    }
+    system_prompt = (
+        "Voce e um editor senior de videos curtos. Escolha cortes fortes, emocionais e auto-contidos "
+        "para shorts de qualquer nicho. Cada corte deve ter entre 10 e 60 segundos, respeitar contexto, "
+        "comecar e terminar em pontos naturais da fala e priorizar gancho, conflito, revelacao, emocao ou conclusao. "
+        "Responda somente JSON valido no formato {\"cuts\":[{\"start\":0,\"end\":20,\"title\":\"...\",\"reason\":\"...\",\"score\":90}]}"
+    )
+
+    def _call_openai() -> str:
+        import openai
+        client = openai.OpenAI(api_key=settings.openai_api_key)
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            temperature=0.25,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": json.dumps(prompt_payload, ensure_ascii=False)},
+            ],
+        )
+        return resp.choices[0].message.content or "{}"
+
+    try:
+        raw = await asyncio.to_thread(_call_openai)
+        payload = json.loads(raw)
+        candidates = payload.get("cuts") if isinstance(payload, dict) else []
+    except Exception as exc:
+        logger.warning("[editor] Smart cut AI failed, using fallback: %s", exc)
+        return _fallback_smart_cuts(transcription.get("words") or [], duration)
+
+    cuts: list[dict] = []
+    for idx, item in enumerate(candidates or [], start=1):
+        try:
+            start = max(0.0, float(item.get("start") or 0))
+            end = max(start, float(item.get("end") or 0))
+        except Exception:
+            continue
+        if duration > 0:
+            start = min(start, max(0.0, duration - 0.1))
+            end = min(end, duration)
+        span = end - start
+        if span < 10.0 or span > 60.0:
+            continue
+        cuts.append({
+            "id": f"smart-{idx}",
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "title": str(item.get("title") or f"Short {idx}").strip()[:80],
+            "reason": str(item.get("reason") or "Trecho indicado pela IA.").strip()[:240],
+            "score": max(0, min(100, int(item.get("score") or 80))),
+            "approved": True,
+        })
+    if not cuts:
+        cuts = _fallback_smart_cuts(transcription.get("words") or [], duration)
+    return cuts[:10]
 
 
 def _probe_media_dimensions(path: str) -> tuple[int, int]:
@@ -417,6 +591,18 @@ class TrimSegment(BaseModel):
     end: float
 
 
+class SmartCutEntry(BaseModel):
+    start: float
+    end: float
+    title: str = ""
+    reason: str = ""
+    score: int = 0
+
+
+class SmartCutsRequest(BaseModel):
+    project_id: int
+
+
 class ExportRequest(BaseModel):
     project_id: int
     aspect_ratio: str = ""
@@ -434,6 +620,7 @@ class ExportRequest(BaseModel):
     subtitles: list[SubtitleEntry] = []
     stickers: list[StickerEntry] = []
     media_layers: list[MediaLayerEntry] = []
+    smart_cuts: list[SmartCutEntry] = []
 
 
 class AddLayerVideoFromLibraryRequest(BaseModel):
@@ -874,33 +1061,7 @@ async def transcribe_video(
     if not src_video:
         raise HTTPException(400, "Arquivo de vídeo não encontrado")
 
-    # Extract audio to temp WAV
-    tmp_audio_dir = os.path.join(settings.media_dir, "tmp", "transcribe", str(project.id))
-    os.makedirs(tmp_audio_dir, exist_ok=True)
-    tmp_audio = os.path.join(tmp_audio_dir, f"_transcribe_{uuid.uuid4().hex[:6]}.wav")
-    try:
-        proc = subprocess.run(
-            [
-                "ffmpeg", "-y", "-i", src_video,
-                "-map", "0:a:0", "-vn", "-acodec", "pcm_s16le",
-                "-ar", "16000", "-ac", "1", tmp_audio,
-            ],
-            capture_output=True, timeout=120,
-        )
-        if proc.returncode != 0:
-            stderr_text = (proc.stderr or b"").decode(errors="ignore")
-            logger.error(
-                "[editor] Transcribe audio extraction failed project_id=%s src=%s stderr=%s",
-                project.id,
-                src_video,
-                stderr_text[-1200:],
-            )
-            if "Stream map '0:a:0'" in stderr_text or "matches no streams" in stderr_text:
-                raise HTTPException(400, "Este vídeo não possui faixa de áudio para transcrição")
-            raise HTTPException(500, "Falha ao extrair áudio do vídeo")
-    except subprocess.TimeoutExpired:
-        logger.error("[editor] Transcribe audio extraction timeout project_id=%s src=%s", project.id, src_video)
-        raise HTTPException(500, "Timeout ao extrair áudio do vídeo")
+    tmp_audio = _extract_editor_audio(project.id, src_video, "transcribe")
     try:
 
         # Transcribe (sync function, run in thread pool)
@@ -908,6 +1069,46 @@ async def transcribe_video(
         import asyncio
         result = await asyncio.to_thread(transcribe_audio, tmp_audio, "pt")
         return {"text": result.get("text", ""), "words": result.get("words", [])}
+    finally:
+        if os.path.exists(tmp_audio):
+            os.remove(tmp_audio)
+
+
+@router.post("/smart-cuts")
+async def analyze_smart_cuts(
+    req: SmartCutsRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Transcribe the edited video's source audio and suggest emotional short cuts."""
+    result = await db.execute(
+        select(VideoProject)
+        .options(selectinload(VideoProject.renders))
+        .where(VideoProject.id == req.project_id, VideoProject.user_id == user["id"])
+    )
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(404, "Projeto não encontrado")
+    render = next((r for r in sorted(project.renders, key=lambda rr: rr.id or 0, reverse=True) if r.file_path), None)
+    if not render:
+        raise HTTPException(400, "Nenhum vídeo disponível")
+
+    src_video = _resolve_render_video_path(render)
+    if not src_video or not os.path.exists(src_video):
+        src_video = _fallback_project_video_path(project.id)
+    if not src_video:
+        raise HTTPException(400, "Arquivo de vídeo não encontrado")
+
+    duration, _ = _probe_video_metadata(src_video)
+    tmp_audio = _extract_editor_audio(project.id, src_video, "smartcuts")
+    try:
+        from app.services.transcriber import transcribe_audio
+        transcription = await asyncio.to_thread(transcribe_audio, tmp_audio, "pt")
+        cuts = await _analyze_smart_cuts_with_ai(transcription, duration)
+        return {
+            "text": transcription.get("text", ""),
+            "cuts": cuts,
+        }
     finally:
         if os.path.exists(tmp_audio):
             os.remove(tmp_audio)
@@ -941,6 +1142,7 @@ async def start_export(
         "message": "Iniciando exportacao...",
         "error": None,
         "output_url": None,
+        "output_urls": [],
     }
 
     main_loop = asyncio.get_running_loop()
@@ -960,6 +1162,104 @@ async def export_status(job_id: str, user=Depends(get_current_user)):
 
 
 # ── Background export function ─────────────────────────
+def _run_smart_cuts_export(job: dict, project, render, req: ExportRequest, src_video: str) -> bool:
+    approved = []
+    src_duration, _ = _probe_video_metadata(src_video)
+    for idx, cut in enumerate(req.smart_cuts or [], start=1):
+        start = max(0.0, float(cut.start or 0))
+        end = max(start, float(cut.end or 0))
+        if src_duration > 0:
+            start = min(start, max(0.0, src_duration - 0.1))
+            end = min(end, src_duration)
+        if end - start < 1.0:
+            continue
+        approved.append((idx, start, end, cut))
+
+    if not approved:
+        return False
+
+    out_dir = os.path.join(settings.media_dir, str(project.id), "edited", "shorts")
+    os.makedirs(out_dir, exist_ok=True)
+    source_has_audio = _probe_has_audio_stream(src_video)
+    selected_aspect = _normalize_aspect_ratio(req.aspect_ratio) or _normalize_aspect_ratio(render.format) or "16:9"
+
+    output_urls: list[dict] = []
+    total = len(approved)
+    for pos, (_idx, start, end, cut) in enumerate(approved, start=1):
+        span = max(0.1, end - start)
+        job["progress"] = 10 + int((pos - 1) * 80 / max(1, total))
+        job["message"] = f"Exportando short {pos} de {total}..."
+
+        out_file = os.path.join(out_dir, f"short_{pos:02d}_{uuid.uuid4().hex[:8]}.mp4")
+        cmd = ["ffmpeg", "-y", "-ss", f"{start:.3f}", "-i", src_video, "-t", f"{span:.3f}"]
+
+        vfilters: list[str] = []
+        filter_map = {
+            "grayscale": "colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3",
+            "sepia": "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131",
+            "warm": "eq=saturation=1.3:brightness=0.05,hue=h=-10",
+            "cool": "eq=saturation=0.9:brightness=0.05,hue=h=15",
+            "vintage": "curves=vintage,eq=contrast=1.1:brightness=-0.05",
+            "vivid": "eq=saturation=1.6:contrast=1.1",
+            "dramatic": "eq=contrast=1.4:brightness=-0.1:saturation=0.8",
+            "fade": "eq=brightness=0.1:saturation=0.7:contrast=0.9",
+            "noir": "colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3,eq=contrast=1.3:brightness=-0.15",
+            "cinematic": "eq=contrast=1.15:saturation=1.1:brightness=-0.05,curves=vintage",
+            "retro": "curves=vintage,hue=h=-15,eq=saturation=1.2",
+        }
+        if req.filter != "none" and req.filter in filter_map:
+            vfilters.append(filter_map[req.filter])
+        aspect_filter = _build_aspect_pad_filter(selected_aspect)
+        if aspect_filter:
+            vfilters.append(aspect_filter)
+        if req.quality == "hd":
+            vfilters.append("scale=-2:720")
+        elif req.quality == "fullhd":
+            vfilters.append("scale=-2:1080")
+        elif req.quality == "enhance":
+            vfilters.append("unsharp=5:5:0.8:5:5:0.4")
+        if vfilters:
+            cmd += ["-vf", ",".join(vfilters)]
+
+        if source_has_audio and int(req.original_volume or 100) != 100:
+            cmd += ["-af", f"volume={max(0, min(200, int(req.original_volume or 100))) / 100:.3f}"]
+
+        cmd += [
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-c:v", "libx264",
+            "-preset", _EDITOR_EXPORT_PRESET,
+            "-crf", _EDITOR_EXPORT_CRF,
+            "-c:a", "aac",
+            "-b:a", _EDITOR_EXPORT_AUDIO_BITRATE,
+            "-movflags", "+faststart",
+            out_file,
+        ]
+
+        logger.info("[editor] Smart cut export cmd: %s", " ".join(cmd))
+        proc = subprocess.run(cmd, capture_output=True)
+        if proc.returncode != 0:
+            logger.error("[editor] Smart cut FFmpeg failed: %s", (proc.stderr or b"").decode(errors="ignore")[-1200:])
+            job["status"] = "failed"
+            job["error"] = f"Falha ao exportar o short {pos}"
+            return True
+
+        output_urls.append({
+            "url": _to_media_url(out_file),
+            "filename": f"short-{pos:02d}.mp4",
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "title": cut.title or f"Short {pos}",
+        })
+
+    job["status"] = "completed"
+    job["progress"] = 100
+    job["message"] = f"{len(output_urls)} shorts exportados com sucesso!"
+    job["output_urls"] = output_urls
+    job["output_url"] = output_urls[0]["url"] if output_urls else None
+    return True
+
+
 def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, main_loop: asyncio.AbstractEventLoop):
     try:
         job = _export_jobs[job_id]
@@ -975,6 +1275,9 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 job["status"] = "failed"
                 job["error"] = "Arquivo de vídeo não encontrado no servidor"
                 return
+
+        if req.smart_cuts and _run_smart_cuts_export(job, project, render, req, src_video):
+            return
 
         # Output directory
         out_dir = os.path.join(settings.media_dir, str(project.id), "edited")
