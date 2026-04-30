@@ -1515,7 +1515,7 @@ def _run_smart_cuts_export(job: dict, project, render, req: ExportRequest, src_v
         or "16:9"
     )
     short_target_w, short_target_h = _get_smart_short_target_resolution(req.quality)
-    smart_cut_overlay_scale = (short_target_w / 720.0) if force_vertical_short and short_target_w > 0 else 1.0
+    smart_cut_overlay_scale = (short_target_w / 540.0) if force_vertical_short and short_target_w > 0 else 1.0
 
     output_urls: list[dict] = []
     total = len(approved)
