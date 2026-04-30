@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260430-10">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260430-11">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 296;
+        var REQUIRED_VER = 297;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1621,21 +1621,15 @@
                         </div>
 
                         <div class="form-group similar-source-upload-group">
-                            <button id="similar-source-upload-trigger" class="similar-upload-card" type="button">
+                            <button id="similar-source-upload-trigger" class="similar-upload-card" type="button" aria-label="Enviar vídeo do aparelho">
                                 <span class="similar-upload-card-icon" aria-hidden="true">
                                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="16"/></svg>
-                                </span>
-                                <span class="similar-upload-card-copy">
-                                    <strong id="similar-source-upload-title">Enviar do aparelho</strong>
-                                    <small id="similar-source-upload-subtitle">Escolha um vídeo salvo no computador ou celular.</small>
                                 </span>
                             </button>
                             <div id="similar-source-file-row" class="similar-upload-meta-row" hidden>
                                 <div class="similar-upload-loaded-copy">
-                                    <strong id="similar-source-file-status">Vídeo carregado</strong>
-                                    <small id="similar-source-file-name"></small>
+                                    <span id="similar-source-file-name"></span>
                                 </div>
-                                <button id="similar-source-file-clear" class="btn btn-secondary btn-sm" type="button" hidden>Limpar</button>
                             </div>
                             <small class="field-hint">Formatos aceitos: MP4, MOV, AVI, WEBM e MKV.</small>
                         </div>
@@ -3213,8 +3207,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260430-10"></script>
-    <script src="/video/static/pwa.js?v=20260430-10"></script>
+    <script src="/video/static/app.js?v=20260430-11"></script>
+    <script src="/video/static/pwa.js?v=20260430-11"></script>
 </body>
 </html>
 

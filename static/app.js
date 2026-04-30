@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v279 loaded");
+console.log("[CriaVideo] app.js v280 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -3648,40 +3648,19 @@ function _isSupportedSimilarSourceVideoFile(file) {
 function _syncSimilarSourceFileUi() {
     const triggerEl = document.getElementById("similar-source-upload-trigger");
     const rowEl = document.getElementById("similar-source-file-row");
-    const clearBtn = document.getElementById("similar-source-file-clear");
-    const titleEl = document.getElementById("similar-source-upload-title");
-    const subtitleEl = document.getElementById("similar-source-upload-subtitle");
-    const fileStatusEl = document.getElementById("similar-source-file-status");
     const fileNameEl = document.getElementById("similar-source-file-name");
     const hasFile = !!similarState.sourceVideoFile;
     const fileName = String(similarState.sourceVideoName || similarState.sourceVideoFile?.name || "").trim();
 
     if (triggerEl) {
         triggerEl.classList.toggle("has-file", hasFile);
-        triggerEl.setAttribute(
-            "aria-label",
-            hasFile ? "Vídeo carregado. Toque para trocar o arquivo." : "Enviar vídeo do aparelho"
-        );
+        triggerEl.setAttribute("aria-label", hasFile ? "Trocar vídeo do aparelho" : "Enviar vídeo do aparelho");
     }
     if (rowEl) {
         rowEl.hidden = !hasFile;
     }
-    if (clearBtn) {
-        clearBtn.hidden = !hasFile;
-    }
-    if (titleEl) {
-        titleEl.textContent = hasFile ? "Vídeo carregado" : "Enviar do aparelho";
-    }
-    if (subtitleEl) {
-        subtitleEl.textContent = hasFile
-            ? (fileName || "Arquivo pronto para análise.")
-            : "Escolha um vídeo salvo no computador ou celular.";
-    }
-    if (fileStatusEl) {
-        fileStatusEl.textContent = hasFile ? "Vídeo carregado" : "";
-    }
     if (fileNameEl) {
-        fileNameEl.textContent = hasFile ? (fileName || "Arquivo pronto para análise.") : "";
+        fileNameEl.textContent = hasFile ? fileName : "";
     }
 }
 
