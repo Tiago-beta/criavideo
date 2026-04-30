@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260430-17">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260430-18">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 303;
+        var REQUIRED_VER = 304;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -839,7 +839,7 @@
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.7 7.5 10.8 15"/><path d="M15.3 7.5 13.2 15"/><path d="M9 6h6"/></svg>
                             </div>
                             <strong>Workflow</strong>
-                            <small>Monte um fluxo visual com prompt, referências, motor Seedance 2.0 e saída.</small>
+                            <small>Monte um fluxo visual com prompt, referências, Imputs e motores de IA.</small>
                         </div>
                     </div>
                 </div>
@@ -3282,8 +3282,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260430-17"></script>
-    <script src="/video/static/pwa.js?v=20260430-17"></script>
+    <script src="/video/static/app.js?v=20260430-18"></script>
+    <script src="/video/static/pwa.js?v=20260430-18"></script>
 </body>
 </html>
 
