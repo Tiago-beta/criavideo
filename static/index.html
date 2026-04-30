@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260429-15">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260429-16">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 284;
+        var REQUIRED_VER = 285;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1739,10 +1739,6 @@
                                 <section class="workflow-node workflow-node-prompt" data-node-id="prompt" style="left: 1900px; top: 980px;">
                                     <header>Prompt</header>
                                     <textarea id="workflow-prompt" class="workflow-textarea" rows="7" placeholder="Descreva a cena, movimento de câmera, iluminação, personagens e atmosfera..."></textarea>
-                                    <div class="workflow-node-actions">
-                                        <button class="workflow-mini-btn" data-workflow-template="cinematic" type="button">Cinemático</button>
-                                        <button class="workflow-mini-btn" data-workflow-template="product" type="button">Produto</button>
-                                    </div>
                                     <span class="workflow-port workflow-port-out" data-port="prompt-out"></span>
                                 </section>
 
@@ -3175,8 +3171,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260429-15"></script>
-    <script src="/video/static/pwa.js?v=20260429-15"></script>
+    <script src="/video/static/app.js?v=20260429-16"></script>
+    <script src="/video/static/pwa.js?v=20260429-16"></script>
 </body>
 </html>
 

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v267 loaded");
+console.log("[CriaVideo] app.js v268 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4324,24 +4324,24 @@ function workflowEnhanceNodeControls(node) {
     }
     const textarea = node.querySelector("textarea");
     if (textarea && !node.querySelector(".workflow-ai-tools")) {
-        textarea.insertAdjacentHTML("afterend", `
-            <div class="workflow-ai-tools">
-                <button class="workflow-ai-btn" type="button" title="IA para melhorar este prompt" onclick="workflowToggleAiTools(this)">IA</button>
-                <div class="workflow-ai-choices" hidden>
-                    <button type="button" data-workflow-ai-style="comercial">Comercial</button>
-                    <button type="button" data-workflow-ai-style="meme viral">Meme Viral</button>
-                    <button type="button" data-workflow-ai-style="anime">Anime</button>
-                    <button type="button" data-workflow-ai-style="drama">Drama</button>
-                    <button type="button" data-workflow-ai-style="efeitos visuais">Efeitos Visuais</button>
-                </div>
-            </div>
-        `);
+        const aiToolsMarkup = node.classList.contains("workflow-node-prompt")
+            ? workflowPromptAiToolsMarkup(node)
+            : workflowDefaultAiToolsMarkup();
+        textarea.insertAdjacentHTML("afterend", aiToolsMarkup);
     }
     node.querySelectorAll("[data-workflow-ai-style]").forEach((btn) => {
         if (btn._workflowBound) return;
         btn._workflowBound = true;
         btn.addEventListener("click", () => workflowImproveCardPrompt(btn));
     });
+    node.querySelectorAll("[data-workflow-ai-duration]").forEach((btn) => {
+        if (btn._workflowBound) return;
+        btn._workflowBound = true;
+        btn.addEventListener("click", () => workflowSelectPromptAiDuration(btn));
+    });
+    if (node.classList.contains("workflow-node-prompt")) {
+        workflowSyncPromptAiDurationButtons(node);
+    }
     if (node.classList.contains("workflow-node-images") && node.dataset.nodeId !== "images") {
         node.querySelectorAll("button").forEach((btn) => {
             if (!/Enviar imagem/i.test(btn.textContent || "")) return;
@@ -4354,6 +4354,79 @@ function workflowEnhanceNodeControls(node) {
     if (node.classList.contains("workflow-node-model") && !node.querySelector(".workflow-model-name-hint")) {
         node.querySelector("header")?.insertAdjacentHTML("afterend", `<div class="workflow-model-name-hint">Modelo e tempo deste card</div>`);
     }
+}
+
+function workflowDefaultAiToolsMarkup() {
+    return `
+        <div class="workflow-ai-tools">
+            <button class="workflow-ai-btn" type="button" title="IA para melhorar este prompt" onclick="workflowToggleAiTools(this)">IA</button>
+            <div class="workflow-ai-choices" hidden>
+                <button type="button" data-workflow-ai-style="comercial">Comercial</button>
+                <button type="button" data-workflow-ai-style="meme viral">Meme Viral</button>
+                <button type="button" data-workflow-ai-style="anime">Anime</button>
+                <button type="button" data-workflow-ai-style="drama">Drama</button>
+                <button type="button" data-workflow-ai-style="efeitos visuais">Efeitos Visuais</button>
+            </div>
+        </div>
+    `;
+}
+
+function workflowResolvePromptAiDuration(node) {
+    const allowed = [5, 10, 15];
+    const nodeDuration = parseInt(node?.dataset?.promptAiDuration || "0", 10);
+    if (allowed.includes(nodeDuration)) return nodeDuration;
+    const workflowDuration = parseInt(document.getElementById("workflow-duration")?.value || "0", 10);
+    if (allowed.includes(workflowDuration)) return workflowDuration;
+    return 15;
+}
+
+function workflowPromptAiToolsMarkup(node) {
+    const selectedDuration = workflowResolvePromptAiDuration(node);
+    return `
+        <div class="workflow-ai-tools workflow-ai-tools-prompt">
+            <button class="workflow-ai-btn" type="button" title="IA para montar este prompt" onclick="workflowToggleAiTools(this)">IA</button>
+            <div class="workflow-ai-choices" hidden>
+                <button type="button" data-workflow-ai-style="comercial">Comercial</button>
+                <button type="button" data-workflow-ai-style="meme viral">Meme Viral</button>
+                <button type="button" data-workflow-ai-style="anime">Anime</button>
+                <button type="button" data-workflow-ai-style="drama">Drama</button>
+                <button type="button" data-workflow-ai-style="efeitos visuais">Efeitos Visuais</button>
+                <button type="button" data-workflow-ai-style="cinematic">Cinemático</button>
+                <button type="button" data-workflow-ai-style="product">Produto</button>
+                <div style="flex-basis:100%;height:0"></div>
+                <span style="width:100%;font-size:0.68rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;">Duração do prompt</span>
+                <button type="button" data-workflow-ai-duration="5" aria-pressed="${selectedDuration === 5 ? "true" : "false"}" style="padding:5px 8px;font-size:0.68rem;min-width:42px;">5s</button>
+                <button type="button" data-workflow-ai-duration="10" aria-pressed="${selectedDuration === 10 ? "true" : "false"}" style="padding:5px 8px;font-size:0.68rem;min-width:42px;">10s</button>
+                <button type="button" data-workflow-ai-duration="15" aria-pressed="${selectedDuration === 15 ? "true" : "false"}" style="padding:5px 8px;font-size:0.68rem;min-width:42px;">15s</button>
+            </div>
+        </div>
+    `;
+}
+
+function workflowSyncPromptAiDurationButtons(node) {
+    if (!node?.classList?.contains("workflow-node-prompt")) return;
+    const selectedDuration = workflowResolvePromptAiDuration(node);
+    node.dataset.promptAiDuration = String(selectedDuration);
+    node.querySelectorAll("[data-workflow-ai-duration]").forEach((btn) => {
+        const active = String(btn.dataset.workflowAiDuration || "") === String(selectedDuration);
+        btn.setAttribute("aria-pressed", active ? "true" : "false");
+        btn.style.borderColor = active ? "#f6a52f" : "rgba(56, 189, 248, 0.52)";
+        btn.style.color = active ? "#fff" : "#dbeafe";
+        btn.style.background = active ? "rgba(246, 165, 47, 0.14)" : "rgba(6, 22, 40, 0.42)";
+    });
+}
+
+function workflowSelectPromptAiDuration(button) {
+    const node = button?.closest?.(".workflow-node");
+    const selectedDuration = parseInt(button?.dataset?.workflowAiDuration || "0", 10);
+    if (!node || ![5, 10, 15].includes(selectedDuration)) return;
+    node.dataset.promptAiDuration = String(selectedDuration);
+    const durationSelect = document.getElementById("workflow-duration");
+    if (durationSelect && Array.from(durationSelect.options).some((option) => option.value === String(selectedDuration))) {
+        durationSelect.value = String(selectedDuration);
+    }
+    workflowSyncPromptAiDurationButtons(node);
+    workflowRecordHistory();
 }
 
 function workflowChooseGlobalImages() {
@@ -4388,6 +4461,10 @@ function workflowEscapeHtml(value) {
 }
 
 function workflowToggleAiTools(button) {
+    const node = button?.closest?.(".workflow-node");
+    if (node?.classList?.contains("workflow-node-prompt")) {
+        workflowSyncPromptAiDurationButtons(node);
+    }
     const panel = button?.closest?.(".workflow-ai-tools")?.querySelector?.(".workflow-ai-choices");
     if (!panel) return;
     panel.hidden = !panel.hidden;
@@ -4407,7 +4484,9 @@ async function workflowImproveCardPrompt(button) {
     button.textContent = "Gerando...";
     try {
         const engine = document.getElementById("workflow-engine")?.value || "grok";
-        const duration = parseInt(document.getElementById("workflow-duration")?.value || "10", 10) || 10;
+        const duration = node?.classList?.contains("workflow-node-prompt")
+            ? workflowResolvePromptAiDuration(node)
+            : (parseInt(document.getElementById("workflow-duration")?.value || "10", 10) || 10);
         const result = await api("/video/generate-realistic-prompt", {
             method: "POST",
             body: JSON.stringify({
@@ -5228,6 +5307,11 @@ function workflowRefreshNodeMarkupFromDefault(node, defaultNode) {
 
 function workflowNodeNeedsDefaultMarkupRefresh(nodeId, node) {
     if (!node) return false;
+    if (nodeId === "prompt") {
+        return !!node.querySelector("[data-workflow-template]")
+            || !!node.querySelector(".workflow-node-actions")
+            || !node.querySelector("[data-workflow-ai-duration]");
+    }
     if (nodeId === "images") {
         return !node.querySelector(".workflow-upload-icon") || !!node.querySelector("#workflow-clear-images") || !!node.querySelector(".workflow-upload-btn");
     }
@@ -5242,7 +5326,7 @@ function workflowNodeNeedsDefaultMarkupRefresh(nodeId, node) {
 
 function workflowMigrateWorkflowNodes(defaultNodes = null) {
     const defaults = defaultNodes instanceof Map ? defaultNodes : workflowCaptureDefaultNodes(document.getElementById("workflow-canvas"));
-    ["images", "video", "audio"].forEach((nodeId) => {
+    ["prompt", "images", "video", "audio"].forEach((nodeId) => {
         const node = document.querySelector(`#create-panel-workflow .workflow-node[data-node-id="${nodeId}"]`);
         const defaultNode = defaults?.get?.(nodeId);
         if (workflowNodeNeedsDefaultMarkupRefresh(nodeId, node) && defaultNode) {

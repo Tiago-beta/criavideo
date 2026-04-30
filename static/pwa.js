@@ -1,6 +1,6 @@
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/video/static/sw.js?v=20260429-15").catch(() => {
+      navigator.serviceWorker.register("/video/static/sw.js?v=20260429-16").catch(() => {
       // Ignore SW registration failures to avoid blocking the app.
     });
   });
