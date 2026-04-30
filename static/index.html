@@ -693,8 +693,80 @@
                             </div>
                             <strong>Carregar da internet</strong>
                         </button>
+
+                        <button class="mode-selection-card editor-start-card" type="button" onclick="_editorChooseStartMode('record')">
+                            <div class="mode-selection-icon">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="13" height="10" rx="2"/><path d="M8 20h3"/><path d="M9.5 14v6"/><circle cx="19" cy="8" r="2.6"/></svg>
+                            </div>
+                            <strong>Gravar tela/webcam</strong>
+                        </button>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-editor-recorder" class="modal">
+        <div class="modal-content modal-content-wide editor-recorder-modal">
+            <div class="modal-header">
+                <h3>Gravar vídeo</h3>
+                <button class="modal-close" onclick="_editorCloseRecorderModal()" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="editor-recorder-layout">
+                    <div class="editor-recorder-side">
+                        <div class="editor-recorder-modes">
+                            <button id="editor-recorder-mode-screen" class="editor-recorder-mode active" type="button" onclick="_editorSetRecorderMode('screen')">
+                                <span class="editor-recorder-mode-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="15" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/></svg>
+                                </span>
+                                <span class="editor-recorder-mode-copy">
+                                    <strong>Tela</strong>
+                                </span>
+                            </button>
+
+                            <button id="editor-recorder-mode-screen-camera" class="editor-recorder-mode" type="button" onclick="_editorSetRecorderMode('screen_camera')">
+                                <span class="editor-recorder-mode-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="13" height="10" rx="2"/><circle cx="18.5" cy="8" r="3"/><path d="M8 18h3"/><path d="M9.5 14v4"/></svg>
+                                </span>
+                                <span class="editor-recorder-mode-copy">
+                                    <strong>Tela + Webcam</strong>
+                                </span>
+                            </button>
+
+                            <button id="editor-recorder-mode-webcam" class="editor-recorder-mode" type="button" onclick="_editorSetRecorderMode('webcam')">
+                                <span class="editor-recorder-mode-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="13" height="10" rx="2"/><path d="M16 9l5-3v10l-5-3z"/></svg>
+                                </span>
+                                <span class="editor-recorder-mode-copy">
+                                    <strong>Webcam</strong>
+                                </span>
+                            </button>
+                        </div>
+
+                        <div class="editor-recorder-tools">
+                            <button id="editor-recorder-mic-toggle" class="editor-recorder-chip active" type="button" onclick="_editorToggleRecorderMic()">Microfone</button>
+                        </div>
+
+                        <p id="editor-recorder-status" class="editor-recorder-status" hidden></p>
+                    </div>
+
+                    <div class="editor-recorder-preview-shell">
+                        <video id="editor-recorder-preview" class="editor-recorder-preview" autoplay muted playsinline hidden></video>
+                        <div id="editor-recorder-preview-empty" class="editor-recorder-preview-empty">
+                            <span class="editor-recorder-preview-empty-icon">
+                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="15" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/><circle cx="18" cy="7" r="3"/></svg>
+                            </span>
+                            <strong>Tela</strong>
+                            <span>O navegador pedirá acesso para começar.</span>
+                        </div>
+                        <div class="editor-recorder-timer"><span id="editor-recorder-timer-label">00:00</span></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer modal-footer-space">
+                <button class="btn btn-secondary" type="button" onclick="_editorCloseRecorderModal()">Cancelar</button>
+                <button id="editor-recorder-submit" class="btn btn-primary" type="button" onclick="_editorSubmitRecorderModal()">Iniciar gravação</button>
             </div>
         </div>
     </div>

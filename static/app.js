@@ -16683,6 +16683,39 @@ let _editorAudioVideoSourceModal = {
     error: "",
     remoteResult: null,
 };
+let _editorRecorderModal = {
+    open: false,
+    mode: "screen",
+    micEnabled: true,
+    starting: false,
+    recording: false,
+    stopping: false,
+    uploading: false,
+    seconds: 0,
+    status: "",
+    error: "",
+};
+
+function _editorCreateRecorderRuntime() {
+    return {
+        displayStream: null,
+        webcamStream: null,
+        micStream: null,
+        canvas: null,
+        canvasStream: null,
+        outputStream: null,
+        audioContext: null,
+        audioDestination: null,
+        recorder: null,
+        chunks: [],
+        drawRaf: 0,
+        timer: 0,
+        screenVideoEl: null,
+        webcamVideoEl: null,
+    };
+}
+
+let _editorRecorderRuntime = _editorCreateRecorderRuntime();
 
 function _editorGetDraftStorageKey(projectId = 0) {
     const pid = Number(projectId || _editor.projectId || 0);
@@ -18199,6 +18232,526 @@ async function _editorUploadVideo(input) {
 }
 window._editorUploadVideo = _editorUploadVideo;
 
+function _editorRecorderUsesScreen(mode) {
+    return mode === "screen" || mode === "screen_camera";
+}
+
+function _editorRecorderUsesWebcam(mode) {
+    return mode === "webcam" || mode === "screen_camera";
+}
+
+function _editorRecorderModeLabel(mode) {
+    if (mode === "screen_camera") return "Tela + Webcam";
+    if (mode === "webcam") return "Webcam";
+    return "Tela";
+}
+
+function _editorRecorderSupportsMode(mode) {
+    if (!navigator.mediaDevices) return false;
+    if (_editorRecorderUsesScreen(mode) && typeof navigator.mediaDevices.getDisplayMedia !== "function") return false;
+    if (_editorRecorderUsesWebcam(mode) && typeof navigator.mediaDevices.getUserMedia !== "function") return false;
+    return _editorRecorderUsesScreen(mode) || _editorRecorderUsesWebcam(mode);
+}
+
+function _editorFormatRecordingClock(totalSeconds = 0) {
+    const safe = Math.max(0, Number(totalSeconds || 0));
+    const minutes = Math.floor(safe / 60);
+    const seconds = Math.floor(safe % 60);
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function _editorPickRecorderMimeType() {
+    const candidates = [
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "video/webm;codecs=h264,opus",
+        "video/webm",
+        "video/mp4",
+    ];
+    if (typeof MediaRecorder === "undefined") return "";
+    if (typeof MediaRecorder.isTypeSupported !== "function") return candidates[0];
+    return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || "";
+}
+
+function _editorRecorderBuildFileName() {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    const hh = String(now.getHours()).padStart(2, "0");
+    const min = String(now.getMinutes()).padStart(2, "0");
+    const ss = String(now.getSeconds()).padStart(2, "0");
+    return `gravacao_editor_${yyyy}${mm}${dd}_${hh}${min}${ss}.webm`;
+}
+
+function _editorStopMediaStream(stream) {
+    if (!stream) return;
+    for (const track of stream.getTracks()) {
+        try {
+            track.stop();
+        } catch {}
+    }
+}
+
+function _editorUpdateRecorderTimerUI() {
+    const timer = document.getElementById("editor-recorder-timer-label");
+    if (timer) timer.textContent = _editorFormatRecordingClock(_editorRecorderModal.seconds);
+}
+
+function _editorCleanupRecorderRuntime(options = {}) {
+    const { preservePreview = false } = options || {};
+    const preview = document.getElementById("editor-recorder-preview");
+    if (_editorRecorderRuntime.drawRaf) cancelAnimationFrame(_editorRecorderRuntime.drawRaf);
+    if (_editorRecorderRuntime.timer) clearInterval(_editorRecorderRuntime.timer);
+
+    _editorStopMediaStream(_editorRecorderRuntime.displayStream);
+    _editorStopMediaStream(_editorRecorderRuntime.webcamStream);
+    _editorStopMediaStream(_editorRecorderRuntime.micStream);
+    _editorStopMediaStream(_editorRecorderRuntime.canvasStream);
+    _editorStopMediaStream(_editorRecorderRuntime.outputStream);
+
+    if (_editorRecorderRuntime.audioContext) {
+        try {
+            _editorRecorderRuntime.audioContext.close();
+        } catch {}
+    }
+
+    if (preview && !preservePreview) {
+        preview.srcObject = null;
+        preview.removeAttribute("src");
+    }
+
+    _editorRecorderRuntime = _editorCreateRecorderRuntime();
+}
+
+function _editorResetRecorderModalState() {
+    _editorRecorderModal.open = false;
+    _editorRecorderModal.mode = "screen";
+    _editorRecorderModal.micEnabled = true;
+    _editorRecorderModal.starting = false;
+    _editorRecorderModal.recording = false;
+    _editorRecorderModal.stopping = false;
+    _editorRecorderModal.uploading = false;
+    _editorRecorderModal.seconds = 0;
+    _editorRecorderModal.status = "";
+    _editorRecorderModal.error = "";
+    _editorCleanupRecorderRuntime();
+    _editorUpdateRecorderTimerUI();
+}
+
+function _editorRenderRecorderModal() {
+    const screenBtn = document.getElementById("editor-recorder-mode-screen");
+    const screenCameraBtn = document.getElementById("editor-recorder-mode-screen-camera");
+    const webcamBtn = document.getElementById("editor-recorder-mode-webcam");
+    const micBtn = document.getElementById("editor-recorder-mic-toggle");
+    const preview = document.getElementById("editor-recorder-preview");
+    const empty = document.getElementById("editor-recorder-preview-empty");
+    const submit = document.getElementById("editor-recorder-submit");
+    const status = document.getElementById("editor-recorder-status");
+    if (!screenBtn || !screenCameraBtn || !webcamBtn || !micBtn || !preview || !empty || !submit || !status) return;
+
+    const mode = _editorRecorderModal.mode;
+    screenBtn.classList.toggle("active", mode === "screen");
+    screenCameraBtn.classList.toggle("active", mode === "screen_camera");
+    webcamBtn.classList.toggle("active", mode === "webcam");
+    micBtn.classList.toggle("active", Boolean(_editorRecorderModal.micEnabled));
+    micBtn.disabled = Boolean(_editorRecorderModal.starting || _editorRecorderModal.recording || _editorRecorderModal.stopping || _editorRecorderModal.uploading);
+
+    const hasPreview = Boolean(preview.srcObject);
+    preview.hidden = !hasPreview;
+    empty.hidden = hasPreview;
+    empty.innerHTML = `
+        <span class="editor-recorder-preview-empty-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="15" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/><circle cx="18" cy="7" r="3"/></svg>
+        </span>
+        <strong>${esc(_editorRecorderModeLabel(mode))}</strong>
+        <span>O navegador pedirá acesso para começar.</span>
+    `;
+
+    let submitLabel = "Iniciar gravação";
+    if (_editorRecorderModal.starting) submitLabel = "Preparando...";
+    else if (_editorRecorderModal.recording) submitLabel = "Parar e abrir no editor";
+    else if (_editorRecorderModal.stopping) submitLabel = "Finalizando...";
+    else if (_editorRecorderModal.uploading) submitLabel = "Enviando...";
+
+    submit.textContent = submitLabel;
+    submit.disabled = !_editorRecorderSupportsMode(mode) || Boolean(_editorRecorderModal.starting || _editorRecorderModal.stopping || _editorRecorderModal.uploading);
+
+    _editorUpdateRecorderTimerUI();
+    const statusMessage = String(_editorRecorderModal.error || _editorRecorderModal.status || "").trim();
+    status.hidden = !statusMessage;
+    status.textContent = statusMessage;
+    status.classList.toggle("error", Boolean(_editorRecorderModal.error));
+}
+
+function _editorOpenRecorderModal() {
+    closeModal("modal-editor-start");
+    _editorResetRecorderModalState();
+    _editorRecorderModal.open = true;
+    openModal("modal-editor-recorder");
+    _editorRenderRecorderModal();
+}
+window._editorOpenRecorderModal = _editorOpenRecorderModal;
+
+function _editorCloseRecorderModal(force = false) {
+    if (!force && (_editorRecorderModal.recording || _editorRecorderModal.starting || _editorRecorderModal.stopping || _editorRecorderModal.uploading)) {
+        showToast("Finalize a gravação antes de fechar.", "error");
+        return;
+    }
+    _editorResetRecorderModalState();
+    closeModal("modal-editor-recorder");
+}
+window._editorCloseRecorderModal = _editorCloseRecorderModal;
+
+function _editorSetRecorderMode(mode) {
+    const nextMode = ["screen", "screen_camera", "webcam"].includes(String(mode || "")) ? String(mode) : "screen";
+    if (_editorRecorderModal.starting || _editorRecorderModal.recording || _editorRecorderModal.stopping || _editorRecorderModal.uploading) return;
+    _editorRecorderModal.mode = nextMode;
+    _editorRecorderModal.status = "";
+    _editorRecorderModal.error = "";
+    _editorRenderRecorderModal();
+}
+window._editorSetRecorderMode = _editorSetRecorderMode;
+
+function _editorToggleRecorderMic() {
+    if (_editorRecorderModal.starting || _editorRecorderModal.recording || _editorRecorderModal.stopping || _editorRecorderModal.uploading) return;
+    _editorRecorderModal.micEnabled = !_editorRecorderModal.micEnabled;
+    _editorRenderRecorderModal();
+}
+window._editorToggleRecorderMic = _editorToggleRecorderMic;
+
+async function _editorRecorderLoadVideoElement(stream) {
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+    await new Promise((resolve) => {
+        video.onloadedmetadata = () => resolve();
+        setTimeout(resolve, 500);
+    });
+    try {
+        await video.play();
+    } catch {}
+    return video;
+}
+
+function _editorRecorderComputeCanvasSize(mode, screenVideoEl, webcamVideoEl) {
+    const fitWithin = (width, height, maxWidth, maxHeight) => {
+        const safeWidth = Math.max(1, Number(width || 1));
+        const safeHeight = Math.max(1, Number(height || 1));
+        const ratio = Math.min(maxWidth / safeWidth, maxHeight / safeHeight, 1);
+        return {
+            width: Math.max(1, Math.round(safeWidth * ratio)),
+            height: Math.max(1, Math.round(safeHeight * ratio)),
+        };
+    };
+
+    if (_editorRecorderUsesScreen(mode) && screenVideoEl?.videoWidth && screenVideoEl?.videoHeight) {
+        return fitWithin(screenVideoEl.videoWidth, screenVideoEl.videoHeight, 1920, 1080);
+    }
+    if (webcamVideoEl?.videoWidth && webcamVideoEl?.videoHeight) {
+        return fitWithin(webcamVideoEl.videoWidth, webcamVideoEl.videoHeight, 1280, 720);
+    }
+    return { width: 1280, height: 720 };
+}
+
+function _editorRecorderRoundRect(ctx, x, y, width, height, radius) {
+    const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + width, y, x + width, y + height, r);
+    ctx.arcTo(x + width, y + height, x, y + height, r);
+    ctx.arcTo(x, y + height, x, y, r);
+    ctx.arcTo(x, y, x + width, y, r);
+    ctx.closePath();
+}
+
+function _editorRecorderBuildMixedAudio(streams) {
+    const audioStreams = (streams || []).filter((stream) => stream && stream.getAudioTracks().length);
+    if (!audioStreams.length) {
+        return { track: null, audioContext: null, audioDestination: null };
+    }
+    if (audioStreams.length === 1) {
+        return { track: audioStreams[0].getAudioTracks()[0], audioContext: null, audioDestination: null };
+    }
+
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) {
+        return { track: audioStreams[0].getAudioTracks()[0], audioContext: null, audioDestination: null };
+    }
+
+    const audioContext = new AudioContextCtor();
+    const destination = audioContext.createMediaStreamDestination();
+    for (const stream of audioStreams) {
+        const source = audioContext.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+        const gain = audioContext.createGain();
+        gain.gain.value = 1;
+        source.connect(gain).connect(destination);
+    }
+    audioContext.resume().catch(() => {});
+    return {
+        track: destination.stream.getAudioTracks()[0] || null,
+        audioContext,
+        audioDestination: destination,
+    };
+}
+
+async function _editorPrepareRecorderSession(mode) {
+    let displayStream = null;
+    let webcamStream = null;
+    let micStream = null;
+
+    if (_editorRecorderUsesScreen(mode)) {
+        displayStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { frameRate: { ideal: 30, max: 30 } },
+            audio: true,
+        });
+    }
+
+    if (_editorRecorderUsesWebcam(mode)) {
+        webcamStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+            },
+            audio: Boolean(_editorRecorderModal.micEnabled),
+        });
+    } else if (_editorRecorderModal.micEnabled) {
+        micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+            },
+        });
+    }
+
+    const screenVideoEl = displayStream ? await _editorRecorderLoadVideoElement(displayStream) : null;
+    const webcamVideoEl = webcamStream ? await _editorRecorderLoadVideoElement(webcamStream) : null;
+    const { width, height } = _editorRecorderComputeCanvasSize(mode, screenVideoEl, webcamVideoEl);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+        throw new Error("Não foi possível preparar a captura de vídeo.");
+    }
+
+    const drawFrame = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (_editorRecorderUsesScreen(mode) && screenVideoEl) {
+            ctx.drawImage(screenVideoEl, 0, 0, canvas.width, canvas.height);
+        } else if (webcamVideoEl) {
+            ctx.drawImage(webcamVideoEl, 0, 0, canvas.width, canvas.height);
+        }
+
+        if (mode === "screen_camera" && webcamVideoEl) {
+            const overlayWidth = Math.round(canvas.width * 0.26);
+            const aspectRatio = Math.max(0.6, webcamVideoEl.videoWidth / Math.max(1, webcamVideoEl.videoHeight));
+            const overlayHeight = Math.round(overlayWidth / aspectRatio);
+            const x = canvas.width - overlayWidth - 28;
+            const y = canvas.height - overlayHeight - 28;
+
+            ctx.save();
+            _editorRecorderRoundRect(ctx, x - 4, y - 4, overlayWidth + 8, overlayHeight + 8, 22);
+            ctx.fillStyle = "rgba(5, 20, 38, 0.88)";
+            ctx.fill();
+            _editorRecorderRoundRect(ctx, x, y, overlayWidth, overlayHeight, 18);
+            ctx.clip();
+            ctx.drawImage(webcamVideoEl, x, y, overlayWidth, overlayHeight);
+            ctx.restore();
+        }
+
+        _editorRecorderRuntime.drawRaf = requestAnimationFrame(drawFrame);
+    };
+    drawFrame();
+
+    const canvasStream = canvas.captureStream(30);
+    const outputStream = new MediaStream();
+    const videoTrack = canvasStream.getVideoTracks()[0];
+    if (videoTrack) outputStream.addTrack(videoTrack);
+
+    const mixedAudio = _editorRecorderBuildMixedAudio([displayStream, webcamStream, micStream]);
+    if (mixedAudio.track) outputStream.addTrack(mixedAudio.track);
+
+    return {
+        displayStream,
+        webcamStream,
+        micStream,
+        canvas,
+        canvasStream,
+        outputStream,
+        audioContext: mixedAudio.audioContext,
+        audioDestination: mixedAudio.audioDestination,
+        screenVideoEl,
+        webcamVideoEl,
+    };
+}
+
+async function _editorHandleRecorderFinished(blob, mimeType = "") {
+    if (!blob || blob.size <= 0) {
+        throw new Error("A gravação terminou vazia.");
+    }
+
+    _editorRecorderModal.uploading = true;
+    _editorRecorderModal.stopping = false;
+    _editorRecorderModal.status = "Enviando gravação...";
+    _editorRecorderModal.error = "";
+    _editorRenderRecorderModal();
+
+    const file = new File([blob], _editorRecorderBuildFileName(), {
+        type: blob.type || mimeType || "video/webm",
+        lastModified: Date.now(),
+    });
+    const formData = new FormData();
+    formData.append("file", file, file.name);
+    const payload = await apiForm("/video/editor/upload-video", formData, { method: "POST" });
+    await loadEditorVideosList();
+    _editorCloseRecorderModal(true);
+
+    if (payload?.project_id) {
+        showToast("Gravação pronta! Abrindo editor...", "success");
+        await openEditor(payload.project_id);
+        return;
+    }
+
+    showToast("Gravação salva com sucesso.", "success");
+}
+
+async function _editorStartRecorderCapture() {
+    if (_editorRecorderModal.starting || _editorRecorderModal.recording || _editorRecorderModal.stopping || _editorRecorderModal.uploading) return;
+    const mode = _editorRecorderModal.mode;
+    if (!_editorRecorderSupportsMode(mode)) {
+        _editorRecorderModal.error = "Seu navegador não suporta esse tipo de gravação.";
+        _editorRenderRecorderModal();
+        return;
+    }
+
+    _editorRecorderModal.starting = true;
+    _editorRecorderModal.error = "";
+    _editorRecorderModal.status = _editorRecorderUsesScreen(mode)
+        ? "Escolha a tela ou janela para compartilhar."
+        : "Preparando webcam...";
+    _editorRecorderModal.seconds = 0;
+    _editorRenderRecorderModal();
+
+    try {
+        _editorCleanupRecorderRuntime();
+        const prepared = await _editorPrepareRecorderSession(mode);
+        Object.assign(_editorRecorderRuntime, prepared);
+
+        const preview = document.getElementById("editor-recorder-preview");
+        if (preview) {
+            preview.srcObject = _editorRecorderRuntime.outputStream;
+            preview.muted = true;
+            preview.playsInline = true;
+            preview.autoplay = true;
+            preview.play().catch(() => {});
+        }
+
+        const mimeType = _editorPickRecorderMimeType();
+        const recorderOptions = mimeType
+            ? { mimeType, videoBitsPerSecond: 6000000 }
+            : { videoBitsPerSecond: 6000000 };
+        const recorder = new MediaRecorder(_editorRecorderRuntime.outputStream, recorderOptions);
+        _editorRecorderRuntime.recorder = recorder;
+        _editorRecorderRuntime.chunks = [];
+
+        recorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+                _editorRecorderRuntime.chunks.push(event.data);
+            }
+        };
+
+        recorder.onerror = () => {
+            _editorRecorderModal.error = "Falha durante a gravação.";
+            _editorRecorderModal.status = "";
+            _editorRecorderModal.starting = false;
+            _editorRecorderModal.recording = false;
+            _editorRecorderModal.stopping = false;
+            _editorRecorderModal.uploading = false;
+            _editorCleanupRecorderRuntime();
+            _editorRenderRecorderModal();
+        };
+
+        recorder.onstop = async () => {
+            const chunks = Array.isArray(_editorRecorderRuntime.chunks) ? [..._editorRecorderRuntime.chunks] : [];
+            const finalMimeType = recorder.mimeType || mimeType || "video/webm";
+            const blob = new Blob(chunks, { type: finalMimeType });
+            try {
+                await _editorHandleRecorderFinished(blob, finalMimeType);
+            } catch (err) {
+                _editorRecorderModal.uploading = false;
+                _editorRecorderModal.stopping = false;
+                _editorRecorderModal.recording = false;
+                _editorRecorderModal.status = "";
+                _editorRecorderModal.error = err?.message || "Erro ao salvar gravação.";
+                _editorCleanupRecorderRuntime();
+                _editorRenderRecorderModal();
+                showToast("Erro ao salvar gravação: " + (_editorRecorderModal.error || "erro desconhecido"), "error");
+            }
+        };
+
+        for (const stream of [_editorRecorderRuntime.displayStream, _editorRecorderRuntime.webcamStream]) {
+            for (const track of stream?.getVideoTracks?.() || []) {
+                track.addEventListener("ended", () => {
+                    if (_editorRecorderModal.recording && !_editorRecorderModal.stopping && !_editorRecorderModal.uploading) {
+                        _editorStopRecorderCapture();
+                    }
+                }, { once: true });
+            }
+        }
+
+        recorder.start(1000);
+        _editorRecorderModal.starting = false;
+        _editorRecorderModal.recording = true;
+        _editorRecorderModal.status = "Gravando agora.";
+        _editorRecorderModal.error = "";
+        _editorRecorderRuntime.timer = setInterval(() => {
+            _editorRecorderModal.seconds += 1;
+            _editorUpdateRecorderTimerUI();
+        }, 1000);
+        _editorRenderRecorderModal();
+    } catch (err) {
+        _editorRecorderModal.starting = false;
+        _editorRecorderModal.recording = false;
+        _editorRecorderModal.stopping = false;
+        _editorRecorderModal.uploading = false;
+        _editorRecorderModal.status = "";
+        _editorRecorderModal.error = err?.message || "Não foi possível iniciar a gravação.";
+        _editorCleanupRecorderRuntime();
+        _editorRenderRecorderModal();
+        showToast("Erro ao iniciar gravação: " + _editorRecorderModal.error, "error");
+    }
+}
+
+function _editorStopRecorderCapture() {
+    if (!_editorRecorderRuntime.recorder || _editorRecorderModal.stopping || _editorRecorderModal.uploading) return;
+    if (_editorRecorderRuntime.timer) {
+        clearInterval(_editorRecorderRuntime.timer);
+        _editorRecorderRuntime.timer = 0;
+    }
+    _editorRecorderModal.recording = false;
+    _editorRecorderModal.stopping = true;
+    _editorRecorderModal.status = "Finalizando gravação...";
+    _editorRecorderModal.error = "";
+    _editorRenderRecorderModal();
+
+    if (_editorRecorderRuntime.recorder.state !== "inactive") {
+        _editorRecorderRuntime.recorder.stop();
+    }
+}
+
+function _editorSubmitRecorderModal() {
+    if (_editorRecorderModal.recording) {
+        _editorStopRecorderCapture();
+        return;
+    }
+    _editorStartRecorderCapture();
+}
+window._editorSubmitRecorderModal = _editorSubmitRecorderModal;
+
 function _editorOpenStartModal() {
     openModal("modal-editor-start");
 }
@@ -18313,6 +18866,11 @@ function _editorChooseStartMode(mode) {
 
     if (selectedMode === "internet") {
         _editorOpenInternetImportModal();
+        return;
+    }
+
+    if (selectedMode === "record") {
+        _editorOpenRecorderModal();
         return;
     }
 
@@ -19380,6 +19938,7 @@ async function openEditor(projectId, options = {}) {
         _editorCloseAIMusicModal(true);
         _editorResetAIMusicModalState();
         _editorCloseAudioVideoSourceModal(true);
+        _editorCloseRecorderModal(true);
 
         document.getElementById("editor-select-view").hidden = true;
         document.getElementById("editor-workspace").hidden = false;
@@ -19467,6 +20026,7 @@ function closeEditor() {
     _editorCloseAIMusicModal(true);
     _editorResetAIMusicModalState();
     _editorCloseAudioVideoSourceModal(true);
+    _editorCloseRecorderModal(true);
     const video = document.getElementById("editor-video");
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = false;
