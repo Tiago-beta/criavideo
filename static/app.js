@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v284 loaded");
+console.log("[CriaVideo] app.js v285 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -20155,7 +20155,21 @@ async function _editorAnalyzeSmartCuts() {
     } finally {
         _editor.smartCutsLoading = false;
         _editorRenderProps();
+        _editorScrollSmartCutResultsIntoView();
     }
+}
+
+function _editorScrollSmartCutResultsIntoView() {
+    if (_editor.activeTool !== "smartcuts") return;
+
+    requestAnimationFrame(() => {
+        const target = document.getElementById("editor-smartcuts-results-anchor")
+            || document.querySelector(".editor-smartcut-item")
+            || document.querySelector(".editor-smartcuts-error");
+        if (!target) return;
+
+        target.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+    });
 }
 
 function _editorSeekToSmartCut(cutId) {
@@ -20261,7 +20275,7 @@ function _editorRenderProps() {
                     ? '<div class="spinner-small" style="width:14px;height:14px"></div> Analisando vídeo...'
                     : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 4.5 16 3l1.5 1.5L19 6l-1.5 1.5L16 9l-1.5-1.5L13 6z"/><path d="M5 4v16"/><path d="M19 12v8"/><path d="M8 7h3"/><path d="M8 12h8"/><path d="M8 17h8"/></svg> Criar vários cortes inteligentes'}
             </button>
-            ${cuts.length ? `<div class="editor-smartcuts-summary">${approvedCount} de ${cuts.length} short(s) aprovados para exportar</div>` : ""}
+            ${cuts.length ? `<div id="editor-smartcuts-results-anchor" class="editor-smartcuts-summary">${approvedCount} de ${cuts.length} short(s) aprovados para exportar</div>` : ""}
             ${errorHtml}
             <div class="editor-smartcuts-list">
                 ${cuts.map((cut) => `
