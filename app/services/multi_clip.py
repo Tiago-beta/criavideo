@@ -126,7 +126,7 @@ async def extract_last_frame(video_path: str, output_path: str) -> str:
 
 
 async def concatenate_clips(clip_paths: list[str], output_path: str) -> str:
-    """Concatenate video clips using FFmpeg concat demuxer with crossfade transitions."""
+    """Concatenate video clips while preserving scene audio."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     if len(clip_paths) == 1:
@@ -134,44 +134,63 @@ async def concatenate_clips(clip_paths: list[str], output_path: str) -> str:
         shutil.copy2(clip_paths[0], output_path)
         return output_path
 
-    # Use concat filter with crossfade for smooth transitions
-    # First, check if all clips have same codec/resolution for fast concat
-    # Use re-encode approach for safety (handles different codecs/resolutions)
-    filter_parts = []
     inputs = []
-    for i, path in enumerate(clip_paths):
+    for path in clip_paths:
         inputs.extend(["-i", path])
 
     # Build crossfade chain: 0.5s crossfade between each pair
     crossfade_dur = 0.5
     n = len(clip_paths)
+    filter_parts: list[str] = []
+
+    clip_durations = [await _get_clip_duration(path) for path in clip_paths]
+
+    audio_labels: list[str] = []
+    for i, path in enumerate(clip_paths):
+        normalized_label = f"[a{i}]"
+        if await _clip_has_audio(path):
+            filter_parts.append(
+                f"[{i}:a]aresample=async=1:first_pts=0,aformat=sample_rates=44100:channel_layouts=stereo{normalized_label}"
+            )
+        else:
+            duration = max(0.1, float(clip_durations[i] or 0.1))
+            filter_parts.append(
+                f"anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration={duration:.2f}{normalized_label}"
+            )
+        audio_labels.append(normalized_label)
 
     if n == 2:
-        filter_complex = (
+        video_filter = (
             f"[0:v][1:v]xfade=transition=fade:duration={crossfade_dur}:offset=OFFSET0[outv]"
         )
         # Get duration of first clip to compute offset
-        dur0 = await _get_clip_duration(clip_paths[0])
-        offset0 = max(0, dur0 - crossfade_dur)
-        filter_complex = filter_complex.replace("OFFSET0", f"{offset0:.2f}")
+        offset0 = max(0, clip_durations[0] - crossfade_dur)
+        filter_parts.append(video_filter.replace("OFFSET0", f"{offset0:.2f}"))
+        filter_parts.append(f"{audio_labels[0]}{audio_labels[1]}acrossfade=d={crossfade_dur}[outa]")
     elif n <= 5:
         # Chain xfade for 3-5 clips
         offsets = []
         cumulative = 0.0
         for i in range(n - 1):
-            dur_i = await _get_clip_duration(clip_paths[i])
+            dur_i = clip_durations[i]
             cumulative += dur_i - (crossfade_dur if i > 0 else 0)
             offsets.append(cumulative - crossfade_dur)
 
-        parts = []
-        prev = "[0:v]"
+        prev_video = "[0:v]"
         for i in range(1, n):
             next_label = "[outv]" if i == n - 1 else f"[v{i}]"
-            parts.append(
-                f"{prev}[{i}:v]xfade=transition=fade:duration={crossfade_dur}:offset={offsets[i-1]:.2f}{next_label}"
+            filter_parts.append(
+                f"{prev_video}[{i}:v]xfade=transition=fade:duration={crossfade_dur}:offset={offsets[i-1]:.2f}{next_label}"
             )
-            prev = next_label if i < n - 1 else ""
-        filter_complex = ";".join(parts)
+            prev_video = next_label if i < n - 1 else ""
+
+        prev_audio = audio_labels[0]
+        for i in range(1, n):
+            next_label = "[outa]" if i == n - 1 else f"[ax{i}]"
+            filter_parts.append(
+                f"{prev_audio}{audio_labels[i]}acrossfade=d={crossfade_dur}{next_label}"
+            )
+            prev_audio = next_label if i < n - 1 else ""
     else:
         # Fallback: simple concat without crossfade for many clips
         concat_file = output_path + ".txt"
@@ -191,12 +210,16 @@ async def concatenate_clips(clip_paths: list[str], output_path: str) -> str:
             raise RuntimeError(f"FFmpeg concat failed: {stderr.decode()[:300]}")
         return output_path
 
+    filter_complex = ";".join(filter_parts)
+
     cmd = [
         "ffmpeg", "-y",
         *inputs,
         "-filter_complex", filter_complex,
         "-map", "[outv]",
+        "-map", "[outa]",
         "-c:v", "libx264", "-crf", "22", "-preset", "fast",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
         "-pix_fmt", "yuv420p",
         output_path,
     ]
@@ -211,6 +234,22 @@ async def concatenate_clips(clip_paths: list[str], output_path: str) -> str:
 
     logger.info(f"Clips concatenated: {output_path}")
     return output_path
+
+
+async def _clip_has_audio(path: str) -> bool:
+    """Return True when the clip has at least one audio stream."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "a",
+        "-show_entries", "stream=codec_type",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        path,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, _ = await proc.communicate()
+    return proc.returncode == 0 and bool((stdout or b"").decode().strip())
 
 
 async def _get_clip_duration(path: str) -> float:
