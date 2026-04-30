@@ -6778,7 +6778,25 @@ th,
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 10px;
+}
+
+.similar-upload-loaded-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.similar-upload-loaded-copy strong {
+    color: var(--text);
+    font-size: 0.95rem;
+}
+
+.similar-upload-loaded-copy small {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+    word-break: break-word;
 }
 
 .similar-panel-actions {
