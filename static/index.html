@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260430-07">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260430-08">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 293;
+        var REQUIRED_VER = 294;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2289,11 +2289,11 @@
                 <button class="modal-close" onclick="closeModal('modal-auto-pilot')" type="button">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="section-subtitle">Ligue por canal do YouTube para o sistema criar temas, produzir, publicar e ajustar a estrategia com base no desempenho.</p>
+                <p class="section-subtitle">Cada canal publica videos longos na segunda e na quinta as 20:00, e agenda 5 shorts por dia na terca, quarta, sexta e sabado, sempre entre 18:00 e 22:00.</p>
                 <div id="auto-pilot-channels" class="auto-pilot-list">
                     <p class="loading">Carregando canais conectados...</p>
                 </div>
-                <p class="muted auto-pilot-note">Quando ligado, o piloto repoe temas automaticamente e mantem a fila ativa para crescimento continuo do canal.</p>
+                <p class="muted auto-pilot-note">Quando ligado, o piloto repoe temas automaticamente, deriva os shorts de cada video longo e mantem a fila de publicacao organizada.</p>
             </div>
             <div class="modal-footer modal-footer-space">
                 <button class="btn btn-primary" onclick="closeModal('modal-auto-pilot'); connectPlatform('youtube')" type="button">Conectar YouTube</button>
@@ -3209,8 +3209,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260430-07"></script>
-    <script src="/video/static/pwa.js?v=20260430-07"></script>
+    <script src="/video/static/app.js?v=20260430-08"></script>
+    <script src="/video/static/pwa.js?v=20260430-08"></script>
 </body>
 </html>
 

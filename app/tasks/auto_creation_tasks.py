@@ -17,8 +17,12 @@ from sqlalchemy.orm import selectinload
 from app.database import async_session
 from app.config import get_settings
 from app.models import (
-    AutoSchedule, AutoScheduleTheme, VideoProject, VideoStatus,
+    AutoPilotCycleRun, AutoSchedule, AutoScheduleTheme, VideoProject, VideoStatus,
     PublishJob, PublishStatus, SocialAccount, VideoRender,
+)
+from app.services.pilot_schedule import (
+    build_pilot_short_publish_plan,
+    resolve_publish_datetime_utc,
 )
 from app.services.persona_registry import (
     build_persona_reference_montage,
@@ -524,8 +528,8 @@ async def ai_select_video_settings(theme: str) -> dict:
         }
 
 
-def _parse_theme_release_date(custom_settings: dict) -> date | None:
-    raw = str(custom_settings.get("scheduled_date_override") or "").strip()
+def _parse_release_date_value(raw_value: object) -> date | None:
+    raw = str(raw_value or "").strip()
     if not raw:
         return None
     for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
@@ -534,6 +538,56 @@ def _parse_theme_release_date(custom_settings: dict) -> date | None:
         except ValueError:
             continue
     return None
+
+
+def _parse_theme_release_date(custom_settings: dict) -> date | None:
+    return _parse_release_date_value((custom_settings or {}).get("scheduled_date_override"))
+
+
+def _resolve_theme_release_date(custom_settings: dict, schedule_timezone: str) -> date:
+    release_date = _parse_release_date_value((custom_settings or {}).get("pilot_release_date"))
+    if release_date:
+        return release_date
+
+    release_date = _parse_theme_release_date(custom_settings or {})
+    if release_date:
+        return release_date
+
+    try:
+        tz = ZoneInfo(schedule_timezone or "UTC")
+    except Exception:
+        tz = ZoneInfo("UTC")
+    return datetime.now(tz).date()
+
+
+def _resolve_auto_publish_datetime(
+    schedule_timezone: str,
+    default_settings: dict,
+    custom_settings: dict,
+):
+    merged_default = default_settings if isinstance(default_settings, dict) else {}
+    merged_custom = custom_settings if isinstance(custom_settings, dict) else {}
+
+    publish_time_local = str(
+        merged_custom.get("scheduled_publish_time_local")
+        or merged_default.get("scheduled_publish_time_local")
+        or merged_default.get("pilot_publish_time_local")
+        or ""
+    ).strip()
+    if not publish_time_local:
+        return None
+
+    release_date = _resolve_theme_release_date(merged_custom, schedule_timezone)
+
+    try:
+        return resolve_publish_datetime_utc(
+            release_date=release_date,
+            publish_time_local=publish_time_local,
+            timezone=schedule_timezone or "UTC",
+        )
+    except Exception as err:
+        logger.warning("Auto-publish datetime resolution failed: %s", err)
+        return None
 
 
 def _is_theme_due_today(theme: AutoScheduleTheme, schedule_timezone: str) -> bool:
@@ -587,19 +641,42 @@ async def run_auto_creation(auto_schedule_id: int):
                     auto_schedule_id,
                 )
                 return
-            theme_entry = due_pending[0]
+            items_per_run = 1
+            if schedule.video_type == "musical_shorts":
+                try:
+                    items_per_run = max(1, int((schedule.default_settings or {}).get("auto_items_per_run", 1) or 1))
+                except Exception:
+                    items_per_run = 1
+            selected_themes = due_pending[:items_per_run]
         else:
-            theme_entry = pending[0]
-        theme_entry.status = "processing"
+            selected_themes = [pending[0]]
+
+        for theme_entry in selected_themes:
+            theme_entry.status = "processing"
+            custom_settings = dict(theme_entry.custom_settings or {})
+            custom_settings["pilot_release_date"] = _resolve_theme_release_date(
+                custom_settings,
+                schedule.timezone or "UTC",
+            ).isoformat()
+            theme_entry.custom_settings = custom_settings
         await db.commit()
 
+    for theme_entry in selected_themes:
         logger.info(
             "Auto-creation started: schedule=%d, theme=%d '%s', mode=%s, type=%s",
-            auto_schedule_id, theme_entry.id, theme_entry.theme,
-            schedule.creation_mode, schedule.video_type,
+            auto_schedule_id,
+            theme_entry.id,
+            theme_entry.theme,
+            schedule.creation_mode,
+            schedule.video_type,
         )
+        await _run_auto_creation_for_theme(schedule, theme_entry)
 
-    # Run the pipeline outside the DB session to avoid long-held connections
+
+
+async def _run_auto_creation_for_theme(schedule: AutoSchedule, theme_entry: AutoScheduleTheme):
+    auto_schedule_id = int(schedule.id or 0)
+
     try:
         project_id = await _create_video_for_theme(
             schedule_id=auto_schedule_id,
@@ -612,17 +689,18 @@ async def run_auto_creation(auto_schedule_id: int):
             custom_settings=theme_entry.custom_settings or {},
         )
 
-        # Wait for video to complete (poll every 10s, max 30 min)
         completed = await _wait_for_project_completion(project_id, timeout_minutes=30)
 
         if completed:
-            # Auto-publish if social account is configured
             if schedule.social_account_id:
                 await _auto_publish(
                     project_id=project_id,
                     user_id=schedule.user_id,
                     platform=schedule.platform,
                     social_account_id=schedule.social_account_id,
+                    schedule_timezone=schedule.timezone or "UTC",
+                    default_settings=schedule.default_settings or {},
+                    custom_settings=theme_entry.custom_settings or {},
                 )
             else:
                 logger.info(
@@ -641,7 +719,6 @@ async def run_auto_creation(auto_schedule_id: int):
 
             logger.info("Auto-creation completed: schedule=%d, theme=%d, project=%d", auto_schedule_id, theme_entry.id, project_id)
 
-            # Pilot: after long video completes, enqueue shorts automatically
             pilot_cycle_key = (theme_entry.custom_settings or {}).get("pilot_cycle_key")
             if pilot_cycle_key and schedule.video_type == "music":
                 try:
@@ -653,7 +730,9 @@ async def run_auto_creation(auto_schedule_id: int):
                 except Exception as pilot_err:
                     logger.error(
                         "Pilot shorts enqueue failed: schedule=%d, theme=%d, error=%s",
-                        auto_schedule_id, theme_entry.id, pilot_err,
+                        auto_schedule_id,
+                        theme_entry.id,
+                        pilot_err,
                     )
             elif pilot_cycle_key and schedule.video_type == "musical_shorts":
                 try:
@@ -661,7 +740,9 @@ async def run_auto_creation(auto_schedule_id: int):
                 except Exception as pilot_err:
                     logger.error(
                         "Pilot short cycle update failed: schedule=%d, theme=%d, error=%s",
-                        auto_schedule_id, theme_entry.id, pilot_err,
+                        auto_schedule_id,
+                        theme_entry.id,
+                        pilot_err,
                     )
         else:
             async with async_session() as db:
@@ -1588,7 +1669,7 @@ async def _enqueue_pilot_shorts_from_long(
         if not pilot_cycle_key:
             return
 
-        shorts_per_cycle = int(custom.get("pilot_shorts_per_cycle", 3))
+        shorts_per_cycle = int(custom.get("pilot_shorts_per_cycle", 10))
 
         long_schedule = await db.get(AutoSchedule, schedule_id)
         if not long_schedule:
@@ -1644,6 +1725,19 @@ async def _enqueue_pilot_shorts_from_long(
             return
 
         shorts_defaults = shorts_schedule.default_settings or {}
+        long_release_date = _resolve_theme_release_date(custom, long_schedule.timezone or "UTC")
+        publish_plan = build_pilot_short_publish_plan(long_release_date)
+        planned_segments = segments[: len(publish_plan)]
+
+        cycle_result = await db.execute(
+            select(AutoPilotCycleRun)
+            .where(AutoPilotCycleRun.cycle_key == pilot_cycle_key)
+            .limit(1)
+        )
+        cycle_run = cycle_result.scalar_one_or_none()
+        if cycle_run:
+            cycle_run.planned_shorts = len(planned_segments)
+
         interaction_persona = (
             shorts_defaults.get("interaction_persona")
             or long_settings.get("interaction_persona")
@@ -1684,7 +1778,7 @@ async def _enqueue_pilot_shorts_from_long(
             and ((theme.custom_settings or {}).get("pilot_variant") or {}).get("kind") == "persona"
         )
 
-        for seg in segments:
+        for seg, publish_slot in zip(planned_segments, publish_plan):
             max_pos += 1
             variant_index = experiment_variant_offset + int(seg["segment_index"] or 0)
             selected_persona = _pick_pilot_persona_candidate(persona_experiment, variant_index)
@@ -1725,9 +1819,13 @@ async def _enqueue_pilot_shorts_from_long(
                 "persona_profile_id": short_persona_profile_id,
                 "persona_profile_ids": short_persona_profile_ids,
                 "pilot_cycle_key": pilot_cycle_key,
+                "pilot_release_date": publish_slot["release_date_iso"],
                 "lyrics_snippet": seg["lyrics_snippet"],
                 "pilot_persona_experiment": persona_experiment,
                 "pilot_variant": pilot_variant,
+                "scheduled_date_override": publish_slot["release_date_iso"],
+                "scheduled_publish_time_local": publish_slot["time_local"],
+                "pilot_publish_slot_index": int(publish_slot["slot_index"] or 0),
             }
 
             short_theme = AutoScheduleTheme(
@@ -1743,7 +1841,7 @@ async def _enqueue_pilot_shorts_from_long(
 
         logger.info(
             "Pilot shorts enqueued for scheduled creation: project=%d, shorts_schedule=%d, segments=%d",
-            project_id, shorts_schedule_id, len(segments),
+            project_id, shorts_schedule_id, len(planned_segments),
         )
 
 
@@ -1852,6 +1950,9 @@ async def _auto_publish(
     user_id: int,
     platform: str,
     social_account_id: int,
+    schedule_timezone: str,
+    default_settings: dict,
+    custom_settings: dict,
 ):
     """Create a publish job for the completed video and run it."""
     from app.tasks.publish_tasks import run_publish_job
@@ -1901,6 +2002,14 @@ async def _auto_publish(
                 project_tags["pilot_variant"] = pilot_variant
                 project.tags = project_tags
 
+        now_utc = datetime.utcnow()
+        scheduled_publish_at = _resolve_auto_publish_datetime(
+            schedule_timezone=schedule_timezone,
+            default_settings=default_settings or {},
+            custom_settings=custom_settings or {},
+        )
+        schedule_for_later = bool(scheduled_publish_at and scheduled_publish_at > now_utc)
+
         job = PublishJob(
             user_id=user_id,
             render_id=render.id,
@@ -1909,7 +2018,8 @@ async def _auto_publish(
             title=title,
             description=description,
             tags=tags,
-            status=PublishStatus.PENDING,
+            scheduled_at=scheduled_publish_at if schedule_for_later else None,
+            status=PublishStatus.SCHEDULED if schedule_for_later else PublishStatus.PENDING,
         )
         db.add(job)
         await db.commit()
@@ -1923,6 +2033,15 @@ async def _auto_publish(
                 project_tags["pilot_variant"] = pilot_variant
                 project.tags = project_tags
                 await db.commit()
+
+        if schedule_for_later:
+            logger.info(
+                "Auto-publish scheduled: project=%d, job=%d, publish_at=%s",
+                project_id,
+                job_id,
+                scheduled_publish_at.isoformat() if scheduled_publish_at else "",
+            )
+            return
 
     try:
         await run_publish_job(job_id)

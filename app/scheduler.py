@@ -85,7 +85,8 @@ async def check_pending_publish_jobs():
     async with async_session() as db:
         result = await db.execute(
             select(PublishJob)
-            .where(PublishJob.status == PublishStatus.PENDING)
+            .where(PublishJob.status.in_([PublishStatus.PENDING, PublishStatus.SCHEDULED]))
+            .where(PublishJob.scheduled_at.isnot(None))
             .where(PublishJob.scheduled_at <= datetime.utcnow())
             .limit(5)
         )

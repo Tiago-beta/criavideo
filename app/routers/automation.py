@@ -20,6 +20,7 @@ from app.database import get_db
 from app.models import AppUser, AutoChannelPilot, AutoSchedule, AutoScheduleTheme, Platform, SocialAccount
 from app.services.persona_image import normalize_persona_type
 from app.services.credit_pricing import estimate_auto_theme_credits
+from app.services.pilot_schedule import PILOT_TOTAL_SHORTS_PER_CYCLE
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -377,6 +378,16 @@ def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
         local_ref = utc_ref.astimezone(tz)
         local_h, local_m = local_ref.hour, local_ref.minute
 
+        active_weekdays = None
+        if isinstance(s.default_settings, dict):
+            active_weekdays = s.default_settings.get("active_weekdays")
+        allowed_days = set()
+        if s.frequency == "daily" and active_weekdays:
+            try:
+                allowed_days = {int(day) for day in active_weekdays}
+            except Exception:
+                allowed_days = set()
+
         # Find next run date in local time
         next_run = now_local.replace(hour=local_h, minute=local_m, second=0, microsecond=0)
         if next_run <= now_local:
@@ -387,8 +398,11 @@ def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
         if s.frequency == "weekly" and s.day_of_week is not None:
             while next_run.weekday() != s.day_of_week:
                 next_run += timedelta(days=1)
+        elif s.frequency == "daily" and allowed_days:
+            while next_run.weekday() not in allowed_days:
+                next_run += timedelta(days=1)
 
-        pending_idx = 0
+        next_pending_run = next_run
         for t in all_sorted:
             td = _theme_to_dict(t, s)
             if t.status == "pending":
@@ -400,12 +414,17 @@ def _schedule_to_dict(s: AutoSchedule, theme_count: int = 0) -> dict:
                     td["scheduled_date_iso"] = override_date.isoformat()
                     td["scheduled_date_overridden"] = True
                 else:
-                    delta = timedelta(weeks=pending_idx) if s.frequency == "weekly" else timedelta(days=pending_idx)
-                    scheduled = next_run + delta
+                    scheduled = next_pending_run
                     td["scheduled_date"] = scheduled.strftime("%d/%m/%Y")
                     td["scheduled_date_iso"] = scheduled.date().isoformat()
                     td["scheduled_date_overridden"] = False
-                    pending_idx += 1
+                    if s.frequency == "weekly":
+                        next_pending_run = scheduled + timedelta(weeks=1)
+                    else:
+                        next_pending_run = scheduled + timedelta(days=1)
+                        if allowed_days:
+                            while next_pending_run.weekday() not in allowed_days:
+                                next_pending_run += timedelta(days=1)
             else:
                 td["scheduled_date"] = None
                 td["scheduled_date_iso"] = None
@@ -458,7 +477,7 @@ def _pilot_summary_dict(pilot: AutoChannelPilot | None) -> dict:
             "enabled": False,
             "channel_mode": "auto",
             "short_mix_mode": "realistic_all",
-            "shorts_per_cycle": 3,
+            "shorts_per_cycle": PILOT_TOTAL_SHORTS_PER_CYCLE,
             "analysis_interval_hours": 24,
             "min_pending_themes": 5,
             "themes_per_cycle": 4,
@@ -476,7 +495,7 @@ def _pilot_summary_dict(pilot: AutoChannelPilot | None) -> dict:
         "enabled": bool(pilot.is_enabled),
         "channel_mode": str(pilot.channel_mode or "auto"),
         "short_mix_mode": str(pilot.short_mix_mode or "realistic_all"),
-        "shorts_per_cycle": int(pilot.shorts_per_cycle or 3),
+        "shorts_per_cycle": int(pilot.shorts_per_cycle or PILOT_TOTAL_SHORTS_PER_CYCLE),
         "analysis_interval_hours": int(pilot.analysis_interval_hours or 24),
         "min_pending_themes": int(pilot.min_pending_themes or 5),
         "themes_per_cycle": int(pilot.themes_per_cycle or 4),
@@ -836,7 +855,7 @@ async def toggle_pilot_channel(
             is_enabled=bool(req.enabled),
             channel_mode="auto",
             short_mix_mode="realistic_all",
-            shorts_per_cycle=3,
+            shorts_per_cycle=PILOT_TOTAL_SHORTS_PER_CYCLE,
             analysis_interval_hours=24,
             min_pending_themes=5,
             themes_per_cycle=4,
@@ -862,8 +881,7 @@ async def toggle_pilot_channel(
             if mix_mode in {"realistic_all", "image_all", "mixed_realistic2_image1"}
             else "realistic_all"
         )
-    if req.shorts_per_cycle is not None:
-        pilot.shorts_per_cycle = max(1, min(6, int(req.shorts_per_cycle)))
+    pilot.shorts_per_cycle = PILOT_TOTAL_SHORTS_PER_CYCLE
 
     experiment_candidates: list[dict] | None = None
     if req.pilot_persona_types is not None or req.pilot_persona_candidates is not None:

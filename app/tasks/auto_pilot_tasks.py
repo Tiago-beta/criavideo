@@ -13,13 +13,26 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.database import async_session
 from app.models import AutoChannelPilot, AutoPilotCycleRun, AutoSchedule, AutoScheduleTheme, Platform, VideoProject
 from app.routers.analyze import build_channel_analysis_payload
+from app.services.pilot_schedule import (
+    PILOT_LONG_PUBLISH_TIME_LOCAL,
+    PILOT_LONG_SCHEDULE_SUMMARY,
+    PILOT_LONG_TIME_UTC,
+    PILOT_LONG_WEEKDAYS,
+    PILOT_SHORT_DAYS_AFTER_LONG,
+    PILOT_SHORT_PUBLISH_SLOTS_LOCAL,
+    PILOT_SHORT_RUN_TIME_UTC,
+    PILOT_SHORT_SCHEDULE_SUMMARY,
+    PILOT_SHORT_WEEKDAYS,
+    PILOT_SHORTS_PER_DAY,
+    PILOT_TIMEZONE,
+    PILOT_TOTAL_SHORTS_PER_CYCLE,
+)
 
 logger = logging.getLogger(__name__)
 
 _PILOT_SCHEDULE_NAME_PREFIX = "Piloto automatico"
 _SHORT_MIX_ALLOWED = {"realistic_all", "image_all", "mixed_realistic2_image1"}
-_PILOT_LOCAL_TIMEZONE = "America/Sao_Paulo"
-_PILOT_20H_LOCAL_UTC = "23:00"
+_PILOT_LOCAL_TIMEZONE = PILOT_TIMEZONE
 
 
 def _safe_int(value, default: int) -> int:
@@ -68,13 +81,6 @@ def _resolve_short_render_modes(shorts_per_cycle: int, short_mix_mode: str) -> l
         return modes
 
     return ["realistic"] * count
-
-
-def _resolve_pilot_short_weekdays(long_day_of_week: int, shorts_per_cycle: int) -> list[int]:
-    """Publish shorts after the long video, skipping one day between each short."""
-    long_day = max(0, min(_safe_int(long_day_of_week, 0), 6))
-    count = max(1, min(_safe_int(shorts_per_cycle, 3), 6))
-    return [int((long_day + 1 + (idx * 2)) % 7) for idx in range(count)]
 
 
 async def _refresh_persona_experiment_state(db, shorts_schedule: AutoSchedule) -> dict:
@@ -283,19 +289,15 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
     if short_mix_mode not in _SHORT_MIX_ALLOWED:
         short_mix_mode = "realistic_all"
 
-    shorts_per_cycle = max(1, min(_safe_int(pilot.shorts_per_cycle, 3), 6))
-    long_day_of_week = (
-        _safe_int(long_schedule.day_of_week, 0)
-        if long_schedule and long_schedule.day_of_week is not None
-        else 0
-    )
-    pilot_short_weekdays = _resolve_pilot_short_weekdays(long_day_of_week, shorts_per_cycle)
+    shorts_per_cycle = PILOT_TOTAL_SHORTS_PER_CYCLE
+    pilot_long_weekdays = list(PILOT_LONG_WEEKDAYS)
+    pilot_short_weekdays = list(PILOT_SHORT_WEEKDAYS)
 
     base_settings_common = {
         "pilot_mode": True,
         "pilot_account_id": account.id,
         "pilot_channel_mode": effective_channel_mode,
-        "pilot_publish_cadence": "weekly_long_plus_spaced_shorts",
+        "pilot_publish_cadence": "monday_thursday_long_with_intermediate_short_blocks",
         "pilot_tool_study": analysis_payload.get("tool_study") or [],
         "pilot_keyword_focus": (analysis_payload.get("recommendations") or {}).get("keyword_focus") or [],
         "pilot_last_generated_at": (analysis_payload.get("source") or {}).get("generated_at") or "",
@@ -316,6 +318,10 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         "pilot_stream": "long",
         "pilot_short_mix_mode": short_mix_mode,
         "pilot_shorts_per_cycle": shorts_per_cycle,
+        "active_weekdays": pilot_long_weekdays,
+        "pilot_long_weekdays": pilot_long_weekdays,
+        "pilot_publish_time_local": PILOT_LONG_PUBLISH_TIME_LOCAL,
+        "pilot_schedule_summary": PILOT_LONG_SCHEDULE_SUMMARY,
     }
 
     short_render_modes = _resolve_short_render_modes(shorts_per_cycle, short_mix_mode)
@@ -325,11 +331,14 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         **(dict(shorts_schedule.default_settings or {}) if shorts_schedule else {}),
         **base_settings_common,
         "pilot_stream": "short",
-        "auto_items_per_run": shorts_per_cycle,
+        "auto_items_per_run": PILOT_SHORTS_PER_DAY,
         "short_render_mode": default_short_render_mode,
         "active_weekdays": pilot_short_weekdays,
         "pilot_short_weekdays": pilot_short_weekdays,
-        "pilot_spacing_days": 2,
+        "pilot_short_days_after_long": list(PILOT_SHORT_DAYS_AFTER_LONG),
+        "pilot_short_publish_slots_local": list(PILOT_SHORT_PUBLISH_SLOTS_LOCAL),
+        "pilot_shorts_per_day": PILOT_SHORTS_PER_DAY,
+        "pilot_schedule_summary": PILOT_SHORT_SCHEDULE_SUMMARY,
     }
 
     if not long_schedule:
@@ -340,9 +349,9 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
             creation_mode="auto",
             platform="youtube",
             social_account_id=account.id,
-            frequency="weekly",
-            time_utc=_PILOT_20H_LOCAL_UTC,
-            day_of_week=long_day_of_week,
+            frequency="daily",
+            time_utc=PILOT_LONG_TIME_UTC,
+            day_of_week=pilot_long_weekdays[0],
             timezone=_PILOT_LOCAL_TIMEZONE,
             default_settings=long_settings,
             is_active=bool(pilot.is_enabled),
@@ -355,10 +364,10 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         long_schedule.social_account_id = account.id
         long_schedule.video_type = "music"
         long_schedule.creation_mode = "auto"
-        long_schedule.frequency = "weekly"
-        long_schedule.time_utc = _PILOT_20H_LOCAL_UTC
+        long_schedule.frequency = "daily"
+        long_schedule.time_utc = PILOT_LONG_TIME_UTC
         long_schedule.timezone = _PILOT_LOCAL_TIMEZONE
-        long_schedule.day_of_week = long_day_of_week
+        long_schedule.day_of_week = pilot_long_weekdays[0]
         long_schedule.default_settings = long_settings
 
     short_settings["pilot_long_schedule_id"] = long_schedule.id
@@ -372,7 +381,7 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
             platform="youtube",
             social_account_id=account.id,
             frequency="daily",
-            time_utc=_PILOT_20H_LOCAL_UTC,
+            time_utc=PILOT_SHORT_RUN_TIME_UTC,
             day_of_week=pilot_short_weekdays[0] if pilot_short_weekdays else 0,
             timezone=_PILOT_LOCAL_TIMEZONE,
             default_settings=short_settings,
@@ -387,7 +396,7 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         shorts_schedule.video_type = "musical_shorts"
         shorts_schedule.creation_mode = "manual"
         shorts_schedule.frequency = "daily"
-        shorts_schedule.time_utc = _PILOT_20H_LOCAL_UTC
+        shorts_schedule.time_utc = PILOT_SHORT_RUN_TIME_UTC
         shorts_schedule.timezone = _PILOT_LOCAL_TIMEZONE
         shorts_schedule.day_of_week = pilot_short_weekdays[0] if pilot_short_weekdays else 0
         shorts_schedule.default_settings = short_settings
@@ -426,7 +435,7 @@ async def _enqueue_pilot_themes(db, pilot: AutoChannelPilot, long_schedule: Auto
     existing_keys = {(_normalize_theme_text(theme.theme)).lower() for theme in existing if theme.theme}
     max_pos = max([theme.position for theme in existing], default=-1)
     short_mix_mode = str(pilot.short_mix_mode or "realistic_all").strip().lower()
-    shorts_per_cycle = max(1, min(_safe_int(pilot.shorts_per_cycle, 3), 6))
+    shorts_per_cycle = PILOT_TOTAL_SHORTS_PER_CYCLE
     short_modes = _resolve_short_render_modes(shorts_per_cycle, short_mix_mode)
 
     added = 0

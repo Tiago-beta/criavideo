@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v276 loaded");
+console.log("[CriaVideo] app.js v277 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -12889,6 +12889,9 @@ function _getAutoScheduleLengthMeta(schedule) {
 }
 
 function renderAutoCard(s) {
+    const defaultSettings = (s && typeof s.default_settings === "object" && s.default_settings)
+        ? s.default_settings
+        : {};
     const isTestAccount = !s.social_account_id;
     let typeBadge = '<span class="badge badge-completed">Imagens IA</span>';
     if (s.video_type === "realistic" || s.video_type === "musical_shorts") {
@@ -12921,8 +12924,12 @@ function renderAutoCard(s) {
         } else {
             icon = "📅"; statusClass = "theme-pending"; statusLabel = "";
         }
+        const publishTimeLocal = String((t.custom_settings && t.custom_settings.scheduled_publish_time_local) || "").trim();
+        const scheduledDateText = t.scheduled_date
+            ? `${t.scheduled_date}${publishTimeLocal ? ` ${publishTimeLocal}` : ""}`
+            : "";
         const dateLabel = t.scheduled_date
-            ? `<span class="theme-date ${t.scheduled_date_overridden ? "theme-date-custom" : ""}">${t.scheduled_date_overridden ? "Manual" : "Previsto"}: ${esc(t.scheduled_date)}</span>`
+            ? `<span class="theme-date ${t.scheduled_date_overridden ? "theme-date-custom" : ""}">${t.scheduled_date_overridden ? "Manual" : "Previsto"}: ${esc(scheduledDateText)}</span>`
             : "";
         const canEditReleaseDate = allowMusicDateEdit && t.status === "pending";
         const dateEditor = canEditReleaseDate
@@ -12953,9 +12960,19 @@ function renderAutoCard(s) {
         </li>`;
     }).join("");
 
-    const freq = s.frequency === "weekly"
-        ? `Semanal (${["Seg","Ter","Qua","Qui","Sex","Sab","Dom"][s.day_of_week || 0]})`
-        : "Diario";
+    const cadenceSummary = String(defaultSettings.pilot_schedule_summary || "").trim();
+    const activeWeekdays = Array.isArray(defaultSettings.active_weekdays)
+        ? defaultSettings.active_weekdays
+            .map((rawDay) => parseInt(rawDay || "0", 10))
+            .filter((day, index, arr) => day >= 0 && day <= 6 && arr.indexOf(day) === index)
+        : [];
+    const freq = cadenceSummary
+        ? cadenceSummary
+        : (s.frequency === "weekly"
+            ? `Semanal (${["Seg","Ter","Qua","Qui","Sex","Sab","Dom"][s.day_of_week || 0]})`
+            : (activeWeekdays.length
+                ? `Diario (${activeWeekdays.map((day) => ["Seg","Ter","Qua","Qui","Sex","Sab","Dom"][day]).join(", ")})`
+                : "Diario"));
 
     const addThemeHtml = `
             <div class="auto-theme-add" style="margin-top:0.5rem">
