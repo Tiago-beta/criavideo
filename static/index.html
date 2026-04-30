@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260430-02">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260430-03">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 288;
+        var REQUIRED_VER = 289;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1722,6 +1722,7 @@
                             <p class="wizard-hint">Arraste os blocos, conecte referências e rode o motor Seedance 2.0.</p>
                         </div>
                         <div class="workflow-head-actions">
+                            <button class="btn btn-secondary btn-sm" id="workflow-new-blank" type="button">Novo workflow</button>
                             <select id="workflow-template-select" class="input workflow-template-select" title="Templates salvos">
                                 <option value="">Templates</option>
                             </select>
@@ -1749,6 +1750,8 @@
                                     <button class="workflow-add-card" data-workflow-add="images" type="button"><strong>Nova imagem</strong><span>Upload ou imagem IA</span></button>
                                     <button class="workflow-add-card" data-workflow-add="video" type="button"><strong>Novo vídeo</strong><span>Referência visual</span></button>
                                     <button class="workflow-add-card" data-workflow-add="audio" type="button"><strong>Novo áudio</strong><span>Trilha ou voz</span></button>
+                                    <button class="workflow-add-card" data-workflow-add="model" type="button"><strong>Gerador de vídeo</strong><span>Motor, duração e execução</span></button>
+                                    <button class="workflow-add-card" data-workflow-add="output" type="button"><strong>Output de vídeo</strong><span>Prévia e resultado final</span></button>
                                 </div>
                             </div>
                             <div class="workflow-canvas-surface" id="workflow-canvas-surface">
@@ -1779,25 +1782,25 @@
 
                                 <section class="workflow-node workflow-node-video" data-node-id="video" style="left: 1900px; top: 1428px;">
                                     <header>Ref Videos <span id="workflow-video-count">0/9</span></header>
-                                    <input id="workflow-video-url" class="input workflow-input" type="url" placeholder="https://example.com/video.mp4">
+                                    <input id="workflow-video-url" class="input workflow-input workflow-video-url-input" type="url" placeholder="https://example.com/video.mp4">
                                     <div class="workflow-upload-row">
                                         <button class="workflow-upload-icon" id="workflow-add-videos" type="button" title="Adicionar vídeos" aria-label="Adicionar vídeos">+</button>
                                     </div>
                                     <div class="workflow-media-list" id="workflow-video-preview"></div>
                                     <input id="workflow-video-input" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-msvideo" multiple hidden>
-                                    <textarea id="workflow-video-notes" class="workflow-textarea workflow-textarea-small" rows="3" placeholder="O que aproveitar deste vídeo: movimento, enquadramento, ritmo..."></textarea>
+                                    <textarea id="workflow-video-notes" class="workflow-textarea workflow-textarea-small workflow-video-notes-input" rows="3" placeholder="O que aproveitar deste vídeo: movimento, enquadramento, ritmo..."></textarea>
                                     <span class="workflow-port workflow-port-out" data-port="video-out"></span>
                                 </section>
 
                                 <section class="workflow-node workflow-node-audio" data-node-id="audio" style="left: 1900px; top: 1606px;">
                                     <header>Ref Audio <span id="workflow-audio-count">0/1</span></header>
-                                    <input id="workflow-audio-url" class="input workflow-input" type="url" placeholder="https://example.com/audio.mp3">
+                                    <input id="workflow-audio-url" class="input workflow-input workflow-audio-url-input" type="url" placeholder="https://example.com/audio.mp3">
                                     <div class="workflow-upload-row">
                                         <button class="workflow-upload-icon" id="workflow-add-audio" type="button" title="Adicionar áudio" aria-label="Adicionar áudio">+</button>
                                     </div>
                                     <div class="workflow-media-list" id="workflow-audio-preview"></div>
                                     <input id="workflow-audio-input" type="file" accept="audio/mpeg,audio/wav,audio/mp3,audio/mp4,audio/aac,audio/ogg" hidden>
-                                    <textarea id="workflow-audio-notes" class="workflow-textarea workflow-textarea-small" rows="3" placeholder="Clima sonoro, narração, trilha ou efeitos desejados..."></textarea>
+                                    <textarea id="workflow-audio-notes" class="workflow-textarea workflow-textarea-small workflow-audio-notes-input" rows="3" placeholder="Clima sonoro, narração, trilha ou efeitos desejados..."></textarea>
                                     <span class="workflow-port workflow-port-out" data-port="audio-out"></span>
                                 </section>
 
@@ -3194,8 +3197,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260430-02"></script>
-    <script src="/video/static/pwa.js?v=20260430-02"></script>
+    <script src="/video/static/app.js?v=20260430-03"></script>
+    <script src="/video/static/pwa.js?v=20260430-03"></script>
 </body>
 </html>
 

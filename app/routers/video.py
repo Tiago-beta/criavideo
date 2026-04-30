@@ -35,6 +35,7 @@ from app.services.credit_pricing import (
     estimate_realistic_credits,
     estimate_standard_credits,
 )
+from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/video", tags=["video"])
@@ -862,6 +863,11 @@ class WorkflowGenerateImageRequest(BaseModel):
     aspect_ratio: str = "16:9"
 
 
+class WorkflowImportVideoUrlRequest(BaseModel):
+    source_url: str
+    formato: str = "video_melhor"
+
+
 @router.post("/workflow/generate-image")
 async def workflow_generate_image(
     req: WorkflowGenerateImageRequest,
@@ -895,6 +901,64 @@ async def workflow_generate_image(
     raw = output_path.read_bytes()
     image_data_url = f"data:image/png;base64,{base64.b64encode(raw).decode('ascii')}"
     return {"upload_id": upload_id, "image_url": image_data_url, "size": len(raw)}
+
+
+@router.post("/workflow/import-video-url")
+async def workflow_import_video_url(
+    req: WorkflowImportVideoUrlRequest,
+    user: dict = Depends(get_current_user),
+):
+    source_url = str(req.source_url or "").strip()
+    if not source_url:
+        raise HTTPException(status_code=400, detail="Cole um link de vídeo antes de importar.")
+    if not source_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Informe uma URL válida para importar o vídeo.")
+    if not (settings.baixatudo_api_url and settings.baixatudo_api_key):
+        raise HTTPException(status_code=503, detail="Integração Baixa Tudo não configurada no servidor.")
+
+    temp_output = _temp_user_dir(user["id"]) / f"{uuid.uuid4().hex}.mp4"
+    client = BaixaTudoClient(
+        base_url=settings.baixatudo_api_url,
+        api_key=settings.baixatudo_api_key,
+        timeout_seconds=settings.baixatudo_timeout_seconds,
+        poll_interval_seconds=settings.baixatudo_poll_interval_seconds,
+        max_wait_seconds=settings.baixatudo_max_wait_seconds,
+    )
+
+    try:
+        download_result = await client.download_video(
+            source_url,
+            str(temp_output),
+            formato=str(req.formato or "video_melhor").strip() or "video_melhor",
+        )
+    except BaixaTudoError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    downloaded_path = Path(str(download_result.output_path or "").strip())
+    if not downloaded_path.exists() or downloaded_path.stat().st_size <= 0:
+        raise HTTPException(status_code=500, detail="O vídeo importado veio vazio ou não foi encontrado.")
+
+    final_ext = downloaded_path.suffix.lower()
+    if final_ext not in VIDEO_EXTS:
+        final_ext = ".mp4"
+    upload_id = f"{uuid.uuid4().hex}{final_ext}"
+    final_path = _temp_user_dir(user["id"]) / upload_id
+
+    if downloaded_path != final_path:
+        shutil.move(str(downloaded_path), str(final_path))
+
+    preview_url = _to_media_url(str(final_path))
+    if not preview_url:
+        raise HTTPException(status_code=500, detail="Não foi possível criar a prévia do vídeo importado.")
+
+    return {
+        "upload_id": upload_id,
+        "file_name": str(download_result.file_name or final_path.name).strip() or final_path.name,
+        "preview_url": preview_url,
+        "size": final_path.stat().st_size,
+        "source_url": str(download_result.source_url or source_url).strip(),
+        "normalized_url": str(download_result.normalized_url or source_url).strip(),
+    }
 
 
 @router.post("/upload-temp-chunk/start")
