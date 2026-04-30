@@ -35,6 +35,7 @@ _export_jobs: dict[str, dict] = {}
 _EDITOR_EXPORT_PRESET = "veryfast"
 _EDITOR_EXPORT_CRF = "23"
 _EDITOR_EXPORT_AUDIO_BITRATE = "160k"
+_SUBTITLE_PROPER_NAMES = ("Senhor", "Deus", "Pastor", "Jesus", "Cristo", "Pai")
 _EDITOR_TEVOXI_MOOD_MAP = {
     "calmo": "calmo",
     "calma": "calmo",
@@ -143,9 +144,13 @@ def _get_smart_short_target_resolution(quality: str | None) -> tuple[int, int]:
 def _build_smart_short_vertical_filter(width: int, height: int) -> str:
     target_w = _round_up_even(max(360, width))
     target_h = _round_up_even(max(640, height))
+    focus_w = _round_up_even(max(320, target_w * 0.92))
     return (
-        f"scale=-2:{target_h}:flags=lanczos,"
-        f"crop={target_w}:{target_h}:x='max(0,(iw-ow)/2)':y=0"
+        "split=2[bg][fg];"
+        f"[bg]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,"
+        f"crop={target_w}:{target_h},boxblur=24:6[bgv];"
+        f"[fg]scale={focus_w}:-2:flags=lanczos[fgv];"
+        "[bgv][fgv]overlay=(W-w)/2:(H-h)/2:format=auto,setsar=1"
     )
 
 
@@ -615,6 +620,26 @@ class SmartCutEntry(BaseModel):
     score: int = 0
 
 
+class SmartCutWordEntry(BaseModel):
+    word: str = ""
+    start: float = 0
+    end: float = 0
+
+
+class SmartCutSubtitleStyle(BaseModel):
+    enabled: bool = True
+    style_name: str = "destaque"
+    x: float = 50
+    y: float = 88
+    font_size: int = 30
+    font_color: str = "#ffffff"
+    bg_color: str = ""
+    outline_color: str = "#000000"
+    font_family: str = "Arial, sans-serif"
+    bold: bool = True
+    italic: bool = False
+
+
 class SmartCutsRequest(BaseModel):
     project_id: int
 
@@ -637,10 +662,120 @@ class ExportRequest(BaseModel):
     stickers: list[StickerEntry] = []
     media_layers: list[MediaLayerEntry] = []
     smart_cuts: list[SmartCutEntry] = []
+    smart_cut_words: list[SmartCutWordEntry] = []
+    smart_cut_subtitle_style: Optional[SmartCutSubtitleStyle] = None
 
 
 class AddLayerVideoFromLibraryRequest(BaseModel):
     project_id: int
+
+
+def _normalize_smart_subtitle_text(raw_text: str) -> str:
+    text = re.sub(r"\s+", " ", str(raw_text or "")).strip()
+    if not text:
+        return ""
+
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text).lower()
+    for name in _SUBTITLE_PROPER_NAMES:
+        matcher = re.compile(rf"\b{re.escape(name.lower())}\b", re.IGNORECASE)
+        text = matcher.sub(name, text)
+
+    text = re.sub(
+        r'^(?:["\'\(\[{«“]*)?([a-zà-ÿ])',
+        lambda match: match.group(0)[:-1] + match.group(1).upper(),
+        text,
+        count=1,
+    )
+    text = re.sub(
+        r'([.!?]\s+)([a-zà-ÿ])',
+        lambda match: f"{match.group(1)}{match.group(2).upper()}",
+        text,
+    )
+    return text
+
+
+def _build_smart_cut_subtitles(
+    words: list[SmartCutWordEntry],
+    cut_start: float,
+    cut_end: float,
+    style: Optional[SmartCutSubtitleStyle],
+    force_vertical: bool = False,
+) -> list[SubtitleEntry]:
+    if not words or not style or not style.enabled:
+        return []
+
+    clip_words: list[tuple[str, float, float]] = []
+    for item in words:
+        text = str(item.word or "").strip()
+        if not text:
+            continue
+        word_start = max(0.0, float(item.start or 0.0))
+        word_end = max(word_start, float(item.end or word_start))
+        overlap_start = max(cut_start, word_start)
+        overlap_end = min(cut_end, word_end)
+        if overlap_end - overlap_start < 0.02:
+            continue
+        clip_words.append((text, overlap_start - cut_start, overlap_end - cut_start))
+
+    if not clip_words:
+        return []
+
+    captions: list[SubtitleEntry] = []
+    current_words: list[str] = []
+    line_start = 0.0
+    line_end = 0.0
+    max_words = 6 if force_vertical else 7
+    max_span = 2.8 if force_vertical else 3.2
+    gap_limit = 1.1 if force_vertical else 1.35
+    base_y = 89 if force_vertical else max(5.0, min(95.0, float(style.y or 82)))
+    base_x = max(10.0, min(90.0, float(style.x or 50)))
+    base_font_size = max(16, min(96, int(style.font_size or (32 if force_vertical else 28))))
+
+    def _flush_caption() -> None:
+        nonlocal current_words, line_start, line_end
+        if not current_words:
+            return
+        text = _normalize_smart_subtitle_text(" ".join(current_words))
+        if text:
+            captions.append(
+                SubtitleEntry(
+                    text=text,
+                    start_time=round(max(0.0, line_start), 3),
+                    end_time=round(max(line_start + 0.08, line_end), 3),
+                    x=base_x,
+                    y=base_y,
+                    font_size=base_font_size,
+                    font_color=style.font_color,
+                    bg_color=style.bg_color,
+                    outline_color=style.outline_color,
+                    font_family=style.font_family,
+                    bold=bool(style.bold),
+                    italic=bool(style.italic),
+                )
+            )
+        current_words = []
+        line_start = 0.0
+        line_end = 0.0
+
+    for text, start, end in clip_words:
+        if not current_words:
+            current_words = [text]
+            line_start = start
+            line_end = end
+            continue
+
+        if len(current_words) >= max_words or (start - line_end) > gap_limit or (end - line_start) > max_span:
+            _flush_caption()
+            current_words = [text]
+            line_start = start
+            line_end = end
+            continue
+
+        current_words.append(text)
+        line_end = end
+
+    _flush_caption()
+    return captions
 
 
 class GenerateTevoxiMusicRequest(BaseModel):
@@ -1123,6 +1258,7 @@ async def analyze_smart_cuts(
         cuts = await _analyze_smart_cuts_with_ai(transcription, duration)
         return {
             "text": transcription.get("text", ""),
+            "words": transcription.get("words", []),
             "cuts": cuts,
         }
     finally:
@@ -1198,6 +1334,22 @@ def _run_smart_cuts_export(job: dict, project, render, req: ExportRequest, src_v
     os.makedirs(out_dir, exist_ok=True)
     source_has_audio = _probe_has_audio_stream(src_video)
     force_vertical_short = source_aspect == "16:9"
+    smart_cut_subtitle_style = req.smart_cut_subtitle_style if req.smart_cut_subtitle_style and req.smart_cut_subtitle_style.enabled else None
+    smart_cut_words = list(req.smart_cut_words or [])
+    if smart_cut_subtitle_style and not smart_cut_words:
+        tmp_audio = _extract_editor_audio(project.id, src_video, "smartcuts_export")
+        try:
+            from app.services.transcriber import transcribe_audio
+
+            transcription = transcribe_audio(tmp_audio, "pt")
+            smart_cut_words = [SmartCutWordEntry(**word) for word in (transcription.get("words") or []) if isinstance(word, dict)]
+        except Exception as exc:
+            logger.warning("[editor] Smart cut subtitle transcription failed for project %s: %s", project.id, exc)
+            smart_cut_words = []
+        finally:
+            if os.path.exists(tmp_audio):
+                os.remove(tmp_audio)
+
     selected_aspect = "9:16" if force_vertical_short else (
         _normalize_aspect_ratio(req.aspect_ratio)
         or _normalize_aspect_ratio(render.format)
@@ -1205,6 +1357,7 @@ def _run_smart_cuts_export(job: dict, project, render, req: ExportRequest, src_v
         or "16:9"
     )
     short_target_w, short_target_h = _get_smart_short_target_resolution(req.quality)
+    smart_cut_overlay_scale = (short_target_h / 720.0) if force_vertical_short and short_target_h > 0 else 1.0
 
     output_urls: list[dict] = []
     total = len(approved)
@@ -1236,6 +1389,42 @@ def _run_smart_cuts_export(job: dict, project, render, req: ExportRequest, src_v
             vfilters.append(filter_map[req.filter])
         elif (aspect_filter := _build_aspect_pad_filter(selected_aspect)):
             vfilters.append(aspect_filter)
+
+        smart_cut_subtitles = _build_smart_cut_subtitles(
+            smart_cut_words,
+            start,
+            end,
+            smart_cut_subtitle_style,
+            force_vertical=force_vertical_short,
+        )
+        for sub in smart_cut_subtitles:
+            color = sub.font_color.lstrip("#") if sub.font_color else "FFFFFF"
+            base_fontsize = max(8, int(sub.font_size or 28))
+            fontsize_px = max(8, int(round(base_fontsize * smart_cut_overlay_scale)))
+            outline_width_px = max(2, int(round(fontsize_px * 0.08)))
+            box_padding_px = max(1, int(round(8 * smart_cut_overlay_scale)))
+            x_expr = f"(w*{sub.x/100})-tw/2" if sub.x else "(w-tw)/2"
+            y_expr = f"(h*{sub.y/100})-th/2" if sub.y else "h-80"
+            escaped_text = sub.text.replace("'", "'\\\\''").replace(":", "\\:")
+            dt_parts = [
+                f"drawtext=text='{escaped_text}'",
+                f"fontsize={fontsize_px}",
+                f"fontcolor=0x{color}",
+                f"x={x_expr}",
+                f"y={y_expr}",
+                f"enable='between(t,{max(0.0, sub.start_time):.3f},{max(0.0, sub.end_time):.3f})'",
+                "shadowcolor=black",
+                "shadowx=2",
+                "shadowy=2",
+            ]
+            if sub.bg_color:
+                bg = sub.bg_color.lstrip("#")[:6] if sub.bg_color.startswith("#") else "000000"
+                dt_parts.append(f"box=1:boxcolor=0x{bg}@0.6:boxborderw={box_padding_px}")
+            if sub.outline_color:
+                border_c = sub.outline_color.lstrip("#")[:6]
+                dt_parts.append(f"borderw={outline_width_px}:bordercolor=0x{border_c}")
+            vfilters.append(":".join(dt_parts))
+
         if req.quality == "hd" and not force_vertical_short:
             vfilters.append("scale=-2:720")
         elif req.quality == "fullhd" and not force_vertical_short:

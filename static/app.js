@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v280 loaded");
+console.log("[CriaVideo] app.js v281 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -16577,6 +16577,8 @@ const _editor = {
     smartCuts: [],
     smartCutsLoading: false,
     smartCutsError: "",
+    smartCutSubtitleStyle: "destaque",
+    smartCutWords: [],
     subtitleListOpen: false,
     selectedClip: { kind: "", id: "", track: "" },
     // Edit state
@@ -16884,6 +16886,7 @@ function _editorBuildDraftSnapshot() {
         outputAspectRatio: String(_editor.outputAspectRatio || "source"),
         activeTool: String(_editor.activeTool || "text"),
         smartCuts: _editor.smartCuts || [],
+        smartCutSubtitleStyle: String(_editor.smartCutSubtitleStyle || "destaque"),
         timelineTime: Number(_editor.timelineTime || 0),
         timelineZoom: Number(_editor.timelineZoom || 1),
         playbackRate: Number(_editor.playbackRate || 1),
@@ -16956,6 +16959,8 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
         _editor.outputAspectRatio = _normalizeAspectValue(String(draft.outputAspectRatio || _editor.outputAspectRatio || "source"));
         _editor.activeTool = String(draft.activeTool || _editor.activeTool || "text");
         _editor.smartCuts = Array.isArray(draft.smartCuts) ? draft.smartCuts : [];
+        _editor.smartCutSubtitleStyle = _getSubStyle(String(draft.smartCutSubtitleStyle || "destaque")).name;
+        _editor.smartCutWords = [];
         _editor.sourceProjectTitle = String(draft.sourceProjectTitle || _editor.sourceProjectTitle || "");
         _editor.editProjectName = _editorResolveEditProjectName(
             String(draft.editProjectName || ""),
@@ -19239,6 +19244,8 @@ async function openEditor(projectId, options = {}) {
         _editor.smartCuts = [];
         _editor.smartCutsLoading = false;
         _editor.smartCutsError = "";
+        _editor.smartCutSubtitleStyle = "destaque";
+        _editor.smartCutWords = [];
         _editor.subtitleListOpen = false;
         _editor.selectedClip = { kind: "", id: "", track: "" };
         _editor.texts = [];
@@ -19993,6 +20000,25 @@ function _editorGetApprovedSmartCuts() {
     return (_editor.smartCuts || []).filter((cut) => cut && cut.approved !== false && Number(cut.end || 0) > Number(cut.start || 0));
 }
 
+function _editorBuildSmartCutSubtitleCfg() {
+    const cfg = _buildAutoSubtitleCfg(_editor.smartCutSubtitleStyle || "destaque");
+    return {
+        ...cfg,
+        enabled: true,
+        y: 89,
+    };
+}
+
+function _editorSetSmartCutSubtitleStyle(styleName) {
+    const style = _getSubStyle(styleName || "destaque");
+    _editor.smartCutSubtitleStyle = style.name;
+    _editorScheduleDraftPersist(120);
+    if (_editor.activeTool === "smartcuts") {
+        _editorRenderProps();
+    }
+}
+window._editorSetSmartCutSubtitleStyle = _editorSetSmartCutSubtitleStyle;
+
 async function _editorAnalyzeSmartCuts() {
     if (!_editor.projectId || _editor.smartCutsLoading) return;
     _editor.smartCutsLoading = true;
@@ -20005,6 +20031,7 @@ async function _editorAnalyzeSmartCuts() {
             body: JSON.stringify({ project_id: _editor.projectId }),
         });
         const cuts = Array.isArray(payload?.cuts) ? payload.cuts : [];
+        _editor.smartCutWords = Array.isArray(payload?.words) ? payload.words : [];
         _editor.smartCuts = cuts.map((cut, idx) => ({
             id: String(cut.id || `smart-${idx + 1}`),
             start: Math.max(0, Number(cut.start || 0)),
@@ -20019,6 +20046,7 @@ async function _editorAnalyzeSmartCuts() {
         }
         _editorScheduleDraftPersist(120);
     } catch (err) {
+        _editor.smartCutWords = [];
         _editor.smartCutsError = err?.message || "Erro ao criar cortes inteligentes.";
         showToast("Erro ao criar cortes inteligentes: " + _editor.smartCutsError, "error");
     } finally {
@@ -20053,6 +20081,7 @@ function _editorToggleSmartCut(cutId, checked) {
 
 function _editorClearSmartCuts() {
     _editor.smartCuts = [];
+    _editor.smartCutWords = [];
     _editor.smartCutsError = "";
     _editorScheduleDraftPersist(120);
     _editorRenderProps();
@@ -20089,9 +20118,41 @@ function _editorRenderProps() {
         const cuts = Array.isArray(_editor.smartCuts) ? _editor.smartCuts : [];
         const approvedCount = _editorGetApprovedSmartCuts().length;
         const errorHtml = _editor.smartCutsError ? `<p class="editor-smartcuts-error">${esc(_editor.smartCutsError)}</p>` : "";
+        const smartCutSubtitleCfg = _editorBuildSmartCutSubtitleCfg();
+        const smartCutStyleLabel = _getSubStyle(_editor.smartCutSubtitleStyle || "destaque").label;
 
         container.innerHTML = `
             <div class="editor-props-title">Cortes IA</div>
+            <div class="editor-smartcuts-summary">${_editor.sourceAspectRatio === "16:9"
+                ? "Vídeos 16:9 viram shorts 9:16 com fundo desfocado e o quadro completo centralizado."
+                : "Os cortes aprovados serão exportados como shorts prontos para download."}</div>
+            <div class="editor-props-group" style="margin-top:10px">
+                <label style="display:block;margin-bottom:6px">Legenda direta nos shorts</label>
+                <p style="margin:0 0 8px;font-size:11px;color:var(--text-muted)">Escolha o estilo antes de criar ou exportar os cortes. A legenda sai no rodapé inferior do short.</p>
+                <div class="editor-smartcuts-summary" style="margin-bottom:8px">Estilo atual: ${esc(smartCutStyleLabel)} · Rodapé ${Math.round(smartCutSubtitleCfg.y || 89)}%</div>
+                <div class="editor-subtitle-styles-grid">
+                    ${SUBTITLE_STYLES.map(st => {
+                        const active = (_editor.smartCutSubtitleStyle || "destaque") === st.name;
+                        const previewStyle = [
+                            `font-family:${st.fontFamily}`,
+                            `color:${st.fontColor}`,
+                            "font-size:11px",
+                            `font-weight:${st.bold ? "bold" : "normal"}`,
+                            `font-style:${st.italic ? "italic" : "normal"}`,
+                            st.bgColor ? `background:${st.bgColor};padding:2px 4px;border-radius:3px;` : "",
+                            st.outlineColor
+                                ? `text-shadow:-1px -1px 0 ${st.outlineColor},1px -1px 0 ${st.outlineColor},-1px 1px 0 ${st.outlineColor},1px 1px 0 ${st.outlineColor};`
+                                : "",
+                        ].join(";");
+                        return `
+                            <div class="editor-sub-style-card${active ? " active" : ""}" onclick="_editorSetSmartCutSubtitleStyle('${st.name}')">
+                                <div class="editor-sub-style-preview" style="${previewStyle}">Abc</div>
+                                <span>${esc(st.label)}</span>
+                            </div>
+                        `;
+                    }).join("")}
+                </div>
+            </div>
             <button class="editor-add-btn" onclick="_editorAnalyzeSmartCuts()" ${isLoading ? "disabled" : ""}>
                 ${isLoading
                     ? '<div class="spinner-small" style="width:14px;height:14px"></div> Analisando vídeo...'
@@ -22239,6 +22300,12 @@ async function _editorExport() {
             reason: String(cut.reason || ""),
             score: Math.round(Number(cut.score || 0)),
         })),
+        smart_cut_words: (_editor.smartCutWords || []).map((word) => ({
+            word: String(word?.word || ""),
+            start: Number(word?.start || 0),
+            end: Number(word?.end || word?.start || 0),
+        })),
+        smart_cut_subtitle_style: _editorGetApprovedSmartCuts().length ? _editorBuildSmartCutSubtitleCfg() : null,
     };
 
     // Show export overlay
