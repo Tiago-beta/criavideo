@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v289 loaded");
+console.log("[CriaVideo] app.js v288 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -57,12 +57,6 @@ let _autoPilotPersonaEditor = {
     accountId: 0,
     selectedTypes: [],
 };
-let _autoPilotPromptEditor = {
-    accountId: 0,
-    promptTemplate: "",
-    selectedCandidates: [],
-};
-let _autoThemeRunState = {};
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 
 const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
@@ -2323,18 +2317,13 @@ function _buildRealisticEstimatePayload(prefix) {
         : false;
 
     const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
-    const rawPersona = personaBtn ? (personaBtn.dataset.persona || "") : "";
-    const interactionPersona = rawPersona
-        ? _normalizeRealisticPersonaType(rawPersona)
-        : (prefix === "auto" ? "" : "natureza");
+    const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
     const contextKey = prefix === "auto" ? "auto" : prefix;
-    const disablePersonaReference = interactionPersona
-        ? _isPersonaNoReferenceEnabled(contextKey, interactionPersona)
-        : false;
+    const disablePersonaReference = _isPersonaNoReferenceEnabled(contextKey, interactionPersona);
     const hasScriptPhotoReference = prefix === "script"
         ? (!!document.getElementById("script-use-photos")?.checked && scriptPhotos.length > 0)
         : false;
-    const hasReferenceImage = hasScriptPhotoReference || (interactionPersona ? !disablePersonaReference : false);
+    const hasReferenceImage = hasScriptPhotoReference || !disablePersonaReference;
 
     const hasSelectedSong = prefix === "wizard"
         ? !!_wizardSelectedSong
@@ -8856,7 +8845,7 @@ function _normalizeRealisticPersonaType(value) {
     return REALISTIC_PERSONA_TYPES.includes(normalized) ? normalized : "natureza";
 }
 
-function _getSelectedRealisticPersonaTypeByContext(context) {
+function _getRealisticPersonaTypeByContext(context) {
     const key = String(context || "script").toLowerCase();
     let selector = "#script-realistic-persona-tags .style-tag.selected";
     if (key === "wizard") selector = "#wizard-realistic-persona-tags .style-tag.selected";
@@ -8864,15 +8853,7 @@ function _getSelectedRealisticPersonaTypeByContext(context) {
     if (key === "auto") selector = "#auto-realistic-persona-tags .style-tag.selected";
     if (key === "pilot") selector = "#pilot-realistic-persona-tags .style-tag.selected";
     const selected = document.querySelector(selector);
-    if (!selected) return "";
-    return _normalizeRealisticPersonaType(selected.dataset.persona || "");
-}
-
-function _getRealisticPersonaTypeByContext(context) {
-    const key = String(context || "script").toLowerCase();
-    const selectedType = _getSelectedRealisticPersonaTypeByContext(key);
-    if (selectedType) return selectedType;
-    return key === "auto" || key === "pilot" ? "" : "natureza";
+    return _normalizeRealisticPersonaType(selected ? selected.dataset.persona : "natureza");
 }
 
 function _getRealisticPersonaPreviewElement(context) {
@@ -8881,12 +8862,6 @@ function _getRealisticPersonaPreviewElement(context) {
     if (context === "auto") return document.getElementById("auto-realistic-persona-preview");
     if (context === "pilot") return document.getElementById("pilot-realistic-persona-preview");
     return document.getElementById("script-realistic-persona-preview");
-}
-
-function _clearPersonaPreview(context, message = "Selecione uma persona de interacao para continuar.") {
-    const el = _getRealisticPersonaPreviewElement(context);
-    if (!el) return;
-    el.innerHTML = `<div class="realistic-persona-empty">${esc(message)}</div>`;
 }
 
 function _getPersonaProfiles(personaType) {
@@ -8939,7 +8914,6 @@ function _isMultiPersonaEnabled(context) {
 function toggleMultiPersona(context, enabled) {
     const ctx = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
     const type = _getRealisticPersonaTypeByContext(ctx);
-    if (!type) return;
     const selectedIds = _getSelectedPersonaProfileIds(ctx, type);
     const isEnabled = !!enabled;
 
@@ -8956,7 +8930,6 @@ function togglePersonaSelectionFromPreview(context, profileId) {
     if (!pid) return;
 
     const type = _getRealisticPersonaTypeByContext(ctx);
-    if (!type) return;
     if (ctx === "pilot" && !_autoPilotPersonaEditor.selectedTypes.includes(type)) {
         _autoPilotPersonaEditor.selectedTypes.push(type);
     }
@@ -8986,7 +8959,6 @@ window.togglePersonaSelectionFromPreview = togglePersonaSelectionFromPreview;
 function selectNoPersonaReference(context) {
     const ctx = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
     const type = _getRealisticPersonaTypeByContext(ctx);
-    if (!type) return;
     if (!_supportsPersonaNoReference(ctx)) {
         return;
     }
@@ -9104,10 +9076,6 @@ function _renderPersonaPreview(context) {
     if (!el) return;
 
     const type = _getRealisticPersonaTypeByContext(context);
-    if (!type) {
-        _clearPersonaPreview(context);
-        return;
-    }
     const supportsNoReference = _supportsPersonaNoReference(context);
     const noReferenceEnabled = supportsNoReference && _isPersonaNoReferenceEnabled(context, type);
     const profiles = _getPersonaProfiles(type);
@@ -9244,12 +9212,7 @@ function _renderPersonaPreview(context) {
 }
 
 async function _refreshPersonaContext(context, forcedPersonaType = "") {
-    const rawForcedType = String(forcedPersonaType || "").trim();
-    const type = rawForcedType ? _normalizeRealisticPersonaType(rawForcedType) : _getRealisticPersonaTypeByContext(context);
-    if (!type) {
-        _clearPersonaPreview(context);
-        return;
-    }
+    const type = _normalizeRealisticPersonaType(forcedPersonaType || _getRealisticPersonaTypeByContext(context));
     try {
         await _loadPersonaProfiles(type, false);
     } catch (error) {
@@ -9291,7 +9254,6 @@ function _refreshAllPersonaPreviews() {
 }
 
 async function _ensurePersonaSelection(context, personaType) {
-    if (!personaType) return 0;
     const type = _normalizeRealisticPersonaType(personaType);
     if (!_getPersonaProfiles(type).length) {
         await _loadPersonaProfiles(type, false);
@@ -9301,7 +9263,6 @@ async function _ensurePersonaSelection(context, personaType) {
 }
 
 async function _ensurePersonaSelections(context, personaType) {
-    if (!personaType) return [];
     const type = _normalizeRealisticPersonaType(personaType);
     const noReferenceEnabled = _supportsPersonaNoReference(context) && _isPersonaNoReferenceEnabled(context, type);
     if (noReferenceEnabled) {
@@ -9943,10 +9904,6 @@ function handlePersonaReferenceImagePaste(event) {
 async function openPersonaManager(context = "script") {
     _personaManagerContext = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
     _personaManagerType = _getRealisticPersonaTypeByContext(_personaManagerContext);
-    if (!_personaManagerType) {
-        alert("Selecione primeiro o tipo de persona que deseja gerenciar.");
-        return;
-    }
     _personaManagerMulti = _isMultiPersonaEnabled(_personaManagerContext);
 
     const titleEl = document.getElementById("persona-manager-title");
@@ -12437,9 +12394,7 @@ function _normalizePilotPersonaCandidates(rawCandidates) {
     (Array.isArray(rawCandidates) ? rawCandidates : []).forEach((item) => {
         if (!item || typeof item !== "object") return;
 
-        const rawType = String(item.persona_type || item.type || item.interaction_persona || "").trim();
-        if (!rawType) return;
-        const type = _normalizeRealisticPersonaType(rawType);
+        const type = _normalizeRealisticPersonaType(item.persona_type || item.type || item.interaction_persona || "natureza");
         const ids = [];
         (Array.isArray(item.persona_profile_ids) ? item.persona_profile_ids : []).forEach((rawId) => {
             const pid = parseInt(rawId || "0", 10) || 0;
@@ -12499,9 +12454,8 @@ function _getPilotPersonaCandidatesFromChannel(channel) {
 }
 
 function _formatPilotPersonaCandidateLabel(candidate) {
-    const rawType = String(candidate?.persona_type || "").trim();
-    const type = rawType ? _normalizeRealisticPersonaType(rawType) : "";
-    const baseLabel = REALISTIC_PERSONA_LABELS[type] || "Sem persona";
+    const type = _normalizeRealisticPersonaType(candidate?.persona_type || "natureza");
+    const baseLabel = REALISTIC_PERSONA_LABELS[type] || type;
     const noReference = !!candidate?.disable_persona_reference;
     if (noReference) {
         return `${baseLabel} (Nenhum)`;
@@ -12518,19 +12472,12 @@ function _formatPilotPersonaCandidateLabel(candidate) {
 }
 
 async function _setAutoPilotPersonaEditorType(personaType) {
-    const rawType = String(personaType || "").trim();
-    const normalizedType = rawType ? _normalizeRealisticPersonaType(rawType) : "";
+    const normalizedType = _normalizeRealisticPersonaType(personaType || "natureza");
     const tagsContainer = document.getElementById("pilot-realistic-persona-tags");
     if (tagsContainer) {
         tagsContainer.querySelectorAll(".style-tag").forEach((tag) => {
             tag.classList.toggle("selected", (tag.dataset.persona || "") === normalizedType);
         });
-    }
-
-    if (!normalizedType) {
-        _clearPersonaPreview("pilot", "Selecione a persona que o piloto deve usar nesta interacao.");
-        _renderAutoPilotPersonaEditorSelectedTypes();
-        return;
     }
 
     if (!_autoPilotPersonaEditor.selectedTypes.includes(normalizedType)) {
@@ -12593,7 +12540,7 @@ function removeAutoPilotPersonaType(personaType) {
 
     const currentType = _getRealisticPersonaTypeByContext("pilot");
     if (currentType === normalizedType) {
-        const nextType = _autoPilotPersonaEditor.selectedTypes[0] || "";
+        const nextType = _autoPilotPersonaEditor.selectedTypes[0] || "natureza";
         _setAutoPilotPersonaEditorType(nextType);
     }
 
@@ -12653,10 +12600,9 @@ async function openAutoPilotPersonaSelector(socialAccountId) {
         }
     });
 
-    const rawFallbackType = String(channel?.pilot?.interaction_persona || "").trim();
-    const fallbackType = rawFallbackType ? _normalizeRealisticPersonaType(rawFallbackType) : "";
-    const initialType = _autoPilotPersonaEditor.selectedTypes[0] || fallbackType;
-    if (initialType && !_autoPilotPersonaEditor.selectedTypes.includes(initialType)) {
+    const fallbackType = _normalizeRealisticPersonaType(channel?.pilot?.interaction_persona || "natureza");
+    const initialType = _autoPilotPersonaEditor.selectedTypes[0] || fallbackType || "natureza";
+    if (!_autoPilotPersonaEditor.selectedTypes.includes(initialType)) {
         _autoPilotPersonaEditor.selectedTypes.push(initialType);
     }
 
@@ -12667,164 +12613,9 @@ async function openAutoPilotPersonaSelector(socialAccountId) {
     }
 
     openModal("modal-auto-pilot-persona");
-    if (initialType) {
-        await _setAutoPilotPersonaEditorType(initialType);
-    } else {
-        await _setAutoPilotPersonaEditorType("");
-    }
+    await _setAutoPilotPersonaEditorType(initialType);
 }
 window.openAutoPilotPersonaSelector = openAutoPilotPersonaSelector;
-
-function _getAutoPilotChannel(accountId) {
-    const parsedAccountId = parseInt(accountId || "0", 10) || 0;
-    return (_autoPilotState.channels || []).find((item) => (parseInt(item.social_account_id || "0", 10) || 0) === parsedAccountId) || null;
-}
-
-function _getAutoPilotCandidatesForAccount(accountId) {
-    const parsedAccountId = parseInt(accountId || "0", 10) || 0;
-    if (!parsedAccountId) return [];
-
-    const personaModal = document.getElementById("modal-auto-pilot-persona");
-    if (_autoPilotPersonaEditor.accountId === parsedAccountId && personaModal?.classList.contains("open")) {
-        return _collectAutoPilotPersonaCandidatesForSave();
-    }
-
-    return _getPilotPersonaCandidatesFromChannel(_getAutoPilotChannel(parsedAccountId));
-}
-
-function _renderAutoPilotPromptDecisionList(lines) {
-    const container = document.getElementById("pilot-prompt-decision-list");
-    if (!container) return;
-    const safeLines = Array.isArray(lines) ? lines.filter(Boolean) : [];
-    if (!safeLines.length) {
-        container.innerHTML = '<span class="auto-pilot-persona-empty">Sem resumo disponivel.</span>';
-        return;
-    }
-    container.innerHTML = safeLines.map((line) => `<div class="auto-pilot-meta">${esc(line)}</div>`).join("");
-}
-
-async function refreshAutoPilotPromptPreview(useEditorValue = true) {
-    const accountId = parseInt(_autoPilotPromptEditor.accountId || "0", 10) || 0;
-    if (!accountId) return;
-
-    const channel = _getAutoPilotChannel(accountId);
-    const candidates = _getAutoPilotCandidatesForAccount(accountId);
-    if (!candidates.length) {
-        alert("Defina a persona do piloto antes de visualizar o prompt.");
-        openAutoPilotPersonaSelector(accountId);
-        return;
-    }
-
-    const sourceLabel = document.getElementById("pilot-prompt-source-label");
-    const previewEl = document.getElementById("pilot-prompt-preview");
-    const templateEl = document.getElementById("pilot-prompt-template");
-    if (sourceLabel) sourceLabel.textContent = "Carregando prévia...";
-    if (previewEl) previewEl.value = "Gerando prévia...";
-
-    const promptTemplate = useEditorValue
-        ? (templateEl?.value || "")
-        : (_autoPilotPromptEditor.promptTemplate || channel?.pilot?.pilot_prompt_template || "");
-
-    const data = await api(`/automation/pilot/channels/${accountId}/prompt-preview`, {
-        method: "POST",
-        body: JSON.stringify({
-            prompt_template: promptTemplate,
-            pilot_persona_candidates: candidates,
-        }),
-    });
-
-    _autoPilotPromptEditor.accountId = accountId;
-    _autoPilotPromptEditor.promptTemplate = data?.prompt_template || "";
-    _autoPilotPromptEditor.selectedCandidates = candidates;
-
-    if (templateEl) templateEl.value = data?.prompt_template || "";
-    if (previewEl) previewEl.value = data?.preview_prompt || "";
-    if (sourceLabel) {
-        sourceLabel.textContent = data?.source === "custom"
-            ? "Template customizado salvo para este canal."
-            : "Template padrao do piloto. Edite se quiser endurecer ou ajustar a cena.";
-    }
-    _renderAutoPilotPromptDecisionList(data?.decision_summary || []);
-}
-window.refreshAutoPilotPromptPreview = refreshAutoPilotPromptPreview;
-
-async function openAutoPilotPromptEditor(socialAccountId = null) {
-    const fallbackAccountId = parseInt(_autoPilotPersonaEditor.accountId || "0", 10) || 0;
-    const accountId = parseInt(socialAccountId || fallbackAccountId || "0", 10) || 0;
-    if (!accountId) {
-        alert("Selecione um canal do piloto para visualizar o prompt.");
-        return;
-    }
-
-    const channel = _getAutoPilotChannel(accountId);
-    const candidates = _getAutoPilotCandidatesForAccount(accountId);
-    if (!candidates.length) {
-        alert("Defina a persona do piloto antes de visualizar o prompt.");
-        openAutoPilotPersonaSelector(accountId);
-        return;
-    }
-
-    _autoPilotPromptEditor.accountId = accountId;
-    _autoPilotPromptEditor.promptTemplate = channel?.pilot?.pilot_prompt_template || "";
-    _autoPilotPromptEditor.selectedCandidates = candidates;
-
-    const labelEl = document.getElementById("pilot-prompt-channel-label");
-    if (labelEl) {
-        const accountName = channel?.account_label || channel?.platform_username || `Canal ${accountId}`;
-        labelEl.textContent = accountName;
-    }
-
-    openModal("modal-auto-pilot-prompt");
-    try {
-        await refreshAutoPilotPromptPreview(false);
-    } catch (error) {
-        alert(`Erro ao carregar o prompt do piloto: ${error.message}`);
-    }
-}
-window.openAutoPilotPromptEditor = openAutoPilotPromptEditor;
-
-async function saveAutoPilotPromptTemplate() {
-    const accountId = parseInt(_autoPilotPromptEditor.accountId || "0", 10) || 0;
-    if (!accountId) return;
-
-    const candidates = _getAutoPilotCandidatesForAccount(accountId);
-    if (!candidates.length) {
-        alert("Defina a persona do piloto antes de salvar o prompt.");
-        openAutoPilotPersonaSelector(accountId);
-        return;
-    }
-
-    const channel = _getAutoPilotChannel(accountId);
-    const enabled = !!channel?.pilot?.enabled;
-    const templateEl = document.getElementById("pilot-prompt-template");
-    const saveBtn = document.getElementById("pilot-prompt-save-btn");
-    const promptTemplate = (templateEl?.value || "").trim();
-
-    if (saveBtn) saveBtn.disabled = true;
-    _autoPilotState.togglingByAccount[accountId] = true;
-    _renderAutoPilotChannels();
-
-    try {
-        await api(`/automation/pilot/channels/${accountId}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-                enabled,
-                pilot_persona_candidates: candidates,
-                pilot_prompt_template: promptTemplate,
-            }),
-        });
-        await loadAutoPilotChannels(true);
-        closeModal("modal-auto-pilot-prompt");
-        showToast("Prompt do piloto salvo.", "success");
-    } catch (error) {
-        alert(`Erro ao salvar prompt do piloto: ${error.message}`);
-    } finally {
-        _autoPilotState.togglingByAccount[accountId] = false;
-        if (saveBtn) saveBtn.disabled = false;
-        _renderAutoPilotChannels();
-    }
-}
-window.saveAutoPilotPromptTemplate = saveAutoPilotPromptTemplate;
 
 function _renderAutoPilotChannels() {
     const container = document.getElementById("auto-pilot-channels");
@@ -12910,12 +12701,6 @@ function _renderAutoPilotChannels() {
                         ${toggling ? "disabled" : ""}
                         onclick="openAutoPilotPersonaSelector(${accountId})"
                     >Definir personas</button>
-                    <button
-                        class="btn btn-sm btn-secondary"
-                        type="button"
-                        ${toggling ? "disabled" : ""}
-                        onclick="openAutoPilotPromptEditor(${accountId})"
-                    >Ver prompt</button>
                     <button
                         class="btn btn-sm ${actionClass}"
                         type="button"
@@ -13024,13 +12809,7 @@ async function toggleAutoPilotChannel(socialAccountId, enabled) {
     const accountId = parseInt(socialAccountId || "0", 10) || 0;
     if (!accountId) return;
     const channel = (_autoPilotState.channels || []).find((item) => (parseInt(item.social_account_id || "0", 10) || 0) === accountId);
-    const selectedCandidates = _getAutoPilotCandidatesForAccount(accountId);
-
-    if (!!enabled && !selectedCandidates.length) {
-        alert("Defina a persona do piloto antes de ligar a automacao.");
-        openAutoPilotPersonaSelector(accountId);
-        return;
-    }
+    const selectedCandidates = _getPilotPersonaCandidatesFromChannel(channel);
 
     _autoPilotState.togglingByAccount[accountId] = true;
     _renderAutoPilotChannels();
@@ -13111,17 +12890,10 @@ function _getAutoScheduleLengthMeta(schedule) {
     return { label: "Shorts", className: "badge-duration-short" };
 }
 
-function _queueAutoScheduleRefresh(delayMs) {
-    window.setTimeout(() => {
-        loadAutoSchedules();
-    }, delayMs);
-}
-
 function renderAutoCard(s) {
     const defaultSettings = (s && typeof s.default_settings === "object" && s.default_settings)
         ? s.default_settings
         : {};
-    const pilotStreamKey = String(defaultSettings.pilot_stream || "").trim().toLowerCase();
     const isTestAccount = !s.social_account_id;
     let typeBadge = '<span class="badge badge-completed">Imagens IA</span>';
     if (s.video_type === "realistic" || s.video_type === "musical_shorts") {
@@ -13175,16 +12947,6 @@ function renderAutoCard(s) {
         const creditBadge = estimatedCredits > 0
             ? `<span class="theme-credit-tag" title="Custo estimado por video em creditos">${estimatedCredits.toLocaleString("pt-BR")} créditos</span>`
             : "";
-        const canRunNow = t.status === "pending" || t.status === "failed" || t.status === "error";
-        const runInProgress = !!_autoThemeRunState[t.id];
-        const runTitle = (t.status === "failed" || t.status === "error") ? "Tentar novamente agora" : "Criar agora";
-        const runBtn = canRunNow
-            ? `<button class="theme-run-btn" onclick="runAutoThemeNow(${t.id}, '${pilotStreamKey}', this)" type="button" title="${runTitle}" ${runInProgress ? "disabled" : ""}>
-                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                    <path d="M4 3.2v9.6L12.4 8 4 3.2Z"></path>
-                </svg>
-            </button>`
-            : "";
         const errorBtn = (t.status === "error" || t.status === "failed") && t.error_message
             ? `<button class="theme-error-btn" data-error="${esc(t.error_message).replace(/"/g, '&quot;')}" onclick="showThemeError(this)" type="button" title="Ver motivo">Ver motivo</button>`
             : "";
@@ -13195,7 +12957,6 @@ function renderAutoCard(s) {
             ${dateEditor}
             ${statusBadge}
             ${creditBadge}
-            ${runBtn}
             ${errorBtn}
             <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
         </li>`;
@@ -13269,30 +13030,6 @@ async function deleteAutoSchedule(id) {
 function showThemeError(btn) {
     const msg = btn.getAttribute("data-error") || "Erro desconhecido";
     alert(msg);
-}
-
-async function runAutoThemeNow(themeId, pilotStream = "", triggerBtn = null) {
-    if (_autoThemeRunState[themeId]) return;
-
-    _autoThemeRunState[themeId] = true;
-    if (triggerBtn) triggerBtn.disabled = true;
-
-    try {
-        await api(`/automation/themes/${themeId}/run`, { method: "POST" });
-        const stream = String(pilotStream || "").trim().toLowerCase();
-        const message = stream === "long"
-            ? "Criacao iniciada. Os temas dos shorts entram na fila assim que o audio do longo ficar pronto."
-            : "Criacao iniciada para este tema.";
-        showToast(message, "success");
-        _queueAutoScheduleRefresh(4000);
-        _queueAutoScheduleRefresh(12000);
-        _queueAutoScheduleRefresh(25000);
-    } catch (error) {
-        showToast(`Erro ao iniciar tema: ${error.message}`, "error");
-    } finally {
-        delete _autoThemeRunState[themeId];
-        await loadAutoSchedules();
-    }
 }
 
 async function saveAutoThemeDate(themeId) {
@@ -13431,15 +13168,14 @@ function openNewAutomationModal() {
     const defStyle = document.querySelector('#auto-realistic-style-tags [data-style="cinematic"]');
     if (defStyle) defStyle.classList.add("selected");
     document.querySelectorAll("#auto-realistic-persona-tags .style-tag").forEach(t => t.classList.remove("selected"));
+    const defPersona = document.querySelector('#auto-realistic-persona-tags [data-persona="natureza"]');
+    if (defPersona) defPersona.classList.add("selected");
     const autoMultiPersona = document.getElementById("auto-realistic-multi-persona");
     if (autoMultiPersona) autoMultiPersona.checked = false;
     _personaSelectionByContext.auto = {};
     _personaMultiSelectionByContext.auto = {};
     _personaNoReferenceByContext.auto = {};
-    const autoPersonaPreview = document.getElementById("auto-realistic-persona-preview");
-    if (autoPersonaPreview) {
-        autoPersonaPreview.innerHTML = '<div class="realistic-persona-empty">Selecione uma persona de interacao para continuar.</div>';
-    }
+    _refreshPersonaContext("auto", "natureza");
 
     // reset engine selection
     _setAutoRealisticEngine("grok");
@@ -15416,11 +15152,7 @@ async function addClipToThemes() {
         ? payload.clip_duration
         : Math.max(1, Number(song.duration || payload.song_duration || 120));
     const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
-    if (!selectedPersona) {
-        alert("Selecione explicitamente a persona de interacao antes de adicionar o clipe na automacao realista.");
-        return;
-    }
-    const interactionPersona = _normalizeRealisticPersonaType(selectedPersona.dataset.persona || "");
+    const interactionPersona = _normalizeRealisticPersonaType(selectedPersona ? selectedPersona.dataset.persona : "natureza");
     const personaProfileId = _getSelectedPersonaProfileId("auto", interactionPersona);
 
     // Store as object with clip metadata
@@ -15685,12 +15417,7 @@ async function createAutoSchedule() {
         // Collect realistic settings
         const selectedStyle = document.querySelector("#auto-realistic-style-tags .style-tag.selected");
         const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
-        if (!selectedPersona) {
-            alert("Selecione explicitamente a persona de interacao antes de salvar a automacao realista.");
-            showAutoStep(2);
-            return;
-        }
-        const interactionPersona = _normalizeRealisticPersonaType(selectedPersona.dataset.persona || "");
+        const interactionPersona = _normalizeRealisticPersonaType(selectedPersona ? selectedPersona.dataset.persona : "natureza");
         let personaProfileId = 0;
         let personaProfileIds = [];
         try {
@@ -16982,9 +16709,12 @@ function _editorCreateRecorderRuntime() {
         recorder: null,
         chunks: [],
         drawRaf: 0,
+        drawWindow: null,
         timer: 0,
         screenVideoEl: null,
         webcamVideoEl: null,
+        monitorWindow: null,
+        monitorClosing: false,
     };
 }
 
@@ -18557,6 +18287,278 @@ function _editorRecorderBuildFileName() {
     return `gravacao_editor_${yyyy}${mm}${dd}_${hh}${min}${ss}.webm`;
 }
 
+function _editorRecorderNeedsCanvasComposition(mode) {
+    return String(mode || "") === "screen_camera";
+}
+
+function _editorRecorderGetMonitorWindow() {
+    const monitorWindow = _editorRecorderRuntime.monitorWindow;
+    if (!monitorWindow || monitorWindow.closed) return null;
+    return monitorWindow;
+}
+
+function _editorRecorderSetPreviewStream(videoEl, stream) {
+    if (!videoEl) return;
+    if (!stream) {
+        videoEl.srcObject = null;
+        videoEl.removeAttribute("src");
+        return;
+    }
+    videoEl.srcObject = stream;
+    videoEl.muted = true;
+    videoEl.playsInline = true;
+    videoEl.autoplay = true;
+    videoEl.play().catch(() => {});
+}
+
+function _editorRecorderRenderMonitorWindow() {
+    const monitorWindow = _editorRecorderGetMonitorWindow();
+    if (!monitorWindow) return;
+
+    const doc = monitorWindow.document;
+    const title = doc.getElementById("editor-recorder-monitor-title");
+    const note = doc.getElementById("editor-recorder-monitor-note");
+    const timer = doc.getElementById("editor-recorder-monitor-timer");
+    const status = doc.getElementById("editor-recorder-monitor-status");
+    const action = doc.getElementById("editor-recorder-monitor-stop");
+    const preview = doc.getElementById("editor-recorder-monitor-preview");
+    const empty = doc.getElementById("editor-recorder-monitor-empty");
+    if (!title || !note || !timer || !status || !action || !preview || !empty) return;
+
+    const mode = _editorRecorderModal.mode;
+    const modeLabel = _editorRecorderModeLabel(mode);
+    title.textContent = modeLabel;
+    timer.textContent = _editorFormatRecordingClock(_editorRecorderModal.seconds);
+    note.textContent = _editorRecorderNeedsCanvasComposition(mode)
+        ? "Pode minimizar o CriaVideo. Mantenha esta mini janela aberta enquanto grava Tela + Webcam."
+        : "Pode minimizar o CriaVideo enquanto grava. Use esta mini janela para acompanhar e parar.";
+
+    let actionLabel = "Voltar ao CriaVideo";
+    if (_editorRecorderModal.starting) actionLabel = "Preparando...";
+    else if (_editorRecorderModal.recording) actionLabel = "Parar e abrir no editor";
+    else if (_editorRecorderModal.stopping) actionLabel = "Finalizando...";
+    else if (_editorRecorderModal.uploading) actionLabel = "Enviando...";
+    action.textContent = actionLabel;
+    action.disabled = Boolean(_editorRecorderModal.starting || _editorRecorderModal.stopping || _editorRecorderModal.uploading);
+
+    const statusMessage = String(_editorRecorderModal.error || _editorRecorderModal.status || "").trim();
+    status.textContent = statusMessage || "Mini janela ativa.";
+    status.classList.toggle("error", Boolean(_editorRecorderModal.error));
+
+    const hasPreview = Boolean(preview.srcObject);
+    preview.hidden = !hasPreview;
+    empty.hidden = hasPreview;
+    monitorWindow.document.title = `CriaVideo - ${modeLabel}`;
+}
+
+function _editorRecorderSyncMonitorPreview(stream) {
+    const monitorWindow = _editorRecorderGetMonitorWindow();
+    const preview = monitorWindow?.document.getElementById("editor-recorder-monitor-preview");
+    _editorRecorderSetPreviewStream(preview, stream || null);
+    _editorRecorderRenderMonitorWindow();
+}
+
+function _editorRecorderOpenMonitorWindow(mode) {
+    if (typeof window.open !== "function") return null;
+
+    let monitorWindow = null;
+    try {
+        monitorWindow = window.open("", "criavideoRecorderMonitor", "popup=yes,width=430,height=360,resizable=yes,scrollbars=no");
+    } catch {
+        return null;
+    }
+    if (!monitorWindow) return null;
+
+    try {
+        const doc = monitorWindow.document;
+        doc.open();
+        doc.write(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CriaVideo - Gravando</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #07162b;
+            --panel: #0b1f3c;
+            --line: rgba(255,255,255,0.08);
+            --text: #f5f8ff;
+            --muted: #93accb;
+            --accent: #f5b840;
+            --accent-dark: #d39a22;
+            --danger: #fca5a5;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            min-height: 100%;
+            background: radial-gradient(circle at top, rgba(245,184,64,0.14), rgba(4,17,34,0.98) 58%);
+            color: var(--text);
+            font-family: Manrope, Segoe UI, sans-serif;
+        }
+        body {
+            padding: 16px;
+        }
+        .mini-recorder {
+            display: grid;
+            gap: 14px;
+        }
+        .mini-recorder-card {
+            border-radius: 22px;
+            border: 1px solid var(--line);
+            background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(4,17,34,0.82));
+            box-shadow: 0 18px 40px rgba(0,0,0,0.24);
+            overflow: hidden;
+        }
+        .mini-recorder-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 16px 18px 0;
+            align-items: flex-start;
+        }
+        .mini-recorder-head strong {
+            display: block;
+            font-size: 1rem;
+        }
+        .mini-recorder-head span {
+            display: block;
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+        .mini-recorder-timer {
+            min-width: 84px;
+            height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(245,184,64,0.28);
+            background: rgba(6,17,34,0.9);
+            font-weight: 800;
+            letter-spacing: 0.04em;
+        }
+        .mini-recorder-preview-shell {
+            position: relative;
+            margin: 14px 18px 0;
+            min-height: 182px;
+            border-radius: 20px;
+            overflow: hidden;
+            background: #050d18;
+            border: 1px solid var(--line);
+        }
+        .mini-recorder-preview {
+            width: 100%;
+            height: 182px;
+            display: block;
+            object-fit: cover;
+            background: #050d18;
+        }
+        .mini-recorder-empty {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 18px;
+            color: var(--muted);
+            font-size: 0.92rem;
+            line-height: 1.5;
+        }
+        .mini-recorder-status {
+            min-height: 22px;
+            padding: 14px 18px 0;
+            color: var(--muted);
+            font-size: 0.9rem;
+            line-height: 1.45;
+        }
+        .mini-recorder-status.error {
+            color: var(--danger);
+        }
+        .mini-recorder-actions {
+            display: flex;
+            padding: 14px 18px 18px;
+        }
+        .mini-recorder-btn {
+            width: 100%;
+            min-height: 46px;
+            border: 0;
+            border-radius: 14px;
+            font: inherit;
+            font-weight: 800;
+            cursor: pointer;
+            color: #10233e;
+            background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+        }
+        .mini-recorder-btn:disabled {
+            opacity: 0.58;
+            cursor: wait;
+        }
+    </style>
+</head>
+<body>
+    <div class="mini-recorder">
+        <div class="mini-recorder-card">
+            <div class="mini-recorder-head">
+                <div>
+                    <strong id="editor-recorder-monitor-title">Tela</strong>
+                    <span id="editor-recorder-monitor-note">Mini janela ativa.</span>
+                </div>
+                <div id="editor-recorder-monitor-timer" class="mini-recorder-timer">00:00</div>
+            </div>
+            <div class="mini-recorder-preview-shell">
+                <video id="editor-recorder-monitor-preview" class="mini-recorder-preview" autoplay muted playsinline hidden></video>
+                <div id="editor-recorder-monitor-empty" class="mini-recorder-empty">O navegador pedirá acesso e a prévia aparece aqui.</div>
+            </div>
+            <div id="editor-recorder-monitor-status" class="mini-recorder-status">Preparando gravação...</div>
+            <div class="mini-recorder-actions">
+                <button id="editor-recorder-monitor-stop" class="mini-recorder-btn" type="button">Voltar ao CriaVideo</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>`);
+        doc.close();
+
+        const stopBtn = doc.getElementById("editor-recorder-monitor-stop");
+        stopBtn?.addEventListener("click", () => {
+            if (_editorRecorderModal.recording && !_editorRecorderModal.stopping && !_editorRecorderModal.uploading) {
+                _editorStopRecorderCapture();
+                return;
+            }
+            try {
+                window.focus();
+            } catch {}
+        });
+
+        monitorWindow.addEventListener("beforeunload", () => {
+            if (_editorRecorderRuntime.monitorClosing) return;
+            if (_editorRecorderModal.recording && _editorRecorderNeedsCanvasComposition(_editorRecorderModal.mode) && !_editorRecorderModal.stopping && !_editorRecorderModal.uploading) {
+                setTimeout(() => {
+                    if (!_editorRecorderModal.recording || _editorRecorderModal.stopping || _editorRecorderModal.uploading) return;
+                    _editorRecorderModal.status = "Mini janela fechada. Finalizando gravação...";
+                    _editorRenderRecorderModal();
+                    _editorStopRecorderCapture();
+                }, 0);
+            }
+        });
+
+        _editorRecorderRenderMonitorWindow();
+        return monitorWindow;
+    } catch {
+        try {
+            monitorWindow.close();
+        } catch {}
+        return null;
+    }
+}
+
 function _editorStopMediaStream(stream) {
     if (!stream) return;
     for (const track of stream.getTracks()) {
@@ -18569,12 +18571,16 @@ function _editorStopMediaStream(stream) {
 function _editorUpdateRecorderTimerUI() {
     const timer = document.getElementById("editor-recorder-timer-label");
     if (timer) timer.textContent = _editorFormatRecordingClock(_editorRecorderModal.seconds);
+    _editorRecorderRenderMonitorWindow();
 }
 
 function _editorCleanupRecorderRuntime(options = {}) {
     const { preservePreview = false } = options || {};
     const preview = document.getElementById("editor-recorder-preview");
-    if (_editorRecorderRuntime.drawRaf) cancelAnimationFrame(_editorRecorderRuntime.drawRaf);
+    const cancelDraw = _editorRecorderRuntime.drawWindow && typeof _editorRecorderRuntime.drawWindow.cancelAnimationFrame === "function"
+        ? _editorRecorderRuntime.drawWindow.cancelAnimationFrame.bind(_editorRecorderRuntime.drawWindow)
+        : cancelAnimationFrame;
+    if (_editorRecorderRuntime.drawRaf) cancelDraw(_editorRecorderRuntime.drawRaf);
     if (_editorRecorderRuntime.timer) clearInterval(_editorRecorderRuntime.timer);
 
     _editorStopMediaStream(_editorRecorderRuntime.displayStream);
@@ -18590,8 +18596,17 @@ function _editorCleanupRecorderRuntime(options = {}) {
     }
 
     if (preview && !preservePreview) {
-        preview.srcObject = null;
-        preview.removeAttribute("src");
+        _editorRecorderSetPreviewStream(preview, null);
+    }
+
+    _editorRecorderSyncMonitorPreview(null);
+
+    const monitorWindow = _editorRecorderGetMonitorWindow();
+    if (monitorWindow) {
+        _editorRecorderRuntime.monitorClosing = true;
+        try {
+            monitorWindow.close();
+        } catch {}
     }
 
     _editorRecorderRuntime = _editorCreateRecorderRuntime();
@@ -18655,6 +18670,7 @@ function _editorRenderRecorderModal() {
     status.hidden = !statusMessage;
     status.textContent = statusMessage;
     status.classList.toggle("error", Boolean(_editorRecorderModal.error));
+    _editorRecorderRenderMonitorWindow();
 }
 
 function _editorOpenRecorderModal() {
@@ -18693,8 +18709,8 @@ function _editorToggleRecorderMic() {
 }
 window._editorToggleRecorderMic = _editorToggleRecorderMic;
 
-async function _editorRecorderLoadVideoElement(stream) {
-    const video = document.createElement("video");
+async function _editorRecorderLoadVideoElement(stream, targetDocument = document) {
+    const video = targetDocument.createElement("video");
     video.autoplay = true;
     video.muted = true;
     video.playsInline = true;
@@ -18799,54 +18815,77 @@ async function _editorPrepareRecorderSession(mode) {
         });
     }
 
-    const screenVideoEl = displayStream ? await _editorRecorderLoadVideoElement(displayStream) : null;
-    const webcamVideoEl = webcamStream ? await _editorRecorderLoadVideoElement(webcamStream) : null;
-    const { width, height } = _editorRecorderComputeCanvasSize(mode, screenVideoEl, webcamVideoEl);
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-        throw new Error("Não foi possível preparar a captura de vídeo.");
-    }
-
-    const drawFrame = () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        if (_editorRecorderUsesScreen(mode) && screenVideoEl) {
-            ctx.drawImage(screenVideoEl, 0, 0, canvas.width, canvas.height);
-        } else if (webcamVideoEl) {
-            ctx.drawImage(webcamVideoEl, 0, 0, canvas.width, canvas.height);
-        }
-
-        if (mode === "screen_camera" && webcamVideoEl) {
-            const overlayWidth = Math.round(canvas.width * 0.26);
-            const aspectRatio = Math.max(0.6, webcamVideoEl.videoWidth / Math.max(1, webcamVideoEl.videoHeight));
-            const overlayHeight = Math.round(overlayWidth / aspectRatio);
-            const x = canvas.width - overlayWidth - 28;
-            const y = canvas.height - overlayHeight - 28;
-
-            ctx.save();
-            _editorRecorderRoundRect(ctx, x - 4, y - 4, overlayWidth + 8, overlayHeight + 8, 22);
-            ctx.fillStyle = "rgba(5, 20, 38, 0.88)";
-            ctx.fill();
-            _editorRecorderRoundRect(ctx, x, y, overlayWidth, overlayHeight, 18);
-            ctx.clip();
-            ctx.drawImage(webcamVideoEl, x, y, overlayWidth, overlayHeight);
-            ctx.restore();
-        }
-
-        _editorRecorderRuntime.drawRaf = requestAnimationFrame(drawFrame);
-    };
-    drawFrame();
-
-    const canvasStream = canvas.captureStream(30);
+    let screenVideoEl = null;
+    let webcamVideoEl = null;
+    let canvas = null;
+    let canvasStream = null;
+    let drawWindow = null;
     const outputStream = new MediaStream();
-    const videoTrack = canvasStream.getVideoTracks()[0];
-    if (videoTrack) outputStream.addTrack(videoTrack);
+    const needsComposition = _editorRecorderNeedsCanvasComposition(mode);
+
+    if (needsComposition) {
+        drawWindow = _editorRecorderGetMonitorWindow() || window;
+        const renderDocument = drawWindow.document || document;
+        screenVideoEl = displayStream ? await _editorRecorderLoadVideoElement(displayStream, renderDocument) : null;
+        webcamVideoEl = webcamStream ? await _editorRecorderLoadVideoElement(webcamStream, renderDocument) : null;
+        const { width, height } = _editorRecorderComputeCanvasSize(mode, screenVideoEl, webcamVideoEl);
+        canvas = renderDocument.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+            throw new Error("Não foi possível preparar a captura de vídeo.");
+        }
+
+        const nextFrame = typeof drawWindow.requestAnimationFrame === "function"
+            ? drawWindow.requestAnimationFrame.bind(drawWindow)
+            : requestAnimationFrame;
+
+        const drawFrame = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (_editorRecorderUsesScreen(mode) && screenVideoEl) {
+                ctx.drawImage(screenVideoEl, 0, 0, canvas.width, canvas.height);
+            } else if (webcamVideoEl) {
+                ctx.drawImage(webcamVideoEl, 0, 0, canvas.width, canvas.height);
+            }
+
+            if (mode === "screen_camera" && webcamVideoEl) {
+                const overlayWidth = Math.round(canvas.width * 0.26);
+                const aspectRatio = Math.max(0.6, webcamVideoEl.videoWidth / Math.max(1, webcamVideoEl.videoHeight));
+                const overlayHeight = Math.round(overlayWidth / aspectRatio);
+                const x = canvas.width - overlayWidth - 28;
+                const y = canvas.height - overlayHeight - 28;
+
+                ctx.save();
+                _editorRecorderRoundRect(ctx, x - 4, y - 4, overlayWidth + 8, overlayHeight + 8, 22);
+                ctx.fillStyle = "rgba(5, 20, 38, 0.88)";
+                ctx.fill();
+                _editorRecorderRoundRect(ctx, x, y, overlayWidth, overlayHeight, 18);
+                ctx.clip();
+                ctx.drawImage(webcamVideoEl, x, y, overlayWidth, overlayHeight);
+                ctx.restore();
+            }
+
+            _editorRecorderRuntime.drawRaf = nextFrame(drawFrame);
+        };
+        drawFrame();
+
+        canvasStream = canvas.captureStream(30);
+        const composedVideoTrack = canvasStream.getVideoTracks()[0];
+        if (composedVideoTrack) outputStream.addTrack(composedVideoTrack);
+    } else {
+        const sourceStream = _editorRecorderUsesScreen(mode) ? displayStream : webcamStream;
+        const sourceVideoTrack = sourceStream?.getVideoTracks?.()[0] || null;
+        if (sourceVideoTrack) outputStream.addTrack(sourceVideoTrack);
+    }
 
     const mixedAudio = _editorRecorderBuildMixedAudio([displayStream, webcamStream, micStream]);
     if (mixedAudio.track) outputStream.addTrack(mixedAudio.track);
+
+    if (!outputStream.getVideoTracks().length) {
+        throw new Error("Não foi possível iniciar a gravação de vídeo.");
+    }
 
     return {
         displayStream,
@@ -18859,6 +18898,7 @@ async function _editorPrepareRecorderSession(mode) {
         audioDestination: mixedAudio.audioDestination,
         screenVideoEl,
         webcamVideoEl,
+        drawWindow,
     };
 }
 
@@ -18911,17 +18951,22 @@ async function _editorStartRecorderCapture() {
 
     try {
         _editorCleanupRecorderRuntime();
+        const monitorWindow = _editorRecorderOpenMonitorWindow(mode);
+        if (monitorWindow) {
+            _editorRecorderRuntime.monitorWindow = monitorWindow;
+        } else if (_editorRecorderNeedsCanvasComposition(mode)) {
+            _editorRecorderModal.status = "Seu navegador bloqueou a mini janela. Se minimizar o CriaVideo em Tela + Webcam, a gravação pode pausar.";
+            _editorRenderRecorderModal();
+        }
+
         const prepared = await _editorPrepareRecorderSession(mode);
         Object.assign(_editorRecorderRuntime, prepared);
 
         const preview = document.getElementById("editor-recorder-preview");
         if (preview) {
-            preview.srcObject = _editorRecorderRuntime.outputStream;
-            preview.muted = true;
-            preview.playsInline = true;
-            preview.autoplay = true;
-            preview.play().catch(() => {});
+            _editorRecorderSetPreviewStream(preview, _editorRecorderRuntime.outputStream);
         }
+        _editorRecorderSyncMonitorPreview(_editorRecorderRuntime.outputStream);
 
         const mimeType = _editorPickRecorderMimeType();
         const recorderOptions = mimeType
@@ -18979,7 +19024,11 @@ async function _editorStartRecorderCapture() {
         recorder.start(1000);
         _editorRecorderModal.starting = false;
         _editorRecorderModal.recording = true;
-        _editorRecorderModal.status = "Gravando agora.";
+        _editorRecorderModal.status = _editorRecorderGetMonitorWindow()
+            ? (_editorRecorderNeedsCanvasComposition(mode)
+                ? "Mini janela ativa. Pode minimizar o CriaVideo, mas mantenha a mini janela aberta."
+                : "Gravando agora. Pode minimizar o CriaVideo e usar a mini janela para parar.")
+            : "Gravando agora.";
         _editorRecorderModal.error = "";
         _editorRecorderRuntime.timer = setInterval(() => {
             _editorRecorderModal.seconds += 1;

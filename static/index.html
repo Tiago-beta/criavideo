@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260501-02">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260430-19">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 306;
+        var REQUIRED_VER = 305;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1123,7 +1123,7 @@
                                 <button class="style-tag" type="button" data-persona="mulher">Mulher</button>
                                 <button class="style-tag" type="button" data-persona="crianca">Criança</button>
                                 <button class="style-tag" type="button" data-persona="familia">Família</button>
-                                <button class="style-tag" type="button" data-persona="natureza">Natureza</button>
+                                <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
                                 <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
                                 <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
                             </div>
@@ -2463,7 +2463,7 @@
                         <button class="style-tag" type="button" data-persona="mulher" onclick="selectAutoPilotPersonaType('mulher')">Mulher</button>
                         <button class="style-tag" type="button" data-persona="crianca" onclick="selectAutoPilotPersonaType('crianca')">Criança</button>
                         <button class="style-tag" type="button" data-persona="familia" onclick="selectAutoPilotPersonaType('familia')">Família</button>
-                        <button class="style-tag" type="button" data-persona="natureza" onclick="selectAutoPilotPersonaType('natureza')">Natureza</button>
+                        <button class="style-tag selected" type="button" data-persona="natureza" onclick="selectAutoPilotPersonaType('natureza')">Natureza</button>
                         <button class="style-tag" type="button" data-persona="desenho" onclick="selectAutoPilotPersonaType('desenho')">Desenho</button>
                         <button class="style-tag" type="button" data-persona="personalizado" onclick="selectAutoPilotPersonaType('personalizado')">Personalizado</button>
                     </div>
@@ -2483,42 +2483,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('modal-auto-pilot-persona')" type="button">Cancelar</button>
-                <button class="btn btn-secondary" onclick="openAutoPilotPromptEditor()" type="button">Ver prompt</button>
                 <button class="btn btn-primary" id="pilot-persona-save-btn" onclick="saveAutoPilotPersonaExperiment()" type="button">Salvar personas</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="modal-auto-pilot-prompt" class="modal">
-        <div class="modal-content modal-content-wide">
-            <div class="modal-header">
-                <h3>Prompt do piloto</h3>
-                <button class="modal-close" onclick="closeModal('modal-auto-pilot-prompt')" type="button">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p class="section-subtitle">Canal: <strong id="pilot-prompt-channel-label">-</strong></p>
-
-                <div class="form-group">
-                    <label>Como o prompt foi decidido</label>
-                    <div id="pilot-prompt-decision-list" class="auto-pilot-persona-summary"></div>
-                </div>
-
-                <div class="form-group">
-                    <label>Template salvo</label>
-                    <small id="pilot-prompt-source-label" class="pause-hint">Carregando...</small>
-                    <textarea id="pilot-prompt-template" class="input" rows="8" placeholder="Edite o template do prompt do piloto."></textarea>
-                    <small class="pause-hint">Use {{excerpt}} para o trecho atual do short e {{persona_instruction}} para reinserir a trava de persona automaticamente.</small>
-                </div>
-
-                <div class="form-group">
-                    <label>Prévia final do prompt</label>
-                    <textarea id="pilot-prompt-preview" class="input" rows="8" readonly></textarea>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('modal-auto-pilot-prompt')" type="button">Fechar</button>
-                <button class="btn btn-secondary" onclick="refreshAutoPilotPromptPreview(true)" type="button">Atualizar prévia</button>
-                <button class="btn btn-primary" id="pilot-prompt-save-btn" onclick="saveAutoPilotPromptTemplate()" type="button">Salvar prompt</button>
             </div>
         </div>
     </div>
@@ -3389,8 +3354,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260501-02"></script>
-    <script src="/video/static/pwa.js?v=20260501-02"></script>
+    <script src="/video/static/app.js?v=20260430-19"></script>
+    <script src="/video/static/pwa.js?v=20260430-19"></script>
 </body>
 </html>
 
