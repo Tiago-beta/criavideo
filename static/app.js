@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v291 loaded");
+console.log("[CriaVideo] app.js v292 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2291,7 +2291,7 @@ function _extractEstimateCredits(estimate) {
 }
 
 function _resolveCreditUnitBrl() {
-    return _creditValueBrl > 0 ? _creditValueBrl : (19.99 / 520);
+    return _creditValueBrl > 0 ? _creditValueBrl : (99.99 / 2800);
 }
 
 function _creditsToBrl(credits) {
@@ -16679,8 +16679,8 @@ function showCreditsPurchaseModal() {
     if (existing) existing.remove();
 
     const pkgs = _creditPackages.length ? _creditPackages : [
-        { credits: 520, price: 19.99 },
-        { credits: 1350, price: 49.99 },
+        { credits: 500, price: 19.99 },
+        { credits: 1300, price: 49.99 },
         { credits: 2800, price: 99.99 },
     ];
 
@@ -16724,7 +16724,7 @@ function showCreditsPurchaseModal() {
                     Pagar com Cartão
                 </button>
             </div>
-            <p class="credits-hint">Preco por credito desde R$ ${creditUnitText} (${_creditPricingVersion || "v2.0"}). O custo de geracao aparece em creditos ao lado dos botoes de gerar.</p>
+            <p class="credits-hint">Preco por credito desde R$ ${creditUnitText} (${_creditPricingVersion || "v2.1"}). O custo de geracao aparece em creditos ao lado dos botoes de gerar.</p>
         </div>
     `;
     document.body.appendChild(overlay);

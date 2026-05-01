@@ -8,7 +8,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-CREDIT_PRICING_RULES_VERSION = "v2.0"
+CREDIT_PRICING_RULES_VERSION = "v2.1"
 
 # Business rules
 USD_TO_BRL = 4.9756
@@ -17,8 +17,8 @@ MARGIN_MULTIPLIER = 1.30
 # Public package catalog used by backend + frontend.
 # Entry package starts at R$ 19.99 as requested.
 CREDIT_PACKAGES = [
-    {"credits": 520, "price": 19.99, "label": "520 creditos"},
-    {"credits": 1350, "price": 49.99, "label": "1350 creditos"},
+    {"credits": 500, "price": 19.99, "label": "500 creditos"},
+    {"credits": 1300, "price": 49.99, "label": "1300 creditos"},
     {"credits": 2800, "price": 99.99, "label": "2800 creditos"},
 ]
 
@@ -86,7 +86,7 @@ def get_credit_value_brl(packages: list[dict[str, Any]] | None = None) -> float:
             continue
         if credits > 0 and price > 0:
             ratios.append(price / credits)
-    return min(ratios) if ratios else (19.99 / 520.0)
+    return min(ratios) if ratios else (99.99 / 2800.0)
 
 
 def _safe_duration_seconds(duration_seconds: float | int | None, word_count: int | None = None) -> float:
