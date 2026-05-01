@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v289 loaded");
+console.log("[CriaVideo] app.js v290 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -57,6 +57,7 @@ let _autoPilotPersonaEditor = {
     accountId: 0,
     selectedTypes: [],
 };
+let _autoRealisticPersonaCompositionTypes = ["natureza"];
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 
 const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
@@ -1440,6 +1441,77 @@ function _analyzeRenderTopVideos(rawVideos) {
     }).join("");
 }
 
+function _analyzeRenderPersonaInsights(rawInsights) {
+    const section = document.getElementById("analyze-persona-section");
+    const summaryEl = document.getElementById("analyze-persona-summary");
+    const combosEl = document.getElementById("analyze-persona-combinations");
+    const elementsEl = document.getElementById("analyze-persona-elements");
+    const actionsEl = document.getElementById("analyze-persona-actions");
+
+    const insights = rawInsights && typeof rawInsights === "object" ? rawInsights : {};
+    const tracked = parseInt(insights.tracked_published_videos || "0", 10) || 0;
+    const hasSectionContent = !!insights.available || tracked > 0 || !!String(insights.summary || "").trim();
+
+    if (section) {
+        section.hidden = !hasSectionContent;
+    }
+    if (!hasSectionContent) {
+        return;
+    }
+
+    if (summaryEl) {
+        summaryEl.textContent = String(insights.summary || "").trim() || "A analise ainda nao cruzou personas suficientes nesta conta.";
+    }
+
+    const renderChips = (values) => (Array.isArray(values) ? values : []).map((value) => {
+        const label = REALISTIC_PERSONA_LABELS[_normalizeRealisticPersonaType(value)] || String(value || "");
+        return `<span class="analyze-persona-chip">${esc(label)}</span>`;
+    }).join("");
+
+    if (combosEl) {
+        const combinations = Array.isArray(insights.top_combinations) ? insights.top_combinations : [];
+        combosEl.innerHTML = combinations.length
+            ? combinations.map((item) => `
+                <article class="analyze-persona-card">
+                    <div class="analyze-persona-card-head">
+                        <h4>${esc(item.label || "Composicao")}</h4>
+                        <span class="analyze-persona-badge">${esc(String(item.matched_top_videos || 0))} top videos</span>
+                    </div>
+                    <div class="analyze-persona-chip-row">${renderChips(item.persona_types)}</div>
+                    <p class="analyze-persona-metrics">Media ${esc(_analyzeFormatNumber(item.avg_views || 0, true))} views · ${esc(_analyzeFormatNumber(item.avg_likes || 0, true))} likes · ${esc(String(item.published_count || 0))} publicados</p>
+                    ${item.best_video_title ? `<p class="analyze-persona-best">Melhor caso: ${esc(item.best_video_title)} · ${esc(_analyzeFormatNumber(item.best_video_views || 0, true))} views</p>` : ""}
+                </article>
+            `).join("")
+            : "<p class='analyze-empty-card'>Sem combinacoes vencedoras mapeadas ainda.</p>";
+    }
+
+    if (elementsEl) {
+        const elements = Array.isArray(insights.top_elements) ? insights.top_elements : [];
+        elementsEl.innerHTML = elements.length
+            ? elements.map((item) => `
+                <article class="analyze-persona-card analyze-persona-card-compact">
+                    <div class="analyze-persona-card-head">
+                        <h4>${esc(item.label || "Persona")}</h4>
+                        <span class="analyze-persona-badge analyze-persona-badge-soft">${esc(String(item.matched_top_videos || 0))} top videos</span>
+                    </div>
+                    <p class="analyze-persona-metrics">Media ${esc(_analyzeFormatNumber(item.avg_views || 0, true))} views · ${esc(_analyzeFormatNumber(item.avg_likes || 0, true))} likes</p>
+                    <p class="analyze-persona-best">${esc(String(item.published_count || 0))} videos internos com essa persona</p>
+                </article>
+            `).join("")
+            : "<p class='analyze-empty-card'>Sem elementos de persona suficientes ainda.</p>";
+    }
+
+    _analyzeRenderStringList(
+        "analyze-persona-actions",
+        insights.recommendations,
+        "Sem recomendacoes de persona disponiveis por enquanto.",
+    );
+
+    if (actionsEl) {
+        actionsEl.classList.toggle("analyze-list-strong", Array.isArray(insights.recommendations) && insights.recommendations.length > 0);
+    }
+}
+
 function _analyzeRenderKpis(channel, history, platformSupported) {
     const container = document.getElementById("analyze-kpi-grid");
     if (!container) return;
@@ -1563,6 +1635,7 @@ function _analyzeRenderPayload(payload) {
 
     _analyzeRenderKpis(channel, history, !!payload.platform_supported);
     _analyzeRenderTopVideos(payload.top_videos || []);
+    _analyzeRenderPersonaInsights(payload.persona_insights || {});
     _analyzeRenderStringList("analyze-title-ideas", rec.title_ideas, "Sem titulos sugeridos.");
     _analyzeRenderStringList("analyze-thumbnail-ideas", rec.thumbnail_ideas, "Sem direcoes de thumbnail.");
     _analyzeRenderStringList("analyze-growth-actions", rec.growth_actions, "Sem plano de crescimento.");
@@ -8950,6 +9023,9 @@ function togglePersonaSelectionFromPreview(context, profileId) {
     }
 
     _renderPersonaPreview(ctx);
+    if (ctx === "auto") {
+        _renderAutoRealisticPersonaCompositionSummary();
+    }
     if (ctx === "pilot") {
         _renderAutoPilotPersonaEditorSelectedTypes();
     }
@@ -9242,6 +9318,9 @@ async function _refreshPersonaContext(context, forcedPersonaType = "") {
     _setSelectedPersonaProfileIds(context, type, selectedIds);
 
     _renderPersonaPreview(context);
+    if (context === "auto") {
+        _renderAutoRealisticPersonaCompositionSummary();
+    }
 }
 
 function _refreshAllPersonaPreviews() {
@@ -9250,6 +9329,7 @@ function _refreshAllPersonaPreviews() {
     _renderPersonaPreview("ai");
     _renderPersonaPreview("auto");
     _renderPersonaPreview("pilot");
+    _renderAutoRealisticPersonaCompositionSummary();
     _renderAutoPilotPersonaEditorSelectedTypes();
 }
 
@@ -12471,6 +12551,116 @@ function _formatPilotPersonaCandidateLabel(candidate) {
     return baseLabel;
 }
 
+function _getAutoRealisticPersonaCompositionTypes() {
+    const normalized = (Array.isArray(_autoRealisticPersonaCompositionTypes) ? _autoRealisticPersonaCompositionTypes : [])
+        .map((type) => _normalizeRealisticPersonaType(type))
+        .filter((type, index, arr) => arr.indexOf(type) === index);
+
+    if (!normalized.length) {
+        normalized.push(_getRealisticPersonaTypeByContext("auto"));
+    }
+
+    return normalized;
+}
+
+function _setAutoRealisticPersonaCompositionTypes(types) {
+    _autoRealisticPersonaCompositionTypes = (Array.isArray(types) ? types : [])
+        .map((type) => _normalizeRealisticPersonaType(type))
+        .filter((type, index, arr) => arr.indexOf(type) === index);
+}
+
+function _renderAutoRealisticPersonaCompositionSummary() {
+    const countEl = document.getElementById("auto-realistic-persona-composition-count");
+    const container = document.getElementById("auto-realistic-persona-composition");
+    if (!container) return;
+
+    const selectedTypes = _getAutoRealisticPersonaCompositionTypes();
+    if (countEl) {
+        countEl.textContent = selectedTypes.length === 1
+            ? "1 persona separada"
+            : `${selectedTypes.length} personas separadas`;
+    }
+
+    if (!selectedTypes.length) {
+        container.innerHTML = '<span class="auto-pilot-persona-empty">Nenhuma persona adicionada.</span>';
+        return;
+    }
+
+    container.innerHTML = selectedTypes.map((type) => {
+        const label = REALISTIC_PERSONA_LABELS[type] || type;
+        const ids = _getSelectedPersonaProfileIds("auto", type);
+        const detail = ids.length > 1
+            ? `${ids.length} personas`
+            : ids.length === 1
+                ? "1 persona"
+                : "carregando";
+        return `
+            <span class="auto-pilot-persona-chip">
+                ${esc(label)} • ${esc(detail)}
+                <button class="auto-pilot-persona-chip-remove" type="button" onclick="removeAutoRealisticPersonaType('${type}')" title="Remover ${esc(label)}">&times;</button>
+            </span>
+        `;
+    }).join("");
+}
+
+async function _selectAutoRealisticPersonaType(personaType) {
+    const normalizedType = _normalizeRealisticPersonaType(personaType || "natureza");
+    const tagsContainer = document.getElementById("auto-realistic-persona-tags");
+    if (tagsContainer) {
+        tagsContainer.querySelectorAll(".style-tag").forEach((tag) => {
+            tag.classList.toggle("selected", (tag.dataset.persona || "") === normalizedType);
+        });
+    }
+
+    const selectedTypes = _getAutoRealisticPersonaCompositionTypes();
+    if (!selectedTypes.includes(normalizedType)) {
+        selectedTypes.push(normalizedType);
+    }
+    _setAutoRealisticPersonaCompositionTypes(selectedTypes);
+    _renderAutoRealisticPersonaCompositionSummary();
+    await _refreshPersonaContext("auto", normalizedType);
+}
+
+function removeAutoRealisticPersonaType(personaType) {
+    const normalizedType = _normalizeRealisticPersonaType(personaType || "natureza");
+    let selectedTypes = _getAutoRealisticPersonaCompositionTypes().filter((type) => type !== normalizedType);
+    _setSelectedPersonaProfileIds("auto", normalizedType, []);
+
+    if (!selectedTypes.length) {
+        selectedTypes = ["natureza"];
+    }
+
+    _setAutoRealisticPersonaCompositionTypes(selectedTypes);
+    _renderAutoRealisticPersonaCompositionSummary();
+
+    const currentType = _getRealisticPersonaTypeByContext("auto");
+    if (!selectedTypes.includes(currentType) || currentType === normalizedType) {
+        void _selectAutoRealisticPersonaType(selectedTypes[0]);
+    }
+}
+window.removeAutoRealisticPersonaType = removeAutoRealisticPersonaType;
+
+async function _collectAutoRealisticPersonaCandidatesForSave() {
+    const selectedTypes = _getAutoRealisticPersonaCompositionTypes();
+    const candidates = [];
+
+    for (const type of selectedTypes) {
+        const personaProfileIds = await _ensurePersonaSelections("auto", type);
+        if (!personaProfileIds.length) {
+            const label = REALISTIC_PERSONA_LABELS[type] || type;
+            throw new Error(`Crie uma ou mais personas para ${label} antes de salvar a composicao.`);
+        }
+        candidates.push({
+            persona_type: type,
+            persona_profile_id: personaProfileIds[0] || 0,
+            persona_profile_ids: personaProfileIds,
+            disable_persona_reference: false,
+        });
+    }
+
+    return candidates;
+}
+
 async function _setAutoPilotPersonaEditorType(personaType) {
     const normalizedType = _normalizeRealisticPersonaType(personaType || "natureza");
     const tagsContainer = document.getElementById("pilot-realistic-persona-tags");
@@ -13167,15 +13357,13 @@ function openNewAutomationModal() {
     document.querySelectorAll("#auto-realistic-style-tags .style-tag").forEach(t => t.classList.remove("selected"));
     const defStyle = document.querySelector('#auto-realistic-style-tags [data-style="cinematic"]');
     if (defStyle) defStyle.classList.add("selected");
-    document.querySelectorAll("#auto-realistic-persona-tags .style-tag").forEach(t => t.classList.remove("selected"));
-    const defPersona = document.querySelector('#auto-realistic-persona-tags [data-persona="natureza"]');
-    if (defPersona) defPersona.classList.add("selected");
     const autoMultiPersona = document.getElementById("auto-realistic-multi-persona");
     if (autoMultiPersona) autoMultiPersona.checked = false;
     _personaSelectionByContext.auto = {};
     _personaMultiSelectionByContext.auto = {};
     _personaNoReferenceByContext.auto = {};
-    _refreshPersonaContext("auto", "natureza");
+    _setAutoRealisticPersonaCompositionTypes(["natureza"]);
+    void _selectAutoRealisticPersonaType("natureza");
 
     // reset engine selection
     _setAutoRealisticEngine("grok");
@@ -13334,7 +13522,7 @@ function autoStepBack() {
 document.addEventListener("DOMContentLoaded", () => {
     const autoModal = document.getElementById("modal-new-automation");
     if (!autoModal) return;
-    autoModal.addEventListener("click", (e) => {
+    autoModal.addEventListener("click", async (e) => {
         const sourceOpt = e.target.closest("#auto-image-audio-source .engine-option");
         if (sourceOpt) {
             selectAutoImageAudioSource(sourceOpt.dataset.value || "narration");
@@ -13348,9 +13536,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const persona = e.target.closest("#auto-realistic-persona-tags .style-tag");
         if (persona) {
-            document.querySelectorAll("#auto-realistic-persona-tags .style-tag").forEach(t => t.classList.remove("selected"));
-            persona.classList.add("selected");
-            _refreshPersonaContext("auto", persona.dataset.persona || "natureza");
+            await _selectAutoRealisticPersonaType(persona.dataset.persona || "natureza");
             scheduleAutoCreditEstimate();
         }
         // Engine option click
@@ -15151,9 +15337,15 @@ async function addClipToThemes() {
     const autoClipDuration = payload.clip_duration > 0
         ? payload.clip_duration
         : Math.max(1, Number(song.duration || payload.song_duration || 120));
-    const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
-    const interactionPersona = _normalizeRealisticPersonaType(selectedPersona ? selectedPersona.dataset.persona : "natureza");
-    const personaProfileId = _getSelectedPersonaProfileId("auto", interactionPersona);
+    let personaCandidates = [];
+    try {
+        personaCandidates = await _collectAutoRealisticPersonaCandidatesForSave();
+    } catch (error) {
+        alert(error.message || "Nao foi possivel montar a composicao de personas.");
+        return;
+    }
+    const interactionPersona = personaCandidates[0]?.persona_type || "natureza";
+    const personaProfileId = personaCandidates[0]?.persona_profile_id || 0;
 
     // Store as object with clip metadata
     _autoWizardThemes.push({
@@ -15167,7 +15359,10 @@ async function addClipToThemes() {
             clip_start: payload.clip_start,
             clip_duration: autoClipDuration,
             interaction_persona: interactionPersona,
+            interaction_personas: personaCandidates.map((candidate) => candidate.persona_type),
             persona_profile_id: personaProfileId,
+            persona_profile_ids: personaCandidates[0]?.persona_profile_ids || [],
+            persona_composition: personaCandidates,
         },
     });
     renderAutoWizardThemes();
@@ -15416,21 +15611,22 @@ async function createAutoSchedule() {
     } else if (videoType === "realista") {
         // Collect realistic settings
         const selectedStyle = document.querySelector("#auto-realistic-style-tags .style-tag.selected");
-        const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
-        const interactionPersona = _normalizeRealisticPersonaType(selectedPersona ? selectedPersona.dataset.persona : "natureza");
-        let personaProfileId = 0;
-        let personaProfileIds = [];
+        let personaCandidates = [];
         try {
-            personaProfileIds = await _ensurePersonaSelections("auto", interactionPersona);
-            personaProfileId = personaProfileIds[0] || 0;
+            personaCandidates = await _collectAutoRealisticPersonaCandidatesForSave();
         } catch (error) {
             alert(`Erro ao carregar persona: ${error.message}`);
             return;
         }
-        if (!personaProfileIds.length) {
+        if (!personaCandidates.length) {
             alert("Crie uma ou mais personas de interação antes de salvar a automação realista.");
             return;
         }
+        const interactionPersona = personaCandidates[0].persona_type || "natureza";
+        const personaProfileId = personaCandidates[0].persona_profile_id || 0;
+        const personaProfileIds = Array.isArray(personaCandidates[0].persona_profile_ids)
+            ? personaCandidates[0].persona_profile_ids
+            : [];
         const selectedEngine = document.querySelector("#auto-realistic-engine .engine-option.selected");
         const selectedDur = document.querySelector("#auto-realistic-duration .duration-option.selected");
         const useTevoxi = document.getElementById("auto-realistic-tevoxi")?.checked || false;
@@ -15440,8 +15636,10 @@ async function createAutoSchedule() {
         defaultSettings = {
             realistic_style: selectedStyle ? selectedStyle.dataset.style : "cinematic",
             interaction_persona: interactionPersona,
+            interaction_personas: personaCandidates.map((candidate) => candidate.persona_type),
             persona_profile_id: personaProfileId,
             persona_profile_ids: personaProfileIds,
+            persona_composition: personaCandidates,
             engine: useTevoxi ? "grok" : (selectedEngine ? selectedEngine.dataset.value : "wan2"),
             duration: selectedDur ? parseInt(selectedDur.dataset.value) : 8,
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",

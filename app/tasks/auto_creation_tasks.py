@@ -31,7 +31,9 @@ from app.services.persona_registry import (
 )
 from app.services.pilot_prompt import (
     build_interaction_persona_instruction as shared_build_interaction_persona_instruction,
+    normalize_interaction_personas,
     render_pilot_prompt_template,
+    summarize_interaction_personas,
 )
 from app.services.credit_pricing import estimate_auto_theme_credits
 
@@ -402,6 +404,179 @@ def _normalize_pilot_persona_candidates(experiment: dict) -> list[dict]:
     return normalized[:8]
 
 
+def _normalize_persona_composition_candidates(
+    raw_candidates: list[dict] | None,
+    fallback_persona: str = "",
+    fallback_profile_id: int = 0,
+    fallback_profile_ids: list[int] | None = None,
+) -> list[dict]:
+    normalized: list[dict] = []
+    seen = set()
+
+    def _add_candidate(
+        persona_type: str,
+        persona_profile_id: int = 0,
+        persona_profile_ids: list[int] | None = None,
+        disable_persona_reference: bool = False,
+    ):
+        normalized_type = _normalize_interaction_persona(persona_type)
+        if not normalized_type:
+            return
+
+        ids: list[int] = []
+        for raw_id in (persona_profile_ids or []):
+            try:
+                pid = int(raw_id)
+            except Exception:
+                continue
+            if pid > 0 and pid not in ids:
+                ids.append(pid)
+
+        try:
+            profile_id = int(persona_profile_id or 0)
+        except Exception:
+            profile_id = 0
+        if profile_id > 0 and profile_id not in ids:
+            ids.insert(0, profile_id)
+
+        disable_ref = bool(disable_persona_reference)
+        key = f"{normalized_type}:{','.join(str(pid) for pid in ids)}:{1 if disable_ref else 0}"
+        if key in seen:
+            return
+        seen.add(key)
+
+        normalized.append(
+            {
+                "persona_type": normalized_type,
+                "persona_profile_id": 0 if disable_ref else (ids[0] if ids else 0),
+                "persona_profile_ids": [] if disable_ref else ids,
+                "disable_persona_reference": disable_ref,
+            }
+        )
+
+    for item in raw_candidates or []:
+        if not isinstance(item, dict):
+            continue
+        _add_candidate(
+            persona_type=item.get("persona_type") or item.get("type") or item.get("interaction_persona") or "",
+            persona_profile_id=item.get("persona_profile_id") or item.get("profile_id") or 0,
+            persona_profile_ids=item.get("persona_profile_ids") or item.get("profile_ids") or [],
+            disable_persona_reference=bool(item.get("disable_persona_reference") or item.get("grok_text_only")),
+        )
+
+    if not normalized and (fallback_persona or fallback_profile_id or (fallback_profile_ids or [])):
+        _add_candidate(
+            persona_type=fallback_persona or "natureza",
+            persona_profile_id=fallback_profile_id,
+            persona_profile_ids=fallback_profile_ids or [],
+        )
+
+    return normalized[:8]
+
+
+def _flatten_persona_profile_ids(persona_candidates: list[dict]) -> list[int]:
+    ids: list[int] = []
+    for candidate in persona_candidates or []:
+        for raw_id in candidate.get("persona_profile_ids") or []:
+            try:
+                pid = int(raw_id)
+            except Exception:
+                continue
+            if pid > 0 and pid not in ids:
+                ids.append(pid)
+    return ids
+
+
+async def _resolve_persona_composition_reference(
+    user_id: int,
+    persona_candidates: list[dict],
+    prefix: str,
+) -> tuple[list[dict], str, list[int], str]:
+    saved_candidates: list[dict] = []
+    reference_image_paths: list[str] = []
+    seen_paths: set[str] = set()
+
+    async with async_session() as db:
+        for candidate in persona_candidates or []:
+            persona_type = _normalize_interaction_persona(candidate.get("persona_type") or "")
+            if not persona_type:
+                continue
+
+            disable_ref = bool(candidate.get("disable_persona_reference"))
+            ids = [
+                int(pid) for pid in (candidate.get("persona_profile_ids") or [])
+                if str(pid).strip().isdigit() and int(pid) > 0
+            ]
+
+            if disable_ref:
+                saved_candidates.append(
+                    {
+                        "persona_type": persona_type,
+                        "persona_profile_id": 0,
+                        "persona_profile_ids": [],
+                        "disable_persona_reference": True,
+                    }
+                )
+                continue
+
+            resolved_personas = []
+            persona_image_paths: list[str] = []
+            if ids:
+                resolved_personas, persona_image_paths = await resolve_persona_reference_images(
+                    db=db,
+                    user_id=user_id,
+                    persona_type=persona_type,
+                    persona_profile_ids=ids,
+                    ensure_default=False,
+                )
+            else:
+                resolved_persona, single_reference_path = await resolve_persona_reference_image(
+                    db=db,
+                    user_id=user_id,
+                    persona_type=persona_type,
+                    persona_profile_id=0,
+                    ensure_default=False,
+                )
+                if resolved_persona and single_reference_path:
+                    resolved_personas = [resolved_persona]
+                    persona_image_paths = [single_reference_path]
+
+            resolved_ids = [int(profile.id) for profile in resolved_personas if int(profile.id) > 0]
+            if not resolved_ids or not persona_image_paths:
+                continue
+
+            saved_candidates.append(
+                {
+                    "persona_type": persona_type,
+                    "persona_profile_id": resolved_ids[0],
+                    "persona_profile_ids": resolved_ids,
+                    "disable_persona_reference": False,
+                }
+            )
+
+            for image_path in persona_image_paths:
+                normalized_path = str(image_path or "").strip()
+                if normalized_path and normalized_path not in seen_paths:
+                    seen_paths.add(normalized_path)
+                    reference_image_paths.append(normalized_path)
+
+    if not reference_image_paths:
+        primary_type = saved_candidates[0]["persona_type"] if saved_candidates else ""
+        return saved_candidates, "", _flatten_persona_profile_ids(saved_candidates), primary_type
+
+    reference_image_path = (
+        reference_image_paths[0]
+        if len(reference_image_paths) == 1
+        else build_persona_reference_montage(
+            user_id=user_id,
+            image_paths=reference_image_paths,
+            prefix=prefix,
+        )
+    )
+    primary_type = saved_candidates[0]["persona_type"] if saved_candidates else ""
+    return saved_candidates, reference_image_path, _flatten_persona_profile_ids(saved_candidates), primary_type
+
+
 def _pick_pilot_persona_candidate(experiment: dict, variant_index: int) -> dict | None:
     candidates = _normalize_pilot_persona_candidates(experiment)
     if not candidates:
@@ -419,7 +594,7 @@ def _pick_pilot_persona_candidate(experiment: dict, variant_index: int) -> dict 
     return candidates[max(0, int(variant_index or 0)) % len(candidates)]
 
 
-def _build_interaction_persona_instruction(interaction_persona: str) -> str:
+def _build_interaction_persona_instruction(interaction_persona: str | list[str] | tuple[str, ...]) -> str:
     return shared_build_interaction_persona_instruction(interaction_persona)
 
 
@@ -1053,6 +1228,17 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
             requested_persona_profile_ids.append(parsed_pid)
     if requested_persona_profile_id and requested_persona_profile_id not in requested_persona_profile_ids:
         requested_persona_profile_ids.insert(0, requested_persona_profile_id)
+    persona_candidates = _normalize_persona_composition_candidates(
+        cfg.get("persona_composition") if isinstance(cfg.get("persona_composition"), list) else [],
+        fallback_persona=interaction_persona,
+        fallback_profile_id=requested_persona_profile_id,
+        fallback_profile_ids=requested_persona_profile_ids,
+    )
+    interaction_personas = normalize_interaction_personas(
+        cfg.get("interaction_personas") if isinstance(cfg.get("interaction_personas"), list) else [
+            candidate.get("persona_type") for candidate in persona_candidates
+        ]
+    ) or [candidate.get("persona_type") for candidate in persona_candidates if candidate.get("persona_type")]
     add_music = cfg.get("add_music", False)
     use_tevoxi = cfg.get("use_tevoxi", False)
     enable_subtitles = cfg.get("enable_subtitles", False)
@@ -1062,42 +1248,28 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     reference_image_path = ""
     resolved_persona_profile_id = 0
     resolved_persona_profile_ids: list[int] = []
-    async with async_session() as db:
-        try:
-            if requested_persona_profile_ids:
-                resolved_personas, persona_image_paths = await resolve_persona_reference_images(
-                    db=db,
-                    user_id=user_id,
-                    persona_type=interaction_persona,
-                    persona_profile_ids=requested_persona_profile_ids,
-                    ensure_default=False,
-                )
-                if persona_image_paths:
-                    reference_image_path = build_persona_reference_montage(
-                        user_id=user_id,
-                        image_paths=persona_image_paths,
-                        prefix="auto_persona_refs",
-                    )
-                    resolved_persona_profile_ids = [int(profile.id) for profile in resolved_personas]
-                    if resolved_persona_profile_ids:
-                        resolved_persona_profile_id = resolved_persona_profile_ids[0]
+    saved_persona_candidates: list[dict] = persona_candidates
+    try:
+        saved_persona_candidates, reference_image_path, resolved_persona_profile_ids, primary_persona_type = await _resolve_persona_composition_reference(
+            user_id=user_id,
+            persona_candidates=persona_candidates,
+            prefix="auto_persona_refs",
+        )
+    except RuntimeError as exc:
+        raise RuntimeError(str(exc))
 
-            if not reference_image_path:
-                resolved_persona, single_reference_path = await resolve_persona_reference_image(
-                    db=db,
-                    user_id=user_id,
-                    persona_type=interaction_persona,
-                    persona_profile_id=requested_persona_profile_id,
-                    ensure_default=False,
-                )
-                reference_image_path = single_reference_path
-                if resolved_persona:
-                    resolved_persona_profile_id = int(resolved_persona.id)
-                    resolved_persona_profile_ids = [resolved_persona_profile_id]
-        except RuntimeError as exc:
-            raise RuntimeError(str(exc))
-        if not reference_image_path:
-            raise RuntimeError("Crie uma persona de interacao antes de rodar automacao realista")
+    if not interaction_personas:
+        interaction_personas = [candidate.get("persona_type") for candidate in saved_persona_candidates if candidate.get("persona_type")]
+    interaction_personas = normalize_interaction_personas(interaction_personas)
+    if primary_persona_type:
+        interaction_persona = primary_persona_type
+    elif interaction_personas:
+        interaction_persona = interaction_personas[0]
+
+    if resolved_persona_profile_ids:
+        resolved_persona_profile_id = resolved_persona_profile_ids[0]
+    if not reference_image_path:
+        raise RuntimeError("Crie uma ou mais personas de interacao antes de rodar automacao realista")
 
     # Backend guardrail: Tevoxi realistic automation always uses Grok.
     if use_tevoxi:
@@ -1118,11 +1290,14 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
     tags = {
         "realistic_style": realistic_style,
         "interaction_persona": interaction_persona,
+        "interaction_personas": interaction_personas,
         "reference_source": "persona",
         "reference_mode": "face_identity_only",
         "has_reference_image": True,
         "persona_profile_id": resolved_persona_profile_id,
         "persona_profile_ids": resolved_persona_profile_ids,
+        "persona_composition": saved_persona_candidates,
+        "persona_composition_summary": summarize_interaction_personas(interaction_personas),
     }
     if enable_subtitles and subtitle_settings:
         tags["subtitle_settings"] = subtitle_settings
@@ -1142,7 +1317,7 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
             tags["clip_duration"] = clip_dur
 
     prompt_seed = (theme_text or "").strip()
-    persona_instruction = _build_interaction_persona_instruction(interaction_persona)
+    persona_instruction = _build_interaction_persona_instruction(interaction_personas or interaction_persona)
     if use_tevoxi:
         if tevoxi_lyrics:
             lyrics_slice = " ".join(tevoxi_lyrics.split())[:420]
@@ -1315,48 +1490,49 @@ async def _create_musical_short(
             requested_persona_profile_ids.append(parsed_pid)
     if requested_persona_profile_id and requested_persona_profile_id not in requested_persona_profile_ids:
         requested_persona_profile_ids.insert(0, requested_persona_profile_id)
+    persona_candidates = _normalize_persona_composition_candidates(
+        custom_settings.get("persona_composition") if isinstance(custom_settings.get("persona_composition"), list) else (
+            cfg.get("persona_composition") if isinstance(cfg.get("persona_composition"), list) else []
+        ),
+        fallback_persona=interaction_persona,
+        fallback_profile_id=requested_persona_profile_id,
+        fallback_profile_ids=requested_persona_profile_ids,
+    )
+    interaction_personas = normalize_interaction_personas(
+        custom_settings.get("interaction_personas") if isinstance(custom_settings.get("interaction_personas"), list) else (
+            cfg.get("interaction_personas") if isinstance(cfg.get("interaction_personas"), list) else [
+                candidate.get("persona_type") for candidate in persona_candidates
+            ]
+        )
+    ) or [candidate.get("persona_type") for candidate in persona_candidates if candidate.get("persona_type")]
     engine = "grok"  # musical shorts are Grok-only
 
     reference_image_path = ""
     resolved_persona_profile_id = 0
     resolved_persona_profile_ids: list[int] = []
+    saved_persona_candidates: list[dict] = persona_candidates
     if not disable_persona_reference:
-        async with async_session() as db:
-            try:
-                if requested_persona_profile_ids:
-                    resolved_personas, persona_image_paths = await resolve_persona_reference_images(
-                        db=db,
-                        user_id=user_id,
-                        persona_type=interaction_persona,
-                        persona_profile_ids=requested_persona_profile_ids,
-                        ensure_default=False,
-                    )
-                    if persona_image_paths:
-                        reference_image_path = build_persona_reference_montage(
-                            user_id=user_id,
-                            image_paths=persona_image_paths,
-                            prefix="short_persona_refs",
-                        )
-                        resolved_persona_profile_ids = [int(profile.id) for profile in resolved_personas]
-                        if resolved_persona_profile_ids:
-                            resolved_persona_profile_id = resolved_persona_profile_ids[0]
+        try:
+            saved_persona_candidates, reference_image_path, resolved_persona_profile_ids, primary_persona_type = await _resolve_persona_composition_reference(
+                user_id=user_id,
+                persona_candidates=persona_candidates,
+                prefix="short_persona_refs",
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(str(exc))
 
-                if not reference_image_path:
-                    resolved_persona, single_reference_path = await resolve_persona_reference_image(
-                        db=db,
-                        user_id=user_id,
-                        persona_type=interaction_persona,
-                        persona_profile_id=requested_persona_profile_id,
-                        ensure_default=False,
-                    )
-                    reference_image_path = single_reference_path
-                    if resolved_persona:
-                        resolved_persona_profile_id = int(resolved_persona.id)
-                        resolved_persona_profile_ids = [resolved_persona_profile_id]
-            except RuntimeError as exc:
-                raise RuntimeError(str(exc))
-            if not reference_image_path:
-                raise RuntimeError("Crie uma persona de interacao antes de gerar short realista")
+        if primary_persona_type:
+            interaction_persona = primary_persona_type
+        if resolved_persona_profile_ids:
+            resolved_persona_profile_id = resolved_persona_profile_ids[0]
+        if not reference_image_path:
+            raise RuntimeError("Crie uma ou mais personas de interacao antes de gerar short realista")
+
+    if not interaction_personas:
+        interaction_personas = [candidate.get("persona_type") for candidate in saved_persona_candidates if candidate.get("persona_type")]
+    interaction_personas = normalize_interaction_personas(interaction_personas)
+    if interaction_personas:
+        interaction_persona = interaction_personas[0]
 
     if not tevoxi_audio_url:
         raise RuntimeError("URL do audio Tevoxi nao configurada.")
@@ -1425,7 +1601,7 @@ async def _create_musical_short(
     pilot_prompt_template = str(custom_settings.get("pilot_prompt_template") or cfg.get("pilot_prompt_template") or "").strip()
     visual_prompt = render_pilot_prompt_template(
         pilot_prompt_template,
-        interaction_persona,
+        interaction_personas or interaction_persona,
         "",
     )
     segment_transcription = ""
@@ -1447,7 +1623,7 @@ async def _create_musical_short(
             snippet = " ".join(transcribed.split())[:420]
             visual_prompt = render_pilot_prompt_template(
                 pilot_prompt_template,
-                interaction_persona,
+                interaction_personas or interaction_persona,
                 snippet,
             )
             logger.info("Short %d transcribed: %s", segment_index, transcribed[:200])
@@ -1455,7 +1631,7 @@ async def _create_musical_short(
             hint_slice = " ".join(str(lyrics_hint).split())[:420]
             visual_prompt = render_pilot_prompt_template(
                 pilot_prompt_template,
-                interaction_persona,
+                interaction_personas or interaction_persona,
                 hint_slice,
             )
     except Exception as e:
@@ -1464,7 +1640,7 @@ async def _create_musical_short(
             hint_slice = " ".join(str(cfg.get("tevoxi_lyrics", "")).split())[:420]
             visual_prompt = render_pilot_prompt_template(
                 pilot_prompt_template,
-                interaction_persona,
+                interaction_personas or interaction_persona,
                 hint_slice,
             )
 
@@ -1483,6 +1659,7 @@ async def _create_musical_short(
                 "segment_audio_path": segment_audio_path,
                 "segment_transcription": segment_transcription,
                 "interaction_persona": interaction_persona,
+                "interaction_personas": interaction_personas,
                 "reference_source": "" if disable_persona_reference else "persona",
                 "reference_mode": "" if disable_persona_reference else "face_identity_only",
                 "has_reference_image": bool(reference_image_path),
@@ -1490,6 +1667,8 @@ async def _create_musical_short(
                 "grok_text_only": disable_persona_reference,
                 "persona_profile_id": resolved_persona_profile_id,
                 "persona_profile_ids": resolved_persona_profile_ids,
+                "persona_composition": saved_persona_candidates,
+                "persona_composition_summary": summarize_interaction_personas(interaction_personas),
                 "pilot_variant": custom_settings.get("pilot_variant") or {},
                 "pilot_persona_experiment": custom_settings.get("pilot_persona_experiment") or {},
             },

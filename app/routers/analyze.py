@@ -13,11 +13,13 @@ import openai
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
-from app.models import ChannelAnalysisReport, Platform, PublishJob, PublishStatus, SocialAccount
+from app.models import ChannelAnalysisReport, Platform, PublishJob, PublishStatus, SocialAccount, VideoRender
+from app.services.pilot_prompt import normalize_interaction_personas, summarize_interaction_personas
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/analyze", tags=["analyze"])
@@ -139,6 +141,291 @@ def _coerce_list(value: Any, max_items: int = 8) -> list[str]:
     else:
         items = []
     return items[:max_items]
+
+
+def _normalize_persona_composition_from_tags(tags: dict[str, Any]) -> list[dict[str, Any]]:
+    if not isinstance(tags, dict):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def _add_candidate(
+        persona_type: Any,
+        persona_profile_id: Any = 0,
+        persona_profile_ids: Any = None,
+        disable_persona_reference: Any = False,
+    ):
+        personas = normalize_interaction_personas([str(persona_type or "")])
+        if not personas:
+            return
+        normalized_type = personas[0]
+
+        ids: list[int] = []
+        raw_ids = persona_profile_ids if isinstance(persona_profile_ids, list) else []
+        for raw_id in raw_ids:
+            try:
+                pid = int(raw_id)
+            except Exception:
+                continue
+            if pid > 0 and pid not in ids:
+                ids.append(pid)
+
+        try:
+            profile_id = int(persona_profile_id or 0)
+        except Exception:
+            profile_id = 0
+        if profile_id > 0 and profile_id not in ids:
+            ids.insert(0, profile_id)
+
+        disable_ref = bool(disable_persona_reference)
+        key = f"{normalized_type}:{','.join(str(pid) for pid in ids)}:{1 if disable_ref else 0}"
+        if key in seen:
+            return
+        seen.add(key)
+
+        normalized.append(
+            {
+                "persona_type": normalized_type,
+                "persona_profile_id": 0 if disable_ref else (ids[0] if ids else 0),
+                "persona_profile_ids": [] if disable_ref else ids,
+                "disable_persona_reference": disable_ref,
+            }
+        )
+
+    raw_candidates = tags.get("persona_composition") if isinstance(tags.get("persona_composition"), list) else []
+    for item in raw_candidates:
+        if not isinstance(item, dict):
+            continue
+        _add_candidate(
+            persona_type=item.get("persona_type") or item.get("type") or item.get("interaction_persona") or "",
+            persona_profile_id=item.get("persona_profile_id") or item.get("profile_id") or 0,
+            persona_profile_ids=item.get("persona_profile_ids") or item.get("profile_ids") or [],
+            disable_persona_reference=bool(item.get("disable_persona_reference") or item.get("grok_text_only")),
+        )
+
+    if not normalized:
+        _add_candidate(
+            persona_type=tags.get("interaction_persona") or "",
+            persona_profile_id=tags.get("persona_profile_id") or 0,
+            persona_profile_ids=tags.get("persona_profile_ids") or [],
+            disable_persona_reference=bool(tags.get("disable_persona_reference") or tags.get("grok_text_only")),
+        )
+
+    return normalized[:8]
+
+
+def _build_persona_insights(top_videos: list[dict[str, Any]], persona_records: list[dict[str, Any]]) -> dict[str, Any]:
+    insights = {
+        "available": False,
+        "tracked_published_videos": 0,
+        "matched_top_videos": 0,
+        "summary": "A analise ainda nao tem metadados suficientes de personas para este canal.",
+        "top_combinations": [],
+        "top_elements": [],
+        "recommendations": [],
+    }
+
+    if not persona_records:
+        return insights
+
+    top_metrics_by_id = {
+        str(item.get("id") or "").strip(): item
+        for item in top_videos or []
+        if str(item.get("id") or "").strip()
+    }
+
+    combination_stats: dict[str, dict[str, Any]] = {}
+    element_stats: dict[str, dict[str, Any]] = {}
+    matched_top_count = 0
+
+    for record in persona_records:
+        candidates = record.get("persona_candidates") if isinstance(record.get("persona_candidates"), list) else []
+        persona_types = normalize_interaction_personas([
+            candidate.get("persona_type") for candidate in candidates if isinstance(candidate, dict)
+        ])
+        if not persona_types:
+            continue
+
+        canonical_types = sorted(persona_types)
+        combo_key = "|".join(canonical_types)
+        combo_label = summarize_interaction_personas(persona_types)
+        matched_top = top_metrics_by_id.get(str(record.get("platform_post_id") or "").strip())
+        if matched_top:
+            matched_top_count += 1
+
+        combo_entry = combination_stats.setdefault(
+            combo_key,
+            {
+                "label": combo_label,
+                "persona_types": persona_types,
+                "published_count": 0,
+                "matched_top_videos": 0,
+                "views_sum": 0,
+                "likes_sum": 0,
+                "comments_sum": 0,
+                "best_video_title": "",
+                "best_video_views": 0,
+            },
+        )
+        combo_entry["published_count"] += 1
+        if matched_top:
+            combo_entry["matched_top_videos"] += 1
+            combo_entry["views_sum"] += _safe_int(matched_top.get("views"))
+            combo_entry["likes_sum"] += _safe_int(matched_top.get("likes"))
+            combo_entry["comments_sum"] += _safe_int(matched_top.get("comments"))
+            current_views = _safe_int(matched_top.get("views"))
+            if current_views >= combo_entry["best_video_views"]:
+                combo_entry["best_video_views"] = current_views
+                combo_entry["best_video_title"] = str(matched_top.get("title") or record.get("title") or "").strip()
+
+        for persona_type in persona_types:
+            element_entry = element_stats.setdefault(
+                persona_type,
+                {
+                    "persona_type": persona_type,
+                    "label": summarize_interaction_personas([persona_type]),
+                    "published_count": 0,
+                    "matched_top_videos": 0,
+                    "views_sum": 0,
+                    "likes_sum": 0,
+                    "comments_sum": 0,
+                },
+            )
+            element_entry["published_count"] += 1
+            if matched_top:
+                element_entry["matched_top_videos"] += 1
+                element_entry["views_sum"] += _safe_int(matched_top.get("views"))
+                element_entry["likes_sum"] += _safe_int(matched_top.get("likes"))
+                element_entry["comments_sum"] += _safe_int(matched_top.get("comments"))
+
+    combo_rows: list[dict[str, Any]] = []
+    for entry in combination_stats.values():
+        matched = max(1, int(entry.get("matched_top_videos") or 0))
+        combo_rows.append(
+            {
+                "label": entry["label"],
+                "persona_types": entry["persona_types"],
+                "published_count": int(entry.get("published_count") or 0),
+                "matched_top_videos": int(entry.get("matched_top_videos") or 0),
+                "avg_views": int(round(float(entry.get("views_sum") or 0) / matched)) if entry.get("matched_top_videos") else 0,
+                "avg_likes": int(round(float(entry.get("likes_sum") or 0) / matched)) if entry.get("matched_top_videos") else 0,
+                "avg_comments": int(round(float(entry.get("comments_sum") or 0) / matched)) if entry.get("matched_top_videos") else 0,
+                "best_video_title": entry.get("best_video_title") or "",
+                "best_video_views": int(entry.get("best_video_views") or 0),
+            }
+        )
+
+    combo_rows.sort(
+        key=lambda item: (
+            int(item.get("matched_top_videos") or 0),
+            int(item.get("avg_views") or 0),
+            int(item.get("published_count") or 0),
+        ),
+        reverse=True,
+    )
+
+    element_rows: list[dict[str, Any]] = []
+    for entry in element_stats.values():
+        matched = max(1, int(entry.get("matched_top_videos") or 0))
+        element_rows.append(
+            {
+                "persona_type": entry["persona_type"],
+                "label": entry["label"],
+                "published_count": int(entry.get("published_count") or 0),
+                "matched_top_videos": int(entry.get("matched_top_videos") or 0),
+                "avg_views": int(round(float(entry.get("views_sum") or 0) / matched)) if entry.get("matched_top_videos") else 0,
+                "avg_likes": int(round(float(entry.get("likes_sum") or 0) / matched)) if entry.get("matched_top_videos") else 0,
+                "avg_comments": int(round(float(entry.get("comments_sum") or 0) / matched)) if entry.get("matched_top_videos") else 0,
+            }
+        )
+
+    element_rows.sort(
+        key=lambda item: (
+            int(item.get("matched_top_videos") or 0),
+            int(item.get("avg_views") or 0),
+            int(item.get("published_count") or 0),
+        ),
+        reverse=True,
+    )
+
+    top_combo = combo_rows[0] if combo_rows else None
+    recommendations: list[str] = []
+    if top_combo and top_combo.get("matched_top_videos"):
+        recommendations.append(
+            f"Repita a composicao {top_combo['label']} em novos temas e mantenha cada persona separada no mesmo frame, sem transformacao entre elas."
+        )
+        if len(top_combo.get("persona_types") or []) > 1:
+            recommendations.append(
+                "Use multi-persona quando a letra ou a mensagem pedir contraste visual claro; trate cada presenca como personagem proprio, com funcao visual distinta."
+            )
+    top_element = element_rows[0] if element_rows else None
+    if top_element and top_element.get("matched_top_videos"):
+        recommendations.append(
+            f"A persona {top_element['label']} aparece com frequencia nos videos internos que mais performam; preserve esse eixo visual como base dos proximos testes."
+        )
+    if not recommendations and combo_rows:
+        recommendations.append(
+            "Continue registrando a composicao de personas nos videos publicados para que a analise consiga identificar quais combinacoes realmente viram vencedoras."
+        )
+
+    tracked_count = len(persona_records)
+    if matched_top_count:
+        summary = (
+            f"{matched_top_count} top videos do canal puderam ser cruzados com metadados internos de personas. "
+            "Esses sinais usam a composicao salva nos videos publicados pelo CriaVideo; ainda nao existe leitura visual frame a frame do video pronto."
+        )
+    else:
+        summary = (
+            f"{tracked_count} videos publicados pelo CriaVideo tem metadados de personas, mas nenhum deles apareceu entre os top videos atuais do canal. "
+            "A analise usa metadata interna; ainda nao faz visao computacional do video pronto."
+        )
+
+    return {
+        "available": bool(combo_rows or element_rows),
+        "tracked_published_videos": tracked_count,
+        "matched_top_videos": matched_top_count,
+        "summary": summary,
+        "top_combinations": combo_rows[:6],
+        "top_elements": element_rows[:8],
+        "recommendations": recommendations[:6],
+    }
+
+
+async def _collect_persona_insights(
+    user_id: int,
+    social_account_id: int,
+    top_videos: list[dict[str, Any]],
+    db: AsyncSession,
+) -> dict[str, Any]:
+    result = await db.execute(
+        select(PublishJob)
+        .options(selectinload(PublishJob.render).selectinload(VideoRender.project))
+        .where(PublishJob.user_id == user_id)
+        .where(PublishJob.social_account_id == social_account_id)
+        .where(PublishJob.status == PublishStatus.PUBLISHED)
+        .order_by(PublishJob.published_at.desc(), PublishJob.id.desc())
+        .limit(200)
+    )
+    jobs = result.scalars().all()
+
+    persona_records: list[dict[str, Any]] = []
+    for job in jobs:
+        project = job.render.project if job.render and getattr(job.render, "project", None) else None
+        tags = project.tags if project and isinstance(project.tags, dict) else {}
+        persona_candidates = _normalize_persona_composition_from_tags(tags)
+        if not persona_candidates:
+            continue
+        persona_records.append(
+            {
+                "publish_job_id": int(job.id or 0),
+                "platform_post_id": str(job.platform_post_id or "").strip(),
+                "title": str(job.title or (project.title if project else "") or "").strip(),
+                "persona_candidates": persona_candidates,
+            }
+        )
+
+    return _build_persona_insights(top_videos=top_videos, persona_records=persona_records)
 
 
 def _normalize_title(text: str, limit: int = 90) -> str:
@@ -739,6 +1026,7 @@ def _build_automation_blueprint(
     recommendations: dict[str, Any],
     tool_study: list[dict[str, str]],
     history: dict[str, Any],
+    persona_insights: dict[str, Any],
     platform_supported: bool,
 ) -> dict[str, Any]:
     title_ideas = _coerce_list(recommendations.get("title_ideas"), max_items=12)
@@ -767,6 +1055,15 @@ def _build_automation_blueprint(
         "best_publish_window": history.get("best_publish_window") or "Sem padrao",
         "keyword_focus": _coerce_list(recommendations.get("keyword_focus"), max_items=10),
         "top_actions": growth_actions,
+        "preferred_persona_compositions": [
+            {
+                "label": item.get("label") or "",
+                "persona_types": item.get("persona_types") or [],
+                "avg_views": int(item.get("avg_views") or 0),
+            }
+            for item in (persona_insights.get("top_combinations") or [])[:4]
+            if isinstance(item, dict)
+        ],
         "tool_study": tool_study,
         "data_quality": "high" if platform_supported else "medium",
     }
@@ -778,6 +1075,7 @@ async def _generate_ai_recommendations(
     channel_snapshot: dict[str, Any],
     top_videos: list[dict[str, Any]],
     history: dict[str, Any],
+    persona_insights: dict[str, Any],
     fallback: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str | None]:
     if not _openai:
@@ -820,6 +1118,13 @@ async def _generate_ai_recommendations(
             "avg_gap_days": history.get("avg_gap_days"),
             "keyword_candidates": history.get("keyword_candidates", []),
         },
+        "persona_insights": {
+            "available": bool(persona_insights.get("available")),
+            "summary": str(persona_insights.get("summary") or ""),
+            "top_combinations": persona_insights.get("top_combinations") or [],
+            "top_elements": persona_insights.get("top_elements") or [],
+            "recommendations": persona_insights.get("recommendations") or [],
+        },
         "fallback_recommendations": fallback,
     }
 
@@ -836,6 +1141,7 @@ REGRAS IMPORTANTES:
 - Evite titulos genericos, vagos ou sem conexao com os temas do canal.
 - Entregue titulos curtos e claros, de leitura facil em mobile.
 - Mantenha descricao humana, com CTA simples.
+- Quando houver persona_insights, considere explicitamente as composicoes de personas que performaram melhor e reflita isso nas acoes de crescimento, lacunas e direcoes criativas.
 - Se os dados forem limitados, sinalize isso em platform_note e use historico interno.
 
 QUANTIDADE:
@@ -893,6 +1199,12 @@ async def build_channel_analysis_payload(
 
     channel_data = snapshot.get("channel", {})
     top_videos = snapshot.get("top_videos", [])
+    persona_insights = await _collect_persona_insights(
+        user_id=user_id,
+        social_account_id=account.id,
+        top_videos=top_videos,
+        db=db,
+    )
     channel_for_fallback = dict(channel_data or {})
     channel_for_fallback["keyword_candidates"] = snapshot.get("keyword_candidates", [])
 
@@ -908,6 +1220,7 @@ async def build_channel_analysis_payload(
         channel_snapshot=snapshot,
         top_videos=top_videos,
         history=history,
+        persona_insights=persona_insights,
         fallback=fallback,
     )
     recommendations = _merge_recommendations(fallback, ai_recommendations)
@@ -916,6 +1229,7 @@ async def build_channel_analysis_payload(
         recommendations=recommendations,
         tool_study=tool_study,
         history=history,
+        persona_insights=persona_insights,
         platform_supported=platform_supported,
     )
 
@@ -930,12 +1244,14 @@ async def build_channel_analysis_payload(
         "channel": channel_data,
         "top_videos": top_videos,
         "history": history,
+        "persona_insights": persona_insights,
         "recommendations": recommendations,
         "tool_study": tool_study,
         "automation_blueprint": automation_blueprint,
         "source": {
             "youtube_api": account.platform == Platform.YOUTUBE,
             "openai_used": bool(ai_recommendations),
+            "persona_metadata_used": bool(persona_insights.get("available")),
             "analysis_model": ai_model_used,
             "generated_at": datetime.utcnow().isoformat(),
         },
