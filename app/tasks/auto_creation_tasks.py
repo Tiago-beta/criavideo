@@ -644,6 +644,34 @@ async def run_auto_creation(auto_schedule_id: int):
         await _run_auto_creation_for_theme(schedule, theme_entry)
 
 
+async def run_auto_creation_theme_now(theme_id: int):
+    async with async_session() as db:
+        result = await db.execute(
+            select(AutoScheduleTheme)
+            .options(selectinload(AutoScheduleTheme.schedule))
+            .where(AutoScheduleTheme.id == theme_id)
+        )
+        theme_entry = result.scalar_one_or_none()
+        if not theme_entry:
+            logger.warning("Manual auto-creation start skipped: theme=%d not found", theme_id)
+            return
+
+        schedule = theme_entry.schedule
+        if not schedule:
+            logger.warning("Manual auto-creation start skipped: theme=%d has no schedule", theme_id)
+            return
+
+    logger.info(
+        "Manual auto-creation started: schedule=%d, theme=%d '%s', mode=%s, type=%s",
+        int(schedule.id or 0),
+        theme_entry.id,
+        theme_entry.theme,
+        schedule.creation_mode,
+        schedule.video_type,
+    )
+    await _run_auto_creation_for_theme(schedule, theme_entry)
+
+
 
 async def _run_auto_creation_for_theme(schedule: AutoSchedule, theme_entry: AutoScheduleTheme):
     auto_schedule_id = int(schedule.id or 0)
@@ -757,7 +785,13 @@ async def _create_video_for_theme(
         return await _create_realistic_video(theme_text, user_id, cfg)
 
     if video_type == "music":
-        return await _create_music_video(theme_text, user_id, cfg)
+        return await _create_music_video(
+            theme_text,
+            user_id,
+            cfg,
+            schedule_id=schedule_id,
+            theme_id=theme_id,
+        )
 
     # Narration video
     if creation_mode == "auto":
@@ -839,7 +873,13 @@ async def _create_video_for_theme(
     return project_id
 
 
-async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
+async def _create_music_video(
+    theme_text: str,
+    user_id: int,
+    cfg: dict,
+    schedule_id: int = 0,
+    theme_id: int = 0,
+) -> int:
     """Create a music video: generate music via Tevoxi, then create video from it."""
     from app.services.tevoxi_music import generate_music_from_theme
     from app.tasks.video_tasks import run_video_pipeline
@@ -965,6 +1005,23 @@ async def _create_music_video(theme_text: str, user_id: int, cfg: dict) -> int:
         project.status = VideoStatus.GENERATING_SCENES
         project.progress = 0
         await db.commit()
+
+    pilot_cycle_key = str(cfg.get("pilot_cycle_key") or "").strip()
+    if schedule_id > 0 and theme_id > 0 and pilot_cycle_key:
+        try:
+            await _enqueue_pilot_shorts_from_long(
+                theme_entry_id=theme_id,
+                project_id=project_id,
+                schedule_id=schedule_id,
+            )
+        except Exception as pilot_err:
+            logger.warning(
+                "Pilot shorts early enqueue failed: schedule=%d, theme=%d, project=%d, error=%s",
+                schedule_id,
+                theme_id,
+                project_id,
+                pilot_err,
+            )
 
     # 5. Run video pipeline
     await run_video_pipeline(project_id)

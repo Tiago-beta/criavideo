@@ -1419,6 +1419,38 @@ a {
     cursor: pointer;
     white-space: nowrap;
 }
+.auto-theme-item .theme-run-btn {
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid rgba(52, 211, 153, 0.45);
+    background: rgba(52, 211, 153, 0.14);
+    color: #34d399;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.auto-theme-item .theme-run-btn svg {
+    width: 12px;
+    height: 12px;
+    fill: currentColor;
+}
+
+.auto-theme-item .theme-run-btn:hover {
+    transform: translateY(-1px);
+    background: rgba(52, 211, 153, 0.22);
+    border-color: rgba(52, 211, 153, 0.7);
+}
+
+.auto-theme-item .theme-run-btn:disabled {
+    opacity: 0.55;
+    cursor: wait;
+    transform: none;
+}
 .auto-theme-item .theme-error-btn:hover { background: #e74c3c22; }
 
 .auto-theme-item.theme-done { opacity: 0.7; }
@@ -4663,9 +4695,15 @@ svg.spin {
         padding: 1px 4px;
     }
 
-    .auto-theme-item .theme-error-btn {
+    .auto-theme-item .theme-error-btn,
+    .auto-theme-item .theme-run-btn {
         font-size: 0.6rem;
         padding: 1px 4px;
+    }
+
+    .auto-theme-item .theme-run-btn {
+        width: 24px;
+        height: 24px;
     }
 
     .auto-theme-item .theme-date-editor {

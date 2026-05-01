@@ -1312,6 +1312,71 @@ async def update_theme(
     return {"ok": True}
 
 
+@router.post("/themes/{theme_id}/run")
+async def run_theme_now(
+    theme_id: int,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(AutoScheduleTheme)
+        .options(selectinload(AutoScheduleTheme.schedule))
+        .join(AutoSchedule)
+        .where(AutoScheduleTheme.id == theme_id, AutoSchedule.user_id == user["id"])
+    )
+    theme = result.scalar_one_or_none()
+    if not theme:
+        raise HTTPException(status_code=404, detail="Tema não encontrado.")
+
+    schedule = theme.schedule
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Automação não encontrada.")
+
+    if theme.status == "processing":
+        return {
+            "ok": True,
+            "already_processing": True,
+            "theme_id": theme.id,
+            "schedule_id": schedule.id,
+        }
+
+    if theme.status in {"done", "completed"}:
+        raise HTTPException(status_code=409, detail="Este tema já foi concluído.")
+
+    if theme.status not in {"pending", "failed", "error"}:
+        raise HTTPException(status_code=409, detail="Este tema não pode ser iniciado agora.")
+
+    processing_result = await db.execute(
+        select(AutoScheduleTheme.id)
+        .where(
+            AutoScheduleTheme.auto_schedule_id == schedule.id,
+            AutoScheduleTheme.status == "processing",
+            AutoScheduleTheme.id != theme.id,
+        )
+        .limit(1)
+    )
+    if processing_result.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Já existe outro tema em processamento nesta automação.")
+
+    custom_settings = dict(theme.custom_settings or {}) if isinstance(theme.custom_settings, dict) else {}
+
+    from app.tasks.auto_creation_tasks import _resolve_theme_release_date, run_auto_creation_theme_now
+
+    custom_settings["pilot_release_date"] = _resolve_theme_release_date(
+        custom_settings,
+        schedule.timezone or "UTC",
+    ).isoformat()
+    theme.custom_settings = custom_settings or None
+    theme.status = "processing"
+    theme.error_message = None
+
+    await db.commit()
+
+    background_tasks.add_task(run_auto_creation_theme_now, theme.id)
+    return {"ok": True, "theme_id": theme.id, "schedule_id": schedule.id}
+
+
 @router.delete("/themes/{theme_id}")
 async def delete_theme(
     theme_id: int,

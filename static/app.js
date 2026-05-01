@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v288 loaded");
+console.log("[CriaVideo] app.js v289 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -62,6 +62,7 @@ let _autoPilotPromptEditor = {
     promptTemplate: "",
     selectedCandidates: [],
 };
+let _autoThemeRunState = {};
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 
 const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
@@ -13110,10 +13111,17 @@ function _getAutoScheduleLengthMeta(schedule) {
     return { label: "Shorts", className: "badge-duration-short" };
 }
 
+function _queueAutoScheduleRefresh(delayMs) {
+    window.setTimeout(() => {
+        loadAutoSchedules();
+    }, delayMs);
+}
+
 function renderAutoCard(s) {
     const defaultSettings = (s && typeof s.default_settings === "object" && s.default_settings)
         ? s.default_settings
         : {};
+    const pilotStreamKey = String(defaultSettings.pilot_stream || "").trim().toLowerCase();
     const isTestAccount = !s.social_account_id;
     let typeBadge = '<span class="badge badge-completed">Imagens IA</span>';
     if (s.video_type === "realistic" || s.video_type === "musical_shorts") {
@@ -13167,6 +13175,16 @@ function renderAutoCard(s) {
         const creditBadge = estimatedCredits > 0
             ? `<span class="theme-credit-tag" title="Custo estimado por video em creditos">${estimatedCredits.toLocaleString("pt-BR")} créditos</span>`
             : "";
+        const canRunNow = t.status === "pending" || t.status === "failed" || t.status === "error";
+        const runInProgress = !!_autoThemeRunState[t.id];
+        const runTitle = (t.status === "failed" || t.status === "error") ? "Tentar novamente agora" : "Criar agora";
+        const runBtn = canRunNow
+            ? `<button class="theme-run-btn" onclick="runAutoThemeNow(${t.id}, '${pilotStreamKey}', this)" type="button" title="${runTitle}" ${runInProgress ? "disabled" : ""}>
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M4 3.2v9.6L12.4 8 4 3.2Z"></path>
+                </svg>
+            </button>`
+            : "";
         const errorBtn = (t.status === "error" || t.status === "failed") && t.error_message
             ? `<button class="theme-error-btn" data-error="${esc(t.error_message).replace(/"/g, '&quot;')}" onclick="showThemeError(this)" type="button" title="Ver motivo">Ver motivo</button>`
             : "";
@@ -13177,6 +13195,7 @@ function renderAutoCard(s) {
             ${dateEditor}
             ${statusBadge}
             ${creditBadge}
+            ${runBtn}
             ${errorBtn}
             <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
         </li>`;
@@ -13250,6 +13269,30 @@ async function deleteAutoSchedule(id) {
 function showThemeError(btn) {
     const msg = btn.getAttribute("data-error") || "Erro desconhecido";
     alert(msg);
+}
+
+async function runAutoThemeNow(themeId, pilotStream = "", triggerBtn = null) {
+    if (_autoThemeRunState[themeId]) return;
+
+    _autoThemeRunState[themeId] = true;
+    if (triggerBtn) triggerBtn.disabled = true;
+
+    try {
+        await api(`/automation/themes/${themeId}/run`, { method: "POST" });
+        const stream = String(pilotStream || "").trim().toLowerCase();
+        const message = stream === "long"
+            ? "Criacao iniciada. Os temas dos shorts entram na fila assim que o audio do longo ficar pronto."
+            : "Criacao iniciada para este tema.";
+        showToast(message, "success");
+        _queueAutoScheduleRefresh(4000);
+        _queueAutoScheduleRefresh(12000);
+        _queueAutoScheduleRefresh(25000);
+    } catch (error) {
+        showToast(`Erro ao iniciar tema: ${error.message}`, "error");
+    } finally {
+        delete _autoThemeRunState[themeId];
+        await loadAutoSchedules();
+    }
 }
 
 async function saveAutoThemeDate(themeId) {
