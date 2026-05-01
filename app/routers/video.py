@@ -36,7 +36,11 @@ from app.services.credit_pricing import (
     estimate_standard_credits,
 )
 from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
-from app.services.pilot_prompt import build_interaction_persona_instruction as shared_build_interaction_persona_instruction
+from app.services.realistic_cover_guidance import (
+    apply_cover_guidance,
+    build_cover_optimizer_tone,
+    decide_cover_guidance,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/video", tags=["video"])
@@ -179,7 +183,41 @@ def _normalize_wan_duration_seconds(value: int) -> int:
 
 
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
-    return shared_build_interaction_persona_instruction(interaction_persona)
+    persona = _normalize_interaction_persona(interaction_persona)
+    if persona == "homem":
+        return (
+            "Inclua um homem em cena interagindo com o ambiente e com a emocao do tema, "
+            "mantendo coerencia narrativa e visual cinematografica."
+        )
+    if persona == "mulher":
+        return (
+            "Inclua uma mulher em cena interagindo com o ambiente e com a emocao do tema, "
+            "mantendo coerencia narrativa e visual cinematografica."
+        )
+    if persona == "crianca":
+        return (
+            "Inclua uma crianca em cena interagindo com o ambiente e com a emocao do tema, "
+            "com linguagem visual sensivel e respeitosa."
+        )
+    if persona == "familia":
+        return (
+            "Inclua uma familia (duas ou mais pessoas) interagindo de forma natural com o ambiente "
+            "e com a emocao do tema."
+        )
+    if persona == "desenho":
+        return (
+            "Inclua obrigatoriamente um personagem em estilo desenho/animacao (cartoon, 3D, anime, etc.) "
+            "interagindo com o ambiente e com a emocao do tema, com consistencia visual cinematografica."
+        )
+    if persona == "personalizado":
+        return (
+            "Inclua obrigatoriamente a persona personalizada definida pelo usuário, mantendo os traços, estilo "
+            "e identidade visual descritos na referencia."
+        )
+    return (
+        "Priorize natureza viva e inclua obrigatoriamente pelo menos um elemento visual de conexão "
+        "(animal, flor, ave, borboleta ou outro ser vivo natural) em destaque e coerente com o tema."
+    )
 
 
 def _inject_interaction_persona_instruction(prompt: str, interaction_persona: str) -> str:
@@ -3560,6 +3598,12 @@ class GenerateRealisticRequest(BaseModel):
     title: str = ""
     image_upload_id: str = ""
     image_upload_ids: list[str] = Field(default_factory=list)
+    cover_context: str = ""
+    cover_visual_mode: str = ""
+    cover_persona: str = ""
+    cover_custom_prompt: str = ""
+    cover_source: str = ""
+    tevoxi_has_official_cover_reference: bool = False
     engine: str = "wan2"  # "seedance", "minimax", "wan2" or "grok"
     audio_url: str = ""       # External audio URL (e.g. from Tevoxi)
     lyrics: str = ""          # Lyrics/transcription for the audio clip
@@ -3761,6 +3805,23 @@ async def generate_realistic_endpoint(
 
     external_audio_url = (req.audio_url or "").strip()
     external_lyrics = (req.lyrics or "").strip()
+    cover_has_saved_persona = bool(selected_persona_profile_ids)
+    cover_decision = decide_cover_guidance(
+        requested_visual_mode=req.cover_visual_mode,
+        prompt=prompt,
+        style=req.realistic_style,
+        cover_context=req.cover_context,
+        cover_custom_prompt=req.cover_custom_prompt,
+        cover_persona=req.cover_persona,
+        cover_source=req.cover_source,
+        tevoxi_has_official_cover_reference=bool(req.tevoxi_has_official_cover_reference),
+        has_saved_persona=cover_has_saved_persona,
+        has_reference_image=has_reference_image,
+        image_is_cover_anchor=bool(upload_ids),
+        music_driven=bool(external_audio_url or external_lyrics or str(req.cover_source or "").strip()),
+    )
+    optimizer_style_hint = build_cover_optimizer_tone(req.realistic_style, cover_decision.visual_mode)
+    prompt = apply_cover_guidance(prompt, cover_decision)
     narration_text = (req.narration_text or "").strip() if req.add_narration and not dialogue_enabled else ""
     effective_add_narration = bool(req.add_narration and narration_text and not dialogue_enabled)
     effective_add_music = bool(req.add_music or external_audio_url)
@@ -3827,6 +3888,16 @@ async def generate_realistic_endpoint(
         "narration_voice": narration_voice,
         "prompt_optimized": bool(req.prompt_optimized),
         "realistic_style": (req.realistic_style or "").strip(),
+        "optimizer_style_hint": optimizer_style_hint,
+        "cover_context": cover_decision.sanitized_cover_context,
+        "cover_visual_mode": (req.cover_visual_mode or "").strip(),
+        "resolved_cover_visual_mode": cover_decision.visual_mode,
+        "cover_persona": (req.cover_persona or "").strip(),
+        "cover_custom_prompt": cover_decision.sanitized_cover_custom_prompt,
+        "cover_source": (req.cover_source or "").strip(),
+        "cover_has_saved_persona": cover_has_saved_persona,
+        "cover_reference_is_primary": bool(upload_ids),
+        "tevoxi_has_official_cover_reference": bool(req.tevoxi_has_official_cover_reference),
         "interaction_persona": interaction_persona,
         "persona_profile_id": 0 if (upload_ids or disable_persona_reference) else selected_persona_profile_id,
         "persona_profile_ids": [] if (upload_ids or disable_persona_reference) else selected_persona_profile_ids,

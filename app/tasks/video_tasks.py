@@ -11,6 +11,11 @@ from app.config import get_settings
 from app.database import async_session
 from app.models import VideoProject, VideoScene, VideoRender, VideoStatus
 from app.services.pilot_prompt import build_interaction_persona_instruction as shared_build_interaction_persona_instruction
+from app.services.realistic_cover_guidance import (
+    apply_cover_guidance,
+    build_cover_optimizer_tone,
+    decide_cover_guidance,
+)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -1405,10 +1410,31 @@ async def run_realistic_video_pipeline(project_id: int):
             interaction_persona = _normalize_interaction_persona(tags_data_early.get("interaction_persona", ""))
             reference_source_early = str(tags_data_early.get("reference_source", "") or "").strip().lower()
             reference_mode = str(tags_data_early.get("reference_mode", "") or "").strip().lower()
+            cover_context_early = str(tags_data_early.get("cover_context", "") or "")
+            cover_visual_mode_early = str(
+                tags_data_early.get("cover_visual_mode", "")
+                or tags_data_early.get("resolved_cover_visual_mode", "")
+                or ""
+            )
+            cover_persona_early = str(tags_data_early.get("cover_persona", "") or "")
+            cover_custom_prompt_early = str(tags_data_early.get("cover_custom_prompt", "") or "")
+            cover_source_early = str(tags_data_early.get("cover_source", "") or "")
+            tevoxi_has_official_cover_reference_early = bool(
+                tags_data_early.get("tevoxi_has_official_cover_reference")
+            )
+            cover_has_saved_persona_early = bool(tags_data_early.get("cover_has_saved_persona"))
             if reference_source_early == "persona" and not reference_mode:
                 reference_mode = "face_identity_only"
             clip_start_early = float(tags_data_early.get("clip_start", 0))
             clip_dur_early = float(tags_data_early.get("clip_duration", 0))
+            raw_cover_persona_ids = tags_data_early.get("persona_profile_ids", []) if isinstance(tags_data_early.get("persona_profile_ids", []), list) else []
+            for raw_pid in raw_cover_persona_ids:
+                try:
+                    if int(raw_pid) > 0:
+                        cover_has_saved_persona_early = True
+                        break
+                except Exception:
+                    continue
             if external_audio_url_early:
                 try:
                     audio_dir_early = Path(settings.media_dir) / "audio" / str(project_id)
@@ -1495,11 +1521,33 @@ async def run_realistic_video_pipeline(project_id: int):
                     "Imagem de referencia da persona nao encontrada. Reabra as personas selecionadas e gere novamente."
                 )
 
+            cover_decision = decide_cover_guidance(
+                requested_visual_mode=cover_visual_mode_early,
+                prompt=user_prompt,
+                style=str(tags_data_early.get("optimizer_style_hint", "") or tags_data_early.get("realistic_style", "") or ""),
+                cover_context=cover_context_early,
+                cover_custom_prompt=cover_custom_prompt_early,
+                cover_persona=cover_persona_early,
+                cover_source=cover_source_early or reference_source_early,
+                tevoxi_has_official_cover_reference=tevoxi_has_official_cover_reference_early,
+                has_saved_persona=cover_has_saved_persona_early,
+                has_reference_image=has_reference_image,
+                image_is_cover_anchor=reference_source_early == "upload",
+                music_driven=bool(
+                    external_audio_url_early
+                    or segment_transcription_hint
+                    or tags_data_early.get("lyrics")
+                    or cover_source_early
+                ),
+            )
+
             if has_reference_image:
                 user_prompt = _ensure_reference_image_instruction(user_prompt, reference_mode=reference_mode)
                 if engine == "grok":
                     user_prompt = _ensure_grok_identity_lock(user_prompt, reference_mode=reference_mode)
                 logger.info("Realistic video: reference-image rule injected into prompt")
+
+            user_prompt = apply_cover_guidance(user_prompt, cover_decision)
 
             duration = int(project.track_duration or 7)
             if engine == "grok":
@@ -1513,6 +1561,7 @@ async def run_realistic_video_pipeline(project_id: int):
             tags_data = project.tags if isinstance(project.tags, dict) else {}
             prompt_optimized = tags_data.get("prompt_optimized", False)
             realistic_style = tags_data.get("realistic_style", "")
+            optimizer_style_hint = str(tags_data.get("optimizer_style_hint", "") or "").strip()
             add_music = bool(tags_data.get("add_music", False))
             provider_generate_audio_requested = bool(tags_data.get("provider_generate_audio", False))
             seedance_native_audio_only = bool(tags_data.get("seedance_native_audio_only", False))
@@ -1604,18 +1653,19 @@ async def run_realistic_video_pipeline(project_id: int):
             if seedance_expect_native_audio:
                 user_prompt = _ensure_seedance_audio_instruction(user_prompt)
 
-            # If user selected a style, prepend it as context for the optimizer
-            if realistic_style and not prompt_optimized:
-                style_labels = {
-                    "cinematic": "estilo cinematografico epico",
-                    "commercial": "estilo comercial/produto premium",
-                    "meme": "estilo meme viral engracado",
-                    "anime": "estilo anime japones",
-                    "drama": "estilo drama emotivo",
-                    "vfx": "estilo efeitos visuais/surrealista",
-                }
-                style_hint = style_labels.get(realistic_style, realistic_style)
-                user_prompt = f"{user_prompt}. Estilo: {style_hint}"
+            style_labels = {
+                "cinematic": "estilo cinematografico epico",
+                "commercial": "estilo comercial/produto premium",
+                "meme": "estilo meme viral engracado",
+                "anime": "estilo anime japones",
+                "drama": "estilo drama emotivo",
+                "vfx": "estilo efeitos visuais/surrealista",
+            }
+            style_hint_source = style_labels.get(realistic_style, realistic_style)
+            if not optimizer_style_hint:
+                optimizer_style_hint = build_cover_optimizer_tone(style_hint_source, cover_decision.visual_mode)
+            if optimizer_style_hint and not prompt_optimized:
+                user_prompt = f"{user_prompt}. Estilo: {optimizer_style_hint}"
 
             if prompt_optimized:
                 optimized_prompt = user_prompt
@@ -1630,7 +1680,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     user_description=user_prompt,
                     duration=duration,
                     has_reference_image=has_reference_image,
-                    tone=realistic_style,
+                    tone=optimizer_style_hint,
                     reference_mode=reference_mode,
                 )
                 logger.info(f"Grok prompt optimized: {optimized_prompt[:200]}...")
@@ -1639,6 +1689,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 optimized_prompt = await optimize_prompt_for_seedance(
                     user_description=user_prompt,
                     duration=duration,
+                    tone=optimizer_style_hint,
                     has_reference_image=has_reference_image,
                     temperature=seedance_optimizer_temperature,
                 )
@@ -1648,6 +1699,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 optimized_prompt = _ensure_reference_image_instruction(optimized_prompt, reference_mode=reference_mode)
                 if engine == "grok":
                     optimized_prompt = _ensure_grok_identity_lock(optimized_prompt, reference_mode=reference_mode)
+            optimized_prompt = apply_cover_guidance(optimized_prompt, cover_decision)
             if seedance_expect_native_audio:
                 optimized_prompt = _ensure_seedance_audio_instruction(optimized_prompt)
 
@@ -1659,7 +1711,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         user_description=user_prompt,
                         duration=wan_effective_duration,
                         has_reference_image=has_reference_image,
-                        tone=realistic_style,
+                        tone=optimizer_style_hint,
                         reference_mode=reference_mode,
                     )
                 except Exception as e:
@@ -1669,6 +1721,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 if has_reference_image:
                     grok_shadow_prompt = _ensure_reference_image_instruction(grok_shadow_prompt, reference_mode=reference_mode)
                     grok_shadow_prompt = _ensure_grok_identity_lock(grok_shadow_prompt, reference_mode=reference_mode)
+                grok_shadow_prompt = apply_cover_guidance(grok_shadow_prompt, cover_decision)
 
             project.progress = 10
             await db.commit()
