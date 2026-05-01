@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v292 loaded");
+console.log("[CriaVideo] app.js v290 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -57,8 +57,6 @@ let _autoPilotPersonaEditor = {
     accountId: 0,
     selectedTypes: [],
 };
-let _autoRealisticPersonaCompositionTypes = ["natureza"];
-let _autoThemeRunState = {};
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 
 const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
@@ -1442,77 +1440,6 @@ function _analyzeRenderTopVideos(rawVideos) {
     }).join("");
 }
 
-function _analyzeRenderPersonaInsights(rawInsights) {
-    const section = document.getElementById("analyze-persona-section");
-    const summaryEl = document.getElementById("analyze-persona-summary");
-    const combosEl = document.getElementById("analyze-persona-combinations");
-    const elementsEl = document.getElementById("analyze-persona-elements");
-    const actionsEl = document.getElementById("analyze-persona-actions");
-
-    const insights = rawInsights && typeof rawInsights === "object" ? rawInsights : {};
-    const tracked = parseInt(insights.tracked_published_videos || "0", 10) || 0;
-    const hasSectionContent = !!insights.available || tracked > 0 || !!String(insights.summary || "").trim();
-
-    if (section) {
-        section.hidden = !hasSectionContent;
-    }
-    if (!hasSectionContent) {
-        return;
-    }
-
-    if (summaryEl) {
-        summaryEl.textContent = String(insights.summary || "").trim() || "A analise ainda nao cruzou personas suficientes nesta conta.";
-    }
-
-    const renderChips = (values) => (Array.isArray(values) ? values : []).map((value) => {
-        const label = REALISTIC_PERSONA_LABELS[_normalizeRealisticPersonaType(value)] || String(value || "");
-        return `<span class="analyze-persona-chip">${esc(label)}</span>`;
-    }).join("");
-
-    if (combosEl) {
-        const combinations = Array.isArray(insights.top_combinations) ? insights.top_combinations : [];
-        combosEl.innerHTML = combinations.length
-            ? combinations.map((item) => `
-                <article class="analyze-persona-card">
-                    <div class="analyze-persona-card-head">
-                        <h4>${esc(item.label || "Composicao")}</h4>
-                        <span class="analyze-persona-badge">${esc(String(item.matched_top_videos || 0))} top videos</span>
-                    </div>
-                    <div class="analyze-persona-chip-row">${renderChips(item.persona_types)}</div>
-                    <p class="analyze-persona-metrics">Media ${esc(_analyzeFormatNumber(item.avg_views || 0, true))} views · ${esc(_analyzeFormatNumber(item.avg_likes || 0, true))} likes · ${esc(String(item.published_count || 0))} publicados</p>
-                    ${item.best_video_title ? `<p class="analyze-persona-best">Melhor caso: ${esc(item.best_video_title)} · ${esc(_analyzeFormatNumber(item.best_video_views || 0, true))} views</p>` : ""}
-                </article>
-            `).join("")
-            : "<p class='analyze-empty-card'>Sem combinacoes vencedoras mapeadas ainda.</p>";
-    }
-
-    if (elementsEl) {
-        const elements = Array.isArray(insights.top_elements) ? insights.top_elements : [];
-        elementsEl.innerHTML = elements.length
-            ? elements.map((item) => `
-                <article class="analyze-persona-card analyze-persona-card-compact">
-                    <div class="analyze-persona-card-head">
-                        <h4>${esc(item.label || "Persona")}</h4>
-                        <span class="analyze-persona-badge analyze-persona-badge-soft">${esc(String(item.matched_top_videos || 0))} top videos</span>
-                    </div>
-                    <p class="analyze-persona-metrics">Media ${esc(_analyzeFormatNumber(item.avg_views || 0, true))} views · ${esc(_analyzeFormatNumber(item.avg_likes || 0, true))} likes</p>
-                    <p class="analyze-persona-best">${esc(String(item.published_count || 0))} videos internos com essa persona</p>
-                </article>
-            `).join("")
-            : "<p class='analyze-empty-card'>Sem elementos de persona suficientes ainda.</p>";
-    }
-
-    _analyzeRenderStringList(
-        "analyze-persona-actions",
-        insights.recommendations,
-        "Sem recomendacoes de persona disponiveis por enquanto.",
-    );
-
-    if (actionsEl) {
-        actionsEl.classList.toggle("analyze-list-strong", Array.isArray(insights.recommendations) && insights.recommendations.length > 0);
-    }
-}
-
 function _analyzeRenderKpis(channel, history, platformSupported) {
     const container = document.getElementById("analyze-kpi-grid");
     if (!container) return;
@@ -1636,7 +1563,6 @@ function _analyzeRenderPayload(payload) {
 
     _analyzeRenderKpis(channel, history, !!payload.platform_supported);
     _analyzeRenderTopVideos(payload.top_videos || []);
-    _analyzeRenderPersonaInsights(payload.persona_insights || {});
     _analyzeRenderStringList("analyze-title-ideas", rec.title_ideas, "Sem titulos sugeridos.");
     _analyzeRenderStringList("analyze-thumbnail-ideas", rec.thumbnail_ideas, "Sem direcoes de thumbnail.");
     _analyzeRenderStringList("analyze-growth-actions", rec.growth_actions, "Sem plano de crescimento.");
@@ -2291,7 +2217,7 @@ function _extractEstimateCredits(estimate) {
 }
 
 function _resolveCreditUnitBrl() {
-    return _creditValueBrl > 0 ? _creditValueBrl : (99.99 / 2800);
+    return _creditValueBrl > 0 ? _creditValueBrl : (19.99 / 520);
 }
 
 function _creditsToBrl(credits) {
@@ -3899,6 +3825,30 @@ function _clearSimilarSourcePreview() {
     }
 }
 
+function _syncSimilarPreviewVideoElement(stageEl, previewUrl) {
+    if (!stageEl) return null;
+    const normalizedPreviewUrl = String(previewUrl || "").trim();
+    if (!normalizedPreviewUrl) {
+        stageEl.innerHTML = "";
+        return null;
+    }
+
+    const currentVideoEl = stageEl.querySelector("video");
+    const currentSrc = String(currentVideoEl?.getAttribute("src") || "").trim();
+    if (currentVideoEl && currentSrc === normalizedPreviewUrl) {
+        return currentVideoEl;
+    }
+
+    stageEl.innerHTML = "";
+    const videoEl = document.createElement("video");
+    videoEl.src = normalizedPreviewUrl;
+    videoEl.controls = true;
+    videoEl.playsInline = true;
+    videoEl.preload = "metadata";
+    stageEl.appendChild(videoEl);
+    return videoEl;
+}
+
 function _renderSimilarResolvedSourcePreview(previewUrl, options = {}) {
     const wrapEl = document.getElementById("similar-source-preview-wrap");
     const stageEl = document.getElementById("similar-source-preview-stage");
@@ -3915,13 +3865,7 @@ function _renderSimilarResolvedSourcePreview(previewUrl, options = {}) {
         return;
     }
 
-    stageEl.innerHTML = "";
-    const videoEl = document.createElement("video");
-    videoEl.src = resolvedPreviewUrl;
-    videoEl.controls = true;
-    videoEl.playsInline = true;
-    videoEl.preload = "metadata";
-    stageEl.appendChild(videoEl);
+    _syncSimilarPreviewVideoElement(stageEl, resolvedPreviewUrl);
 
     titleEl.textContent = title;
     if (sourceUrl) {
@@ -3969,13 +3913,7 @@ function _renderSimilarUploadedSourcePreview() {
         return;
     }
 
-    stageEl.innerHTML = "";
-    const videoEl = document.createElement("video");
-    videoEl.src = previewUrl;
-    videoEl.controls = true;
-    videoEl.playsInline = true;
-    videoEl.preload = "metadata";
-    stageEl.appendChild(videoEl);
+    _syncSimilarPreviewVideoElement(stageEl, previewUrl);
 
     titleEl.textContent = "Prévia do vídeo enviado";
     hintEl.hidden = true;
@@ -4332,6 +4270,13 @@ function _renderSimilarScenes(project, options = {}) {
 
     containerEl.hidden = false;
     similarState.lastProjectSnapshot = project;
+    const similarActionIcons = {
+        save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
+        upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+        apply: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+        image: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
+        preview: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
+    };
     listEl.innerHTML = scenes.map((scene, idx) => {
         const sceneId = Number(scene.id || 0);
         const sceneKey = _similarSceneStateKey(sceneId);
@@ -4367,6 +4312,8 @@ function _renderSimilarScenes(project, options = {}) {
         const applyUploadedLabel = pendingCount > 1
             ? "Aplicar imagens (Nano Banana)"
             : "Aplicar imagem enviada";
+        const hasImagePreview = !!String(scene.image_url || "").trim();
+        const hasClipPreview = !!String(scene.clip_url || "").trim();
 
         const uploadsMarkup = pendingCount
             ? pendingUploads.map((item, uploadIdx) => {
@@ -4379,14 +4326,38 @@ function _renderSimilarScenes(project, options = {}) {
                     </figure>
                 `;
             }).join("")
-            : '<div class="similar-upload-empty">Nenhuma imagem enviada ainda.</div>';
+            : "";
 
-        const imagePreview = scene.image_url
-            ? `<img src="${scene.image_url}" alt="Preview imagem cena ${idx + 1}" loading="lazy">`
-            : '<div class="similar-preview-empty">Sem imagem</div>';
-        const clipPreview = scene.clip_url
-            ? `<video src="${scene.clip_url}" controls preload="metadata"></video>`
-            : '<div class="similar-preview-empty">Sem previa</div>';
+        const previewItems = [];
+        if (hasImagePreview) {
+            previewItems.push(`
+                <div class="similar-preview-box">
+                    <img src="${scene.image_url}" alt="Preview imagem cena ${idx + 1}" loading="lazy">
+                </div>
+            `);
+        }
+        if (hasClipPreview) {
+            previewItems.push(`
+                <div class="similar-preview-box">
+                    <video src="${scene.clip_url}" controls preload="metadata"></video>
+                </div>
+            `);
+        }
+
+        const previewMarkup = previewItems.length
+            ? `<div class="similar-scene-preview${previewItems.length === 1 ? " similar-scene-preview-single" : ""}">${previewItems.join("")}</div>`
+            : "";
+        const uploadsSectionMarkup = pendingCount
+            ? `
+                <div class="similar-scene-upload-panel">
+                    <div class="similar-scene-upload-head">
+                        <span>Imagens enviadas para esta cena: ${pendingCount}/6</span>
+                        <button class="similar-upload-clear" type="button" onclick="similarClearSceneUploads(${sceneId})" ${clearDisabledAttr}>Limpar</button>
+                    </div>
+                    <div class="similar-scene-upload-grid">${uploadsMarkup}</div>
+                </div>
+            `
+            : "";
 
         return `
             <article class="similar-scene-card">
@@ -4395,14 +4366,11 @@ function _renderSimilarScenes(project, options = {}) {
                     <span class="similar-scene-time">${start.toFixed(1)}s - ${end.toFixed(1)}s</span>
                 </div>
 
-                <div class="similar-scene-preview">
-                    <div class="similar-preview-box">${imagePreview}</div>
-                    <div class="similar-preview-box">${clipPreview}</div>
-                </div>
+                ${previewMarkup}
 
                 <div class="form-group">
                     <label>Prompt da cena</label>
-                    <textarea id="similar-scene-prompt-${sceneId}" class="input" rows="4" maxlength="2000" data-server-value="${promptServerEncoded}">${promptValue}</textarea>
+                    <textarea id="similar-scene-prompt-${sceneId}" class="input similar-scene-prompt-input" rows="8" maxlength="2000" data-server-value="${promptServerEncoded}">${promptValue}</textarea>
                 </div>
 
                 <div class="similar-scene-row">
@@ -4418,20 +4386,14 @@ function _renderSimilarScenes(project, options = {}) {
                     </label>
                 </div>
 
-                <div class="similar-scene-upload-panel">
-                    <div class="similar-scene-upload-head">
-                        <span>Imagens enviadas para esta cena: ${pendingCount}/6</span>
-                        <button class="similar-upload-clear" type="button" onclick="similarClearSceneUploads(${sceneId})" ${clearDisabledAttr}>Limpar</button>
-                    </div>
-                    <div class="similar-scene-upload-grid">${uploadsMarkup}</div>
-                </div>
+                ${uploadsSectionMarkup}
 
                 <div class="similar-scene-actions">
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="similarSaveScene(${sceneId})">Salvar cena</button>
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="similarUploadSceneImage(${sceneId})">Enviar imagens</button>
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" ${applyDisabledAttr}>${applyUploadedLabel}</button>
-                    <button class="btn btn-secondary btn-sm" type="button" onclick="similarGenerateSceneImage(${sceneId})">Gerar imagem IA</button>
-                    <button class="btn btn-primary btn-sm" type="button" onclick="similarRegenerateScene(${sceneId})">Gerar previa da cena</button>
+                    <button class="similar-scene-action-btn" type="button" onclick="similarSaveScene(${sceneId})" title="Salvar cena" aria-label="Salvar cena">${similarActionIcons.save}</button>
+                    <button class="similar-scene-action-btn" type="button" onclick="similarUploadSceneImage(${sceneId})" title="Enviar imagens" aria-label="Enviar imagens">${similarActionIcons.upload}</button>
+                    <button class="similar-scene-action-btn" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" title="${applyUploadedLabel}" aria-label="${applyUploadedLabel}" ${applyDisabledAttr}>${similarActionIcons.apply}</button>
+                    <button class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Gerar imagem com IA" aria-label="Gerar imagem com IA">${similarActionIcons.image}</button>
+                    <button class="similar-scene-action-btn similar-scene-action-btn-primary" type="button" onclick="similarRegenerateScene(${sceneId})" title="Gerar previa da cena" aria-label="Gerar previa da cena">${similarActionIcons.preview}</button>
                 </div>
             </article>
         `;
@@ -9024,9 +8986,6 @@ function togglePersonaSelectionFromPreview(context, profileId) {
     }
 
     _renderPersonaPreview(ctx);
-    if (ctx === "auto") {
-        _renderAutoRealisticPersonaCompositionSummary();
-    }
     if (ctx === "pilot") {
         _renderAutoPilotPersonaEditorSelectedTypes();
     }
@@ -9319,9 +9278,6 @@ async function _refreshPersonaContext(context, forcedPersonaType = "") {
     _setSelectedPersonaProfileIds(context, type, selectedIds);
 
     _renderPersonaPreview(context);
-    if (context === "auto") {
-        _renderAutoRealisticPersonaCompositionSummary();
-    }
 }
 
 function _refreshAllPersonaPreviews() {
@@ -9330,7 +9286,6 @@ function _refreshAllPersonaPreviews() {
     _renderPersonaPreview("ai");
     _renderPersonaPreview("auto");
     _renderPersonaPreview("pilot");
-    _renderAutoRealisticPersonaCompositionSummary();
     _renderAutoPilotPersonaEditorSelectedTypes();
 }
 
@@ -12552,116 +12507,6 @@ function _formatPilotPersonaCandidateLabel(candidate) {
     return baseLabel;
 }
 
-function _getAutoRealisticPersonaCompositionTypes() {
-    const normalized = (Array.isArray(_autoRealisticPersonaCompositionTypes) ? _autoRealisticPersonaCompositionTypes : [])
-        .map((type) => _normalizeRealisticPersonaType(type))
-        .filter((type, index, arr) => arr.indexOf(type) === index);
-
-    if (!normalized.length) {
-        normalized.push(_getRealisticPersonaTypeByContext("auto"));
-    }
-
-    return normalized;
-}
-
-function _setAutoRealisticPersonaCompositionTypes(types) {
-    _autoRealisticPersonaCompositionTypes = (Array.isArray(types) ? types : [])
-        .map((type) => _normalizeRealisticPersonaType(type))
-        .filter((type, index, arr) => arr.indexOf(type) === index);
-}
-
-function _renderAutoRealisticPersonaCompositionSummary() {
-    const countEl = document.getElementById("auto-realistic-persona-composition-count");
-    const container = document.getElementById("auto-realistic-persona-composition");
-    if (!container) return;
-
-    const selectedTypes = _getAutoRealisticPersonaCompositionTypes();
-    if (countEl) {
-        countEl.textContent = selectedTypes.length === 1
-            ? "1 persona separada"
-            : `${selectedTypes.length} personas separadas`;
-    }
-
-    if (!selectedTypes.length) {
-        container.innerHTML = '<span class="auto-pilot-persona-empty">Nenhuma persona adicionada.</span>';
-        return;
-    }
-
-    container.innerHTML = selectedTypes.map((type) => {
-        const label = REALISTIC_PERSONA_LABELS[type] || type;
-        const ids = _getSelectedPersonaProfileIds("auto", type);
-        const detail = ids.length > 1
-            ? `${ids.length} personas`
-            : ids.length === 1
-                ? "1 persona"
-                : "carregando";
-        return `
-            <span class="auto-pilot-persona-chip">
-                ${esc(label)} • ${esc(detail)}
-                <button class="auto-pilot-persona-chip-remove" type="button" onclick="removeAutoRealisticPersonaType('${type}')" title="Remover ${esc(label)}">&times;</button>
-            </span>
-        `;
-    }).join("");
-}
-
-async function _selectAutoRealisticPersonaType(personaType) {
-    const normalizedType = _normalizeRealisticPersonaType(personaType || "natureza");
-    const tagsContainer = document.getElementById("auto-realistic-persona-tags");
-    if (tagsContainer) {
-        tagsContainer.querySelectorAll(".style-tag").forEach((tag) => {
-            tag.classList.toggle("selected", (tag.dataset.persona || "") === normalizedType);
-        });
-    }
-
-    const selectedTypes = _getAutoRealisticPersonaCompositionTypes();
-    if (!selectedTypes.includes(normalizedType)) {
-        selectedTypes.push(normalizedType);
-    }
-    _setAutoRealisticPersonaCompositionTypes(selectedTypes);
-    _renderAutoRealisticPersonaCompositionSummary();
-    await _refreshPersonaContext("auto", normalizedType);
-}
-
-function removeAutoRealisticPersonaType(personaType) {
-    const normalizedType = _normalizeRealisticPersonaType(personaType || "natureza");
-    let selectedTypes = _getAutoRealisticPersonaCompositionTypes().filter((type) => type !== normalizedType);
-    _setSelectedPersonaProfileIds("auto", normalizedType, []);
-
-    if (!selectedTypes.length) {
-        selectedTypes = ["natureza"];
-    }
-
-    _setAutoRealisticPersonaCompositionTypes(selectedTypes);
-    _renderAutoRealisticPersonaCompositionSummary();
-
-    const currentType = _getRealisticPersonaTypeByContext("auto");
-    if (!selectedTypes.includes(currentType) || currentType === normalizedType) {
-        void _selectAutoRealisticPersonaType(selectedTypes[0]);
-    }
-}
-window.removeAutoRealisticPersonaType = removeAutoRealisticPersonaType;
-
-async function _collectAutoRealisticPersonaCandidatesForSave() {
-    const selectedTypes = _getAutoRealisticPersonaCompositionTypes();
-    const candidates = [];
-
-    for (const type of selectedTypes) {
-        const personaProfileIds = await _ensurePersonaSelections("auto", type);
-        if (!personaProfileIds.length) {
-            const label = REALISTIC_PERSONA_LABELS[type] || type;
-            throw new Error(`Crie uma ou mais personas para ${label} antes de salvar a composicao.`);
-        }
-        candidates.push({
-            persona_type: type,
-            persona_profile_id: personaProfileIds[0] || 0,
-            persona_profile_ids: personaProfileIds,
-            disable_persona_reference: false,
-        });
-    }
-
-    return candidates;
-}
-
 async function _setAutoPilotPersonaEditorType(personaType) {
     const normalizedType = _normalizeRealisticPersonaType(personaType || "natureza");
     const tagsContainer = document.getElementById("pilot-realistic-persona-tags");
@@ -13081,17 +12926,10 @@ function _getAutoScheduleLengthMeta(schedule) {
     return { label: "Shorts", className: "badge-duration-short" };
 }
 
-function _queueAutoScheduleRefresh(delayMs) {
-    window.setTimeout(() => {
-        loadAutoSchedules();
-    }, delayMs);
-}
-
 function renderAutoCard(s) {
     const defaultSettings = (s && typeof s.default_settings === "object" && s.default_settings)
         ? s.default_settings
         : {};
-    const pilotStreamKey = String(defaultSettings.pilot_stream || "").trim().toLowerCase();
     const isTestAccount = !s.social_account_id;
     let typeBadge = '<span class="badge badge-completed">Imagens IA</span>';
     if (s.video_type === "realistic" || s.video_type === "musical_shorts") {
@@ -13145,16 +12983,6 @@ function renderAutoCard(s) {
         const creditBadge = estimatedCredits > 0
             ? `<span class="theme-credit-tag" title="Custo estimado por video em creditos">${estimatedCredits.toLocaleString("pt-BR")} créditos</span>`
             : "";
-        const canRunNow = t.status === "pending" || t.status === "failed" || t.status === "error";
-        const runInProgress = !!_autoThemeRunState[t.id];
-        const runTitle = (t.status === "failed" || t.status === "error") ? "Tentar novamente agora" : "Criar agora";
-        const runBtn = canRunNow
-            ? `<button class="theme-run-btn" onclick="runAutoThemeNow(${t.id}, '${pilotStreamKey}', this)" type="button" title="${runTitle}" ${runInProgress ? "disabled" : ""}>
-                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                    <path d="M4 3.2v9.6L12.4 8 4 3.2Z"></path>
-                </svg>
-            </button>`
-            : "";
         const errorBtn = (t.status === "error" || t.status === "failed") && t.error_message
             ? `<button class="theme-error-btn" data-error="${esc(t.error_message).replace(/"/g, '&quot;')}" onclick="showThemeError(this)" type="button" title="Ver motivo">Ver motivo</button>`
             : "";
@@ -13165,7 +12993,6 @@ function renderAutoCard(s) {
             ${dateEditor}
             ${statusBadge}
             ${creditBadge}
-            ${runBtn}
             ${errorBtn}
             <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
         </li>`;
@@ -13239,30 +13066,6 @@ async function deleteAutoSchedule(id) {
 function showThemeError(btn) {
     const msg = btn.getAttribute("data-error") || "Erro desconhecido";
     alert(msg);
-}
-
-async function runAutoThemeNow(themeId, pilotStream = "", triggerBtn = null) {
-    if (_autoThemeRunState[themeId]) return;
-
-    _autoThemeRunState[themeId] = true;
-    if (triggerBtn) triggerBtn.disabled = true;
-
-    try {
-        await api(`/automation/themes/${themeId}/run`, { method: "POST" });
-        const stream = String(pilotStream || "").trim().toLowerCase();
-        const message = stream === "long"
-            ? "Criacao iniciada. Os temas dos shorts entram na fila assim que o audio do longo ficar pronto."
-            : "Criacao iniciada para este tema.";
-        showToast(message, "success");
-        _queueAutoScheduleRefresh(4000);
-        _queueAutoScheduleRefresh(12000);
-        _queueAutoScheduleRefresh(25000);
-    } catch (error) {
-        showToast(`Erro ao iniciar tema: ${error.message}`, "error");
-    } finally {
-        delete _autoThemeRunState[themeId];
-        await loadAutoSchedules();
-    }
 }
 
 async function saveAutoThemeDate(themeId) {
@@ -13400,13 +13203,15 @@ function openNewAutomationModal() {
     document.querySelectorAll("#auto-realistic-style-tags .style-tag").forEach(t => t.classList.remove("selected"));
     const defStyle = document.querySelector('#auto-realistic-style-tags [data-style="cinematic"]');
     if (defStyle) defStyle.classList.add("selected");
+    document.querySelectorAll("#auto-realistic-persona-tags .style-tag").forEach(t => t.classList.remove("selected"));
+    const defPersona = document.querySelector('#auto-realistic-persona-tags [data-persona="natureza"]');
+    if (defPersona) defPersona.classList.add("selected");
     const autoMultiPersona = document.getElementById("auto-realistic-multi-persona");
     if (autoMultiPersona) autoMultiPersona.checked = false;
     _personaSelectionByContext.auto = {};
     _personaMultiSelectionByContext.auto = {};
     _personaNoReferenceByContext.auto = {};
-    _setAutoRealisticPersonaCompositionTypes(["natureza"]);
-    void _selectAutoRealisticPersonaType("natureza");
+    _refreshPersonaContext("auto", "natureza");
 
     // reset engine selection
     _setAutoRealisticEngine("grok");
@@ -13565,7 +13370,7 @@ function autoStepBack() {
 document.addEventListener("DOMContentLoaded", () => {
     const autoModal = document.getElementById("modal-new-automation");
     if (!autoModal) return;
-    autoModal.addEventListener("click", async (e) => {
+    autoModal.addEventListener("click", (e) => {
         const sourceOpt = e.target.closest("#auto-image-audio-source .engine-option");
         if (sourceOpt) {
             selectAutoImageAudioSource(sourceOpt.dataset.value || "narration");
@@ -13579,7 +13384,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const persona = e.target.closest("#auto-realistic-persona-tags .style-tag");
         if (persona) {
-            await _selectAutoRealisticPersonaType(persona.dataset.persona || "natureza");
+            document.querySelectorAll("#auto-realistic-persona-tags .style-tag").forEach(t => t.classList.remove("selected"));
+            persona.classList.add("selected");
+            _refreshPersonaContext("auto", persona.dataset.persona || "natureza");
             scheduleAutoCreditEstimate();
         }
         // Engine option click
@@ -15380,15 +15187,9 @@ async function addClipToThemes() {
     const autoClipDuration = payload.clip_duration > 0
         ? payload.clip_duration
         : Math.max(1, Number(song.duration || payload.song_duration || 120));
-    let personaCandidates = [];
-    try {
-        personaCandidates = await _collectAutoRealisticPersonaCandidatesForSave();
-    } catch (error) {
-        alert(error.message || "Nao foi possivel montar a composicao de personas.");
-        return;
-    }
-    const interactionPersona = personaCandidates[0]?.persona_type || "natureza";
-    const personaProfileId = personaCandidates[0]?.persona_profile_id || 0;
+    const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
+    const interactionPersona = _normalizeRealisticPersonaType(selectedPersona ? selectedPersona.dataset.persona : "natureza");
+    const personaProfileId = _getSelectedPersonaProfileId("auto", interactionPersona);
 
     // Store as object with clip metadata
     _autoWizardThemes.push({
@@ -15402,10 +15203,7 @@ async function addClipToThemes() {
             clip_start: payload.clip_start,
             clip_duration: autoClipDuration,
             interaction_persona: interactionPersona,
-            interaction_personas: personaCandidates.map((candidate) => candidate.persona_type),
             persona_profile_id: personaProfileId,
-            persona_profile_ids: personaCandidates[0]?.persona_profile_ids || [],
-            persona_composition: personaCandidates,
         },
     });
     renderAutoWizardThemes();
@@ -15654,22 +15452,21 @@ async function createAutoSchedule() {
     } else if (videoType === "realista") {
         // Collect realistic settings
         const selectedStyle = document.querySelector("#auto-realistic-style-tags .style-tag.selected");
-        let personaCandidates = [];
+        const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
+        const interactionPersona = _normalizeRealisticPersonaType(selectedPersona ? selectedPersona.dataset.persona : "natureza");
+        let personaProfileId = 0;
+        let personaProfileIds = [];
         try {
-            personaCandidates = await _collectAutoRealisticPersonaCandidatesForSave();
+            personaProfileIds = await _ensurePersonaSelections("auto", interactionPersona);
+            personaProfileId = personaProfileIds[0] || 0;
         } catch (error) {
             alert(`Erro ao carregar persona: ${error.message}`);
             return;
         }
-        if (!personaCandidates.length) {
+        if (!personaProfileIds.length) {
             alert("Crie uma ou mais personas de interação antes de salvar a automação realista.");
             return;
         }
-        const interactionPersona = personaCandidates[0].persona_type || "natureza";
-        const personaProfileId = personaCandidates[0].persona_profile_id || 0;
-        const personaProfileIds = Array.isArray(personaCandidates[0].persona_profile_ids)
-            ? personaCandidates[0].persona_profile_ids
-            : [];
         const selectedEngine = document.querySelector("#auto-realistic-engine .engine-option.selected");
         const selectedDur = document.querySelector("#auto-realistic-duration .duration-option.selected");
         const useTevoxi = document.getElementById("auto-realistic-tevoxi")?.checked || false;
@@ -15679,10 +15476,8 @@ async function createAutoSchedule() {
         defaultSettings = {
             realistic_style: selectedStyle ? selectedStyle.dataset.style : "cinematic",
             interaction_persona: interactionPersona,
-            interaction_personas: personaCandidates.map((candidate) => candidate.persona_type),
             persona_profile_id: personaProfileId,
             persona_profile_ids: personaProfileIds,
-            persona_composition: personaCandidates,
             engine: useTevoxi ? "grok" : (selectedEngine ? selectedEngine.dataset.value : "wan2"),
             duration: selectedDur ? parseInt(selectedDur.dataset.value) : 8,
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",
@@ -16679,8 +16474,8 @@ function showCreditsPurchaseModal() {
     if (existing) existing.remove();
 
     const pkgs = _creditPackages.length ? _creditPackages : [
-        { credits: 500, price: 19.99 },
-        { credits: 1300, price: 49.99 },
+        { credits: 520, price: 19.99 },
+        { credits: 1350, price: 49.99 },
         { credits: 2800, price: 99.99 },
     ];
 
@@ -16724,7 +16519,7 @@ function showCreditsPurchaseModal() {
                     Pagar com Cartão
                 </button>
             </div>
-            <p class="credits-hint">Preco por credito desde R$ ${creditUnitText} (${_creditPricingVersion || "v2.1"}). O custo de geracao aparece em creditos ao lado dos botoes de gerar.</p>
+            <p class="credits-hint">Preco por credito desde R$ ${creditUnitText} (${_creditPricingVersion || "v2.0"}). O custo de geracao aparece em creditos ao lado dos botoes de gerar.</p>
         </div>
     `;
     document.body.appendChild(overlay);
@@ -16950,12 +16745,9 @@ function _editorCreateRecorderRuntime() {
         recorder: null,
         chunks: [],
         drawRaf: 0,
-        drawWindow: null,
         timer: 0,
         screenVideoEl: null,
         webcamVideoEl: null,
-        monitorWindow: null,
-        monitorClosing: false,
     };
 }
 
@@ -18477,147 +18269,17 @@ async function _editorUploadVideo(input) {
 window._editorUploadVideo = _editorUploadVideo;
 
 function _editorRecorderUsesScreen(mode) {
-    return mode === "screen" || mode === "screen_camera" || mode === "window";
+    return mode === "screen" || mode === "screen_camera";
 }
 
 function _editorRecorderUsesWebcam(mode) {
     return mode === "webcam" || mode === "screen_camera";
 }
 
-function _editorRecorderUsesWindow(mode) {
-    return mode === "window";
-}
-
 function _editorRecorderModeLabel(mode) {
-    if (mode === "window") return "Janela";
     if (mode === "screen_camera") return "Tela + Webcam";
     if (mode === "webcam") return "Webcam";
     return "Tela";
-}
-
-function _editorRecorderIsMobileLike() {
-    const ua = String(navigator?.userAgent || "");
-    if (/Android|iPhone|iPad|iPod|IEMobile|Mobile/i.test(ua)) return true;
-    if (typeof window?.matchMedia === "function") {
-        try {
-            return window.matchMedia("(max-width: 768px)").matches;
-        } catch {}
-    }
-    return false;
-}
-
-function _editorRecorderModeDescription(mode) {
-    if (_editorRecorderUsesWindow(mode)) {
-        return _editorRecorderIsMobileLike()
-            ? "No celular, o navegador normalmente compartilha a tela do aparelho."
-            : "Escolha no navegador a janela específica que deseja gravar.";
-    }
-    if (mode === "screen_camera") {
-        return _editorRecorderIsMobileLike()
-            ? "O navegador pode pedir a tela do aparelho e a câmera separadamente."
-            : "Mistura a tela com a webcam em uma gravação só.";
-    }
-    if (mode === "webcam") {
-        return _editorRecorderIsMobileLike()
-            ? "Use a câmera do celular para gravar direto no editor."
-            : "Grava somente a câmera para entrar direto no editor.";
-    }
-    return _editorRecorderIsMobileLike()
-        ? "Use o compartilhamento de tela do celular para gravar o aparelho."
-        : "Grava a tela inteira, uma aba ou o app que você escolher.";
-}
-
-function _editorRecorderIdleStatus(mode) {
-    if (_editorRecorderUsesWindow(mode)) {
-        return _editorRecorderIsMobileLike()
-            ? "No celular, se o navegador não mostrar janelas, use Tela para gravar o aparelho."
-            : "Clique em iniciar e escolha a janela aberta que deseja gravar.";
-    }
-    if (mode === "screen_camera") {
-        return _editorRecorderIsMobileLike()
-            ? "Tela + Webcam depende do suporte do navegador do celular."
-            : "Clique em iniciar, escolha a tela e depois a webcam entra junto na gravação.";
-    }
-    if (mode === "webcam") {
-        return _editorRecorderIsMobileLike()
-            ? "A câmera do celular entra direto no editor."
-            : "Clique em iniciar para abrir a webcam e gravar direto no editor.";
-    }
-    return _editorRecorderIsMobileLike()
-        ? "No celular, clique em iniciar e compartilhe a tela do aparelho."
-        : "Clique em iniciar e escolha a tela, aba ou app que quer gravar.";
-}
-
-function _editorRecorderStartingStatus(mode) {
-    if (_editorRecorderUsesWindow(mode)) {
-        return _editorRecorderIsMobileLike()
-            ? "Escolha o compartilhamento de tela disponível no celular."
-            : "Escolha a janela que deseja compartilhar.";
-    }
-    if (mode === "screen_camera") {
-        return _editorRecorderIsMobileLike()
-            ? "Compartilhe a tela do aparelho e autorize a câmera."
-            : "Escolha a tela ou janela para compartilhar.";
-    }
-    if (mode === "webcam") return "Preparando webcam...";
-    return _editorRecorderIsMobileLike()
-        ? "Escolha compartilhar a tela do aparelho."
-        : "Escolha a tela, aba ou app para compartilhar.";
-}
-
-function _editorRecorderRecordingStatus(mode, hasMonitor = false) {
-    if (_editorRecorderUsesWindow(mode)) {
-        return _editorRecorderIsMobileLike()
-            ? "Gravando o compartilhamento do celular."
-            : "Gravando a janela escolhida.";
-    }
-    if (mode === "screen_camera") {
-        if (hasMonitor) {
-            return "Mini janela ativa. Pode minimizar o CriaVideo e deixar a gravação rolando por ela.";
-        }
-        return _editorRecorderIsMobileLike()
-            ? "Gravando tela + webcam com o suporte disponível no navegador."
-            : "Gravando agora.";
-    }
-    if (mode === "webcam") {
-        return _editorRecorderIsMobileLike()
-            ? "Gravando a câmera do celular." 
-            : "Gravando a webcam agora.";
-    }
-    return _editorRecorderIsMobileLike()
-        ? "Gravando a tela do aparelho." 
-        : "Gravando agora.";
-}
-
-function _editorRecorderNeedsMonitorWindow(mode) {
-    return _editorRecorderNeedsCanvasComposition(mode) && !_editorRecorderIsMobileLike();
-}
-
-function _editorRecorderBuildDisplayCaptureOptions(mode) {
-    const options = {
-        video: { frameRate: { ideal: 30, max: 30 } },
-        audio: true,
-    };
-
-    if (_editorRecorderUsesWindow(mode)) {
-        options.preferCurrentTab = false;
-        options.selfBrowserSurface = "exclude";
-        options.surfaceSwitching = "exclude";
-        options.monitorTypeSurfaces = "exclude";
-        return options;
-    }
-
-    if (_editorRecorderIsMobileLike()) {
-        options.preferCurrentTab = true;
-        options.selfBrowserSurface = "include";
-        options.surfaceSwitching = "include";
-        return options;
-    }
-
-    options.preferCurrentTab = false;
-    options.selfBrowserSurface = "include";
-    options.surfaceSwitching = "include";
-    return options;
 }
 
 function _editorRecorderSupportsMode(mode) {
@@ -18658,279 +18320,6 @@ function _editorRecorderBuildFileName() {
     return `gravacao_editor_${yyyy}${mm}${dd}_${hh}${min}${ss}.webm`;
 }
 
-function _editorRecorderNeedsCanvasComposition(mode) {
-    return String(mode || "") === "screen_camera";
-}
-
-function _editorRecorderGetMonitorWindow() {
-    const monitorWindow = _editorRecorderRuntime.monitorWindow;
-    if (!monitorWindow || monitorWindow.closed) return null;
-    return monitorWindow;
-}
-
-function _editorRecorderSetPreviewStream(videoEl, stream) {
-    if (!videoEl) return;
-    if (!stream) {
-        videoEl.srcObject = null;
-        videoEl.removeAttribute("src");
-        return;
-    }
-    videoEl.srcObject = stream;
-    videoEl.muted = true;
-    videoEl.playsInline = true;
-    videoEl.autoplay = true;
-    videoEl.play().catch(() => {});
-}
-
-function _editorRecorderRenderMonitorWindow() {
-    const monitorWindow = _editorRecorderGetMonitorWindow();
-    if (!monitorWindow) return;
-
-    const doc = monitorWindow.document;
-    const title = doc.getElementById("editor-recorder-monitor-title");
-    const note = doc.getElementById("editor-recorder-monitor-note");
-    const timer = doc.getElementById("editor-recorder-monitor-timer");
-    const status = doc.getElementById("editor-recorder-monitor-status");
-    const action = doc.getElementById("editor-recorder-monitor-stop");
-    const preview = doc.getElementById("editor-recorder-monitor-preview");
-    const empty = doc.getElementById("editor-recorder-monitor-empty");
-    if (!title || !note || !timer || !status || !action || !preview || !empty) return;
-
-    const mode = _editorRecorderModal.mode;
-    const modeLabel = _editorRecorderModeLabel(mode);
-    title.textContent = modeLabel;
-    timer.textContent = _editorFormatRecordingClock(_editorRecorderModal.seconds);
-    note.textContent = _editorRecorderNeedsMonitorWindow(mode)
-        ? "Pode minimizar o CriaVideo. Mantenha esta mini janela aberta enquanto grava Tela + Webcam."
-        : _editorRecorderModeDescription(mode);
-
-    let actionLabel = "Voltar ao CriaVideo";
-    if (_editorRecorderModal.starting) actionLabel = "Preparando...";
-    else if (_editorRecorderModal.recording) actionLabel = "Parar e abrir no editor";
-    else if (_editorRecorderModal.stopping) actionLabel = "Finalizando...";
-    else if (_editorRecorderModal.uploading) actionLabel = "Enviando...";
-    action.textContent = actionLabel;
-    action.disabled = Boolean(_editorRecorderModal.starting || _editorRecorderModal.stopping || _editorRecorderModal.uploading);
-
-    const statusMessage = String(_editorRecorderModal.error || _editorRecorderModal.status || "").trim();
-    status.textContent = statusMessage || "Mini janela ativa.";
-    status.classList.toggle("error", Boolean(_editorRecorderModal.error));
-
-    const hasPreview = Boolean(preview.srcObject);
-    preview.hidden = !hasPreview;
-    empty.hidden = hasPreview;
-    monitorWindow.document.title = `CriaVideo - ${modeLabel}`;
-}
-
-function _editorRecorderSyncMonitorPreview(stream) {
-    const monitorWindow = _editorRecorderGetMonitorWindow();
-    const preview = monitorWindow?.document.getElementById("editor-recorder-monitor-preview");
-    _editorRecorderSetPreviewStream(preview, stream || null);
-    _editorRecorderRenderMonitorWindow();
-}
-
-function _editorRecorderOpenMonitorWindow(mode) {
-    if (!_editorRecorderNeedsMonitorWindow(mode)) return null;
-    if (typeof window.open !== "function") return null;
-
-    let monitorWindow = null;
-    try {
-        monitorWindow = window.open("", "criavideoRecorderMonitor", "popup=yes,width=430,height=360,resizable=yes,scrollbars=no");
-    } catch {
-        return null;
-    }
-    if (!monitorWindow) return null;
-
-    try {
-        const doc = monitorWindow.document;
-        doc.open();
-        doc.write(`<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CriaVideo - Gravando</title>
-    <style>
-        :root {
-            color-scheme: dark;
-            --bg: #07162b;
-            --panel: #0b1f3c;
-            --line: rgba(255,255,255,0.08);
-            --text: #f5f8ff;
-            --muted: #93accb;
-            --accent: #f5b840;
-            --accent-dark: #d39a22;
-            --danger: #fca5a5;
-        }
-        * { box-sizing: border-box; }
-        html, body {
-            margin: 0;
-            min-height: 100%;
-            background: radial-gradient(circle at top, rgba(245,184,64,0.14), rgba(4,17,34,0.98) 58%);
-            color: var(--text);
-            font-family: Manrope, Segoe UI, sans-serif;
-        }
-        body {
-            padding: 16px;
-        }
-        .mini-recorder {
-            display: grid;
-            gap: 14px;
-        }
-        .mini-recorder-card {
-            border-radius: 22px;
-            border: 1px solid var(--line);
-            background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(4,17,34,0.82));
-            box-shadow: 0 18px 40px rgba(0,0,0,0.24);
-            overflow: hidden;
-        }
-        .mini-recorder-head {
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 16px 18px 0;
-            align-items: flex-start;
-        }
-        .mini-recorder-head strong {
-            display: block;
-            font-size: 1rem;
-        }
-        .mini-recorder-head span {
-            display: block;
-            margin-top: 4px;
-            color: var(--muted);
-            font-size: 0.84rem;
-            line-height: 1.45;
-        }
-        .mini-recorder-timer {
-            min-width: 84px;
-            height: 38px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0 12px;
-            border-radius: 999px;
-            border: 1px solid rgba(245,184,64,0.28);
-            background: rgba(6,17,34,0.9);
-            font-weight: 800;
-            letter-spacing: 0.04em;
-        }
-        .mini-recorder-preview-shell {
-            position: relative;
-            margin: 14px 18px 0;
-            min-height: 182px;
-            border-radius: 20px;
-            overflow: hidden;
-            background: #050d18;
-            border: 1px solid var(--line);
-        }
-        .mini-recorder-preview {
-            width: 100%;
-            height: 182px;
-            display: block;
-            object-fit: cover;
-            background: #050d18;
-        }
-        .mini-recorder-empty {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 18px;
-            color: var(--muted);
-            font-size: 0.92rem;
-            line-height: 1.5;
-        }
-        .mini-recorder-status {
-            min-height: 22px;
-            padding: 14px 18px 0;
-            color: var(--muted);
-            font-size: 0.9rem;
-            line-height: 1.45;
-        }
-        .mini-recorder-status.error {
-            color: var(--danger);
-        }
-        .mini-recorder-actions {
-            display: flex;
-            padding: 14px 18px 18px;
-        }
-        .mini-recorder-btn {
-            width: 100%;
-            min-height: 46px;
-            border: 0;
-            border-radius: 14px;
-            font: inherit;
-            font-weight: 800;
-            cursor: pointer;
-            color: #10233e;
-            background: linear-gradient(180deg, var(--accent), var(--accent-dark));
-        }
-        .mini-recorder-btn:disabled {
-            opacity: 0.58;
-            cursor: wait;
-        }
-    </style>
-</head>
-<body>
-    <div class="mini-recorder">
-        <div class="mini-recorder-card">
-            <div class="mini-recorder-head">
-                <div>
-                    <strong id="editor-recorder-monitor-title">Tela</strong>
-                    <span id="editor-recorder-monitor-note">Mini janela ativa.</span>
-                </div>
-                <div id="editor-recorder-monitor-timer" class="mini-recorder-timer">00:00</div>
-            </div>
-            <div class="mini-recorder-preview-shell">
-                <video id="editor-recorder-monitor-preview" class="mini-recorder-preview" autoplay muted playsinline hidden></video>
-                <div id="editor-recorder-monitor-empty" class="mini-recorder-empty">O navegador pedirá acesso e a prévia aparece aqui.</div>
-            </div>
-            <div id="editor-recorder-monitor-status" class="mini-recorder-status">Preparando gravação...</div>
-            <div class="mini-recorder-actions">
-                <button id="editor-recorder-monitor-stop" class="mini-recorder-btn" type="button">Voltar ao CriaVideo</button>
-            </div>
-        </div>
-    </div>
-</body>
-</html>`);
-        doc.close();
-
-        const stopBtn = doc.getElementById("editor-recorder-monitor-stop");
-        stopBtn?.addEventListener("click", () => {
-            if (_editorRecorderModal.recording && !_editorRecorderModal.stopping && !_editorRecorderModal.uploading) {
-                _editorStopRecorderCapture();
-                return;
-            }
-            try {
-                window.focus();
-            } catch {}
-        });
-
-        monitorWindow.addEventListener("beforeunload", () => {
-            if (_editorRecorderRuntime.monitorClosing) return;
-            if (_editorRecorderModal.recording && _editorRecorderNeedsMonitorWindow(_editorRecorderModal.mode) && !_editorRecorderModal.stopping && !_editorRecorderModal.uploading) {
-                setTimeout(() => {
-                    if (!_editorRecorderModal.recording || _editorRecorderModal.stopping || _editorRecorderModal.uploading) return;
-                    _editorRecorderModal.status = "Mini janela fechada. Finalizando gravação...";
-                    _editorRenderRecorderModal();
-                    _editorStopRecorderCapture();
-                }, 0);
-            }
-        });
-
-        _editorRecorderRenderMonitorWindow();
-        return monitorWindow;
-    } catch {
-        try {
-            monitorWindow.close();
-        } catch {}
-        return null;
-    }
-}
-
 function _editorStopMediaStream(stream) {
     if (!stream) return;
     for (const track of stream.getTracks()) {
@@ -18943,16 +18332,12 @@ function _editorStopMediaStream(stream) {
 function _editorUpdateRecorderTimerUI() {
     const timer = document.getElementById("editor-recorder-timer-label");
     if (timer) timer.textContent = _editorFormatRecordingClock(_editorRecorderModal.seconds);
-    _editorRecorderRenderMonitorWindow();
 }
 
 function _editorCleanupRecorderRuntime(options = {}) {
     const { preservePreview = false } = options || {};
     const preview = document.getElementById("editor-recorder-preview");
-    const cancelDraw = _editorRecorderRuntime.drawWindow && typeof _editorRecorderRuntime.drawWindow.cancelAnimationFrame === "function"
-        ? _editorRecorderRuntime.drawWindow.cancelAnimationFrame.bind(_editorRecorderRuntime.drawWindow)
-        : cancelAnimationFrame;
-    if (_editorRecorderRuntime.drawRaf) cancelDraw(_editorRecorderRuntime.drawRaf);
+    if (_editorRecorderRuntime.drawRaf) cancelAnimationFrame(_editorRecorderRuntime.drawRaf);
     if (_editorRecorderRuntime.timer) clearInterval(_editorRecorderRuntime.timer);
 
     _editorStopMediaStream(_editorRecorderRuntime.displayStream);
@@ -18968,17 +18353,8 @@ function _editorCleanupRecorderRuntime(options = {}) {
     }
 
     if (preview && !preservePreview) {
-        _editorRecorderSetPreviewStream(preview, null);
-    }
-
-    _editorRecorderSyncMonitorPreview(null);
-
-    const monitorWindow = _editorRecorderGetMonitorWindow();
-    if (monitorWindow) {
-        _editorRecorderRuntime.monitorClosing = true;
-        try {
-            monitorWindow.close();
-        } catch {}
+        preview.srcObject = null;
+        preview.removeAttribute("src");
     }
 
     _editorRecorderRuntime = _editorCreateRecorderRuntime();
@@ -18993,7 +18369,7 @@ function _editorResetRecorderModalState() {
     _editorRecorderModal.stopping = false;
     _editorRecorderModal.uploading = false;
     _editorRecorderModal.seconds = 0;
-    _editorRecorderModal.status = _editorRecorderIdleStatus("screen");
+    _editorRecorderModal.status = "";
     _editorRecorderModal.error = "";
     _editorCleanupRecorderRuntime();
     _editorUpdateRecorderTimerUI();
@@ -19001,7 +18377,6 @@ function _editorResetRecorderModalState() {
 
 function _editorRenderRecorderModal() {
     const screenBtn = document.getElementById("editor-recorder-mode-screen");
-    const windowBtn = document.getElementById("editor-recorder-mode-window");
     const screenCameraBtn = document.getElementById("editor-recorder-mode-screen-camera");
     const webcamBtn = document.getElementById("editor-recorder-mode-webcam");
     const micBtn = document.getElementById("editor-recorder-mic-toggle");
@@ -19009,11 +18384,10 @@ function _editorRenderRecorderModal() {
     const empty = document.getElementById("editor-recorder-preview-empty");
     const submit = document.getElementById("editor-recorder-submit");
     const status = document.getElementById("editor-recorder-status");
-    if (!screenBtn || !windowBtn || !screenCameraBtn || !webcamBtn || !micBtn || !preview || !empty || !submit || !status) return;
+    if (!screenBtn || !screenCameraBtn || !webcamBtn || !micBtn || !preview || !empty || !submit || !status) return;
 
     const mode = _editorRecorderModal.mode;
     screenBtn.classList.toggle("active", mode === "screen");
-    windowBtn.classList.toggle("active", mode === "window");
     screenCameraBtn.classList.toggle("active", mode === "screen_camera");
     webcamBtn.classList.toggle("active", mode === "webcam");
     micBtn.classList.toggle("active", Boolean(_editorRecorderModal.micEnabled));
@@ -19027,7 +18401,7 @@ function _editorRenderRecorderModal() {
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="15" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/><circle cx="18" cy="7" r="3"/></svg>
         </span>
         <strong>${esc(_editorRecorderModeLabel(mode))}</strong>
-        <span>${esc(_editorRecorderModeDescription(mode))}</span>
+        <span>O navegador pedirá acesso para começar.</span>
     `;
 
     let submitLabel = "Iniciar gravação";
@@ -19044,14 +18418,12 @@ function _editorRenderRecorderModal() {
     status.hidden = !statusMessage;
     status.textContent = statusMessage;
     status.classList.toggle("error", Boolean(_editorRecorderModal.error));
-    _editorRecorderRenderMonitorWindow();
 }
 
 function _editorOpenRecorderModal() {
     closeModal("modal-editor-start");
     _editorResetRecorderModalState();
     _editorRecorderModal.open = true;
-    _editorRecorderModal.status = _editorRecorderIdleStatus(_editorRecorderModal.mode);
     openModal("modal-editor-recorder");
     _editorRenderRecorderModal();
 }
@@ -19068,10 +18440,10 @@ function _editorCloseRecorderModal(force = false) {
 window._editorCloseRecorderModal = _editorCloseRecorderModal;
 
 function _editorSetRecorderMode(mode) {
-    const nextMode = ["screen", "window", "screen_camera", "webcam"].includes(String(mode || "")) ? String(mode) : "screen";
+    const nextMode = ["screen", "screen_camera", "webcam"].includes(String(mode || "")) ? String(mode) : "screen";
     if (_editorRecorderModal.starting || _editorRecorderModal.recording || _editorRecorderModal.stopping || _editorRecorderModal.uploading) return;
     _editorRecorderModal.mode = nextMode;
-    _editorRecorderModal.status = _editorRecorderIdleStatus(nextMode);
+    _editorRecorderModal.status = "";
     _editorRecorderModal.error = "";
     _editorRenderRecorderModal();
 }
@@ -19084,8 +18456,8 @@ function _editorToggleRecorderMic() {
 }
 window._editorToggleRecorderMic = _editorToggleRecorderMic;
 
-async function _editorRecorderLoadVideoElement(stream, targetDocument = document) {
-    const video = targetDocument.createElement("video");
+async function _editorRecorderLoadVideoElement(stream) {
+    const video = document.createElement("video");
     video.autoplay = true;
     video.muted = true;
     video.playsInline = true;
@@ -19167,7 +18539,10 @@ async function _editorPrepareRecorderSession(mode) {
     let micStream = null;
 
     if (_editorRecorderUsesScreen(mode)) {
-        displayStream = await navigator.mediaDevices.getDisplayMedia(_editorRecorderBuildDisplayCaptureOptions(mode));
+        displayStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { frameRate: { ideal: 30, max: 30 } },
+            audio: true,
+        });
     }
 
     if (_editorRecorderUsesWebcam(mode)) {
@@ -19187,77 +18562,54 @@ async function _editorPrepareRecorderSession(mode) {
         });
     }
 
-    let screenVideoEl = null;
-    let webcamVideoEl = null;
-    let canvas = null;
-    let canvasStream = null;
-    let drawWindow = null;
-    const outputStream = new MediaStream();
-    const needsComposition = _editorRecorderNeedsCanvasComposition(mode);
+    const screenVideoEl = displayStream ? await _editorRecorderLoadVideoElement(displayStream) : null;
+    const webcamVideoEl = webcamStream ? await _editorRecorderLoadVideoElement(webcamStream) : null;
+    const { width, height } = _editorRecorderComputeCanvasSize(mode, screenVideoEl, webcamVideoEl);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+        throw new Error("Não foi possível preparar a captura de vídeo.");
+    }
 
-    if (needsComposition) {
-        drawWindow = _editorRecorderGetMonitorWindow() || window;
-        const renderDocument = drawWindow.document || document;
-        screenVideoEl = displayStream ? await _editorRecorderLoadVideoElement(displayStream, renderDocument) : null;
-        webcamVideoEl = webcamStream ? await _editorRecorderLoadVideoElement(webcamStream, renderDocument) : null;
-        const { width, height } = _editorRecorderComputeCanvasSize(mode, screenVideoEl, webcamVideoEl);
-        canvas = renderDocument.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-            throw new Error("Não foi possível preparar a captura de vídeo.");
+    const drawFrame = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (_editorRecorderUsesScreen(mode) && screenVideoEl) {
+            ctx.drawImage(screenVideoEl, 0, 0, canvas.width, canvas.height);
+        } else if (webcamVideoEl) {
+            ctx.drawImage(webcamVideoEl, 0, 0, canvas.width, canvas.height);
         }
 
-        const nextFrame = typeof drawWindow.requestAnimationFrame === "function"
-            ? drawWindow.requestAnimationFrame.bind(drawWindow)
-            : requestAnimationFrame;
+        if (mode === "screen_camera" && webcamVideoEl) {
+            const overlayWidth = Math.round(canvas.width * 0.26);
+            const aspectRatio = Math.max(0.6, webcamVideoEl.videoWidth / Math.max(1, webcamVideoEl.videoHeight));
+            const overlayHeight = Math.round(overlayWidth / aspectRatio);
+            const x = canvas.width - overlayWidth - 28;
+            const y = canvas.height - overlayHeight - 28;
 
-        const drawFrame = () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            _editorRecorderRoundRect(ctx, x - 4, y - 4, overlayWidth + 8, overlayHeight + 8, 22);
+            ctx.fillStyle = "rgba(5, 20, 38, 0.88)";
+            ctx.fill();
+            _editorRecorderRoundRect(ctx, x, y, overlayWidth, overlayHeight, 18);
+            ctx.clip();
+            ctx.drawImage(webcamVideoEl, x, y, overlayWidth, overlayHeight);
+            ctx.restore();
+        }
 
-            if (_editorRecorderUsesScreen(mode) && screenVideoEl) {
-                ctx.drawImage(screenVideoEl, 0, 0, canvas.width, canvas.height);
-            } else if (webcamVideoEl) {
-                ctx.drawImage(webcamVideoEl, 0, 0, canvas.width, canvas.height);
-            }
+        _editorRecorderRuntime.drawRaf = requestAnimationFrame(drawFrame);
+    };
+    drawFrame();
 
-            if (mode === "screen_camera" && webcamVideoEl) {
-                const overlayWidth = Math.round(canvas.width * 0.26);
-                const aspectRatio = Math.max(0.6, webcamVideoEl.videoWidth / Math.max(1, webcamVideoEl.videoHeight));
-                const overlayHeight = Math.round(overlayWidth / aspectRatio);
-                const x = canvas.width - overlayWidth - 28;
-                const y = canvas.height - overlayHeight - 28;
-
-                ctx.save();
-                _editorRecorderRoundRect(ctx, x - 4, y - 4, overlayWidth + 8, overlayHeight + 8, 22);
-                ctx.fillStyle = "rgba(5, 20, 38, 0.88)";
-                ctx.fill();
-                _editorRecorderRoundRect(ctx, x, y, overlayWidth, overlayHeight, 18);
-                ctx.clip();
-                ctx.drawImage(webcamVideoEl, x, y, overlayWidth, overlayHeight);
-                ctx.restore();
-            }
-
-            _editorRecorderRuntime.drawRaf = nextFrame(drawFrame);
-        };
-        drawFrame();
-
-        canvasStream = canvas.captureStream(30);
-        const composedVideoTrack = canvasStream.getVideoTracks()[0];
-        if (composedVideoTrack) outputStream.addTrack(composedVideoTrack);
-    } else {
-        const sourceStream = _editorRecorderUsesScreen(mode) ? displayStream : webcamStream;
-        const sourceVideoTrack = sourceStream?.getVideoTracks?.()[0] || null;
-        if (sourceVideoTrack) outputStream.addTrack(sourceVideoTrack);
-    }
+    const canvasStream = canvas.captureStream(30);
+    const outputStream = new MediaStream();
+    const videoTrack = canvasStream.getVideoTracks()[0];
+    if (videoTrack) outputStream.addTrack(videoTrack);
 
     const mixedAudio = _editorRecorderBuildMixedAudio([displayStream, webcamStream, micStream]);
     if (mixedAudio.track) outputStream.addTrack(mixedAudio.track);
-
-    if (!outputStream.getVideoTracks().length) {
-        throw new Error("Não foi possível iniciar a gravação de vídeo.");
-    }
 
     return {
         displayStream,
@@ -19270,7 +18622,6 @@ async function _editorPrepareRecorderSession(mode) {
         audioDestination: mixedAudio.audioDestination,
         screenVideoEl,
         webcamVideoEl,
-        drawWindow,
     };
 }
 
@@ -19315,28 +18666,25 @@ async function _editorStartRecorderCapture() {
 
     _editorRecorderModal.starting = true;
     _editorRecorderModal.error = "";
-    _editorRecorderModal.status = _editorRecorderStartingStatus(mode);
+    _editorRecorderModal.status = _editorRecorderUsesScreen(mode)
+        ? "Escolha a tela ou janela para compartilhar."
+        : "Preparando webcam...";
     _editorRecorderModal.seconds = 0;
     _editorRenderRecorderModal();
 
     try {
         _editorCleanupRecorderRuntime();
-        const monitorWindow = _editorRecorderOpenMonitorWindow(mode);
-        if (monitorWindow) {
-            _editorRecorderRuntime.monitorWindow = monitorWindow;
-        } else if (_editorRecorderNeedsMonitorWindow(mode)) {
-            _editorRecorderModal.status = "Seu navegador bloqueou a mini janela. Se minimizar o CriaVideo em Tela + Webcam, a gravação pode pausar.";
-            _editorRenderRecorderModal();
-        }
-
         const prepared = await _editorPrepareRecorderSession(mode);
         Object.assign(_editorRecorderRuntime, prepared);
 
         const preview = document.getElementById("editor-recorder-preview");
         if (preview) {
-            _editorRecorderSetPreviewStream(preview, _editorRecorderRuntime.outputStream);
+            preview.srcObject = _editorRecorderRuntime.outputStream;
+            preview.muted = true;
+            preview.playsInline = true;
+            preview.autoplay = true;
+            preview.play().catch(() => {});
         }
-        _editorRecorderSyncMonitorPreview(_editorRecorderRuntime.outputStream);
 
         const mimeType = _editorPickRecorderMimeType();
         const recorderOptions = mimeType
@@ -19394,7 +18742,7 @@ async function _editorStartRecorderCapture() {
         recorder.start(1000);
         _editorRecorderModal.starting = false;
         _editorRecorderModal.recording = true;
-        _editorRecorderModal.status = _editorRecorderRecordingStatus(mode, Boolean(_editorRecorderGetMonitorWindow()));
+        _editorRecorderModal.status = "Gravando agora.";
         _editorRecorderModal.error = "";
         _editorRecorderRuntime.timer = setInterval(() => {
             _editorRecorderModal.seconds += 1;
