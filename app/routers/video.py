@@ -3839,7 +3839,7 @@ async def generate_realistic_endpoint(
         provider_generate_audio = True
 
     # Credit check — centralized realistic estimator.
-    from app.routers.credits import deduct_credits
+    from app.routers.credits import deduct_credits, is_levita_credit_bypass_user
 
     estimate = estimate_realistic_credits(
         engine=engine,
@@ -3851,7 +3851,14 @@ async def generate_realistic_endpoint(
         use_external_audio=bool(external_audio_url),
     )
     credits_needed = int(estimate.get("credits_needed", 0) or 0)
-    await deduct_credits(db, user["id"], credits_needed)
+    if await is_levita_credit_bypass_user(db, user=user):
+        logger.info(
+            "Skipping CriaVideo credit deduction for Levita user in realistic mode (user_id=%s, credits_needed=%s)",
+            user["id"],
+            credits_needed,
+        )
+    else:
+        await deduct_credits(db, user["id"], credits_needed)
 
     # Use custom title if provided
     project_title = (req.title or "").strip()

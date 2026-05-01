@@ -1277,14 +1277,21 @@ async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> i
 
     # Credit check
     async with async_session() as db:
-        from app.routers.credits import deduct_credits
+        from app.routers.credits import deduct_credits, is_levita_credit_bypass_user
 
         estimate = estimate_auto_theme_credits(
             video_type="realistic",
             default_settings=cfg,
         )
         credits_needed = int(estimate.get("credits_needed", 0) or 0)
-        await deduct_credits(db, user_id, credits_needed)
+        if await is_levita_credit_bypass_user(db, user_id=user_id):
+            logger.info(
+                "Skipping CriaVideo credit deduction for Levita user in realistic mode (user_id=%s, flow=auto_theme_realistic, credits_needed=%s)",
+                user_id,
+                credits_needed,
+            )
+        else:
+            await deduct_credits(db, user_id, credits_needed)
 
     # Build tags for the project
     tags = {
@@ -1539,7 +1546,7 @@ async def _create_musical_short(
 
     # Credit check
     async with async_session() as db:
-        from app.routers.credits import deduct_credits
+        from app.routers.credits import deduct_credits, is_levita_credit_bypass_user
 
         estimate = estimate_auto_theme_credits(
             video_type="musical_shorts",
@@ -1547,7 +1554,14 @@ async def _create_musical_short(
             custom_settings=custom_settings,
         )
         credits_needed = int(estimate.get("credits_needed", 0) or 0)
-        await deduct_credits(db, user_id, credits_needed)
+        if await is_levita_credit_bypass_user(db, user_id=user_id):
+            logger.info(
+                "Skipping CriaVideo credit deduction for Levita user in realistic mode (user_id=%s, flow=musical_shorts, credits_needed=%s)",
+                user_id,
+                credits_needed,
+            )
+        else:
+            await deduct_credits(db, user_id, credits_needed)
 
     # 1. Download full audio from Tevoxi
     audio_dir = Path(settings.media_dir) / "audio" / f"short_{tevoxi_job_id}_{segment_index}"
