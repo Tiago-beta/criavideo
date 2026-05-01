@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v293 loaded");
+console.log("[CriaVideo] app.js v294 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -128,6 +128,15 @@ const WAN_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const DEFAULT_REALISTIC_DURATION_OPTIONS = [5, 10, 15, 20, 45, 60];
 const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10];
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
+const WORKFLOW_PROMPT_AI_STYLE_OPTIONS = [
+    { value: "commercial", label: "Comercial" },
+    { value: "meme", label: "Meme Viral" },
+    { value: "anime", label: "Anime" },
+    { value: "drama", label: "Drama" },
+    { value: "vfx", label: "Efeitos Visuais" },
+    { value: "cinematic", label: "Cinemático" },
+    { value: "product", label: "Produto" },
+];
 
 function _normalizeWanDurationMultiple(value) {
     const raw = parseInt(value || 0, 10);
@@ -2224,6 +2233,7 @@ let workflowState = {
     restoringHistory: false,
     autosaveTimer: null,
     templateModalResolve: null,
+    promptPersonaModalResolve: null,
     templateKey: "",
     imageUploadTargetNodeId: "",
     videoUploadTargetNodeId: "",
@@ -4511,6 +4521,14 @@ function initWorkflowBuilder() {
         if (event.key === "Enter") workflowConfirmTemplateModal();
         if (event.key === "Escape") workflowCloseTemplateModal("");
     });
+    const promptPersonaCancelBtn = document.getElementById("workflow-prompt-persona-cancel");
+    if (promptPersonaCancelBtn) promptPersonaCancelBtn.addEventListener("click", workflowCancelPromptPersonaModal);
+    const promptPersonaConfirmBtn = document.getElementById("workflow-prompt-persona-confirm");
+    if (promptPersonaConfirmBtn) promptPersonaConfirmBtn.addEventListener("click", workflowConfirmPromptPersonaModal);
+    const promptPersonaInput = document.getElementById("workflow-prompt-persona-input");
+    if (promptPersonaInput) promptPersonaInput.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") workflowCancelPromptPersonaModal();
+    });
     const templateSelect = document.getElementById("workflow-template-select");
     if (templateSelect) templateSelect.addEventListener("change", () => workflowLoadTemplate(templateSelect.value));
     const duplicateTemplateBtn = document.getElementById("workflow-duplicate-template");
@@ -4573,6 +4591,10 @@ function initWorkflowBuilder() {
 
 function workflowHandleEngineSelectChange() {
     workflowSyncEngineDurationOptions();
+    document.querySelectorAll("#create-panel-workflow .workflow-node-prompt").forEach((node) => {
+        workflowEnsurePromptAiTools(node, { force: true, keepOpen: true });
+        workflowBindAiControls(node);
+    });
     workflowRecordHistory();
 }
 
@@ -4645,7 +4667,9 @@ function workflowEnhanceNodeControls(node) {
         titleInput?.addEventListener("change", workflowRecordHistory);
     }
     const textarea = node.querySelector("textarea");
-    if (textarea && !node.querySelector(".workflow-ai-tools")) {
+    if (node.classList.contains("workflow-node-prompt")) {
+        workflowEnsurePromptAiTools(node);
+    } else if (textarea && !node.querySelector(".workflow-ai-tools")) {
         textarea.insertAdjacentHTML("afterend", `
             <div class="workflow-ai-tools">
                 <button class="workflow-ai-btn" type="button" title="IA para melhorar este prompt" onclick="workflowToggleAiTools(this)">IA</button>
@@ -4659,24 +4683,11 @@ function workflowEnhanceNodeControls(node) {
             </div>
         `);
     }
-    node.querySelectorAll("[data-workflow-ai-style]").forEach((btn) => {
-        if (btn._workflowBound) return;
-        btn._workflowBound = true;
-        btn.addEventListener("click", () => workflowImproveCardPrompt(btn));
-    });
-    node.querySelectorAll("[data-workflow-ai-duration]").forEach((btn) => {
-        if (btn._workflowBound) return;
-        btn._workflowBound = true;
-        btn.addEventListener("click", () => workflowSelectPromptAiDuration(btn));
-    });
-    node.querySelectorAll("[data-workflow-ai-persona]").forEach((btn) => {
-        if (btn._workflowBound) return;
-        btn._workflowBound = true;
-        btn.addEventListener("click", () => workflowSelectPromptAiPersona(btn));
-    });
+    workflowBindAiControls(node);
     if (node.classList.contains("workflow-node-prompt")) {
         workflowSyncPromptAiDurationButtons(node);
         workflowSyncPromptAiPersonaButtons(node);
+        workflowSyncPromptAiCustomPersonaUi(node);
     }
     if (node.classList.contains("workflow-node-images") && node.dataset.nodeId !== "images") {
         node.querySelectorAll("button").forEach((btn) => {
@@ -4716,6 +4727,30 @@ function workflowEnhanceNodeControls(node) {
     }
 }
 
+function workflowBindAiControls(node) {
+    if (!node) return;
+    node.querySelectorAll("[data-workflow-ai-style]").forEach((btn) => {
+        if (btn._workflowBound) return;
+        btn._workflowBound = true;
+        btn.addEventListener("click", () => workflowImproveCardPrompt(btn));
+    });
+    node.querySelectorAll("[data-workflow-ai-duration]").forEach((btn) => {
+        if (btn._workflowBound) return;
+        btn._workflowBound = true;
+        btn.addEventListener("click", () => workflowSelectPromptAiDuration(btn));
+    });
+    node.querySelectorAll("[data-workflow-ai-persona]").forEach((btn) => {
+        if (btn._workflowBound) return;
+        btn._workflowBound = true;
+        btn.addEventListener("click", () => workflowSelectPromptAiPersona(btn));
+    });
+    node.querySelectorAll("[data-workflow-ai-custom-persona]").forEach((btn) => {
+        if (btn._workflowBound) return;
+        btn._workflowBound = true;
+        btn.addEventListener("click", () => workflowEditPromptAiCustomPersona(btn));
+    });
+}
+
 function workflowDefaultAiToolsMarkup() {
     return `
         <div class="workflow-ai-tools">
@@ -4732,12 +4767,26 @@ function workflowDefaultAiToolsMarkup() {
 }
 
 function workflowResolvePromptAiDuration(node) {
-    const allowed = [5, 10, 15];
+    const allowed = workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "grok");
     const nodeDuration = parseInt(node?.dataset?.promptAiDuration || "0", 10);
     if (allowed.includes(nodeDuration)) return nodeDuration;
     const workflowDuration = parseInt(document.getElementById("workflow-duration")?.value || "0", 10);
     if (allowed.includes(workflowDuration)) return workflowDuration;
-    return 15;
+    return _pickClosestDurationOption(allowed, workflowDuration || nodeDuration || allowed[0]);
+}
+
+function workflowPromptAiStyleButtonsMarkup() {
+    return WORKFLOW_PROMPT_AI_STYLE_OPTIONS.map((style) => (
+        `<button type="button" data-workflow-ai-style="${style.value}">${style.label}</button>`
+    )).join("");
+}
+
+function workflowPromptAiDurationButtonsMarkup(selectedDuration) {
+    return workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "grok")
+        .map((duration) => (
+            `<button type="button" data-workflow-ai-duration="${duration}" aria-pressed="${selectedDuration === duration ? "true" : "false"}">${duration}s</button>`
+        ))
+        .join("");
 }
 
 function workflowPromptAiToolsMarkup(node) {
@@ -4747,21 +4796,18 @@ function workflowPromptAiToolsMarkup(node) {
         <div class="workflow-ai-tools workflow-ai-tools-prompt">
             <button class="workflow-ai-btn" type="button" title="IA para montar este prompt" onclick="workflowToggleAiTools(this)">IA</button>
             <div class="workflow-ai-choices" hidden>
-                <button type="button" data-workflow-ai-style="comercial">Comercial</button>
-                <button type="button" data-workflow-ai-style="meme viral">Meme Viral</button>
-                <button type="button" data-workflow-ai-style="anime">Anime</button>
-                <button type="button" data-workflow-ai-style="drama">Drama</button>
-                <button type="button" data-workflow-ai-style="efeitos visuais">Efeitos Visuais</button>
-                <button type="button" data-workflow-ai-style="cinematic">Cinemático</button>
-                <button type="button" data-workflow-ai-style="product">Produto</button>
-                <div style="flex-basis:100%;height:0"></div>
-                <span style="width:100%;font-size:0.68rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;">Persona de interação</span>
+                ${workflowPromptAiStyleButtonsMarkup()}
+                <div class="workflow-ai-break"></div>
+                <span class="workflow-ai-section-label">Persona de interação</span>
                 ${workflowPromptAiPersonaButtonsMarkup(selectedPersona)}
-                <div style="flex-basis:100%;height:0"></div>
-                <span style="width:100%;font-size:0.68rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;">Duração do prompt</span>
-                <button type="button" data-workflow-ai-duration="5" aria-pressed="${selectedDuration === 5 ? "true" : "false"}" style="padding:5px 8px;font-size:0.68rem;min-width:42px;">5s</button>
-                <button type="button" data-workflow-ai-duration="10" aria-pressed="${selectedDuration === 10 ? "true" : "false"}" style="padding:5px 8px;font-size:0.68rem;min-width:42px;">10s</button>
-                <button type="button" data-workflow-ai-duration="15" aria-pressed="${selectedDuration === 15 ? "true" : "false"}" style="padding:5px 8px;font-size:0.68rem;min-width:42px;">15s</button>
+                <div class="workflow-ai-break"></div>
+                <div class="workflow-ai-custom-persona" ${selectedPersona === "personalizado" ? "" : "hidden"}>
+                    <button type="button" data-workflow-ai-custom-persona>${workflowResolvePromptAiCustomPersona(node) ? "Editar personalizado" : "Descrever personalizado"}</button>
+                    <span class="workflow-ai-custom-persona-status">${workflowEscapeHtml(workflowResolvePromptAiCustomPersona(node) || "Descreva a persona que a IA deve manter na cena.")}</span>
+                </div>
+                <div class="workflow-ai-break"></div>
+                <span class="workflow-ai-section-label">Duração do vídeo para o prompt</span>
+                ${workflowPromptAiDurationButtonsMarkup(selectedDuration)}
             </div>
         </div>
     `;
@@ -4791,7 +4837,24 @@ function workflowResolvePromptAiPersona(node) {
     return _normalizeRealisticPersonaType(node?.dataset?.promptAiPersona || "natureza");
 }
 
-function workflowEnsurePromptAiTools(node) {
+function workflowResolvePromptAiCustomPersona(node) {
+    return String(node?.dataset?.promptAiPersonaCustom || "").trim();
+}
+
+function workflowSyncPromptAiCustomPersonaUi(node) {
+    if (!node?.classList?.contains("workflow-node-prompt")) return;
+    const selectedPersona = workflowResolvePromptAiPersona(node);
+    const container = node.querySelector(".workflow-ai-custom-persona");
+    if (!container) return;
+    const customValue = workflowResolvePromptAiCustomPersona(node);
+    container.hidden = selectedPersona !== "personalizado";
+    const button = container.querySelector("[data-workflow-ai-custom-persona]");
+    if (button) button.textContent = customValue ? "Editar personalizado" : "Descrever personalizado";
+    const status = container.querySelector(".workflow-ai-custom-persona-status");
+    if (status) status.textContent = customValue || "Descreva a persona que a IA deve manter na cena.";
+}
+
+function workflowEnsurePromptAiTools(node, options = {}) {
     if (!node?.classList?.contains("workflow-node-prompt")) return;
     const textarea = node.querySelector("textarea");
     if (!textarea) return;
@@ -4803,12 +4866,23 @@ function workflowEnsurePromptAiTools(node) {
     });
 
     const tools = node.querySelector(".workflow-ai-tools");
-    if (tools?.querySelector("[data-workflow-ai-duration]") && tools?.querySelector("[data-workflow-ai-persona]")) return;
+    const existingPanel = tools?.querySelector(".workflow-ai-choices");
+    const shouldKeepCurrent = !options.force
+        && tools?.querySelector("[data-workflow-ai-duration]")
+        && tools?.querySelector("[data-workflow-ai-persona]")
+        && tools?.querySelector("[data-workflow-ai-custom-persona]");
+    if (shouldKeepCurrent) return;
+
+    const keepOpen = !!options.keepOpen && existingPanel && !existingPanel.hidden;
 
     if (tools) {
         tools.remove();
     }
     textarea.insertAdjacentHTML("afterend", workflowPromptAiToolsMarkup(node));
+    if (keepOpen) {
+        const nextPanel = node.querySelector(".workflow-ai-choices");
+        if (nextPanel) nextPanel.hidden = false;
+    }
 }
 
 function workflowSyncPromptAiDurationButtons(node) {
@@ -4835,12 +4909,13 @@ function workflowSyncPromptAiPersonaButtons(node) {
         btn.style.color = active ? "#fff" : "#dbeafe";
         btn.style.background = active ? "rgba(34, 211, 238, 0.12)" : "rgba(6, 22, 40, 0.42)";
     });
+    workflowSyncPromptAiCustomPersonaUi(node);
 }
 
 function workflowSelectPromptAiDuration(button) {
     const node = button?.closest?.(".workflow-node");
     const selectedDuration = parseInt(button?.dataset?.workflowAiDuration || "0", 10);
-    if (!node || ![5, 10, 15].includes(selectedDuration)) return;
+    if (!node || !workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "grok").includes(selectedDuration)) return;
     node.dataset.promptAiDuration = String(selectedDuration);
     const durationSelect = document.getElementById("workflow-duration");
     if (durationSelect && Array.from(durationSelect.options).some((option) => option.value === String(selectedDuration))) {
@@ -4850,12 +4925,69 @@ function workflowSelectPromptAiDuration(button) {
     workflowRecordHistory();
 }
 
-function workflowSelectPromptAiPersona(button) {
+async function workflowSelectPromptAiPersona(button) {
     const node = button?.closest?.(".workflow-node");
     const selectedPersona = _normalizeRealisticPersonaType(button?.dataset?.workflowAiPersona || "natureza");
     if (!node) return;
+    const previousPersona = workflowResolvePromptAiPersona(node);
+    const previousCustomPersona = workflowResolvePromptAiCustomPersona(node);
     node.dataset.promptAiPersona = selectedPersona;
     workflowSyncPromptAiPersonaButtons(node);
+    if (selectedPersona === "personalizado") {
+        const customPersona = await workflowOpenPromptPersonaModal(previousCustomPersona);
+        if (customPersona === null) {
+            if (!previousCustomPersona) {
+                node.dataset.promptAiPersona = previousPersona;
+            }
+        } else if (customPersona) {
+            node.dataset.promptAiPersonaCustom = customPersona;
+        } else if (!previousCustomPersona) {
+            node.dataset.promptAiPersona = previousPersona;
+        }
+        workflowSyncPromptAiPersonaButtons(node);
+    }
+    workflowSyncPromptAiCustomPersonaUi(node);
+    workflowRecordHistory();
+}
+
+function workflowOpenPromptPersonaModal(defaultValue = "") {
+    const modal = document.getElementById("workflow-prompt-persona-modal");
+    const input = document.getElementById("workflow-prompt-persona-input");
+    if (!modal || !input) return Promise.resolve(defaultValue || "");
+    input.value = defaultValue || "";
+    modal.hidden = false;
+    setTimeout(() => input.focus(), 30);
+    return new Promise((resolve) => {
+        workflowState.promptPersonaModalResolve = resolve;
+    });
+}
+
+function workflowClosePromptPersonaModal(value = null) {
+    const modal = document.getElementById("workflow-prompt-persona-modal");
+    if (modal) modal.hidden = true;
+    const resolve = workflowState.promptPersonaModalResolve;
+    workflowState.promptPersonaModalResolve = null;
+    if (resolve) resolve(value);
+}
+
+function workflowConfirmPromptPersonaModal() {
+    const input = document.getElementById("workflow-prompt-persona-input");
+    const value = String(input?.value || "").trim();
+    workflowClosePromptPersonaModal(value || null);
+}
+
+function workflowCancelPromptPersonaModal() {
+    workflowClosePromptPersonaModal(null);
+}
+
+async function workflowEditPromptAiCustomPersona(button) {
+    const node = button?.closest?.(".workflow-node");
+    if (!node) return;
+    const currentValue = workflowResolvePromptAiCustomPersona(node);
+    const nextValue = await workflowOpenPromptPersonaModal(currentValue);
+    if (nextValue === null) return;
+    node.dataset.promptAiPersonaCustom = nextValue;
+    workflowSyncPromptAiCustomPersonaUi(node);
     workflowRecordHistory();
 }
 
@@ -5147,18 +5279,37 @@ async function workflowImproveCardPrompt(button) {
     button.textContent = "Gerando...";
     try {
         const engine = document.getElementById("workflow-engine")?.value || "grok";
-        const duration = parseInt(document.getElementById("workflow-duration")?.value || "10", 10) || 10;
+        const interactionPersona = node?.classList?.contains("workflow-node-prompt")
+            ? workflowResolvePromptAiPersona(node)
+            : "nenhum";
+        const customPersona = interactionPersona === "personalizado" ? workflowResolvePromptAiCustomPersona(node) : "";
+        if (interactionPersona === "personalizado" && !customPersona) {
+            const nextValue = await workflowOpenPromptPersonaModal("");
+            if (!nextValue) {
+                throw new Error("Descreva a persona personalizada antes de pedir ajuda da IA.");
+            }
+            node.dataset.promptAiPersonaCustom = nextValue;
+            workflowSyncPromptAiCustomPersonaUi(node);
+        }
+        const duration = node?.classList?.contains("workflow-node-prompt")
+            ? workflowResolvePromptAiDuration(node)
+            : parseInt(document.getElementById("workflow-duration")?.value || "10", 10) || 10;
+        const topic = interactionPersona === "personalizado" && workflowResolvePromptAiCustomPersona(node)
+            ? `${raw}\n\nPERSONA PERSONALIZADA OBRIGATORIA: ${workflowResolvePromptAiCustomPersona(node)}`
+            : raw;
+        const contextParts = [`Sugestao para card do workflow: ${node?.dataset?.title || node?.dataset?.nodeId || "card"}`];
+        if (interactionPersona === "personalizado" && workflowResolvePromptAiCustomPersona(node)) {
+            contextParts.push(`Mantenha esta persona personalizada em toda a cena: ${workflowResolvePromptAiCustomPersona(node)}`);
+        }
         const result = await api("/video/generate-realistic-prompt", {
             method: "POST",
             body: JSON.stringify({
-                topic: raw,
-                context_hint: `Sugestao para card do workflow: ${node?.dataset?.title || node?.dataset?.nodeId || "card"}`,
+                topic,
+                context_hint: contextParts.join("\n"),
                 style,
                 engine,
                 duration,
-                interaction_persona: node?.classList?.contains("workflow-node-prompt")
-                    ? workflowResolvePromptAiPersona(node)
-                    : "nenhum",
+                interaction_persona: interactionPersona,
                 persona_profile_id: 0,
                 persona_profile_ids: [],
                 has_reference_image: node?.classList?.contains("workflow-node-images") || workflowState.images.length > 0,
@@ -5979,9 +6130,9 @@ function workflowGetEngineLabel(engine) {
 }
 
 function workflowEngineDurationOptions(engine) {
-    if (engine === "seedance") return [5, 10];
-    if (engine === "wan2") return [5, 10];
-    return [5, 10, 15, 20, 45, 60];
+    if (engine === "seedance") return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
+    if (engine === "wan2") return [...WAN_REALISTIC_DURATION_OPTIONS];
+    return [...DEFAULT_REALISTIC_DURATION_OPTIONS];
 }
 
 function workflowSyncEngineDurationOptions() {
@@ -5990,7 +6141,7 @@ function workflowSyncEngineDurationOptions() {
     if (!engineSelect || !durationSelect) return;
     const current = parseInt(durationSelect.value || "15", 10) || 15;
     const options = workflowEngineDurationOptions(engineSelect.value || "grok");
-    const nextValue = options.includes(current) ? current : options[Math.min(1, options.length - 1)];
+    const nextValue = _pickClosestDurationOption(options, current || options[0]);
     durationSelect.innerHTML = options.map((value) => `<option value="${value}">${value}s</option>`).join("");
     durationSelect.value = String(nextValue);
 }
