@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260501-02">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260501-04">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 307;
+        var REQUIRED_VER = 310;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -555,6 +555,31 @@
                                         <div id="analyze-top-videos" class="analyze-video-grid"></div>
                                     </div>
 
+                                    <div id="analyze-persona-section" class="analyze-section" hidden>
+                                        <div class="analyze-section-head">
+                                            <div>
+                                                <h3 class="section-title">Personas que mais vencem</h3>
+                                                <p id="analyze-persona-summary" class="analyze-persona-summary"></p>
+                                            </div>
+                                        </div>
+                                        <div class="analyze-suggestions-grid analyze-persona-grid">
+                                            <div class="analyze-suggestion-card">
+                                                <h4>Composições mais fortes</h4>
+                                                <div id="analyze-persona-combinations" class="analyze-persona-stack"></div>
+                                            </div>
+
+                                            <div class="analyze-suggestion-card">
+                                                <h4>Elementos que mais repetem</h4>
+                                                <div id="analyze-persona-elements" class="analyze-persona-stack"></div>
+                                            </div>
+
+                                            <div class="analyze-suggestion-card">
+                                                <h4>Como repetir isso</h4>
+                                                <ul id="analyze-persona-actions" class="analyze-list"></ul>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <div class="analyze-section">
                                         <h3 class="section-title">Sugestões para próximos conteúdos</h3>
                                         <div class="analyze-suggestions-grid">
@@ -722,6 +747,15 @@
                                 </span>
                                 <span class="editor-recorder-mode-copy">
                                     <strong>Tela</strong>
+                                </span>
+                            </button>
+
+                            <button id="editor-recorder-mode-window" class="editor-recorder-mode" type="button" onclick="_editorSetRecorderMode('window')">
+                                <span class="editor-recorder-mode-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M8 3v4"/></svg>
+                                </span>
+                                <span class="editor-recorder-mode-copy">
+                                    <strong>Janela</strong>
                                 </span>
                             </button>
 
@@ -1780,19 +1814,6 @@
                             </div>
                             <small class="field-hint">Formatos aceitos: MP4, MOV, AVI, WEBM e MKV.</small>
                         </div>
-
-                        <div class="wizard-details-grid similar-details-grid">
-                            <div class="form-group">
-                                <input id="similar-title" type="text" class="input" placeholder="Título do projeto">
-                            </div>
-                            <div class="form-group">
-                                <select id="similar-aspect" class="input">
-                                    <option value="16:9">16:9 (YouTube)</option>
-                                    <option value="9:16">9:16 (TikTok/Reels)</option>
-                                    <option value="1:1">1:1 (Instagram)</option>
-                                </select>
-                            </div>
-                        </div>
                     </div>
 
                     <input id="similar-source-file-input" type="file" accept="video/mp4,video/quicktime,video/x-msvideo,video/webm,video/x-matroska,.mp4,.mov,.avi,.webm,.mkv" hidden>
@@ -1804,6 +1825,19 @@
                         </div>
                         <div id="similar-source-preview-stage" class="similar-source-preview-stage"></div>
                         <small id="similar-source-preview-hint" class="field-hint" hidden></small>
+                    </div>
+
+                    <div class="wizard-details-grid similar-details-grid">
+                        <div class="form-group">
+                            <input id="similar-title" type="text" class="input" placeholder="Título do projeto">
+                        </div>
+                        <div class="form-group">
+                            <select id="similar-aspect" class="input">
+                                <option value="16:9">16:9 (YouTube)</option>
+                                <option value="9:16">9:16 (TikTok/Reels)</option>
+                                <option value="1:1">1:1 (Instagram)</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div class="similar-panel-actions">
@@ -2730,7 +2764,12 @@
                                 <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
                                 <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
                             </div>
-                            <small class="pause-hint">A cena segue o trecho e inclui essa persona em interação.</small>
+                            <small class="pause-hint">Clique em quantas personas quiser. Cada uma entra separadamente na mesma cena, sem virar a outra.</small>
+                            <div class="realistic-persona-picker-head auto-realistic-persona-head">
+                                <span class="realistic-persona-picker-label">Composição atual</span>
+                                <span id="auto-realistic-persona-composition-count" class="realistic-persona-picker-count">1 persona separada</span>
+                            </div>
+                            <div id="auto-realistic-persona-composition" class="auto-pilot-persona-summary auto-realistic-persona-summary"></div>
                             <div id="auto-realistic-persona-preview" class="realistic-persona-preview"></div>
                             <div class="realistic-persona-actions">
                                 <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('auto')" title="Gerenciar personas" aria-label="Gerenciar personas">
@@ -3354,8 +3393,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260501-02"></script>
-    <script src="/video/static/pwa.js?v=20260501-02"></script>
+    <script src="/video/static/app.js?v=20260501-04"></script>
+    <script src="/video/static/pwa.js?v=20260501-04"></script>
 </body>
 </html>
 
