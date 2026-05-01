@@ -1764,6 +1764,12 @@ async def run_realistic_video_pipeline(project_id: int):
                         break
                 except Exception:
                     continue
+            use_direct_upload_reference_for_wan = (
+                engine == "wan2"
+                and reference_source == "upload"
+                and reference_mode == "full_frame"
+                and bool(image_path and os.path.exists(image_path))
+            )
             enable_grok_persona_anchor = (
                 engine == "grok"
                 and reference_source == "persona"
@@ -1785,7 +1791,13 @@ async def run_realistic_video_pipeline(project_id: int):
 
             # Build a scene-locked reference frame with Nano Banana for engines other than Grok.
             # Grok max-fidelity mode uses the original persona image directly.
-            if has_reference_image and image_path and engine != "grok":
+            if use_direct_upload_reference_for_wan:
+                scene_reference_path = image_path
+                logger.info(
+                    "Realistic video: Wan using direct uploaded reference image without Nano Banana rewrite (%s)",
+                    scene_reference_path,
+                )
+            elif has_reference_image and image_path and engine != "grok":
                 from app.services.scene_generator import build_single_scene_anchor_prompt, generate_scene_image
 
                 try:

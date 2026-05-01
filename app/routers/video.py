@@ -168,6 +168,8 @@ def _normalize_interaction_persona(value: str) -> str:
         "custom": "personalizado",
     }
     normalized = mapping.get(raw, raw)
+    if normalized in {"nenhum", "none", "no_reference", "no-reference", "sem_persona", "sem-persona"}:
+        return ""
     if normalized in _INTERACTION_PERSONAS:
         return normalized
     return "natureza"
@@ -184,6 +186,8 @@ def _normalize_wan_duration_seconds(value: int) -> int:
 
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
     persona = _normalize_interaction_persona(interaction_persona)
+    if not persona:
+        return ""
     if persona == "homem":
         return (
             "Inclua um homem em cena interagindo com o ambiente e com a emocao do tema, "
