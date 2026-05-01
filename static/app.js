@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v288 loaded");
+console.log("[CriaVideo] app.js v289 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -18236,17 +18236,147 @@ async function _editorUploadVideo(input) {
 window._editorUploadVideo = _editorUploadVideo;
 
 function _editorRecorderUsesScreen(mode) {
-    return mode === "screen" || mode === "screen_camera";
+    return mode === "screen" || mode === "screen_camera" || mode === "window";
 }
 
 function _editorRecorderUsesWebcam(mode) {
     return mode === "webcam" || mode === "screen_camera";
 }
 
+function _editorRecorderUsesWindow(mode) {
+    return mode === "window";
+}
+
 function _editorRecorderModeLabel(mode) {
+    if (mode === "window") return "Janela";
     if (mode === "screen_camera") return "Tela + Webcam";
     if (mode === "webcam") return "Webcam";
     return "Tela";
+}
+
+function _editorRecorderIsMobileLike() {
+    const ua = String(navigator?.userAgent || "");
+    if (/Android|iPhone|iPad|iPod|IEMobile|Mobile/i.test(ua)) return true;
+    if (typeof window?.matchMedia === "function") {
+        try {
+            return window.matchMedia("(max-width: 768px)").matches;
+        } catch {}
+    }
+    return false;
+}
+
+function _editorRecorderModeDescription(mode) {
+    if (_editorRecorderUsesWindow(mode)) {
+        return _editorRecorderIsMobileLike()
+            ? "No celular, o navegador normalmente compartilha a tela do aparelho."
+            : "Escolha no navegador a janela específica que deseja gravar.";
+    }
+    if (mode === "screen_camera") {
+        return _editorRecorderIsMobileLike()
+            ? "O navegador pode pedir a tela do aparelho e a câmera separadamente."
+            : "Mistura a tela com a webcam em uma gravação só.";
+    }
+    if (mode === "webcam") {
+        return _editorRecorderIsMobileLike()
+            ? "Use a câmera do celular para gravar direto no editor."
+            : "Grava somente a câmera para entrar direto no editor.";
+    }
+    return _editorRecorderIsMobileLike()
+        ? "Use o compartilhamento de tela do celular para gravar o aparelho."
+        : "Grava a tela inteira, uma aba ou o app que você escolher.";
+}
+
+function _editorRecorderIdleStatus(mode) {
+    if (_editorRecorderUsesWindow(mode)) {
+        return _editorRecorderIsMobileLike()
+            ? "No celular, se o navegador não mostrar janelas, use Tela para gravar o aparelho."
+            : "Clique em iniciar e escolha a janela aberta que deseja gravar.";
+    }
+    if (mode === "screen_camera") {
+        return _editorRecorderIsMobileLike()
+            ? "Tela + Webcam depende do suporte do navegador do celular."
+            : "Clique em iniciar, escolha a tela e depois a webcam entra junto na gravação.";
+    }
+    if (mode === "webcam") {
+        return _editorRecorderIsMobileLike()
+            ? "A câmera do celular entra direto no editor."
+            : "Clique em iniciar para abrir a webcam e gravar direto no editor.";
+    }
+    return _editorRecorderIsMobileLike()
+        ? "No celular, clique em iniciar e compartilhe a tela do aparelho."
+        : "Clique em iniciar e escolha a tela, aba ou app que quer gravar.";
+}
+
+function _editorRecorderStartingStatus(mode) {
+    if (_editorRecorderUsesWindow(mode)) {
+        return _editorRecorderIsMobileLike()
+            ? "Escolha o compartilhamento de tela disponível no celular."
+            : "Escolha a janela que deseja compartilhar.";
+    }
+    if (mode === "screen_camera") {
+        return _editorRecorderIsMobileLike()
+            ? "Compartilhe a tela do aparelho e autorize a câmera."
+            : "Escolha a tela ou janela para compartilhar.";
+    }
+    if (mode === "webcam") return "Preparando webcam...";
+    return _editorRecorderIsMobileLike()
+        ? "Escolha compartilhar a tela do aparelho."
+        : "Escolha a tela, aba ou app para compartilhar.";
+}
+
+function _editorRecorderRecordingStatus(mode, hasMonitor = false) {
+    if (_editorRecorderUsesWindow(mode)) {
+        return _editorRecorderIsMobileLike()
+            ? "Gravando o compartilhamento do celular."
+            : "Gravando a janela escolhida.";
+    }
+    if (mode === "screen_camera") {
+        if (hasMonitor) {
+            return "Mini janela ativa. Pode minimizar o CriaVideo e deixar a gravação rolando por ela.";
+        }
+        return _editorRecorderIsMobileLike()
+            ? "Gravando tela + webcam com o suporte disponível no navegador."
+            : "Gravando agora.";
+    }
+    if (mode === "webcam") {
+        return _editorRecorderIsMobileLike()
+            ? "Gravando a câmera do celular." 
+            : "Gravando a webcam agora.";
+    }
+    return _editorRecorderIsMobileLike()
+        ? "Gravando a tela do aparelho." 
+        : "Gravando agora.";
+}
+
+function _editorRecorderNeedsMonitorWindow(mode) {
+    return _editorRecorderNeedsCanvasComposition(mode) && !_editorRecorderIsMobileLike();
+}
+
+function _editorRecorderBuildDisplayCaptureOptions(mode) {
+    const options = {
+        video: { frameRate: { ideal: 30, max: 30 } },
+        audio: true,
+    };
+
+    if (_editorRecorderUsesWindow(mode)) {
+        options.preferCurrentTab = false;
+        options.selfBrowserSurface = "exclude";
+        options.surfaceSwitching = "exclude";
+        options.monitorTypeSurfaces = "exclude";
+        return options;
+    }
+
+    if (_editorRecorderIsMobileLike()) {
+        options.preferCurrentTab = true;
+        options.selfBrowserSurface = "include";
+        options.surfaceSwitching = "include";
+        return options;
+    }
+
+    options.preferCurrentTab = false;
+    options.selfBrowserSurface = "include";
+    options.surfaceSwitching = "include";
+    return options;
 }
 
 function _editorRecorderSupportsMode(mode) {
@@ -18329,9 +18459,9 @@ function _editorRecorderRenderMonitorWindow() {
     const modeLabel = _editorRecorderModeLabel(mode);
     title.textContent = modeLabel;
     timer.textContent = _editorFormatRecordingClock(_editorRecorderModal.seconds);
-    note.textContent = _editorRecorderNeedsCanvasComposition(mode)
+    note.textContent = _editorRecorderNeedsMonitorWindow(mode)
         ? "Pode minimizar o CriaVideo. Mantenha esta mini janela aberta enquanto grava Tela + Webcam."
-        : "Pode minimizar o CriaVideo enquanto grava. Use esta mini janela para acompanhar e parar.";
+        : _editorRecorderModeDescription(mode);
 
     let actionLabel = "Voltar ao CriaVideo";
     if (_editorRecorderModal.starting) actionLabel = "Preparando...";
@@ -18359,6 +18489,7 @@ function _editorRecorderSyncMonitorPreview(stream) {
 }
 
 function _editorRecorderOpenMonitorWindow(mode) {
+    if (!_editorRecorderNeedsMonitorWindow(mode)) return null;
     if (typeof window.open !== "function") return null;
 
     let monitorWindow = null;
@@ -18539,7 +18670,7 @@ function _editorRecorderOpenMonitorWindow(mode) {
 
         monitorWindow.addEventListener("beforeunload", () => {
             if (_editorRecorderRuntime.monitorClosing) return;
-            if (_editorRecorderModal.recording && _editorRecorderNeedsCanvasComposition(_editorRecorderModal.mode) && !_editorRecorderModal.stopping && !_editorRecorderModal.uploading) {
+            if (_editorRecorderModal.recording && _editorRecorderNeedsMonitorWindow(_editorRecorderModal.mode) && !_editorRecorderModal.stopping && !_editorRecorderModal.uploading) {
                 setTimeout(() => {
                     if (!_editorRecorderModal.recording || _editorRecorderModal.stopping || _editorRecorderModal.uploading) return;
                     _editorRecorderModal.status = "Mini janela fechada. Finalizando gravação...";
@@ -18621,7 +18752,7 @@ function _editorResetRecorderModalState() {
     _editorRecorderModal.stopping = false;
     _editorRecorderModal.uploading = false;
     _editorRecorderModal.seconds = 0;
-    _editorRecorderModal.status = "";
+    _editorRecorderModal.status = _editorRecorderIdleStatus("screen");
     _editorRecorderModal.error = "";
     _editorCleanupRecorderRuntime();
     _editorUpdateRecorderTimerUI();
@@ -18629,6 +18760,7 @@ function _editorResetRecorderModalState() {
 
 function _editorRenderRecorderModal() {
     const screenBtn = document.getElementById("editor-recorder-mode-screen");
+    const windowBtn = document.getElementById("editor-recorder-mode-window");
     const screenCameraBtn = document.getElementById("editor-recorder-mode-screen-camera");
     const webcamBtn = document.getElementById("editor-recorder-mode-webcam");
     const micBtn = document.getElementById("editor-recorder-mic-toggle");
@@ -18636,10 +18768,11 @@ function _editorRenderRecorderModal() {
     const empty = document.getElementById("editor-recorder-preview-empty");
     const submit = document.getElementById("editor-recorder-submit");
     const status = document.getElementById("editor-recorder-status");
-    if (!screenBtn || !screenCameraBtn || !webcamBtn || !micBtn || !preview || !empty || !submit || !status) return;
+    if (!screenBtn || !windowBtn || !screenCameraBtn || !webcamBtn || !micBtn || !preview || !empty || !submit || !status) return;
 
     const mode = _editorRecorderModal.mode;
     screenBtn.classList.toggle("active", mode === "screen");
+    windowBtn.classList.toggle("active", mode === "window");
     screenCameraBtn.classList.toggle("active", mode === "screen_camera");
     webcamBtn.classList.toggle("active", mode === "webcam");
     micBtn.classList.toggle("active", Boolean(_editorRecorderModal.micEnabled));
@@ -18653,7 +18786,7 @@ function _editorRenderRecorderModal() {
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="15" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/><circle cx="18" cy="7" r="3"/></svg>
         </span>
         <strong>${esc(_editorRecorderModeLabel(mode))}</strong>
-        <span>O navegador pedirá acesso para começar.</span>
+        <span>${esc(_editorRecorderModeDescription(mode))}</span>
     `;
 
     let submitLabel = "Iniciar gravação";
@@ -18677,6 +18810,7 @@ function _editorOpenRecorderModal() {
     closeModal("modal-editor-start");
     _editorResetRecorderModalState();
     _editorRecorderModal.open = true;
+    _editorRecorderModal.status = _editorRecorderIdleStatus(_editorRecorderModal.mode);
     openModal("modal-editor-recorder");
     _editorRenderRecorderModal();
 }
@@ -18693,10 +18827,10 @@ function _editorCloseRecorderModal(force = false) {
 window._editorCloseRecorderModal = _editorCloseRecorderModal;
 
 function _editorSetRecorderMode(mode) {
-    const nextMode = ["screen", "screen_camera", "webcam"].includes(String(mode || "")) ? String(mode) : "screen";
+    const nextMode = ["screen", "window", "screen_camera", "webcam"].includes(String(mode || "")) ? String(mode) : "screen";
     if (_editorRecorderModal.starting || _editorRecorderModal.recording || _editorRecorderModal.stopping || _editorRecorderModal.uploading) return;
     _editorRecorderModal.mode = nextMode;
-    _editorRecorderModal.status = "";
+    _editorRecorderModal.status = _editorRecorderIdleStatus(nextMode);
     _editorRecorderModal.error = "";
     _editorRenderRecorderModal();
 }
@@ -18792,10 +18926,7 @@ async function _editorPrepareRecorderSession(mode) {
     let micStream = null;
 
     if (_editorRecorderUsesScreen(mode)) {
-        displayStream = await navigator.mediaDevices.getDisplayMedia({
-            video: { frameRate: { ideal: 30, max: 30 } },
-            audio: true,
-        });
+        displayStream = await navigator.mediaDevices.getDisplayMedia(_editorRecorderBuildDisplayCaptureOptions(mode));
     }
 
     if (_editorRecorderUsesWebcam(mode)) {
@@ -18943,9 +19074,7 @@ async function _editorStartRecorderCapture() {
 
     _editorRecorderModal.starting = true;
     _editorRecorderModal.error = "";
-    _editorRecorderModal.status = _editorRecorderUsesScreen(mode)
-        ? "Escolha a tela ou janela para compartilhar."
-        : "Preparando webcam...";
+    _editorRecorderModal.status = _editorRecorderStartingStatus(mode);
     _editorRecorderModal.seconds = 0;
     _editorRenderRecorderModal();
 
@@ -18954,7 +19083,7 @@ async function _editorStartRecorderCapture() {
         const monitorWindow = _editorRecorderOpenMonitorWindow(mode);
         if (monitorWindow) {
             _editorRecorderRuntime.monitorWindow = monitorWindow;
-        } else if (_editorRecorderNeedsCanvasComposition(mode)) {
+        } else if (_editorRecorderNeedsMonitorWindow(mode)) {
             _editorRecorderModal.status = "Seu navegador bloqueou a mini janela. Se minimizar o CriaVideo em Tela + Webcam, a gravação pode pausar.";
             _editorRenderRecorderModal();
         }
@@ -19024,11 +19153,7 @@ async function _editorStartRecorderCapture() {
         recorder.start(1000);
         _editorRecorderModal.starting = false;
         _editorRecorderModal.recording = true;
-        _editorRecorderModal.status = _editorRecorderGetMonitorWindow()
-            ? (_editorRecorderNeedsCanvasComposition(mode)
-                ? "Mini janela ativa. Pode minimizar o CriaVideo, mas mantenha a mini janela aberta."
-                : "Gravando agora. Pode minimizar o CriaVideo e usar a mini janela para parar.")
-            : "Gravando agora.";
+        _editorRecorderModal.status = _editorRecorderRecordingStatus(mode, Boolean(_editorRecorderGetMonitorWindow()));
         _editorRecorderModal.error = "";
         _editorRecorderRuntime.timer = setInterval(() => {
             _editorRecorderModal.seconds += 1;

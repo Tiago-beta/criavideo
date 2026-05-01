@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260430-19">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260430-20">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 305;
+        var REQUIRED_VER = 306;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -722,6 +722,15 @@
                                 </span>
                                 <span class="editor-recorder-mode-copy">
                                     <strong>Tela</strong>
+                                </span>
+                            </button>
+
+                            <button id="editor-recorder-mode-window" class="editor-recorder-mode" type="button" onclick="_editorSetRecorderMode('window')">
+                                <span class="editor-recorder-mode-icon">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M8 3v4"/></svg>
+                                </span>
+                                <span class="editor-recorder-mode-copy">
+                                    <strong>Janela</strong>
                                 </span>
                             </button>
 
@@ -3354,8 +3363,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260430-19"></script>
-    <script src="/video/static/pwa.js?v=20260430-19"></script>
+    <script src="/video/static/app.js?v=20260430-20"></script>
+    <script src="/video/static/pwa.js?v=20260430-20"></script>
 </body>
 </html>
 
