@@ -303,14 +303,30 @@ async def _ensure_pilot_schedules(db, pilot: AutoChannelPilot, account, analysis
         "pilot_last_generated_at": (analysis_payload.get("source") or {}).get("generated_at") or "",
     }
 
+    existing_summary = pilot.last_summary if isinstance(pilot.last_summary, dict) else {}
+
     existing_persona_experiment = {}
     for source_schedule in (shorts_schedule, long_schedule):
         settings = source_schedule.default_settings if source_schedule and isinstance(source_schedule.default_settings, dict) else {}
         if isinstance(settings.get("pilot_persona_experiment"), dict):
             existing_persona_experiment = settings.get("pilot_persona_experiment") or {}
             break
+    if not existing_persona_experiment and isinstance(existing_summary.get("pilot_persona_experiment"), dict):
+        existing_persona_experiment = existing_summary.get("pilot_persona_experiment") or {}
     if existing_persona_experiment:
         base_settings_common["pilot_persona_experiment"] = existing_persona_experiment
+
+    existing_prompt_template = ""
+    for source_schedule in (shorts_schedule, long_schedule):
+        settings = source_schedule.default_settings if source_schedule and isinstance(source_schedule.default_settings, dict) else {}
+        raw_template = str(settings.get("pilot_prompt_template") or "").strip()
+        if raw_template:
+            existing_prompt_template = raw_template
+            break
+    if not existing_prompt_template:
+        existing_prompt_template = str(existing_summary.get("pilot_prompt_template") or "").strip()
+    if existing_prompt_template:
+        base_settings_common["pilot_prompt_template"] = existing_prompt_template
 
     long_settings = {
         **(dict(long_schedule.default_settings or {}) if long_schedule else {}),
@@ -541,6 +557,7 @@ async def run_channel_pilot_cycle(pilot_id: int) -> dict:
             pilot.last_analysis_at = now
             pilot.last_run_at = now
             pilot.last_error = None
+            previous_summary = pilot.last_summary if isinstance(pilot.last_summary, dict) else {}
             pilot.last_summary = {
                 "channel_title": (analysis_payload.get("channel") or {}).get("title") or "",
                 "analysis_model": (analysis_payload.get("source") or {}).get("analysis_model") or "",
@@ -553,6 +570,11 @@ async def run_channel_pilot_cycle(pilot_id: int) -> dict:
                 "shorts_schedule_id": shorts_schedule.id,
                 "pilot_short_weekdays": (shorts_schedule.default_settings or {}).get("pilot_short_weekdays", []),
                 "pilot_persona_experiment": persona_experiment or (shorts_schedule.default_settings or {}).get("pilot_persona_experiment", {}),
+                "pilot_prompt_template": (
+                    (shorts_schedule.default_settings or {}).get("pilot_prompt_template")
+                    or (long_schedule.default_settings or {}).get("pilot_prompt_template")
+                    or previous_summary.get("pilot_prompt_template", "")
+                ),
                 "pending_long_themes": pending_long,
                 "pending_short_themes": pending_shorts,
                 "tool_study": analysis_payload.get("tool_study") or [],

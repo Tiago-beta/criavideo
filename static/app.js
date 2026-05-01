@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v287 loaded");
+console.log("[CriaVideo] app.js v288 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -56,6 +56,11 @@ let _autoPilotState = {
 let _autoPilotPersonaEditor = {
     accountId: 0,
     selectedTypes: [],
+};
+let _autoPilotPromptEditor = {
+    accountId: 0,
+    promptTemplate: "",
+    selectedCandidates: [],
 };
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 
@@ -2317,13 +2322,18 @@ function _buildRealisticEstimatePayload(prefix) {
         : false;
 
     const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
-    const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
+    const rawPersona = personaBtn ? (personaBtn.dataset.persona || "") : "";
+    const interactionPersona = rawPersona
+        ? _normalizeRealisticPersonaType(rawPersona)
+        : (prefix === "auto" ? "" : "natureza");
     const contextKey = prefix === "auto" ? "auto" : prefix;
-    const disablePersonaReference = _isPersonaNoReferenceEnabled(contextKey, interactionPersona);
+    const disablePersonaReference = interactionPersona
+        ? _isPersonaNoReferenceEnabled(contextKey, interactionPersona)
+        : false;
     const hasScriptPhotoReference = prefix === "script"
         ? (!!document.getElementById("script-use-photos")?.checked && scriptPhotos.length > 0)
         : false;
-    const hasReferenceImage = hasScriptPhotoReference || !disablePersonaReference;
+    const hasReferenceImage = hasScriptPhotoReference || (interactionPersona ? !disablePersonaReference : false);
 
     const hasSelectedSong = prefix === "wizard"
         ? !!_wizardSelectedSong
@@ -8845,7 +8855,7 @@ function _normalizeRealisticPersonaType(value) {
     return REALISTIC_PERSONA_TYPES.includes(normalized) ? normalized : "natureza";
 }
 
-function _getRealisticPersonaTypeByContext(context) {
+function _getSelectedRealisticPersonaTypeByContext(context) {
     const key = String(context || "script").toLowerCase();
     let selector = "#script-realistic-persona-tags .style-tag.selected";
     if (key === "wizard") selector = "#wizard-realistic-persona-tags .style-tag.selected";
@@ -8853,7 +8863,15 @@ function _getRealisticPersonaTypeByContext(context) {
     if (key === "auto") selector = "#auto-realistic-persona-tags .style-tag.selected";
     if (key === "pilot") selector = "#pilot-realistic-persona-tags .style-tag.selected";
     const selected = document.querySelector(selector);
-    return _normalizeRealisticPersonaType(selected ? selected.dataset.persona : "natureza");
+    if (!selected) return "";
+    return _normalizeRealisticPersonaType(selected.dataset.persona || "");
+}
+
+function _getRealisticPersonaTypeByContext(context) {
+    const key = String(context || "script").toLowerCase();
+    const selectedType = _getSelectedRealisticPersonaTypeByContext(key);
+    if (selectedType) return selectedType;
+    return key === "auto" || key === "pilot" ? "" : "natureza";
 }
 
 function _getRealisticPersonaPreviewElement(context) {
@@ -8862,6 +8880,12 @@ function _getRealisticPersonaPreviewElement(context) {
     if (context === "auto") return document.getElementById("auto-realistic-persona-preview");
     if (context === "pilot") return document.getElementById("pilot-realistic-persona-preview");
     return document.getElementById("script-realistic-persona-preview");
+}
+
+function _clearPersonaPreview(context, message = "Selecione uma persona de interacao para continuar.") {
+    const el = _getRealisticPersonaPreviewElement(context);
+    if (!el) return;
+    el.innerHTML = `<div class="realistic-persona-empty">${esc(message)}</div>`;
 }
 
 function _getPersonaProfiles(personaType) {
@@ -8914,6 +8938,7 @@ function _isMultiPersonaEnabled(context) {
 function toggleMultiPersona(context, enabled) {
     const ctx = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
     const type = _getRealisticPersonaTypeByContext(ctx);
+    if (!type) return;
     const selectedIds = _getSelectedPersonaProfileIds(ctx, type);
     const isEnabled = !!enabled;
 
@@ -8930,6 +8955,7 @@ function togglePersonaSelectionFromPreview(context, profileId) {
     if (!pid) return;
 
     const type = _getRealisticPersonaTypeByContext(ctx);
+    if (!type) return;
     if (ctx === "pilot" && !_autoPilotPersonaEditor.selectedTypes.includes(type)) {
         _autoPilotPersonaEditor.selectedTypes.push(type);
     }
@@ -8959,6 +8985,7 @@ window.togglePersonaSelectionFromPreview = togglePersonaSelectionFromPreview;
 function selectNoPersonaReference(context) {
     const ctx = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
     const type = _getRealisticPersonaTypeByContext(ctx);
+    if (!type) return;
     if (!_supportsPersonaNoReference(ctx)) {
         return;
     }
@@ -9076,6 +9103,10 @@ function _renderPersonaPreview(context) {
     if (!el) return;
 
     const type = _getRealisticPersonaTypeByContext(context);
+    if (!type) {
+        _clearPersonaPreview(context);
+        return;
+    }
     const supportsNoReference = _supportsPersonaNoReference(context);
     const noReferenceEnabled = supportsNoReference && _isPersonaNoReferenceEnabled(context, type);
     const profiles = _getPersonaProfiles(type);
@@ -9212,7 +9243,12 @@ function _renderPersonaPreview(context) {
 }
 
 async function _refreshPersonaContext(context, forcedPersonaType = "") {
-    const type = _normalizeRealisticPersonaType(forcedPersonaType || _getRealisticPersonaTypeByContext(context));
+    const rawForcedType = String(forcedPersonaType || "").trim();
+    const type = rawForcedType ? _normalizeRealisticPersonaType(rawForcedType) : _getRealisticPersonaTypeByContext(context);
+    if (!type) {
+        _clearPersonaPreview(context);
+        return;
+    }
     try {
         await _loadPersonaProfiles(type, false);
     } catch (error) {
@@ -9254,6 +9290,7 @@ function _refreshAllPersonaPreviews() {
 }
 
 async function _ensurePersonaSelection(context, personaType) {
+    if (!personaType) return 0;
     const type = _normalizeRealisticPersonaType(personaType);
     if (!_getPersonaProfiles(type).length) {
         await _loadPersonaProfiles(type, false);
@@ -9263,6 +9300,7 @@ async function _ensurePersonaSelection(context, personaType) {
 }
 
 async function _ensurePersonaSelections(context, personaType) {
+    if (!personaType) return [];
     const type = _normalizeRealisticPersonaType(personaType);
     const noReferenceEnabled = _supportsPersonaNoReference(context) && _isPersonaNoReferenceEnabled(context, type);
     if (noReferenceEnabled) {
@@ -9904,6 +9942,10 @@ function handlePersonaReferenceImagePaste(event) {
 async function openPersonaManager(context = "script") {
     _personaManagerContext = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
     _personaManagerType = _getRealisticPersonaTypeByContext(_personaManagerContext);
+    if (!_personaManagerType) {
+        alert("Selecione primeiro o tipo de persona que deseja gerenciar.");
+        return;
+    }
     _personaManagerMulti = _isMultiPersonaEnabled(_personaManagerContext);
 
     const titleEl = document.getElementById("persona-manager-title");
@@ -12394,7 +12436,9 @@ function _normalizePilotPersonaCandidates(rawCandidates) {
     (Array.isArray(rawCandidates) ? rawCandidates : []).forEach((item) => {
         if (!item || typeof item !== "object") return;
 
-        const type = _normalizeRealisticPersonaType(item.persona_type || item.type || item.interaction_persona || "natureza");
+        const rawType = String(item.persona_type || item.type || item.interaction_persona || "").trim();
+        if (!rawType) return;
+        const type = _normalizeRealisticPersonaType(rawType);
         const ids = [];
         (Array.isArray(item.persona_profile_ids) ? item.persona_profile_ids : []).forEach((rawId) => {
             const pid = parseInt(rawId || "0", 10) || 0;
@@ -12454,8 +12498,9 @@ function _getPilotPersonaCandidatesFromChannel(channel) {
 }
 
 function _formatPilotPersonaCandidateLabel(candidate) {
-    const type = _normalizeRealisticPersonaType(candidate?.persona_type || "natureza");
-    const baseLabel = REALISTIC_PERSONA_LABELS[type] || type;
+    const rawType = String(candidate?.persona_type || "").trim();
+    const type = rawType ? _normalizeRealisticPersonaType(rawType) : "";
+    const baseLabel = REALISTIC_PERSONA_LABELS[type] || "Sem persona";
     const noReference = !!candidate?.disable_persona_reference;
     if (noReference) {
         return `${baseLabel} (Nenhum)`;
@@ -12472,12 +12517,19 @@ function _formatPilotPersonaCandidateLabel(candidate) {
 }
 
 async function _setAutoPilotPersonaEditorType(personaType) {
-    const normalizedType = _normalizeRealisticPersonaType(personaType || "natureza");
+    const rawType = String(personaType || "").trim();
+    const normalizedType = rawType ? _normalizeRealisticPersonaType(rawType) : "";
     const tagsContainer = document.getElementById("pilot-realistic-persona-tags");
     if (tagsContainer) {
         tagsContainer.querySelectorAll(".style-tag").forEach((tag) => {
             tag.classList.toggle("selected", (tag.dataset.persona || "") === normalizedType);
         });
+    }
+
+    if (!normalizedType) {
+        _clearPersonaPreview("pilot", "Selecione a persona que o piloto deve usar nesta interacao.");
+        _renderAutoPilotPersonaEditorSelectedTypes();
+        return;
     }
 
     if (!_autoPilotPersonaEditor.selectedTypes.includes(normalizedType)) {
@@ -12540,7 +12592,7 @@ function removeAutoPilotPersonaType(personaType) {
 
     const currentType = _getRealisticPersonaTypeByContext("pilot");
     if (currentType === normalizedType) {
-        const nextType = _autoPilotPersonaEditor.selectedTypes[0] || "natureza";
+        const nextType = _autoPilotPersonaEditor.selectedTypes[0] || "";
         _setAutoPilotPersonaEditorType(nextType);
     }
 
@@ -12600,9 +12652,10 @@ async function openAutoPilotPersonaSelector(socialAccountId) {
         }
     });
 
-    const fallbackType = _normalizeRealisticPersonaType(channel?.pilot?.interaction_persona || "natureza");
-    const initialType = _autoPilotPersonaEditor.selectedTypes[0] || fallbackType || "natureza";
-    if (!_autoPilotPersonaEditor.selectedTypes.includes(initialType)) {
+    const rawFallbackType = String(channel?.pilot?.interaction_persona || "").trim();
+    const fallbackType = rawFallbackType ? _normalizeRealisticPersonaType(rawFallbackType) : "";
+    const initialType = _autoPilotPersonaEditor.selectedTypes[0] || fallbackType;
+    if (initialType && !_autoPilotPersonaEditor.selectedTypes.includes(initialType)) {
         _autoPilotPersonaEditor.selectedTypes.push(initialType);
     }
 
@@ -12613,9 +12666,164 @@ async function openAutoPilotPersonaSelector(socialAccountId) {
     }
 
     openModal("modal-auto-pilot-persona");
-    await _setAutoPilotPersonaEditorType(initialType);
+    if (initialType) {
+        await _setAutoPilotPersonaEditorType(initialType);
+    } else {
+        await _setAutoPilotPersonaEditorType("");
+    }
 }
 window.openAutoPilotPersonaSelector = openAutoPilotPersonaSelector;
+
+function _getAutoPilotChannel(accountId) {
+    const parsedAccountId = parseInt(accountId || "0", 10) || 0;
+    return (_autoPilotState.channels || []).find((item) => (parseInt(item.social_account_id || "0", 10) || 0) === parsedAccountId) || null;
+}
+
+function _getAutoPilotCandidatesForAccount(accountId) {
+    const parsedAccountId = parseInt(accountId || "0", 10) || 0;
+    if (!parsedAccountId) return [];
+
+    const personaModal = document.getElementById("modal-auto-pilot-persona");
+    if (_autoPilotPersonaEditor.accountId === parsedAccountId && personaModal?.classList.contains("open")) {
+        return _collectAutoPilotPersonaCandidatesForSave();
+    }
+
+    return _getPilotPersonaCandidatesFromChannel(_getAutoPilotChannel(parsedAccountId));
+}
+
+function _renderAutoPilotPromptDecisionList(lines) {
+    const container = document.getElementById("pilot-prompt-decision-list");
+    if (!container) return;
+    const safeLines = Array.isArray(lines) ? lines.filter(Boolean) : [];
+    if (!safeLines.length) {
+        container.innerHTML = '<span class="auto-pilot-persona-empty">Sem resumo disponivel.</span>';
+        return;
+    }
+    container.innerHTML = safeLines.map((line) => `<div class="auto-pilot-meta">${esc(line)}</div>`).join("");
+}
+
+async function refreshAutoPilotPromptPreview(useEditorValue = true) {
+    const accountId = parseInt(_autoPilotPromptEditor.accountId || "0", 10) || 0;
+    if (!accountId) return;
+
+    const channel = _getAutoPilotChannel(accountId);
+    const candidates = _getAutoPilotCandidatesForAccount(accountId);
+    if (!candidates.length) {
+        alert("Defina a persona do piloto antes de visualizar o prompt.");
+        openAutoPilotPersonaSelector(accountId);
+        return;
+    }
+
+    const sourceLabel = document.getElementById("pilot-prompt-source-label");
+    const previewEl = document.getElementById("pilot-prompt-preview");
+    const templateEl = document.getElementById("pilot-prompt-template");
+    if (sourceLabel) sourceLabel.textContent = "Carregando prévia...";
+    if (previewEl) previewEl.value = "Gerando prévia...";
+
+    const promptTemplate = useEditorValue
+        ? (templateEl?.value || "")
+        : (_autoPilotPromptEditor.promptTemplate || channel?.pilot?.pilot_prompt_template || "");
+
+    const data = await api(`/automation/pilot/channels/${accountId}/prompt-preview`, {
+        method: "POST",
+        body: JSON.stringify({
+            prompt_template: promptTemplate,
+            pilot_persona_candidates: candidates,
+        }),
+    });
+
+    _autoPilotPromptEditor.accountId = accountId;
+    _autoPilotPromptEditor.promptTemplate = data?.prompt_template || "";
+    _autoPilotPromptEditor.selectedCandidates = candidates;
+
+    if (templateEl) templateEl.value = data?.prompt_template || "";
+    if (previewEl) previewEl.value = data?.preview_prompt || "";
+    if (sourceLabel) {
+        sourceLabel.textContent = data?.source === "custom"
+            ? "Template customizado salvo para este canal."
+            : "Template padrao do piloto. Edite se quiser endurecer ou ajustar a cena.";
+    }
+    _renderAutoPilotPromptDecisionList(data?.decision_summary || []);
+}
+window.refreshAutoPilotPromptPreview = refreshAutoPilotPromptPreview;
+
+async function openAutoPilotPromptEditor(socialAccountId = null) {
+    const fallbackAccountId = parseInt(_autoPilotPersonaEditor.accountId || "0", 10) || 0;
+    const accountId = parseInt(socialAccountId || fallbackAccountId || "0", 10) || 0;
+    if (!accountId) {
+        alert("Selecione um canal do piloto para visualizar o prompt.");
+        return;
+    }
+
+    const channel = _getAutoPilotChannel(accountId);
+    const candidates = _getAutoPilotCandidatesForAccount(accountId);
+    if (!candidates.length) {
+        alert("Defina a persona do piloto antes de visualizar o prompt.");
+        openAutoPilotPersonaSelector(accountId);
+        return;
+    }
+
+    _autoPilotPromptEditor.accountId = accountId;
+    _autoPilotPromptEditor.promptTemplate = channel?.pilot?.pilot_prompt_template || "";
+    _autoPilotPromptEditor.selectedCandidates = candidates;
+
+    const labelEl = document.getElementById("pilot-prompt-channel-label");
+    if (labelEl) {
+        const accountName = channel?.account_label || channel?.platform_username || `Canal ${accountId}`;
+        labelEl.textContent = accountName;
+    }
+
+    openModal("modal-auto-pilot-prompt");
+    try {
+        await refreshAutoPilotPromptPreview(false);
+    } catch (error) {
+        alert(`Erro ao carregar o prompt do piloto: ${error.message}`);
+    }
+}
+window.openAutoPilotPromptEditor = openAutoPilotPromptEditor;
+
+async function saveAutoPilotPromptTemplate() {
+    const accountId = parseInt(_autoPilotPromptEditor.accountId || "0", 10) || 0;
+    if (!accountId) return;
+
+    const candidates = _getAutoPilotCandidatesForAccount(accountId);
+    if (!candidates.length) {
+        alert("Defina a persona do piloto antes de salvar o prompt.");
+        openAutoPilotPersonaSelector(accountId);
+        return;
+    }
+
+    const channel = _getAutoPilotChannel(accountId);
+    const enabled = !!channel?.pilot?.enabled;
+    const templateEl = document.getElementById("pilot-prompt-template");
+    const saveBtn = document.getElementById("pilot-prompt-save-btn");
+    const promptTemplate = (templateEl?.value || "").trim();
+
+    if (saveBtn) saveBtn.disabled = true;
+    _autoPilotState.togglingByAccount[accountId] = true;
+    _renderAutoPilotChannels();
+
+    try {
+        await api(`/automation/pilot/channels/${accountId}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+                enabled,
+                pilot_persona_candidates: candidates,
+                pilot_prompt_template: promptTemplate,
+            }),
+        });
+        await loadAutoPilotChannels(true);
+        closeModal("modal-auto-pilot-prompt");
+        showToast("Prompt do piloto salvo.", "success");
+    } catch (error) {
+        alert(`Erro ao salvar prompt do piloto: ${error.message}`);
+    } finally {
+        _autoPilotState.togglingByAccount[accountId] = false;
+        if (saveBtn) saveBtn.disabled = false;
+        _renderAutoPilotChannels();
+    }
+}
+window.saveAutoPilotPromptTemplate = saveAutoPilotPromptTemplate;
 
 function _renderAutoPilotChannels() {
     const container = document.getElementById("auto-pilot-channels");
@@ -12701,6 +12909,12 @@ function _renderAutoPilotChannels() {
                         ${toggling ? "disabled" : ""}
                         onclick="openAutoPilotPersonaSelector(${accountId})"
                     >Definir personas</button>
+                    <button
+                        class="btn btn-sm btn-secondary"
+                        type="button"
+                        ${toggling ? "disabled" : ""}
+                        onclick="openAutoPilotPromptEditor(${accountId})"
+                    >Ver prompt</button>
                     <button
                         class="btn btn-sm ${actionClass}"
                         type="button"
@@ -12809,7 +13023,13 @@ async function toggleAutoPilotChannel(socialAccountId, enabled) {
     const accountId = parseInt(socialAccountId || "0", 10) || 0;
     if (!accountId) return;
     const channel = (_autoPilotState.channels || []).find((item) => (parseInt(item.social_account_id || "0", 10) || 0) === accountId);
-    const selectedCandidates = _getPilotPersonaCandidatesFromChannel(channel);
+    const selectedCandidates = _getAutoPilotCandidatesForAccount(accountId);
+
+    if (!!enabled && !selectedCandidates.length) {
+        alert("Defina a persona do piloto antes de ligar a automacao.");
+        openAutoPilotPersonaSelector(accountId);
+        return;
+    }
 
     _autoPilotState.togglingByAccount[accountId] = true;
     _renderAutoPilotChannels();
@@ -13168,14 +13388,15 @@ function openNewAutomationModal() {
     const defStyle = document.querySelector('#auto-realistic-style-tags [data-style="cinematic"]');
     if (defStyle) defStyle.classList.add("selected");
     document.querySelectorAll("#auto-realistic-persona-tags .style-tag").forEach(t => t.classList.remove("selected"));
-    const defPersona = document.querySelector('#auto-realistic-persona-tags [data-persona="natureza"]');
-    if (defPersona) defPersona.classList.add("selected");
     const autoMultiPersona = document.getElementById("auto-realistic-multi-persona");
     if (autoMultiPersona) autoMultiPersona.checked = false;
     _personaSelectionByContext.auto = {};
     _personaMultiSelectionByContext.auto = {};
     _personaNoReferenceByContext.auto = {};
-    _refreshPersonaContext("auto", "natureza");
+    const autoPersonaPreview = document.getElementById("auto-realistic-persona-preview");
+    if (autoPersonaPreview) {
+        autoPersonaPreview.innerHTML = '<div class="realistic-persona-empty">Selecione uma persona de interacao para continuar.</div>';
+    }
 
     // reset engine selection
     _setAutoRealisticEngine("grok");
@@ -15152,7 +15373,11 @@ async function addClipToThemes() {
         ? payload.clip_duration
         : Math.max(1, Number(song.duration || payload.song_duration || 120));
     const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
-    const interactionPersona = _normalizeRealisticPersonaType(selectedPersona ? selectedPersona.dataset.persona : "natureza");
+    if (!selectedPersona) {
+        alert("Selecione explicitamente a persona de interacao antes de adicionar o clipe na automacao realista.");
+        return;
+    }
+    const interactionPersona = _normalizeRealisticPersonaType(selectedPersona.dataset.persona || "");
     const personaProfileId = _getSelectedPersonaProfileId("auto", interactionPersona);
 
     // Store as object with clip metadata
@@ -15417,7 +15642,12 @@ async function createAutoSchedule() {
         // Collect realistic settings
         const selectedStyle = document.querySelector("#auto-realistic-style-tags .style-tag.selected");
         const selectedPersona = document.querySelector("#auto-realistic-persona-tags .style-tag.selected");
-        const interactionPersona = _normalizeRealisticPersonaType(selectedPersona ? selectedPersona.dataset.persona : "natureza");
+        if (!selectedPersona) {
+            alert("Selecione explicitamente a persona de interacao antes de salvar a automacao realista.");
+            showAutoStep(2);
+            return;
+        }
+        const interactionPersona = _normalizeRealisticPersonaType(selectedPersona.dataset.persona || "");
         let personaProfileId = 0;
         let personaProfileIds = [];
         try {

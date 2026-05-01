@@ -36,6 +36,7 @@ from app.services.credit_pricing import (
     estimate_standard_credits,
 )
 from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
+from app.services.pilot_prompt import build_interaction_persona_instruction as shared_build_interaction_persona_instruction
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/video", tags=["video"])
@@ -178,41 +179,7 @@ def _normalize_wan_duration_seconds(value: int) -> int:
 
 
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
-    persona = _normalize_interaction_persona(interaction_persona)
-    if persona == "homem":
-        return (
-            "Inclua um homem em cena interagindo com o ambiente e com a emocao do tema, "
-            "mantendo coerencia narrativa e visual cinematografica."
-        )
-    if persona == "mulher":
-        return (
-            "Inclua uma mulher em cena interagindo com o ambiente e com a emocao do tema, "
-            "mantendo coerencia narrativa e visual cinematografica."
-        )
-    if persona == "crianca":
-        return (
-            "Inclua uma crianca em cena interagindo com o ambiente e com a emocao do tema, "
-            "com linguagem visual sensivel e respeitosa."
-        )
-    if persona == "familia":
-        return (
-            "Inclua uma familia (duas ou mais pessoas) interagindo de forma natural com o ambiente "
-            "e com a emocao do tema."
-        )
-    if persona == "desenho":
-        return (
-            "Inclua obrigatoriamente um personagem em estilo desenho/animacao (cartoon, 3D, anime, etc.) "
-            "interagindo com o ambiente e com a emocao do tema, com consistencia visual cinematografica."
-        )
-    if persona == "personalizado":
-        return (
-            "Inclua obrigatoriamente a persona personalizada definida pelo usuário, mantendo os traços, estilo "
-            "e identidade visual descritos na referencia."
-        )
-    return (
-        "Priorize natureza viva e inclua obrigatoriamente pelo menos um elemento visual de conexão "
-        "(animal, flor, ave, borboleta ou outro ser vivo natural) em destaque e coerente com o tema."
-    )
+    return shared_build_interaction_persona_instruction(interaction_persona)
 
 
 def _inject_interaction_persona_instruction(prompt: str, interaction_persona: str) -> str:

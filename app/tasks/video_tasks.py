@@ -10,6 +10,7 @@ from pathlib import Path
 from app.config import get_settings
 from app.database import async_session
 from app.models import VideoProject, VideoScene, VideoRender, VideoStatus
+from app.services.pilot_prompt import build_interaction_persona_instruction as shared_build_interaction_persona_instruction
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -287,43 +288,7 @@ def _normalize_interaction_persona(value: str) -> str:
 
 
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
-    persona = _normalize_interaction_persona(interaction_persona)
-    if persona == "homem":
-        return (
-            "PERSONA DE INTERACAO: inclua um homem em cena interagindo com o ambiente e a emocao do trecho "
-            "(por exemplo, orando, cantando, caminhando, contemplando), sem perder o sentido da letra."
-        )
-    if persona == "mulher":
-        return (
-            "PERSONA DE INTERACAO: inclua uma mulher em cena interagindo com o ambiente e a emocao do trecho "
-            "(por exemplo, orando, cantando, caminhando, contemplando), sem perder o sentido da letra."
-        )
-    if persona == "crianca":
-        return (
-            "PERSONA DE INTERACAO: inclua uma crianca em cena interagindo com o ambiente e a emocao do trecho, "
-            "com linguagem visual sensivel e respeitosa."
-        )
-    if persona == "familia":
-        return (
-            "PERSONA DE INTERACAO: inclua uma familia (duas ou mais pessoas) interagindo de forma natural com a cena "
-            "e com a emocao do trecho."
-        )
-    if persona == "desenho":
-        return (
-            "PERSONA DE INTERACAO: inclua um personagem em estilo desenho/animacao (cartoon, 3D, anime, etc.) "
-            "interagindo de forma natural com a cena e com a emocao do trecho."
-        )
-    if persona == "personalizado":
-        return (
-            "PERSONA DE INTERACAO: inclua a persona personalizada definida pelo usuario, mantendo os tracos, "
-            "estilo e identidade visual da referencia enviada."
-        )
-    if persona == "natureza":
-        return (
-            "PERSONA DE INTERACAO: priorize natureza viva e inclua obrigatoriamente pelo menos um elemento visual "
-            "de conexao (animal, flor, ave, borboleta ou outro ser vivo natural) em destaque, coerente com o trecho."
-        )
-    return ""
+    return shared_build_interaction_persona_instruction(interaction_persona)
 
 
 def _inject_interaction_persona_instruction(prompt: str, interaction_persona: str) -> str:

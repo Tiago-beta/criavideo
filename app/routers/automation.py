@@ -20,6 +20,7 @@ from app.database import get_db
 from app.models import AppUser, AutoChannelPilot, AutoSchedule, AutoScheduleTheme, Platform, SocialAccount
 from app.services.persona_image import normalize_persona_type
 from app.services.credit_pricing import estimate_auto_theme_credits
+from app.services.pilot_prompt import build_pilot_prompt_preview
 from app.services.pilot_schedule import PILOT_TOTAL_SHORTS_PER_CYCLE
 
 logger = logging.getLogger(__name__)
@@ -217,6 +218,12 @@ class ToggleChannelPilotRequest(BaseModel):
     persona_profile_ids: Optional[list[int]] = None
     pilot_persona_types: Optional[list[str]] = None
     pilot_persona_candidates: Optional[list[dict]] = None
+    pilot_prompt_template: Optional[str] = None
+
+
+class PilotPromptPreviewRequest(BaseModel):
+    prompt_template: Optional[str] = None
+    pilot_persona_candidates: Optional[list[dict]] = None
 
 
 # ── Helpers ──
@@ -296,6 +303,55 @@ def _build_pilot_persona_experiment(candidates: list[dict]) -> dict:
         "winner": None,
         "selection_reason": "primeira_rodada_testa_todas_as_personas",
     }
+
+
+def _pilot_last_summary_dict(pilot: Optional[AutoChannelPilot]) -> dict:
+    if pilot and isinstance(pilot.last_summary, dict):
+        return dict(pilot.last_summary or {})
+    return {}
+
+
+def _extract_saved_pilot_prompt_template(summary: dict, *settings_sources: dict) -> str:
+    for settings in settings_sources:
+        if not isinstance(settings, dict):
+            continue
+        raw_template = str(settings.get("pilot_prompt_template") or "").strip()
+        if raw_template:
+            return raw_template
+    return str(summary.get("pilot_prompt_template") or "").strip()
+
+
+def _extract_saved_pilot_persona_candidates(summary: dict, *settings_sources: dict) -> list[dict]:
+    for settings in settings_sources:
+        if not isinstance(settings, dict):
+            continue
+        experiment = settings.get("pilot_persona_experiment")
+        if isinstance(experiment, dict):
+            candidates = _normalize_pilot_persona_candidates(
+                persona_candidates=experiment.get("candidates") or []
+            )
+            if candidates:
+                return candidates
+
+    summary_experiment = summary.get("pilot_persona_experiment")
+    if isinstance(summary_experiment, dict):
+        candidates = _normalize_pilot_persona_candidates(
+            persona_candidates=summary_experiment.get("candidates") or []
+        )
+        if candidates:
+            return candidates
+
+    fallback_candidate = _normalize_pilot_persona_candidates(
+        persona_candidates=[
+            {
+                "persona_type": summary.get("interaction_persona") or "",
+                "persona_profile_id": summary.get("persona_profile_id") or 0,
+                "persona_profile_ids": summary.get("persona_profile_ids") or [],
+                "disable_persona_reference": bool(summary.get("disable_persona_reference")),
+            }
+        ]
+    )
+    return fallback_candidate
 
 
 def _parse_schedule_date_value(raw_value: str) -> Optional[date]:
@@ -775,20 +831,51 @@ async def list_pilot_channels(
     for account in accounts:
         pilot = pilot_by_account.get(account.id)
         pilot_data = _pilot_summary_dict(pilot)
+        pilot_summary = _pilot_last_summary_dict(pilot)
 
         long_schedule = schedules_by_id.get(
             pilot_data.get("long_schedule_id") or pilot_data.get("schedule_id") or 0
         )
         short_schedule = schedules_by_id.get(pilot_data.get("shorts_schedule_id") or 0)
 
-        sched_defaults = {}
-        if long_schedule and isinstance(long_schedule.default_settings, dict):
-            sched_defaults = long_schedule.default_settings
-        pilot_data["interaction_persona"] = sched_defaults.get("interaction_persona", "")
-        pilot_data["persona_profile_id"] = int(sched_defaults.get("persona_profile_id", 0) or 0)
-        pilot_data["persona_profile_ids"] = sched_defaults.get("persona_profile_ids") or []
-        pilot_data["disable_persona_reference"] = bool(sched_defaults.get("disable_persona_reference"))
-        pilot_data["pilot_persona_experiment"] = sched_defaults.get("pilot_persona_experiment") or pilot_data.get("pilot_persona_experiment") or {}
+        long_defaults = long_schedule.default_settings if long_schedule and isinstance(long_schedule.default_settings, dict) else {}
+        short_defaults = short_schedule.default_settings if short_schedule and isinstance(short_schedule.default_settings, dict) else {}
+        effective_defaults = short_defaults or long_defaults
+
+        pilot_data["interaction_persona"] = (
+            effective_defaults.get("interaction_persona")
+            or long_defaults.get("interaction_persona")
+            or pilot_summary.get("interaction_persona")
+            or ""
+        )
+        pilot_data["persona_profile_id"] = int(
+            effective_defaults.get("persona_profile_id")
+            or long_defaults.get("persona_profile_id")
+            or pilot_summary.get("persona_profile_id")
+            or 0
+        )
+        pilot_data["persona_profile_ids"] = (
+            effective_defaults.get("persona_profile_ids")
+            or long_defaults.get("persona_profile_ids")
+            or pilot_summary.get("persona_profile_ids")
+            or []
+        )
+        pilot_data["disable_persona_reference"] = bool(
+            effective_defaults.get("disable_persona_reference")
+            or long_defaults.get("disable_persona_reference")
+            or pilot_summary.get("disable_persona_reference")
+        )
+        pilot_data["pilot_persona_experiment"] = (
+            effective_defaults.get("pilot_persona_experiment")
+            or long_defaults.get("pilot_persona_experiment")
+            or pilot_summary.get("pilot_persona_experiment")
+            or {}
+        )
+        pilot_data["pilot_prompt_template"] = _extract_saved_pilot_prompt_template(
+            pilot_summary,
+            short_defaults,
+            long_defaults,
+        )
 
         long_counts = counts_by_schedule.get(long_schedule.id if long_schedule else 0, {"pending": 0, "completed": 0})
         short_counts = counts_by_schedule.get(short_schedule.id if short_schedule else 0, {"pending": 0, "completed": 0})
@@ -822,6 +909,59 @@ async def list_pilot_channels(
         )
 
     return payload
+
+
+@router.post("/pilot/channels/{social_account_id}/prompt-preview")
+async def preview_pilot_prompt(
+    social_account_id: int,
+    req: PilotPromptPreviewRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    account = await db.get(SocialAccount, social_account_id)
+    if not account or account.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Conta social nao encontrada.")
+
+    pilot_result = await db.execute(
+        select(AutoChannelPilot)
+        .where(AutoChannelPilot.user_id == user["id"])
+        .where(AutoChannelPilot.social_account_id == social_account_id)
+        .limit(1)
+    )
+    pilot = pilot_result.scalar_one_or_none()
+    pilot_summary = _pilot_last_summary_dict(pilot)
+
+    long_defaults = {}
+    short_defaults = {}
+    if pilot and pilot.long_schedule_id:
+        long_schedule = await db.get(AutoSchedule, pilot.long_schedule_id)
+        if long_schedule and long_schedule.user_id == user["id"] and isinstance(long_schedule.default_settings, dict):
+            long_defaults = long_schedule.default_settings
+    if pilot and pilot.shorts_schedule_id:
+        short_schedule = await db.get(AutoSchedule, pilot.shorts_schedule_id)
+        if short_schedule and short_schedule.user_id == user["id"] and isinstance(short_schedule.default_settings, dict):
+            short_defaults = short_schedule.default_settings
+
+    candidates = _normalize_pilot_persona_candidates(persona_candidates=req.pilot_persona_candidates or [])
+    if not candidates:
+        candidates = _extract_saved_pilot_persona_candidates(pilot_summary, short_defaults, long_defaults)
+    if not candidates:
+        raise HTTPException(status_code=400, detail="Defina pelo menos uma persona do piloto antes de visualizar o prompt.")
+
+    prompt_template = (
+        str(req.prompt_template or "").strip()
+        if req.prompt_template is not None
+        else _extract_saved_pilot_prompt_template(pilot_summary, short_defaults, long_defaults)
+    )
+
+    preview = build_pilot_prompt_preview(
+        candidates[0].get("persona_type") or "",
+        prompt_template=prompt_template,
+        candidate_count=len(candidates),
+    )
+    preview["selected_candidates"] = candidates
+    preview["social_account_id"] = social_account_id
+    return preview
 
 
 @router.patch("/pilot/channels/{social_account_id}")
@@ -863,6 +1003,20 @@ async def toggle_pilot_channel(
         db.add(pilot)
         await db.flush()
 
+    managed_schedules: dict[int, AutoSchedule] = {}
+    for sid in [pilot.long_schedule_id, pilot.shorts_schedule_id]:
+        if not sid:
+            continue
+        schedule = await db.get(AutoSchedule, sid)
+        if schedule and schedule.user_id == user["id"]:
+            managed_schedules[int(schedule.id)] = schedule
+
+    pilot_summary = _pilot_last_summary_dict(pilot)
+    saved_candidates = _extract_saved_pilot_persona_candidates(
+        pilot_summary,
+        *[dict(schedule.default_settings or {}) for schedule in managed_schedules.values()],
+    )
+
     pilot.is_enabled = bool(req.enabled)
 
     if req.analysis_interval_hours is not None:
@@ -890,15 +1044,34 @@ async def toggle_pilot_channel(
             persona_candidates=req.pilot_persona_candidates,
         )
 
+    if req.enabled and not (experiment_candidates if experiment_candidates is not None else saved_candidates):
+        raise HTTPException(
+            status_code=400,
+            detail="Defina pelo menos uma persona do piloto antes de ligar a automacao.",
+        )
+
+    prompt_template_patch: str | None = None
+    if req.pilot_prompt_template is not None:
+        prompt_template_patch = str(req.pilot_prompt_template or "").strip()
+        if len(prompt_template_patch) > 4000:
+            raise HTTPException(status_code=400, detail="Prompt do piloto muito longo (maximo de 4000 caracteres).")
+
+    summary_patch = dict(pilot_summary)
+    summary_dirty = False
+
     if (
         req.interaction_persona is not None
         or req.persona_profile_id is not None
         or req.persona_profile_ids is not None
         or experiment_candidates is not None
+        or req.pilot_prompt_template is not None
     ):
         persona_patch = {}
         if experiment_candidates is not None:
-            persona_patch["pilot_persona_experiment"] = _build_pilot_persona_experiment(experiment_candidates)
+            experiment_payload = _build_pilot_persona_experiment(experiment_candidates)
+            persona_patch["pilot_persona_experiment"] = experiment_payload
+            summary_patch["pilot_persona_experiment"] = experiment_payload
+            summary_dirty = True
             if experiment_candidates:
                 first_candidate = experiment_candidates[0]
                 persona_patch["interaction_persona"] = first_candidate.get("persona_type", "")
@@ -907,22 +1080,42 @@ async def toggle_pilot_channel(
                 disable_ref = bool(first_candidate.get("disable_persona_reference"))
                 persona_patch["disable_persona_reference"] = disable_ref
                 persona_patch["grok_text_only"] = disable_ref
+                summary_patch["interaction_persona"] = persona_patch["interaction_persona"]
+                summary_patch["persona_profile_id"] = persona_patch["persona_profile_id"]
+                summary_patch["persona_profile_ids"] = persona_patch["persona_profile_ids"]
+                summary_patch["disable_persona_reference"] = disable_ref
+            else:
+                summary_patch["interaction_persona"] = ""
+                summary_patch["persona_profile_id"] = 0
+                summary_patch["persona_profile_ids"] = []
+                summary_patch["disable_persona_reference"] = False
+            summary_dirty = True
         if req.interaction_persona is not None:
             persona_patch["interaction_persona"] = str(req.interaction_persona).strip().lower()
+            summary_patch["interaction_persona"] = persona_patch["interaction_persona"]
+            summary_dirty = True
         if req.persona_profile_id is not None:
             persona_patch["persona_profile_id"] = int(req.persona_profile_id)
+            summary_patch["persona_profile_id"] = persona_patch["persona_profile_id"]
+            summary_dirty = True
         if req.persona_profile_ids is not None:
             persona_patch["persona_profile_ids"] = [int(pid) for pid in req.persona_profile_ids if int(pid) > 0]
-        for sid in [pilot.long_schedule_id, pilot.shorts_schedule_id]:
-            if not sid:
-                continue
-            sched = await db.get(AutoSchedule, sid)
+            summary_patch["persona_profile_ids"] = persona_patch["persona_profile_ids"]
+            summary_dirty = True
+        if prompt_template_patch is not None:
+            persona_patch["pilot_prompt_template"] = prompt_template_patch
+            summary_patch["pilot_prompt_template"] = prompt_template_patch
+            summary_dirty = True
+        for sched in managed_schedules.values():
             if sched and sched.user_id == user["id"]:
                 ds = dict(sched.default_settings or {})
                 ds.update(persona_patch)
                 sched.default_settings = ds
                 from sqlalchemy.orm.attributes import flag_modified
                 flag_modified(sched, "default_settings")
+
+    if summary_dirty:
+        pilot.last_summary = summary_patch
 
     schedule_ids_to_toggle = {
         int(sid)

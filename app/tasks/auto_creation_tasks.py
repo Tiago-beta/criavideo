@@ -29,6 +29,10 @@ from app.services.persona_registry import (
     resolve_persona_reference_image,
     resolve_persona_reference_images,
 )
+from app.services.pilot_prompt import (
+    build_interaction_persona_instruction as shared_build_interaction_persona_instruction,
+    render_pilot_prompt_template,
+)
 from app.services.credit_pricing import estimate_auto_theme_credits
 
 logger = logging.getLogger(__name__)
@@ -416,40 +420,7 @@ def _pick_pilot_persona_candidate(experiment: dict, variant_index: int) -> dict 
 
 
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
-    persona = _normalize_interaction_persona(interaction_persona)
-    if persona == "homem":
-        return (
-            "Inclua um homem em cena interagindo com o ambiente e com a emocao do trecho "
-            "(por exemplo, orando, cantando, caminhando ou contemplando), sem perder o sentido da letra."
-        )
-    if persona == "mulher":
-        return (
-            "Inclua uma mulher em cena interagindo com o ambiente e com a emocao do trecho "
-            "(por exemplo, orando, cantando, caminhando ou contemplando), sem perder o sentido da letra."
-        )
-    if persona == "crianca":
-        return (
-            "Inclua uma crianca em cena interagindo com o ambiente e com a emocao do trecho, "
-            "com linguagem visual sensivel e respeitosa."
-        )
-    if persona == "familia":
-        return (
-            "Inclua uma familia (duas ou mais pessoas) interagindo de forma natural com o ambiente e com a emocao do trecho."
-        )
-    if persona == "desenho":
-        return (
-            "Inclua um personagem em estilo desenho/animacao (cartoon, 3D, anime, etc.) interagindo com o ambiente "
-            "e com a emocao do trecho, mantendo coerencia visual cinematografica."
-        )
-    if persona == "personalizado":
-        return (
-            "Inclua a persona personalizada definida pelo usuario, respeitando os tracos, estilo e identidade visual "
-            "da referencia escolhida."
-        )
-    return (
-        "Priorize natureza viva e inclua obrigatoriamente pelo menos um elemento visual de conexao "
-        "(animal, flor, ave, borboleta ou outro ser vivo natural) em destaque e coerente com o trecho."
-    )
+    return shared_build_interaction_persona_instruction(interaction_persona)
 
 
 def _strip_lyrics_from_description(text: str) -> str:
@@ -1394,16 +1365,12 @@ async def _create_musical_short(
         raise RuntimeError(f"Falha ao extrair segmento de audio (start={clip_start}, dur={clip_duration})")
 
     # 3. Transcribe segment for visual prompt context
-    visual_prompt = (
-        "Crie um video realista cinematografico inspirado no trecho cantado. "
-        "Baseie a cena somente no trecho atual, sem puxar elementos de outros versos. "
-        "Nao force personagem humano quando o trecho nao pedir isso. "
-        "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
-        "quando isso nao estiver claramente no trecho cantado."
+    pilot_prompt_template = str(custom_settings.get("pilot_prompt_template") or cfg.get("pilot_prompt_template") or "").strip()
+    visual_prompt = render_pilot_prompt_template(
+        pilot_prompt_template,
+        interaction_persona,
+        "",
     )
-    persona_instruction = _build_interaction_persona_instruction(interaction_persona)
-    if persona_instruction:
-        visual_prompt = f"{visual_prompt} {persona_instruction}"
     segment_transcription = ""
     segment_transcription_words = []
     try:
@@ -1421,43 +1388,28 @@ async def _create_musical_short(
         if transcribed:
             segment_transcription = transcribed
             snippet = " ".join(transcribed.split())[:420]
-            visual_prompt = (
-                f'Trecho transcrito da musica: "{snippet}". '
-                "Crie uma cena realista cinematografica baseada nessas palavras, "
-                "somente nesse trecho e sem puxar elementos de outros versos. "
-                "Nao force personagem humano quando o trecho nao pedir isso. "
-                "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
-                "quando isso nao estiver claramente no trecho cantado."
+            visual_prompt = render_pilot_prompt_template(
+                pilot_prompt_template,
+                interaction_persona,
+                snippet,
             )
-            if persona_instruction:
-                visual_prompt = f"{visual_prompt} {persona_instruction}"
             logger.info("Short %d transcribed: %s", segment_index, transcribed[:200])
         elif lyrics_hint:
             hint_slice = " ".join(str(lyrics_hint).split())[:420]
-            visual_prompt = (
-                f'Trecho de letra de referencia: "{hint_slice}". '
-                "Crie uma cena realista cinematografica baseada nessas palavras, "
-                "somente nesse trecho e sem puxar elementos de outros versos. "
-                "Nao force personagem humano quando o trecho nao pedir isso. "
-                "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
-                "quando isso nao estiver claramente no trecho cantado."
+            visual_prompt = render_pilot_prompt_template(
+                pilot_prompt_template,
+                interaction_persona,
+                hint_slice,
             )
-            if persona_instruction:
-                visual_prompt = f"{visual_prompt} {persona_instruction}"
     except Exception as e:
         logger.warning("Transcription failed for short %d: %s", segment_index, e)
         if cfg.get("tevoxi_lyrics"):
             hint_slice = " ".join(str(cfg.get("tevoxi_lyrics", "")).split())[:420]
-            visual_prompt = (
-                f'Trecho de letra de referencia: "{hint_slice}". '
-                "Crie uma cena realista cinematografica baseada nessas palavras, "
-                "somente nesse trecho e sem puxar elementos de outros versos. "
-                "Nao force personagem humano quando o trecho nao pedir isso. "
-                "Evite repetir cliches visuais (campo de trigo, roupa branca, poses padrao) "
-                "quando isso nao estiver claramente no trecho cantado."
+            visual_prompt = render_pilot_prompt_template(
+                pilot_prompt_template,
+                interaction_persona,
+                hint_slice,
             )
-            if persona_instruction:
-                visual_prompt = f"{visual_prompt} {persona_instruction}"
 
     # 4. Create VideoProject for realistic pipeline
     async with async_session() as db:
