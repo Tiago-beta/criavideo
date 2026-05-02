@@ -17758,6 +17758,7 @@ const _EDITOR_TRANSITION_OPTIONS = [
     { value: "zoom-in", label: "Zoom in", desc: "Aproxima a chegada do próximo clipe", preview: "zoom-in" },
     { value: "flash-white", label: "Flash branco", desc: "Corte com clarão rápido", preview: "flash-white" },
 ];
+const _EDITOR_TRANSITION_PREVIEW_SEC = 0.45;
 let _editorLayerLibrary = {
     open: false,
     loading: false,
@@ -21458,6 +21459,7 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         }
 
         const normalizedLayer = _editorNormalizeMediaLayer(layer);
+        const transitionState = _editorGetLayerPreviewTransitionState(normalizedLayer, currentTime);
         const localTime = Math.max(0, currentTime - normalizedLayer.startTime);
         const sourceOffset = Math.max(0, Number(normalizedLayer.sourceOffset || 0));
         const clipDuration = Math.max(0, Number(normalizedLayer.endTime || 0) - Number(normalizedLayer.startTime || 0));
@@ -21470,7 +21472,18 @@ function _editorSyncMediaLayersWithTime(timeSec) {
             && Number(normalizedLayer.duration || 0) > 0
             && !normalizedLayer.reversed
             && playbackTime > Number(normalizedLayer.duration || 0);
-        const inRange = currentTime >= normalizedLayer.startTime && currentTime <= normalizedLayer.endTime && !reachedVideoEnd;
+        const inRange = (
+            currentTime >= normalizedLayer.startTime
+            && currentTime <= normalizedLayer.endTime
+            && !reachedVideoEnd
+        ) || Boolean(transitionState?.role === "in");
+
+        item.style.transform = "";
+        item.style.filter = "";
+        item.style.clipPath = "";
+        if (item.dataset.baseZ) {
+            item.style.zIndex = item.dataset.baseZ;
+        }
 
         if (normalizedLayer.kind === "video" && normalizedLayer.audioOnly) {
             item.style.display = inRange ? "block" : "none";
@@ -21480,6 +21493,10 @@ function _editorSyncMediaLayersWithTime(timeSec) {
             item.style.display = inRange ? "block" : "none";
             item.style.opacity = "1";
             item.style.pointerEvents = "";
+        }
+
+        if (transitionState && item.style.display !== "none") {
+            _editorApplyPreviewTransitionStyles(item, transitionState, normalizedLayer);
         }
 
         if (normalizedLayer.kind !== "video") return;
@@ -21501,7 +21518,7 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         videoEl.volume = Math.max(0, Math.min(1, normalizedLayer.volume / 100));
         videoEl.muted = normalizedLayer.volume <= 0;
 
-        if (shouldPlay && inRange && !videoEl.ended && !normalizedLayer.reversed) {
+        if (shouldPlay && inRange && !videoEl.ended && !normalizedLayer.reversed && !transitionState?.freezeFrame) {
             if (videoEl.paused) {
                 const playPromise = videoEl.play();
                 if (playPromise?.catch) {
@@ -21539,6 +21556,7 @@ function _editorRenderMediaLayers() {
             <div
                 class="editor-media-layer-item${selectedClass}"
                 data-id="${layer.id}"
+                data-base-z="${zIndex}"
                 style="left:${layout.leftPx}px;top:${layout.topPx}px;width:${layout.widthPx}px;height:${layout.heightPx}px;z-index:${zIndex}"
             >
                 ${mediaHtml}
@@ -22797,6 +22815,124 @@ function _editorGetTransitionByKey(key) {
     return (_editor.transitions || []).find((transition) => String(transition?.key || "") === String(key || "")) || null;
 }
 
+function _editorGetConfiguredTransitionSlots() {
+    return _editorGetTransitionSlots()
+        .map((slot) => {
+            const transition = _editorGetTransitionByKey(slot.key);
+            return transition?.type ? { ...slot, transition } : null;
+        })
+        .filter(Boolean);
+}
+
+function _editorGetTransitionPreviewDuration(slot) {
+    const fromDuration = Math.max(0.1, Number(slot?.fromLayer?.endTime || 0) - Number(slot?.fromLayer?.startTime || 0));
+    return Math.max(0.12, Math.min(_EDITOR_TRANSITION_PREVIEW_SEC, fromDuration * 0.45));
+}
+
+function _editorGetLayerPreviewTransitionState(layer, currentTime) {
+    const safeLayer = _editorNormalizeMediaLayer(layer || {});
+    const safeTime = Math.max(0, Number(currentTime || 0));
+
+    for (const slot of _editorGetConfiguredTransitionSlots()) {
+        const duration = _editorGetTransitionPreviewDuration(slot);
+        const boundary = Math.max(0, Number(slot.boundaryTime || slot.toLayer?.startTime || 0));
+        const windowStart = Math.max(0, boundary - duration);
+
+        if (String(slot.fromId) === String(safeLayer.id) && safeTime >= windowStart && safeTime <= boundary) {
+            return {
+                role: "out",
+                type: String(slot.transition.type || "dissolve"),
+                progress: duration > 0 ? (safeTime - windowStart) / duration : 1,
+            };
+        }
+
+        if (
+            String(slot.toId) === String(safeLayer.id)
+            && String(slot.transition.type || "") !== "fade-black"
+            && safeTime >= windowStart
+            && safeTime <= boundary
+        ) {
+            return {
+                role: "in",
+                type: String(slot.transition.type || "dissolve"),
+                progress: duration > 0 ? (safeTime - windowStart) / duration : 1,
+                freezeFrame: true,
+            };
+        }
+    }
+
+    return null;
+}
+
+function _editorApplyPreviewTransitionStyles(item, transitionState, layer) {
+    const safeLayer = _editorNormalizeMediaLayer(layer || {});
+    const baseZ = Number(item.dataset.baseZ || item.style.zIndex || 1) || 1;
+    const progress = Math.max(0, Math.min(1, Number(transitionState?.progress || 0)));
+    const eased = progress < 0.5
+        ? 2 * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+    const isIncoming = transitionState?.role === "in";
+
+    item.style.transformOrigin = "center center";
+    item.style.transform = "";
+    item.style.filter = "";
+    item.style.clipPath = "";
+    item.style.zIndex = String(baseZ);
+    item.style.opacity = safeLayer.kind === "video" && safeLayer.audioOnly ? "0" : "1";
+
+    switch (String(transitionState?.type || "dissolve")) {
+        case "fade-black":
+            item.style.filter = `brightness(${Math.max(0, 1 - eased)})`;
+            break;
+        case "slide-left":
+            item.style.transform = isIncoming
+                ? `translateX(${(1 - eased) * 36}%)`
+                : `translateX(${-eased * 36}%)`;
+            if (isIncoming) item.style.zIndex = String(baseZ + 2000);
+            break;
+        case "slide-right":
+            item.style.transform = isIncoming
+                ? `translateX(${-((1 - eased) * 36)}%)`
+                : `translateX(${eased * 36}%)`;
+            if (isIncoming) item.style.zIndex = String(baseZ + 2000);
+            break;
+        case "slide-up":
+            item.style.transform = isIncoming
+                ? `translateY(${(1 - eased) * 32}%)`
+                : `translateY(${-eased * 32}%)`;
+            if (isIncoming) item.style.zIndex = String(baseZ + 2000);
+            break;
+        case "slide-down":
+            item.style.transform = isIncoming
+                ? `translateY(${-((1 - eased) * 32)}%)`
+                : `translateY(${eased * 32}%)`;
+            if (isIncoming) item.style.zIndex = String(baseZ + 2000);
+            break;
+        case "zoom-in":
+            item.style.opacity = isIncoming ? String(0.3 + eased * 0.7) : String(Math.max(0.3, 1 - eased * 0.3));
+            item.style.transform = isIncoming
+                ? `scale(${1.18 - eased * 0.18})`
+                : `scale(${1 + eased * 0.08})`;
+            if (isIncoming) item.style.zIndex = String(baseZ + 2000);
+            break;
+        case "flash-white":
+            if (isIncoming) {
+                item.style.opacity = String(Math.max(0, (eased - 0.55) / 0.45));
+                item.style.filter = `brightness(${1.1 + (1 - eased) * 0.4})`;
+                item.style.zIndex = String(baseZ + 2000);
+            } else {
+                item.style.opacity = String(Math.max(0.35, 1 - eased * 0.2));
+                item.style.filter = `brightness(${1 + Math.sin(progress * Math.PI) * 1.4})`;
+            }
+            break;
+        case "dissolve":
+        default:
+            item.style.opacity = isIncoming ? String(eased) : String(1 - eased);
+            if (isIncoming) item.style.zIndex = String(baseZ + 2000);
+            break;
+    }
+}
+
 function _editorTransitionSlotLabel(slot) {
     if (!slot) return "";
     return `${_editorTransitionClipLabel(slot.fromLayer)} → ${_editorTransitionClipLabel(slot.toLayer)}`;
@@ -22804,7 +22940,10 @@ function _editorTransitionSlotLabel(slot) {
 
 function _editorSetTransitionType(slotKey, type) {
     const safeKey = String(slotKey || "").trim();
-    if (!safeKey) return;
+    if (!safeKey) {
+        showToast("Selecione um marcador de transição na timeline.", "error");
+        return;
+    }
     const slot = _editorGetTransitionSlots().find((item) => item.key === safeKey);
     if (!slot) {
         showToast("Selecione uma junção válida na faixa para aplicar a transição.", "error");
@@ -22828,6 +22967,7 @@ function _editorSetTransitionType(slotKey, type) {
     _editor.selectedClip = { kind: "transition", id: safeKey, track: slot.track };
     _editorRenderProps();
     _editorRenderTimeline();
+    _editorRenderMediaLayers();
 
     if (safeType) {
         showToast(`Transição ${_editorGetTransitionOption(safeType).label.toLowerCase()} aplicada.`, "success");
@@ -23275,51 +23415,29 @@ function _editorRenderProps() {
     } else if (tool === "transitions") {
         const slots = _editorGetTransitionSlots();
         const selectedKey = _editor.selectedClip.kind === "transition" ? String(_editor.selectedClip.id || "") : "";
-        const selectedSlot = slots.find((slot) => slot.key === selectedKey) || slots[0] || null;
+        const selectedSlot = slots.find((slot) => slot.key === selectedKey) || null;
         const selectedTransition = selectedSlot ? _editorGetTransitionByKey(selectedSlot.key) : null;
 
         container.innerHTML = `
             <div class="editor-props-title">Transições</div>
-            <div class="editor-smartcuts-summary">Selecione a junção entre dois clipes da faixa e escolha o estilo da passagem.</div>
             ${slots.length ? `
-                <div class="editor-transition-junctions">
-                    ${slots.map((slot) => {
-                        const active = selectedSlot && slot.key === selectedSlot.key;
-                        const applied = _editorGetTransitionByKey(slot.key);
-                        const appliedLabel = applied ? _editorGetTransitionOption(applied.type).label : "Sem transição";
+                <div class="editor-transition-grid">
+                    ${_EDITOR_TRANSITION_OPTIONS.map((option) => {
+                        const active = selectedTransition && selectedTransition.type === option.value;
                         return `
-                            <button class="editor-transition-junction${active ? " active" : ""}" type="button" onclick="_editorSelectTimelineClip('transition', '${slot.key}', true, '${slot.track}')">
-                                <strong>${esc(_editorTransitionSlotLabel(slot))}</strong>
-                                <span>${esc(_editorTransitionTrackLabel(slot.trackIndex))} · ${esc(appliedLabel)}</span>
+                            <button class="editor-transition-card${active ? " active" : ""}" type="button" onclick="_editorSetTransitionType('${selectedSlot?.key || ""}', '${option.value}')">
+                                <div class="editor-transition-preview editor-transition-preview-${option.preview}">
+                                    <span class="editor-transition-preview-pane before"></span>
+                                    <span class="editor-transition-preview-pane after"></span>
+                                    <span class="editor-transition-preview-flash"></span>
+                                </div>
+                                <strong>${esc(option.label)}</strong>
                             </button>
                         `;
                     }).join("")}
                 </div>
-
-                ${selectedSlot ? `
-                    <div class="editor-transition-selection-card">
-                        <strong>${esc(_editorTransitionSlotLabel(selectedSlot))}</strong>
-                        <span>${esc(_editorTransitionTrackLabel(selectedSlot.trackIndex))}</span>
-                    </div>
-                    <div class="editor-transition-grid">
-                        ${_EDITOR_TRANSITION_OPTIONS.map((option) => {
-                            const active = selectedTransition && selectedTransition.type === option.value;
-                            return `
-                                <button class="editor-transition-card${active ? " active" : ""}" type="button" onclick="_editorSetTransitionType('${selectedSlot.key}', '${option.value}')">
-                                    <div class="editor-transition-preview editor-transition-preview-${option.preview}">
-                                        <span class="editor-transition-preview-pane before"></span>
-                                        <span class="editor-transition-preview-pane after"></span>
-                                        <span class="editor-transition-preview-flash"></span>
-                                    </div>
-                                    <strong>${esc(option.label)}</strong>
-                                    <small>${esc(option.desc)}</small>
-                                </button>
-                            `;
-                        }).join("")}
-                    </div>
-                    <button class="editor-add-btn" type="button" onclick="_editorSetTransitionType('${selectedSlot.key}', '')" style="margin-top:6px">Remover transição</button>
-                ` : ""}
-            ` : '<div class="editor-transition-empty">Adicione pelo menos dois clipes em sequência na mesma faixa para liberar transições.</div>'}
+                ${selectedSlot ? `<button class="editor-add-btn" type="button" onclick="_editorSetTransitionType('${selectedSlot.key}', '')" style="margin-top:6px">Remover transição</button>` : ""}
+            ` : '<div class="editor-transition-empty">Adicione pelo menos dois clipes em sequência na mesma faixa.</div>'}
         `;
     } else if (tool === "filters") {
         const filterNames = ["none","grayscale","sepia","warm","cool","vintage","vivid","dramatic","fade","noir","cinematic","retro"];
