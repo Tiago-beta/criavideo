@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v297 loaded");
+console.log("[CriaVideo] app.js v298 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -23098,19 +23098,35 @@ window._editorCloseAudioVideoSourceModal = _editorCloseAudioVideoSourceModal;
 
 function _editorSetAudioVideoSourceMode(mode) {
     if (_editorAudioVideoSourceModal.loading) return;
-    _editorAudioVideoSourceModal.mode = mode === "internet" ? "internet" : "local";
+    const nextMode = mode === "internet" ? "internet" : "local";
+    const reopenLocalPicker = nextMode === "local" && _editorAudioVideoSourceModal.mode === "local";
+    _editorAudioVideoSourceModal.mode = nextMode;
     _editorAudioVideoSourceModal.status = "";
     _editorAudioVideoSourceModal.error = "";
     _editorRenderAudioVideoSourceModal();
     if (_editorAudioVideoSourceModal.mode === "internet") {
         requestAnimationFrame(() => document.getElementById("editor-audio-video-url-input")?.focus());
+        return;
+    }
+    if (reopenLocalPicker) {
+        _editorChooseLocalVideoForAudio();
     }
 }
 window._editorSetAudioVideoSourceMode = _editorSetAudioVideoSourceMode;
 
 function _editorChooseLocalVideoForAudio() {
     if (_editorAudioVideoSourceModal.loading) return;
-    document.getElementById("editor-audio-source-local-input")?.click();
+    const input = document.getElementById("editor-audio-source-local-input");
+    if (!input) return;
+    if (typeof input.showPicker === "function") {
+        try {
+            input.showPicker();
+            return;
+        } catch (err) {
+            console.debug("[CriaVideo] showPicker fallback", err);
+        }
+    }
+    input.click();
 }
 window._editorChooseLocalVideoForAudio = _editorChooseLocalVideoForAudio;
 
