@@ -523,16 +523,38 @@ async def ai_suggest(
 
     def _derive_theme_seed(primary_context: str, fallback: str) -> str:
         cleaned = _strip_lyrics_blocks(primary_context)
+        for raw_line in cleaned.splitlines():
+            line = str(raw_line or "").strip().lstrip("- ").strip()
+            if not line:
+                continue
+            lowered = line.lower()
+            if lowered.startswith("tema visual observado:"):
+                return _trim_title(line.split(":", 1)[-1].strip(), 72) or _trim_title(fallback, 72) or "Vídeo musical"
+            if lowered.startswith("angulo narrativo sugerido:"):
+                return _trim_title(line.split(":", 1)[-1].strip(), 72) or _trim_title(fallback, 72) or "Vídeo musical"
+
+        sentences = [part.strip(" -") for part in re.split(r"[\n\.!?]", cleaned) if part.strip()]
+        for sentence in sentences:
+            word_count = len(re.findall(r"[\wÀ-ÿ]+", sentence, flags=re.UNICODE))
+            if word_count >= 4:
+                return _trim_title(sentence, 72) or _trim_title(fallback, 72) or "Vídeo musical"
+
         words = re.findall(r"[\wÀ-ÿ]+", cleaned, flags=re.UNICODE)
         if len(words) >= 6:
             return _trim_title(" ".join(words[:16]), 72)
         return _trim_title(fallback, 72) or "Vídeo musical"
 
-    async def _load_render_transcription() -> str:
-        fallback_text = _strip_lyrics_blocks(project.lyrics_text or "")
+    def _context_has_enough_signal(text: str) -> bool:
+        cleaned = _strip_lyrics_blocks(text)
+        if len(cleaned) >= 80:
+            return True
+        words = re.findall(r"[\wÀ-ÿ]+", cleaned, flags=re.UNICODE)
+        return len(words) >= 12
+
+    async def _load_render_transcription() -> tuple[str, bool]:
         render_path = _normalize_render_source_path(render.file_path)
         if not render_path or not os.path.exists(render_path):
-            return fallback_text
+            return "", False
 
         temp_dir = Path(settings.media_dir) / "tmp" / "publish_transcribe" / str(project.id)
         temp_dir.mkdir(parents=True, exist_ok=True)
@@ -567,28 +589,143 @@ async def ai_suggest(
 
             temp_audio_path = await asyncio.get_event_loop().run_in_executor(None, _extract_audio_track)
             if not temp_audio_path:
-                return fallback_text
+                return "", False
 
-            hint = (fallback_text or project.description or project.track_title or project.title or "")[:800]
+            hint = (_strip_lyrics_blocks(project.lyrics_text or "") or project.description or project.track_title or project.title or "")[:800]
             result = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: transcribe_audio(temp_audio_path, prompt=hint),
             )
             transcript_text = _strip_lyrics_blocks(str((result or {}).get("text") or ""))
-            return transcript_text or fallback_text
+            return transcript_text, bool(transcript_text)
         except Exception as transcribe_err:
             logger.warning(
                 "Publish AI context transcription failed for render %s: %s",
                 render.id,
                 transcribe_err,
             )
-            return fallback_text
+            return "", False
         finally:
             if temp_audio_path and os.path.exists(temp_audio_path):
                 try:
                     os.remove(temp_audio_path)
                 except OSError:
                     pass
+
+    async def _load_render_visual_context() -> str:
+        render_path = _normalize_render_source_path(render.file_path)
+        if not render_path or not os.path.exists(render_path):
+            return ""
+
+        temp_dir = Path(settings.media_dir) / "tmp" / "publish_frames" / str(project.id)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        frame_paths: list[str] = []
+        try:
+            import asyncio
+            import subprocess
+            import uuid
+            from app.services.script_audio import analyze_images_for_context
+
+            duration_seconds = 0.0
+            for candidate in (render.duration, project.track_duration):
+                try:
+                    parsed = float(candidate or 0)
+                except Exception:
+                    parsed = 0.0
+                if parsed > 0.5:
+                    duration_seconds = parsed
+                    break
+
+            if duration_seconds <= 0.5:
+                probe = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        [
+                            "ffprobe",
+                            "-v",
+                            "error",
+                            "-show_entries",
+                            "format=duration",
+                            "-of",
+                            "default=noprint_wrappers=1:nokey=1",
+                            render_path,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=20,
+                    ),
+                )
+                if probe.returncode == 0:
+                    try:
+                        duration_seconds = float((probe.stdout or "").strip() or 0)
+                    except Exception:
+                        duration_seconds = 0.0
+
+            if duration_seconds <= 0.5:
+                duration_seconds = 30.0
+
+            timestamps = []
+            for factor in (0.15, 0.45, 0.78):
+                timestamp = max(0.0, min(duration_seconds - 0.2, duration_seconds * factor))
+                rounded = round(timestamp, 2)
+                if rounded not in timestamps:
+                    timestamps.append(rounded)
+            if not timestamps:
+                timestamps = [0.0]
+
+            def _extract_frames() -> list[str]:
+                outputs: list[str] = []
+                for idx, timestamp in enumerate(timestamps):
+                    target = temp_dir / f"publish_frame_{render.id}_{idx}_{uuid.uuid4().hex[:6]}.jpg"
+                    proc = subprocess.run(
+                        [
+                            "ffmpeg",
+                            "-y",
+                            "-ss",
+                            str(timestamp),
+                            "-i",
+                            render_path,
+                            "-frames:v",
+                            "1",
+                            "-q:v",
+                            "4",
+                            str(target),
+                        ],
+                        capture_output=True,
+                        timeout=45,
+                    )
+                    if proc.returncode == 0 and target.exists() and target.stat().st_size > 0:
+                        outputs.append(str(target))
+                return outputs
+
+            frame_paths = await asyncio.get_event_loop().run_in_executor(None, _extract_frames)
+            if not frame_paths:
+                return ""
+
+            topic_hint = project.title or project.track_title or project.description or "Vídeo"
+            tone_hint = project.style_prompt or "informativo, envolvente e objetivo"
+            visual_context = await analyze_images_for_context(
+                frame_paths,
+                topic=topic_hint,
+                tone=tone_hint,
+                duration_seconds=max(1, int(round(duration_seconds))),
+            )
+            return _normalize_ptbr_copy(str(visual_context or "").strip())
+        except Exception as visual_err:
+            logger.warning(
+                "Publish visual context analysis failed for render %s: %s",
+                render.id,
+                visual_err,
+            )
+            return ""
+        finally:
+            for frame_path in frame_paths:
+                if frame_path and os.path.exists(frame_path):
+                    try:
+                        os.remove(frame_path)
+                    except OSError:
+                        pass
 
     def _build_description_template(
         main_keyword: str,
@@ -631,8 +768,17 @@ async def ai_suggest(
 
         return _normalize_ptbr_copy("\n".join(lines).strip())
 
-    render_transcription = await _load_render_transcription()
+    render_transcription, has_spoken_transcription = await _load_render_transcription()
+    render_visual_context = ""
+    if (not has_spoken_transcription) or (not _context_has_enough_signal(render_transcription)):
+        render_visual_context = await _load_render_visual_context()
+
+    primary_context_seed = render_transcription if _context_has_enough_signal(render_transcription) else render_visual_context
+    if not primary_context_seed:
+        primary_context_seed = project.description or project.track_title or project.title or ""
+
     transcription_preview = render_transcription[:1800]
+    visual_context_preview = render_visual_context[:1200]
     project_tags = _normalize_project_tags(project.tags)
 
     context_parts = []
@@ -649,6 +795,8 @@ async def ai_suggest(
     elif project.lyrics_text:
         lyrics_preview = project.lyrics_text[:700]
         context_parts.append(f"Trecho da letra/roteiro:\n{lyrics_preview}")
+    if visual_context_preview:
+        context_parts.append(f"Resumo visual extraido dos frames:\n{visual_context_preview}")
     if project.description:
         context_parts.append(f"Descricao do projeto: {project.description}")
     if project_tags:
@@ -657,7 +805,7 @@ async def ai_suggest(
     context = "\n".join(context_parts) or "Vídeo musical sem detalhes adicionais."
 
     tema = _derive_theme_seed(
-        transcription_preview or project.description or "",
+        primary_context_seed,
         project.track_title or project.title or "Vídeo musical",
     )
     resumo = context[:2800]
@@ -669,7 +817,8 @@ async def ai_suggest(
     tom_desejado = project.style_prompt or "envolvente, premium e humano"
     context_priority = (
         "Use primeiro a transcrição/contexto real do vídeo para entender o assunto. "
-        "Só use o nome do projeto, do arquivo ou da música como apoio quando a transcrição não trouxer contexto suficiente."
+        "Se não houver falas suficientes, use o resumo visual extraído dos frames do vídeo. "
+        "Só use o nome do projeto, do arquivo ou da música como apoio quando esses contextos não trouxerem informação suficiente."
     )
 
     stage1_prompt = f"""Você é um estrategista sênior de YouTube SEO + CTR no Brasil.
@@ -678,6 +827,7 @@ Sua tarefa é criar metadados que maximizem descoberta em busca e cliques qualif
 
 REGRA DE CONTEXTO (OBRIGATORIA):
 - priorize a transcrição/contexto real do vídeo acima do nome do projeto ou do arquivo
+- se o vídeo não tiver falas suficientes, use o resumo visual dos frames para descobrir o contexto real
 - se o título atual for vago, descubra o assunto principal pela transcrição e pela descrição real
 - só use nome de música, nome do projeto ou rótulos genéricos como apoio secundário
 
@@ -838,6 +988,7 @@ REGRAS FINAIS OBRIGATORIAS:
 - thumbnail_prompt com foco em 1 ideia principal, contraste forte e texto grande legivel
 - ortografia revisada em pt-BR, com acentuacao e pontuacao natural
 - use a transcrição/contexto real do vídeo como fonte principal de verdade antes de considerar nomes vagos
+- se a transcrição estiver vazia ou fraca, use o resumo visual dos frames como fonte principal de verdade
 - proibido inserir assuntos, terapias, benefícios ou comandos que não estejam no contexto do vídeo
 - se o vídeo for religioso, musical, infantil, educativo, produto ou outro nicho, adaptar tudo ao nicho real
 

@@ -161,6 +161,17 @@ async def _analyze_images_for_script(
     return ""
 
 
+async def analyze_images_for_context(
+    image_paths: list[str],
+    topic: str = "",
+    tone: str = "",
+    duration_seconds: int = 30,
+) -> str:
+    """Public wrapper for multimodal image-context analysis used by other flows."""
+    safe_duration = max(1, int(duration_seconds or 30))
+    return await _analyze_images_for_script(image_paths, topic or "", tone or "informativo", safe_duration)
+
+
 async def expand_narration_for_duration(
     narration_text: str,
     duration_seconds: int,
