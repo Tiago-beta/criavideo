@@ -16,6 +16,12 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 import openai
+try:
+    from google import genai
+    from google.genai import types as genai_types
+except Exception:
+    genai = None
+    genai_types = None
 from sqlalchemy import delete, select
 
 from app.config import get_settings
@@ -34,11 +40,17 @@ from app.services.video_composer import _get_duration as get_duration
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+_google_scene_analysis_client = (
+    genai.Client(api_key=settings.google_ai_api_key)
+    if genai is not None and (settings.google_ai_api_key or "").strip()
+    else None
+)
 _SIMILAR_SCENE_TIME_RE = re.compile(r"pts_time:(\d+(?:\.\d+)?)")
 _SIMILAR_SCENE_DETECT_THRESHOLD = 0.22
 _SIMILAR_SCENE_MIN_SECONDS = 0.85
 _SIMILAR_SCENE_MAX_COUNT = 180
 _SIMILAR_REFERENCE_CLIP_FPS = 30
+_SIMILAR_GOOGLE_ANALYSIS_MODEL = "gemini-2.5-flash"
 
 
 def _safe_tags_dict(raw: object) -> dict:
@@ -418,6 +430,64 @@ def _extract_scene_prompt_from_content(content: object) -> str:
     return candidate
 
 
+def _is_quota_exhausted_error(exc: Exception) -> bool:
+    raw = str(exc or "").strip().lower()
+    status_code = getattr(exc, "status_code", None)
+    if status_code == 429 and ("insufficient_quota" in raw or "quota" in raw or "billing" in raw):
+        return True
+    return "insufficient_quota" in raw
+
+
+def _request_scene_prompt_from_google_sync(
+    frame_path: str,
+    start_time: float,
+    end_time: float,
+    duration_seconds: float,
+) -> str:
+    if _google_scene_analysis_client is None or genai_types is None:
+        raise RuntimeError("Google scene-analysis client indisponivel")
+
+    mime_type = mimetypes.guess_type(frame_path)[0] or "image/jpeg"
+    image_bytes = Path(frame_path).read_bytes()
+    if not image_bytes:
+        raise RuntimeError("Frame image is empty")
+
+    response = _google_scene_analysis_client.models.generate_content(
+        model=_SIMILAR_GOOGLE_ANALYSIS_MODEL,
+        contents=[
+            genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+            (
+                "Analise este frame de video e escreva um prompt cinematografico em pt-BR para recriar a cena em video. "
+                "Descreva de forma concreta o sujeito principal, a acao visivel, o ambiente, os objetos importantes, "
+                "o enquadramento, a iluminacao, as cores, a textura e o movimento de camera. "
+                "Evite frases genericas como 'cena cinematografica' sem contexto visual. "
+                f"A cena representa o trecho de {start_time:.1f}s ate {end_time:.1f}s de um video de {duration_seconds:.1f}s. "
+                "Responda somente com o prompt final em um unico paragrafo."
+            ),
+        ],
+        config=genai_types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=450,
+        ),
+    )
+    return _extract_scene_prompt_from_content(getattr(response, "text", "") or response)
+
+
+async def _request_scene_prompt_from_google(
+    frame_path: str,
+    start_time: float,
+    end_time: float,
+    duration_seconds: float,
+) -> str:
+    return await asyncio.to_thread(
+        _request_scene_prompt_from_google_sync,
+        frame_path,
+        start_time,
+        end_time,
+        duration_seconds,
+    )
+
+
 async def _request_scene_prompt_from_model(
     client: openai.AsyncOpenAI,
     model_name: str,
@@ -509,6 +579,25 @@ async def _analyze_frame_prompt(
                 structured,
                 exc,
             )
+            if _is_quota_exhausted_error(exc):
+                logger.warning(
+                    "Frame analysis OpenAI quota exhausted for model=%s; switching to Google fallback",
+                    attempt_model,
+                )
+                break
+
+    try:
+        prompt = await _request_scene_prompt_from_google(
+            frame_path,
+            start_time,
+            end_time,
+            duration_seconds,
+        )
+        if prompt:
+            logger.info("Frame analysis fallback succeeded with Google model=%s", _SIMILAR_GOOGLE_ANALYSIS_MODEL)
+            return prompt[:1600]
+    except Exception as exc:
+        logger.warning("Frame analysis Google fallback failed: %s", exc)
 
     return (
         "Cena cinematografica ultra detalhada com composicao fiel ao frame de referencia, "

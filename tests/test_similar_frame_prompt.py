@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from app.tasks.similar_tasks import _analyze_frame_prompt, _extract_scene_prompt_from_content
 
@@ -71,6 +71,34 @@ class TestSimilarFramePrompt(unittest.IsolatedAsyncioTestCase):
         self.assertIn("cimento", prompt)
         self.assertIn("cascas de ovo", prompt)
         self.assertEqual(create_mock.await_count, 2)
+
+    async def test_analyze_frame_prompt_uses_google_after_openai_quota_error(self):
+        class FakeQuotaError(RuntimeError):
+            status_code = 429
+
+        create_mock = AsyncMock(
+            side_effect=FakeQuotaError("Error code: 429 - {'error': {'code': 'insufficient_quota'}}")
+        )
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create_mock)))
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+            tmp.write(b"fake-image")
+            tmp_path = tmp.name
+
+        try:
+            with patch(
+                "app.tasks.similar_tasks._request_scene_prompt_from_google",
+                new=AsyncMock(
+                    return_value="Uma artesa quebra cascas de ovo e mistura o po em uma tigela sobre bancada rustica, em close com luz lateral suave."
+                ),
+            ) as google_mock:
+                prompt = await _analyze_frame_prompt(client, tmp_path, 0.0, 3.9, 19.0)
+        finally:
+            os.unlink(tmp_path)
+
+        self.assertIn("cascas de ovo", prompt)
+        self.assertEqual(create_mock.await_count, 1)
+        self.assertEqual(google_mock.await_count, 1)
 
 
 if __name__ == "__main__":
