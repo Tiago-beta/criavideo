@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v307 loaded");
+console.log("[CriaVideo] app.js v308 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -22824,6 +22824,57 @@ function _editorGetConfiguredTransitionSlots() {
         .filter(Boolean);
 }
 
+function _editorResolveTransitionTrack(track) {
+    const resolvedTrack = _editorResolveInsertTrackForUi(track || _editor.selectedInsertTrack || "");
+    return resolvedTrack === "video" ? "layer-video-0" : resolvedTrack;
+}
+
+function _editorFindPreferredTransitionSlot() {
+    const slots = _editorGetTransitionSlots();
+    if (!slots.length) return null;
+
+    const selectedKey = _editor.selectedClip.kind === "transition" ? String(_editor.selectedClip.id || "") : "";
+    if (selectedKey) {
+        const selectedSlot = slots.find((slot) => slot.key === selectedKey);
+        if (selectedSlot) return selectedSlot;
+    }
+
+    const currentTrack = _editorResolveTransitionTrack(_editor.selectedClip.track || _editor.selectedInsertTrack || "");
+    const currentId = String(_editor.selectedClip.id || "");
+    const currentTime = Math.max(0, Number(_editor.timelineTime || document.getElementById("editor-video")?.currentTime || 0));
+
+    const trackSlots = currentTrack
+        ? slots.filter((slot) => String(slot.track || "") === currentTrack)
+        : [];
+    let candidates = trackSlots.length ? trackSlots : slots;
+
+    if (_editor.selectedClip.kind === "media-layer" && currentId) {
+        const touchingSlots = candidates.filter((slot) => String(slot.fromId) === currentId || String(slot.toId) === currentId);
+        if (touchingSlots.length) {
+            candidates = touchingSlots;
+        }
+    }
+
+    const unconfiguredCandidates = candidates.filter((slot) => !_editorGetTransitionByKey(slot.key));
+    const prioritized = unconfiguredCandidates.length ? unconfiguredCandidates : candidates;
+
+    return [...prioritized].sort((left, right) => {
+        const leftDistance = Math.abs(Number(left.boundaryTime || 0) - currentTime);
+        const rightDistance = Math.abs(Number(right.boundaryTime || 0) - currentTime);
+        if (leftDistance !== rightDistance) return leftDistance - rightDistance;
+        return Number(left.boundaryTime || 0) - Number(right.boundaryTime || 0);
+    })[0] || null;
+}
+
+function _editorAutoSelectTransitionSlot() {
+    const slot = _editorFindPreferredTransitionSlot();
+    if (!slot) return null;
+
+    _editor.selectedClip = { kind: "transition", id: slot.key, track: slot.track };
+    _editor.selectedInsertTrack = _editorResolveInsertTrackForUi(slot.track);
+    return slot;
+}
+
 function _editorGetTransitionPreviewDuration(slot) {
     const fromDuration = Math.max(0.1, Number(slot?.fromLayer?.endTime || 0) - Number(slot?.fromLayer?.startTime || 0));
     return Math.max(0.12, Math.min(_EDITOR_TRANSITION_PREVIEW_SEC, fromDuration * 0.45));
@@ -22989,8 +23040,18 @@ function _editorSelectTool(toolName) {
         overlayCanvas.style.pointerEvents = toolName === "layers" ? "none" : "auto";
     }
 
+    let autoSelectedTransition = null;
+    if (toolName === "transitions" && _editor.selectedClip.kind !== "transition") {
+        autoSelectedTransition = _editorAutoSelectTransitionSlot();
+    }
+
     if (toolName === "layers") {
         _editorRenderMediaLayers();
+    } else if (toolName === "transitions") {
+        _editorRenderTimeline();
+        if (autoSelectedTransition) {
+            _editorRenderMediaLayers();
+        }
     }
 
     _editorRenderProps();
