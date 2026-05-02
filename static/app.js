@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v301 loaded");
+console.log("[CriaVideo] app.js v302 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -17401,6 +17401,8 @@ window.purchaseCredits = purchaseCredits;
    VIDEO EDITOR ENGINE
    ══════════════════════════════════════════════════════════════ */
 const _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS = 5;
+const _EDITOR_PREVIEW_SEEK_INTERVAL_MS = 85;
+const _EDITOR_PREVIEW_SEEK_THRESHOLD = 0.05;
 
 const _editor = {
     projectId: 0,
@@ -17451,6 +17453,57 @@ const _editor = {
     _virtualPlaybackRaf: 0,
     _virtualPlaybackLastTs: 0,
 };
+
+function _editorAttachPreviewSeekHandlers(videoEl) {
+    if (!videoEl || videoEl._editorSeekHandlersAttached) return;
+
+    videoEl._editorSeekHandlersAttached = true;
+    videoEl._editorPendingSeekTime = Number.NaN;
+    videoEl._editorSeekInFlight = false;
+    videoEl._editorLastSeekTs = 0;
+    videoEl._editorLastSeekApplied = Number(videoEl.currentTime || 0);
+
+    videoEl.addEventListener("seeked", () => {
+        videoEl._editorSeekInFlight = false;
+        videoEl._editorLastSeekApplied = Number(videoEl.currentTime || 0);
+    });
+}
+
+function _editorPreviewSeekTo(videoEl, targetTime, options = {}) {
+    if (!videoEl) return;
+
+    _editorAttachPreviewSeekHandlers(videoEl);
+
+    const safeTarget = Math.max(0, Number(targetTime || 0));
+    const force = Boolean(options.force);
+    const threshold = Math.max(0.02, Number(options.threshold || _EDITOR_PREVIEW_SEEK_THRESHOLD));
+    const minIntervalMs = Math.max(16, Number(options.minIntervalMs || _EDITOR_PREVIEW_SEEK_INTERVAL_MS));
+    const nowMs = Number(options.nowMs || performance.now());
+
+    videoEl._editorPendingSeekTime = safeTarget;
+
+    if (!force) {
+        const currentDiff = Math.abs(Number(videoEl.currentTime || 0) - safeTarget);
+        const lastAppliedDiff = Math.abs(Number(videoEl._editorLastSeekApplied || 0) - safeTarget);
+        if (currentDiff <= threshold || lastAppliedDiff <= threshold) {
+            return;
+        }
+        if (videoEl._editorSeekInFlight) {
+            return;
+        }
+        if (nowMs - Number(videoEl._editorLastSeekTs || 0) < minIntervalMs) {
+            return;
+        }
+    }
+
+    videoEl._editorSeekInFlight = true;
+    videoEl._editorLastSeekTs = nowMs;
+    try {
+        videoEl.currentTime = safeTarget;
+    } catch {
+        videoEl._editorSeekInFlight = false;
+    }
+}
 
 let _editorTimelineDrag = null;
 let _editorTimelineScrub = null;
@@ -18265,7 +18318,10 @@ function _editorApplyTimelineFrame(timeSec, shouldPlay = false) {
     const video = document.getElementById("editor-video");
     if (video && video.src && (_editor._virtualPlaybackActive || _editorShouldUseVirtualVideoPlayback() || video.paused)) {
         const sourceTime = Math.max(0, _editorTimelineToSourceTime(Math.min(safeTime, _editorGetVideoPlaybackEndTime())));
-        if (Math.abs(Number(video.currentTime || 0) - sourceTime) > 0.03) {
+        const useSmoothSeek = Boolean(shouldPlay && (_editor._virtualPlaybackActive || _editorShouldUseVirtualVideoPlayback()));
+        if (useSmoothSeek) {
+            _editorPreviewSeekTo(video, sourceTime, { nowMs: performance.now() });
+        } else if (Math.abs(Number(video.currentTime || 0) - sourceTime) > 0.03) {
             try {
                 video.currentTime = sourceTime;
             } catch {
@@ -19102,29 +19158,10 @@ async function _editorUploadVideo(input) {
         return;
     }
 
-    if (selection.imageFiles.length) {
-        await _editorStartWithUploadedImages(selection.imageFiles);
-        return;
-    }
-
-    const file = selection.videoFiles[0];
-    if (!file) return;
-
     try {
-        showToast("Enviando vídeo para o editor...");
-        const formData = new FormData();
-        formData.append("file", file);
-        const payload = await apiForm("/video/editor/upload-video", formData, { method: "POST" });
-
-        await loadEditorVideosList();
-        if (payload?.project_id) {
-            showToast("Vídeo enviado! Abrindo editor...", "success");
-            await openEditor(payload.project_id);
-        } else {
-            showToast("Vídeo enviado com sucesso.", "success");
-        }
+        await _editorStartWithOrderedMediaEntries(selection.orderedEntries);
     } catch (err) {
-        showToast("Erro ao enviar vídeo: " + err.message, "error");
+        showToast("Erro ao enviar mídia: " + (err?.message || "erro desconhecido"), "error");
     }
 }
 window._editorUploadVideo = _editorUploadVideo;
@@ -19145,15 +19182,18 @@ function _editorClassifyLocalMediaFiles(files = []) {
     const imageFiles = [];
     const videoFiles = [];
     const invalidFiles = [];
+    const orderedEntries = [];
 
     files.forEach((file) => {
         const kind = _editorGetLocalMediaKind(file);
         if (kind === "image") {
             imageFiles.push(file);
+            orderedEntries.push({ kind, file });
             return;
         }
         if (kind === "video") {
             videoFiles.push(file);
+            orderedEntries.push({ kind, file });
             return;
         }
         invalidFiles.push(file);
@@ -19161,27 +19201,108 @@ function _editorClassifyLocalMediaFiles(files = []) {
 
     if (invalidFiles.length) {
         return {
+            orderedEntries,
             imageFiles,
             videoFiles,
             error: "Selecione apenas vídeos MP4/MOV/WEBM/MKV/AVI ou imagens JPG/PNG/WebP.",
         };
     }
-    if (imageFiles.length && videoFiles.length) {
-        return {
-            imageFiles,
-            videoFiles,
-            error: "Selecione um vídeo ou apenas imagens no mesmo envio.",
-        };
-    }
-    if (videoFiles.length > 1) {
-        return {
-            imageFiles,
-            videoFiles,
-            error: "Envie um vídeo por vez nesse botão.",
-        };
+
+    return { orderedEntries, imageFiles, videoFiles, error: "" };
+}
+
+async function _editorUploadSingleVideoProject(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiForm("/video/editor/upload-video", formData, { method: "POST" });
+}
+
+async function _editorUploadSingleLayerImage(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiForm("/video/editor/upload-layer-image", formData, { method: "POST" });
+}
+
+async function _editorUploadSingleLayerVideo(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiForm("/video/editor/upload-layer-video", formData, { method: "POST" });
+}
+
+async function _editorAppendOrderedMediaEntries(entries = [], options = {}) {
+    const orderedEntries = Array.isArray(entries) ? entries.filter((entry) => entry?.file && entry?.kind) : [];
+    if (!orderedEntries.length) {
+        return { addedCount: 0, cursor: Math.max(0, Number(options.startTime || 0)) };
     }
 
-    return { imageFiles, videoFiles, error: "" };
+    let cursor = Math.max(0, Number(options.startTime || 0));
+    let addedCount = 0;
+
+    for (let index = 0; index < orderedEntries.length; index += 1) {
+        const entry = orderedEntries[index];
+        const isLast = index === orderedEntries.length - 1;
+        if (entry.kind === "image") {
+            const payload = await _editorUploadSingleLayerImage(entry.file);
+            _editorPushMediaLayer("image", payload, {
+                appendToTrack: false,
+                startTime: cursor,
+                endTime: cursor + _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS,
+                select: isLast,
+            });
+            cursor += _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS;
+            addedCount += 1;
+            continue;
+        }
+
+        const payload = await _editorUploadSingleLayerVideo(entry.file);
+        const clipDuration = Math.max(0.1, Number(payload?.duration || 5));
+        _editorPushMediaLayer("video", payload, {
+            appendToTrack: false,
+            startTime: cursor,
+            endTime: cursor + clipDuration,
+            select: isLast,
+        });
+        cursor += clipDuration;
+        addedCount += 1;
+    }
+
+    return { addedCount, cursor };
+}
+
+async function _editorStartWithOrderedMediaEntries(entries = []) {
+    const orderedEntries = Array.isArray(entries) ? entries.filter((entry) => entry?.file && entry?.kind) : [];
+    if (!orderedEntries.length) return;
+
+    if (orderedEntries.every((entry) => entry.kind === "image")) {
+        await _editorStartWithUploadedImages(orderedEntries.map((entry) => entry.file));
+        return;
+    }
+
+    const [firstEntry, ...restEntries] = orderedEntries;
+    if (firstEntry.kind === "image") {
+        await _editorStartWithUploadedImages([firstEntry.file]);
+    } else {
+        showToast(`Enviando ${orderedEntries.length} mídia(s) para o editor...`);
+        const payload = await _editorUploadSingleVideoProject(firstEntry.file);
+        await loadEditorVideosList();
+        if (!payload?.project_id) {
+            throw new Error("Projeto do editor não foi criado para o primeiro vídeo.");
+        }
+        await openEditor(payload.project_id, { restoreDraft: false });
+    }
+
+    if (!restEntries.length) {
+        showToast("Mídia enviada com sucesso.", "success");
+        return;
+    }
+
+    _editorSaveState();
+    const startTime = Math.max(0, Number(_editorGetTimelineDuration() || 0));
+    await _editorAppendOrderedMediaEntries(restEntries, { startTime });
+    _editorRenderTimeline();
+    _editorRenderMediaLayers();
+    _editorRenderProps();
+    showToast(`${orderedEntries.length} mídia(s) importada(s) na ordem selecionada.`, "success");
 }
 
 function _editorApplyImageSequenceLayers(layers, options = {}) {
@@ -20876,7 +20997,10 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         if (!videoEl) return;
         const maxTime = normalizedLayer.duration > 0 ? Math.max(0, normalizedLayer.duration - 0.05) : playbackTime;
         const targetTime = Math.max(0, Math.min(playbackTime, maxTime));
-        if (Math.abs((videoEl.currentTime || 0) - targetTime) > 0.1) {
+        const useSmoothReverseSeek = Boolean(shouldPlay && normalizedLayer.reversed);
+        if (useSmoothReverseSeek) {
+            _editorPreviewSeekTo(videoEl, targetTime, { nowMs: performance.now() });
+        } else if (Math.abs((videoEl.currentTime || 0) - targetTime) > 0.1) {
             try {
                 videoEl.currentTime = targetTime;
             } catch {
@@ -20886,7 +21010,7 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         videoEl.volume = Math.max(0, Math.min(1, normalizedLayer.volume / 100));
         videoEl.muted = normalizedLayer.volume <= 0;
 
-        if (shouldPlay && inRange && !videoEl.ended) {
+        if (shouldPlay && inRange && !videoEl.ended && !normalizedLayer.reversed) {
             if (videoEl.paused) {
                 const playPromise = videoEl.play();
                 if (playPromise?.catch) {
@@ -21132,52 +21256,17 @@ async function _editorUploadLayerVideo(input) {
         return;
     }
 
-    if (selection.imageFiles.length) {
-        try {
-            _editorSaveState();
-            let cursor = _editorGetLayerVideoAppendStart();
-            let addedCount = 0;
-
-            showToast(`Enviando ${selection.imageFiles.length} imagem(ns) para a faixa...`);
-            for (let index = 0; index < selection.imageFiles.length; index += 1) {
-                const file = selection.imageFiles[index];
-                const formData = new FormData();
-                formData.append("file", file);
-                const payload = await apiForm("/video/editor/upload-layer-image", formData, { method: "POST" });
-                _editorPushMediaLayer("image", payload, {
-                    startTime: cursor,
-                    endTime: cursor + _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS,
-                    select: index === selection.imageFiles.length - 1,
-                });
-                cursor += _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS;
-                addedCount += 1;
-            }
-
-            _editorRenderTimeline();
-            _editorRenderMediaLayers();
-            _editorRenderProps();
-            showToast(`${addedCount} imagem(ns) adicionada(s) na sequência da faixa.`, "success");
-        } catch (err) {
-            showToast("Erro ao enviar imagens da faixa: " + (err?.message || "erro desconhecido"), "error");
-        }
-        return;
-    }
-
-    const file = selection.videoFiles[0];
-    if (!file) return;
-
     try {
         _editorSaveState();
-        showToast("Enviando vídeo para camada...");
-        const formData = new FormData();
-        formData.append("file", file);
-        const payload = await apiForm("/video/editor/upload-layer-video", formData, { method: "POST" });
-        _editorPushMediaLayer("video", payload, { appendToTrack: true });
+        showToast(`Enviando ${selection.orderedEntries.length} mídia(s) para a faixa...`);
+        const startTime = Math.max(0, Number(_editorGetTimelineDuration() || 0));
+        const result = await _editorAppendOrderedMediaEntries(selection.orderedEntries, { startTime });
         _editorRenderTimeline();
         _editorRenderMediaLayers();
-        showToast("Vídeo adicionado no fim da faixa de camadas.", "success");
+        _editorRenderProps();
+        showToast(`${result.addedCount} mídia(s) adicionada(s) na sequência da faixa.`, "success");
     } catch (err) {
-        showToast("Erro ao enviar vídeo da camada: " + err.message, "error");
+        showToast("Erro ao enviar mídia da faixa: " + (err?.message || "erro desconhecido"), "error");
     }
 }
 window._editorUploadLayerVideo = _editorUploadLayerVideo;
