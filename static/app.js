@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v296 loaded");
+console.log("[CriaVideo] app.js v297 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2202,6 +2202,8 @@ let similarState = {
     engineManuallySelected: false,
     selectedEngine: "grok",
     sceneEngineSelectionBySceneId: {},
+    pendingBusyStage: "",
+    pendingBusySceneId: 0,
     sceneDraftsBySceneId: {},
     sceneMergeSelectionBySceneId: {},
     pendingImageUploadsBySceneId: {},
@@ -2261,6 +2263,7 @@ const SIMILAR_STAGE_LABELS = {
     analysis_ready: "Analise concluida. Revise as cenas abaixo.",
     scene_edited: "Cena atualizada. Gere a previa para validar.",
     scene_image_ready: "Imagem da cena atualizada. Gere a previa desta cena.",
+    generating_scene: "Gerando a cena selecionada...",
     generating_previews: "Gerando previas das cenas...",
     regenerating_scene: "Regenerando a cena selecionada...",
     preview_ready: "Previas prontas. Ajuste e regenere somente o necessario.",
@@ -4142,6 +4145,100 @@ function _getSimilarProjectScene(sceneId) {
     return scenes.find((scene) => Number(scene?.id || 0) === targetId) || null;
 }
 
+function _similarPreviewAspectClass(aspectRatio) {
+    const normalized = String(aspectRatio || "").trim();
+    if (normalized === "9:16") return "similar-preview-box-vertical";
+    if (normalized === "1:1") return "similar-preview-box-square";
+    return "similar-preview-box-horizontal";
+}
+
+function _setSimilarBusyIntent(stage = "", sceneId = 0) {
+    similarState.pendingBusyStage = String(stage || "").trim();
+    similarState.pendingBusySceneId = Number(sceneId || 0);
+}
+
+function _clearSimilarBusyIntent() {
+    similarState.pendingBusyStage = "";
+    similarState.pendingBusySceneId = 0;
+}
+
+function _hideSimilarBusyOverlay() {
+    const overlayEl = document.getElementById("similar-busy-overlay");
+    const modalEl = document.getElementById("modal-new-project");
+    if (overlayEl) {
+        overlayEl.hidden = true;
+    }
+    if (modalEl) {
+        modalEl.classList.remove("similar-busy");
+    }
+}
+
+function _resolveSimilarBusyStage(stage, status) {
+    const normalizedStage = String(stage || "").trim();
+    if (["generating_scene", "regenerating_scene", "generating_previews"].includes(normalizedStage)) {
+        return normalizedStage;
+    }
+
+    const normalizedStatus = String(status || "").trim().toLowerCase();
+    if (["generating_clips", "rendering"].includes(normalizedStatus) && similarState.pendingBusyStage) {
+        return similarState.pendingBusyStage;
+    }
+
+    return "";
+}
+
+function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
+    const overlayEl = document.getElementById("similar-busy-overlay");
+    const modalEl = document.getElementById("modal-new-project");
+    const titleEl = document.getElementById("similar-busy-title");
+    const detailEl = document.getElementById("similar-busy-detail");
+    const progressEl = document.getElementById("similar-busy-progress-fill");
+    const percentEl = document.getElementById("similar-busy-progress-label");
+    if (!overlayEl || !modalEl || !titleEl || !detailEl || !progressEl || !percentEl) {
+        return;
+    }
+
+    const normalizedStatus = String(options.status || project?.status || "").trim().toLowerCase();
+    const requestedStage = String(options.stage || tags?.similar_stage || "").trim();
+    const busyStage = _resolveSimilarBusyStage(requestedStage, normalizedStatus);
+    if (!busyStage) {
+        _hideSimilarBusyOverlay();
+        return;
+    }
+
+    const scenes = Array.isArray(project?.scenes) ? project.scenes : [];
+    const requestedSceneId = Number(options.sceneId || tags?.similar_regenerating_scene_id || similarState.pendingBusySceneId || 0);
+    const targetScene = requestedSceneId
+        ? scenes.find((scene) => Number(scene?.id || 0) === requestedSceneId) || _getSimilarProjectScene(requestedSceneId)
+        : null;
+    const sceneNumber = targetScene ? Number(targetScene.scene_index || 0) + 1 : 0;
+    const totalScenes = Number(tags?.similar_total_scenes || scenes.length || 0);
+    const currentSceneIndex = Number(tags?.similar_current_scene_index || 0);
+    const progress = Math.max(4, Math.min(100, Number(options.progress ?? project?.progress ?? 0) || 4));
+
+    let title = "Processando cenas...";
+    let detail = "Aguarde alguns instantes.";
+    if (busyStage === "generating_scene") {
+        title = sceneNumber ? `Gerando cena ${sceneNumber}...` : "Gerando cena...";
+        detail = "Primeira geracao em andamento. A tela sera liberada quando terminar.";
+    } else if (busyStage === "regenerating_scene") {
+        title = sceneNumber ? `Regenerando cena ${sceneNumber}...` : "Regenerando cena...";
+        detail = "Criando uma nova versao desta cena. Aguarde a conclusao para continuar.";
+    } else if (busyStage === "generating_previews") {
+        title = "Gerando previas...";
+        detail = currentSceneIndex && totalScenes
+            ? `Criando a cena ${currentSceneIndex} de ${totalScenes}.`
+            : "Criando as cenas uma por uma. Aguarde a conclusao para editar novamente.";
+    }
+
+    titleEl.textContent = title;
+    detailEl.textContent = detail;
+    progressEl.style.width = `${progress}%`;
+    percentEl.textContent = `${progress}%`;
+    overlayEl.hidden = false;
+    modalEl.classList.add("similar-busy");
+}
+
 function _setSimilarEngineSelection(engineValue, options = {}) {
     const markManual = !!options.markManual;
     const normalized = _normalizeSimilarEngine(engineValue);
@@ -4396,6 +4493,7 @@ function _renderSimilarScenes(project, options = {}) {
 
     containerEl.hidden = false;
     similarState.lastProjectSnapshot = project;
+    const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
     const similarActionIcons = {
         save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
         upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
@@ -4444,14 +4542,14 @@ function _renderSimilarScenes(project, options = {}) {
         const previewItems = [];
         if (hasImagePreview) {
             previewItems.push(`
-                <div class="similar-preview-box">
+                <div class="similar-preview-box ${previewAspectClass}">
                     <img src="${scene.image_url}" alt="Preview imagem cena ${idx + 1}" loading="lazy">
                 </div>
             `);
         }
         if (hasClipPreview) {
             previewItems.push(`
-                <div class="similar-preview-box">
+                <div class="similar-preview-box ${previewAspectClass}">
                     <video src="${scene.clip_url}" controls preload="metadata"></video>
                 </div>
             `);
@@ -4505,7 +4603,7 @@ function _renderSimilarScenes(project, options = {}) {
                     <button class="similar-scene-action-btn" type="button" onclick="similarUploadSceneImage(${sceneId})" title="Enviar imagens" aria-label="Enviar imagens">${similarActionIcons.upload}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" title="${applyUploadedLabel}" aria-label="${applyUploadedLabel}" ${applyDisabledAttr}>${similarActionIcons.apply}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Gerar imagem com IA" aria-label="Gerar imagem com IA">${similarActionIcons.image}</button>
-                    <button class="similar-scene-action-btn similar-scene-action-btn-primary" type="button" onclick="similarRegenerateScene(${sceneId})" title="Gerar previa da cena" aria-label="Gerar previa da cena">${similarActionIcons.preview}</button>
+                    <button class="similar-scene-action-btn similar-scene-action-btn-primary" type="button" onclick="similarRegenerateScene(${sceneId})" title="Gerar cena" aria-label="Gerar cena">${similarActionIcons.preview}</button>
                 </div>
             </article>
         `;
@@ -7099,13 +7197,14 @@ async function _refreshSimilarProject({ silent = false } = {}) {
     try {
         const project = await api(`/video/projects/${projectId}`);
         const tags = _safeSimilarTags(project.tags);
-        const stage = String(tags.similar_stage || "").trim();
-        const stageLabel = SIMILAR_STAGE_LABELS[stage] || "Processando modo semelhante...";
-        const detectedMode = _resolveSimilarDetectedMode(tags);
-        const detectedModeLabel = SIMILAR_DETECTED_MODE_LABELS[detectedMode] || "";
         const status = String(project.status || "").toLowerCase();
         const progress = Number(project.progress || 0);
         const isProcessing = ["generating_scenes", "generating_clips", "rendering"].includes(status);
+        const rawStage = String(tags.similar_stage || "").trim();
+        const stage = _resolveSimilarBusyStage(rawStage, status) || rawStage;
+        const stageLabel = SIMILAR_STAGE_LABELS[stage] || "Processando modo semelhante...";
+        const detectedMode = _resolveSimilarDetectedMode(tags);
+        const detectedModeLabel = SIMILAR_DETECTED_MODE_LABELS[detectedMode] || "";
 
         similarState.status = status;
         similarState.progress = progress;
@@ -7133,12 +7232,25 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         _syncSimilarSourcePreview(project);
         _renderSimilarScenes(project);
         _updateSimilarGenerationStep(project, tags);
+        _updateSimilarBusyOverlay(project, tags, {
+            stage,
+            status,
+            progress,
+            sceneId: Number(tags.similar_regenerating_scene_id || 0) || similarState.pendingBusySceneId,
+        });
         _refreshSimilarButtonsDisabled(isProcessing);
+
+        if (!isProcessing) {
+            _clearSimilarBusyIntent();
+            _hideSimilarBusyOverlay();
+        }
 
         if (status === "completed" || status === "failed") {
             _stopSimilarPolling();
             loadProjects();
             _refreshSimilarButtonsDisabled(false);
+            _clearSimilarBusyIntent();
+            _hideSimilarBusyOverlay();
         }
     } catch (error) {
         if (!silent) {
@@ -7146,6 +7258,8 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         }
         _stopSimilarPolling();
         _refreshSimilarButtonsDisabled(false);
+        _clearSimilarBusyIntent();
+        _hideSimilarBusyOverlay();
     }
 }
 
@@ -7166,6 +7280,7 @@ function _resetSimilarModeState() {
     similarState.engineManuallySelected = false;
     similarState.selectedEngine = "grok";
     similarState.sceneEngineSelectionBySceneId = {};
+    _clearSimilarBusyIntent();
     similarState.lastProjectSnapshot = null;
     similarState.detectedMode = "";
     similarState.detectedReason = "";
@@ -7193,6 +7308,7 @@ function _resetSimilarModeState() {
     if (generationStepEl) generationStepEl.hidden = true;
     const profileEl = document.getElementById("similar-detected-profile");
     if (profileEl) profileEl.textContent = "Perfil do vídeo sendo analisado...";
+    _hideSimilarBusyOverlay();
     _setSimilarStatus("", "running");
     _refreshSimilarButtonsDisabled(false);
 }
@@ -7455,6 +7571,16 @@ async function similarRegenerateScene(sceneId) {
     }
 
     try {
+        const scene = _getSimilarProjectScene(sceneId);
+        const hasExistingClip = !!String(scene?.clip_url || scene?.clip_path || "").trim();
+        const busyStage = hasExistingClip ? "regenerating_scene" : "generating_scene";
+        _setSimilarBusyIntent(busyStage, sceneId);
+        _updateSimilarBusyOverlay(similarState.lastProjectSnapshot, {}, {
+            stage: busyStage,
+            status: "generating_clips",
+            progress: 4,
+            sceneId,
+        });
         _refreshSimilarButtonsDisabled(true);
         await api(`/video/projects/${projectId}/similar/regenerate-scene`, {
             method: "POST",
@@ -7464,11 +7590,13 @@ async function similarRegenerateScene(sceneId) {
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });
-        _setSimilarStatus("Regeneracao da cena iniciada...", "running");
+        _setSimilarStatus(hasExistingClip ? "Regeneracao da cena iniciada..." : "Geracao da cena iniciada...", "running");
         _startSimilarPolling();
         await _refreshSimilarProject();
     } catch (error) {
         showToast(`Erro ao regenerar cena: ${error.message}`, "error");
+        _clearSimilarBusyIntent();
+        _hideSimilarBusyOverlay();
         _refreshSimilarButtonsDisabled(false);
     }
 }
@@ -7481,6 +7609,14 @@ async function similarGenerateAllPreviews() {
     }
 
     try {
+        _setSimilarBusyIntent("generating_previews");
+        _updateSimilarBusyOverlay(similarState.lastProjectSnapshot, {
+            similar_total_scenes: Array.isArray(similarState.lastProjectSnapshot?.scenes) ? similarState.lastProjectSnapshot.scenes.length : 0,
+        }, {
+            stage: "generating_previews",
+            status: "generating_clips",
+            progress: 4,
+        });
         _refreshSimilarButtonsDisabled(true);
         await api(`/video/projects/${projectId}/similar/generate-previews`, {
             method: "POST",
@@ -7494,6 +7630,8 @@ async function similarGenerateAllPreviews() {
         await _refreshSimilarProject();
     } catch (error) {
         showToast(`Erro ao gerar previas: ${error.message}`, "error");
+        _clearSimilarBusyIntent();
+        _hideSimilarBusyOverlay();
         _refreshSimilarButtonsDisabled(false);
     }
 }

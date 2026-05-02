@@ -834,23 +834,28 @@ async def _generate_clip_for_scene(
 
     base_reference_image = manual_image_path or reference_image_path
     if normalized_engine == "seedance" and base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
+        seedance_target_duration = min(
+            float(_engine_min_duration(normalized_engine)),
+            max(3.0, float(scene_duration_seconds or 0.0)),
+        )
         tmp_output_path = str(clip_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_seedance_full.mp4")
         await generate_realistic_video(
             prompt=prompt,
             duration=int(_engine_min_duration(normalized_engine)),
             aspect_ratio=aspect_ratio,
             output_path=tmp_output_path,
+            resolution="480p",
             generate_audio=True,
             image_path=base_reference_image,
             on_progress=None,
         )
-        await _trim_clip_duration(tmp_output_path, scene_duration_seconds, output_path)
+        await _trim_clip_duration(tmp_output_path, seedance_target_duration, output_path)
         try:
             if os.path.exists(tmp_output_path):
                 os.remove(tmp_output_path)
         except Exception:
             pass
-        clip_duration = max(0.6, scene_duration_seconds)
+        clip_duration = seedance_target_duration
     elif base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
         await _render_reference_frame_clip(
             base_reference_image,
@@ -905,6 +910,7 @@ async def _generate_clip_for_scene(
                 duration=clip_duration,
                 aspect_ratio=aspect_ratio,
                 output_path=output_path,
+                resolution="480p",
                 generate_audio=True,
                 image_path=image_path,
                 on_progress=None,
@@ -1190,6 +1196,19 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
             reference_frames_by_scene_index = _extract_similar_reference_frames(tags)
 
             for idx, scene in enumerate(scenes):
+                tags = _safe_tags_dict(project.tags)
+                tags.update(
+                    {
+                        "type": "similar",
+                        "similar_stage": "generating_previews",
+                        "similar_current_scene_id": int(scene.id or 0),
+                        "similar_current_scene_index": idx + 1,
+                        "similar_total_scenes": len(scenes),
+                    }
+                )
+                project.tags = tags
+                await db.commit()
+
                 await _generate_clip_for_scene(
                     scene,
                     engine=engine,
@@ -1204,6 +1223,9 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
 
             tags = _safe_tags_dict(project.tags)
             tags.update({"type": "similar", "similar_stage": "preview_ready"})
+            tags.pop("similar_current_scene_id", None)
+            tags.pop("similar_current_scene_index", None)
+            tags.pop("similar_total_scenes", None)
             project.tags = tags
             project.status = VideoStatus.PENDING
             project.progress = 0
@@ -1239,12 +1261,17 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
             if not scene or scene.project_id != project_id:
                 raise RuntimeError("Cena nao encontrada para regeneracao")
 
+            has_existing_clip = bool(str(scene.clip_path or "").strip() and os.path.exists(str(scene.clip_path or "").strip()))
+            scene_stage = "regenerating_scene" if has_existing_clip else "generating_scene"
+
             tags = _safe_tags_dict(project.tags)
             tags.update(
                 {
                     "type": "similar",
-                    "similar_stage": "regenerating_scene",
+                    "similar_stage": scene_stage,
                     "similar_regenerating_scene_id": scene_id,
+                    "similar_current_scene_id": int(scene.id or 0),
+                    "similar_current_scene_index": int(scene.scene_index or 0) + 1,
                     "similar_engine": _normalize_engine(engine),
                     "similar_aspect_ratio": aspect_ratio,
                 }
@@ -1281,6 +1308,8 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
 
             tags = _safe_tags_dict(project.tags)
             tags.update({"type": "similar", "similar_stage": "preview_ready"})
+            tags.pop("similar_current_scene_id", None)
+            tags.pop("similar_current_scene_index", None)
             project.tags = tags
             project.status = VideoStatus.PENDING
             project.progress = 0
