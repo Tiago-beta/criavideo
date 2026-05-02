@@ -3925,13 +3925,17 @@ function _renderSimilarResolvedSourcePreview(previewUrl, options = {}) {
         return;
     }
 
-    stageEl.innerHTML = "";
-    const videoEl = document.createElement("video");
-    videoEl.src = resolvedPreviewUrl;
-    videoEl.controls = true;
-    videoEl.playsInline = true;
-    videoEl.preload = "metadata";
-    stageEl.appendChild(videoEl);
+    const existingVideo = stageEl.querySelector("video");
+    const existingSrc = String(existingVideo?.getAttribute("src") || "").trim();
+    if (!existingVideo || existingSrc !== resolvedPreviewUrl) {
+        stageEl.innerHTML = "";
+        const videoEl = document.createElement("video");
+        videoEl.src = resolvedPreviewUrl;
+        videoEl.controls = true;
+        videoEl.playsInline = true;
+        videoEl.preload = "metadata";
+        stageEl.appendChild(videoEl);
+    }
 
     titleEl.textContent = title;
     if (sourceUrl) {
@@ -3979,13 +3983,17 @@ function _renderSimilarUploadedSourcePreview() {
         return;
     }
 
-    stageEl.innerHTML = "";
-    const videoEl = document.createElement("video");
-    videoEl.src = previewUrl;
-    videoEl.controls = true;
-    videoEl.playsInline = true;
-    videoEl.preload = "metadata";
-    stageEl.appendChild(videoEl);
+    const existingUploadVideo = stageEl.querySelector("video");
+    const existingUploadSrc = String(existingUploadVideo?.getAttribute("src") || "").trim();
+    if (!existingUploadVideo || existingUploadSrc !== previewUrl) {
+        stageEl.innerHTML = "";
+        const videoEl = document.createElement("video");
+        videoEl.src = previewUrl;
+        videoEl.controls = true;
+        videoEl.playsInline = true;
+        videoEl.preload = "metadata";
+        stageEl.appendChild(videoEl);
+    }
 
     titleEl.textContent = "Prévia do vídeo enviado";
     hintEl.hidden = true;
