@@ -1602,11 +1602,15 @@ async def upsert_similar_scene_image(
         current_scene_index=current_scene_index,
         anchor_scene_index=int(anchor_scene.scene_index or 0) if anchor_scene else 0,
     )
-    anchor_reference_image = ""
-    if anchor_scene and current_scene_index > int(anchor_scene.scene_index or 0):
+    tags_data = _safe_tags_dict(project.tags)
+    reference_frame_map = tags_data.get("similar_reference_frames") if isinstance(tags_data.get("similar_reference_frames"), dict) else {}
+    source_reference_image = str(reference_frame_map.get(str(current_scene_index)) or "").strip()
+    if source_reference_image and not os.path.exists(source_reference_image):
+        source_reference_image = ""
+    if not source_reference_image and anchor_scene and current_scene_index > int(anchor_scene.scene_index or 0):
         candidate_anchor_path = str(anchor_scene.image_path or "").strip()
         if candidate_anchor_path and os.path.exists(candidate_anchor_path):
-            anchor_reference_image = candidate_anchor_path
+            source_reference_image = candidate_anchor_path
 
     effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     image_dir = Path(settings.media_dir) / "images" / str(project.id)
@@ -1666,7 +1670,7 @@ async def upsert_similar_scene_image(
             effective_aspect_ratio,
             str(target_file),
             False,
-            anchor_reference_image,
+            source_reference_image,
         )
         if not target_file.exists() or target_file.stat().st_size <= 0:
             raise HTTPException(status_code=500, detail="Falha ao gerar imagem da cena")

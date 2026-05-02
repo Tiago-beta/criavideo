@@ -125,7 +125,7 @@ async def extract_last_frame(video_path: str, output_path: str) -> str:
     return output_path
 
 
-async def concatenate_clips(clip_paths: list[str], output_path: str) -> str:
+async def concatenate_clips(clip_paths: list[str], output_path: str, crossfade_dur: float = 0.5) -> str:
     """Concatenate video clips while preserving scene audio."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -138,8 +138,6 @@ async def concatenate_clips(clip_paths: list[str], output_path: str) -> str:
     for path in clip_paths:
         inputs.extend(["-i", path])
 
-    # Build crossfade chain: 0.5s crossfade between each pair
-    crossfade_dur = 0.5
     n = len(clip_paths)
     filter_parts: list[str] = []
 
@@ -159,7 +157,11 @@ async def concatenate_clips(clip_paths: list[str], output_path: str) -> str:
             )
         audio_labels.append(normalized_label)
 
-    if n == 2:
+    if crossfade_dur <= 0:
+        video_labels = "".join(f"[{i}:v]" for i in range(n))
+        filter_parts.append(f"{video_labels}concat=n={n}:v=1:a=0[outv]")
+        filter_parts.append(f"{''.join(audio_labels)}concat=n={n}:v=0:a=1[outa]")
+    elif n == 2:
         video_filter = (
             f"[0:v][1:v]xfade=transition=fade:duration={crossfade_dur}:offset=OFFSET0[outv]"
         )
@@ -224,7 +226,11 @@ async def concatenate_clips(clip_paths: list[str], output_path: str) -> str:
         output_path,
     ]
 
-    logger.info(f"Concatenating {n} clips with crossfade...")
+    logger.info(
+        "Concatenating %s clips with %s...",
+        n,
+        "hard cuts" if crossfade_dur <= 0 else f"crossfade {crossfade_dur:.2f}s",
+    )
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
     )

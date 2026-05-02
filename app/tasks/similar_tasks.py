@@ -9,6 +9,7 @@ import logging
 import math
 import mimetypes
 import os
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -33,6 +34,11 @@ from app.services.video_composer import _get_duration as get_duration
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+_SIMILAR_SCENE_TIME_RE = re.compile(r"pts_time:(\d+(?:\.\d+)?)")
+_SIMILAR_SCENE_DETECT_THRESHOLD = 0.22
+_SIMILAR_SCENE_MIN_SECONDS = 0.85
+_SIMILAR_SCENE_MAX_COUNT = 180
+_SIMILAR_REFERENCE_CLIP_FPS = 30
 
 
 def _safe_tags_dict(raw: object) -> dict:
@@ -195,6 +201,150 @@ async def _extract_frame(video_path: str, timestamp_seconds: float, output_path:
     if proc.returncode != 0 or not out.exists() or out.stat().st_size <= 0:
         details = (stderr or b"").decode(errors="ignore")[-500:]
         raise RuntimeError(f"Frame extraction failed: {details}")
+
+
+async def _detect_scene_change_timestamps(
+    video_path: str,
+    threshold: float = _SIMILAR_SCENE_DETECT_THRESHOLD,
+) -> list[float]:
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-hide_banner",
+        "-i",
+        video_path,
+        "-an",
+        "-vf",
+        f"select=gt(scene\\,{float(threshold):.3f}),showinfo",
+        "-vsync",
+        "vfr",
+        "-f",
+        "null",
+        "-",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    raw_output = (stderr or b"").decode(errors="ignore")
+    if proc.returncode != 0 and not raw_output.strip():
+        raise RuntimeError("ffmpeg falhou ao detectar cortes do video de referencia")
+
+    cut_times: list[float] = []
+    for match in _SIMILAR_SCENE_TIME_RE.finditer(raw_output):
+        try:
+            value = float(match.group(1))
+        except Exception:
+            continue
+        if value > 0:
+            cut_times.append(value)
+    return cut_times
+
+
+def _compress_similar_scene_ranges(
+    ranges: list[tuple[float, float]],
+    *,
+    max_count: int = _SIMILAR_SCENE_MAX_COUNT,
+) -> list[tuple[float, float]]:
+    compressed = [(float(start), float(end)) for start, end in ranges if float(end) - float(start) > 0.05]
+    while len(compressed) > max_count:
+        shortest_idx = min(
+            range(len(compressed)),
+            key=lambda idx: max(0.0, compressed[idx][1] - compressed[idx][0]),
+        )
+        if shortest_idx == 0 and len(compressed) > 1:
+            _, first_end = compressed[0]
+            _, second_end = compressed[1]
+            compressed[0:2] = [(0.0, max(first_end, second_end))]
+        else:
+            prev_start, _ = compressed[shortest_idx - 1]
+            _, current_end = compressed[shortest_idx]
+            compressed[shortest_idx - 1:shortest_idx + 1] = [(prev_start, current_end)]
+    return [(round(start, 3), round(end, 3)) for start, end in compressed]
+
+
+def _build_similar_scene_ranges(
+    duration_seconds: float,
+    cut_times: list[float],
+    *,
+    target_chunk_seconds: float = 5.0,
+    min_seconds: float = _SIMILAR_SCENE_MIN_SECONDS,
+    max_count: int = _SIMILAR_SCENE_MAX_COUNT,
+) -> list[tuple[float, float]]:
+    total_duration = max(float(duration_seconds or 0), 0.1)
+    safe_chunk = max(float(target_chunk_seconds or 5.0), min_seconds)
+    normalized_cuts: list[float] = []
+    for raw_cut in sorted(float(value) for value in (cut_times or [])):
+        if raw_cut <= min_seconds * 0.35 or raw_cut >= total_duration - (min_seconds * 0.35):
+            continue
+        if normalized_cuts and raw_cut - normalized_cuts[-1] < min_seconds * 0.55:
+            continue
+        normalized_cuts.append(round(raw_cut, 3))
+
+    boundaries = [0.0, *normalized_cuts, total_duration]
+    raw_ranges: list[tuple[float, float]] = []
+    for idx in range(len(boundaries) - 1):
+        start = float(boundaries[idx])
+        end = float(boundaries[idx + 1])
+        if end - start > 0.05:
+            raw_ranges.append((start, end))
+
+    merged_ranges: list[tuple[float, float]] = []
+    for start, end in raw_ranges:
+        if end - start < min_seconds and merged_ranges:
+            prev_start, _ = merged_ranges[-1]
+            merged_ranges[-1] = (prev_start, end)
+        else:
+            merged_ranges.append((start, end))
+
+    if len(merged_ranges) > 1 and (merged_ranges[0][1] - merged_ranges[0][0]) < min_seconds:
+        first_start, _ = merged_ranges[0]
+        _, second_end = merged_ranges[1]
+        merged_ranges = [(first_start, second_end), *merged_ranges[2:]]
+
+    final_ranges: list[tuple[float, float]] = []
+    for start, end in merged_ranges or [(0.0, total_duration)]:
+        segment_duration = end - start
+        if segment_duration <= safe_chunk + 0.05:
+            final_ranges.append((start, end))
+            continue
+
+        segment_count = max(2, int(math.ceil(segment_duration / safe_chunk)))
+        while segment_count > 1 and (segment_duration / segment_count) < min_seconds:
+            segment_count -= 1
+
+        for idx in range(segment_count):
+            part_start = start + ((segment_duration * idx) / segment_count)
+            part_end = end if idx == segment_count - 1 else start + ((segment_duration * (idx + 1)) / segment_count)
+            if part_end - part_start > 0.05:
+                final_ranges.append((part_start, part_end))
+
+    if not final_ranges:
+        final_ranges = [(0.0, total_duration)]
+
+    return _compress_similar_scene_ranges(final_ranges, max_count=max_count)
+
+
+def _extract_similar_reference_frames(tags: dict | None) -> dict[str, str]:
+    raw_map = tags.get("similar_reference_frames") if isinstance(tags, dict) else {}
+    if not isinstance(raw_map, dict):
+        return {}
+
+    reference_frames: dict[str, str] = {}
+    for key, raw_path in raw_map.items():
+        path = str(raw_path or "").strip()
+        if path and os.path.exists(path):
+            reference_frames[str(key)] = path
+    return reference_frames
+
+
+def _get_similar_scene_reference_frame_path(
+    scene: VideoScene,
+    reference_frames_by_scene_index: dict[str, str] | None = None,
+) -> str:
+    scene_key = str(int(scene.scene_index or 0))
+    candidate = str((reference_frames_by_scene_index or {}).get(scene_key) or "").strip()
+    if candidate and os.path.exists(candidate):
+        return candidate
+    return ""
 
 
 def _image_file_to_data_url(path: str) -> str:
@@ -446,11 +596,17 @@ def _scene_duration(scene: VideoScene) -> int:
     start = float(scene.start_time or 0)
     end = float(scene.end_time or start)
     raw = max(0.0, end - start)
-    floor = max(1, int(settings.similar_scene_min_seconds or 5))
+    floor = 1
     ceil = max(floor, int(settings.similar_scene_max_seconds or 15))
     if raw <= 0:
         return floor
-    return max(floor, min(ceil, int(round(raw))))
+    return max(floor, min(ceil, int(math.ceil(raw))))
+
+
+def _scene_duration_seconds(scene: VideoScene) -> float:
+    start = float(scene.start_time or 0)
+    end = float(scene.end_time or start)
+    return max(0.1, end - start)
 
 
 def _normalize_engine(value: str) -> str:
@@ -480,9 +636,19 @@ def _engine_duration(engine: str, duration: int) -> int:
     return max(5, min(15, safe))
 
 
+def _engine_min_duration(engine: str) -> float:
+    normalized_engine = _normalize_engine(engine)
+    if normalized_engine == "grok":
+        return 1.0
+    if normalized_engine in {"wan2", "minimax", "seedance"}:
+        return 5.0
+    return 1.0
+
+
 def _build_similar_scene_generation_context(
     scene: VideoScene,
     anchor_scene: VideoScene | None = None,
+    reference_frames_by_scene_index: dict[str, str] | None = None,
 ) -> tuple[str, str]:
     current_scene_index = int(scene.scene_index or 0)
     anchor_scene_index = int(anchor_scene.scene_index or 0) if anchor_scene else 0
@@ -493,13 +659,76 @@ def _build_similar_scene_generation_context(
         anchor_scene_index=anchor_scene_index,
     )
 
-    reference_image_path = ""
-    if anchor_scene and current_scene_index > anchor_scene_index:
+    reference_image_path = _get_similar_scene_reference_frame_path(scene, reference_frames_by_scene_index)
+    if not reference_image_path and anchor_scene and current_scene_index > anchor_scene_index:
         candidate = str(anchor_scene.image_path or "").strip()
         if candidate and os.path.exists(candidate) and int(anchor_scene.id or 0) != int(scene.id or 0):
             reference_image_path = candidate
 
     return prompt, reference_image_path
+
+
+async def _render_reference_frame_clip(
+    image_path: str,
+    output_path: str,
+    duration_seconds: float,
+    aspect_ratio: str,
+) -> str:
+    if not image_path or not os.path.exists(image_path):
+        raise RuntimeError("Imagem de referencia nao encontrada para microclip")
+
+    clip_duration = max(0.6, float(duration_seconds or 0.6))
+    if aspect_ratio == "9:16":
+        width, height = 1080, 1920
+    elif aspect_ratio == "1:1":
+        width, height = 1080, 1080
+    else:
+        width, height = 1920, 1080
+
+    upscale_factor = 2
+    frames = max(int(math.ceil(clip_duration * _SIMILAR_REFERENCE_CLIP_FPS)), 1)
+    filter_chain = (
+        f"scale={width * upscale_factor}:{height * upscale_factor},"
+        f"zoompan=z='1.0+0.035*(on/{frames})':"
+        f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+        f"d={frames}:s={width}x{height}:fps={_SIMILAR_REFERENCE_CLIP_FPS},"
+        "format=yuv420p,setsar=1"
+    )
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-y",
+        "-loop",
+        "1",
+        "-i",
+        image_path,
+        "-vf",
+        filter_chain,
+        "-t",
+        f"{clip_duration:.3f}",
+        "-r",
+        str(_SIMILAR_REFERENCE_CLIP_FPS),
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        output_path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
+        details = (stderr or b"").decode(errors="ignore")[-500:]
+        raise RuntimeError(f"Falha ao gerar microclip de referencia: {details}")
+    return output_path
 
 
 async def _ensure_scene_image(
@@ -508,13 +737,18 @@ async def _ensure_scene_image(
     target_dir: Path,
     *,
     anchor_scene: VideoScene | None = None,
+    reference_frames_by_scene_index: dict[str, str] | None = None,
 ) -> str:
     if scene.image_path and os.path.exists(scene.image_path):
         return str(scene.image_path)
 
     target_dir.mkdir(parents=True, exist_ok=True)
     out_path = str(target_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.png")
-    prompt, reference_image_path = _build_similar_scene_generation_context(scene, anchor_scene)
+    prompt, reference_image_path = _build_similar_scene_generation_context(
+        scene,
+        anchor_scene,
+        reference_frames_by_scene_index,
+    )
 
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(
@@ -542,54 +776,82 @@ async def _generate_clip_for_scene(
     clip_dir: Path,
     image_dir: Path,
     anchor_scene: VideoScene | None = None,
+    reference_frames_by_scene_index: dict[str, str] | None = None,
 ) -> str:
     normalized_engine = _normalize_engine(engine)
+    scene_duration_seconds = _scene_duration_seconds(scene)
     clip_duration = _engine_duration(normalized_engine, _scene_duration(scene))
-    prompt, _ = _build_similar_scene_generation_context(scene, anchor_scene)
+    prompt, reference_image_path = _build_similar_scene_generation_context(
+        scene,
+        anchor_scene,
+        reference_frames_by_scene_index,
+    )
 
     clip_dir.mkdir(parents=True, exist_ok=True)
-    image_path = await _ensure_scene_image(scene, aspect_ratio, image_dir, anchor_scene=anchor_scene)
+    manual_image_path = str(scene.image_path or "").strip()
+    if not (manual_image_path and os.path.exists(manual_image_path)):
+        manual_image_path = ""
     output_path = str(clip_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.mp4")
 
-    if normalized_engine == "grok":
-        await generate_video_clip(
-            image_path=image_path,
-            prompt=prompt,
-            output_path=output_path,
-            duration=clip_duration,
-            aspect_ratio=aspect_ratio,
-            on_progress=None,
-            reference_mode="",
+    base_reference_image = manual_image_path or reference_image_path
+    if base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
+        await _render_reference_frame_clip(
+            base_reference_image,
+            output_path,
+            scene_duration_seconds,
+            aspect_ratio,
         )
-    elif normalized_engine == "minimax":
-        await generate_minimax_video(
-            prompt=prompt,
-            duration=clip_duration,
-            aspect_ratio=aspect_ratio,
-            output_path=output_path,
-            image_path=image_path,
-            on_progress=None,
-        )
-    elif normalized_engine == "wan2":
-        await generate_wan_video(
-            prompt=prompt,
-            duration=clip_duration,
-            aspect_ratio=aspect_ratio,
-            output_path=output_path,
-            image_path=image_path,
-            generate_audio=True,
-            on_progress=None,
-        )
+        clip_duration = max(0.6, scene_duration_seconds)
     else:
-        await generate_realistic_video(
-            prompt=prompt,
-            duration=clip_duration,
-            aspect_ratio=aspect_ratio,
-            output_path=output_path,
-            generate_audio=True,
-            image_path=image_path,
-            on_progress=None,
-        )
+        image_path = manual_image_path or reference_image_path
+        if not image_path:
+            image_path = await _ensure_scene_image(
+                scene,
+                aspect_ratio,
+                image_dir,
+                anchor_scene=anchor_scene,
+                reference_frames_by_scene_index=reference_frames_by_scene_index,
+            )
+
+        if normalized_engine == "grok":
+            await generate_video_clip(
+                image_path=image_path,
+                prompt=prompt,
+                output_path=output_path,
+                duration=clip_duration,
+                aspect_ratio=aspect_ratio,
+                on_progress=None,
+                reference_mode="",
+            )
+        elif normalized_engine == "minimax":
+            await generate_minimax_video(
+                prompt=prompt,
+                duration=clip_duration,
+                aspect_ratio=aspect_ratio,
+                output_path=output_path,
+                image_path=image_path,
+                on_progress=None,
+            )
+        elif normalized_engine == "wan2":
+            await generate_wan_video(
+                prompt=prompt,
+                duration=clip_duration,
+                aspect_ratio=aspect_ratio,
+                output_path=output_path,
+                image_path=image_path,
+                generate_audio=True,
+                on_progress=None,
+            )
+        else:
+            await generate_realistic_video(
+                prompt=prompt,
+                duration=clip_duration,
+                aspect_ratio=aspect_ratio,
+                output_path=output_path,
+                generate_audio=True,
+                image_path=image_path,
+                on_progress=None,
+            )
 
     if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
         raise RuntimeError("Falha ao gerar clip da cena")
@@ -713,22 +975,20 @@ async def run_similar_reference_analysis(
             await db.commit()
 
             duration_seconds = await _ffprobe_duration(resolved_video_path)
-            scene_seconds = max(
-                int(settings.similar_scene_default_seconds or 5),
-                int(settings.similar_scene_min_seconds or 5),
+            scene_seconds = max(1.0, float(settings.similar_scene_default_seconds or 5))
+            detected_cut_times = await _detect_scene_change_timestamps(resolved_video_path)
+            scene_ranges = _build_similar_scene_ranges(
+                duration_seconds,
+                detected_cut_times,
+                target_chunk_seconds=scene_seconds,
             )
-            scene_seconds = min(scene_seconds, int(settings.similar_scene_max_seconds or 15))
-            scene_count = max(1, int(math.ceil(duration_seconds / scene_seconds)))
-            scene_count = min(scene_count, 120)
+            scene_count = len(scene_ranges)
 
             openai_client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
             scene_payloads: list[dict] = []
+            reference_frames_by_scene_index: dict[str, str] = {}
 
-            for idx in range(scene_count):
-                start = float(idx * scene_seconds)
-                if start >= duration_seconds:
-                    break
-                end = min(duration_seconds, start + scene_seconds)
+            for idx, (start, end) in enumerate(scene_ranges):
                 midpoint = min(duration_seconds - 0.05, start + ((end - start) / 2.0))
                 if midpoint < 0:
                     midpoint = 0
@@ -749,8 +1009,10 @@ async def run_similar_reference_analysis(
                         "start_time": start,
                         "end_time": end,
                         "prompt": prompt,
+                        "reference_frame_path": frame_path,
                     }
                 )
+                reference_frames_by_scene_index[str(idx)] = frame_path
 
                 progress = 20 + int(55 * ((idx + 1) / max(scene_count, 1)))
                 project.progress = min(80, progress)
@@ -796,6 +1058,9 @@ async def run_similar_reference_analysis(
                     "similar_stage": "analysis_ready",
                     "similar_scene_seconds": scene_seconds,
                     "similar_scene_count": len(scene_payloads),
+                    "similar_scene_strategy": "shot_detect",
+                    "similar_scene_detect_threshold": _SIMILAR_SCENE_DETECT_THRESHOLD,
+                    "similar_reference_frames": reference_frames_by_scene_index,
                     "similar_total_duration": duration_seconds,
                     "similar_detected_mode": detected_mode,
                     "similar_detected_confidence": detected_confidence,
@@ -865,6 +1130,7 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
             clip_dir = Path(settings.media_dir) / "clips" / str(project_id)
             image_dir = Path(settings.media_dir) / "images" / str(project_id)
             anchor_scene = scenes[0] if scenes else None
+            reference_frames_by_scene_index = _extract_similar_reference_frames(tags)
 
             for idx, scene in enumerate(scenes):
                 await _generate_clip_for_scene(
@@ -874,6 +1140,7 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
                     clip_dir=clip_dir,
                     image_dir=image_dir,
                     anchor_scene=anchor_scene,
+                    reference_frames_by_scene_index=reference_frames_by_scene_index,
                 )
                 project.progress = 10 + int(80 * ((idx + 1) / max(len(scenes), 1)))
                 await db.commit()
@@ -932,6 +1199,7 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
 
             clip_dir = Path(settings.media_dir) / "clips" / str(project_id)
             image_dir = Path(settings.media_dir) / "images" / str(project_id)
+            reference_frames_by_scene_index = _extract_similar_reference_frames(tags)
             anchor_scene = None
             if int(scene.scene_index or 0) > 0:
                 anchor_result = await db.execute(
@@ -951,6 +1219,7 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
                 clip_dir=clip_dir,
                 image_dir=image_dir,
                 anchor_scene=anchor_scene,
+                reference_frames_by_scene_index=reference_frames_by_scene_index,
             )
 
             tags = _safe_tags_dict(project.tags)
@@ -1020,7 +1289,8 @@ async def run_similar_merge(project_id: int, aspect_ratio: str, scene_ids: list[
             render_dir.mkdir(parents=True, exist_ok=True)
             output_path = str(render_dir / f"video_{aspect_ratio.replace(':', 'x')}_similar.mp4")
 
-            await concatenate_clips(clip_paths, output_path)
+            use_hard_cuts = str(tags.get("similar_scene_strategy") or "").strip().lower() == "shot_detect"
+            await concatenate_clips(clip_paths, output_path, crossfade_dur=0.0 if use_hard_cuts else 0.5)
 
             if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
                 raise RuntimeError("Falha ao unir os clips")
