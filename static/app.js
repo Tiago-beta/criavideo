@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v308 loaded");
+console.log("[CriaVideo] app.js v309 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -12227,6 +12227,26 @@ function clearPublishThumbnail() {
     if (btnRegen) btnRegen.hidden = true;
 }
 
+function setPublishThumbnailManualState(hasPreview = false) {
+    const thumbArea = document.getElementById("pub-thumbnail-area");
+    const thumbLoading = document.getElementById("pub-thumbnail-loading");
+    const thumbPreview = document.getElementById("pub-thumbnail-preview");
+    const btnRegen = document.getElementById("btn-regenerate-thumb");
+
+    if (thumbArea) thumbArea.hidden = false;
+    if (thumbLoading) thumbLoading.hidden = true;
+    if (thumbPreview && !hasPreview) {
+        thumbPreview.hidden = true;
+        thumbPreview.src = "";
+        thumbPreview.removeAttribute("data-raw-url");
+    }
+    if (btnRegen) {
+        btnRegen.hidden = false;
+        btnRegen.disabled = false;
+        btnRegen.textContent = hasPreview ? "Gerar nova thumbnail" : "Gerar thumbnail";
+    }
+}
+
 function getPublishThumbnailUrlFromForm() {
     const thumbPreview = document.getElementById("pub-thumbnail-preview");
     if (!thumbPreview || thumbPreview.hidden) {
@@ -12249,7 +12269,7 @@ function getPublishThumbnailUrlFromForm() {
 function applyPublishDraftThumbnail(thumbnailUrl) {
     const cleanUrl = String(thumbnailUrl || "").trim();
     if (!cleanUrl) {
-        clearPublishThumbnail();
+        setPublishThumbnailManualState(false);
         return;
     }
 
@@ -12265,7 +12285,11 @@ function applyPublishDraftThumbnail(thumbnailUrl) {
         thumbPreview.src = `${cleanUrl}?t=${Date.now()}`;
         thumbPreview.hidden = false;
     }
-    if (btnRegen) btnRegen.hidden = false;
+    if (btnRegen) {
+        btnRegen.hidden = false;
+        btnRegen.disabled = false;
+        btnRegen.textContent = "Gerar nova thumbnail";
+    }
 }
 
 function getAllPublishDrafts() {
@@ -12688,7 +12712,6 @@ async function onRenderSelected(renderId) {
     }
 
     // First: get AI suggestions for title/description
-    let aiTitle = "";
     try {
         const data = await api("/publish/ai-suggest", {
             method: "POST",
@@ -12697,19 +12720,12 @@ async function onRenderSelected(renderId) {
         titleInput.value = data.title || "";
         descInput.value = data.description || "";
         hashtagsInput.value = data.hashtags || "";
-        aiTitle = data.title || "";
         _publishLastThumbnailPrompt = String(data.thumbnail_prompt || "").trim();
     } catch (err) {
         console.warn("AI suggest failed:", err);
     }
 
-    // Then: generate thumbnail using the AI title for impactful text
-    await generatePublishThumbnail(
-        renderId,
-        aiTitle,
-        descInput.value || "",
-        _publishLastThumbnailPrompt,
-    );
+    setPublishThumbnailManualState(false);
     aiLoading.hidden = true;
     renderPublishDraftPicker();
 }
@@ -12723,7 +12739,9 @@ async function generatePublishThumbnail(renderId, customTitle, customDescription
     thumbArea.hidden = false;
     thumbLoading.hidden = false;
     thumbPreview.hidden = true;
-    btnRegen.hidden = true;
+    btnRegen.hidden = false;
+    btnRegen.disabled = true;
+    btnRegen.textContent = "Gerando thumbnail...";
 
     try {
         const body = { render_id: renderId };
@@ -12746,12 +12764,18 @@ async function generatePublishThumbnail(renderId, customTitle, customDescription
             thumbPreview.src = data.thumbnail_url + "?t=" + Date.now();
             thumbPreview.hidden = false;
             btnRegen.hidden = false;
+            btnRegen.textContent = "Gerar nova thumbnail";
         }
     } catch (err) {
         console.warn("Thumbnail generation failed:", err);
         showToast(`Erro ao gerar thumbnail: ${err.message || err}`, "error");
     } finally {
         thumbLoading.hidden = true;
+        btnRegen.hidden = false;
+        btnRegen.disabled = false;
+        if (thumbPreview.hidden) {
+            btnRegen.textContent = "Gerar thumbnail";
+        }
     }
 }
 

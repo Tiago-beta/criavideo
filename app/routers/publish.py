@@ -484,6 +484,112 @@ async def ai_suggest(
         content = re.sub(r"\s{2,}", " ", content)
         return content.strip()
 
+    def _normalize_project_tags(raw_tags) -> list[str]:
+        if isinstance(raw_tags, dict):
+            candidates = []
+            for key, value in raw_tags.items():
+                key_label = re.sub(r"[_\-]+", " ", str(key or "")).strip()
+                if key_label:
+                    candidates.append(key_label)
+
+                if isinstance(value, str):
+                    value_label = re.sub(r"\s+", " ", value).strip()
+                    if value_label and len(value_label) <= 48:
+                        candidates.append(value_label)
+                elif isinstance(value, (int, float)) and value:
+                    candidates.append(str(value))
+                elif isinstance(value, list):
+                    for item in value[:4]:
+                        item_label = re.sub(r"\s+", " ", str(item or "")).strip()
+                        if item_label and len(item_label) <= 48:
+                            candidates.append(item_label)
+            return _normalize_tags(candidates, max_items=12)
+
+        return _normalize_tags(raw_tags, max_items=12)
+
+    def _normalize_render_source_path(raw_path: str) -> str:
+        source = str(raw_path or "").strip()
+        if not source:
+            return ""
+
+        if source.startswith("/video/media/"):
+            source = os.path.join(settings.media_dir, source.split("/video/media/")[-1].lstrip("/"))
+        elif "/video/media/" in source:
+            source = os.path.join(settings.media_dir, source.split("/video/media/")[-1].lstrip("/"))
+        elif not os.path.isabs(source):
+            source = os.path.join(settings.media_dir, source.lstrip("/\\"))
+
+        return source
+
+    def _derive_theme_seed(primary_context: str, fallback: str) -> str:
+        cleaned = _strip_lyrics_blocks(primary_context)
+        words = re.findall(r"[\wÀ-ÿ]+", cleaned, flags=re.UNICODE)
+        if len(words) >= 6:
+            return _trim_title(" ".join(words[:16]), 72)
+        return _trim_title(fallback, 72) or "Vídeo musical"
+
+    async def _load_render_transcription() -> str:
+        fallback_text = _strip_lyrics_blocks(project.lyrics_text or "")
+        render_path = _normalize_render_source_path(render.file_path)
+        if not render_path or not os.path.exists(render_path):
+            return fallback_text
+
+        temp_dir = Path(settings.media_dir) / "tmp" / "publish_transcribe" / str(project.id)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        temp_audio_path = ""
+        try:
+            import asyncio
+            import subprocess
+            import uuid
+            from app.services.transcriber import transcribe_audio
+
+            def _extract_audio_track() -> str:
+                target = temp_dir / f"publish_{render.id}_{uuid.uuid4().hex[:8]}.mp3"
+                proc = subprocess.run(
+                    [
+                        "ffmpeg", "-y", "-i", render_path,
+                        "-map", "0:a:0", "-vn",
+                        "-t", "240",
+                        "-ac", "1", "-ar", "16000",
+                        "-c:a", "libmp3lame", "-b:a", "32k",
+                        str(target),
+                    ],
+                    capture_output=True,
+                    timeout=120,
+                )
+                if proc.returncode != 0:
+                    stderr_text = (proc.stderr or b"").decode(errors="ignore")
+                    if "Stream map '0:a:0'" in stderr_text or "matches no streams" in stderr_text:
+                        return ""
+                    raise RuntimeError(stderr_text[-800:])
+                return str(target)
+
+            temp_audio_path = await asyncio.get_event_loop().run_in_executor(None, _extract_audio_track)
+            if not temp_audio_path:
+                return fallback_text
+
+            hint = (fallback_text or project.description or project.track_title or project.title or "")[:800]
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: transcribe_audio(temp_audio_path, prompt=hint),
+            )
+            transcript_text = _strip_lyrics_blocks(str((result or {}).get("text") or ""))
+            return transcript_text or fallback_text
+        except Exception as transcribe_err:
+            logger.warning(
+                "Publish AI context transcription failed for render %s: %s",
+                render.id,
+                transcribe_err,
+            )
+            return fallback_text
+        finally:
+            if temp_audio_path and os.path.exists(temp_audio_path):
+                try:
+                    os.remove(temp_audio_path)
+                except OSError:
+                    pass
+
     def _build_description_template(
         main_keyword: str,
         angle_text: str,
@@ -525,6 +631,10 @@ async def ai_suggest(
 
         return _normalize_ptbr_copy("\n".join(lines).strip())
 
+    render_transcription = await _load_render_transcription()
+    transcription_preview = render_transcription[:1800]
+    project_tags = _normalize_project_tags(project.tags)
+
     context_parts = []
     if project.title:
         context_parts.append(f"Titulo do projeto: {project.title}")
@@ -534,28 +644,42 @@ async def ai_suggest(
         context_parts.append(f"Artista: {project.track_artist}")
     if project.style_prompt:
         context_parts.append(f"Estilo visual: {project.style_prompt}")
-    if project.lyrics_text:
+    if transcription_preview:
+        context_parts.append(f"Transcricao/contexto real do video:\n{transcription_preview}")
+    elif project.lyrics_text:
         lyrics_preview = project.lyrics_text[:700]
-        context_parts.append(f"Trecho da letra:\n{lyrics_preview}")
+        context_parts.append(f"Trecho da letra/roteiro:\n{lyrics_preview}")
     if project.description:
         context_parts.append(f"Descricao do projeto: {project.description}")
-    if project.tags:
-        context_parts.append(f"Tags base: {', '.join(str(tag) for tag in project.tags[:12])}")
+    if project_tags:
+        context_parts.append(f"Tags base: {', '.join(project_tags[:12])}")
 
     context = "\n".join(context_parts) or "Vídeo musical sem detalhes adicionais."
 
-    tema = project.track_title or project.title or "Vídeo musical"
+    tema = _derive_theme_seed(
+        transcription_preview or project.description or "",
+        project.track_title or project.title or "Vídeo musical",
+    )
     resumo = context[:2800]
-    project_tags = [str(tag).strip() for tag in (project.tags or []) if str(tag).strip()]
+    title_seed = _trim_title(tema or project.title or project.track_title or "Novo video", 80)
     publico = "Público brasileiro do YouTube interessado no tema específico deste vídeo."
     if project_tags:
         publico = f"Publico principal ligado a: {', '.join(project_tags[:6])}."
     objetivo = "Maximizar CTR sem clickbait enganoso e melhorar descoberta em busca/sugeridos."
     tom_desejado = project.style_prompt or "envolvente, premium e humano"
+    context_priority = (
+        "Use primeiro a transcrição/contexto real do vídeo para entender o assunto. "
+        "Só use o nome do projeto, do arquivo ou da música como apoio quando a transcrição não trouxer contexto suficiente."
+    )
 
     stage1_prompt = f"""Você é um estrategista sênior de YouTube SEO + CTR no Brasil.
 
 Sua tarefa é criar metadados que maximizem descoberta em busca e cliques qualificados sem enganar.
+
+REGRA DE CONTEXTO (OBRIGATORIA):
+- priorize a transcrição/contexto real do vídeo acima do nome do projeto ou do arquivo
+- se o título atual for vago, descubra o assunto principal pela transcrição e pela descrição real
+- só use nome de música, nome do projeto ou rótulos genéricos como apoio secundário
 
 GUIDE OBRIGATORIO DE THUMBNAIL (seguir estritamente):
 - a thumbnail precisa ter 1 ideia principal e ser entendida em menos de 1 segundo
@@ -585,6 +709,7 @@ Resumo: {resumo}
 Publico: {publico}
 Objetivo: {objetivo}
 Tom desejado: {tom_desejado}
+Prioridade de contexto: {context_priority}
 
 Regras de saida:
 - português brasileiro com acentuação e pontuação corretas
@@ -641,7 +766,7 @@ Retorne SOMENTE JSON (sem markdown):
             raw_titles = [raw_titles]
         title_options = [_trim_title(str(t).strip(), 80) for t in raw_titles if str(t).strip()]
         if not title_options:
-            title_options = [_trim_title(project.title or project.track_title or "Novo video", 80)]
+            title_options = [title_seed]
         while len(title_options) < 3:
             title_options.append(title_options[-1])
         title_options = title_options[:5]
@@ -712,6 +837,7 @@ REGRAS FINAIS OBRIGATORIAS:
 - thumbnail_hook com 2 a 5 palavras em portugues
 - thumbnail_prompt com foco em 1 ideia principal, contraste forte e texto grande legivel
 - ortografia revisada em pt-BR, com acentuacao e pontuacao natural
+- use a transcrição/contexto real do vídeo como fonte principal de verdade antes de considerar nomes vagos
 - proibido inserir assuntos, terapias, benefícios ou comandos que não estejam no contexto do vídeo
 - se o vídeo for religioso, musical, infantil, educativo, produto ou outro nicho, adaptar tudo ao nicho real
 
@@ -752,7 +878,7 @@ Retorne SOMENTE JSON:
             80,
         )
         if not chosen_title or _has_off_context_niche_terms(chosen_title, context):
-            chosen_title = _trim_title(project.title or project.track_title or "Novo video", 80)
+            chosen_title = title_seed
 
         primary_keyword = _pick_primary_keyword(keywords, tema)
         chosen_title = _enforce_title_formula(chosen_title, primary_keyword)

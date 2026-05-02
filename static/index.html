@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260502-20">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260502-21">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 326;
+        var REQUIRED_VER = 327;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -442,7 +442,7 @@
                                             <span>Gerando thumbnail com IA...</span>
                                         </div>
                                         <img id="pub-thumbnail-preview" class="pub-thumbnail-preview" alt="Thumbnail preview" hidden>
-                                        <button id="btn-regenerate-thumb" class="btn btn-secondary btn-sm" type="button" hidden>Gerar nova thumbnail</button>
+                                        <button id="btn-regenerate-thumb" class="btn btn-secondary btn-sm" type="button" hidden>Gerar thumbnail</button>
                                     </div>
                                     <div class="publish-action-row">
                                         <button id="btn-publish" class="btn btn-primary publish-action-btn" type="button">
@@ -3436,8 +3436,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260502-20"></script>
-    <script src="/video/static/pwa.js?v=20260502-20"></script>
+    <script src="/video/static/app.js?v=20260502-21"></script>
+    <script src="/video/static/pwa.js?v=20260502-21"></script>
 </body>
 </html>
 
