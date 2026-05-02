@@ -1136,6 +1136,63 @@ def _safe_tags_dict(raw: object) -> dict[str, Any]:
     return {}
 
 
+def _extract_similar_reference_frame_map(raw_tags: object) -> dict[str, str]:
+    tags = _safe_tags_dict(raw_tags)
+    raw_map = tags.get("similar_reference_frames") if isinstance(tags.get("similar_reference_frames"), dict) else {}
+    if not isinstance(raw_map, dict):
+        return {}
+
+    resolved: dict[str, str] = {}
+    for key, raw_path in raw_map.items():
+        path = str(raw_path or "").strip()
+        if path and os.path.exists(path):
+            resolved[str(key)] = path
+    return resolved
+
+
+def _serialize_project_scene(scene: VideoScene, reference_frame_map: dict[str, str] | None = None) -> dict[str, Any]:
+    reference_frame_path = ""
+    scene_key = str(int(scene.scene_index or 0))
+    if isinstance(reference_frame_map, dict):
+        reference_frame_path = str(reference_frame_map.get(scene_key) or "").strip()
+        if reference_frame_path and not os.path.exists(reference_frame_path):
+            reference_frame_path = ""
+
+    return {
+        "id": scene.id,
+        "scene_index": scene.scene_index,
+        "scene_type": scene.scene_type,
+        "prompt": scene.prompt,
+        "image_path": scene.image_path,
+        "image_url": _to_media_url(scene.image_path),
+        "clip_path": scene.clip_path,
+        "clip_url": _to_media_url(scene.clip_path),
+        "reference_frame_path": reference_frame_path,
+        "reference_frame_url": _to_media_url(reference_frame_path),
+        "start_time": scene.start_time,
+        "end_time": scene.end_time,
+        "lyrics_segment": scene.lyrics_segment,
+        "is_user_uploaded": bool(scene.is_user_uploaded),
+    }
+
+
+def _build_similar_scene_prompt_for_image_generation(base_prompt: object, edit_instruction: object = "") -> str:
+    prompt = str(base_prompt or "").strip() or "Cena cinematografica detalhada."
+    instruction = re.sub(r"\s+", " ", str(edit_instruction or "")).strip()
+    if not instruction:
+        return prompt[:2000]
+
+    merged = (
+        f"{prompt}\n\n"
+        f"AJUSTE VISUAL SOLICITADO: {instruction}\n"
+        "Mantenha o enquadramento, o ambiente, a luz, a perspectiva e a coerencia geral do frame original, "
+        "alterando apenas os elementos pedidos."
+    ).strip()
+    if len(merged) <= 2000:
+        return merged
+    return merged[:2000].rsplit(" ", 1)[0].strip() or merged[:2000]
+
+
 def _project_type(project: VideoProject) -> str:
     tags = _safe_tags_dict(getattr(project, "tags", {}) or {})
     return str(tags.get("type") or "").strip().lower()
@@ -1212,6 +1269,8 @@ class SimilarSceneImageRequest(BaseModel):
     image_upload_id: str = ""
     image_upload_ids: list[str] = Field(default_factory=list)
     generate_from_prompt: bool = False
+    prompt_override: str = ""
+    edit_instruction: str = ""
     aspect_ratio: str = "16:9"
 
 
@@ -1416,11 +1475,13 @@ async def get_project(
     renders = result_renders.scalars().all()
 
     response_tags = project.tags
+    reference_frame_map: dict[str, str] = {}
     if _is_similar_project(project):
         response_tags = _safe_tags_dict(project.tags)
         reference_video_url = _to_media_url(str(response_tags.get("similar_local_video_path") or "").strip())
         if reference_video_url:
             response_tags["similar_reference_video_url"] = reference_video_url
+        reference_frame_map = _extract_similar_reference_frame_map(response_tags)
 
     return {
         "id": project.id,
@@ -1436,20 +1497,7 @@ async def get_project(
         "error_message": project.error_message,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "scenes": [
-            {
-                "id": s.id,
-                "scene_index": s.scene_index,
-                "scene_type": s.scene_type,
-                "prompt": s.prompt,
-                "image_path": s.image_path,
-                "image_url": _to_media_url(s.image_path),
-                "clip_path": s.clip_path,
-                "clip_url": _to_media_url(s.clip_path),
-                "start_time": s.start_time,
-                "end_time": s.end_time,
-                "lyrics_segment": s.lyrics_segment,
-                "is_user_uploaded": bool(s.is_user_uploaded),
-            }
+            _serialize_project_scene(s, reference_frame_map)
             for s in scenes
         ],
         "renders": [
@@ -1547,20 +1595,8 @@ async def update_similar_scene(
         project.error_message = None
         await db.commit()
 
-    return {
-        "scene": {
-            "id": scene.id,
-            "scene_index": scene.scene_index,
-            "prompt": scene.prompt,
-            "image_path": scene.image_path,
-            "image_url": _to_media_url(scene.image_path),
-            "clip_path": scene.clip_path,
-            "clip_url": _to_media_url(scene.clip_path),
-            "start_time": scene.start_time,
-            "end_time": scene.end_time,
-            "is_user_uploaded": bool(scene.is_user_uploaded),
-        }
-    }
+    reference_frame_map = _extract_similar_reference_frame_map(project.tags)
+    return {"scene": _serialize_project_scene(scene, reference_frame_map)}
 
 
 @router.post("/projects/{project_id}/similar/scenes/{scene_id}/image")
@@ -1596,14 +1632,18 @@ async def upsert_similar_scene_image(
         if anchor_candidate and int(anchor_candidate.id or 0) != int(scene.id or 0):
             anchor_scene = anchor_candidate
 
+    effective_scene_prompt = _build_similar_scene_prompt_for_image_generation(
+        str(req.prompt_override or "").strip() or (scene.prompt or ""),
+        req.edit_instruction,
+    )
     continuity_prompt = build_similar_scene_continuity_prompt(
-        (scene.prompt or "").strip() or "Cena cinematografica detalhada.",
+        effective_scene_prompt,
         anchor_prompt=(anchor_scene.prompt or "") if anchor_scene else "",
         current_scene_index=current_scene_index,
         anchor_scene_index=int(anchor_scene.scene_index or 0) if anchor_scene else 0,
     )
     tags_data = _safe_tags_dict(project.tags)
-    reference_frame_map = tags_data.get("similar_reference_frames") if isinstance(tags_data.get("similar_reference_frames"), dict) else {}
+    reference_frame_map = _extract_similar_reference_frame_map(tags_data)
     source_reference_image = str(reference_frame_map.get(str(current_scene_index)) or "").strip()
     if source_reference_image and not os.path.exists(source_reference_image):
         source_reference_image = ""
@@ -1676,6 +1716,7 @@ async def upsert_similar_scene_image(
             raise HTTPException(status_code=500, detail="Falha ao gerar imagem da cena")
         scene.image_path = str(target_file)
         scene.is_user_uploaded = False
+        scene.prompt = effective_scene_prompt
     else:
         raise HTTPException(status_code=400, detail="Informe image_upload_id/image_upload_ids ou generate_from_prompt=true")
 
@@ -1690,17 +1731,8 @@ async def upsert_similar_scene_image(
     project.error_message = None
     await db.commit()
 
-    return {
-        "scene": {
-            "id": scene.id,
-            "scene_index": scene.scene_index,
-            "image_path": scene.image_path,
-            "image_url": _to_media_url(scene.image_path),
-            "clip_path": scene.clip_path,
-            "clip_url": _to_media_url(scene.clip_path),
-            "is_user_uploaded": bool(scene.is_user_uploaded),
-        }
-    }
+    reference_frame_map = _extract_similar_reference_frame_map(project.tags)
+    return {"scene": _serialize_project_scene(scene, reference_frame_map)}
 
 
 @router.post("/projects/{project_id}/similar/generate-previews")

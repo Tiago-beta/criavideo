@@ -7615,6 +7615,99 @@ th,
     font-size: 0.82rem;
 }
 
+.similar-reference-frame-panel {
+    margin-bottom: 12px;
+    border: 1px solid rgba(255, 193, 77, 0.28);
+    border-radius: 12px;
+    padding: 12px;
+    background: rgba(255, 193, 77, 0.06);
+}
+
+.similar-reference-frame-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.similar-reference-frame-head strong {
+    display: block;
+    color: var(--text);
+}
+
+.similar-reference-frame-head span {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+}
+
+.similar-reference-frame-body {
+    display: flex;
+    justify-content: center;
+}
+
+.similar-reference-frame-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.similar-frame-tool-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 0 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.similar-frame-tool-btn:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 193, 77, 0.42);
+    background: rgba(255, 193, 77, 0.12);
+}
+
+.similar-frame-tool-btn-primary {
+    border-color: rgba(255, 193, 77, 0.5);
+    background: rgba(255, 193, 77, 0.18);
+}
+
+.similar-reference-frame-editor {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.similar-reference-frame-editor label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text);
+    font-weight: 600;
+}
+
+.similar-reference-frame-editor-input {
+    min-height: 108px;
+    resize: vertical;
+}
+
+.similar-reference-frame-editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
 .similar-scene-preview {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -7658,6 +7751,21 @@ th,
     height: 100%;
     object-fit: cover;
     display: block;
+}
+
+@media (max-width: 820px) {
+    .similar-reference-frame-head {
+        flex-direction: column;
+    }
+
+    .similar-reference-frame-tools {
+        width: 100%;
+        justify-content: stretch;
+    }
+
+    .similar-frame-tool-btn {
+        flex: 1 1 0;
+    }
 }
 
 .similar-preview-empty {

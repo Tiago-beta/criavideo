@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v299 loaded");
+console.log("[CriaVideo] app.js v300 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4443,6 +4443,37 @@ function _forgetSimilarSceneDraft(sceneId) {
     delete similarState.sceneDraftsBySceneId[key];
 }
 
+function _setSimilarSceneFrameEditorDraft(sceneId, { open, instruction } = {}) {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return;
+
+    const nextDraft = {
+        ...(similarState.sceneDraftsBySceneId[key] || {}),
+    };
+
+    if (typeof open === "boolean") {
+        if (open) {
+            nextDraft.frameEditorOpen = true;
+        } else {
+            delete nextDraft.frameEditorOpen;
+        }
+    }
+
+    if (typeof instruction === "string") {
+        if (instruction) {
+            nextDraft.frameInstruction = instruction;
+        } else {
+            delete nextDraft.frameInstruction;
+        }
+    }
+
+    if (Object.keys(nextDraft).length) {
+        similarState.sceneDraftsBySceneId[key] = nextDraft;
+    } else {
+        delete similarState.sceneDraftsBySceneId[key];
+    }
+}
+
 function _syncSimilarDraftsFromDom() {
     const promptInputs = document.querySelectorAll("[id^='similar-scene-prompt-']");
     if (!promptInputs.length) return;
@@ -4456,6 +4487,8 @@ function _syncSimilarDraftsFromDom() {
         const startEl = document.getElementById(`similar-scene-start-${sceneId}`);
         const durationEl = document.getElementById(`similar-scene-duration-${sceneId}`);
         const mergeEl = document.getElementById(`similar-scene-merge-${sceneId}`);
+        const frameInstructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
+        const existingDraft = similarState.sceneDraftsBySceneId[sceneKey] || {};
 
         const promptValue = String(promptEl.value || "");
         const serverStart = scene ? Number(scene.start_time || 0).toFixed(1) : String(startEl?.dataset.serverValue || "");
@@ -4475,12 +4508,34 @@ function _syncSimilarDraftsFromDom() {
         const hasStartDraft = startValue !== serverStart;
         const hasDurationDraft = durationValue !== serverDuration;
 
-        if (hasPromptDraft || hasStartDraft || hasDurationDraft) {
-            similarState.sceneDraftsBySceneId[sceneKey] = {
-                prompt: promptValue,
-                start: startValue,
-                duration: durationValue,
-            };
+        const nextDraft = { ...existingDraft };
+        if (hasPromptDraft) {
+            nextDraft.prompt = promptValue;
+        } else {
+            delete nextDraft.prompt;
+        }
+        if (hasStartDraft) {
+            nextDraft.start = startValue;
+        } else {
+            delete nextDraft.start;
+        }
+        if (hasDurationDraft) {
+            nextDraft.duration = durationValue;
+        } else {
+            delete nextDraft.duration;
+        }
+
+        if (frameInstructionEl) {
+            const frameInstructionValue = String(frameInstructionEl.value || "").trim();
+            if (frameInstructionValue) {
+                nextDraft.frameInstruction = frameInstructionValue;
+            } else {
+                delete nextDraft.frameInstruction;
+            }
+        }
+
+        if (Object.keys(nextDraft).length) {
+            similarState.sceneDraftsBySceneId[sceneKey] = nextDraft;
         } else {
             delete similarState.sceneDraftsBySceneId[sceneKey];
         }
@@ -4494,7 +4549,7 @@ function _syncSimilarDraftsFromDom() {
 function _similarSceneEditorHasFocus() {
     const active = document.activeElement;
     if (!active || !active.id) return false;
-    return /^similar-scene-prompt-\d+$/.test(String(active.id));
+    return /^similar-(?:scene-prompt|frame-instruction)-\d+$/.test(String(active.id));
 }
 
 function _cleanupSimilarSceneTransientState(sceneIds) {
@@ -4585,6 +4640,15 @@ function _renderSimilarScenes(project, options = {}) {
         const selectedSceneEngine = _getSimilarSceneSelectedEngine(sceneId);
         const hasImagePreview = !!String(scene.image_url || "").trim();
         const hasClipPreview = !!String(scene.clip_url || "").trim();
+        const hasReferenceFrame = !!String(scene.reference_frame_url || "").trim();
+        const frameEditorOpen = !!draft.frameEditorOpen;
+        const frameInstruction = Object.prototype.hasOwnProperty.call(draft, "frameInstruction")
+            ? String(draft.frameInstruction || "")
+            : "";
+        const frameInstructionValue = esc(frameInstruction);
+        const referenceFrameUrl = esc(String(scene.reference_frame_url || ""));
+        const referenceFrameAlt = esc(`Frame extraido da cena ${idx + 1}`);
+        const referenceDownloadName = esc(`frame-cena-${idx + 1}.jpg`);
 
         const uploadsMarkup = pendingCount
             ? pendingUploads.map((item, uploadIdx) => {
@@ -4597,6 +4661,37 @@ function _renderSimilarScenes(project, options = {}) {
                     </figure>
                 `;
             }).join("")
+            : "";
+
+        const referenceFrameMarkup = hasReferenceFrame
+            ? `
+                <section class="similar-reference-frame-panel">
+                    <div class="similar-reference-frame-head">
+                        <div>
+                            <strong>Frame extraido do video</strong>
+                            <span>Base visual usada para manter o contexto desta cena.</span>
+                        </div>
+                        <div class="similar-reference-frame-tools">
+                            <a class="similar-frame-tool-btn" href="${referenceFrameUrl}" download="${referenceDownloadName}">Baixar frame</a>
+                            <button class="similar-frame-tool-btn similar-frame-tool-btn-primary" type="button" onclick="similarToggleFrameEdit(${sceneId})">${frameEditorOpen ? "Fechar edição" : "Editar com IA"}</button>
+                        </div>
+                    </div>
+                    <div class="similar-reference-frame-body">
+                        <div class="similar-preview-box ${previewAspectClass}">
+                            <img src="${referenceFrameUrl}" alt="${referenceFrameAlt}" loading="lazy">
+                        </div>
+                    </div>
+                    <div class="similar-reference-frame-editor${frameEditorOpen ? " is-open" : ""}" ${frameEditorOpen ? "" : "hidden"}>
+                        <label for="similar-frame-instruction-${sceneId}">O que a IA deve mudar neste frame?</label>
+                        <textarea id="similar-frame-instruction-${sceneId}" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar o produto por uma embalagem premium, manter a mesma mesa, o mesmo enquadramento e a mesma luz.">${frameInstructionValue}</textarea>
+                        <p class="field-hint">A imagem nova sai do frame original e respeita o prompt atual da cena para manter o contexto.</p>
+                        <div class="similar-reference-frame-editor-actions">
+                            <button class="btn btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})">Criar nova imagem a partir do frame</button>
+                            <button class="btn btn-secondary" type="button" onclick="similarCloseFrameEdit(${sceneId})">Cancelar</button>
+                        </div>
+                    </div>
+                </section>
+            `
             : "";
 
         const previewItems = [];
@@ -4636,6 +4731,8 @@ function _renderSimilarScenes(project, options = {}) {
                     <strong>Cena ${idx + 1}</strong>
                     <span class="similar-scene-time">${start.toFixed(1)}s - ${end.toFixed(1)}s</span>
                 </div>
+
+                ${referenceFrameMarkup}
 
                 ${previewMarkup}
 
@@ -7609,12 +7706,17 @@ async function similarGenerateSceneImage(sceneId) {
         return;
     }
 
+    const scene = _getSimilarProjectScene(sceneId);
+    const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+    const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
+
     try {
         _setSimilarStatus("Gerando imagem com IA para a cena...", "running");
         await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/image`, {
             method: "POST",
             body: JSON.stringify({
                 generate_from_prompt: true,
+                prompt_override: promptOverride,
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });
@@ -7622,6 +7724,74 @@ async function similarGenerateSceneImage(sceneId) {
         await _refreshSimilarProject();
     } catch (error) {
         showToast(`Erro ao gerar imagem: ${error.message}`, "error");
+    }
+}
+
+function similarToggleFrameEdit(sceneId) {
+    _syncSimilarDraftsFromDom();
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return;
+    const isOpen = !!similarState.sceneDraftsBySceneId[key]?.frameEditorOpen;
+    _setSimilarSceneFrameEditorDraft(sceneId, { open: !isOpen });
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+    if (!isOpen) {
+        setTimeout(() => {
+            document.getElementById(`similar-frame-instruction-${sceneId}`)?.focus();
+        }, 0);
+    }
+}
+
+function similarCloseFrameEdit(sceneId) {
+    _syncSimilarDraftsFromDom();
+    _setSimilarSceneFrameEditorDraft(sceneId, { open: false });
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+}
+
+async function similarGenerateFrameVariant(sceneId) {
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Inicie a analise antes de editar um frame.");
+        return;
+    }
+
+    const scene = _getSimilarProjectScene(sceneId);
+    const hasReferenceFrame = !!String(scene?.reference_frame_url || scene?.reference_frame_path || "").trim();
+    if (!hasReferenceFrame) {
+        showToast("Esta cena ainda nao possui frame de referencia disponivel.", "error");
+        return;
+    }
+
+    const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+    const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
+    const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
+    const editInstruction = String(instructionEl?.value || "").trim();
+
+    if (!editInstruction) {
+        showToast("Descreva primeiro o que deve mudar no frame.", "error");
+        instructionEl?.focus();
+        return;
+    }
+
+    try {
+        _setSimilarStatus("Criando uma nova imagem com base no frame extraido...", "running");
+        await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/image`, {
+            method: "POST",
+            body: JSON.stringify({
+                generate_from_prompt: true,
+                prompt_override: promptOverride,
+                edit_instruction: editInstruction,
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+        _setSimilarSceneFrameEditorDraft(sceneId, { open: false, instruction: "" });
+        showToast("Nova imagem criada a partir do frame.", "success");
+        await _refreshSimilarProject();
+    } catch (error) {
+        showToast(`Erro ao editar frame com IA: ${error.message}`, "error");
     }
 }
 
