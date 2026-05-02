@@ -25,7 +25,7 @@ from app.services.grok_video import generate_video_clip
 from app.services.minimax_video import generate_minimax_video
 from app.services.multi_clip import concatenate_clips
 from app.services.runpod_video import generate_wan_video
-from app.services.scene_generator import generate_scene_image
+from app.services.scene_generator import build_similar_scene_continuity_prompt, generate_scene_image
 from app.services.seedance_video import generate_realistic_video
 from app.services.thumbnail_generator import generate_thumbnail_from_frame
 from app.services.video_composer import _get_duration as get_duration
@@ -480,13 +480,41 @@ def _engine_duration(engine: str, duration: int) -> int:
     return max(5, min(15, safe))
 
 
-async def _ensure_scene_image(scene: VideoScene, aspect_ratio: str, target_dir: Path) -> str:
+def _build_similar_scene_generation_context(
+    scene: VideoScene,
+    anchor_scene: VideoScene | None = None,
+) -> tuple[str, str]:
+    current_scene_index = int(scene.scene_index or 0)
+    anchor_scene_index = int(anchor_scene.scene_index or 0) if anchor_scene else 0
+    prompt = build_similar_scene_continuity_prompt(
+        (scene.prompt or "").strip() or "Cena cinematografica detalhada.",
+        anchor_prompt=(anchor_scene.prompt or "") if anchor_scene else "",
+        current_scene_index=current_scene_index,
+        anchor_scene_index=anchor_scene_index,
+    )
+
+    reference_image_path = ""
+    if anchor_scene and current_scene_index > anchor_scene_index:
+        candidate = str(anchor_scene.image_path or "").strip()
+        if candidate and os.path.exists(candidate) and int(anchor_scene.id or 0) != int(scene.id or 0):
+            reference_image_path = candidate
+
+    return prompt, reference_image_path
+
+
+async def _ensure_scene_image(
+    scene: VideoScene,
+    aspect_ratio: str,
+    target_dir: Path,
+    *,
+    anchor_scene: VideoScene | None = None,
+) -> str:
     if scene.image_path and os.path.exists(scene.image_path):
         return str(scene.image_path)
 
     target_dir.mkdir(parents=True, exist_ok=True)
     out_path = str(target_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.png")
-    prompt = (scene.prompt or "").strip() or "Cena cinematografica detalhada."
+    prompt, reference_image_path = _build_similar_scene_generation_context(scene, anchor_scene)
 
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(
@@ -495,6 +523,8 @@ async def _ensure_scene_image(scene: VideoScene, aspect_ratio: str, target_dir: 
         prompt[:1200],
         aspect_ratio,
         out_path,
+        False,
+        reference_image_path,
     )
 
     if not os.path.exists(out_path) or os.path.getsize(out_path) <= 0:
@@ -511,13 +541,14 @@ async def _generate_clip_for_scene(
     aspect_ratio: str,
     clip_dir: Path,
     image_dir: Path,
+    anchor_scene: VideoScene | None = None,
 ) -> str:
     normalized_engine = _normalize_engine(engine)
     clip_duration = _engine_duration(normalized_engine, _scene_duration(scene))
-    prompt = (scene.prompt or "").strip() or "Cena cinematografica detalhada."
+    prompt, _ = _build_similar_scene_generation_context(scene, anchor_scene)
 
     clip_dir.mkdir(parents=True, exist_ok=True)
-    image_path = await _ensure_scene_image(scene, aspect_ratio, image_dir)
+    image_path = await _ensure_scene_image(scene, aspect_ratio, image_dir, anchor_scene=anchor_scene)
     output_path = str(clip_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.mp4")
 
     if normalized_engine == "grok":
@@ -833,6 +864,7 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
 
             clip_dir = Path(settings.media_dir) / "clips" / str(project_id)
             image_dir = Path(settings.media_dir) / "images" / str(project_id)
+            anchor_scene = scenes[0] if scenes else None
 
             for idx, scene in enumerate(scenes):
                 await _generate_clip_for_scene(
@@ -841,6 +873,7 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
                     aspect_ratio=aspect_ratio,
                     clip_dir=clip_dir,
                     image_dir=image_dir,
+                    anchor_scene=anchor_scene,
                 )
                 project.progress = 10 + int(80 * ((idx + 1) / max(len(scenes), 1)))
                 await db.commit()
@@ -899,6 +932,17 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
 
             clip_dir = Path(settings.media_dir) / "clips" / str(project_id)
             image_dir = Path(settings.media_dir) / "images" / str(project_id)
+            anchor_scene = None
+            if int(scene.scene_index or 0) > 0:
+                anchor_result = await db.execute(
+                    select(VideoScene)
+                    .where(VideoScene.project_id == project_id)
+                    .order_by(VideoScene.scene_index.asc())
+                    .limit(1)
+                )
+                anchor_candidate = anchor_result.scalars().first()
+                if anchor_candidate and int(anchor_candidate.id or 0) != int(scene.id or 0):
+                    anchor_scene = anchor_candidate
 
             await _generate_clip_for_scene(
                 scene,
@@ -906,6 +950,7 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
                 aspect_ratio=aspect_ratio,
                 clip_dir=clip_dir,
                 image_dir=image_dir,
+                anchor_scene=anchor_scene,
             )
 
             tags = _safe_tags_dict(project.tags)

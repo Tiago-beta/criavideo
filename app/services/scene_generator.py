@@ -380,6 +380,41 @@ def merge_reference_images_with_nano_banana(
     raise RuntimeError("Nano Banana nao retornou imagem ao unir referencias")
 
 
+def _truncate_similar_continuity_text(raw_text: str, limit: int = 620) -> str:
+    cleaned = re.sub(r"\s+", " ", str(raw_text or "")).strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[:limit].rsplit(" ", 1)[0].strip() or cleaned[:limit]
+
+
+def build_similar_scene_continuity_prompt(
+    prompt: str,
+    *,
+    anchor_prompt: str = "",
+    current_scene_index: int = 0,
+    anchor_scene_index: int = 0,
+) -> str:
+    base_prompt = _truncate_similar_continuity_text(prompt, limit=1200) or "Cena cinematografica detalhada."
+    if int(current_scene_index or 0) <= int(anchor_scene_index or 0):
+        return base_prompt
+
+    anchor_label = int(anchor_scene_index or 0) + 1
+    continuity_instruction = (
+        f"CONTINUIDADE VISUAL OBRIGATORIA: trate esta cena como uma continuacao direta da cena {anchor_label}. "
+        "Se os mesmos personagens, objetos, materiais, roupas, fundo ou ambiente reaparecerem, preserve exatamente a mesma identidade visual. "
+        "Mantenha a mesma paleta de cores, tons, texturas, acabamento, proporcoes, iluminacao-base e direcao de arte definidas na primeira cena. "
+        "Quando houver interacao com os mesmos elementos da cena inicial, mostre evolucao natural da acao sem resetar design, atmosfera ou cores."
+    )
+
+    anchor_excerpt = _truncate_similar_continuity_text(anchor_prompt, limit=420)
+    if anchor_excerpt:
+        continuity_instruction = (
+            f"{continuity_instruction} Referencia visual da cena {anchor_label}: {anchor_excerpt}"
+        )
+
+    return f"{base_prompt}\n\n{continuity_instruction}".strip()
+
+
 def generate_scene_image(
     prompt: str,
     aspect_ratio: str = "16:9",

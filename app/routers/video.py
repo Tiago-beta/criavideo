@@ -1581,6 +1581,33 @@ async def upsert_similar_scene_image(
     if not scene or scene.project_id != project_id:
         raise HTTPException(status_code=404, detail="Cena nao encontrada")
 
+    from app.services.scene_generator import build_similar_scene_continuity_prompt
+
+    anchor_scene = None
+    current_scene_index = int(scene.scene_index or 0)
+    if current_scene_index > 0:
+        anchor_result = await db.execute(
+            select(VideoScene)
+            .where(VideoScene.project_id == project_id)
+            .order_by(VideoScene.scene_index.asc())
+            .limit(1)
+        )
+        anchor_candidate = anchor_result.scalars().first()
+        if anchor_candidate and int(anchor_candidate.id or 0) != int(scene.id or 0):
+            anchor_scene = anchor_candidate
+
+    continuity_prompt = build_similar_scene_continuity_prompt(
+        (scene.prompt or "").strip() or "Cena cinematografica detalhada.",
+        anchor_prompt=(anchor_scene.prompt or "") if anchor_scene else "",
+        current_scene_index=current_scene_index,
+        anchor_scene_index=int(anchor_scene.scene_index or 0) if anchor_scene else 0,
+    )
+    anchor_reference_image = ""
+    if anchor_scene and current_scene_index > int(anchor_scene.scene_index or 0):
+        candidate_anchor_path = str(anchor_scene.image_path or "").strip()
+        if candidate_anchor_path and os.path.exists(candidate_anchor_path):
+            anchor_reference_image = candidate_anchor_path
+
     effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     image_dir = Path(settings.media_dir) / "images" / str(project.id)
     image_dir.mkdir(parents=True, exist_ok=True)
@@ -1615,12 +1642,11 @@ async def upsert_similar_scene_image(
 
             target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.png"
             loop = asyncio.get_event_loop()
-            prompt = (scene.prompt or "").strip() or "Cena cinematografica detalhada."
             await loop.run_in_executor(
                 None,
                 merge_reference_images_with_nano_banana,
                 [str(item) for item in resolved_files],
-                prompt[:1200],
+                continuity_prompt[:1200],
                 effective_aspect_ratio,
                 str(target_file),
             )
@@ -1633,13 +1659,14 @@ async def upsert_similar_scene_image(
 
         target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.png"
         loop = asyncio.get_event_loop()
-        prompt = (scene.prompt or "").strip() or "Cena cinematografica detalhada."
         await loop.run_in_executor(
             None,
             generate_scene_image,
-            prompt[:1200],
+            continuity_prompt[:1200],
             effective_aspect_ratio,
             str(target_file),
+            False,
+            anchor_reference_image,
         )
         if not target_file.exists() or target_file.stat().st_size <= 0:
             raise HTTPException(status_code=500, detail="Falha ao gerar imagem da cena")
