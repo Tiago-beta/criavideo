@@ -42,6 +42,13 @@ class TestSimilarFramePrompt(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Chegou o painel", dialogue)
         self.assertIn("renovar minha casa", dialogue)
 
+    def test_extract_explicit_scene_dialogue_accepts_braces(self):
+        dialogue = _extract_explicit_scene_dialogue(
+            "Mulher instala o painel com luz natural entrando pela janela.\n\nFala em PT-BR: {Estou muito feliz, agora vou renovar minha sala.}"
+        )
+
+        self.assertEqual(dialogue, "Estou muito feliz, agora vou renovar minha sala.")
+
     def test_build_similar_scene_speech_lock_keeps_exact_phrase(self):
         prompt = _build_similar_scene_speech_lock(
             "Mulher instala o painel ripado com luz natural entrando pela janela.",

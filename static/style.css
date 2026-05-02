@@ -7785,7 +7785,20 @@ th,
     border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.similar-reference-frame-narration-editor {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .similar-reference-frame-editor label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text);
+    font-weight: 600;
+}
+
+.similar-reference-frame-narration-editor label {
     display: block;
     margin-bottom: 8px;
     color: var(--text);
@@ -7811,6 +7824,53 @@ th,
     line-height: 1.4;
 }
 
+.similar-reference-frame-upload-list {
+    margin-top: 12px;
+}
+
+.similar-reference-frame-upload-title {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text);
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.similar-reference-frame-upload-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 8px;
+}
+
+.similar-reference-frame-progress {
+    margin-top: 12px;
+}
+
+.similar-reference-frame-progress-label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text);
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.similar-reference-frame-progress-bar {
+    position: relative;
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.similar-reference-frame-progress-bar span {
+    position: absolute;
+    inset: 0 auto 0 -35%;
+    width: 35%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(255, 193, 77, 0), rgba(255, 193, 77, 0.85), rgba(17, 201, 255, 0.7));
+    animation: similar-frame-progress-slide 1.25s ease-in-out infinite;
+}
+
 .similar-reference-frame-editor-actions {
     display: flex;
     flex-wrap: wrap;
@@ -7824,6 +7884,15 @@ th,
     padding: 0 18px;
     border-radius: 14px;
     font-size: 0.95rem;
+}
+
+@keyframes similar-frame-progress-slide {
+    0% {
+        left: -35%;
+    }
+    100% {
+        left: 100%;
+    }
 }
 
 .similar-scene-preview {

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v303 loaded");
+console.log("[CriaVideo] app.js v304 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4402,6 +4402,42 @@ function _formatSimilarUploadFileName(fileName) {
     return `${raw.slice(0, 23)}...`;
 }
 
+function _extractSimilarNarrationFromPrompt(promptText) {
+    const raw = String(promptText || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+    if (!raw) return "";
+
+    const markerMatch = raw.match(/fala\s+em\s+pt-br\s*:\s*\{([\s\S]{1,400}?)\}/i)
+        || raw.match(/narra(?:ção|c[aã]o)\s+em\s+pt-br\s*:\s*\{([\s\S]{1,400}?)\}/i)
+        || raw.match(/fala\s*:\s*\{([\s\S]{1,400}?)\}/i);
+    if (markerMatch?.[1]) {
+        return String(markerMatch[1] || "").trim();
+    }
+
+    const braceMatches = [...raw.matchAll(/\{([^{}]{3,400})\}/g)];
+    if (!braceMatches.length) {
+        return "";
+    }
+    return String(braceMatches[braceMatches.length - 1]?.[1] || "").trim();
+}
+
+function _stripSimilarNarrationFromPrompt(promptText) {
+    let next = String(promptText || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    next = next.replace(/\n{0,2}\s*(?:fala\s+em\s+pt-br|narra(?:ção|c[aã]o)\s+em\s+pt-br|fala)\s*:\s*\{[\s\S]{1,400}?\}\s*/gi, "\n");
+    next = next.replace(/\s*(?:refletindo\s+a\s+narra(?:ção|c[aã]o)|narra(?:ção|c[aã]o)|fala)\s*:?[ \t]*\{[^{}]{1,400}\}\s*/gi, " ");
+    next = next.replace(/\n{3,}/g, "\n\n");
+    return next.trim();
+}
+
+function _injectSimilarNarrationIntoPrompt(promptText, narrationText) {
+    const narration = String(narrationText || "").trim();
+    const basePrompt = _stripSimilarNarrationFromPrompt(promptText);
+    if (!narration) {
+        return basePrompt;
+    }
+    const narrationBlock = `Fala em PT-BR: {${narration}}`;
+    return basePrompt ? `${basePrompt}\n\n${narrationBlock}` : narrationBlock;
+}
+
 function _revokeSimilarPreviewUrl(previewUrl) {
     const raw = String(previewUrl || "").trim();
     if (!raw || !raw.startsWith("blob:")) return;
@@ -4443,7 +4479,7 @@ function _forgetSimilarSceneDraft(sceneId) {
     delete similarState.sceneDraftsBySceneId[key];
 }
 
-function _setSimilarSceneFrameEditorDraft(sceneId, { open, instruction } = {}) {
+function _setSimilarSceneFrameEditorDraft(sceneId, { open, instruction, narrationOpen, narrationText, frameBusy, frameBusyLabel } = {}) {
     const key = _similarSceneStateKey(sceneId);
     if (!key) return;
 
@@ -4464,6 +4500,39 @@ function _setSimilarSceneFrameEditorDraft(sceneId, { open, instruction } = {}) {
             nextDraft.frameInstruction = instruction;
         } else {
             delete nextDraft.frameInstruction;
+        }
+    }
+
+    if (typeof narrationOpen === "boolean") {
+        if (narrationOpen) {
+            nextDraft.narrationEditorOpen = true;
+        } else {
+            delete nextDraft.narrationEditorOpen;
+        }
+    }
+
+    if (typeof narrationText === "string") {
+        if (narrationText) {
+            nextDraft.narrationText = narrationText;
+        } else {
+            delete nextDraft.narrationText;
+        }
+    }
+
+    if (typeof frameBusy === "boolean") {
+        if (frameBusy) {
+            nextDraft.frameBusy = true;
+        } else {
+            delete nextDraft.frameBusy;
+            delete nextDraft.frameBusyLabel;
+        }
+    }
+
+    if (typeof frameBusyLabel === "string") {
+        if (frameBusyLabel) {
+            nextDraft.frameBusyLabel = frameBusyLabel;
+        } else {
+            delete nextDraft.frameBusyLabel;
         }
     }
 
@@ -4488,6 +4557,7 @@ function _syncSimilarDraftsFromDom() {
         const durationEl = document.getElementById(`similar-scene-duration-${sceneId}`);
         const mergeEl = document.getElementById(`similar-scene-merge-${sceneId}`);
         const frameInstructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
+        const narrationEl = document.getElementById(`similar-scene-narration-${sceneId}`);
         const existingDraft = similarState.sceneDraftsBySceneId[sceneKey] || {};
 
         const promptValue = String(promptEl.value || "");
@@ -4534,6 +4604,15 @@ function _syncSimilarDraftsFromDom() {
             }
         }
 
+        if (narrationEl) {
+            const narrationValue = String(narrationEl.value || "").trim();
+            if (narrationValue) {
+                nextDraft.narrationText = narrationValue;
+            } else {
+                delete nextDraft.narrationText;
+            }
+        }
+
         if (Object.keys(nextDraft).length) {
             similarState.sceneDraftsBySceneId[sceneKey] = nextDraft;
         } else {
@@ -4549,7 +4628,7 @@ function _syncSimilarDraftsFromDom() {
 function _similarSceneEditorHasFocus() {
     const active = document.activeElement;
     if (!active || !active.id) return false;
-    return /^similar-(?:scene-prompt|frame-instruction)-\d+$/.test(String(active.id));
+    return /^similar-(?:scene-prompt|frame-instruction|scene-narration)-\d+$/.test(String(active.id));
 }
 
 function _cleanupSimilarSceneTransientState(sceneIds) {
@@ -4642,10 +4721,18 @@ function _renderSimilarScenes(project, options = {}) {
         const hasClipPreview = !!String(scene.clip_url || "").trim();
         const hasReferenceFrame = !!String(scene.reference_frame_url || "").trim();
         const frameEditorOpen = !!draft.frameEditorOpen;
+        const narrationEditorOpen = !!draft.narrationEditorOpen;
+        const frameBusy = !!draft.frameBusy;
+        const frameBusyDisabledAttr = frameBusy ? "disabled" : "";
         const frameInstruction = Object.prototype.hasOwnProperty.call(draft, "frameInstruction")
             ? String(draft.frameInstruction || "")
             : "";
         const frameInstructionValue = esc(frameInstruction);
+        const narrationRaw = Object.prototype.hasOwnProperty.call(draft, "narrationText")
+            ? String(draft.narrationText || "")
+            : _extractSimilarNarrationFromPrompt(promptRaw);
+        const narrationValue = esc(narrationRaw);
+        const frameBusyLabel = esc(String(draft.frameBusyLabel || "Trocando a imagem com IA..."));
         const referenceFrameUrl = esc(String(scene.reference_frame_url || ""));
         const referenceFrameAlt = esc(`Frame extraido da cena ${idx + 1}`);
         const referenceDownloadName = esc(`frame-cena-${idx + 1}.jpg`);
@@ -4662,6 +4749,22 @@ function _renderSimilarScenes(project, options = {}) {
                 `;
             }).join("")
             : "";
+        const frameUploadsMarkup = pendingCount
+            ? `
+                <div class="similar-reference-frame-upload-list">
+                    <span class="similar-reference-frame-upload-title">Imagens extras enviadas para esta troca</span>
+                    <div class="similar-reference-frame-upload-grid">${uploadsMarkup}</div>
+                </div>
+            `
+            : "";
+        const frameBusyMarkup = frameBusy
+            ? `
+                <div class="similar-reference-frame-progress" role="status" aria-live="polite">
+                    <span class="similar-reference-frame-progress-label">${frameBusyLabel}</span>
+                    <div class="similar-reference-frame-progress-bar"><span></span></div>
+                </div>
+            `
+            : "";
 
         const referenceFrameMarkup = hasReferenceFrame
             ? `
@@ -4673,7 +4776,8 @@ function _renderSimilarScenes(project, options = {}) {
                         </div>
                         <div class="similar-reference-frame-tools">
                             <a class="similar-frame-tool-btn" href="${referenceFrameUrl}" download="${referenceDownloadName}">Baixar frame</a>
-                            <button class="similar-frame-tool-btn similar-frame-tool-btn-primary" type="button" onclick="similarToggleFrameEdit(${sceneId})">${frameEditorOpen ? "Fechar edição" : "Editar com IA"}</button>
+                            <button class="similar-frame-tool-btn similar-frame-tool-btn-primary" type="button" onclick="similarToggleFrameEdit(${sceneId})" ${frameBusyDisabledAttr}>${frameEditorOpen ? "Fechar edição" : "Editar com IA"}</button>
+                            <button class="similar-frame-tool-btn" type="button" onclick="similarToggleNarrationEdit(${sceneId})" ${frameBusyDisabledAttr}>${narrationEditorOpen ? "Fechar narração" : "Editar narração"}</button>
                         </div>
                     </div>
                     <div class="similar-reference-frame-body">
@@ -4681,17 +4785,28 @@ function _renderSimilarScenes(project, options = {}) {
                             <img src="${referenceFrameUrl}" alt="${referenceFrameAlt}" loading="lazy">
                         </div>
                     </div>
+                    <div class="similar-reference-frame-narration-editor${narrationEditorOpen ? " is-open" : ""}" ${narrationEditorOpen ? "" : "hidden"}>
+                        <label for="similar-scene-narration-${sceneId}">O que deve ser falado nesta cena?</label>
+                        <textarea id="similar-scene-narration-${sceneId}" class="input similar-reference-frame-editor-input" rows="2" maxlength="320" placeholder="Ex.: Estou muito feliz, agora vou renovar minha sala" onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); similarApplySceneNarration(${sceneId}); }">${narrationValue}</textarea>
+                        <p class="field-hint">Ao aplicar, a fala entra no prompt automaticamente no formato com chaves: { ... }.</p>
+                        <div class="similar-reference-frame-editor-actions">
+                            <button class="btn btn-primary similar-reference-frame-submit-btn" type="button" onclick="similarApplySceneNarration(${sceneId})">Aplicar narração</button>
+                            <button class="btn btn-secondary" type="button" onclick="similarCloseNarrationEdit(${sceneId})">Cancelar</button>
+                        </div>
+                    </div>
                     <div class="similar-reference-frame-editor${frameEditorOpen ? " is-open" : ""}" ${frameEditorOpen ? "" : "hidden"}>
                         <label for="similar-frame-instruction-${sceneId}">O que a IA deve mudar neste frame?</label>
-                        <textarea id="similar-frame-instruction-${sceneId}" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar o produto por uma embalagem premium, manter a mesma mesa, o mesmo enquadramento e a mesma luz.">${frameInstructionValue}</textarea>
+                        <textarea id="similar-frame-instruction-${sceneId}" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar o produto por uma embalagem premium, manter a mesma mesa, o mesmo enquadramento e a mesma luz." ${frameBusyDisabledAttr}>${frameInstructionValue}</textarea>
                         <p class="field-hint">A imagem nova sai do frame original e respeita o prompt atual da cena para manter o contexto.</p>
                         <div class="similar-reference-frame-editor-tools">
-                            <button class="similar-frame-tool-btn" type="button" onclick="similarUploadFrameReference(${sceneId})">Enviar nova imagem</button>
+                            <button class="similar-frame-tool-btn" type="button" onclick="similarUploadFrameReference(${sceneId})" ${frameBusyDisabledAttr}>Enviar nova imagem</button>
                             <span class="similar-reference-frame-upload-note">${pendingCount ? `${pendingCount} imagem(ns) extra(s) pronta(s) para combinar com o frame.` : "Envie uma imagem extra para trocar pessoa, produto ou outro elemento mantendo o contexto do frame."}</span>
                         </div>
+                        ${frameUploadsMarkup}
+                        ${frameBusyMarkup}
                         <div class="similar-reference-frame-editor-actions">
-                            <button class="btn btn-primary similar-reference-frame-submit-btn" type="button" onclick="similarGenerateFrameVariant(${sceneId})">Criar nova imagem</button>
-                            <button class="btn btn-secondary" type="button" onclick="similarCloseFrameEdit(${sceneId})">Cancelar</button>
+                            <button class="btn btn-primary similar-reference-frame-submit-btn" type="button" onclick="similarGenerateFrameVariant(${sceneId})" ${frameBusyDisabledAttr}>${frameBusy ? "Trocando imagem..." : "Criar nova imagem"}</button>
+                            <button class="btn btn-secondary" type="button" onclick="similarCloseFrameEdit(${sceneId})" ${frameBusyDisabledAttr}>Cancelar</button>
                         </div>
                     </div>
                 </section>
@@ -4717,7 +4832,7 @@ function _renderSimilarScenes(project, options = {}) {
         const previewMarkup = previewItems.length
             ? `<div class="similar-scene-preview${previewItems.length === 1 ? " similar-scene-preview-single" : ""}">${previewItems.join("")}</div>`
             : "";
-        const uploadsSectionMarkup = pendingCount
+        const uploadsSectionMarkup = pendingCount && !frameEditorOpen
             ? `
                 <div class="similar-scene-upload-panel">
                     <div class="similar-scene-upload-head">
@@ -7558,6 +7673,7 @@ async function similarSaveScene(sceneId) {
 
     const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
     const scene = _getSimilarProjectScene(sceneId);
+    _applySimilarNarrationToPrompt(sceneId);
     const startEl = document.getElementById(`similar-scene-start-${sceneId}`);
     const durationEl = document.getElementById(`similar-scene-duration-${sceneId}`);
     const prompt = String(promptEl?.value || "").trim();
@@ -7595,6 +7711,28 @@ function similarUploadSceneImage(sceneId) {
 
 function similarUploadFrameReference(sceneId) {
     similarUploadSceneImage(sceneId);
+}
+
+function _applySimilarNarrationToPrompt(sceneId, { closeEditor = false, notify = false } = {}) {
+    const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+    const narrationEl = document.getElementById(`similar-scene-narration-${sceneId}`);
+    const scene = _getSimilarProjectScene(sceneId);
+    if (!promptEl) return "";
+
+    const promptValue = String(promptEl.value || scene?.prompt || "").trim();
+    const narrationValue = String(narrationEl?.value || "").trim();
+    const nextPrompt = _injectSimilarNarrationIntoPrompt(promptValue, narrationValue);
+    promptEl.value = nextPrompt;
+    _syncSimilarDraftsFromDom();
+    _setSimilarSceneFrameEditorDraft(sceneId, {
+        narrationText: narrationValue,
+        narrationOpen: closeEditor ? false : undefined,
+    });
+
+    if (notify) {
+        showToast(narrationValue ? "Narração aplicada ao prompt da cena." : "Narração removida do prompt da cena.", "success");
+    }
+    return nextPrompt;
 }
 
 async function _handleSimilarSceneImageInput(event) {
@@ -7715,6 +7853,7 @@ async function similarGenerateSceneImage(sceneId) {
     }
 
     const scene = _getSimilarProjectScene(sceneId);
+    _applySimilarNarrationToPrompt(sceneId);
     const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
     const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
 
@@ -7751,6 +7890,49 @@ function similarToggleFrameEdit(sceneId) {
     }
 }
 
+function similarToggleNarrationEdit(sceneId) {
+    _syncSimilarDraftsFromDom();
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return;
+
+    const scene = _getSimilarProjectScene(sceneId);
+    const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+    const draft = similarState.sceneDraftsBySceneId[key] || {};
+    const isOpen = !!draft.narrationEditorOpen;
+    const currentNarration = Object.prototype.hasOwnProperty.call(draft, "narrationText")
+        ? String(draft.narrationText || "")
+        : _extractSimilarNarrationFromPrompt(String(promptEl?.value || scene?.prompt || ""));
+
+    _setSimilarSceneFrameEditorDraft(sceneId, {
+        narrationOpen: !isOpen,
+        narrationText: currentNarration,
+    });
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+    if (!isOpen) {
+        setTimeout(() => {
+            document.getElementById(`similar-scene-narration-${sceneId}`)?.focus();
+        }, 0);
+    }
+}
+
+function similarCloseNarrationEdit(sceneId) {
+    _syncSimilarDraftsFromDom();
+    _setSimilarSceneFrameEditorDraft(sceneId, { narrationOpen: false });
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+}
+
+function similarApplySceneNarration(sceneId) {
+    const nextPrompt = _applySimilarNarrationToPrompt(sceneId, { closeEditor: true, notify: true });
+    if (!nextPrompt) return;
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+}
+
 function similarCloseFrameEdit(sceneId) {
     _syncSimilarDraftsFromDom();
     _setSimilarSceneFrameEditorDraft(sceneId, { open: false });
@@ -7773,6 +7955,7 @@ async function similarGenerateFrameVariant(sceneId) {
         return;
     }
 
+    _applySimilarNarrationToPrompt(sceneId);
     const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
     const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
     const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
@@ -7792,6 +7975,15 @@ async function similarGenerateFrameVariant(sceneId) {
     }
 
     try {
+        _setSimilarSceneFrameEditorDraft(sceneId, {
+            frameBusy: true,
+            frameBusyLabel: uploadIds.length
+                ? "Trocando a pessoa/elemento no frame com as imagens enviadas..."
+                : "Criando uma nova imagem a partir do frame...",
+        });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
         _setSimilarStatus("Criando uma nova imagem com base no frame extraido...", "running");
         await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/image`, {
             method: "POST",
@@ -7804,10 +7996,14 @@ async function similarGenerateFrameVariant(sceneId) {
             }),
         });
         _clearSimilarScenePendingUploads(sceneId);
-        _setSimilarSceneFrameEditorDraft(sceneId, { open: false, instruction: "" });
+        _setSimilarSceneFrameEditorDraft(sceneId, { open: false, instruction: "", frameBusy: false, frameBusyLabel: "" });
         showToast("Nova imagem criada a partir do frame.", "success");
         await _refreshSimilarProject();
     } catch (error) {
+        _setSimilarSceneFrameEditorDraft(sceneId, { frameBusy: false, frameBusyLabel: "" });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
         showToast(`Erro ao editar frame com IA: ${error.message}`, "error");
     }
 }
@@ -7821,6 +8017,7 @@ async function similarRegenerateScene(sceneId) {
 
     try {
         const scene = _getSimilarProjectScene(sceneId);
+        _applySimilarNarrationToPrompt(sceneId);
         const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
         const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
         const hasExistingClip = !!String(scene?.clip_url || scene?.clip_path || "").trim();
@@ -16732,6 +16929,9 @@ window.createSimilar = createSimilar;
 window.similarSaveScene = similarSaveScene;
 window.similarUploadSceneImage = similarUploadSceneImage;
 window.similarUploadFrameReference = similarUploadFrameReference;
+window.similarToggleNarrationEdit = similarToggleNarrationEdit;
+window.similarCloseNarrationEdit = similarCloseNarrationEdit;
+window.similarApplySceneNarration = similarApplySceneNarration;
 window.similarApplyUploadedSceneImages = similarApplyUploadedSceneImages;
 window.similarClearSceneUploads = similarClearSceneUploads;
 window.similarGenerateSceneImage = similarGenerateSceneImage;

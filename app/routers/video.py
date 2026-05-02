@@ -301,7 +301,7 @@ def _looks_like_temporal_technical_line(line: str) -> bool:
 
 
 def _normalize_scene_dialogue_text(raw_text: object, limit: int = 500) -> str:
-    cleaned = re.sub(r"\s+", " ", str(raw_text or "")).strip().strip('"“”')
+    cleaned = re.sub(r"\s+", " ", str(raw_text or "")).strip().strip('"“”{}')
     if not cleaned:
         return ""
     if len(cleaned) <= limit:
@@ -351,7 +351,7 @@ def _extract_explicit_scene_dialogue(prompt_text: object, fallback_text: object 
             capture_mode = True
             tail = line.split(":", 1)[1].strip() if ":" in line else ""
             if tail:
-                captured.append(tail.strip('"“”'))
+                captured.append(tail.strip('"“”{}'))
             continue
 
         if capture_mode:
@@ -364,7 +364,7 @@ def _extract_explicit_scene_dialogue(prompt_text: object, fallback_text: object 
                     for token in ("prompt", "gancho", "scene", "cena", "camera", "estilo", "duracao", "duração")
                 ):
                     break
-            captured.append(line.strip('"“”'))
+            captured.append(line.strip('"“”{}'))
             if len(" ".join(captured)) >= limit:
                 break
 
@@ -374,6 +374,10 @@ def _extract_explicit_scene_dialogue(prompt_text: object, fallback_text: object 
     quoted_chunks = re.findall(r'"([^\"]{3,260})"', raw)
     if quoted_chunks:
         return _normalize_scene_dialogue_text(" ".join(quoted_chunks[:4]), limit=limit)
+
+    brace_chunks = re.findall(r"\{([^{}]{3,320})\}", raw)
+    if brace_chunks:
+        return _normalize_scene_dialogue_text(" ".join(brace_chunks[-2:]), limit=limit)
 
     return fallback
 
@@ -1771,11 +1775,32 @@ async def upsert_similar_scene_image(
             resolved_files.append(source_file)
 
     if req.generate_from_prompt:
-        from app.services.scene_generator import generate_scene_image, merge_reference_images_with_nano_banana
+        from app.services.scene_generator import (
+            edit_frame_with_replacement_references,
+            generate_scene_image,
+            merge_reference_images_with_nano_banana,
+        )
 
         target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.png"
         loop = asyncio.get_event_loop()
-        if resolved_files:
+        if resolved_files and str(req.edit_instruction or "").strip():
+            base_edit_image = source_reference_image
+            if not base_edit_image and scene.image_path and os.path.exists(scene.image_path):
+                base_edit_image = str(scene.image_path)
+            if not base_edit_image:
+                raise HTTPException(status_code=400, detail="Frame base nao encontrado para editar esta cena")
+
+            await loop.run_in_executor(
+                None,
+                edit_frame_with_replacement_references,
+                base_edit_image,
+                [str(item) for item in resolved_files],
+                str(req.edit_instruction or ""),
+                continuity_prompt[:1200],
+                effective_aspect_ratio,
+                str(target_file),
+            )
+        elif resolved_files:
             reference_sources: list[str] = []
             if source_reference_image:
                 reference_sources.append(source_reference_image)

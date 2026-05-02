@@ -380,6 +380,118 @@ def merge_reference_images_with_nano_banana(
     raise RuntimeError("Nano Banana nao retornou imagem ao unir referencias")
 
 
+def edit_frame_with_replacement_references(
+    base_image_path: str,
+    reference_image_paths: list[str],
+    edit_instruction: str,
+    scene_prompt: str,
+    aspect_ratio: str = "16:9",
+    output_path: str = "",
+) -> str:
+    base_path = str(base_image_path or "").strip()
+    if not base_path or not os.path.exists(base_path):
+        raise RuntimeError("Frame base nao encontrado para a edicao")
+
+    valid_references: list[str] = []
+    for raw in (reference_image_paths or []):
+        path = str(raw or "").strip()
+        if not path or path == base_path or not os.path.exists(path) or path in valid_references:
+            continue
+        valid_references.append(path)
+
+    if not valid_references:
+        raise RuntimeError("Nenhuma imagem de substituicao foi enviada para editar o frame")
+
+    target_path = output_path or base_path
+    edit_goal = re.sub(r"\s+", " ", str(edit_instruction or "")).strip()
+    if not edit_goal:
+        edit_goal = "Trocar apenas o elemento solicitado, preservando todo o resto do frame base."
+
+    scene_goal = re.sub(r"\s+", " ", str(scene_prompt or "")).strip()
+    if not scene_goal:
+        scene_goal = "Cena cinematografica coerente, com o mesmo contexto visual do frame base."
+
+    try:
+        contents_payload: list = []
+
+        base_mime = mimetypes.guess_type(base_path)[0] or "image/png"
+        with open(base_path, "rb") as base_file:
+            base_bytes = base_file.read()
+        if not base_bytes:
+            raise RuntimeError("Frame base vazio para edicao")
+        contents_payload.append(types.Part.from_bytes(data=base_bytes, mime_type=base_mime))
+
+        for path in valid_references[:4]:
+            mime_type = mimetypes.guess_type(path)[0] or "image/png"
+            with open(path, "rb") as ref_file:
+                ref_bytes = ref_file.read()
+            if not ref_bytes:
+                continue
+            contents_payload.append(types.Part.from_bytes(data=ref_bytes, mime_type=mime_type))
+
+        if len(contents_payload) < 2:
+            raise RuntimeError("Nao foi possivel carregar as referencias para editar o frame")
+
+        contents_payload.append(
+            (
+                "Use a PRIMEIRA imagem como frame base obrigatorio. Preserve enquadramento, ambiente, perspectiva, luz, piso, parede, objetos, camera e contexto visual da primeira imagem. "
+                "Use as imagens adicionais somente como referencias para substituir os elementos pedidos. "
+                f"Edicao solicitada: {edit_goal}. "
+                f"Contexto da cena: {scene_goal}. "
+                "Se o pedido mencionar trocar a pessoa, substitua completamente a pessoa da primeira imagem pela pessoa da referencia enviada, mantendo o mesmo cenario e o mesmo contexto. "
+                "Nao misture rostos, corpos, roupas ou identidades. Nao mantenha a pessoa original quando a instrucao pedir troca. "
+                "Nao crie collage, comparacao lado a lado, pessoa duplicada, corpo extra, morphing, dois rostos sobrepostos ou painel dividido. "
+                "Retorne UMA unica imagem final editada."
+            )
+        )
+
+        response = google_client.models.generate_content(
+            model="gemini-2.5-flash-image",
+            contents=contents_payload,
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+            ),
+        )
+
+        parts = []
+        direct_parts = getattr(response, "parts", None)
+        if isinstance(direct_parts, list):
+            parts.extend(direct_parts)
+
+        candidates = getattr(response, "candidates", None) or []
+        for cand in candidates:
+            content = getattr(cand, "content", None)
+            cand_parts = getattr(content, "parts", None) if content is not None else None
+            if isinstance(cand_parts, list):
+                parts.extend(cand_parts)
+
+        for part in parts:
+            inline_data = getattr(part, "inline_data", None)
+            if inline_data is None:
+                continue
+
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            try:
+                image = part.as_image()
+                image.save(target_path)
+            except Exception:
+                data = getattr(inline_data, "data", None)
+                if not data:
+                    continue
+                raw = bytes(data) if not isinstance(data, str) else base64.b64decode(data)
+                with open(target_path, "wb") as out:
+                    out.write(raw)
+
+            if os.path.exists(target_path) and os.path.getsize(target_path) > 0:
+                return target_path
+    except Exception as e:
+        logger.warning("Nano Banana frame edit failed: %s", e)
+        raise RuntimeError("Falha ao editar o frame com as imagens enviadas") from e
+
+    raise RuntimeError("Nano Banana nao retornou imagem ao editar o frame")
+
+
 def _truncate_similar_continuity_text(raw_text: str, limit: int = 620) -> str:
     cleaned = re.sub(r"\s+", " ", str(raw_text or "")).strip()
     if len(cleaned) <= limit:
