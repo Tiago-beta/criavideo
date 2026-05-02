@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v305 loaded");
+console.log("[CriaVideo] app.js v306 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -17662,6 +17662,7 @@ const _editor = {
     _lastOriginalVolume: 100,
     filter: "none",
     stickers: [],       // {id, emoji, x, y, startTime, endTime, size}
+    transitions: [],    // {key, track, fromId, toId, type}
     mediaLayers: [],    // Optional layered media stack order
     quality: "original",
     // Undo/redo
@@ -17768,6 +17769,16 @@ const _EDITOR_TIMELINE_MIN_ZOOM = 0.5;
 const _EDITOR_TIMELINE_MAX_ZOOM = 12;
 const _EDITOR_TIMELINE_ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12];
 const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
+const _EDITOR_TRANSITION_OPTIONS = [
+    { value: "dissolve", label: "Dissolver", desc: "Mistura suave entre os dois clipes", preview: "dissolve" },
+    { value: "fade-black", label: "Escurecer", desc: "Sai no preto e entra no próximo", preview: "fade-black" },
+    { value: "slide-left", label: "Deslizar esquerda", desc: "O próximo clipe entra da direita", preview: "slide-left" },
+    { value: "slide-right", label: "Deslizar direita", desc: "O próximo clipe entra da esquerda", preview: "slide-right" },
+    { value: "slide-up", label: "Deslizar acima", desc: "O próximo clipe sobe de baixo", preview: "slide-up" },
+    { value: "slide-down", label: "Deslizar abaixo", desc: "O próximo clipe desce de cima", preview: "slide-down" },
+    { value: "zoom-in", label: "Zoom in", desc: "Aproxima a chegada do próximo clipe", preview: "zoom-in" },
+    { value: "flash-white", label: "Flash branco", desc: "Corte com clarão rápido", preview: "flash-white" },
+];
 let _editorLayerLibrary = {
     open: false,
     loading: false,
@@ -18060,6 +18071,7 @@ function _editorBuildDraftSnapshot() {
         texts: _editor.texts || [],
         subtitles: _editor.subtitles || [],
         stickers: _editor.stickers || [],
+        transitions: _editor.transitions || [],
         mediaLayers: _editor.mediaLayers || [],
         videoSegments: _editor.videoSegments || [],
         audioSegments: _editor.audioSegments || [],
@@ -18137,6 +18149,7 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
         _editor.texts = Array.isArray(draft.texts) ? draft.texts : [];
         _editor.subtitles = Array.isArray(draft.subtitles) ? draft.subtitles : [];
         _editor.stickers = Array.isArray(draft.stickers) ? draft.stickers : [];
+        _editor.transitions = Array.isArray(draft.transitions) ? draft.transitions : [];
         _editor.mediaLayers = Array.isArray(draft.mediaLayers) ? draft.mediaLayers : [];
         _editor.videoSegments = Array.isArray(draft.videoSegments) ? draft.videoSegments : [];
         _editor.audioSegments = Array.isArray(draft.audioSegments) ? draft.audioSegments : [];
@@ -18244,6 +18257,7 @@ function _editorSaveState() {
         originalVolume: _editor.originalVolume,
         filter: _editor.filter,
         stickers: _editor.stickers,
+        transitions: _editor.transitions,
         mediaLayers: _editor.mediaLayers,
         quality: _editor.quality,
     });
@@ -18268,7 +18282,7 @@ function _editorUndo() {
         _musicSource: _editor._musicSource,
         _musicServerPath: _editor._musicServerPath,
         musicVolume: _editor.musicVolume,
-        originalVolume: _editor.originalVolume, filter: _editor.filter, stickers: _editor.stickers, mediaLayers: _editor.mediaLayers, quality: _editor.quality,
+        originalVolume: _editor.originalVolume, filter: _editor.filter, stickers: _editor.stickers, transitions: _editor.transitions, mediaLayers: _editor.mediaLayers, quality: _editor.quality,
     });
     _editor.redoStack.push(current);
     const snap = JSON.parse(_editor.undoStack.pop());
@@ -18299,7 +18313,7 @@ function _editorRedo() {
         _musicSource: _editor._musicSource,
         _musicServerPath: _editor._musicServerPath,
         musicVolume: _editor.musicVolume,
-        originalVolume: _editor.originalVolume, filter: _editor.filter, stickers: _editor.stickers, mediaLayers: _editor.mediaLayers, quality: _editor.quality,
+        originalVolume: _editor.originalVolume, filter: _editor.filter, stickers: _editor.stickers, transitions: _editor.transitions, mediaLayers: _editor.mediaLayers, quality: _editor.quality,
     });
     _editor.undoStack.push(current);
     const snap = JSON.parse(_editor.redoStack.pop());
@@ -21394,6 +21408,21 @@ async function _editorGenerateAIMusic() {
 }
 window._editorGenerateAIMusic = _editorGenerateAIMusic;
 
+function _editorResolveMediaLayerPlacement(layer) {
+    const width = Math.max(8, Math.min(100, Number(layer?.width || 100)));
+    const rawX = Math.max(0, Math.min(100, Number(layer?.x || 0)));
+    const rawY = Math.max(0, Math.min(100, Number(layer?.y || 0)));
+    const layoutMode = String(layer?.layoutMode || "").trim();
+    const legacyAutoCenter = !layoutMode && width >= 99.5 && rawX <= 0.01 && rawY <= 0.01;
+    const autoCenter = layoutMode === "auto-center" || legacyAutoCenter;
+    return {
+        width,
+        x: autoCenter ? 50 : rawX,
+        y: autoCenter ? 50 : rawY,
+        layoutMode: autoCenter ? "auto-center" : (layoutMode || "manual"),
+    };
+}
+
 function _editorNormalizeMediaLayer(layer) {
     const aspect = Math.max(0.2, Number(layer.aspectRatio || 1));
     const duration = Math.max(0, Number(layer.duration || 0));
@@ -21402,11 +21431,12 @@ function _editorNormalizeMediaLayer(layer) {
         sourceOffset = Math.min(sourceOffset, Math.max(0, duration - 0.05));
     }
     const trackIndex = _editorGetLayerTrackIndex(layer);
+    const placement = _editorResolveMediaLayerPlacement(layer);
     return {
         ...layer,
-        width: Math.max(8, Math.min(100, Number(layer.width || 100))),
-        x: Math.max(0, Math.min(100, Number(layer.x || 0))),
-        y: Math.max(0, Math.min(100, Number(layer.y || 0))),
+        width: placement.width,
+        x: placement.x,
+        y: placement.y,
         startTime: Math.max(0, Number(layer.startTime || 0)),
         endTime: Math.max(0, Number(layer.endTime || 0)),
         duration,
@@ -21416,6 +21446,7 @@ function _editorNormalizeMediaLayer(layer) {
         reversed: Boolean(layer.reversed),
         aspectRatio: aspect,
         trackIndex,
+        layoutMode: placement.layoutMode,
     };
 }
 
@@ -21568,6 +21599,7 @@ function _editorSetMediaLayerSize(id, val) {
     const layer = _editorGetMediaLayerById(id);
     if (!layer) return;
     layer.width = Math.max(8, Math.min(100, Number(val || layer.width || 100)));
+    layer.layoutMode = "manual";
     _editorRenderMediaLayers();
     _editorRenderProps();
 }
@@ -21577,6 +21609,7 @@ function _editorSetMediaLayerX(id, val) {
     const layer = _editorGetMediaLayerById(id);
     if (!layer) return;
     layer.x = Math.max(0, Math.min(100, Number(val || layer.x || 0)));
+    layer.layoutMode = "manual";
     _editorRenderMediaLayers();
     _editorRenderProps();
 }
@@ -21586,6 +21619,7 @@ function _editorSetMediaLayerY(id, val) {
     const layer = _editorGetMediaLayerById(id);
     if (!layer) return;
     layer.y = Math.max(0, Math.min(100, Number(val || layer.y || 0)));
+    layer.layoutMode = "manual";
     _editorRenderMediaLayers();
     _editorRenderProps();
 }
@@ -21703,8 +21737,8 @@ function _editorPushMediaLayer(kind, payload, options = {}) {
         url: previewUrl,
         path: serverPath,
         width: 100,
-        x: 0,
-        y: 0,
+        x: 50,
+        y: 50,
         startTime,
         endTime: Math.max(0.1, initialEnd),
         duration: layerDuration,
@@ -21713,6 +21747,7 @@ function _editorPushMediaLayer(kind, payload, options = {}) {
         volume: 100,
         audioOnly: false,
         trackIndex: 0,
+        layoutMode: "auto-center",
     };
     _editor.mediaLayers.push(layer);
     if (options?.select === false) {
@@ -21857,11 +21892,13 @@ function _editorOnMediaLayerDragMove(e) {
         layer.width = Math.max(8, Math.min(100, (nextWidth / drag.hostWidth) * 100));
         layer.x = nextMaxLeft > 0 ? (nextLeft / nextMaxLeft) * 100 : 0;
         layer.y = nextMaxTop > 0 ? (nextTop / nextMaxTop) * 100 : 0;
+        layer.layoutMode = "manual";
     } else {
         nextLeft = Math.max(0, Math.min(drag.maxLeft, drag.startLeft + dx));
         nextTop = Math.max(0, Math.min(drag.maxTop, drag.startTop + dy));
         layer.x = drag.maxLeft > 0 ? (nextLeft / drag.maxLeft) * 100 : 0;
         layer.y = drag.maxTop > 0 ? (nextTop / drag.maxTop) * 100 : 0;
+        layer.layoutMode = "manual";
     }
 
     const host = document.getElementById("editor-media-layer-host");
@@ -22003,6 +22040,7 @@ async function openEditor(projectId, options = {}) {
         _editor.originalVolume = 100;
         _editor.filter = "none";
         _editor.stickers = [];
+        _editor.transitions = [];
         _editor.mediaLayers = [];
         _editor.quality = "original";
         _editor.undoStack = [];
@@ -22724,6 +22762,102 @@ function _getCSSFilter(name) {
     return filters[name] || "none";
 }
 
+function _editorGetTransitionOption(type) {
+    return _EDITOR_TRANSITION_OPTIONS.find((option) => option.value === String(type || "").trim()) || _EDITOR_TRANSITION_OPTIONS[0];
+}
+
+function _editorTransitionTrackLabel(trackIndex) {
+    return Number(trackIndex || 0) <= 0 ? "Faixa principal" : `Camada ${Number(trackIndex) + 1}`;
+}
+
+function _editorTransitionClipLabel(layer) {
+    const safeLayer = _editorNormalizeMediaLayer(layer || {});
+    const fallback = safeLayer.kind === "video" ? "Vídeo" : "Imagem";
+    const raw = String(safeLayer.name || fallback).trim();
+    return raw || fallback;
+}
+
+function _editorGetTransitionSlots() {
+    const groups = new Map();
+    (_editor.mediaLayers || []).forEach((layer, index) => {
+        const safeLayer = _editorNormalizeMediaLayer(layer);
+        if (!safeLayer || safeLayer.audioOnly) return;
+        if (Number(safeLayer.endTime || 0) <= Number(safeLayer.startTime || 0) + 0.05) return;
+        const trackIndex = _editorGetLayerTrackIndex(safeLayer);
+        if (!groups.has(trackIndex)) groups.set(trackIndex, []);
+        groups.get(trackIndex).push({ ...safeLayer, _order: index });
+    });
+
+    const slots = [];
+    [...groups.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .forEach(([trackIndex, layers]) => {
+            layers.sort((a, b) => (a.startTime - b.startTime) || (a.endTime - b.endTime) || (a._order - b._order));
+            for (let index = 0; index < layers.length - 1; index += 1) {
+                const fromLayer = layers[index];
+                const toLayer = layers[index + 1];
+                const gap = Number(toLayer.startTime || 0) - Number(fromLayer.endTime || 0);
+                if (gap > 0.35) continue;
+                const track = `layer-video-${trackIndex}`;
+                slots.push({
+                    key: `${track}:${fromLayer.id}:${toLayer.id}`,
+                    track,
+                    trackIndex,
+                    fromId: String(fromLayer.id),
+                    toId: String(toLayer.id),
+                    fromLayer,
+                    toLayer,
+                    boundaryTime: Math.max(0, Number(toLayer.startTime || fromLayer.endTime || 0)),
+                });
+            }
+        });
+    return slots;
+}
+
+function _editorGetTransitionByKey(key) {
+    return (_editor.transitions || []).find((transition) => String(transition?.key || "") === String(key || "")) || null;
+}
+
+function _editorTransitionSlotLabel(slot) {
+    if (!slot) return "";
+    return `${_editorTransitionClipLabel(slot.fromLayer)} → ${_editorTransitionClipLabel(slot.toLayer)}`;
+}
+
+function _editorSetTransitionType(slotKey, type) {
+    const safeKey = String(slotKey || "").trim();
+    if (!safeKey) return;
+    const slot = _editorGetTransitionSlots().find((item) => item.key === safeKey);
+    if (!slot) {
+        showToast("Selecione uma junção válida na faixa para aplicar a transição.", "error");
+        return;
+    }
+
+    _editorSaveState();
+    _editor.transitions = (_editor.transitions || []).filter((transition) => String(transition?.key || "") !== safeKey);
+
+    const safeType = String(type || "").trim();
+    if (safeType) {
+        _editor.transitions.push({
+            key: safeKey,
+            track: slot.track,
+            fromId: slot.fromId,
+            toId: slot.toId,
+            type: safeType,
+        });
+    }
+
+    _editor.selectedClip = { kind: "transition", id: safeKey, track: slot.track };
+    _editorRenderProps();
+    _editorRenderTimeline();
+
+    if (safeType) {
+        showToast(`Transição ${_editorGetTransitionOption(safeType).label.toLowerCase()} aplicada.`, "success");
+    } else {
+        showToast("Transição removida da junção.", "success");
+    }
+}
+window._editorSetTransitionType = _editorSetTransitionType;
+
 // ---------- Tool selection ----------
 function _editorSelectTool(toolName) {
     _editor.activeTool = toolName;
@@ -23158,6 +23292,55 @@ function _editorRenderProps() {
                     </button>
                 </div>
             ` : ''}
+        `;
+    } else if (tool === "transitions") {
+        const slots = _editorGetTransitionSlots();
+        const selectedKey = _editor.selectedClip.kind === "transition" ? String(_editor.selectedClip.id || "") : "";
+        const selectedSlot = slots.find((slot) => slot.key === selectedKey) || slots[0] || null;
+        const selectedTransition = selectedSlot ? _editorGetTransitionByKey(selectedSlot.key) : null;
+
+        container.innerHTML = `
+            <div class="editor-props-title">Transições</div>
+            <div class="editor-smartcuts-summary">Selecione a junção entre dois clipes da faixa e escolha o estilo da passagem.</div>
+            ${slots.length ? `
+                <div class="editor-transition-junctions">
+                    ${slots.map((slot) => {
+                        const active = selectedSlot && slot.key === selectedSlot.key;
+                        const applied = _editorGetTransitionByKey(slot.key);
+                        const appliedLabel = applied ? _editorGetTransitionOption(applied.type).label : "Sem transição";
+                        return `
+                            <button class="editor-transition-junction${active ? " active" : ""}" type="button" onclick="_editorSelectTimelineClip('transition', '${slot.key}', true, '${slot.track}')">
+                                <strong>${esc(_editorTransitionSlotLabel(slot))}</strong>
+                                <span>${esc(_editorTransitionTrackLabel(slot.trackIndex))} · ${esc(appliedLabel)}</span>
+                            </button>
+                        `;
+                    }).join("")}
+                </div>
+
+                ${selectedSlot ? `
+                    <div class="editor-transition-selection-card">
+                        <strong>${esc(_editorTransitionSlotLabel(selectedSlot))}</strong>
+                        <span>${esc(_editorTransitionTrackLabel(selectedSlot.trackIndex))}</span>
+                    </div>
+                    <div class="editor-transition-grid">
+                        ${_EDITOR_TRANSITION_OPTIONS.map((option) => {
+                            const active = selectedTransition && selectedTransition.type === option.value;
+                            return `
+                                <button class="editor-transition-card${active ? " active" : ""}" type="button" onclick="_editorSetTransitionType('${selectedSlot.key}', '${option.value}')">
+                                    <div class="editor-transition-preview editor-transition-preview-${option.preview}">
+                                        <span class="editor-transition-preview-pane before"></span>
+                                        <span class="editor-transition-preview-pane after"></span>
+                                        <span class="editor-transition-preview-flash"></span>
+                                    </div>
+                                    <strong>${esc(option.label)}</strong>
+                                    <small>${esc(option.desc)}</small>
+                                </button>
+                            `;
+                        }).join("")}
+                    </div>
+                    <button class="editor-add-btn" type="button" onclick="_editorSetTransitionType('${selectedSlot.key}', '')" style="margin-top:6px">Remover transição</button>
+                ` : ""}
+            ` : '<div class="editor-transition-empty">Adicione pelo menos dois clipes em sequência na mesma faixa para liberar transições.</div>'}
         `;
     } else if (tool === "filters") {
         const filterNames = ["none","grayscale","sepia","warm","cool","vintage","vivid","dramatic","fade","noir","cinematic","retro"];
@@ -24464,6 +24647,32 @@ function _editorRenderTimeline() {
     const rows = [];
     const trackW = _editorGetTimelineTrackWidth(dur);
     const timelineInnerWidth = Math.max(120, Math.round(80 + trackW + 16));
+    const transitionMarkersByTrack = new Map();
+
+    if (dur > 0.05) {
+        _editorGetTransitionSlots().forEach((slot) => {
+            const left = (Math.max(0, Math.min(Number(slot.boundaryTime || 0), dur)) / dur) * 100;
+            const applied = _editorGetTransitionByKey(slot.key);
+            const transitionLabel = applied ? _editorGetTransitionOption(applied.type).label : "Adicionar transição";
+            const selectedClass = selectedKind === "transition" && selectedId === slot.key ? " selected" : "";
+            const configuredClass = applied ? " configured" : "";
+            const markerHtml = `
+                <button
+                    class="editor-transition-marker${selectedClass}${configuredClass}"
+                    type="button"
+                    data-transition-key="${slot.key}"
+                    data-track="${slot.track}"
+                    style="left:${left}%"
+                    title="${esc(`${transitionLabel}: ${_editorTransitionSlotLabel(slot)}`)}"
+                    aria-label="${esc(`${transitionLabel}: ${_editorTransitionSlotLabel(slot)}`)}"
+                ></button>
+            `;
+            if (!transitionMarkersByTrack.has(slot.track)) {
+                transitionMarkersByTrack.set(slot.track, []);
+            }
+            transitionMarkersByTrack.get(slot.track).push(markerHtml);
+        });
+    }
 
     _editorEnsureSourceWaveform();
     const sourceVideoWaveStyle = _editorGetSourceWaveformInlineStyle("video", dur);
@@ -24514,7 +24723,8 @@ function _editorRenderTimeline() {
     });
 
     const baseLayerClips = (layerClipsByTrack.get(0) || []).join("");
-    const videoClips = `${baseVideoClips}${baseLayerClips}`;
+    const baseLayerMarkers = (transitionMarkersByTrack.get("layer-video-0") || []).join("");
+    const videoClips = `${baseVideoClips}${baseLayerClips}${baseLayerMarkers}`;
     rows.push({
         track: "video",
         kind: "video",
@@ -24531,7 +24741,7 @@ function _editorRenderTimeline() {
             track: `layer-video-${trackIndex}`,
             kind: "media-layer",
             label: `Camada ${Number(trackIndex) + 1}`,
-            clipsHtml: (layerClipsByTrack.get(trackIndex) || []).join(""),
+            clipsHtml: `${(layerClipsByTrack.get(trackIndex) || []).join("")}${(transitionMarkersByTrack.get(`layer-video-${trackIndex}`) || []).join("")}`,
         });
     });
 
@@ -24683,7 +24893,7 @@ function _editorRenderTimeline() {
 }
 
 function _editorSelectionCanDelete() {
-    return ["segment", "text", "subtitle", "sticker", "music", "audio", "media-layer"].includes(_editor.selectedClip.kind);
+    return ["segment", "text", "subtitle", "sticker", "music", "audio", "media-layer", "transition"].includes(_editor.selectedClip.kind);
 }
 
 function _editorSelectionCanDuplicate() {
@@ -24860,6 +25070,11 @@ function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
             switchedTool = true;
         }
         _editorRenderMediaLayers();
+    } else if (kind === "transition") {
+        if (renderProps && _editor.activeTool !== "transitions") {
+            _editorSelectTool("transitions");
+            switchedTool = true;
+        }
     } else if (kind === "sticker" && renderProps && _editor.activeTool !== "stickers") {
         _editorSelectTool("stickers");
         switchedTool = true;
@@ -24879,7 +25094,7 @@ function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
 function _editorDeleteSelectedClip() {
     if (!_editor.selectedClip.kind) return;
     if (!_editorSelectionCanDelete()) {
-        showToast("Selecione um trecho, texto, legenda, sticker ou áudio/música para excluir.", "error");
+        showToast("Selecione um trecho, texto, legenda, sticker, transição ou áudio/música para excluir.", "error");
         return;
     }
 
@@ -24915,6 +25130,9 @@ function _editorDeleteSelectedClip() {
         _editor.stickers = _editor.stickers.filter(s => String(s.id) !== selId);
     } else if (selKind === "media-layer") {
         _editor.mediaLayers = _editor.mediaLayers.filter(layer => String(layer.id) !== selId);
+        _editor.transitions = (_editor.transitions || []).filter((transition) => String(transition?.fromId || "") !== selId && String(transition?.toId || "") !== selId);
+    } else if (selKind === "transition") {
+        _editor.transitions = (_editor.transitions || []).filter((transition) => String(transition?.key || "") !== selId);
     } else if (selKind === "music") {
         _editor.musicUrl = "";
         _editor._musicFile = null;
@@ -25369,21 +25587,24 @@ async function _editorExport() {
         stickers: _editor.stickers.map(s => ({
             emoji: s.emoji, x: s.x, y: s.y, start_time: s.startTime, end_time: s.endTime, size: s.size,
         })),
-        media_layers: _editor.mediaLayers.map(layer => ({
-            path: layer.path,
-            kind: layer.kind,
-            media_type: layer.kind,
-            x: Number(layer.x || 0),
-            y: Number(layer.y || 0),
-            width: Number(layer.width || 100),
-            start_time: Number(layer.startTime || 0),
-            end_time: Number(layer.endTime || 0),
-            duration: Number(layer.duration || 0),
-            source_offset: Number(layer.sourceOffset || 0),
-            volume: Number(layer.volume ?? 100),
-            audio_only: Boolean(layer.audioOnly),
-            reversed: Boolean(layer.reversed),
-        })),
+        media_layers: _editor.mediaLayers.map((layer) => {
+            const normalizedLayer = _editorNormalizeMediaLayer(layer);
+            return {
+                path: normalizedLayer.path,
+                kind: normalizedLayer.kind,
+                media_type: normalizedLayer.kind,
+                x: Number(normalizedLayer.x || 0),
+                y: Number(normalizedLayer.y || 0),
+                width: Number(normalizedLayer.width || 100),
+                start_time: Number(normalizedLayer.startTime || 0),
+                end_time: Number(normalizedLayer.endTime || 0),
+                duration: Number(normalizedLayer.duration || 0),
+                source_offset: Number(normalizedLayer.sourceOffset || 0),
+                volume: Number(normalizedLayer.volume ?? 100),
+                audio_only: Boolean(normalizedLayer.audioOnly),
+                reversed: Boolean(normalizedLayer.reversed),
+            };
+        }),
         smart_cuts: _editorGetApprovedSmartCuts().map((cut) => ({
             start: Number(cut.start || 0),
             end: Number(cut.end || 0),
@@ -25633,6 +25854,18 @@ function _bindEditorEvents() {
             } else {
                 _editorRefreshTrackSelectionUI();
             }
+            e.stopPropagation();
+            return;
+        }
+
+        const transitionMarker = e.target.closest(".editor-transition-marker");
+        if (transitionMarker) {
+            _editorSelectTimelineClip(
+                "transition",
+                transitionMarker.dataset.transitionKey || "",
+                true,
+                transitionMarker.dataset.track || ""
+            );
             e.stopPropagation();
             return;
         }
