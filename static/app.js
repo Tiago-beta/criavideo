@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v300 loaded");
+console.log("[CriaVideo] app.js v301 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -17400,6 +17400,8 @@ window.purchaseCredits = purchaseCredits;
 /* ══════════════════════════════════════════════════════════════
    VIDEO EDITOR ENGINE
    ══════════════════════════════════════════════════════════════ */
+const _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS = 5;
+
 const _editor = {
     projectId: 0,
     videoUrl: "",
@@ -18109,6 +18111,10 @@ function _editorSegSourceStart(seg) {
     return seg.sourceStart != null ? Number(seg.sourceStart) : Number(seg.start);
 }
 
+function _editorSegmentIsReversed(seg) {
+    return Boolean(seg?.reversed);
+}
+
 function _editorEnsureSegmentSourceStart(seg) {
     if (!seg) return 0;
     if (seg.sourceStart == null) {
@@ -18121,12 +18127,26 @@ function _editorSegSourceEnd(seg) {
     return _editorSegSourceStart(seg) + Math.max(0, Number(seg.end) - Number(seg.start));
 }
 
+function _editorSegSourceTimeAtTimelineTime(seg, timelineTime) {
+    if (!seg) return Number(timelineTime || 0);
+    const start = Number(seg.start || 0);
+    const sourceStart = _editorSegSourceStart(seg);
+    const sourceEnd = _editorSegSourceEnd(seg);
+    const span = Math.max(0, sourceEnd - sourceStart);
+    const offset = Math.max(0, Math.min(span, Number(timelineTime || 0) - start));
+    if (_editorSegmentIsReversed(seg)) {
+        const epsilon = span > 0.05 ? 0.03 : 0;
+        return Math.max(sourceStart, sourceEnd - offset - epsilon);
+    }
+    return Math.min(sourceEnd, sourceStart + offset);
+}
+
 function _editorTimelineToSourceTime(timelineTime) {
     if (!_editor.videoSegments.length) return timelineTime;
     const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
     for (const seg of sorted) {
         if (timelineTime >= Number(seg.start) - 0.01 && timelineTime <= Number(seg.end) + 0.01) {
-            return _editorSegSourceStart(seg) + (timelineTime - Number(seg.start));
+            return _editorSegSourceTimeAtTimelineTime(seg, timelineTime);
         }
     }
     return timelineTime;
@@ -18139,6 +18159,9 @@ function _editorSourceToTimelineTime(sourceTime) {
         const ss = _editorSegSourceStart(seg);
         const se = _editorSegSourceEnd(seg);
         if (sourceTime >= ss - 0.01 && sourceTime <= se + 0.01) {
+            if (_editorSegmentIsReversed(seg)) {
+                return Number(seg.start) + Math.max(0, se - Number(sourceTime || 0));
+            }
             return Number(seg.start) + (sourceTime - ss);
         }
     }
@@ -18212,6 +18235,14 @@ function _editorGetVideoPlaybackEndTime() {
     return Math.max(0, Math.min(trackEnd, mediaDuration));
 }
 
+function _editorHasReversedVideoSegments() {
+    return _editor.videoSegments.some((seg) => _editorSegmentIsReversed(seg));
+}
+
+function _editorShouldUseVirtualVideoPlayback() {
+    return _editorHasReversedVideoSegments();
+}
+
 function _editorGetVideoTailAnchorTime() {
     const video = document.getElementById("editor-video");
     const mediaDuration = Math.max(0, Number(video?.duration || _editor.duration || 0));
@@ -18230,6 +18261,18 @@ function _editorApplyTimelineFrame(timeSec, shouldPlay = false) {
     const timelineDuration = _editorGetTimelineDuration();
     const safeTime = Math.max(0, Math.min(timelineDuration, Number(timeSec || 0)));
     _editor.timelineTime = safeTime;
+
+    const video = document.getElementById("editor-video");
+    if (video && video.src && (_editor._virtualPlaybackActive || _editorShouldUseVirtualVideoPlayback() || video.paused)) {
+        const sourceTime = Math.max(0, _editorTimelineToSourceTime(Math.min(safeTime, _editorGetVideoPlaybackEndTime())));
+        if (Math.abs(Number(video.currentTime || 0) - sourceTime) > 0.03) {
+            try {
+                video.currentTime = sourceTime;
+            } catch {
+                // Ignore seek errors while metadata is loading.
+            }
+        }
+    }
 
     const timeEl = document.getElementById("editor-time-current");
     if (timeEl) timeEl.textContent = _fmtTime(safeTime);
@@ -18900,6 +18943,7 @@ function _editorCloneVideoSegmentsForAudio() {
             start: Number(seg.start || 0),
             end: Number(seg.end || 0),
             sourceStart: _editorSegSourceStart(seg),
+            reversed: _editorSegmentIsReversed(seg),
         };
         return clone;
     });
@@ -18990,7 +19034,7 @@ function _editorRecomputeTrimBounds() {
 
 function _editorInitVideoSegments() {
     const dur = Math.max(_editor.duration || 0, 0.1);
-    _editor.videoSegments = [{ id: _editorGenId(), start: 0, end: dur, sourceStart: 0 }];
+    _editor.videoSegments = [{ id: _editorGenId(), start: 0, end: dur, sourceStart: 0, reversed: false }];
     _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
     _editor.selectedTracks = ["video"];
     _editor.selectedInsertTrack = "video";
@@ -19048,7 +19092,22 @@ async function loadEditorVideosList() {
 }
 
 async function _editorUploadVideo(input) {
-    const file = input.files?.[0];
+    const files = Array.from(input?.files || []);
+    if (input) input.value = "";
+    if (!files.length) return;
+
+    const selection = _editorClassifyLocalMediaFiles(files);
+    if (selection.error) {
+        showToast(selection.error, "error");
+        return;
+    }
+
+    if (selection.imageFiles.length) {
+        await _editorStartWithUploadedImages(selection.imageFiles);
+        return;
+    }
+
+    const file = selection.videoFiles[0];
     if (!file) return;
 
     try {
@@ -19056,7 +19115,6 @@ async function _editorUploadVideo(input) {
         const formData = new FormData();
         formData.append("file", file);
         const payload = await apiForm("/video/editor/upload-video", formData, { method: "POST" });
-        input.value = "";
 
         await loadEditorVideosList();
         if (payload?.project_id) {
@@ -19070,6 +19128,113 @@ async function _editorUploadVideo(input) {
     }
 }
 window._editorUploadVideo = _editorUploadVideo;
+
+function _editorGetLocalMediaKind(file) {
+    const mime = String(file?.type || "").toLowerCase();
+    const name = String(file?.name || "").toLowerCase();
+    const ext = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
+    const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+    const videoExts = new Set([".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"]);
+
+    if (mime.startsWith("image/") || imageExts.has(ext)) return "image";
+    if (mime.startsWith("video/") || videoExts.has(ext)) return "video";
+    return "";
+}
+
+function _editorClassifyLocalMediaFiles(files = []) {
+    const imageFiles = [];
+    const videoFiles = [];
+    const invalidFiles = [];
+
+    files.forEach((file) => {
+        const kind = _editorGetLocalMediaKind(file);
+        if (kind === "image") {
+            imageFiles.push(file);
+            return;
+        }
+        if (kind === "video") {
+            videoFiles.push(file);
+            return;
+        }
+        invalidFiles.push(file);
+    });
+
+    if (invalidFiles.length) {
+        return {
+            imageFiles,
+            videoFiles,
+            error: "Selecione apenas vídeos MP4/MOV/WEBM/MKV/AVI ou imagens JPG/PNG/WebP.",
+        };
+    }
+    if (imageFiles.length && videoFiles.length) {
+        return {
+            imageFiles,
+            videoFiles,
+            error: "Selecione um vídeo ou apenas imagens no mesmo envio.",
+        };
+    }
+    if (videoFiles.length > 1) {
+        return {
+            imageFiles,
+            videoFiles,
+            error: "Envie um vídeo por vez nesse botão.",
+        };
+    }
+
+    return { imageFiles, videoFiles, error: "" };
+}
+
+function _editorApplyImageSequenceLayers(layers, options = {}) {
+    const sequence = Array.isArray(layers) ? layers.filter((layer) => layer && layer.path && layer.media_url) : [];
+    if (!sequence.length) return;
+
+    const clipSeconds = Math.max(0.5, Number(options.clipSeconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS));
+    let cursor = Math.max(0, Number(options.startTime || 0));
+
+    sequence.forEach((payload, idx) => {
+        const startTime = cursor;
+        const endTime = startTime + clipSeconds;
+        _editorPushMediaLayer("image", payload, {
+            startTime,
+            endTime,
+            select: idx === sequence.length - 1,
+        });
+        cursor = endTime;
+    });
+}
+
+async function _editorStartWithUploadedImages(files) {
+    const imageFiles = Array.isArray(files)
+        ? files.filter((file) => _editorGetLocalMediaKind(file) === "image")
+        : [];
+    if (!imageFiles.length) {
+        showToast("Selecione imagens JPG, PNG ou WebP para continuar.", "error");
+        return;
+    }
+
+    try {
+        closeModal("modal-editor-start");
+        showToast(`Preparando ${imageFiles.length} imagem(ns) no editor...`);
+        const formData = new FormData();
+        imageFiles.forEach((file) => formData.append("images", file));
+        const payload = await apiForm("/video/editor/upload-image-sequence", formData, { method: "POST" });
+        await loadEditorVideosList();
+
+        if (payload?.project_id) {
+            showToast(`${imageFiles.length} imagem(ns) enviada(s)! Abrindo editor...`, "success");
+            await openEditor(payload.project_id, {
+                restoreDraft: false,
+                initialMediaLayers: payload.layers || [],
+                initialImageDurationSeconds: Number(payload.image_duration_seconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS),
+            });
+            return;
+        }
+
+        showToast("Sequência de imagens enviada com sucesso.", "success");
+    } catch (err) {
+        showToast("Erro ao preparar imagens no editor: " + (err?.message || "erro desconhecido"), "error");
+    }
+}
 
 function _editorRecorderUsesScreen(mode) {
     return mode === "screen" || mode === "screen_camera" || mode === "window";
@@ -20204,8 +20369,7 @@ function _editorStartWithImages(input) {
     if (input) input.value = "";
     if (!files.length) return;
 
-    closeModal("modal-editor-start");
-    _editorOpenCreateFlowWithImages(files);
+    _editorStartWithUploadedImages(files);
 }
 window._editorStartWithImages = _editorStartWithImages;
 
@@ -20647,6 +20811,7 @@ function _editorNormalizeMediaLayer(layer) {
         sourceOffset,
         volume: Math.max(0, Math.min(200, Number(layer.volume ?? 100))),
         audioOnly: Boolean(layer.audioOnly),
+        reversed: Boolean(layer.reversed),
         aspectRatio: aspect,
         trackIndex,
     };
@@ -20682,9 +20847,16 @@ function _editorSyncMediaLayersWithTime(timeSec) {
 
         const normalizedLayer = _editorNormalizeMediaLayer(layer);
         const localTime = Math.max(0, currentTime - normalizedLayer.startTime);
-        const playbackTime = Math.max(0, Number(normalizedLayer.sourceOffset || 0) + localTime);
+        const sourceOffset = Math.max(0, Number(normalizedLayer.sourceOffset || 0));
+        const clipDuration = Math.max(0, Number(normalizedLayer.endTime || 0) - Number(normalizedLayer.startTime || 0));
+        let playbackTime = Math.max(0, sourceOffset + localTime);
+        if (normalizedLayer.kind === "video" && normalizedLayer.reversed && Number(normalizedLayer.duration || 0) > 0) {
+            const layerSourceEnd = Math.min(Number(normalizedLayer.duration || 0), sourceOffset + clipDuration);
+            playbackTime = Math.max(sourceOffset, layerSourceEnd - localTime - 0.03);
+        }
         const reachedVideoEnd = normalizedLayer.kind === "video"
             && Number(normalizedLayer.duration || 0) > 0
+            && !normalizedLayer.reversed
             && playbackTime > Number(normalizedLayer.duration || 0);
         const inRange = currentTime >= normalizedLayer.startTime && currentTime <= normalizedLayer.endTime && !reachedVideoEnd;
 
@@ -20703,7 +20875,7 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         const videoEl = item.querySelector("video");
         if (!videoEl) return;
         const maxTime = normalizedLayer.duration > 0 ? Math.max(0, normalizedLayer.duration - 0.05) : playbackTime;
-        const targetTime = Math.min(playbackTime, maxTime);
+        const targetTime = Math.max(0, Math.min(playbackTime, maxTime));
         if (Math.abs((videoEl.currentTime || 0) - targetTime) > 0.1) {
             try {
                 videoEl.currentTime = targetTime;
@@ -20908,11 +21080,17 @@ function _editorPushMediaLayer(kind, payload, options = {}) {
     const baseDuration = Math.max(0.1, Number(_editor.duration || 0.1));
     const layerDuration = kind === "video" ? Math.max(0, Number(payload?.duration || 0)) : baseDuration;
     const appendToTrack = kind === "video" && options?.appendToTrack !== false;
-    const startTime = appendToTrack ? _editorGetLayerVideoAppendStart() : 0;
+    const hasCustomStart = Number.isFinite(Number(options?.startTime));
+    const hasCustomEnd = Number.isFinite(Number(options?.endTime));
+    const startTime = hasCustomStart
+        ? Math.max(0, Number(options.startTime || 0))
+        : (appendToTrack ? _editorGetLayerVideoAppendStart() : 0);
     const initialSpan = kind === "video"
         ? Math.max(0.1, layerDuration || 5)
         : baseDuration;
-    const initialEnd = startTime + initialSpan;
+    const initialEnd = hasCustomEnd
+        ? Math.max(startTime + 0.1, Number(options.endTime || (startTime + initialSpan)))
+        : (startTime + initialSpan);
     const layer = {
         id: _editorGenId(),
         kind,
@@ -20932,17 +21110,61 @@ function _editorPushMediaLayer(kind, payload, options = {}) {
         trackIndex: 0,
     };
     _editor.mediaLayers.push(layer);
+    if (options?.select === false) {
+        return layer;
+    }
     _editorSelectMediaLayer(layer.id, true);
+    return layer;
 }
 
 async function _editorUploadLayerVideo(input) {
-    const file = input.files?.[0];
-    if (!file) return;
+    const files = Array.from(input?.files || []);
+    if (input) input.value = "";
+    if (!files.length) return;
     if (!_editor.projectId) {
-        input.value = "";
         showToast("Abra um projeto no editor antes de enviar vídeos em camada.", "error");
         return;
     }
+
+    const selection = _editorClassifyLocalMediaFiles(files);
+    if (selection.error) {
+        showToast(selection.error, "error");
+        return;
+    }
+
+    if (selection.imageFiles.length) {
+        try {
+            _editorSaveState();
+            let cursor = _editorGetLayerVideoAppendStart();
+            let addedCount = 0;
+
+            showToast(`Enviando ${selection.imageFiles.length} imagem(ns) para a faixa...`);
+            for (let index = 0; index < selection.imageFiles.length; index += 1) {
+                const file = selection.imageFiles[index];
+                const formData = new FormData();
+                formData.append("file", file);
+                const payload = await apiForm("/video/editor/upload-layer-image", formData, { method: "POST" });
+                _editorPushMediaLayer("image", payload, {
+                    startTime: cursor,
+                    endTime: cursor + _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS,
+                    select: index === selection.imageFiles.length - 1,
+                });
+                cursor += _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS;
+                addedCount += 1;
+            }
+
+            _editorRenderTimeline();
+            _editorRenderMediaLayers();
+            _editorRenderProps();
+            showToast(`${addedCount} imagem(ns) adicionada(s) na sequência da faixa.`, "success");
+        } catch (err) {
+            showToast("Erro ao enviar imagens da faixa: " + (err?.message || "erro desconhecido"), "error");
+        }
+        return;
+    }
+
+    const file = selection.videoFiles[0];
+    if (!file) return;
 
     try {
         _editorSaveState();
@@ -20956,8 +21178,6 @@ async function _editorUploadLayerVideo(input) {
         showToast("Vídeo adicionado no fim da faixa de camadas.", "success");
     } catch (err) {
         showToast("Erro ao enviar vídeo da camada: " + err.message, "error");
-    } finally {
-        input.value = "";
     }
 }
 window._editorUploadLayerVideo = _editorUploadLayerVideo;
@@ -21168,6 +21388,8 @@ function _editorResolveProjectDurationSeconds(detail = {}, render = {}, videoDur
 async function openEditor(projectId, options = {}) {
     try {
         const shouldRestoreDraft = options && options.restoreDraft !== false;
+        const initialMediaLayers = Array.isArray(options?.initialMediaLayers) ? options.initialMediaLayers : [];
+        const initialImageDurationSeconds = Math.max(0.5, Number(options?.initialImageDurationSeconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS));
         const detail = await api(`/video/projects/${projectId}`);
         const render = _pickLatestAvailableRender(detail.renders || []);
         if (!render || !render.video_url) {
@@ -21231,6 +21453,10 @@ async function openEditor(projectId, options = {}) {
         video.src = _editor.videoUrl;
         video.load();
         let editorReady = false;
+        let resolveOpen;
+        const readyPromise = new Promise((resolve) => {
+            resolveOpen = resolve;
+        });
         const finalizeEditorOpen = () => {
             if (editorReady) return;
             editorReady = true;
@@ -21245,6 +21471,13 @@ async function openEditor(projectId, options = {}) {
             }
             if (!restored) {
                 _editor.timelineTime = 0;
+            }
+
+            if (!restored && initialMediaLayers.length) {
+                _editorApplyImageSequenceLayers(initialMediaLayers, {
+                    startTime: 0,
+                    clipSeconds: initialImageDurationSeconds,
+                });
             }
 
             if (restored) {
@@ -21269,11 +21502,13 @@ async function openEditor(projectId, options = {}) {
             if (shouldRestoreDraft && restored) {
                 showToast("Edição restaurada de onde você parou.", "success");
             }
+            resolveOpen?.();
         };
         video.onloadedmetadata = finalizeEditorOpen;
         video.onerror = finalizeEditorOpen;
         setTimeout(finalizeEditorOpen, 1500);
         _updateUndoRedoBtns();
+        await readyPromise;
     } catch (err) {
         showToast("Erro ao abrir editor: " + err.message, "error");
     }
@@ -21556,7 +21791,7 @@ function _editorTogglePlay() {
     }
 
     const videoPlaybackEnd = _editorGetVideoPlaybackEndTime();
-    if (startTime > videoPlaybackEnd + 0.01) {
+    if (_editorShouldUseVirtualVideoPlayback() || startTime > videoPlaybackEnd + 0.01) {
         _editorStartVirtualTimelinePlayback(startTime);
     } else {
         _editor._virtualPlaybackActive = false;
@@ -22898,8 +23133,15 @@ function _editorSplitAtCurrentTime() {
 
         ensureSaved();
         const origSrc = _editorSegSourceStart(seg);
-        const first = { id: _editorGenId(), start: seg.start, end: t, sourceStart: origSrc };
-        const second = { id: _editorGenId(), start: t, end: seg.end, sourceStart: origSrc + (t - Number(seg.start)) };
+        const reversedFlag = _editorSegmentIsReversed(seg);
+        const firstSourceStart = reversedFlag
+            ? _editorSegSourceTimeAtTimelineTime(seg, t)
+            : origSrc;
+        const first = { id: _editorGenId(), start: seg.start, end: t, sourceStart: firstSourceStart, reversed: reversedFlag };
+        const secondSourceStart = reversedFlag
+            ? origSrc
+            : origSrc + (t - Number(seg.start));
+        const second = { id: _editorGenId(), start: t, end: seg.end, sourceStart: secondSourceStart, reversed: reversedFlag };
         const nextSegments = segments
             .filter(item => item !== seg)
             .concat([first, second]);
@@ -22917,10 +23159,17 @@ function _editorSplitAtCurrentTime() {
         ensureSaved();
         const firstEnd = t;
         const secondStart = t;
-        const secondSourceOffset = Math.max(
-            0,
-            Number(normalizedLayer.sourceOffset || 0) + (t - normalizedLayer.startTime)
-        );
+        const layerClipDuration = Math.max(0.1, Number(normalizedLayer.endTime || 0) - Number(normalizedLayer.startTime || 0));
+        const firstClipDuration = Math.max(0.1, firstEnd - normalizedLayer.startTime);
+        const secondClipDuration = Math.max(0.1, normalizedLayer.endTime - secondStart);
+        const originalSourceOffset = Math.max(0, Number(normalizedLayer.sourceOffset || 0));
+        const secondSourceOffset = Boolean(normalizedLayer.reversed)
+            ? originalSourceOffset
+            : Math.max(0, originalSourceOffset + (t - normalizedLayer.startTime));
+        const firstSourceOffset = Boolean(normalizedLayer.reversed)
+            ? Math.max(0, originalSourceOffset + Math.max(0, layerClipDuration - firstClipDuration))
+            : originalSourceOffset;
+        layer.sourceOffset = firstSourceOffset;
         layer.endTime = firstEnd;
 
         const secondLayer = {
@@ -22929,10 +23178,13 @@ function _editorSplitAtCurrentTime() {
             startTime: secondStart,
             endTime: normalizedLayer.endTime,
             sourceOffset: secondSourceOffset,
+            reversed: Boolean(normalizedLayer.reversed),
         };
 
         if (Number(secondLayer.duration || 0) > 0) {
-            const remainingDuration = Math.max(0.1, Number(secondLayer.duration || 0) - secondSourceOffset);
+            const remainingDuration = Boolean(normalizedLayer.reversed)
+                ? Math.max(0.1, secondClipDuration)
+                : Math.max(0.1, Number(secondLayer.duration || 0) - secondSourceOffset);
             secondLayer.endTime = Math.min(secondLayer.endTime, secondLayer.startTime + remainingDuration);
         }
         secondLayer.endTime = Math.max(secondLayer.startTime + 0.1, secondLayer.endTime);
@@ -23651,13 +23903,14 @@ function _editorRenderTimeline() {
         const startPct = (segStart / dur) * 100;
         const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
         const selectedClass = selectedKind === "segment" && selectedTrack === "video" && selectedId === String(seg.id) ? " selected" : "";
+        const reversedClass = _editorSegmentIsReversed(seg) ? " clip-reversed" : "";
         const hasWaveOverlay = Boolean(sourceVideoWaveStyle || _editorSourceWaveformState.loading);
         const waveClass = hasWaveOverlay ? ` with-waveform${sourceWaveLoadingClass}` : "";
         const styleParts = [`left:${startPct}%`, `width:${widthPct}%`];
         if (sourceVideoWaveStyle) {
             styleParts.push(sourceVideoWaveStyle);
         }
-        return `<div class="editor-track-clip clip-video${waveClass}${selectedClass}" data-kind="segment" data-track="video" data-id="${seg.id}" style="${styleParts.join(";")}">Video ${idx + 1}</div>`;
+        return `<div class="editor-track-clip clip-video${waveClass}${selectedClass}${reversedClass}" data-kind="segment" data-track="video" data-id="${seg.id}" style="${styleParts.join(";")}">Video ${idx + 1}</div>`;
     }).join("");
 
     const layerClipsByTrack = new Map();
@@ -23673,11 +23926,12 @@ function _editorRenderTimeline() {
         const left = (start / dur) * 100;
         const width = Math.max(0.5, ((end - start) / dur) * 100);
         const selectedClass = selectedKind === "media-layer" && selectedId === String(normalizedLayer.id) ? " selected" : "";
+        const reversedClass = normalizedLayer.kind === "video" && normalizedLayer.reversed ? " clip-reversed" : "";
         const labelPrefix = normalizedLayer.kind === "video" ? "Video" : "Imagem";
         const label = `${labelPrefix} ${idx + 1}`;
         const trackIndex = _editorGetLayerTrackIndex(normalizedLayer);
         const layerTrack = `layer-video-${trackIndex}`;
-        const clipHtml = `<div class="editor-track-clip clip-media${selectedClass}" data-kind="media-layer" data-track="${layerTrack}" data-id="${normalizedLayer.id}" style="left:${left}%;width:${width}%">${label}</div>`;
+        const clipHtml = `<div class="editor-track-clip clip-media${selectedClass}${reversedClass}" data-kind="media-layer" data-track="${layerTrack}" data-id="${normalizedLayer.id}" style="left:${left}%;width:${width}%">${label}</div>`;
 
         if (!layerClipsByTrack.has(trackIndex)) {
             layerClipsByTrack.set(trackIndex, []);
@@ -23862,6 +24116,46 @@ function _editorSelectionCanDuplicate() {
     return ["text", "subtitle", "sticker"].includes(_editor.selectedClip.kind);
 }
 
+function _editorGetReversibleSelection() {
+    const selected = _editor.selectedClip || {};
+    if (selected.kind === "segment" && selected.track === "video") {
+        return { type: "segment", target: _editorFindVideoSegment(selected.id) };
+    }
+    if (selected.kind === "media-layer") {
+        const layer = _editorGetMediaLayerById(selected.id);
+        if (layer && layer.kind === "video") {
+            return { type: "media-layer", target: layer };
+        }
+    }
+    return null;
+}
+
+function _editorToggleReverseSelection() {
+    const selection = _editorGetReversibleSelection();
+    if (!selection?.target) return;
+
+    _editorSaveState();
+    if (selection.type === "segment") {
+        selection.target.reversed = !_editorSegmentIsReversed(selection.target);
+        _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
+    } else {
+        selection.target.reversed = !Boolean(selection.target.reversed);
+    }
+
+    if (_editor.playing) {
+        _editor.playing = false;
+        _editorStopVirtualTimelinePlayback();
+        document.getElementById("editor-video")?.pause();
+        _updatePlayIcon();
+    }
+
+    const previewTime = Number(_editor.timelineTime || 0);
+    _editorApplyTimelineFrame(previewTime, false);
+    _editorRefreshQuickActions();
+    _editorRenderTimeline();
+}
+window._editorToggleReverseSelection = _editorToggleReverseSelection;
+
 function _editorGetLayerOrderCount() {
     if (Array.isArray(_editor.mediaLayers) && _editor.mediaLayers.length) {
         return _editor.mediaLayers.length;
@@ -23919,6 +24213,7 @@ function _editorRefreshQuickActions() {
     const delBtn = document.getElementById("editor-quick-delete");
     const dupBtn = document.getElementById("editor-quick-duplicate");
     const cutBtn = document.getElementById("editor-quick-cut");
+    const reverseBtn = document.getElementById("editor-quick-reverse");
     const layerOrderBtn = document.getElementById("editor-quick-layer-order");
     const zoomOutBtn = document.getElementById("editor-quick-zoom-out");
     const zoomInBtn = document.getElementById("editor-quick-zoom-in");
@@ -23926,6 +24221,16 @@ function _editorRefreshQuickActions() {
     if (delBtn) delBtn.disabled = !_editorSelectionCanDelete();
     if (dupBtn) dupBtn.disabled = !_editorSelectionCanDuplicate();
     if (cutBtn) cutBtn.disabled = !_editor.duration || !_editorGetSelectedSegmentTracks().length;
+    if (reverseBtn) {
+        const selection = _editorGetReversibleSelection();
+        const isActive = Boolean(selection?.target && (selection.type === "segment"
+            ? _editorSegmentIsReversed(selection.target)
+            : selection.target.reversed));
+        reverseBtn.disabled = !selection?.target;
+        reverseBtn.classList.toggle("active", isActive);
+        reverseBtn.setAttribute("aria-pressed", isActive ? "true" : "false");
+        reverseBtn.title = isActive ? "Desinverter vídeo selecionado" : "Inverter vídeo selecionado";
+    }
     if (layerOrderBtn) layerOrderBtn.disabled = _editorGetLayerOrderCount() < 2;
     if (zoomOutBtn) zoomOutBtn.disabled = Number(_editor.timelineZoom || 1) <= _EDITOR_TIMELINE_MIN_ZOOM + 0.0001;
     if (zoomInBtn) zoomInBtn.disabled = Number(_editor.timelineZoom || 1) >= _EDITOR_TIMELINE_MAX_ZOOM - 0.0001;
@@ -24461,15 +24766,15 @@ async function _editorExport() {
         trim_start: _editor.trimStart,
         trim_end: _editor.trimEnd,
         trim_video_segments: _editor.videoSegments
-            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg) }))
+            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg), reversed: _editorSegmentIsReversed(seg) }))
             .sort((a, b) => a.start - b.start)
             .filter(seg => seg.end > seg.start + 0.05),
         trim_audio_segments: _editor.audioSegments
-            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg) }))
+            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg), reversed: _editorSegmentIsReversed(seg) }))
             .sort((a, b) => a.start - b.start)
             .filter(seg => seg.end > seg.start + 0.05),
         trim_segments: _editor.videoSegments
-            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg) }))
+            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg), reversed: _editorSegmentIsReversed(seg) }))
             .sort((a, b) => a.start - b.start)
             .filter(seg => seg.end > seg.start + 0.05),
         filter: _editor.filter,
@@ -24503,6 +24808,7 @@ async function _editorExport() {
             source_offset: Number(layer.sourceOffset || 0),
             volume: Number(layer.volume ?? 100),
             audio_only: Boolean(layer.audioOnly),
+            reversed: Boolean(layer.reversed),
         })),
         smart_cuts: _editorGetApprovedSmartCuts().map((cut) => ({
             start: Number(cut.start || 0),
@@ -24695,6 +25001,7 @@ function _bindEditorEvents() {
     document.getElementById("editor-quick-add-text")?.addEventListener("click", _editorAddText);
     document.getElementById("editor-quick-add-subtitle")?.addEventListener("click", _editorAddSubtitle);
     document.getElementById("editor-quick-cut")?.addEventListener("click", _editorSplitAtCurrentTime);
+    document.getElementById("editor-quick-reverse")?.addEventListener("click", _editorToggleReverseSelection);
     document.getElementById("editor-quick-layer-order")?.addEventListener("click", _editorCycleMediaLayerOrder);
     document.getElementById("editor-quick-zoom-out")?.addEventListener("click", () => {
         _editorAdjustTimelineZoom(-1, { focusTime: _editorGetTimelineFocusTime(), announce: true });

@@ -8,6 +8,9 @@ import math
 import os
 import re
 import shutil
+    segments: list[dict] = []
+    max_duration = max(0.0, float(src_duration or 0.0))
+
 import subprocess
 import asyncio
 import uuid
@@ -22,7 +25,7 @@ from sqlalchemy.orm import selectinload
 
 from app.auth import get_current_user
 from app.config import get_settings
-from app.database import get_db
+            segments.append({"start": st, "end": et, "reversed": False})
 from app.models import VideoProject, VideoRender, VideoStatus
 from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
 from app.services.tevoxi_music import generate_music_from_theme
@@ -31,30 +34,35 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/video/editor", tags=["editor"])
 settings = get_settings()
 
-# In-memory export jobs
+            segments.append({"start": st, "end": et, "reversed": False})
 _export_jobs: dict[str, dict] = {}
 _EDITOR_EXPORT_PRESET = "veryfast"
-_EDITOR_EXPORT_CRF = "23"
+        segments.append({"start": float(trim_start), "end": max_duration, "reversed": False})
 _EDITOR_EXPORT_AUDIO_BITRATE = "160k"
 _SUBTITLE_PROPER_NAMES = ("Senhor", "Deus", "Pastor", "Jesus", "Cristo", "Pai")
+_EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS = 5.0
+            segments.append({"start": 0.0, "end": max_duration, "reversed": False})
 _EDITOR_TEVOXI_MOOD_MAP = {
-    "calmo": "calmo",
+            segments.append({"start": 0.0, "end": 1e9, "reversed": False})
     "calma": "calmo",
-    "drama": "drama",
+    segments.sort(key=lambda item: float(item["start"]))
     "dramatico": "drama",
     "dramático": "drama",
-    "alegre": "alegre",
-    "animado": "alegre",
+    merged: list[dict] = []
+    for item in segments:
+        st = float(item["start"])
+        et = float(item["end"])
+        reversed_flag = bool(item.get("reversed", False))
     "emocional": "drama",
-}
+            merged.append({"start": st, "end": et, "reversed": reversed_flag})
 _EDITOR_TEVOXI_MOOD_SETTINGS = {
     "calmo": {
-        "api_mood": "calmo reflexivo",
-        "genre": "ambient",
+        if st <= float(prev["end"]) + 0.01 and reversed_flag == bool(prev.get("reversed", False)):
+            prev["end"] = max(float(prev["end"]), et)
         "theme_hint": "atmosfera suave, piano leve, texturas calmas, sem percussao agressiva",
-    },
+            merged.append({"start": st, "end": et, "reversed": reversed_flag})
     "drama": {
-        "api_mood": "dramatico poderoso agressivo",
+    return [item for item in merged if float(item["end"]) - float(item["start"]) >= 0.05]
         "genre": "cinematic trailer",
         "theme_hint": "trilha dramatica agressiva de trailer, tensao crescente, impactos fortes, cordas intensas, sem voz",
     },
@@ -421,6 +429,90 @@ def _probe_media_dimensions(path: str) -> tuple[int, int]:
         return 0, 0
 
 
+def _editor_detect_aspect_from_dimensions(width: int, height: int) -> str:
+    safe_width = max(1, int(width or 0))
+    safe_height = max(1, int(height or 0))
+    ratio = safe_width / safe_height
+    if abs(ratio - 1.0) <= 0.12:
+        return "1:1"
+    if ratio < 1.0:
+        return "9:16"
+    return "16:9"
+
+
+def _editor_canvas_size_for_aspect(aspect_ratio: str) -> tuple[int, int]:
+    normalized = _normalize_aspect_ratio(aspect_ratio) or "9:16"
+    if normalized == "16:9":
+        return 1280, 720
+    if normalized == "1:1":
+        return 1080, 1080
+    return 720, 1280
+
+
+def _create_editor_blank_video(dest: Path, width: int, height: int, duration_seconds: float) -> None:
+    safe_width = max(2, _round_up_even(width))
+    safe_height = max(2, _round_up_even(height))
+    safe_duration = max(0.2, float(duration_seconds or 0.2))
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-f", "lavfi",
+                "-i", f"color=c=black:s={safe_width}x{safe_height}:d={safe_duration:.6f}:r=30",
+                "-pix_fmt", "yuv420p",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "23",
+                "-movflags", "+faststart",
+                str(dest),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(500, "Timeout ao preparar sequência de imagens para o editor") from exc
+
+    if proc.returncode != 0 or not dest.exists() or dest.stat().st_size <= 0:
+        logger.error("[editor] Failed to create blank editor video %s: %s", dest, (proc.stderr or "")[-1200:])
+        dest.unlink(missing_ok=True)
+        raise HTTPException(500, "Falha ao preparar sequência de imagens para o editor")
+
+
+async def _save_editor_layer_image_upload(file: UploadFile, user_id: int) -> dict:
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    if file.content_type not in allowed:
+        raise HTTPException(400, "Formato inválido. Envie JPG, PNG ou WebP.")
+
+    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user_id) / "layers" / "images"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    ext_map = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+    ext = ext_map.get(file.content_type, Path(file.filename or "layer.jpg").suffix.lower() or ".jpg")
+    filename = f"layer_image_{uuid.uuid4().hex[:10]}{ext}"
+    dest = upload_dir / filename
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "Arquivo vazio")
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(400, "Imagem muito grande (max 10MB)")
+
+    with open(dest, "wb") as out:
+        out.write(content)
+
+    width, height = _probe_media_dimensions(str(dest))
+    return {
+        "path": str(dest),
+        "media_url": _to_media_url(str(dest)),
+        "width": width,
+        "height": height,
+        "name": Path(file.filename or "Camada imagem").stem,
+    }
+
+
 def _probe_has_audio_stream(video_path: str) -> bool:
     try:
         proc = subprocess.run(
@@ -446,16 +538,28 @@ def _normalize_trim_segments(
     trim_end: float,
     src_duration: float,
 ) -> list[tuple[float, float]]:
-    segments: list[tuple[float, float]] = []
+    entries = _normalize_trim_segment_entries(raw_segments, trim_start, trim_end, src_duration)
+    return [(float(item["start"]), float(item["end"])) for item in entries]
+
+
+def _normalize_trim_segment_entries(
+    raw_segments: list,
+    trim_start: float,
+    trim_end: float,
+    src_duration: float,
+) -> list[dict]:
+    segments: list[dict] = []
     max_duration = max(0.0, float(src_duration or 0.0))
 
     for seg in raw_segments or []:
         if isinstance(seg, dict):
             st = float(seg.get("start") or 0)
             et = float(seg.get("end") or 0)
+            reversed_flag = bool(seg.get("reversed", False))
         else:
             st = float(getattr(seg, "start", 0) or 0)
             et = float(getattr(seg, "end", 0) or 0)
+            reversed_flag = bool(getattr(seg, "reversed", False))
 
         st = max(0.0, st)
         et = max(st, et)
@@ -463,7 +567,7 @@ def _normalize_trim_segments(
             st = min(st, max_duration)
             et = min(et, max_duration)
         if et - st >= 0.05:
-            segments.append((st, et))
+            segments.append({"start": st, "end": et, "reversed": reversed_flag})
 
     if not segments and trim_end > trim_start:
         st = max(0.0, float(trim_start or 0))
@@ -472,37 +576,84 @@ def _normalize_trim_segments(
             st = min(st, max_duration)
             et = min(et, max_duration)
         if et - st >= 0.05:
-            segments.append((st, et))
+            segments.append({"start": st, "end": et, "reversed": False})
 
     if not segments and trim_start > 0 and max_duration > trim_start:
-        segments.append((float(trim_start), max_duration))
+        segments.append({"start": float(trim_start), "end": max_duration, "reversed": False})
 
     if not segments:
         if max_duration > 0:
-            segments.append((0.0, max_duration))
+            segments.append({"start": 0.0, "end": max_duration, "reversed": False})
         else:
-            segments.append((0.0, 1e9))
+            segments.append({"start": 0.0, "end": 1e9, "reversed": False})
 
-    segments.sort(key=lambda item: item[0])
+    segments.sort(key=lambda item: float(item["start"]))
 
     # Merge overlapping or adjacent ranges to avoid duplicated frames.
-    merged: list[list[float]] = []
-    for st, et in segments:
+    merged: list[dict] = []
+    for item in segments:
+        st = float(item["start"])
+        et = float(item["end"])
+        reversed_flag = bool(item.get("reversed", False))
         if not merged:
-            merged.append([st, et])
+            merged.append({"start": st, "end": et, "reversed": reversed_flag})
             continue
         prev = merged[-1]
-        if st <= prev[1] + 0.01:
-            prev[1] = max(prev[1], et)
+        if st <= float(prev["end"]) + 0.01 and reversed_flag == bool(prev.get("reversed", False)):
+            prev["end"] = max(float(prev["end"]), et)
         else:
-            merged.append([st, et])
+            merged.append({"start": st, "end": et, "reversed": reversed_flag})
 
-    return [(item[0], item[1]) for item in merged if item[1] - item[0] >= 0.05]
+    return [item for item in merged if float(item["end"]) - float(item["start"]) >= 0.05]
 
 
 def _build_segment_select_expr(segments: list[tuple[float, float]]) -> str:
     parts = [f"between(t\\,{st:.6f}\\,{et:.6f})" for st, et in segments]
     return "+".join(parts)
+
+
+def _build_segment_concat_filter_parts(
+    segment_entries: list[dict],
+    stream_label: str,
+    media_kind: str,
+    prefix: str,
+) -> tuple[list[str], str]:
+    parts: list[str] = []
+    labels: list[str] = []
+    stream_ref = stream_label if stream_label.startswith("[") else f"[{stream_label}]"
+
+    for idx, entry in enumerate(segment_entries or []):
+        start = max(0.0, float(entry.get("start", 0.0) or 0.0))
+        end = max(start, float(entry.get("end", 0.0) or 0.0))
+        if end - start < 0.02:
+            continue
+
+        label = f"{prefix}_{idx}"
+        reversed_flag = bool(entry.get("reversed", False))
+        if media_kind == "video":
+            chain = f"{stream_ref}trim=start={start:.6f}:end={end:.6f},setpts=PTS-STARTPTS"
+            if reversed_flag:
+                chain += ",reverse"
+        else:
+            chain = f"{stream_ref}atrim=start={start:.6f}:end={end:.6f},asetpts=PTS-STARTPTS"
+            if reversed_flag:
+                chain += ",areverse"
+        chain += f"[{label}]"
+        parts.append(chain)
+        labels.append(f"[{label}]")
+
+    if not labels:
+        return [], ""
+
+    if len(labels) == 1:
+        return parts, labels[0]
+
+    final_label = f"{prefix}_out"
+    if media_kind == "video":
+        parts.append(f"{''.join(labels)}concat=n={len(labels)}:v=1:a=0[{final_label}]")
+    else:
+        parts.append(f"{''.join(labels)}concat=n={len(labels)}:v=0:a=1[{final_label}]")
+    return parts, f"[{final_label}]"
 
 
 def _map_source_interval_to_output(
@@ -606,11 +757,13 @@ class MediaLayerEntry(BaseModel):
     end_time: float = 0
     duration: float = 0
     source_offset: float = 0
+    reversed: bool = False
 
 
 class TrimSegment(BaseModel):
     start: float
     end: float
+    reversed: bool = False
 
 
 class SmartCutEntry(BaseModel):
@@ -1186,6 +1339,63 @@ async def upload_video(
     )
 
 
+@router.post("/upload-image-sequence")
+async def upload_image_sequence(
+    images: list[UploadFile] = File(...),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    uploads = list(images or [])
+    if not uploads:
+        raise HTTPException(400, "Envie pelo menos uma imagem")
+    if len(uploads) > _EDITOR_IMAGE_SEQUENCE_MAX_FILES:
+        raise HTTPException(400, f"Selecione no máximo {_EDITOR_IMAGE_SEQUENCE_MAX_FILES} imagens por vez")
+
+    uploaded_layers: list[dict] = []
+    blank_video_path: Path | None = None
+
+    try:
+        for image in uploads:
+            uploaded_layers.append(await _save_editor_layer_image_upload(image, int(user["id"])))
+
+        first_layer = uploaded_layers[0]
+        aspect_ratio = _editor_detect_aspect_from_dimensions(
+            int(first_layer.get("width") or 0),
+            int(first_layer.get("height") or 0),
+        )
+        canvas_width, canvas_height = _editor_canvas_size_for_aspect(aspect_ratio)
+        total_duration = max(1.0, len(uploaded_layers) * _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS)
+
+        blank_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "videos"
+        blank_video_path = blank_dir / f"image_sequence_{uuid.uuid4().hex[:10]}.mp4"
+        _create_editor_blank_video(blank_video_path, canvas_width, canvas_height, total_duration)
+
+        payload = await _create_editor_video_project(
+            db=db,
+            user_id=int(user["id"]),
+            video_path=blank_video_path,
+            original_name="Sequência de imagens",
+            file_size=int(blank_video_path.stat().st_size) if blank_video_path.exists() else 0,
+            description="Sequência de imagens enviada para edição",
+        )
+        payload.update(
+            {
+                "layers": uploaded_layers,
+                "image_duration_seconds": _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS,
+                "source": "image-sequence",
+            }
+        )
+        return payload
+    except Exception:
+        if blank_video_path and blank_video_path.exists():
+            blank_video_path.unlink(missing_ok=True)
+        for layer in uploaded_layers:
+            raw_path = str(layer.get("path") or "").strip()
+            if raw_path:
+                Path(raw_path).unlink(missing_ok=True)
+        raise
+
+
 async def _create_editor_video_project(
     db: AsyncSession,
     user_id: int,
@@ -1382,35 +1592,7 @@ async def upload_layer_image(
     file: UploadFile = File(...),
     user=Depends(get_current_user),
 ):
-    allowed = {"image/jpeg", "image/png", "image/webp"}
-    if file.content_type not in allowed:
-        raise HTTPException(400, "Formato inválido. Envie JPG, PNG ou WebP.")
-
-    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "layers" / "images"
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    ext_map = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
-    ext = ext_map.get(file.content_type, Path(file.filename or "layer.jpg").suffix.lower() or ".jpg")
-    filename = f"layer_image_{uuid.uuid4().hex[:10]}{ext}"
-    dest = upload_dir / filename
-
-    content = await file.read()
-    if not content:
-        raise HTTPException(400, "Arquivo vazio")
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(400, "Imagem muito grande (max 10MB)")
-
-    with open(dest, "wb") as out:
-        out.write(content)
-
-    width, height = _probe_media_dimensions(str(dest))
-    return {
-        "path": str(dest),
-        "media_url": _to_media_url(str(dest)),
-        "width": width,
-        "height": height,
-        "name": Path(file.filename or "Camada imagem").stem,
-    }
+    return await _save_editor_layer_image_upload(file, int(user["id"]))
 
 
 # ── Transcribe audio for subtitles ───────────────────
@@ -1721,18 +1903,20 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
         src_duration, _ = _probe_video_metadata(src_video)
         source_has_audio = _probe_has_audio_stream(src_video)
-        video_segments = _normalize_trim_segments(
+        video_segment_entries = _normalize_trim_segment_entries(
             req.trim_video_segments or req.trim_segments,
             req.trim_start,
             req.trim_end,
             src_duration,
         )
-        audio_segments = _normalize_trim_segments(
+        audio_segment_entries = _normalize_trim_segment_entries(
             req.trim_audio_segments or req.trim_segments,
             req.trim_start,
             req.trim_end,
             src_duration,
         )
+        video_segments = [(float(item["start"]), float(item["end"])) for item in video_segment_entries]
+        audio_segments = [(float(item["start"]), float(item["end"])) for item in audio_segment_entries]
 
         def _is_full_source_range(segments: list[tuple[float, float]]) -> bool:
             if len(segments) != 1:
@@ -1750,7 +1934,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             video_has_cuts = not _is_full_source_range(video_segments)
             audio_is_untouched = _is_full_source_range(audio_segments)
             if video_has_cuts and audio_is_untouched:
-                audio_segments = list(video_segments)
+                audio_segment_entries = [dict(item) for item in video_segment_entries]
+                audio_segments = [(float(item["start"]), float(item["end"])) for item in audio_segment_entries]
                 logger.info("[editor] Auto-syncing audio segments to video cuts")
 
         use_video_segment_filter = not (
@@ -1763,10 +1948,12 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             and audio_segments[0][0] <= 0.01
             and (src_duration <= 0 or audio_segments[0][1] >= max(0.0, src_duration - 0.01))
         )
+        video_has_reversed_segments = any(bool(item.get("reversed", False)) for item in video_segment_entries)
+        audio_has_reversed_segments = any(bool(item.get("reversed", False)) for item in audio_segment_entries)
 
         video_select_expr = _build_segment_select_expr(video_segments)
         audio_select_expr = _build_segment_select_expr(audio_segments)
-        output_video_duration = sum(max(0.0, et - st) for st, et in video_segments)
+        output_video_duration = sum(max(0.0, float(item["end"]) - float(item["start"])) for item in video_segment_entries)
 
         valid_media_layers: list[dict] = []
         allowed_layer_root = os.path.normpath(
@@ -1804,6 +1991,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             start_time = max(0.0, float(getattr(layer, "start_time", 0) or 0))
             end_time = max(start_time, float(getattr(layer, "end_time", 0) or 0))
             source_offset = max(0.0, float(getattr(layer, "source_offset", 0) or 0))
+            reversed_flag = bool(getattr(layer, "reversed", False))
 
             layer_duration = 0.0
             available_video_duration = 0.0
@@ -1875,6 +2063,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                         "end_time": mapped_end,
                         "duration": max(0.0, layer_duration),
                         "source_offset": mapped_source_offset,
+                        "reversed": reversed_flag,
                         "layer_ref": f"{layer_idx}:{range_idx}",
                     }
                 )
@@ -1914,7 +2103,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         _, overlay_canvas_height = _estimate_padded_canvas_size(src_width, src_height, selected_aspect)
         overlay_scale = (overlay_canvas_height / 720.0) if overlay_canvas_height > 0 else 1.0
 
-        if use_video_segment_filter:
+        if use_video_segment_filter and not video_has_reversed_segments:
             vfilters.append(f"select='{video_select_expr}',setpts=N/FRAME_RATE/TB")
 
         # CSS-like filter mapping for FFmpeg
@@ -2021,13 +2210,35 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
             # Keep video filtering inside filter_complex when mixing audio so the
             # mapped video stream always comes from the edited (trimmed) output.
-            if video_filter_chain:
+            if video_has_reversed_segments:
+                reversed_video_parts, reversed_video_label = _build_segment_concat_filter_parts(
+                    video_segment_entries,
+                    "0:v",
+                    "video",
+                    "vseg",
+                )
+                filter_complex_parts.extend(reversed_video_parts)
+                if video_filter_chain:
+                    filter_complex_parts.append(f"{reversed_video_label}{video_filter_chain}[vout]")
+                    video_map = "[vout]"
+                else:
+                    video_map = reversed_video_label
+            elif video_filter_chain:
                 filter_complex_parts.append(f"[0:v]{video_filter_chain}[vout]")
                 video_map = "[vout]"
 
             if source_has_audio:
                 base_audio_label = "[0:a]"
-                if use_audio_segment_filter:
+                if audio_has_reversed_segments:
+                    reversed_audio_parts, reversed_audio_label = _build_segment_concat_filter_parts(
+                        audio_segment_entries,
+                        "0:a",
+                        "audio",
+                        "aseg",
+                    )
+                    filter_complex_parts.extend(reversed_audio_parts)
+                    base_audio_label = reversed_audio_label
+                elif use_audio_segment_filter:
                     filter_complex_parts.append(f"[0:a]aselect='{audio_select_expr}',asetpts=N/SR/TB[a_src]")
                     base_audio_label = "[a_src]"
                 filter_complex_parts.append(f"{base_audio_label}volume={orig_vol}[a0]")
@@ -2055,19 +2266,72 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 ]
         else:
             # Simple path: no external music mixing required.
-            if video_filter_chain:
-                cmd += ["-vf", video_filter_chain]
-
             orig_vol = req.original_volume / 100
             afilters: list[str] = []
-            if source_has_audio and use_audio_segment_filter:
-                afilters.append(f"aselect='{audio_select_expr}',asetpts=N/SR/TB")
-            if source_has_audio and orig_vol != 1.0:
-                afilters.append(f"volume={orig_vol}")
-            if source_has_audio and final_output_duration > 0:
-                afilters.append(f"atrim=0:{final_output_duration:.6f}")
-            if afilters:
-                cmd += ["-af", ",".join(afilters)]
+            use_complex_segment_filters = video_has_reversed_segments or (source_has_audio and audio_has_reversed_segments)
+            if use_complex_segment_filters:
+                filter_complex_parts: list[str] = []
+                video_map = "0:v"
+
+                if video_has_reversed_segments:
+                    reversed_video_parts, reversed_video_label = _build_segment_concat_filter_parts(
+                        video_segment_entries,
+                        "0:v",
+                        "video",
+                        "vseg",
+                    )
+                    filter_complex_parts.extend(reversed_video_parts)
+                    if video_filter_chain:
+                        filter_complex_parts.append(f"{reversed_video_label}{video_filter_chain}[vout]")
+                        video_map = "[vout]"
+                    else:
+                        video_map = reversed_video_label
+                elif video_filter_chain:
+                    filter_complex_parts.append(f"[0:v]{video_filter_chain}[vout]")
+                    video_map = "[vout]"
+
+                audio_map = ""
+                if source_has_audio:
+                    base_audio_label = "[0:a]"
+                    if audio_has_reversed_segments:
+                        reversed_audio_parts, reversed_audio_label = _build_segment_concat_filter_parts(
+                            audio_segment_entries,
+                            "0:a",
+                            "audio",
+                            "aseg",
+                        )
+                        filter_complex_parts.extend(reversed_audio_parts)
+                        base_audio_label = reversed_audio_label
+                    elif use_audio_segment_filter:
+                        filter_complex_parts.append(f"[0:a]aselect='{audio_select_expr}',asetpts=N/SR/TB[a_src]")
+                        base_audio_label = "[a_src]"
+
+                    if orig_vol != 1.0 or final_output_duration > 0:
+                        audio_filters: list[str] = []
+                        if orig_vol != 1.0:
+                            audio_filters.append(f"volume={orig_vol}")
+                        if final_output_duration > 0:
+                            audio_filters.append(f"atrim=0:{final_output_duration:.6f}")
+                        filter_complex_parts.append(f"{base_audio_label}{','.join(audio_filters)}[aout]")
+                        audio_map = "[aout]"
+                    else:
+                        audio_map = base_audio_label
+
+                cmd += ["-filter_complex", ";".join(filter_complex_parts), "-map", video_map]
+                if audio_map:
+                    cmd += ["-map", audio_map]
+            else:
+                if video_filter_chain:
+                    cmd += ["-vf", video_filter_chain]
+
+                if source_has_audio and use_audio_segment_filter:
+                    afilters.append(f"aselect='{audio_select_expr}',asetpts=N/SR/TB")
+                if source_has_audio and orig_vol != 1.0:
+                    afilters.append(f"volume={orig_vol}")
+                if source_has_audio and final_output_duration > 0:
+                    afilters.append(f"atrim=0:{final_output_duration:.6f}")
+                if afilters:
+                    cmd += ["-af", ",".join(afilters)]
 
         # Output settings
 
@@ -2141,12 +2405,15 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 if layer["kind"] == "video":
                     clip_duration = max(0.02, float(layer["end_time"]) - float(layer["start_time"]))
                     source_offset = max(0.0, float(layer.get("source_offset", 0.0) or 0.0))
-                    overlay_parts.append(
+                    layer_video_chain = (
                         f"[{layer['input_idx']}:v]"
                         f"trim=start={source_offset:.6f}:duration={clip_duration:.6f},"
-                        f"setpts=PTS-STARTPTS+{layer['start_time']:.6f}/TB"
-                        f"[{src_label}]"
+                        "setpts=PTS-STARTPTS"
                     )
+                    if layer.get("reversed"):
+                        layer_video_chain += ",reverse"
+                    layer_video_chain += f",setpts=PTS-STARTPTS+{layer['start_time']:.6f}/TB[{src_label}]"
+                    overlay_parts.append(layer_video_chain)
                 else:
                     overlay_parts.append(f"[{layer['input_idx']}:v]setpts=PTS-STARTPTS[{src_label}]")
                 overlay_parts.append(
@@ -2196,12 +2463,15 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
                 delay_ms = max(0, int(round(start_time * 1000)))
                 out_label = f"la{audio_idx}"
-                filter_parts.append(
+                layer_audio_chain = (
                     f"[{layer['input_idx']}:a]"
                     f"atrim=start={source_offset:.6f}:duration={clip_duration:.6f},"
-                    f"asetpts=PTS-STARTPTS,adelay={delay_ms}|{delay_ms},"
-                    f"volume={volume_factor:.4f}[{out_label}]"
+                    "asetpts=PTS-STARTPTS"
                 )
+                if layer.get("reversed"):
+                    layer_audio_chain += ",areverse"
+                layer_audio_chain += f",adelay={delay_ms}|{delay_ms},volume={volume_factor:.4f}[{out_label}]"
+                filter_parts.append(layer_audio_chain)
                 layer_audio_labels.append(f"[{out_label}]")
 
             audio_map = "0:a?"

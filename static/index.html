@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260502-12">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260502-13">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 318;
+        var REQUIRED_VER = 319;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -202,9 +202,9 @@
                                     <button id="editor-upload-btn" class="btn btn-primary btn-add-project" type="button" title="Enviar vídeo para editar" aria-label="Enviar vídeo para editar">+</button>
                                 </div>
                             </div>
-                            <input id="editor-video-upload-input" type="file" accept="video/*" hidden onchange="_editorUploadVideo(this)">
+                            <input id="editor-video-upload-input" type="file" accept="video/*,image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadVideo(this)">
                             <input id="editor-start-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="_editorStartWithImages(this)">
-                            <input id="editor-layer-video-upload-input" type="file" accept="video/*" hidden onchange="_editorUploadLayerVideo(this)">
+                            <input id="editor-layer-video-upload-input" type="file" accept="video/*,image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadLayerVideo(this)">
                             <input id="editor-layer-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="_editorUploadLayerImage(this)">
                             <input id="editor-project-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadProjectImages(this)">
                             <p class="section-subtitle">Selecione um vídeo finalizado para editar.</p>
@@ -315,6 +315,9 @@
                                 </button>
                                 <button class="editor-quick-icon-btn" id="editor-quick-cut" type="button" title="Cortar no ponto atual">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+                                </button>
+                                <button class="editor-quick-icon-btn" id="editor-quick-reverse" type="button" title="Inverter vídeo selecionado" disabled>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 3 21 7 17 11"/><path d="M3 7h18"/><polyline points="7 13 3 17 7 21"/><path d="M21 17H3"/></svg>
                                 </button>
                                 <button class="editor-quick-icon-btn" id="editor-quick-zoom-out" type="button" title="Afastar timeline (-)">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
@@ -695,7 +698,7 @@
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                             </div>
-                            <strong>Enviar vídeo</strong>
+                            <strong>Enviar mídia</strong>
                         </button>
 
                         <button class="mode-selection-card editor-start-card" type="button" onclick="_editorChooseStartMode('image_pc')">
@@ -3412,8 +3415,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260502-12"></script>
-    <script src="/video/static/pwa.js?v=20260502-12"></script>
+    <script src="/video/static/app.js?v=20260502-13"></script>
+    <script src="/video/static/pwa.js?v=20260502-13"></script>
 </body>
 </html>
 
