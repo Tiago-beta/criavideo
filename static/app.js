@@ -17536,6 +17536,12 @@ let _editorMusicPreviewLoadPromise = null;
 let _editorMusicPreviewRequestId = 0;
 let _editorMusicPreviewWarned = false;
 let _editorMusicPreviewPrimed = false;
+let _editorMediaImportOrderModal = {
+    open: false,
+    context: "project",
+    entries: [],
+    resolve: null,
+};
 let _editorMusicWaveformState = {
     key: "",
     loading: false,
@@ -19180,7 +19186,9 @@ async function _editorUploadVideo(input) {
     }
 
     try {
-        await _editorStartWithOrderedMediaEntries(selection.orderedEntries);
+        const orderedEntries = await _editorResolveMediaImportOrder(selection.orderedEntries, "project");
+        if (!orderedEntries?.length) return;
+        await _editorStartWithOrderedMediaEntries(orderedEntries);
     } catch (err) {
         showToast("Erro ao enviar mídia: " + (err?.message || "erro desconhecido"), "error");
     }
@@ -19324,6 +19332,102 @@ async function _editorStartWithOrderedMediaEntries(entries = []) {
     _editorRenderMediaLayers();
     _editorRenderProps();
     showToast(`${orderedEntries.length} mídia(s) importada(s) na ordem selecionada.`, "success");
+}
+
+function _editorShouldConfirmMediaImportOrder(entries = []) {
+    const orderedEntries = Array.isArray(entries) ? entries.filter((entry) => entry?.file && entry?.kind) : [];
+    return orderedEntries.length > 1 && orderedEntries.some((entry) => entry.kind === "video");
+}
+
+function _editorRenderMediaImportOrderModal() {
+    const titleEl = document.getElementById("editor-media-order-title");
+    const descEl = document.getElementById("editor-media-order-description");
+    const listEl = document.getElementById("editor-media-order-list");
+    const confirmBtn = document.getElementById("editor-media-order-confirm");
+    if (!titleEl || !descEl || !listEl || !confirmBtn) return;
+
+    const isLayerContext = _editorMediaImportOrderModal.context === "layer";
+    titleEl.textContent = isLayerContext ? "Confirmar ordem da faixa" : "Confirmar ordem da importação";
+    descEl.textContent = isLayerContext
+        ? "O navegador pode mudar a ordem dos arquivos. Ajuste abaixo a sequência em que eles devem entrar na faixa."
+        : "O navegador pode reorganizar os arquivos por nome. Ajuste abaixo a sequência em que eles devem entrar no editor.";
+    confirmBtn.textContent = isLayerContext ? "Adicionar na ordem" : "Importar na ordem";
+
+    listEl.innerHTML = _editorMediaImportOrderModal.entries.map((entry, index) => {
+        const isVideo = entry.kind === "video";
+        const kindLabel = isVideo ? "Vídeo" : "Imagem";
+        return `
+            <div class="editor-media-order-item">
+                <div class="editor-media-order-item-main">
+                    <span class="editor-media-order-index">${index + 1}</span>
+                    <div class="editor-media-order-copy">
+                        <strong>${esc(String(entry.file?.name || `${kindLabel} ${index + 1}`))}</strong>
+                        <small>${kindLabel}</small>
+                    </div>
+                </div>
+                <div class="editor-media-order-actions">
+                    <button class="editor-media-order-move" type="button" onclick="_editorMoveMediaImportOrderItem(${index}, -1)" ${index <= 0 ? "disabled" : ""} aria-label="Mover para cima">↑</button>
+                    <button class="editor-media-order-move" type="button" onclick="_editorMoveMediaImportOrderItem(${index}, 1)" ${index >= _editorMediaImportOrderModal.entries.length - 1 ? "disabled" : ""} aria-label="Mover para baixo">↓</button>
+                </div>
+            </div>
+        `;
+    }).join("");
+}
+
+function _editorCloseMediaImportOrderModal(result = null) {
+    const resolve = _editorMediaImportOrderModal.resolve;
+    _editorMediaImportOrderModal = {
+        open: false,
+        context: "project",
+        entries: [],
+        resolve: null,
+    };
+    closeModal("modal-editor-media-order");
+    if (typeof resolve === "function") {
+        resolve(result);
+    }
+}
+
+function _editorMoveMediaImportOrderItem(index, delta) {
+    const entries = Array.isArray(_editorMediaImportOrderModal.entries) ? [..._editorMediaImportOrderModal.entries] : [];
+    const fromIndex = Number(index);
+    const toIndex = fromIndex + Number(delta || 0);
+    if (fromIndex < 0 || fromIndex >= entries.length || toIndex < 0 || toIndex >= entries.length) return;
+
+    const [moved] = entries.splice(fromIndex, 1);
+    entries.splice(toIndex, 0, moved);
+    _editorMediaImportOrderModal.entries = entries;
+    _editorRenderMediaImportOrderModal();
+}
+window._editorMoveMediaImportOrderItem = _editorMoveMediaImportOrderItem;
+
+function _editorCancelMediaImportOrderModal() {
+    _editorCloseMediaImportOrderModal(null);
+}
+window._editorCancelMediaImportOrderModal = _editorCancelMediaImportOrderModal;
+
+function _editorConfirmMediaImportOrderModal() {
+    const result = _editorMediaImportOrderModal.entries.map((entry) => ({ kind: entry.kind, file: entry.file }));
+    _editorCloseMediaImportOrderModal(result);
+}
+window._editorConfirmMediaImportOrderModal = _editorConfirmMediaImportOrderModal;
+
+function _editorResolveMediaImportOrder(entries = [], context = "project") {
+    const orderedEntries = Array.isArray(entries) ? entries.filter((entry) => entry?.file && entry?.kind) : [];
+    if (!_editorShouldConfirmMediaImportOrder(orderedEntries)) {
+        return Promise.resolve(orderedEntries);
+    }
+
+    return new Promise((resolve) => {
+        _editorMediaImportOrderModal = {
+            open: true,
+            context,
+            entries: orderedEntries.map((entry) => ({ kind: entry.kind, file: entry.file })),
+            resolve,
+        };
+        _editorRenderMediaImportOrderModal();
+        openModal("modal-editor-media-order");
+    });
 }
 
 function _editorApplyImageSequenceLayers(layers, options = {}) {
@@ -21278,10 +21382,12 @@ async function _editorUploadLayerVideo(input) {
     }
 
     try {
+        const orderedEntries = await _editorResolveMediaImportOrder(selection.orderedEntries, "layer");
+        if (!orderedEntries?.length) return;
         _editorSaveState();
-        showToast(`Enviando ${selection.orderedEntries.length} mídia(s) para a faixa...`);
+        showToast(`Enviando ${orderedEntries.length} mídia(s) para a faixa...`);
         const startTime = Math.max(0, Number(_editorGetTimelineDuration() || 0));
-        const result = await _editorAppendOrderedMediaEntries(selection.orderedEntries, { startTime });
+        const result = await _editorAppendOrderedMediaEntries(orderedEntries, { startTime });
         _editorRenderTimeline();
         _editorRenderMediaLayers();
         _editorRenderProps();

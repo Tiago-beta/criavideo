@@ -626,11 +626,11 @@ def _build_segment_concat_filter_parts(
         if media_kind == "video":
             chain = f"{stream_ref}trim=start={start:.6f}:end={end:.6f},setpts=PTS-STARTPTS"
             if reversed_flag:
-                chain += ",reverse"
+                chain += ",reverse,setpts=PTS-STARTPTS"
         else:
             chain = f"{stream_ref}atrim=start={start:.6f}:end={end:.6f},asetpts=PTS-STARTPTS"
             if reversed_flag:
-                chain += ",areverse"
+                chain += ",areverse,asetpts=PTS-STARTPTS"
         chain += f"[{label}]"
         parts.append(chain)
         labels.append(f"[{label}]")
@@ -2404,7 +2404,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                         "setpts=PTS-STARTPTS"
                     )
                     if layer.get("reversed"):
-                        layer_video_chain += ",reverse"
+                        layer_video_chain += ",reverse,setpts=PTS-STARTPTS"
                     layer_video_chain += f",setpts=PTS-STARTPTS+{layer['start_time']:.6f}/TB[{src_label}]"
                     overlay_parts.append(layer_video_chain)
                 else:
@@ -2462,7 +2462,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     "asetpts=PTS-STARTPTS"
                 )
                 if layer.get("reversed"):
-                    layer_audio_chain += ",areverse"
+                    layer_audio_chain += ",areverse,asetpts=PTS-STARTPTS"
                 layer_audio_chain += f",adelay={delay_ms}|{delay_ms},volume={volume_factor:.4f}[{out_label}]"
                 filter_parts.append(layer_audio_chain)
                 layer_audio_labels.append(f"[{out_label}]")

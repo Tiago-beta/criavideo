@@ -734,6 +734,23 @@
         </div>
     </div>
 
+    <div id="modal-editor-media-order" class="modal">
+        <div class="modal-content editor-media-order-modal">
+            <div class="modal-header">
+                <h3 id="editor-media-order-title">Confirmar ordem da importação</h3>
+                <button class="modal-close" onclick="_editorCancelMediaImportOrderModal()" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="editor-media-order-description" class="editor-media-order-description"></p>
+                <div id="editor-media-order-list" class="editor-media-order-list"></div>
+            </div>
+            <div class="modal-footer modal-footer-space">
+                <button class="btn btn-secondary" type="button" onclick="_editorCancelMediaImportOrderModal()">Cancelar</button>
+                <button id="editor-media-order-confirm" class="btn btn-primary" type="button" onclick="_editorConfirmMediaImportOrderModal()">Importar na ordem</button>
+            </div>
+        </div>
+    </div>
+
     <div id="modal-editor-recorder" class="modal">
         <div class="modal-content modal-content-wide editor-recorder-modal">
             <div class="modal-header">

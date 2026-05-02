@@ -6953,6 +6953,102 @@ th,
     outline-offset: 2px;
 }
 
+.editor-media-order-modal {
+    max-width: 720px;
+}
+
+.editor-media-order-description {
+    margin: 0 0 16px;
+    color: var(--text-muted);
+}
+
+.editor-media-order-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: min(52vh, 420px);
+    overflow-y: auto;
+}
+
+.editor-media-order-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.025));
+}
+
+.editor-media-order-item-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.editor-media-order-index {
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.16);
+    flex: 0 0 32px;
+}
+
+.editor-media-order-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.editor-media-order-copy strong,
+.editor-media-order-copy small {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.editor-media-order-copy small {
+    color: var(--text-muted);
+}
+
+.editor-media-order-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.editor-media-order-move {
+    appearance: none;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    border-radius: 12px;
+    width: 38px;
+    height: 38px;
+    cursor: pointer;
+    font: inherit;
+    transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.editor-media-order-move:hover:not(:disabled) {
+    border-color: rgba(var(--accent-rgb), 0.55);
+    background: rgba(var(--accent-rgb), 0.14);
+    transform: translateY(-1px);
+}
+
+.editor-media-order-move:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 .editor-audio-source-modal {
     max-width: 760px;
 }
