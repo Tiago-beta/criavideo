@@ -1,6 +1,10 @@
 import unittest
 
-from app.services.scene_generator import build_similar_scene_continuity_prompt
+from app.services.scene_generator import (
+    _build_frame_edit_prompt,
+    _sanitize_frame_edit_scene_context,
+    build_similar_scene_continuity_prompt,
+)
 
 
 class TestSimilarSceneContinuity(unittest.TestCase):
@@ -36,6 +40,32 @@ class TestSimilarSceneContinuity(unittest.TestCase):
         self.assertIn("mesma paleta de cores", generated)
         self.assertIn("caixa de ovos azul", generated)
         self.assertIn("cimento cinza", generated)
+
+    def test_frame_edit_context_drops_person_identity_and_continuity_rules(self):
+        context = _sanitize_frame_edit_scene_context(
+            "A cena mostra uma mulher morena ajoelhada no piso branco, usando camiseta branca e shorts vermelhos. "
+            "A luz natural entra pela janela e ilumina a parede clara e os paineis de madeira. "
+            "CONTINUIDADE VISUAL OBRIGATORIA: preserve exatamente a mesma identidade visual da personagem. "
+            "AJUSTE VISUAL SOLICITADO: trocar por uma mulher loira da imagem nova."
+        )
+
+        self.assertIn("luz natural entra pela janela", context)
+        self.assertIn("parede clara", context)
+        self.assertNotIn("mulher morena", context)
+        self.assertNotIn("shorts vermelhos", context)
+        self.assertNotIn("CONTINUIDADE VISUAL OBRIGATORIA", context)
+        self.assertNotIn("AJUSTE VISUAL SOLICITADO", context)
+
+    def test_frame_edit_prompt_makes_uploaded_reference_win_for_identity(self):
+        prompt = _build_frame_edit_prompt(
+            "Trocar a mulher morena do frame por essa loira da imagem nova",
+            "A cena mostra uma mulher morena ajoelhada no piso branco. A luz natural entra pela janela e ilumina a parede clara.",
+        )
+
+        self.assertIn("as imagens adicionais vencem", prompt)
+        self.assertIn("Nao reutilize rosto, cabelo, cor de pele, corpo ou roupa", prompt)
+        self.assertIn("Contexto do ambiente a preservar", prompt)
+        self.assertNotIn("mulher morena ajoelhada", prompt)
 
 
 if __name__ == "__main__":

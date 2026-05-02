@@ -523,6 +523,73 @@ def _save_openai_multi_reference_edit(
         return False
 
 
+def _sanitize_frame_edit_scene_context(scene_prompt: str) -> str:
+    raw_text = str(scene_prompt or "")
+    if not raw_text.strip():
+        return ""
+
+    cleaned = re.sub(r"AJUSTE VISUAL SOLICITADO\s*:.*", "", raw_text, flags=re.IGNORECASE)
+    cleaned = re.sub(r"CONTINUIDADE VISUAL OBRIGATORIA\s*:.*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"Cena ancora.*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        return ""
+
+    parts = re.split(r"(?<=[.!?])\s+", cleaned)
+    keep_parts: list[str] = []
+    skip_patterns = [
+        r"\bmulher\b",
+        r"\bhomem\b",
+        r"\bpessoa\b",
+        r"\bpersonagem\b",
+        r"\brosto\b",
+        r"\bcabelo\b",
+        r"\bpele\b",
+        r"\bcorpo\b",
+        r"\broupa\b",
+        r"\broupas\b",
+        r"\bcamiseta\b",
+        r"\bcamisa\b",
+        r"\bshorts\b",
+        r"\bvestido\b",
+        r"\bblusa\b",
+        r"\bloira\b",
+        r"\bmorena\b",
+        r"\bnegra\b",
+        r"\bbranca\b",
+    ]
+    for part in parts:
+        sentence = str(part or "").strip()
+        if not sentence:
+            continue
+        if any(re.search(pattern, sentence, re.IGNORECASE) for pattern in skip_patterns):
+            continue
+        keep_parts.append(sentence)
+
+    return " ".join(keep_parts)[:700].strip()
+
+
+def _build_frame_edit_prompt(edit_instruction: str, scene_prompt: str) -> str:
+    edit_goal = re.sub(r"\s+", " ", str(edit_instruction or "")).strip()
+    if not edit_goal:
+        edit_goal = "Trocar apenas o elemento solicitado, preservando todo o resto do frame base."
+
+    environment_context = _sanitize_frame_edit_scene_context(scene_prompt)
+    prompt_parts = [
+        "Use a primeira imagem apenas como base de composicao, ambiente, perspectiva, luz, profundidade, camera, piso, parede e objetos fixos.",
+        "Use as imagens adicionais como fonte principal da nova identidade visual do elemento substituido.",
+        f"Edicao solicitada: {edit_goal}.",
+        "Se houver conflito entre a primeira imagem e as imagens adicionais sobre a pessoa, rosto, cabelo, pele, corpo ou roupa, as imagens adicionais vencem.",
+        "Nao reutilize rosto, cabelo, cor de pele, corpo ou roupa da pessoa original do frame base quando o pedido for substituir a pessoa.",
+        "Preserve somente o cenario, enquadramento, iluminacao, perspectiva e materiais do frame base.",
+        "Nao mantenha a pessoa antiga, nao misture identidades, nao combine dois rostos, nao duplique pessoas e nao retorne a mesma imagem sem mudanca.",
+        "Retorne uma unica imagem final editada.",
+    ]
+    if environment_context:
+        prompt_parts.insert(3, f"Contexto do ambiente a preservar: {environment_context}.")
+    return " ".join(prompt_parts)
+
+
 def edit_frame_with_replacement_references(
     base_image_path: str,
     reference_image_paths: list[str],
@@ -550,19 +617,7 @@ def edit_frame_with_replacement_references(
     if not edit_goal:
         edit_goal = "Trocar apenas o elemento solicitado, preservando todo o resto do frame base."
 
-    scene_goal = re.sub(r"\s+", " ", str(scene_prompt or "")).strip()
-    if not scene_goal:
-        scene_goal = "Cena cinematografica coerente, com o mesmo contexto visual do frame base."
-
-    strict_edit_prompt = (
-        "Use a primeira imagem como frame base obrigatorio e preserve exatamente enquadramento, ambiente, perspectiva, luz, piso, parede, objetos e camera. "
-        "Use as imagens adicionais apenas como referencia para substituir o elemento solicitado. "
-        f"Edicao solicitada: {edit_goal}. "
-        f"Contexto da cena: {scene_goal}. "
-        "Se o pedido mencionar trocar a pessoa, remova a pessoa original e coloque a pessoa da referencia no lugar, com roupas e aparencia coerentes com a instrucao. "
-        "Nao mantenha a pessoa antiga, nao misture duas pessoas, nao preserve o rosto antigo e nao retorne a mesma imagem sem mudanca. "
-        "Retorne uma unica imagem final editada."
-    )
+    strict_edit_prompt = _build_frame_edit_prompt(edit_goal, scene_prompt)
 
     if _save_openai_multi_reference_edit(
         base_path,
