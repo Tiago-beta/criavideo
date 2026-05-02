@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v304 loaded");
+console.log("[CriaVideo] app.js v305 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -17647,6 +17647,7 @@ const _editor = {
     subtitles: [],      // {id, text, startTime, endTime, styleName, x, y, fontSize, fontColor, bgColor, outlineColor, fontFamily, bold, italic}
     videoSegments: [],  // {id, start, end}
     audioSegments: [],  // {id, start, end}
+    hideBaseVideoTrack: false,
     selectedTracks: ["video"],
     selectedInsertTrack: "video",
     trimStart: 0,
@@ -17741,6 +17742,7 @@ let _editorMediaImportOrderModal = {
     context: "project",
     entries: [],
     resolve: null,
+    dragIndex: -1,
 };
 let _editorMusicWaveformState = {
     key: "",
@@ -19458,6 +19460,17 @@ async function _editorUploadSingleLayerVideo(file) {
     return apiForm("/video/editor/upload-layer-video", formData, { method: "POST" });
 }
 
+async function _editorUploadMediaSequenceProject(entries = []) {
+    const orderedEntries = Array.isArray(entries) ? entries.filter((entry) => entry?.file && entry?.kind) : [];
+    if (!orderedEntries.length) {
+        throw new Error("Nenhuma mídia válida foi enviada para o editor.");
+    }
+
+    const formData = new FormData();
+    orderedEntries.forEach((entry) => formData.append("files", entry.file));
+    return apiForm("/video/editor/upload-media-sequence", formData, { method: "POST" });
+}
+
 async function _editorAppendOrderedMediaEntries(entries = [], options = {}) {
     const orderedEntries = Array.isArray(entries) ? entries.filter((entry) => entry?.file && entry?.kind) : [];
     if (!orderedEntries.length) {
@@ -19507,6 +19520,24 @@ async function _editorStartWithOrderedMediaEntries(entries = []) {
         return;
     }
 
+    if (orderedEntries.length > 1 && orderedEntries.some((entry) => entry.kind === "video")) {
+        closeModal("modal-editor-start");
+        showToast(`Preparando ${orderedEntries.length} mídia(s) no editor...`);
+        const payload = await _editorUploadMediaSequenceProject(orderedEntries);
+        await loadEditorVideosList();
+        if (!payload?.project_id) {
+            throw new Error("Projeto do editor não foi criado para a sequência de mídias.");
+        }
+        await openEditor(payload.project_id, {
+            restoreDraft: false,
+            initialMediaLayers: payload.layers || [],
+            initialImageDurationSeconds: Number(payload.image_duration_seconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS),
+            hideBaseVideoTrack: true,
+        });
+        showToast(`${orderedEntries.length} mídia(s) importada(s) na ordem selecionada.`, "success");
+        return;
+    }
+
     const [firstEntry, ...restEntries] = orderedEntries;
     if (firstEntry.kind === "image") {
         await _editorStartWithUploadedImages([firstEntry.file]);
@@ -19539,6 +19570,52 @@ function _editorShouldConfirmMediaImportOrder(entries = []) {
     return orderedEntries.length > 1 && orderedEntries.some((entry) => entry.kind === "video");
 }
 
+function _editorCreateMediaImportOrderEntries(entries = []) {
+    return (Array.isArray(entries) ? entries : [])
+        .filter((entry) => entry?.file && entry?.kind)
+        .map((entry) => ({
+            kind: entry.kind,
+            file: entry.file,
+            previewUrl: URL.createObjectURL(entry.file),
+        }));
+}
+
+function _editorReleaseMediaImportOrderEntries(entries = []) {
+    (Array.isArray(entries) ? entries : []).forEach((entry) => {
+        const previewUrl = String(entry?.previewUrl || "").trim();
+        if (!previewUrl.startsWith("blob:")) return;
+        try {
+            URL.revokeObjectURL(previewUrl);
+        } catch {
+            // Ignore blob URL cleanup failures.
+        }
+    });
+}
+
+function _editorPrimeMediaImportOrderVideoThumbs() {
+    requestAnimationFrame(() => {
+        document.querySelectorAll("#editor-media-order-list video[data-editor-media-preview='video']").forEach((videoEl) => {
+            const primeFrame = () => {
+                const duration = Math.max(0, Number(videoEl.duration || 0));
+                const targetTime = duration > 0.08 ? Math.min(0.12, Math.max(0.02, duration / 12)) : 0.01;
+                try {
+                    if (Math.abs(Number(videoEl.currentTime || 0) - targetTime) > 0.01) {
+                        videoEl.currentTime = targetTime;
+                    }
+                } catch {
+                    // Ignore preview seek failures for modal thumbnails.
+                }
+            };
+
+            if (videoEl.readyState >= 2) {
+                primeFrame();
+            } else {
+                videoEl.addEventListener("loadeddata", primeFrame, { once: true });
+            }
+        });
+    });
+}
+
 function _editorRenderMediaImportOrderModal() {
     const titleEl = document.getElementById("editor-media-order-title");
     const descEl = document.getElementById("editor-media-order-description");
@@ -19556,10 +19633,21 @@ function _editorRenderMediaImportOrderModal() {
     listEl.innerHTML = _editorMediaImportOrderModal.entries.map((entry, index) => {
         const isVideo = entry.kind === "video";
         const kindLabel = isVideo ? "Vídeo" : "Imagem";
+        const previewHtml = isVideo
+            ? `<video class="editor-media-order-preview-media" src="${esc(String(entry.previewUrl || ""))}" muted playsinline preload="metadata" data-editor-media-preview="video"></video>`
+            : `<img class="editor-media-order-preview-media" src="${esc(String(entry.previewUrl || ""))}" alt="Prévia da mídia">`;
         return `
-            <div class="editor-media-order-item">
+            <div
+                class="editor-media-order-item${_editorMediaImportOrderModal.dragIndex === index ? " dragging" : ""}"
+                draggable="true"
+                ondragstart="_editorStartMediaImportOrderDrag(event, ${index})"
+                ondragover="_editorDragOverMediaImportOrder(event, ${index})"
+                ondrop="_editorDropMediaImportOrder(event, ${index})"
+                ondragend="_editorEndMediaImportOrderDrag()"
+            >
                 <div class="editor-media-order-item-main">
                     <span class="editor-media-order-index">${index + 1}</span>
+                    <div class="editor-media-order-preview">${previewHtml}</div>
                     <div class="editor-media-order-copy">
                         <strong>${esc(String(entry.file?.name || `${kindLabel} ${index + 1}`))}</strong>
                         <small>${kindLabel}</small>
@@ -19572,15 +19660,19 @@ function _editorRenderMediaImportOrderModal() {
             </div>
         `;
     }).join("");
+
+    _editorPrimeMediaImportOrderVideoThumbs();
 }
 
 function _editorCloseMediaImportOrderModal(result = null) {
     const resolve = _editorMediaImportOrderModal.resolve;
+    _editorReleaseMediaImportOrderEntries(_editorMediaImportOrderModal.entries);
     _editorMediaImportOrderModal = {
         open: false,
         context: "project",
         entries: [],
         resolve: null,
+        dragIndex: -1,
     };
     closeModal("modal-editor-media-order");
     if (typeof resolve === "function") {
@@ -19600,6 +19692,65 @@ function _editorMoveMediaImportOrderItem(index, delta) {
     _editorRenderMediaImportOrderModal();
 }
 window._editorMoveMediaImportOrderItem = _editorMoveMediaImportOrderItem;
+
+function _editorStartMediaImportOrderDrag(event, index) {
+    _editorMediaImportOrderModal.dragIndex = Number(index);
+    if (event?.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", String(index));
+    }
+}
+window._editorStartMediaImportOrderDrag = _editorStartMediaImportOrderDrag;
+
+function _editorDragOverMediaImportOrder(event, index) {
+    event.preventDefault();
+    if (event?.dataTransfer) {
+        event.dataTransfer.dropEffect = "move";
+    }
+    const item = event.currentTarget;
+    document.querySelectorAll("#editor-media-order-list .editor-media-order-item.drag-over").forEach((node) => {
+        if (node !== item) node.classList.remove("drag-over");
+    });
+    item?.classList?.add("drag-over");
+}
+window._editorDragOverMediaImportOrder = _editorDragOverMediaImportOrder;
+
+function _editorDropMediaImportOrder(event, index) {
+    event.preventDefault();
+    const fromIndex = Number(_editorMediaImportOrderModal.dragIndex);
+    const rawTargetIndex = Number(index);
+    document.querySelectorAll("#editor-media-order-list .editor-media-order-item.drag-over").forEach((node) => {
+        node.classList.remove("drag-over");
+    });
+    if (!Number.isFinite(fromIndex) || fromIndex < 0 || fromIndex === rawTargetIndex) {
+        _editorMediaImportOrderModal.dragIndex = -1;
+        _editorRenderMediaImportOrderModal();
+        return;
+    }
+
+    const entries = Array.isArray(_editorMediaImportOrderModal.entries) ? [..._editorMediaImportOrderModal.entries] : [];
+    if (fromIndex >= entries.length || rawTargetIndex < 0 || rawTargetIndex >= entries.length) {
+        _editorMediaImportOrderModal.dragIndex = -1;
+        _editorRenderMediaImportOrderModal();
+        return;
+    }
+
+    const [moved] = entries.splice(fromIndex, 1);
+    const targetIndex = fromIndex < rawTargetIndex ? rawTargetIndex - 1 : rawTargetIndex;
+    entries.splice(targetIndex, 0, moved);
+    _editorMediaImportOrderModal.entries = entries;
+    _editorMediaImportOrderModal.dragIndex = -1;
+    _editorRenderMediaImportOrderModal();
+}
+window._editorDropMediaImportOrder = _editorDropMediaImportOrder;
+
+function _editorEndMediaImportOrderDrag() {
+    _editorMediaImportOrderModal.dragIndex = -1;
+    document.querySelectorAll("#editor-media-order-list .editor-media-order-item.drag-over").forEach((node) => {
+        node.classList.remove("drag-over");
+    });
+}
+window._editorEndMediaImportOrderDrag = _editorEndMediaImportOrderDrag;
 
 function _editorCancelMediaImportOrderModal() {
     _editorCloseMediaImportOrderModal(null);
@@ -19622,8 +19773,9 @@ function _editorResolveMediaImportOrder(entries = [], context = "project") {
         _editorMediaImportOrderModal = {
             open: true,
             context,
-            entries: orderedEntries.map((entry) => ({ kind: entry.kind, file: entry.file })),
+            entries: _editorCreateMediaImportOrderEntries(orderedEntries),
             resolve,
+            dragIndex: -1,
         };
         _editorRenderMediaImportOrderModal();
         openModal("modal-editor-media-order");
@@ -19638,9 +19790,13 @@ function _editorApplyImageSequenceLayers(layers, options = {}) {
     let cursor = Math.max(0, Number(options.startTime || 0));
 
     sequence.forEach((payload, idx) => {
+        const layerKind = String(payload.kind || "image") === "video" ? "video" : "image";
+        const layerSpan = layerKind === "video"
+            ? Math.max(0.1, Number(payload.duration || 0) || clipSeconds)
+            : clipSeconds;
         const startTime = cursor;
-        const endTime = startTime + clipSeconds;
-        _editorPushMediaLayer("image", payload, {
+        const endTime = startTime + layerSpan;
+        _editorPushMediaLayer(layerKind, payload, {
             startTime,
             endTime,
             select: idx === sequence.length - 1,
@@ -21806,6 +21962,7 @@ async function openEditor(projectId, options = {}) {
         const shouldRestoreDraft = options && options.restoreDraft !== false;
         const initialMediaLayers = Array.isArray(options?.initialMediaLayers) ? options.initialMediaLayers : [];
         const initialImageDurationSeconds = Math.max(0.5, Number(options?.initialImageDurationSeconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS));
+        const hideBaseVideoTrack = Boolean(options?.hideBaseVideoTrack);
         const detail = await api(`/video/projects/${projectId}`);
         const render = _pickLatestAvailableRender(detail.renders || []);
         if (!render || !render.video_url) {
@@ -21832,6 +21989,7 @@ async function openEditor(projectId, options = {}) {
         _editor.subtitles = [];
         _editor.videoSegments = [];
         _editor.audioSegments = [];
+        _editor.hideBaseVideoTrack = hideBaseVideoTrack;
         _editor.selectedTracks = ["video"];
         _editor.selectedInsertTrack = "video";
         _editor.trimStart = 0;
@@ -24313,7 +24471,7 @@ function _editorRenderTimeline() {
     const sourceWaveLoadingClass = _editorSourceWaveformState.loading ? " loading" : "";
 
     _editorSortSegments("video");
-    const baseVideoClips = _editor.videoSegments.map((seg, idx) => {
+    const baseVideoClips = _editor.hideBaseVideoTrack ? "" : _editor.videoSegments.map((seg, idx) => {
         const segStart = Math.max(0, Math.min(Number(seg.start || 0), dur));
         const segEnd = Math.max(segStart + 0.05, Math.min(Number(seg.end || 0), dur));
         const startPct = (segStart / dur) * 100;

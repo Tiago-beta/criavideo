@@ -38,6 +38,8 @@ _EDITOR_EXPORT_CRF = "23"
 _EDITOR_EXPORT_AUDIO_BITRATE = "160k"
 _SUBTITLE_PROPER_NAMES = ("Senhor", "Deus", "Pastor", "Jesus", "Cristo", "Pai")
 _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS = 5.0
+_EDITOR_IMAGE_SEQUENCE_MAX_FILES = 50
+_EDITOR_MEDIA_SEQUENCE_MAX_FILES = 50
 _EDITOR_TEVOXI_MOOD_MAP = {
     "calmo": "calmo",
     "calma": "calmo",
@@ -498,11 +500,55 @@ async def _save_editor_layer_image_upload(file: UploadFile, user_id: int) -> dic
 
     width, height = _probe_media_dimensions(str(dest))
     return {
+        "kind": "image",
         "path": str(dest),
         "media_url": _to_media_url(str(dest)),
         "width": width,
         "height": height,
         "name": Path(file.filename or "Camada imagem").stem,
+    }
+
+
+async def _save_editor_layer_video_upload(file: UploadFile, user_id: int) -> dict:
+    if not file.content_type or not file.content_type.startswith("video"):
+        raise HTTPException(400, "Arquivo deve ser de vídeo")
+
+    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user_id) / "layers" / "videos"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = Path(file.filename or "layer.mp4").suffix.lower() or ".mp4"
+    filename = f"layer_video_{uuid.uuid4().hex[:10]}{ext}"
+    dest = upload_dir / filename
+
+    max_size = 500 * 1024 * 1024
+    written = 0
+    with open(dest, "wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > max_size:
+                out.close()
+                dest.unlink(missing_ok=True)
+                raise HTTPException(400, "Arquivo muito grande (max 500MB)")
+            out.write(chunk)
+
+    if written <= 0:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, "Arquivo vazio")
+
+    final_dest = _normalize_editor_uploaded_video(dest, file.content_type)
+    duration, _ = _probe_video_metadata(str(final_dest))
+    width, height = _probe_media_dimensions(str(final_dest))
+    return {
+        "kind": "video",
+        "path": str(final_dest),
+        "media_url": _to_media_url(str(final_dest)),
+        "duration": duration,
+        "width": width,
+        "height": height,
+        "name": Path(file.filename or "Camada vídeo").stem,
     }
 
 
@@ -1479,46 +1525,79 @@ async def upload_layer_video(
     file: UploadFile = File(...),
     user=Depends(get_current_user),
 ):
-    if not file.content_type or not file.content_type.startswith("video"):
-        raise HTTPException(400, "Arquivo deve ser de vídeo")
+    return await _save_editor_layer_video_upload(file, int(user["id"]))
 
-    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "layers" / "videos"
-    upload_dir.mkdir(parents=True, exist_ok=True)
 
-    ext = Path(file.filename or "layer.mp4").suffix.lower() or ".mp4"
-    filename = f"layer_video_{uuid.uuid4().hex[:10]}{ext}"
-    dest = upload_dir / filename
+@router.post("/upload-media-sequence")
+async def upload_media_sequence(
+    files: list[UploadFile] = File(...),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    uploads = list(files or [])
+    if not uploads:
+        raise HTTPException(400, "Envie pelo menos uma mídia")
+    if len(uploads) > _EDITOR_MEDIA_SEQUENCE_MAX_FILES:
+        raise HTTPException(400, f"Selecione no máximo {_EDITOR_MEDIA_SEQUENCE_MAX_FILES} mídias por vez")
 
-    max_size = 500 * 1024 * 1024
-    written = 0
-    with open(dest, "wb") as out:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            written += len(chunk)
-            if written > max_size:
-                out.close()
-                if dest.exists():
-                    dest.unlink(missing_ok=True)
-                raise HTTPException(400, "Arquivo muito grande (max 500MB)")
-            out.write(chunk)
+    uploaded_layers: list[dict] = []
+    blank_video_path: Path | None = None
+    allowed_image_types = {"image/jpeg", "image/png", "image/webp"}
 
-    if written <= 0:
-        if dest.exists():
-            dest.unlink(missing_ok=True)
-        raise HTTPException(400, "Arquivo vazio")
+    try:
+        for media in uploads:
+            content_type = str(media.content_type or "").strip().lower()
+            if content_type.startswith("video"):
+                uploaded_layers.append(await _save_editor_layer_video_upload(media, int(user["id"])))
+                continue
+            if content_type in allowed_image_types:
+                uploaded_layers.append(await _save_editor_layer_image_upload(media, int(user["id"])))
+                continue
+            raise HTTPException(400, "Selecione apenas vídeos MP4/MOV/WEBM/MKV/AVI ou imagens JPG/PNG/WebP.")
 
-    duration, _ = _probe_video_metadata(str(dest))
-    width, height = _probe_media_dimensions(str(dest))
-    return {
-        "path": str(dest),
-        "media_url": _to_media_url(str(dest)),
-        "duration": duration,
-        "width": width,
-        "height": height,
-        "name": Path(file.filename or "Camada vídeo").stem,
-    }
+        first_layer = uploaded_layers[0]
+        aspect_ratio = _editor_detect_aspect_from_dimensions(
+            int(first_layer.get("width") or 0),
+            int(first_layer.get("height") or 0),
+        )
+        canvas_width, canvas_height = _editor_canvas_size_for_aspect(aspect_ratio)
+
+        total_duration = 0.0
+        for layer in uploaded_layers:
+            if str(layer.get("kind") or "") == "video":
+                total_duration += max(0.1, float(layer.get("duration") or 0.1))
+            else:
+                total_duration += _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS
+        total_duration = max(1.0, total_duration)
+
+        blank_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "videos"
+        blank_video_path = blank_dir / f"media_sequence_{uuid.uuid4().hex[:10]}.mp4"
+        _create_editor_blank_video(blank_video_path, canvas_width, canvas_height, total_duration)
+
+        payload = await _create_editor_video_project(
+            db=db,
+            user_id=int(user["id"]),
+            video_path=blank_video_path,
+            original_name="Sequência de mídias",
+            file_size=int(blank_video_path.stat().st_size) if blank_video_path.exists() else 0,
+            description="Sequência de mídias enviada para edição",
+        )
+        payload.update(
+            {
+                "layers": uploaded_layers,
+                "image_duration_seconds": _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS,
+                "source": "media-sequence",
+            }
+        )
+        return payload
+    except Exception:
+        if blank_video_path and blank_video_path.exists():
+            blank_video_path.unlink(missing_ok=True)
+        for layer in uploaded_layers:
+            raw_path = str(layer.get("path") or "").strip()
+            if raw_path:
+                Path(raw_path).unlink(missing_ok=True)
+        raise
 
 
 @router.post("/add-layer-video-from-library")
