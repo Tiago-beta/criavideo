@@ -7596,6 +7596,40 @@ th,
     margin-top: 10px;
 }
 
+.similar-scene-engine-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.similar-scene-engine-btn {
+    min-width: 42px;
+    height: 30px;
+    border-radius: 999px;
+    border: 1px solid rgba(125, 158, 189, 0.28);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-muted);
+    padding: 0 10px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.similar-scene-engine-btn:hover {
+    border-color: rgba(0, 212, 255, 0.36);
+    color: var(--accent);
+    background: rgba(0, 212, 255, 0.08);
+}
+
+.similar-scene-engine-btn.selected {
+    border-color: rgba(255, 193, 79, 0.52);
+    background: rgba(255, 193, 79, 0.14);
+    color: #ffe2a1;
+}
+
 .similar-scene-action-btn {
     width: 42px;
     height: 42px;

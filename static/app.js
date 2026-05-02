@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v294 loaded");
+console.log("[CriaVideo] app.js v295 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2201,6 +2201,7 @@ let similarState = {
     pollingTimer: null,
     engineManuallySelected: false,
     selectedEngine: "grok",
+    sceneEngineSelectionBySceneId: {},
     sceneDraftsBySceneId: {},
     sceneMergeSelectionBySceneId: {},
     pendingImageUploadsBySceneId: {},
@@ -4103,6 +4104,35 @@ function _normalizeSimilarEngine(rawValue) {
     return "grok";
 }
 
+function _similarSceneEngineLabel(engineValue) {
+    const normalized = _normalizeSimilarEngine(engineValue);
+    if (normalized === "wan2") return "U1";
+    if (normalized === "seedance") return "S2";
+    if (normalized === "minimax") return "MM";
+    return "C3";
+}
+
+function _getSimilarSceneSelectedEngine(sceneId) {
+    const sceneKey = _similarSceneStateKey(sceneId);
+    return _normalizeSimilarEngine(
+        similarState.sceneEngineSelectionBySceneId?.[sceneKey]
+        || similarState.selectedEngine
+        || "grok"
+    );
+}
+
+function _setSimilarSceneSelectedEngine(sceneId, engineValue) {
+    const sceneKey = _similarSceneStateKey(sceneId);
+    similarState.sceneEngineSelectionBySceneId[sceneKey] = _normalizeSimilarEngine(engineValue);
+}
+
+function similarSelectSceneEngine(sceneId, engineValue) {
+    _setSimilarSceneSelectedEngine(sceneId, engineValue);
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+}
+
 function _setSimilarEngineSelection(engineValue, options = {}) {
     const markManual = !!options.markManual;
     const normalized = _normalizeSimilarEngine(engineValue);
@@ -4315,6 +4345,12 @@ function _cleanupSimilarSceneTransientState(sceneIds) {
         }
     });
 
+    Object.keys(similarState.sceneEngineSelectionBySceneId || {}).forEach((sceneKey) => {
+        if (!keep.has(sceneKey)) {
+            delete similarState.sceneEngineSelectionBySceneId[sceneKey];
+        }
+    });
+
     Object.keys(similarState.pendingImageUploadsBySceneId || {}).forEach((sceneKey) => {
         if (!keep.has(sceneKey)) {
             _clearSimilarScenePendingUploads(sceneKey);
@@ -4392,6 +4428,7 @@ function _renderSimilarScenes(project, options = {}) {
         const applyUploadedLabel = pendingCount > 1
             ? "Aplicar imagens (Nano Banana)"
             : "Aplicar imagem enviada";
+        const selectedSceneEngine = _getSimilarSceneSelectedEngine(sceneId);
         const hasImagePreview = !!String(scene.image_url || "").trim();
         const hasClipPreview = !!String(scene.clip_url || "").trim();
 
@@ -4467,6 +4504,18 @@ function _renderSimilarScenes(project, options = {}) {
                 </div>
 
                 ${uploadsSectionMarkup}
+
+                <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
+                    ${["grok", "wan2", "seedance", "minimax"].map((engineValue) => `
+                        <button
+                            class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
+                            type="button"
+                            onclick="similarSelectSceneEngine(${sceneId}, '${engineValue}')"
+                            title="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : engineValue === "seedance" ? "Seedance 2.0" : "MiniMax"} nesta cena"
+                            aria-label="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : engineValue === "seedance" ? "Seedance 2.0" : "MiniMax"} nesta cena"
+                        >${_similarSceneEngineLabel(engineValue)}</button>
+                    `).join("")}
+                </div>
 
                 <div class="similar-scene-actions">
                     <button class="similar-scene-action-btn" type="button" onclick="similarSaveScene(${sceneId})" title="Salvar cena" aria-label="Salvar cena">${similarActionIcons.save}</button>
@@ -7133,6 +7182,7 @@ function _resetSimilarModeState() {
     _clearSimilarSourceFile();
     similarState.engineManuallySelected = false;
     similarState.selectedEngine = "grok";
+    similarState.sceneEngineSelectionBySceneId = {};
     similarState.lastProjectSnapshot = null;
     similarState.detectedMode = "";
     similarState.detectedReason = "";
@@ -7222,6 +7272,7 @@ async function similarStartAnalysis() {
 
         similarState.projectId = projectId;
         similarState.lastProjectSnapshot = null;
+        similarState.sceneEngineSelectionBySceneId = {};
         similarState.sceneDraftsBySceneId = {};
         similarState.sceneMergeSelectionBySceneId = {};
         _clearAllSimilarScenePendingUploads();
@@ -7423,7 +7474,7 @@ async function similarRegenerateScene(sceneId) {
             method: "POST",
             body: JSON.stringify({
                 scene_id: Number(sceneId || 0),
-                engine: _getSimilarSelectedEngine(),
+                engine: _getSimilarSceneSelectedEngine(sceneId),
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });
@@ -16304,6 +16355,7 @@ window.similarApplyUploadedSceneImages = similarApplyUploadedSceneImages;
 window.similarClearSceneUploads = similarClearSceneUploads;
 window.similarGenerateSceneImage = similarGenerateSceneImage;
 window.similarRegenerateScene = similarRegenerateScene;
+window.similarSelectSceneEngine = similarSelectSceneEngine;
 window.openRenameProjectModal = openRenameProjectModal;
 window.saveProjectTitle = saveProjectEdit;
 window.openCopyChoiceModal = openCopyChoiceModal;

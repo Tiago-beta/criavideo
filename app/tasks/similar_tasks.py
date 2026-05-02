@@ -640,8 +640,10 @@ def _engine_min_duration(engine: str) -> float:
     normalized_engine = _normalize_engine(engine)
     if normalized_engine == "grok":
         return 1.0
-    if normalized_engine in {"wan2", "minimax", "seedance"}:
+    if normalized_engine in {"wan2", "minimax"}:
         return 5.0
+    if normalized_engine == "seedance":
+        return 4.0
     return 1.0
 
 
@@ -731,6 +733,43 @@ async def _render_reference_frame_clip(
     return output_path
 
 
+async def _trim_clip_duration(input_path: str, duration_seconds: float, output_path: str) -> str:
+    target_duration = max(0.6, float(duration_seconds or 0.6))
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-y",
+        "-i",
+        input_path,
+        "-t",
+        f"{target_duration:.3f}",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+        "-pix_fmt",
+        "yuv420p",
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        output_path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
+        details = (stderr or b"").decode(errors="ignore")[-500:]
+        raise RuntimeError(f"Falha ao cortar clip curto: {details}")
+    return output_path
+
+
 async def _ensure_scene_image(
     scene: VideoScene,
     aspect_ratio: str,
@@ -794,7 +833,25 @@ async def _generate_clip_for_scene(
     output_path = str(clip_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.mp4")
 
     base_reference_image = manual_image_path or reference_image_path
-    if base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
+    if normalized_engine == "seedance" and base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
+        tmp_output_path = str(clip_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_seedance_full.mp4")
+        await generate_realistic_video(
+            prompt=prompt,
+            duration=int(_engine_min_duration(normalized_engine)),
+            aspect_ratio=aspect_ratio,
+            output_path=tmp_output_path,
+            generate_audio=True,
+            image_path=base_reference_image,
+            on_progress=None,
+        )
+        await _trim_clip_duration(tmp_output_path, scene_duration_seconds, output_path)
+        try:
+            if os.path.exists(tmp_output_path):
+                os.remove(tmp_output_path)
+        except Exception:
+            pass
+        clip_duration = max(0.6, scene_duration_seconds)
+    elif base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
         await _render_reference_frame_clip(
             base_reference_image,
             output_path,
