@@ -4,7 +4,12 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from app.tasks.similar_tasks import _analyze_frame_prompt, _extract_scene_prompt_from_content
+from app.tasks.similar_tasks import (
+    _analyze_frame_prompt,
+    _build_scene_analysis_instruction,
+    _extract_scene_prompt_from_content,
+    _extract_scene_transcript_excerpt,
+)
 
 
 def _fake_openai_response(content):
@@ -18,6 +23,39 @@ def _fake_openai_response(content):
 
 
 class TestSimilarFramePrompt(unittest.IsolatedAsyncioTestCase):
+    def test_build_scene_analysis_instruction_includes_video_context(self):
+        instruction = _build_scene_analysis_instruction(
+            0.0,
+            3.9,
+            19.0,
+            global_context="O vídeo mostra um leão adulto descansando enquanto um filhote se aproxima de forma curiosa.",
+            spoken_context="Sem fala, apenas sons naturais da savana.",
+        )
+
+        self.assertIn("português do Brasil", instruction)
+        self.assertIn("acentuação", instruction)
+        self.assertIn("Contexto geral do vídeo", instruction)
+        self.assertIn("Falas, narração ou áudio", instruction)
+
+    def test_extract_scene_transcript_excerpt_uses_scene_window(self):
+        excerpt = _extract_scene_transcript_excerpt(
+            [
+                {"word": "o", "start": 0.0, "end": 0.2},
+                {"word": "leão", "start": 0.2, "end": 0.4},
+                {"word": "descansa", "start": 0.4, "end": 0.8},
+                {"word": "enquanto", "start": 2.5, "end": 2.9},
+                {"word": "o", "start": 2.9, "end": 3.0},
+                {"word": "filhote", "start": 3.0, "end": 3.4},
+                {"word": "chega", "start": 3.4, "end": 3.7},
+            ],
+            2.6,
+            3.8,
+        )
+
+        self.assertIn("filhote", excerpt)
+        self.assertIn("chega", excerpt)
+        self.assertNotIn("leão descansa", excerpt)
+
     def test_extract_scene_prompt_from_plain_text(self):
         prompt = _extract_scene_prompt_from_content(
             "Uma mulher de vestido vermelho caminha por uma avenida ensolarada, com camera seguindo por tras em plano medio."

@@ -51,6 +51,10 @@ _SIMILAR_SCENE_MIN_SECONDS = 0.85
 _SIMILAR_SCENE_MAX_COUNT = 180
 _SIMILAR_REFERENCE_CLIP_FPS = 30
 _SIMILAR_GOOGLE_ANALYSIS_MODEL = "gemini-2.5-flash"
+_SIMILAR_CONTEXT_FRAME_SAMPLE_COUNT = 6
+_SIMILAR_CONTEXT_SUMMARY_LIMIT = 1800
+_SIMILAR_TRANSCRIPT_LIMIT = 4200
+_SIMILAR_SCENE_DIALOGUE_LIMIT = 420
 
 
 def _safe_tags_dict(raw: object) -> dict:
@@ -366,6 +370,229 @@ def _image_file_to_data_url(path: str) -> str:
     return f"data:{mime};base64,{encoded}"
 
 
+def _normalize_similar_context_text(raw_text: object, *, limit: int = 900) -> str:
+    cleaned = re.sub(r"\s+", " ", str(raw_text or "")).strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[:limit].rsplit(" ", 1)[0].strip() or cleaned[:limit]
+
+
+def _build_scene_analysis_instruction(
+    start_time: float,
+    end_time: float,
+    duration_seconds: float,
+    *,
+    global_context: str = "",
+    spoken_context: str = "",
+) -> str:
+    global_excerpt = _normalize_similar_context_text(global_context, limit=1200)
+    spoken_excerpt = _normalize_similar_context_text(spoken_context, limit=_SIMILAR_SCENE_DIALOGUE_LIMIT)
+
+    lines = [
+        "Analise este frame e crie um prompt cinematográfico em português do Brasil.",
+        "Escreva com ortografia, acentuação e pontuação corretas do pt-BR.",
+        "Descreva com riqueza de detalhes o sujeito principal, a ação visível, o enquadramento, o ambiente, a luz, as cores, a textura e o movimento de câmera.",
+        "Evite frases genéricas como 'cena cinematográfica' sem contexto visual real.",
+        f"A cena representa o trecho de {start_time:.1f}s até {end_time:.1f}s de um vídeo de {duration_seconds:.1f}s.",
+    ]
+
+    if global_excerpt:
+        lines.append(f"Contexto geral do vídeo: {global_excerpt}")
+    if spoken_excerpt:
+        lines.append(f"Falas, narração ou áudio neste trecho: {spoken_excerpt}")
+
+    lines.extend(
+        [
+            "Use o contexto geral e o áudio apenas como apoio narrativo, sem inventar elementos que contradigam o frame.",
+            "Se houver conversa ou narração, reflita isso nas expressões, gestos, intenção dramática e situação da cena quando fizer sentido visualmente.",
+            "Retorne somente o prompt final em um único parágrafo, sem marcadores e sem JSON.",
+        ]
+    )
+    return " ".join(line.strip() for line in lines if line and line.strip())
+
+
+def _pick_similar_context_frame_paths(frame_paths: list[str], *, max_items: int = _SIMILAR_CONTEXT_FRAME_SAMPLE_COUNT) -> list[str]:
+    valid_paths = [str(path or "").strip() for path in (frame_paths or []) if str(path or "").strip()]
+    if len(valid_paths) <= max_items:
+        return valid_paths
+
+    selected: list[str] = []
+    total = len(valid_paths)
+    for idx in range(max_items):
+        pick_index = round((idx * (total - 1)) / max(max_items - 1, 1))
+        candidate = valid_paths[pick_index]
+        if candidate not in selected:
+            selected.append(candidate)
+    return selected
+
+
+def _extract_scene_transcript_excerpt(
+    words: list[dict] | None,
+    start_time: float,
+    end_time: float,
+    *,
+    padding_seconds: float = 0.8,
+    limit: int = _SIMILAR_SCENE_DIALOGUE_LIMIT,
+) -> str:
+    if not isinstance(words, list) or not words:
+        return ""
+
+    lower_bound = max(0.0, float(start_time or 0.0) - padding_seconds)
+    upper_bound = max(lower_bound, float(end_time or lower_bound) + padding_seconds)
+
+    tokens: list[str] = []
+    for item in words:
+        if not isinstance(item, dict):
+            continue
+        try:
+            word_start = float(item.get("start", 0.0) or 0.0)
+            word_end = float(item.get("end", word_start) or word_start)
+        except Exception:
+            continue
+        if word_end < lower_bound or word_start > upper_bound:
+            continue
+        token = str(item.get("word") or "").strip()
+        if token:
+            tokens.append(token)
+
+    if not tokens:
+        return ""
+    return _normalize_similar_context_text(" ".join(tokens), limit=limit)
+
+
+async def _extract_audio_track_for_similar_context(video_path: str, output_path: str) -> str:
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-y",
+        "-i",
+        video_path,
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        "64k",
+        output_path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
+        details = (stderr or b"").decode(errors="ignore")[-500:]
+        raise RuntimeError(f"Falha ao extrair áudio do vídeo de referência: {details}")
+    return output_path
+
+
+async def _transcribe_similar_video_context(video_path: str) -> tuple[str, list[dict]]:
+    audio_path = str(Path(video_path).with_name("reference_audio_context.mp3"))
+    try:
+        await _extract_audio_track_for_similar_context(video_path, audio_path)
+        from app.services.transcriber import transcribe_audio
+
+        result = await asyncio.to_thread(transcribe_audio, audio_path, "pt", "")
+        if not isinstance(result, dict):
+            return "", []
+
+        transcript_text = _normalize_similar_context_text(result.get("text", ""), limit=_SIMILAR_TRANSCRIPT_LIMIT)
+        transcript_words = result.get("words", []) if isinstance(result.get("words", []), list) else []
+        return transcript_text, transcript_words
+    except Exception as exc:
+        logger.warning("Similar audio context transcription failed: %s", exc)
+        return "", []
+    finally:
+        try:
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+        except Exception:
+            pass
+
+
+def _request_similar_video_context_from_google_sync(
+    frame_paths: list[str],
+    transcript_text: str,
+    duration_seconds: float,
+) -> str:
+    if _google_scene_analysis_client is None or genai_types is None:
+        raise RuntimeError("Google video-context client indisponível")
+
+    contents: list[object] = [
+        (
+            "Analise estes frames representativos do mesmo vídeo e produza um resumo curto em português do Brasil, "
+            "com ortografia, acentuação e pontuação corretas. "
+            "Explique o contexto geral do que acontece no vídeo, quem são os personagens ou elementos principais, "
+            "qual é a situação dramática, o ambiente, a progressão da ação e, se houver, o assunto das falas, da narração ou do áudio. "
+            f"O vídeo completo tem {duration_seconds:.1f}s. "
+            "Não descreva frame por frame separadamente. Responda em um único parágrafo objetivo."
+        )
+    ]
+
+    transcript_excerpt = _normalize_similar_context_text(transcript_text, limit=_SIMILAR_TRANSCRIPT_LIMIT)
+    if transcript_excerpt:
+        contents.append(f"Transcrição do áudio do vídeo: {transcript_excerpt}")
+
+    for frame_path in _pick_similar_context_frame_paths(frame_paths):
+        mime_type = mimetypes.guess_type(frame_path)[0] or "image/jpeg"
+        frame_bytes = Path(frame_path).read_bytes()
+        if not frame_bytes:
+            continue
+        contents.append(genai_types.Part.from_bytes(data=frame_bytes, mime_type=mime_type))
+
+    response = _google_scene_analysis_client.models.generate_content(
+        model=_SIMILAR_GOOGLE_ANALYSIS_MODEL,
+        contents=contents,
+        config=genai_types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=700,
+        ),
+    )
+    return _normalize_similar_context_text(getattr(response, "text", "") or response, limit=_SIMILAR_CONTEXT_SUMMARY_LIMIT)
+
+
+async def _request_similar_video_context_from_google(
+    frame_paths: list[str],
+    transcript_text: str,
+    duration_seconds: float,
+) -> str:
+    return await asyncio.to_thread(
+        _request_similar_video_context_from_google_sync,
+        frame_paths,
+        transcript_text,
+        duration_seconds,
+    )
+
+
+async def _build_similar_video_context(
+    video_path: str,
+    duration_seconds: float,
+    frame_paths: list[str],
+) -> tuple[str, str, list[dict]]:
+    transcript_text, transcript_words = await _transcribe_similar_video_context(video_path)
+
+    context_summary = ""
+    try:
+        if frame_paths and _google_scene_analysis_client is not None:
+            context_summary = await _request_similar_video_context_from_google(
+                frame_paths,
+                transcript_text,
+                duration_seconds,
+            )
+    except Exception as exc:
+        logger.warning("Similar global video-context summary failed: %s", exc)
+
+    if not context_summary and transcript_text:
+        context_summary = transcript_text
+
+    return (
+        _normalize_similar_context_text(context_summary, limit=_SIMILAR_CONTEXT_SUMMARY_LIMIT),
+        transcript_text,
+        transcript_words,
+    )
+
+
 def _coerce_openai_content_to_text(value: object) -> str:
     if value is None:
         return ""
@@ -443,27 +670,30 @@ def _request_scene_prompt_from_google_sync(
     start_time: float,
     end_time: float,
     duration_seconds: float,
+    global_context: str = "",
+    spoken_context: str = "",
 ) -> str:
     if _google_scene_analysis_client is None or genai_types is None:
-        raise RuntimeError("Google scene-analysis client indisponivel")
+        raise RuntimeError("Google scene-analysis client indisponível")
 
     mime_type = mimetypes.guess_type(frame_path)[0] or "image/jpeg"
     image_bytes = Path(frame_path).read_bytes()
     if not image_bytes:
         raise RuntimeError("Frame image is empty")
 
+    instruction_text = _build_scene_analysis_instruction(
+        start_time,
+        end_time,
+        duration_seconds,
+        global_context=global_context,
+        spoken_context=spoken_context,
+    )
+
     response = _google_scene_analysis_client.models.generate_content(
         model=_SIMILAR_GOOGLE_ANALYSIS_MODEL,
         contents=[
             genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-            (
-                "Analise este frame de video e escreva um prompt cinematografico em pt-BR para recriar a cena em video. "
-                "Descreva de forma concreta o sujeito principal, a acao visivel, o ambiente, os objetos importantes, "
-                "o enquadramento, a iluminacao, as cores, a textura e o movimento de camera. "
-                "Evite frases genericas como 'cena cinematografica' sem contexto visual. "
-                f"A cena representa o trecho de {start_time:.1f}s ate {end_time:.1f}s de um video de {duration_seconds:.1f}s. "
-                "Responda somente com o prompt final em um unico paragrafo."
-            ),
+            instruction_text,
         ],
         config=genai_types.GenerateContentConfig(
             temperature=0.2,
@@ -478,6 +708,8 @@ async def _request_scene_prompt_from_google(
     start_time: float,
     end_time: float,
     duration_seconds: float,
+    global_context: str = "",
+    spoken_context: str = "",
 ) -> str:
     return await asyncio.to_thread(
         _request_scene_prompt_from_google_sync,
@@ -485,6 +717,8 @@ async def _request_scene_prompt_from_google(
         start_time,
         end_time,
         duration_seconds,
+        global_context,
+        spoken_context,
     )
 
 
@@ -497,14 +731,24 @@ async def _request_scene_prompt_from_model(
     duration_seconds: float,
     *,
     structured: bool,
+    global_context: str = "",
+    spoken_context: str = "",
 ) -> str:
+    instruction_text = _build_scene_analysis_instruction(
+        start_time,
+        end_time,
+        duration_seconds,
+        global_context=global_context,
+        spoken_context=spoken_context,
+    )
     messages = [
         {
             "role": "system",
             "content": (
-                "Voce analisa frames de video e escreve prompts cinematograficos em portugues do Brasil. "
-                "Descreva a cena de forma concreta, citando sujeito, acao, ambiente, objetos, enquadramento, luz e movimento de camera. "
-                + ("Retorne JSON com chave 'scene_prompt'." if structured else "Retorne apenas o prompt final em um unico paragrafo, sem JSON e sem marcadores.")
+                "Você analisa frames de vídeo e escreve prompts cinematográficos em português do Brasil. "
+                "Use ortografia, acentuação e pontuação corretas do pt-BR. "
+                "Descreva a cena de forma concreta, citando sujeito, ação, ambiente, objetos, enquadramento, luz e movimento de câmera. "
+                + ("Retorne JSON com chave 'scene_prompt'." if structured else "Retorne apenas o prompt final em um único parágrafo, sem JSON e sem marcadores.")
             ),
         },
         {
@@ -512,14 +756,7 @@ async def _request_scene_prompt_from_model(
             "content": [
                 {
                     "type": "text",
-                    "text": (
-                        "Analise este frame e crie um prompt para recriar a cena em video com riqueza de detalhes, "
-                        "incluindo sujeito principal, acao visivel, enquadramento, ambiente, luz, cores, textura e movimento de camera. "
-                        "Evite frases genericas como 'cena cinematografica' sem contexto visual. "
-                        "A cena representa o trecho de "
-                        f"{start_time:.1f}s ate {end_time:.1f}s de um video de {duration_seconds:.1f}s. "
-                        "Escreva em pt-BR e sem marcadores."
-                    ),
+                    "text": instruction_text,
                 },
                 {
                     "type": "image_url",
@@ -549,6 +786,8 @@ async def _analyze_frame_prompt(
     start_time: float,
     end_time: float,
     duration_seconds: float,
+    global_context: str = "",
+    spoken_context: str = "",
 ) -> str:
     image_data_url = _image_file_to_data_url(frame_path)
     preferred_model = (settings.similar_analysis_model or "gpt-4o").strip() or "gpt-4o"
@@ -569,6 +808,8 @@ async def _analyze_frame_prompt(
                 end_time,
                 duration_seconds,
                 structured=structured,
+                global_context=global_context,
+                spoken_context=spoken_context,
             )
             if prompt:
                 return prompt[:1600]
@@ -592,6 +833,8 @@ async def _analyze_frame_prompt(
             start_time,
             end_time,
             duration_seconds,
+            global_context=global_context,
+            spoken_context=spoken_context,
         )
         if prompt:
             logger.info("Frame analysis fallback succeeded with Google model=%s", _SIMILAR_GOOGLE_ANALYSIS_MODEL)
@@ -1241,6 +1484,7 @@ async def run_similar_reference_analysis(
 
             openai_client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
             scene_payloads: list[dict] = []
+            scene_frame_payloads: list[dict] = []
             reference_frames_by_scene_index: dict[str, str] = {}
 
             for idx, (start, end) in enumerate(scene_ranges):
@@ -1250,24 +1494,48 @@ async def run_similar_reference_analysis(
 
                 frame_path = str(frames_dir / f"frame_{idx:03d}.jpg")
                 await _extract_frame(resolved_video_path, midpoint, frame_path)
+
+                scene_frame_payloads.append(
+                    {
+                        "scene_index": idx,
+                        "start_time": start,
+                        "end_time": end,
+                        "frame_path": frame_path,
+                    }
+                )
+                reference_frames_by_scene_index[str(idx)] = frame_path
+
+            context_summary, transcript_text, transcript_words = await _build_similar_video_context(
+                resolved_video_path,
+                duration_seconds,
+                [payload.get("frame_path", "") for payload in scene_frame_payloads],
+            )
+
+            for idx, payload in enumerate(scene_frame_payloads):
+                start = float(payload.get("start_time", 0.0) or 0.0)
+                end = float(payload.get("end_time", start) or start)
+                frame_path = str(payload.get("frame_path") or "").strip()
+                spoken_excerpt = _extract_scene_transcript_excerpt(transcript_words, start, end)
                 prompt = await _analyze_frame_prompt(
                     client=openai_client,
                     frame_path=frame_path,
                     start_time=start,
                     end_time=end,
                     duration_seconds=duration_seconds,
+                    global_context=context_summary,
+                    spoken_context=spoken_excerpt,
                 )
 
                 scene_payloads.append(
                     {
-                        "scene_index": idx,
+                        "scene_index": int(payload.get("scene_index", idx) or idx),
                         "start_time": start,
                         "end_time": end,
                         "prompt": prompt,
                         "reference_frame_path": frame_path,
+                        "spoken_context": spoken_excerpt,
                     }
                 )
-                reference_frames_by_scene_index[str(idx)] = frame_path
 
                 progress = 20 + int(55 * ((idx + 1) / max(scene_count, 1)))
                 project.progress = min(80, progress)
@@ -1301,7 +1569,7 @@ async def run_similar_reference_analysis(
                         clip_path="",
                         start_time=float(payload["start_time"]),
                         end_time=float(payload["end_time"]),
-                        lyrics_segment="",
+                        lyrics_segment=str(payload.get("spoken_context") or ""),
                         is_user_uploaded=False,
                     )
                 )
@@ -1317,6 +1585,8 @@ async def run_similar_reference_analysis(
                     "similar_scene_detect_threshold": _SIMILAR_SCENE_DETECT_THRESHOLD,
                     "similar_reference_frames": reference_frames_by_scene_index,
                     "similar_total_duration": duration_seconds,
+                    "similar_context_summary": context_summary,
+                    "similar_transcript_excerpt": _normalize_similar_context_text(transcript_text, limit=900),
                     "similar_detected_mode": detected_mode,
                     "similar_detected_confidence": detected_confidence,
                     "similar_detected_reason": detected_reason,

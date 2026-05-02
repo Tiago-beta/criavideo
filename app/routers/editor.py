@@ -8,9 +8,6 @@ import math
 import os
 import re
 import shutil
-    segments: list[dict] = []
-    max_duration = max(0.0, float(src_duration or 0.0))
-
 import subprocess
 import asyncio
 import uuid
@@ -25,7 +22,7 @@ from sqlalchemy.orm import selectinload
 
 from app.auth import get_current_user
 from app.config import get_settings
-            segments.append({"start": st, "end": et, "reversed": False})
+from app.database import get_db
 from app.models import VideoProject, VideoRender, VideoStatus
 from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
 from app.services.tevoxi_music import generate_music_from_theme
@@ -34,35 +31,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/video/editor", tags=["editor"])
 settings = get_settings()
 
-            segments.append({"start": st, "end": et, "reversed": False})
+# In-memory export jobs
 _export_jobs: dict[str, dict] = {}
 _EDITOR_EXPORT_PRESET = "veryfast"
-        segments.append({"start": float(trim_start), "end": max_duration, "reversed": False})
+_EDITOR_EXPORT_CRF = "23"
 _EDITOR_EXPORT_AUDIO_BITRATE = "160k"
 _SUBTITLE_PROPER_NAMES = ("Senhor", "Deus", "Pastor", "Jesus", "Cristo", "Pai")
 _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS = 5.0
-            segments.append({"start": 0.0, "end": max_duration, "reversed": False})
 _EDITOR_TEVOXI_MOOD_MAP = {
-            segments.append({"start": 0.0, "end": 1e9, "reversed": False})
+    "calmo": "calmo",
     "calma": "calmo",
-    segments.sort(key=lambda item: float(item["start"]))
+    "drama": "drama",
     "dramatico": "drama",
     "dramático": "drama",
-    merged: list[dict] = []
-    for item in segments:
-        st = float(item["start"])
-        et = float(item["end"])
-        reversed_flag = bool(item.get("reversed", False))
+    "alegre": "alegre",
+    "animado": "alegre",
     "emocional": "drama",
-            merged.append({"start": st, "end": et, "reversed": reversed_flag})
+}
 _EDITOR_TEVOXI_MOOD_SETTINGS = {
     "calmo": {
-        if st <= float(prev["end"]) + 0.01 and reversed_flag == bool(prev.get("reversed", False)):
-            prev["end"] = max(float(prev["end"]), et)
+        "api_mood": "calmo reflexivo",
+        "genre": "ambient",
         "theme_hint": "atmosfera suave, piano leve, texturas calmas, sem percussao agressiva",
-            merged.append({"start": st, "end": et, "reversed": reversed_flag})
+    },
     "drama": {
-    return [item for item in merged if float(item["end"]) - float(item["start"]) >= 0.05]
+        "api_mood": "dramatico poderoso agressivo",
         "genre": "cinematic trailer",
         "theme_hint": "trilha dramatica agressiva de trailer, tensao crescente, impactos fortes, cordas intensas, sem voz",
     },
