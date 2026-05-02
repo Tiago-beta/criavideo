@@ -117,6 +117,19 @@ _TEMPORAL_TECHNICAL_PREFIXES = (
     "world_lock",
     "[00:",
 )
+_EXPLICIT_SCENE_SPEECH_MARKERS = (
+    "fala em pt-br",
+    "fala pt-br",
+    "falas em pt-br",
+    "fala obrigatoria",
+    "fala obrigatória",
+    "texto falado",
+    "texto da fala",
+    "dialogo",
+    "diálogo",
+    "dialogue",
+    "speech",
+)
 _SCENE_RANGE_ONLY_RE = re.compile(r"^(?P<start>\d+(?:\.\d)?)s\s*-\s*(?P<end>\d+(?:\.\d)?)s$")
 _DIALOGUE_TIMING_LINE_RE = re.compile(
     r"^(?P<start>\d+(?:\.\d)?)s\s*-\s*(?P<end>\d+(?:\.\d)?)s\s*\|\s*Speaker:\s*(?P<speaker>.+)$"
@@ -285,6 +298,84 @@ def _looks_like_temporal_technical_line(line: str) -> bool:
     if _DIALOGUE_TIMING_LINE_RE.match(str(line or "").strip()):
         return True
     return False
+
+
+def _normalize_scene_dialogue_text(raw_text: object, limit: int = 500) -> str:
+    cleaned = re.sub(r"\s+", " ", str(raw_text or "")).strip().strip('"“”')
+    if not cleaned:
+        return ""
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[:limit].rsplit(" ", 1)[0].strip() or cleaned[:limit]
+
+
+def _extract_explicit_scene_dialogue(prompt_text: object, fallback_text: object = "", limit: int = 500) -> str:
+    raw = str(prompt_text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    fallback = _normalize_scene_dialogue_text(fallback_text, limit=limit)
+    if not raw:
+        return fallback
+
+    lines = [line.strip() for line in raw.split("\n") if line.strip()]
+    dialogue_quotes: list[str] = []
+    dialogue_idx = -1
+    for idx, line in enumerate(lines):
+        if line.lower() == "dialogue timing:":
+            dialogue_idx = idx
+            break
+
+    if dialogue_idx >= 0:
+        idx = dialogue_idx + 1
+        while idx < len(lines):
+            timing_line = lines[idx]
+            if not _DIALOGUE_TIMING_LINE_RE.match(timing_line):
+                idx += 1
+                continue
+            idx += 1
+            if idx >= len(lines):
+                break
+            speech_line = lines[idx].strip()
+            if speech_line.startswith('"') and speech_line.endswith('"') and len(speech_line) >= 3:
+                dialogue_quotes.append(speech_line[1:-1].strip())
+            elif speech_line:
+                dialogue_quotes.append(speech_line.strip('"“”'))
+            idx += 1
+
+    if dialogue_quotes:
+        return _normalize_scene_dialogue_text(" ".join(dialogue_quotes), limit=limit)
+
+    captured: list[str] = []
+    capture_mode = False
+    for line in lines:
+        lowered = line.lower()
+        if any(marker in lowered for marker in _EXPLICIT_SCENE_SPEECH_MARKERS):
+            capture_mode = True
+            tail = line.split(":", 1)[1].strip() if ":" in line else ""
+            if tail:
+                captured.append(tail.strip('"“”'))
+            continue
+
+        if capture_mode:
+            if _looks_like_temporal_technical_line(line):
+                break
+            if ":" in line:
+                section_key = line.split(":", 1)[0].strip().lower()
+                if len(section_key) <= 32 and any(
+                    token in section_key
+                    for token in ("prompt", "gancho", "scene", "cena", "camera", "estilo", "duracao", "duração")
+                ):
+                    break
+            captured.append(line.strip('"“”'))
+            if len(" ".join(captured)) >= limit:
+                break
+
+    if captured:
+        return _normalize_scene_dialogue_text(" ".join(captured), limit=limit)
+
+    quoted_chunks = re.findall(r'"([^\"]{3,260})"', raw)
+    if quoted_chunks:
+        return _normalize_scene_dialogue_text(" ".join(quoted_chunks[:4]), limit=limit)
+
+    return fallback
 
 
 def _extract_thematic_seed(topic_seed: str, briefing: str, max_chars: int = 220) -> str:
@@ -1283,6 +1374,7 @@ class SimilarRegenerateSceneRequest(BaseModel):
     scene_id: int
     engine: str = "grok"
     aspect_ratio: str = "16:9"
+    prompt_override: str = ""
 
 
 class SimilarMergeRequest(BaseModel):
@@ -1543,6 +1635,10 @@ async def update_similar_scene(
         if new_prompt != (scene.prompt or ""):
             scene.prompt = new_prompt
             changed = True
+        explicit_dialogue = _extract_explicit_scene_dialogue(new_prompt, scene.lyrics_segment)
+        if explicit_dialogue != str(scene.lyrics_segment or ""):
+            scene.lyrics_segment = explicit_dialogue
+            changed = True
 
     base_start = float(scene.start_time or 0)
     base_end = float(scene.end_time or base_start)
@@ -1666,14 +1762,55 @@ async def upsert_similar_scene_image(
     if single_upload_id and single_upload_id not in upload_ids:
         upload_ids.append(single_upload_id)
 
+    resolved_files: list[Path] = []
     if upload_ids:
-        resolved_files: list[Path] = []
         for upload_id in upload_ids:
             source_file = _resolve_temp_file(user["id"], upload_id, IMAGE_EXTS)
             if not source_file:
                 raise HTTPException(status_code=400, detail="Uma das imagens enviadas nao foi encontrada. Envie novamente")
             resolved_files.append(source_file)
 
+    if req.generate_from_prompt:
+        from app.services.scene_generator import generate_scene_image, merge_reference_images_with_nano_banana
+
+        target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.png"
+        loop = asyncio.get_event_loop()
+        if resolved_files:
+            reference_sources: list[str] = []
+            if source_reference_image:
+                reference_sources.append(source_reference_image)
+            elif scene.image_path and os.path.exists(scene.image_path):
+                reference_sources.append(str(scene.image_path))
+            for item in resolved_files:
+                candidate = str(item)
+                if candidate and candidate not in reference_sources:
+                    reference_sources.append(candidate)
+
+            await loop.run_in_executor(
+                None,
+                merge_reference_images_with_nano_banana,
+                reference_sources,
+                continuity_prompt[:1200],
+                effective_aspect_ratio,
+                str(target_file),
+            )
+        else:
+            await loop.run_in_executor(
+                None,
+                generate_scene_image,
+                continuity_prompt[:1200],
+                effective_aspect_ratio,
+                str(target_file),
+                False,
+                source_reference_image,
+            )
+        if not target_file.exists() or target_file.stat().st_size <= 0:
+            raise HTTPException(status_code=500, detail="Falha ao gerar imagem da cena")
+        scene.image_path = str(target_file)
+        scene.is_user_uploaded = False
+        scene.prompt = effective_scene_prompt
+        scene.lyrics_segment = _extract_explicit_scene_dialogue(effective_scene_prompt, scene.lyrics_segment)
+    elif resolved_files:
         if len(resolved_files) == 1:
             source_file = resolved_files[0]
             ext = source_file.suffix.lower() or ".png"
@@ -1698,25 +1835,6 @@ async def upsert_similar_scene_image(
                 raise HTTPException(status_code=500, detail="Falha ao unir as imagens da cena")
             scene.image_path = str(target_file)
             scene.is_user_uploaded = True
-    elif req.generate_from_prompt:
-        from app.services.scene_generator import generate_scene_image
-
-        target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.png"
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None,
-            generate_scene_image,
-            continuity_prompt[:1200],
-            effective_aspect_ratio,
-            str(target_file),
-            False,
-            source_reference_image,
-        )
-        if not target_file.exists() or target_file.stat().st_size <= 0:
-            raise HTTPException(status_code=500, detail="Falha ao gerar imagem da cena")
-        scene.image_path = str(target_file)
-        scene.is_user_uploaded = False
-        scene.prompt = effective_scene_prompt
     else:
         raise HTTPException(status_code=400, detail="Informe image_upload_id/image_upload_ids ou generate_from_prompt=true")
 
@@ -1799,6 +1917,14 @@ async def regenerate_similar_scene(
     engine = str(req.engine or "grok").strip().lower() or "grok"
     if engine not in {"grok", "wan2", "minimax", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
+
+    prompt_override = str(req.prompt_override or "").strip()
+    if prompt_override:
+        if len(prompt_override) > 2000:
+            raise HTTPException(status_code=400, detail="Prompt da cena muito longo (maximo 2000 caracteres)")
+        if prompt_override != str(scene.prompt or ""):
+            scene.prompt = prompt_override
+        scene.lyrics_segment = _extract_explicit_scene_dialogue(prompt_override, scene.lyrics_segment)
 
     aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     project.aspect_ratio = aspect_ratio

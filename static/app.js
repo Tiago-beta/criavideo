@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v302 loaded");
+console.log("[CriaVideo] app.js v303 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4685,8 +4685,12 @@ function _renderSimilarScenes(project, options = {}) {
                         <label for="similar-frame-instruction-${sceneId}">O que a IA deve mudar neste frame?</label>
                         <textarea id="similar-frame-instruction-${sceneId}" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar o produto por uma embalagem premium, manter a mesma mesa, o mesmo enquadramento e a mesma luz.">${frameInstructionValue}</textarea>
                         <p class="field-hint">A imagem nova sai do frame original e respeita o prompt atual da cena para manter o contexto.</p>
+                        <div class="similar-reference-frame-editor-tools">
+                            <button class="similar-frame-tool-btn" type="button" onclick="similarUploadFrameReference(${sceneId})">Enviar nova imagem</button>
+                            <span class="similar-reference-frame-upload-note">${pendingCount ? `${pendingCount} imagem(ns) extra(s) pronta(s) para combinar com o frame.` : "Envie uma imagem extra para trocar pessoa, produto ou outro elemento mantendo o contexto do frame."}</span>
+                        </div>
                         <div class="similar-reference-frame-editor-actions">
-                            <button class="btn btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})">Criar nova imagem a partir do frame</button>
+                            <button class="btn btn-primary similar-reference-frame-submit-btn" type="button" onclick="similarGenerateFrameVariant(${sceneId})">Criar nova imagem</button>
                             <button class="btn btn-secondary" type="button" onclick="similarCloseFrameEdit(${sceneId})">Cancelar</button>
                         </div>
                     </div>
@@ -7589,6 +7593,10 @@ function similarUploadSceneImage(sceneId) {
     input.click();
 }
 
+function similarUploadFrameReference(sceneId) {
+    similarUploadSceneImage(sceneId);
+}
+
 async function _handleSimilarSceneImageInput(event) {
     const projectId = Number(similarState.projectId || 0);
     const sceneId = Number(similarState.activeUploadSceneId || 0);
@@ -7769,6 +7777,13 @@ async function similarGenerateFrameVariant(sceneId) {
     const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
     const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
     const editInstruction = String(instructionEl?.value || "").trim();
+    const uploadIds = [];
+    _getSimilarScenePendingUploads(sceneId).forEach((item) => {
+        const uploadId = String(item?.upload_id || "").trim();
+        if (uploadId && !uploadIds.includes(uploadId)) {
+            uploadIds.push(uploadId);
+        }
+    });
 
     if (!editInstruction) {
         showToast("Descreva primeiro o que deve mudar no frame.", "error");
@@ -7784,9 +7799,11 @@ async function similarGenerateFrameVariant(sceneId) {
                 generate_from_prompt: true,
                 prompt_override: promptOverride,
                 edit_instruction: editInstruction,
+                image_upload_ids: uploadIds,
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });
+        _clearSimilarScenePendingUploads(sceneId);
         _setSimilarSceneFrameEditorDraft(sceneId, { open: false, instruction: "" });
         showToast("Nova imagem criada a partir do frame.", "success");
         await _refreshSimilarProject();
@@ -7804,6 +7821,8 @@ async function similarRegenerateScene(sceneId) {
 
     try {
         const scene = _getSimilarProjectScene(sceneId);
+        const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+        const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
         const hasExistingClip = !!String(scene?.clip_url || scene?.clip_path || "").trim();
         const busyStage = hasExistingClip ? "regenerating_scene" : "generating_scene";
         _setSimilarBusyIntent(busyStage, sceneId);
@@ -7818,6 +7837,7 @@ async function similarRegenerateScene(sceneId) {
             method: "POST",
             body: JSON.stringify({
                 scene_id: Number(sceneId || 0),
+                prompt_override: promptOverride,
                 engine: _getSimilarSceneSelectedEngine(sceneId),
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
@@ -16711,6 +16731,7 @@ window.openPublishForProject = openPublishForProject;
 window.createSimilar = createSimilar;
 window.similarSaveScene = similarSaveScene;
 window.similarUploadSceneImage = similarUploadSceneImage;
+window.similarUploadFrameReference = similarUploadFrameReference;
 window.similarApplyUploadedSceneImages = similarApplyUploadedSceneImages;
 window.similarClearSceneUploads = similarClearSceneUploads;
 window.similarGenerateSceneImage = similarGenerateSceneImage;

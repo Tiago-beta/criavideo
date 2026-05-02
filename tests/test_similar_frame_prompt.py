@@ -4,9 +4,11 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from app.routers.video import _extract_explicit_scene_dialogue
 from app.tasks.similar_tasks import (
     _analyze_frame_prompt,
     _build_scene_analysis_instruction,
+    _build_similar_scene_speech_lock,
     _extract_scene_prompt_from_content,
     _extract_scene_transcript_excerpt,
 )
@@ -23,6 +25,32 @@ def _fake_openai_response(content):
 
 
 class TestSimilarFramePrompt(unittest.IsolatedAsyncioTestCase):
+    def test_extract_explicit_scene_dialogue_prefers_dialogue_timing_quotes(self):
+        dialogue = _extract_explicit_scene_dialogue(
+            """
+            0.0s - 3.0s
+            Mulher apresenta o produto em close.
+
+            Dialogue timing:
+            0.0s - 1.5s | Speaker: Mulher
+            \"Chegou o painel que eu estava esperando.\"
+            1.5s - 3.0s | Speaker: Mulher
+            \"Agora vou renovar minha casa sem bagunca.\"
+            """
+        )
+
+        self.assertIn("Chegou o painel", dialogue)
+        self.assertIn("renovar minha casa", dialogue)
+
+    def test_build_similar_scene_speech_lock_keeps_exact_phrase(self):
+        prompt = _build_similar_scene_speech_lock(
+            "Mulher instala o painel ripado com luz natural entrando pela janela.",
+            "Chegou o painel que eu estava esperando.",
+        )
+
+        self.assertIn("FALA OBRIGATORIA EM PT-BR", prompt)
+        self.assertIn('"Chegou o painel que eu estava esperando."', prompt)
+
     def test_build_scene_analysis_instruction_includes_video_context(self):
         instruction = _build_scene_analysis_instruction(
             0.0,

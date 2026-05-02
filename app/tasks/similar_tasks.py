@@ -377,6 +377,23 @@ def _normalize_similar_context_text(raw_text: object, *, limit: int = 900) -> st
     return cleaned[:limit].rsplit(" ", 1)[0].strip() or cleaned[:limit]
 
 
+def _build_similar_scene_speech_lock(prompt_text: str, spoken_text: object = "") -> str:
+    base_prompt = str(prompt_text or "").strip()
+    spoken_excerpt = _normalize_similar_context_text(spoken_text, limit=320).strip().strip('"“”')
+    if not spoken_excerpt:
+        return base_prompt
+
+    if "fala obrigatoria em pt-br" in base_prompt.lower() or "fala obrigatória em pt-br" in base_prompt.lower():
+        return base_prompt
+
+    speech_lock = (
+        'FALA OBRIGATORIA EM PT-BR: use exatamente esta fala no audio da cena, sem resumir, '\
+        f'reescrever ou trocar palavras: "{spoken_excerpt}". '
+        'Mantenha a fala natural, coerente com a acao visual e claramente audivel.'
+    )
+    return f"{base_prompt}\n\n{speech_lock}".strip()
+
+
 def _build_scene_analysis_instruction(
     start_time: float,
     end_time: float,
@@ -1095,6 +1112,7 @@ def _build_similar_scene_generation_context(
         current_scene_index=current_scene_index,
         anchor_scene_index=anchor_scene_index,
     )
+    prompt = _build_similar_scene_speech_lock(prompt, scene.lyrics_segment)
 
     reference_image_path = _get_similar_scene_reference_frame_path(scene, reference_frames_by_scene_index)
     if not reference_image_path and anchor_scene and current_scene_index > anchor_scene_index:
