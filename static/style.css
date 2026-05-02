@@ -7554,39 +7554,10 @@ th,
     font-size: 0.78rem;
 }
 
-.similar-scene-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    margin-top: 8px;
-}
-
-.similar-scene-row label {
-    color: var(--text-muted);
-    font-size: 0.82rem;
-}
-
 .similar-scene-prompt-input {
     min-height: 190px;
     resize: vertical;
     line-height: 1.5;
-}
-
-.similar-scene-duration {
-    width: 96px;
-}
-
-.similar-scene-time-input {
-    width: 112px;
-}
-
-.similar-scene-merge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--text-muted);
-    font-size: 0.82rem;
 }
 
 .similar-scene-actions {

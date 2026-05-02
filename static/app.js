@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v295 loaded");
+console.log("[CriaVideo] app.js v296 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4133,6 +4133,15 @@ function similarSelectSceneEngine(sceneId, engineValue) {
     }
 }
 
+function _getSimilarProjectScene(sceneId) {
+    const targetId = Number(sceneId || 0);
+    if (!targetId) return null;
+    const scenes = Array.isArray(similarState.lastProjectSnapshot?.scenes)
+        ? similarState.lastProjectSnapshot.scenes
+        : [];
+    return scenes.find((scene) => Number(scene?.id || 0) === targetId) || null;
+}
+
 function _setSimilarEngineSelection(engineValue, options = {}) {
     const markManual = !!options.markManual;
     const normalized = _normalizeSimilarEngine(engineValue);
@@ -4285,14 +4294,17 @@ function _syncSimilarDraftsFromDom() {
         const sceneId = Number(String(promptEl.id || "").replace("similar-scene-prompt-", ""));
         const sceneKey = _similarSceneStateKey(sceneId);
         if (!sceneKey) return;
+        const scene = _getSimilarProjectScene(sceneId);
 
         const startEl = document.getElementById(`similar-scene-start-${sceneId}`);
         const durationEl = document.getElementById(`similar-scene-duration-${sceneId}`);
         const mergeEl = document.getElementById(`similar-scene-merge-${sceneId}`);
 
         const promptValue = String(promptEl.value || "");
-        const startValue = String(startEl?.value || "");
-        const durationValue = String(durationEl?.value || "");
+        const serverStart = scene ? Number(scene.start_time || 0).toFixed(1) : String(startEl?.dataset.serverValue || "");
+        const serverDuration = scene ? String(_similarSceneDuration(scene)) : String(durationEl?.dataset.serverValue || "");
+        const startValue = startEl ? String(startEl.value || "") : serverStart;
+        const durationValue = durationEl ? String(durationEl.value || "") : serverDuration;
 
         let serverPrompt = "";
         const serverPromptRaw = String(promptEl.dataset.serverValue || "");
@@ -4301,8 +4313,6 @@ function _syncSimilarDraftsFromDom() {
         } catch (_) {
             serverPrompt = serverPromptRaw;
         }
-        const serverStart = String(startEl?.dataset.serverValue || "");
-        const serverDuration = String(durationEl?.dataset.serverValue || "");
 
         const hasPromptDraft = promptValue !== serverPrompt;
         const hasStartDraft = startValue !== serverStart;
@@ -4327,7 +4337,7 @@ function _syncSimilarDraftsFromDom() {
 function _similarSceneEditorHasFocus() {
     const active = document.activeElement;
     if (!active || !active.id) return false;
-    return /^similar-scene-(prompt|start|duration)-\d+$/.test(String(active.id));
+    return /^similar-scene-prompt-\d+$/.test(String(active.id));
 }
 
 function _cleanupSimilarSceneTransientState(sceneIds) {
@@ -4400,26 +4410,12 @@ function _renderSimilarScenes(project, options = {}) {
 
         const start = Number(scene.start_time || 0);
         const end = Number(scene.end_time || start);
-        const duration = _similarSceneDuration(scene);
-        const startServer = start.toFixed(1);
-        const durationServer = String(duration);
         const promptServerEncoded = encodeURIComponent(String(scene.prompt || ""));
-
-        const draftStart = Number.parseFloat(draft.start);
-        const startInput = Number.isFinite(draftStart) ? draftStart : start;
-
-        const draftDuration = Number.parseInt(draft.duration, 10);
-        const durationInput = Number.isFinite(draftDuration) ? Math.max(5, Math.min(15, draftDuration)) : duration;
 
         const promptRaw = Object.prototype.hasOwnProperty.call(draft, "prompt")
             ? String(draft.prompt || "")
             : String(scene.prompt || "");
         const promptValue = esc(promptRaw);
-
-        const mergeChecked = Object.prototype.hasOwnProperty.call(similarState.sceneMergeSelectionBySceneId, sceneKey)
-            ? !!similarState.sceneMergeSelectionBySceneId[sceneKey]
-            : true;
-        const mergeCheckedAttr = mergeChecked ? "checked" : "";
 
         const pendingUploads = _getSimilarScenePendingUploads(sceneId);
         const pendingCount = pendingUploads.length;
@@ -4488,19 +4484,6 @@ function _renderSimilarScenes(project, options = {}) {
                 <div class="form-group">
                     <label>Prompt da cena</label>
                     <textarea id="similar-scene-prompt-${sceneId}" class="input similar-scene-prompt-input" rows="8" maxlength="2000" data-server-value="${promptServerEncoded}">${promptValue}</textarea>
-                </div>
-
-                <div class="similar-scene-row">
-                    <label for="similar-scene-start-${sceneId}">Inicio</label>
-                    <input id="similar-scene-start-${sceneId}" class="input similar-scene-time-input" type="number" min="0" step="0.1" value="${startInput.toFixed(1)}" data-server-value="${startServer}">
-                    <span class="similar-scene-time">s</span>
-                    <label for="similar-scene-duration-${sceneId}">Duracao</label>
-                    <input id="similar-scene-duration-${sceneId}" class="input similar-scene-duration" type="number" min="5" max="15" step="1" value="${durationInput}" data-server-value="${durationServer}">
-                    <span class="similar-scene-time">segundos</span>
-                    <label class="similar-scene-merge">
-                        <input id="similar-scene-merge-${sceneId}" type="checkbox" ${mergeCheckedAttr}>
-                        Incluir na uniao
-                    </label>
                 </div>
 
                 ${uploadsSectionMarkup}
@@ -7295,13 +7278,16 @@ async function similarSaveScene(sceneId) {
     }
 
     const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+    const scene = _getSimilarProjectScene(sceneId);
     const startEl = document.getElementById(`similar-scene-start-${sceneId}`);
     const durationEl = document.getElementById(`similar-scene-duration-${sceneId}`);
     const prompt = String(promptEl?.value || "").trim();
-    const startRaw = Number.parseFloat(startEl?.value || "0");
-    const startTime = Number.isFinite(startRaw) ? Math.max(0, startRaw) : 0;
-    const durationRaw = parseInt(durationEl?.value || "0", 10);
-    const duration = Number.isFinite(durationRaw) ? Math.max(5, Math.min(15, durationRaw)) : 5;
+    const fallbackStart = Number(scene?.start_time || 0);
+    const fallbackDuration = scene ? _similarSceneDuration(scene) : 5;
+    const startRaw = Number.parseFloat(startEl?.value || String(fallbackStart));
+    const startTime = Number.isFinite(startRaw) ? Math.max(0, startRaw) : Math.max(0, fallbackStart);
+    const durationRaw = parseInt(durationEl?.value || String(fallbackDuration), 10);
+    const duration = Number.isFinite(durationRaw) ? Math.max(5, Math.min(15, durationRaw)) : fallbackDuration;
 
     try {
         await api(`/video/projects/${projectId}/similar/scenes/${sceneId}`, {
@@ -7514,16 +7500,20 @@ async function similarGenerateAllPreviews() {
 
 function _getSimilarSelectedSceneIds() {
     _syncSimilarDraftsFromDom();
-    const ids = [];
-    document.querySelectorAll("[id^='similar-scene-merge-']").forEach((checkbox) => {
-        if (!checkbox.checked) return;
-        const rawId = String(checkbox.id || "").replace("similar-scene-merge-", "");
-        const parsed = parseInt(rawId, 10);
-        if (Number.isFinite(parsed) && parsed > 0) {
-            ids.push(parsed);
-        }
-    });
-    return ids;
+    const scenes = Array.isArray(similarState.lastProjectSnapshot?.scenes)
+        ? similarState.lastProjectSnapshot.scenes
+        : [];
+    return scenes
+        .map((scene) => Number(scene?.id || 0))
+        .filter((sceneId) => sceneId > 0)
+        .filter((sceneId) => {
+            const sceneKey = _similarSceneStateKey(sceneId);
+            if (!sceneKey) return false;
+            if (!Object.prototype.hasOwnProperty.call(similarState.sceneMergeSelectionBySceneId, sceneKey)) {
+                return true;
+            }
+            return !!similarState.sceneMergeSelectionBySceneId[sceneKey];
+        });
 }
 
 async function similarMergeSelectedScenes() {
