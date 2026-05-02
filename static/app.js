@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v298 loaded");
+console.log("[CriaVideo] app.js v299 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2204,6 +2204,10 @@ let similarState = {
     sceneEngineSelectionBySceneId: {},
     pendingBusyStage: "",
     pendingBusySceneId: 0,
+    busyProgressStage: "",
+    busyProgressCurrent: 0,
+    busyProgressTarget: 0,
+    busyProgressTimer: null,
     sceneDraftsBySceneId: {},
     sceneMergeSelectionBySceneId: {},
     pendingImageUploadsBySceneId: {},
@@ -4165,6 +4169,13 @@ function _clearSimilarBusyIntent() {
 function _hideSimilarBusyOverlay() {
     const overlayEl = document.getElementById("similar-busy-overlay");
     const modalEl = document.getElementById("modal-new-project");
+    if (similarState.busyProgressTimer) {
+        clearInterval(similarState.busyProgressTimer);
+        similarState.busyProgressTimer = null;
+    }
+    similarState.busyProgressStage = "";
+    similarState.busyProgressCurrent = 0;
+    similarState.busyProgressTarget = 0;
     if (overlayEl) {
         overlayEl.hidden = true;
     }
@@ -4187,14 +4198,55 @@ function _resolveSimilarBusyStage(stage, status) {
     return "";
 }
 
+function _similarBusyProgressCeiling(stage) {
+    if (stage === "generating_previews") return 94;
+    if (stage === "generating_scene" || stage === "regenerating_scene") return 96;
+    return 90;
+}
+
+function _paintSimilarBusyProgress(progress) {
+    const progressEl = document.getElementById("similar-busy-progress-fill");
+    const percentEl = document.getElementById("similar-busy-progress-label");
+    if (!progressEl || !percentEl) return;
+
+    const normalized = Math.max(0, Math.min(100, Number(progress || 0) || 0));
+    const rounded = Math.round(normalized);
+    progressEl.style.width = `${rounded}%`;
+    percentEl.textContent = `${rounded}%`;
+}
+
+function _ensureSimilarBusyProgressTimer() {
+    if (similarState.busyProgressTimer) {
+        return;
+    }
+
+    similarState.busyProgressTimer = setInterval(() => {
+        const stage = String(similarState.busyProgressStage || "").trim();
+        if (!stage) {
+            return;
+        }
+
+        const ceiling = _similarBusyProgressCeiling(stage);
+        if (similarState.busyProgressCurrent < similarState.busyProgressTarget) {
+            const gap = similarState.busyProgressTarget - similarState.busyProgressCurrent;
+            const step = Math.max(0.45, gap * 0.14);
+            similarState.busyProgressCurrent = Math.min(similarState.busyProgressTarget, similarState.busyProgressCurrent + step);
+            _paintSimilarBusyProgress(similarState.busyProgressCurrent);
+            return;
+        }
+
+        if (similarState.busyProgressTarget < ceiling) {
+            similarState.busyProgressTarget = Math.min(ceiling, similarState.busyProgressTarget + 0.9);
+        }
+    }, 220);
+}
+
 function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
     const overlayEl = document.getElementById("similar-busy-overlay");
     const modalEl = document.getElementById("modal-new-project");
     const titleEl = document.getElementById("similar-busy-title");
     const detailEl = document.getElementById("similar-busy-detail");
-    const progressEl = document.getElementById("similar-busy-progress-fill");
-    const percentEl = document.getElementById("similar-busy-progress-label");
-    if (!overlayEl || !modalEl || !titleEl || !detailEl || !progressEl || !percentEl) {
+    if (!overlayEl || !modalEl || !titleEl || !detailEl) {
         return;
     }
 
@@ -4231,10 +4283,18 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
             : "Criando as cenas uma por uma. Aguarde a conclusao para editar novamente.";
     }
 
+    if (similarState.busyProgressStage !== busyStage || overlayEl.hidden) {
+        similarState.busyProgressStage = busyStage;
+        similarState.busyProgressCurrent = Math.max(4, Math.min(100, progress));
+        similarState.busyProgressTarget = Math.max(similarState.busyProgressCurrent, progress);
+    } else {
+        similarState.busyProgressTarget = Math.max(similarState.busyProgressTarget, progress);
+    }
+
     titleEl.textContent = title;
     detailEl.textContent = detail;
-    progressEl.style.width = `${progress}%`;
-    percentEl.textContent = `${progress}%`;
+    _paintSimilarBusyProgress(similarState.busyProgressCurrent);
+    _ensureSimilarBusyProgressTimer();
     overlayEl.hidden = false;
     modalEl.classList.add("similar-busy");
 }
@@ -7241,6 +7301,8 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         _refreshSimilarButtonsDisabled(isProcessing);
 
         if (!isProcessing) {
+            _stopSimilarPolling();
+            _refreshSimilarButtonsDisabled(false);
             _clearSimilarBusyIntent();
             _hideSimilarBusyOverlay();
         }
