@@ -380,6 +380,149 @@ def merge_reference_images_with_nano_banana(
     raise RuntimeError("Nano Banana nao retornou imagem ao unir referencias")
 
 
+def _openai_image_size_for_aspect_ratio(aspect_ratio: str) -> str:
+    if aspect_ratio == "9:16":
+        return "1024x1536"
+    if aspect_ratio == "1:1":
+        return "1024x1024"
+    return "1536x1024"
+
+
+def _looks_like_same_image(base_image_path: str, candidate_image_path: str) -> bool:
+    try:
+        with open(base_image_path, "rb") as base_file, open(candidate_image_path, "rb") as candidate_file:
+            if base_file.read() == candidate_file.read():
+                return True
+    except Exception:
+        pass
+
+    try:
+        from PIL import Image, ImageChops, ImageStat
+
+        with Image.open(base_image_path) as base_img, Image.open(candidate_image_path) as candidate_img:
+            base_rgb = base_img.convert("RGB").resize((96, 96))
+            candidate_rgb = candidate_img.convert("RGB").resize((96, 96))
+            diff = ImageChops.difference(base_rgb, candidate_rgb)
+            stat = ImageStat.Stat(diff)
+            mean_delta = sum(float(channel_mean) for channel_mean in stat.mean) / max(len(stat.mean), 1)
+            return mean_delta <= 2.0
+    except Exception:
+        return False
+
+
+def _extract_openai_image_bytes_from_response(response: object) -> bytes:
+    data_items = getattr(response, "data", None) or []
+    if not data_items:
+        return b""
+
+    item = data_items[0]
+    b64_data = getattr(item, "b64_json", None)
+    if not b64_data and isinstance(item, dict):
+        b64_data = item.get("b64_json")
+    if b64_data:
+        return base64.b64decode(b64_data)
+
+    img_url = getattr(item, "url", None)
+    if not img_url and isinstance(item, dict):
+        img_url = item.get("url")
+    if not img_url:
+        return b""
+
+    with httpx.Client(timeout=120, follow_redirects=True) as client_http:
+        resp = client_http.get(img_url)
+        resp.raise_for_status()
+        return resp.content or b""
+
+
+def _save_openai_multi_reference_edit(
+    base_image_path: str,
+    reference_image_paths: list[str],
+    prompt: str,
+    aspect_ratio: str,
+    output_path: str,
+) -> bool:
+    if not (settings.openai_api_key or "").strip():
+        return False
+
+    client = openai.OpenAI(api_key=settings.openai_api_key)
+    model_name = settings.persona_image_openai_model or "gpt-image-1"
+
+    def _run_edit(image_inputs: list[str]) -> bool:
+        file_handles = []
+        try:
+            for path in image_inputs:
+                file_handles.append(open(path, "rb"))
+
+            response = client.images.edit(
+                model=model_name,
+                image=file_handles,
+                prompt=prompt[:3800],
+                size=_openai_image_size_for_aspect_ratio(aspect_ratio),
+            )
+            image_bytes = _extract_openai_image_bytes_from_response(response)
+            if not image_bytes:
+                return False
+
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            with open(output_path, "wb") as out:
+                out.write(image_bytes)
+            if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
+                return False
+            if _looks_like_same_image(base_image_path, output_path):
+                logger.warning("OpenAI multi-reference edit returned an unchanged image; trying fallback provider")
+                return False
+            return True
+        finally:
+            for handle in file_handles:
+                try:
+                    handle.close()
+                except Exception:
+                    pass
+
+    image_inputs = [base_image_path] + list(reference_image_paths[:3])
+    try:
+        if _run_edit(image_inputs):
+            return True
+    except Exception as exc:
+        logger.warning("OpenAI multi-reference edit failed with separate files: %s", exc)
+
+    try:
+        import tempfile
+        from PIL import Image
+
+        thumbs: list[Image.Image] = []
+        for ref_path in reference_image_paths[:3]:
+            with Image.open(ref_path) as img:
+                thumb = img.convert("RGB")
+                thumb.thumbnail((512, 512))
+                thumbs.append(thumb.copy())
+        if not thumbs:
+            return False
+
+        montage_width = sum(img.width for img in thumbs)
+        montage_height = max(img.height for img in thumbs)
+        montage = Image.new("RGB", (montage_width, montage_height), (18, 24, 34))
+        cursor_x = 0
+        for thumb in thumbs:
+            offset_y = max(0, (montage_height - thumb.height) // 2)
+            montage.paste(thumb, (cursor_x, offset_y))
+            cursor_x += thumb.width
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
+            montage_path = tmp_file.name
+        montage.save(montage_path)
+        try:
+            return _run_edit([base_image_path, montage_path])
+        finally:
+            try:
+                os.remove(montage_path)
+            except Exception:
+                pass
+    except Exception as exc:
+        logger.warning("OpenAI montage fallback for frame edit failed: %s", exc)
+        return False
+
+
 def edit_frame_with_replacement_references(
     base_image_path: str,
     reference_image_paths: list[str],
@@ -411,6 +554,26 @@ def edit_frame_with_replacement_references(
     if not scene_goal:
         scene_goal = "Cena cinematografica coerente, com o mesmo contexto visual do frame base."
 
+    strict_edit_prompt = (
+        "Use a primeira imagem como frame base obrigatorio e preserve exatamente enquadramento, ambiente, perspectiva, luz, piso, parede, objetos e camera. "
+        "Use as imagens adicionais apenas como referencia para substituir o elemento solicitado. "
+        f"Edicao solicitada: {edit_goal}. "
+        f"Contexto da cena: {scene_goal}. "
+        "Se o pedido mencionar trocar a pessoa, remova a pessoa original e coloque a pessoa da referencia no lugar, com roupas e aparencia coerentes com a instrucao. "
+        "Nao mantenha a pessoa antiga, nao misture duas pessoas, nao preserve o rosto antigo e nao retorne a mesma imagem sem mudanca. "
+        "Retorne uma unica imagem final editada."
+    )
+
+    if _save_openai_multi_reference_edit(
+        base_path,
+        valid_references,
+        strict_edit_prompt,
+        aspect_ratio,
+        target_path,
+    ):
+        logger.info("Frame edit saved via OpenAI multi-reference edit: %s", target_path)
+        return target_path
+
     try:
         contents_payload: list = []
 
@@ -432,18 +595,7 @@ def edit_frame_with_replacement_references(
         if len(contents_payload) < 2:
             raise RuntimeError("Nao foi possivel carregar as referencias para editar o frame")
 
-        contents_payload.append(
-            (
-                "Use a PRIMEIRA imagem como frame base obrigatorio. Preserve enquadramento, ambiente, perspectiva, luz, piso, parede, objetos, camera e contexto visual da primeira imagem. "
-                "Use as imagens adicionais somente como referencias para substituir os elementos pedidos. "
-                f"Edicao solicitada: {edit_goal}. "
-                f"Contexto da cena: {scene_goal}. "
-                "Se o pedido mencionar trocar a pessoa, substitua completamente a pessoa da primeira imagem pela pessoa da referencia enviada, mantendo o mesmo cenario e o mesmo contexto. "
-                "Nao misture rostos, corpos, roupas ou identidades. Nao mantenha a pessoa original quando a instrucao pedir troca. "
-                "Nao crie collage, comparacao lado a lado, pessoa duplicada, corpo extra, morphing, dois rostos sobrepostos ou painel dividido. "
-                "Retorne UMA unica imagem final editada."
-            )
-        )
+        contents_payload.append(strict_edit_prompt)
 
         response = google_client.models.generate_content(
             model="gemini-2.5-flash-image",
@@ -484,6 +636,13 @@ def edit_frame_with_replacement_references(
                     out.write(raw)
 
             if os.path.exists(target_path) and os.path.getsize(target_path) > 0:
+                if _looks_like_same_image(base_path, target_path):
+                    logger.warning("Nano Banana frame edit returned an unchanged image; treating as failure")
+                    try:
+                        os.remove(target_path)
+                    except Exception:
+                        pass
+                    continue
                 return target_path
     except Exception as e:
         logger.warning("Nano Banana frame edit failed: %s", e)
