@@ -354,6 +354,125 @@ def _image_file_to_data_url(path: str) -> str:
     return f"data:{mime};base64,{encoded}"
 
 
+def _coerce_openai_content_to_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("scene_prompt", "text", "output_text", "content", "value", "prompt", "description"):
+            if key in value:
+                return _coerce_openai_content_to_text(value.get(key))
+        return ""
+    if isinstance(value, list):
+        fragments: list[str] = []
+        for item in value:
+            fragment = _coerce_openai_content_to_text(item)
+            if fragment:
+                fragments.append(fragment)
+        return "\n".join(fragments).strip()
+
+    for attr in ("scene_prompt", "text", "output_text", "content", "value"):
+        if hasattr(value, attr):
+            return _coerce_openai_content_to_text(getattr(value, attr))
+    return ""
+
+
+def _extract_scene_prompt_from_content(content: object) -> str:
+    candidate = _coerce_openai_content_to_text(content)
+    if not candidate:
+        return ""
+
+    candidate = candidate.strip()
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\s*```$", "", candidate).strip()
+
+    parsed = None
+    if candidate.startswith("{") or candidate.startswith("["):
+        try:
+            parsed = json.loads(candidate)
+        except Exception:
+            parsed = None
+
+    if parsed is not None:
+        if isinstance(parsed, dict):
+            for key in ("scene_prompt", "prompt", "description", "output", "text"):
+                value = str(parsed.get(key) or "").strip()
+                if value:
+                    candidate = value
+                    break
+            else:
+                candidate = ""
+        elif isinstance(parsed, list):
+            chunks = [_extract_scene_prompt_from_content(item) for item in parsed]
+            candidate = " ".join(chunk for chunk in chunks if chunk).strip()
+        elif isinstance(parsed, str):
+            candidate = parsed.strip()
+        else:
+            candidate = ""
+
+    candidate = re.sub(r"^\s*(?:scene_prompt|prompt|descricao|descri[cç][aã]o)\s*:\s*", "", candidate, flags=re.IGNORECASE)
+    candidate = candidate.strip().strip('"\'')
+    candidate = re.sub(r"\s+", " ", candidate).strip()
+    return candidate
+
+
+async def _request_scene_prompt_from_model(
+    client: openai.AsyncOpenAI,
+    model_name: str,
+    image_data_url: str,
+    start_time: float,
+    end_time: float,
+    duration_seconds: float,
+    *,
+    structured: bool,
+) -> str:
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Voce analisa frames de video e escreve prompts cinematograficos em portugues do Brasil. "
+                "Descreva a cena de forma concreta, citando sujeito, acao, ambiente, objetos, enquadramento, luz e movimento de camera. "
+                + ("Retorne JSON com chave 'scene_prompt'." if structured else "Retorne apenas o prompt final em um unico paragrafo, sem JSON e sem marcadores.")
+            ),
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "Analise este frame e crie um prompt para recriar a cena em video com riqueza de detalhes, "
+                        "incluindo sujeito principal, acao visivel, enquadramento, ambiente, luz, cores, textura e movimento de camera. "
+                        "Evite frases genericas como 'cena cinematografica' sem contexto visual. "
+                        "A cena representa o trecho de "
+                        f"{start_time:.1f}s ate {end_time:.1f}s de um video de {duration_seconds:.1f}s. "
+                        "Escreva em pt-BR e sem marcadores."
+                    ),
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": image_data_url},
+                },
+            ],
+        },
+    ]
+
+    request_kwargs = {
+        "model": model_name,
+        "temperature": 0.2,
+        "max_tokens": 450,
+        "messages": messages,
+    }
+    if structured:
+        request_kwargs["response_format"] = {"type": "json_object"}
+
+    resp = await client.chat.completions.create(**request_kwargs)
+    content = resp.choices[0].message.content if getattr(resp, "choices", None) else ""
+    return _extract_scene_prompt_from_content(content)
+
+
 async def _analyze_frame_prompt(
     client: openai.AsyncOpenAI,
     frame_path: str,
@@ -362,50 +481,34 @@ async def _analyze_frame_prompt(
     duration_seconds: float,
 ) -> str:
     image_data_url = _image_file_to_data_url(frame_path)
-    model_name = (settings.similar_analysis_model or "gpt-4o").strip() or "gpt-4o"
+    preferred_model = (settings.similar_analysis_model or "gpt-4o").strip() or "gpt-4o"
+    attempts: list[tuple[str, bool]] = [
+        (preferred_model, True),
+        (preferred_model, False),
+    ]
+    if preferred_model != "gpt-4o":
+        attempts.append(("gpt-4o", False))
 
-    try:
-        resp = await client.chat.completions.create(
-            model=model_name,
-            temperature=0.2,
-            max_tokens=450,
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Voce analisa frames de video e escreve prompts cinematograficos em portugues do Brasil. "
-                        "Retorne JSON com chave 'scene_prompt'."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                "Analise este frame e crie um prompt para recriar a cena em video com riqueza de detalhes, "
-                                "incluindo enquadramento, ambiente, luz, cores, textura e movimento de camera. "
-                                "A cena representa o trecho de "
-                                f"{start_time:.1f}s ate {end_time:.1f}s de um video de {duration_seconds:.1f}s. "
-                                "Escreva em pt-BR e sem marcadores."
-                            ),
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": image_data_url},
-                        },
-                    ],
-                },
-            ],
-        )
-        raw = (resp.choices[0].message.content or "").strip()
-        data = json.loads(raw) if raw else {}
-        prompt = str(data.get("scene_prompt") or "").strip()
-        if prompt:
-            return prompt[:1600]
-    except Exception as exc:
-        logger.warning("Frame analysis fallback activated: %s", exc)
+    for attempt_model, structured in attempts:
+        try:
+            prompt = await _request_scene_prompt_from_model(
+                client,
+                attempt_model,
+                image_data_url,
+                start_time,
+                end_time,
+                duration_seconds,
+                structured=structured,
+            )
+            if prompt:
+                return prompt[:1600]
+        except Exception as exc:
+            logger.warning(
+                "Frame analysis retry activated for model=%s structured=%s: %s",
+                attempt_model,
+                structured,
+                exc,
+            )
 
     return (
         "Cena cinematografica ultra detalhada com composicao fiel ao frame de referencia, "
