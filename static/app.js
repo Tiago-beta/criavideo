@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v309 loaded");
+console.log("[CriaVideo] app.js v310 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -19591,6 +19591,30 @@ function _editorGetLocalMediaKind(file) {
     return "";
 }
 
+function _editorCompareMediaFileNames(leftFile, rightFile) {
+    const leftName = String(leftFile?.name || "").trim();
+    const rightName = String(rightFile?.name || "").trim();
+    const byName = leftName.localeCompare(rightName, "pt-BR", { numeric: true, sensitivity: "base" });
+    if (byName !== 0) return byName;
+
+    const leftStamp = Number(leftFile?.lastModified || 0);
+    const rightStamp = Number(rightFile?.lastModified || 0);
+    if (leftStamp !== rightStamp) return leftStamp - rightStamp;
+
+    return Number(leftFile?.size || 0) - Number(rightFile?.size || 0);
+}
+
+function _editorSortOrderedMediaEntries(entries = []) {
+    return (Array.isArray(entries) ? entries : [])
+        .map((entry, index) => ({ ...entry, _originalIndex: index }))
+        .sort((left, right) => {
+            const byName = _editorCompareMediaFileNames(left.file, right.file);
+            if (byName !== 0) return byName;
+            return Number(left._originalIndex || 0) - Number(right._originalIndex || 0);
+        })
+        .map(({ _originalIndex, ...entry }) => entry);
+}
+
 function _editorClassifyLocalMediaFiles(files = []) {
     const imageFiles = [];
     const videoFiles = [];
@@ -19614,14 +19638,19 @@ function _editorClassifyLocalMediaFiles(files = []) {
 
     if (invalidFiles.length) {
         return {
-            orderedEntries,
-            imageFiles,
-            videoFiles,
+            orderedEntries: _editorSortOrderedMediaEntries(orderedEntries),
+            imageFiles: [...imageFiles].sort(_editorCompareMediaFileNames),
+            videoFiles: [...videoFiles].sort(_editorCompareMediaFileNames),
             error: "Selecione apenas vídeos MP4/MOV/WEBM/MKV/AVI ou imagens JPG/PNG/WebP.",
         };
     }
 
-    return { orderedEntries, imageFiles, videoFiles, error: "" };
+    return {
+        orderedEntries: _editorSortOrderedMediaEntries(orderedEntries),
+        imageFiles: [...imageFiles].sort(_editorCompareMediaFileNames),
+        videoFiles: [...videoFiles].sort(_editorCompareMediaFileNames),
+        error: "",
+    };
 }
 
 async function _editorUploadSingleVideoProject(file) {
