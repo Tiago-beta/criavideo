@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v310 loaded");
+console.log("[CriaVideo] app.js v311 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -17772,6 +17772,9 @@ const _EDITOR_TIMELINE_MIN_ZOOM = 0.5;
 const _EDITOR_TIMELINE_MAX_ZOOM = 12;
 const _EDITOR_TIMELINE_ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12];
 const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
+const _EDITOR_SEGMENT_SPEED_MIN = 0.25;
+const _EDITOR_SEGMENT_SPEED_MAX = 4;
+const _EDITOR_SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 const _EDITOR_TRANSITION_OPTIONS = [
     { value: "dissolve", label: "Dissolver", desc: "Mistura suave entre os dois clipes", preview: "dissolve" },
     { value: "fade-black", label: "Escurecer", desc: "Sai no preto e entra no próximo", preview: "fade-black" },
@@ -18407,6 +18410,28 @@ function _editorFindVideoSegment(id) {
     return _editorFindSegment("video", id);
 }
 
+function _editorClampSegmentSpeed(value) {
+    const parsed = Number(value || 1);
+    if (!Number.isFinite(parsed)) return 1;
+    return Math.max(_EDITOR_SEGMENT_SPEED_MIN, Math.min(_EDITOR_SEGMENT_SPEED_MAX, parsed));
+}
+
+function _editorSegmentPlaybackSpeed(seg) {
+    return _editorClampSegmentSpeed(seg?.speed);
+}
+
+function _editorSegTimelineDuration(seg) {
+    return Math.max(0, Number(seg?.end || 0) - Number(seg?.start || 0));
+}
+
+function _editorSegSourceDuration(seg) {
+    const explicit = Number(seg?.sourceDuration ?? seg?.source_duration ?? Number.NaN);
+    if (Number.isFinite(explicit) && explicit > 0) {
+        return explicit;
+    }
+    return _editorSegTimelineDuration(seg) * _editorSegmentPlaybackSpeed(seg);
+}
+
 function _editorSegSourceStart(seg) {
     return seg.sourceStart != null ? Number(seg.sourceStart) : Number(seg.start);
 }
@@ -18420,11 +18445,23 @@ function _editorEnsureSegmentSourceStart(seg) {
     if (seg.sourceStart == null) {
         seg.sourceStart = Number(seg.start || 0);
     }
+    seg.speed = _editorSegmentPlaybackSpeed(seg);
+    if (seg.sourceDuration == null) {
+        seg.sourceDuration = _editorSegSourceDuration(seg);
+    }
     return Number(seg.sourceStart || 0);
 }
 
+function _editorEnsureSegmentSourceDuration(seg) {
+    if (!seg) return 0;
+    const duration = _editorSegSourceDuration(seg);
+    seg.sourceDuration = duration;
+    seg.speed = _editorSegmentPlaybackSpeed(seg);
+    return duration;
+}
+
 function _editorSegSourceEnd(seg) {
-    return _editorSegSourceStart(seg) + Math.max(0, Number(seg.end) - Number(seg.start));
+    return _editorSegSourceStart(seg) + _editorSegSourceDuration(seg);
 }
 
 function _editorSegSourceTimeAtTimelineTime(seg, timelineTime) {
@@ -18432,8 +18469,10 @@ function _editorSegSourceTimeAtTimelineTime(seg, timelineTime) {
     const start = Number(seg.start || 0);
     const sourceStart = _editorSegSourceStart(seg);
     const sourceEnd = _editorSegSourceEnd(seg);
+    const timelineSpan = Math.max(0.0001, _editorSegTimelineDuration(seg));
     const span = Math.max(0, sourceEnd - sourceStart);
-    const offset = Math.max(0, Math.min(span, Number(timelineTime || 0) - start));
+    const rate = span > 0 ? (span / timelineSpan) : _editorSegmentPlaybackSpeed(seg);
+    const offset = Math.max(0, Math.min(span, (Number(timelineTime || 0) - start) * rate));
     if (_editorSegmentIsReversed(seg)) {
         const epsilon = span > 0.05 ? 0.03 : 0;
         return Math.max(sourceStart, sourceEnd - offset - epsilon);
@@ -18441,15 +18480,19 @@ function _editorSegSourceTimeAtTimelineTime(seg, timelineTime) {
     return Math.min(sourceEnd, sourceStart + offset);
 }
 
+function _editorGetTrackSegmentAtTimelineTime(track = "video", timelineTime = 0) {
+    const sorted = [..._editorGetSegments(track)].sort((a, b) => a.start - b.start);
+    return sorted.find((seg) => timelineTime >= Number(seg.start || 0) - 0.01 && timelineTime <= Number(seg.end || 0) + 0.01) || null;
+}
+
+function _editorTimelineToTrackSourceTime(timelineTime, track = "video") {
+    const seg = _editorGetTrackSegmentAtTimelineTime(track, Number(timelineTime || 0));
+    if (!seg) return Number(timelineTime || 0);
+    return _editorSegSourceTimeAtTimelineTime(seg, timelineTime);
+}
+
 function _editorTimelineToSourceTime(timelineTime) {
-    if (!_editor.videoSegments.length) return timelineTime;
-    const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
-    for (const seg of sorted) {
-        if (timelineTime >= Number(seg.start) - 0.01 && timelineTime <= Number(seg.end) + 0.01) {
-            return _editorSegSourceTimeAtTimelineTime(seg, timelineTime);
-        }
-    }
-    return timelineTime;
+    return _editorTimelineToTrackSourceTime(timelineTime, "video");
 }
 
 function _editorSourceToTimelineTime(sourceTime) {
@@ -18459,13 +18502,55 @@ function _editorSourceToTimelineTime(sourceTime) {
         const ss = _editorSegSourceStart(seg);
         const se = _editorSegSourceEnd(seg);
         if (sourceTime >= ss - 0.01 && sourceTime <= se + 0.01) {
+            const rate = Math.max(0.0001, _editorSegSourceDuration(seg) / Math.max(0.0001, _editorSegTimelineDuration(seg)));
             if (_editorSegmentIsReversed(seg)) {
-                return Number(seg.start) + Math.max(0, se - Number(sourceTime || 0));
+                return Number(seg.start) + Math.max(0, se - Number(sourceTime || 0)) / rate;
             }
-            return Number(seg.start) + (sourceTime - ss);
+            return Number(seg.start) + ((sourceTime - ss) / rate);
         }
     }
     return sourceTime;
+}
+
+function _editorApplySegmentTimelineBounds(seg, nextStart, nextEnd) {
+    if (!seg) return;
+
+    const oldStart = Number(seg.start || 0);
+    const oldEnd = Number(seg.end || 0);
+    const oldTimelineDuration = Math.max(0.0001, oldEnd - oldStart);
+    const nextTimelineDuration = Math.max(0.1, Number(nextEnd || 0) - Number(nextStart || 0));
+    const oldSourceStart = _editorEnsureSegmentSourceStart(seg);
+    const oldSourceDuration = _editorEnsureSegmentSourceDuration(seg);
+    const oldSourceEnd = oldSourceStart + oldSourceDuration;
+
+    if (Math.abs((nextStart - oldStart) - (nextEnd - oldEnd)) <= 0.0001 && Math.abs(nextTimelineDuration - oldTimelineDuration) <= 0.0001) {
+        seg.start = Number(nextStart || 0);
+        seg.end = Number(nextEnd || 0);
+        seg.sourceStart = oldSourceStart;
+        seg.sourceDuration = oldSourceDuration;
+        seg.speed = _editorSegmentPlaybackSpeed(seg);
+        return;
+    }
+
+    const rate = oldSourceDuration / oldTimelineDuration;
+    const sourceDeltaStart = (Number(nextStart || 0) - oldStart) * rate;
+    const sourceDeltaEnd = (Number(nextEnd || 0) - oldEnd) * rate;
+    let nextSourceStart = oldSourceStart;
+    let nextSourceEnd = oldSourceEnd;
+
+    if (_editorSegmentIsReversed(seg)) {
+        nextSourceStart = oldSourceStart - sourceDeltaEnd;
+        nextSourceEnd = oldSourceEnd - sourceDeltaStart;
+    } else {
+        nextSourceStart = oldSourceStart + sourceDeltaStart;
+        nextSourceEnd = oldSourceEnd + sourceDeltaEnd;
+    }
+
+    seg.start = Number(nextStart || 0);
+    seg.end = Number(nextEnd || 0);
+    seg.sourceStart = Math.max(0, Math.min(nextSourceStart, nextSourceEnd));
+    seg.sourceDuration = Math.max(0.05, Math.abs(nextSourceEnd - nextSourceStart));
+    seg.speed = _editorSegmentPlaybackSpeed(seg);
 }
 
 function _editorRippleCloseGaps(track) {
@@ -18475,7 +18560,8 @@ function _editorRippleCloseGaps(track) {
     let cursor = 0;
     segs.forEach(seg => {
         _editorEnsureSegmentSourceStart(seg);
-        const duration = Math.max(0, Number(seg.end) - Number(seg.start));
+        _editorEnsureSegmentSourceDuration(seg);
+        const duration = _editorSegTimelineDuration(seg);
         seg.start = cursor;
         seg.end = cursor + duration;
         cursor = seg.end;
@@ -18703,8 +18789,12 @@ function _editorHasReversedVideoSegments() {
     return _editor.videoSegments.some((seg) => _editorSegmentIsReversed(seg));
 }
 
+function _editorHasSpeedAdjustedVideoSegments() {
+    return _editor.videoSegments.some((seg) => Math.abs(_editorSegmentPlaybackSpeed(seg) - 1) > 0.001);
+}
+
 function _editorShouldUseVirtualVideoPlayback() {
-    return _editorHasReversedVideoSegments();
+    return _editorHasReversedVideoSegments() || _editorHasSpeedAdjustedVideoSegments();
 }
 
 function _editorGetVideoTailAnchorTime() {
@@ -19263,10 +19353,12 @@ function _editorPrimeMusicPreviewPlayback(videoTime = 0) {
 
     const audio = _editorGetMusicPreviewAudio();
     const attemptPlayback = () => {
-        let targetTime = Math.max(0, Number(videoTime || 0));
+        const activeSegment = _editorGetTrackSegmentAtTimelineTime("audio", Number(videoTime || 0));
+        let targetTime = Math.max(0, _editorTimelineToTrackSourceTime(videoTime, "audio"));
+        audio.playbackRate = Math.max(0.25, Math.min(8, Number(_editor.playbackRate || 1) * _editorSegmentPlaybackSpeed(activeSegment)));
         const duration = Number(audio.duration || 0);
         if (Number.isFinite(duration) && duration > 0.05) {
-            targetTime %= duration;
+            targetTime = Math.max(0, Math.min(targetTime, Math.max(0, duration - 0.02)));
         }
 
         if (audio.readyState >= 1 && Math.abs(Number(audio.currentTime || 0) - targetTime) > 0.3) {
@@ -19360,12 +19452,13 @@ function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
     }
 
     audio.volume = Math.max(0, Math.min(1, (_editor.musicVolume || 0) / 100));
-    audio.playbackRate = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
+    const activeSegment = _editorGetTrackSegmentAtTimelineTime("audio", Number(videoTime || 0));
+    audio.playbackRate = Math.max(0.25, Math.min(8, Number(_editor.playbackRate || 1) * _editorSegmentPlaybackSpeed(activeSegment)));
 
-    let targetTime = Math.max(0, Number(videoTime || 0));
+    let targetTime = Math.max(0, _editorTimelineToTrackSourceTime(videoTime, "audio"));
     const duration = Number(audio.duration || 0);
     if (Number.isFinite(duration) && duration > 0.05) {
-        targetTime = targetTime % duration;
+        targetTime = Math.max(0, Math.min(targetTime, Math.max(0, duration - 0.02)));
     }
 
     if (Math.abs(Number(audio.currentTime || 0) - targetTime) > 0.25) {
@@ -19410,7 +19503,9 @@ function _editorCloneVideoSegmentsForAudio() {
             start: Number(seg.start || 0),
             end: Number(seg.end || 0),
             sourceStart: _editorSegSourceStart(seg),
+            sourceDuration: _editorSegSourceDuration(seg),
             reversed: _editorSegmentIsReversed(seg),
+            speed: _editorSegmentPlaybackSpeed(seg),
         };
         return clone;
     });
@@ -19501,7 +19596,7 @@ function _editorRecomputeTrimBounds() {
 
 function _editorInitVideoSegments() {
     const dur = Math.max(_editor.duration || 0, 0.1);
-    _editor.videoSegments = [{ id: _editorGenId(), start: 0, end: dur, sourceStart: 0, reversed: false }];
+    _editor.videoSegments = [{ id: _editorGenId(), start: 0, end: dur, sourceStart: 0, sourceDuration: dur, speed: 1, reversed: false }];
     _editor.audioSegments = _editorCloneVideoSegmentsForAudio();
     _editor.selectedTracks = ["video"];
     _editor.selectedInsertTrack = "video";
@@ -22406,7 +22501,7 @@ function _fmtTime(sec) {
 }
 
 function _editorFormatRateLabel(rate = 1) {
-    const safeRate = Math.max(0.25, Math.min(2, Number(rate || 1)));
+    const safeRate = Math.max(_EDITOR_SEGMENT_SPEED_MIN, Math.min(_EDITOR_SEGMENT_SPEED_MAX, Number(rate || 1)));
     return `${safeRate.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1")}x`;
 }
 
@@ -22722,7 +22817,6 @@ function _editorMovePlayhead(t) {
 }
 
 function _editorClampToVideoSegments(timeSec) {
-        _editor.audioSegments = [{ id: _editorGenId(), start: 0, end: _editorGetTimelineDuration(), sourceStart: 0 }];
     const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
     let t = Math.max(0, Math.min(_editor.duration || 0, timeSec));
     const inside = sorted.find(seg => t >= seg.start && t <= seg.end);
@@ -23559,6 +23653,9 @@ function _editorRenderProps() {
         const selectedSeg = _editor.selectedClip.kind === "segment"
             ? _editorFindSegment(_editor.selectedClip.track || "video", _editor.selectedClip.id)
             : null;
+        const selectedSegTrack = String(_editor.selectedClip.track || "video");
+        const selectedSegSpeed = selectedSeg ? _editorSegmentPlaybackSpeed(selectedSeg) : 1;
+        const selectedSegSourceDuration = selectedSeg ? _editorSegSourceDuration(selectedSeg) : 0;
         const segInfo = selectedSeg
             ? `${_fmtTime(selectedSeg.start)} - ${_fmtTime(selectedSeg.end)} (${_fmtTime(selectedSeg.end - selectedSeg.start)})`
             : "Nenhum trecho selecionado";
@@ -23616,6 +23713,42 @@ function _editorRenderProps() {
                     <div class="editor-props-group editor-track-props-volume-group">
                         <label>Volume das faixas selecionadas</label>
                         <div class="editor-track-props-volume-list">${volumeControlsHtml}</div>
+                    </div>
+                ` : ""}
+                ${selectedSeg ? `
+                    <div class="editor-props-group editor-track-props-volume-group">
+                        <label>Velocidade do trecho selecionado</label>
+                        <div class="editor-track-props-volume-item">
+                            <div class="editor-track-props-volume-head">
+                                <span class="editor-track-props-volume-name-wrap">
+                                    <span class="editor-track-props-volume-name">${selectedSegTrack === "audio" ? "Trecho do audio externo" : "Trecho do video"}</span>
+                                </span>
+                                <span class="editor-track-props-volume-value">${_editorFormatRateLabel(selectedSegSpeed)}</span>
+                            </div>
+                            <input
+                                class="editor-track-props-volume-slider"
+                                type="range"
+                                min="${_EDITOR_SEGMENT_SPEED_MIN}"
+                                max="${_EDITOR_SEGMENT_SPEED_MAX}"
+                                step="0.05"
+                                value="${selectedSegSpeed}"
+                                onchange="_editorSetSelectedSegmentSpeed(this.value)"
+                            >
+                            <div class="editor-trim-values">
+                                <span>Origem: ${_fmtTime(selectedSegSourceDuration)}</span>
+                                <span>Duração na timeline: ${_fmtTime(selectedSeg.end - selectedSeg.start)}</span>
+                            </div>
+                            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+                                ${_EDITOR_SEGMENT_SPEED_PRESETS.map((rate) => `
+                                    <button
+                                        class="editor-add-btn${Math.abs(rate - selectedSegSpeed) < 0.001 ? " active" : ""}"
+                                        type="button"
+                                        style="margin-top:0;padding:6px 10px;min-width:0"
+                                        onclick="_editorSetSelectedSegmentSpeed(${rate})"
+                                    >${_editorFormatRateLabel(rate)}</button>
+                                `).join("")}
+                            </div>
+                        </div>
                     </div>
                 ` : ""}
             </div>
@@ -24265,15 +24398,21 @@ function _editorSplitAtCurrentTime() {
 
         ensureSaved();
         const origSrc = _editorSegSourceStart(seg);
+        const origSourceDuration = _editorSegSourceDuration(seg);
+        const origSourceEnd = origSrc + origSourceDuration;
         const reversedFlag = _editorSegmentIsReversed(seg);
+        const speed = _editorSegmentPlaybackSpeed(seg);
+        const splitRatio = Math.max(0, Math.min(1, (t - Number(seg.start || 0)) / Math.max(0.0001, _editorSegTimelineDuration(seg))));
+        const firstSourceDuration = Math.max(0.05, origSourceDuration * splitRatio);
+        const secondSourceDuration = Math.max(0.05, origSourceDuration - firstSourceDuration);
         const firstSourceStart = reversedFlag
-            ? _editorSegSourceTimeAtTimelineTime(seg, t)
+            ? Math.max(origSrc, origSourceEnd - firstSourceDuration)
             : origSrc;
-        const first = { id: _editorGenId(), start: seg.start, end: t, sourceStart: firstSourceStart, reversed: reversedFlag };
         const secondSourceStart = reversedFlag
             ? origSrc
-            : origSrc + (t - Number(seg.start));
-        const second = { id: _editorGenId(), start: t, end: seg.end, sourceStart: secondSourceStart, reversed: reversedFlag };
+            : origSrc + firstSourceDuration;
+        const first = { id: _editorGenId(), start: seg.start, end: t, sourceStart: firstSourceStart, sourceDuration: firstSourceDuration, speed, reversed: reversedFlag };
+        const second = { id: _editorGenId(), start: t, end: seg.end, sourceStart: secondSourceStart, sourceDuration: secondSourceDuration, speed, reversed: reversedFlag };
         const nextSegments = segments
             .filter(item => item !== seg)
             .concat([first, second]);
@@ -24540,11 +24679,8 @@ function _editorSetTrimStart(val) {
     if (isNaN(parsed) || !_editor.videoSegments.length) return;
     _editorSortVideoSegments();
     const first = _editor.videoSegments[0];
-    const oldStart = Number(first.start || 0);
     const nextStart = Math.max(0, Math.min(first.end - 0.1, parsed));
-    const sourceStart = _editorEnsureSegmentSourceStart(first);
-    first.start = nextStart;
-    first.sourceStart = Math.max(0, sourceStart + (nextStart - oldStart));
+    _editorApplySegmentTimelineBounds(first, nextStart, Number(first.end || nextStart + 0.1));
     _editorRecomputeTrimBounds();
     _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     const label = document.getElementById("trim-start-label");
@@ -24558,7 +24694,8 @@ function _editorSetTrimEnd(val) {
     if (isNaN(parsed) || !_editor.videoSegments.length) return;
     _editorSortVideoSegments();
     const last = _editor.videoSegments[_editor.videoSegments.length - 1];
-    last.end = Math.max(last.start + 0.1, Math.min(_editor.duration || parsed, parsed));
+    const nextEnd = Math.max(last.start + 0.1, Math.min(_editor.duration || parsed, parsed));
+    _editorApplySegmentTimelineBounds(last, Number(last.start || 0), nextEnd);
     _editorRecomputeTrimBounds();
     _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     const label = document.getElementById("trim-end-label");
@@ -24577,7 +24714,7 @@ function _editorUploadMusic(input) {
     _editor._musicServerPath = "";
     _editor._musicSource = "audio";
     _editorSetMusicPreviewSource(_editor.musicUrl);
-    _editor.audioSegments = [{ id: _editorGenId(), start: 0, end: _editorGetTimelineDuration(), sourceStart: 0 }];
+    _editor.audioSegments = [{ id: _editorGenId(), start: 0, end: _editorGetTimelineDuration(), sourceStart: 0, sourceDuration: _editorGetTimelineDuration(), speed: 1 }];
     _editor.selectedTracks = ["video", "audio"];
     _editor.selectedClip = { kind: "music", id: "music" };
     _editorRefreshQuickActions();
@@ -24606,7 +24743,7 @@ function _editorApplyVideoAudioSource(payload) {
     _editor.musicUrl = mediaUrl;
     _editorSetMusicPreviewSource(_editor.musicUrl || "");
 
-    _editor.audioSegments = [{ id: _editorGenId(), start: 0, end: _editorGetTimelineDuration(), sourceStart: 0 }];
+    _editor.audioSegments = [{ id: _editorGenId(), start: 0, end: _editorGetTimelineDuration(), sourceStart: 0, sourceDuration: _editorGetTimelineDuration(), speed: 1 }];
     _editor.selectedTracks = ["video", "audio"];
     _editor.selectedClip = { kind: "music", id: "music" };
     _editorRefreshQuickActions();
@@ -24931,6 +25068,48 @@ function _editorSetTrackVolumeFromTrim(track, val) {
     }
 }
 window._editorSetTrackVolumeFromTrim = _editorSetTrackVolumeFromTrim;
+
+function _editorSetSelectedSegmentSpeed(value) {
+    if (_editor.selectedClip.kind !== "segment") return;
+
+    const track = String(_editor.selectedClip.track || "video");
+    const segment = _editorFindSegment(track, _editor.selectedClip.id);
+    if (!segment) return;
+
+    const nextSpeed = _editorClampSegmentSpeed(value);
+    const currentSpeed = _editorSegmentPlaybackSpeed(segment);
+    if (Math.abs(nextSpeed - currentSpeed) < 0.001) return;
+
+    _editorSaveState();
+    const sourceDuration = _editorEnsureSegmentSourceDuration(segment);
+    segment.speed = nextSpeed;
+    segment.sourceDuration = sourceDuration;
+    segment.end = Number(segment.start || 0) + (sourceDuration / nextSpeed);
+
+    _editorSortSegments(track);
+    _editorRippleCloseGaps(track);
+
+    if (track === "video") {
+        _editorRecomputeTrimBounds();
+        _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
+    }
+
+    if (_editor.playing) {
+        _editor.playing = false;
+        _editorStopVirtualTimelinePlayback();
+        document.getElementById("editor-video")?.pause();
+        _editorGetMusicPreviewAudio()?.pause?.();
+        _updatePlayIcon();
+    }
+
+    const previewTime = Number(_editor.timelineTime || document.getElementById("editor-video")?.currentTime || 0);
+    _editorRenderTimeline();
+    _editorRenderProps();
+    _editorApplyTimelineFrame(previewTime, false);
+    _editorRefreshQuickActions();
+    _editorScheduleDraftPersist(120);
+}
+window._editorSetSelectedSegmentSpeed = _editorSetSelectedSegmentSpeed;
 
 // ---------- Filter ----------
 function _editorSetFilter(name) {
@@ -25625,10 +25804,10 @@ function _editorApplyDraggedRange(kind, id, start, end, track = "") {
         const item = _editorFindSegment(targetTrack, id);
         if (!item) return;
         _editorEnsureSegmentSourceStart(item);
+        _editorEnsureSegmentSourceDuration(item);
         const span = Math.max(0.1, end - start);
         const [clampedStart, clampedEnd] = _editorClampSegmentRange(targetTrack, id, start, span);
-        item.start = clampedStart;
-        item.end = clampedEnd;
+        _editorApplySegmentTimelineBounds(item, clampedStart, clampedEnd);
         if (targetTrack === "video") {
             _editorRecomputeTrimBounds();
             _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
@@ -25947,15 +26126,15 @@ async function _editorExport() {
         trim_start: _editor.trimStart,
         trim_end: _editor.trimEnd,
         trim_video_segments: _editor.videoSegments
-            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg), reversed: _editorSegmentIsReversed(seg) }))
+            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg), reversed: _editorSegmentIsReversed(seg), speed: _editorSegmentPlaybackSpeed(seg) }))
             .sort((a, b) => a.start - b.start)
             .filter(seg => seg.end > seg.start + 0.05),
         trim_audio_segments: _editor.audioSegments
-            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg), reversed: _editorSegmentIsReversed(seg) }))
+            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg), reversed: _editorSegmentIsReversed(seg), speed: _editorSegmentPlaybackSpeed(seg) }))
             .sort((a, b) => a.start - b.start)
             .filter(seg => seg.end > seg.start + 0.05),
         trim_segments: _editor.videoSegments
-            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg), reversed: _editorSegmentIsReversed(seg) }))
+            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg), reversed: _editorSegmentIsReversed(seg), speed: _editorSegmentPlaybackSpeed(seg) }))
             .sort((a, b) => a.start - b.start)
             .filter(seg => seg.end > seg.start + 0.05),
         filter: _editor.filter,

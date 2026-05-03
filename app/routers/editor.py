@@ -595,10 +595,15 @@ def _normalize_trim_segment_entries(
             st = float(seg.get("start") or 0)
             et = float(seg.get("end") or 0)
             reversed_flag = bool(seg.get("reversed", False))
+            speed = float(seg.get("speed") or 1)
         else:
             st = float(getattr(seg, "start", 0) or 0)
             et = float(getattr(seg, "end", 0) or 0)
             reversed_flag = bool(getattr(seg, "reversed", False))
+            speed = float(getattr(seg, "speed", 1) or 1)
+
+        if not math.isfinite(speed) or speed <= 0:
+            speed = 1.0
 
         st = max(0.0, st)
         et = max(st, et)
@@ -606,7 +611,7 @@ def _normalize_trim_segment_entries(
             st = min(st, max_duration)
             et = min(et, max_duration)
         if et - st >= 0.05:
-            segments.append({"start": st, "end": et, "reversed": reversed_flag})
+            segments.append({"start": st, "end": et, "reversed": reversed_flag, "speed": speed})
 
     if not segments and trim_end > trim_start:
         st = max(0.0, float(trim_start or 0))
@@ -615,16 +620,16 @@ def _normalize_trim_segment_entries(
             st = min(st, max_duration)
             et = min(et, max_duration)
         if et - st >= 0.05:
-            segments.append({"start": st, "end": et, "reversed": False})
+            segments.append({"start": st, "end": et, "reversed": False, "speed": 1.0})
 
     if not segments and trim_start > 0 and max_duration > trim_start:
-        segments.append({"start": float(trim_start), "end": max_duration, "reversed": False})
+        segments.append({"start": float(trim_start), "end": max_duration, "reversed": False, "speed": 1.0})
 
     if not segments:
         if max_duration > 0:
-            segments.append({"start": 0.0, "end": max_duration, "reversed": False})
+            segments.append({"start": 0.0, "end": max_duration, "reversed": False, "speed": 1.0})
         else:
-            segments.append({"start": 0.0, "end": 1e9, "reversed": False})
+            segments.append({"start": 0.0, "end": 1e9, "reversed": False, "speed": 1.0})
 
     segments.sort(key=lambda item: float(item["start"]))
 
@@ -634,14 +639,19 @@ def _normalize_trim_segment_entries(
         st = float(item["start"])
         et = float(item["end"])
         reversed_flag = bool(item.get("reversed", False))
+        speed = float(item.get("speed", 1.0) or 1.0)
         if not merged:
-            merged.append({"start": st, "end": et, "reversed": reversed_flag})
+            merged.append({"start": st, "end": et, "reversed": reversed_flag, "speed": speed})
             continue
         prev = merged[-1]
-        if st <= float(prev["end"]) + 0.01 and reversed_flag == bool(prev.get("reversed", False)):
+        if (
+            st <= float(prev["end"]) + 0.01
+            and reversed_flag == bool(prev.get("reversed", False))
+            and abs(speed - float(prev.get("speed", 1.0) or 1.0)) <= 1e-4
+        ):
             prev["end"] = max(float(prev["end"]), et)
         else:
-            merged.append({"start": st, "end": et, "reversed": reversed_flag})
+            merged.append({"start": st, "end": et, "reversed": reversed_flag, "speed": speed})
 
     return [item for item in merged if float(item["end"]) - float(item["start"]) >= 0.05]
 
@@ -649,6 +659,50 @@ def _normalize_trim_segment_entries(
 def _build_segment_select_expr(segments: list[tuple[float, float]]) -> str:
     parts = [f"between(t\\,{st:.6f}\\,{et:.6f})" for st, et in segments]
     return "+".join(parts)
+
+
+def _segment_entry_values(entry: dict | tuple[float, float]) -> tuple[float, float, float]:
+    if isinstance(entry, dict):
+        start = max(0.0, float(entry.get("start", 0.0) or 0.0))
+        end = max(start, float(entry.get("end", 0.0) or 0.0))
+        speed = float(entry.get("speed", 1.0) or 1.0)
+    else:
+        start = max(0.0, float(entry[0] or 0.0))
+        end = max(start, float(entry[1] or 0.0))
+        speed = 1.0
+    if not math.isfinite(speed) or speed <= 0:
+        speed = 1.0
+    return start, end, speed
+
+
+def _segment_output_duration(entry: dict | tuple[float, float]) -> float:
+    start, end, speed = _segment_entry_values(entry)
+    return max(0.0, end - start) / speed
+
+
+def _segments_have_speed_adjustment(entries: list[dict]) -> bool:
+    return any(abs(float(item.get("speed", 1.0) or 1.0) - 1.0) > 1e-4 for item in entries or [])
+
+
+def _build_atempo_filter_chain(speed: float) -> str:
+    safe_speed = float(speed or 1.0)
+    if not math.isfinite(safe_speed) or safe_speed <= 0:
+        safe_speed = 1.0
+
+    factors: list[float] = []
+    while safe_speed < 0.5 - 1e-6:
+        factors.append(0.5)
+        safe_speed /= 0.5
+    while safe_speed > 2.0 + 1e-6:
+        factors.append(2.0)
+        safe_speed /= 2.0
+    if abs(safe_speed - 1.0) > 1e-6 or not factors:
+        factors.append(safe_speed)
+    return ",".join(
+        f"atempo={factor:.6f}"
+        for factor in factors
+        if abs(factor - 1.0) > 1e-6
+    )
 
 
 def _build_segment_concat_filter_parts(
@@ -664,6 +718,7 @@ def _build_segment_concat_filter_parts(
     for idx, entry in enumerate(segment_entries or []):
         start = max(0.0, float(entry.get("start", 0.0) or 0.0))
         end = max(start, float(entry.get("end", 0.0) or 0.0))
+        speed = max(0.05, float(entry.get("speed", 1.0) or 1.0))
         if end - start < 0.02:
             continue
 
@@ -673,10 +728,15 @@ def _build_segment_concat_filter_parts(
             chain = f"{stream_ref}trim=start={start:.6f}:end={end:.6f},setpts=PTS-STARTPTS"
             if reversed_flag:
                 chain += ",reverse,setpts=PTS-STARTPTS"
+            if abs(speed - 1.0) > 1e-4:
+                chain += f",setpts=PTS/{speed:.6f}"
         else:
             chain = f"{stream_ref}atrim=start={start:.6f}:end={end:.6f},asetpts=PTS-STARTPTS"
             if reversed_flag:
                 chain += ",areverse,asetpts=PTS-STARTPTS"
+            atempo_chain = _build_atempo_filter_chain(speed)
+            if atempo_chain:
+                chain += f",{atempo_chain}"
         chain += f"[{label}]"
         parts.append(chain)
         labels.append(f"[{label}]")
@@ -698,7 +758,7 @@ def _build_segment_concat_filter_parts(
 def _map_source_interval_to_output(
     start_time: float,
     end_time: float,
-    segments: list[tuple[float, float]],
+    segments: list[dict] | list[tuple[float, float]],
 ) -> list[tuple[float, float]]:
     start = max(0.0, float(start_time or 0.0))
     end = max(start, float(end_time or 0.0))
@@ -707,21 +767,22 @@ def _map_source_interval_to_output(
 
     mapped: list[tuple[float, float]] = []
     offset = 0.0
-    for seg_start, seg_end in segments:
+    for segment in segments:
+        seg_start, seg_end, speed = _segment_entry_values(segment)
         overlap_start = max(start, seg_start)
         overlap_end = min(end, seg_end)
         if overlap_end - overlap_start >= 0.02:
-            out_start = offset + (overlap_start - seg_start)
-            out_end = out_start + (overlap_end - overlap_start)
+            out_start = offset + ((overlap_start - seg_start) / speed)
+            out_end = out_start + ((overlap_end - overlap_start) / speed)
             mapped.append((out_start, out_end))
-        offset += seg_end - seg_start
+        offset += max(0.0, seg_end - seg_start) / speed
     return mapped
 
 
 def _map_source_interval_to_output_detailed(
     start_time: float,
     end_time: float,
-    segments: list[tuple[float, float]],
+    segments: list[dict] | list[tuple[float, float]],
 ) -> list[tuple[float, float, float, float]]:
     """Map source [start,end] to output timeline preserving overlap source ranges.
 
@@ -734,14 +795,15 @@ def _map_source_interval_to_output_detailed(
 
     mapped: list[tuple[float, float, float, float]] = []
     offset = 0.0
-    for seg_start, seg_end in segments:
+    for segment in segments:
+        seg_start, seg_end, speed = _segment_entry_values(segment)
         overlap_start = max(start, seg_start)
         overlap_end = min(end, seg_end)
         if overlap_end - overlap_start >= 0.02:
-            out_start = offset + (overlap_start - seg_start)
-            out_end = out_start + (overlap_end - overlap_start)
+            out_start = offset + ((overlap_start - seg_start) / speed)
+            out_end = out_start + ((overlap_end - overlap_start) / speed)
             mapped.append((out_start, out_end, overlap_start, overlap_end))
-        offset += seg_end - seg_start
+        offset += max(0.0, seg_end - seg_start) / speed
 
     return mapped
 
@@ -803,6 +865,7 @@ class TrimSegment(BaseModel):
     start: float
     end: float
     reversed: bool = False
+    speed: float = 1.0
 
 
 class SmartCutEntry(BaseModel):
@@ -1975,6 +2038,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
         src_duration, _ = _probe_video_metadata(src_video)
         source_has_audio = _probe_has_audio_stream(src_video)
+        has_music = bool(req.music_path) and os.path.exists(req.music_path)
         video_segment_entries = _normalize_trim_segment_entries(
             req.trim_video_segments or req.trim_segments,
             req.trim_start,
@@ -1985,7 +2049,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             req.trim_audio_segments or req.trim_segments,
             req.trim_start,
             req.trim_end,
-            src_duration,
+            0.0 if has_music else src_duration,
         )
         video_segments = [(float(item["start"]), float(item["end"])) for item in video_segment_entries]
         audio_segments = [(float(item["start"]), float(item["end"])) for item in audio_segment_entries]
@@ -2002,7 +2066,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
         # If the user cut the video but left audio track untouched, keep base audio
         # synchronized with the same cuts to avoid perceived "reinserted" sections.
-        if source_has_audio:
+        if source_has_audio and not has_music:
             video_has_cuts = not _is_full_source_range(video_segments)
             audio_is_untouched = _is_full_source_range(audio_segments)
             if video_has_cuts and audio_is_untouched:
@@ -2010,22 +2074,35 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 audio_segments = [(float(item["start"]), float(item["end"])) for item in audio_segment_entries]
                 logger.info("[editor] Auto-syncing audio segments to video cuts")
 
+        base_audio_segment_entries = [dict(item) for item in (video_segment_entries if has_music else audio_segment_entries)]
+        base_audio_segments = [(float(item["start"]), float(item["end"])) for item in base_audio_segment_entries]
+
         use_video_segment_filter = not (
             len(video_segments) == 1
             and video_segments[0][0] <= 0.01
             and (src_duration <= 0 or video_segments[0][1] >= max(0.0, src_duration - 0.01))
         )
-        use_audio_segment_filter = not (
+        use_audio_segment_filter = has_music or not (
             len(audio_segments) == 1
             and audio_segments[0][0] <= 0.01
-            and (src_duration <= 0 or audio_segments[0][1] >= max(0.0, src_duration - 0.01))
+            and ((not has_music and src_duration <= 0) or (not has_music and audio_segments[0][1] >= max(0.0, src_duration - 0.01)))
+        )
+        use_base_audio_segment_filter = not (
+            len(base_audio_segments) == 1
+            and base_audio_segments[0][0] <= 0.01
+            and (src_duration <= 0 or base_audio_segments[0][1] >= max(0.0, src_duration - 0.01))
         )
         video_has_reversed_segments = any(bool(item.get("reversed", False)) for item in video_segment_entries)
         audio_has_reversed_segments = any(bool(item.get("reversed", False)) for item in audio_segment_entries)
+        base_audio_has_reversed_segments = any(bool(item.get("reversed", False)) for item in base_audio_segment_entries)
+        video_has_speed_adjusted_segments = _segments_have_speed_adjustment(video_segment_entries)
+        audio_has_speed_adjusted_segments = _segments_have_speed_adjustment(audio_segment_entries)
+        base_audio_has_speed_adjusted_segments = _segments_have_speed_adjustment(base_audio_segment_entries)
 
         video_select_expr = _build_segment_select_expr(video_segments)
         audio_select_expr = _build_segment_select_expr(audio_segments)
-        output_video_duration = sum(max(0.0, float(item["end"]) - float(item["start"])) for item in video_segment_entries)
+        base_audio_select_expr = _build_segment_select_expr(base_audio_segments)
+        output_video_duration = sum(_segment_output_duration(item) for item in video_segment_entries)
 
         valid_media_layers: list[dict] = []
         allowed_layer_root = os.path.normpath(
@@ -2084,7 +2161,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             if end_time <= start_time + 0.02:
                 continue
 
-            mapped_ranges = _map_source_interval_to_output_detailed(start_time, end_time, video_segments)
+            mapped_ranges = _map_source_interval_to_output_detailed(start_time, end_time, video_segment_entries)
             candidate_ranges: list[tuple[float, float, float]] = []
             mapped_duration = 0.0
             for mapped_start, mapped_end, overlap_start, _overlap_end in mapped_ranges:
@@ -2164,7 +2241,6 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         cmd += ["-i", src_video]
 
         # Music input
-        has_music = bool(req.music_path) and os.path.exists(req.music_path)
         if has_music:
             cmd += ["-i", req.music_path]
 
@@ -2175,7 +2251,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         _, overlay_canvas_height = _estimate_padded_canvas_size(src_width, src_height, selected_aspect)
         overlay_scale = (overlay_canvas_height / 720.0) if overlay_canvas_height > 0 else 1.0
 
-        if use_video_segment_filter and not video_has_reversed_segments:
+        if use_video_segment_filter and not video_has_reversed_segments and not video_has_speed_adjusted_segments:
             vfilters.append(f"select='{video_select_expr}',setpts=N/FRAME_RATE/TB")
 
         # CSS-like filter mapping for FFmpeg
@@ -2202,7 +2278,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
         # Text overlays using drawtext
         for txt in req.texts:
-            mapped_ranges = _map_source_interval_to_output(txt.start_time, txt.end_time, video_segments)
+            mapped_ranges = _map_source_interval_to_output(txt.start_time, txt.end_time, video_segment_entries)
             for st, et in mapped_ranges:
                 base_fontsize = max(8, int(txt.font_size or 36))
                 fontsize_px = max(8, int(round(base_fontsize * overlay_scale)))
@@ -2215,7 +2291,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
         # Subtitle overlays
         for sub in req.subtitles:
-            mapped_ranges = _map_source_interval_to_output(sub.start_time, sub.end_time, video_segments)
+            mapped_ranges = _map_source_interval_to_output(sub.start_time, sub.end_time, video_segment_entries)
             for st, et in mapped_ranges:
                 color = sub.font_color.lstrip("#") if sub.font_color else "FFFFFF"
                 base_fontsize = max(8, int(sub.font_size or 28))
@@ -2248,7 +2324,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
         # Sticker/emoji overlays (drawtext with emoji font)
         for stk in req.stickers:
-            mapped_ranges = _map_source_interval_to_output(stk.start_time, stk.end_time, video_segments)
+            mapped_ranges = _map_source_interval_to_output(stk.start_time, stk.end_time, video_segment_entries)
             for st, et in mapped_ranges:
                 x_expr = f"(w*{stk.x/100})"
                 y_expr = f"(h*{stk.y/100})"
@@ -2282,7 +2358,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
             # Keep video filtering inside filter_complex when mixing audio so the
             # mapped video stream always comes from the edited (trimmed) output.
-            if video_has_reversed_segments:
+            if video_has_reversed_segments or video_has_speed_adjusted_segments:
                 reversed_video_parts, reversed_video_label = _build_segment_concat_filter_parts(
                     video_segment_entries,
                     "0:v",
@@ -2301,20 +2377,28 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
             if source_has_audio:
                 base_audio_label = "[0:a]"
-                if audio_has_reversed_segments:
+                if base_audio_has_reversed_segments or base_audio_has_speed_adjusted_segments:
                     reversed_audio_parts, reversed_audio_label = _build_segment_concat_filter_parts(
-                        audio_segment_entries,
+                        base_audio_segment_entries,
                         "0:a",
                         "audio",
-                        "aseg",
+                        "abase",
                     )
                     filter_complex_parts.extend(reversed_audio_parts)
                     base_audio_label = reversed_audio_label
-                elif use_audio_segment_filter:
-                    filter_complex_parts.append(f"[0:a]aselect='{audio_select_expr}',asetpts=N/SR/TB[a_src]")
+                elif use_base_audio_segment_filter:
+                    filter_complex_parts.append(f"[0:a]aselect='{base_audio_select_expr}',asetpts=N/SR/TB[a_src]")
                     base_audio_label = "[a_src]"
+
+                music_audio_parts, music_audio_label = _build_segment_concat_filter_parts(
+                    audio_segment_entries,
+                    "1:a",
+                    "audio",
+                    "mseg",
+                )
+                filter_complex_parts.extend(music_audio_parts)
                 filter_complex_parts.append(f"{base_audio_label}volume={orig_vol}[a0]")
-                filter_complex_parts.append(f"[1:a]volume={music_vol}[a1]")
+                filter_complex_parts.append(f"{music_audio_label}volume={music_vol}[a1]")
                 filter_complex_parts.append("[a0][a1]amix=inputs=2:duration=longest[a_mix]")
                 if final_output_duration > 0:
                     filter_complex_parts.append(f"[a_mix]atrim=0:{final_output_duration:.6f}[aout]")
@@ -2326,11 +2410,18 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     "-map", "[aout]",
                 ]
             else:
+                music_audio_parts, music_audio_label = _build_segment_concat_filter_parts(
+                    audio_segment_entries,
+                    "1:a",
+                    "audio",
+                    "mseg",
+                )
+                filter_complex_parts.extend(music_audio_parts)
                 if final_output_duration > 0:
-                    filter_complex_parts.append(f"[1:a]volume={music_vol}[a1]")
+                    filter_complex_parts.append(f"{music_audio_label}volume={music_vol}[a1]")
                     filter_complex_parts.append(f"[a1]atrim=0:{final_output_duration:.6f}[aout]")
                 else:
-                    filter_complex_parts.append(f"[1:a]volume={music_vol}[aout]")
+                    filter_complex_parts.append(f"{music_audio_label}volume={music_vol}[aout]")
                 cmd += [
                     "-filter_complex", ";".join(filter_complex_parts),
                     "-map", video_map,
@@ -2340,12 +2431,16 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             # Simple path: no external music mixing required.
             orig_vol = req.original_volume / 100
             afilters: list[str] = []
-            use_complex_segment_filters = video_has_reversed_segments or (source_has_audio and audio_has_reversed_segments)
+            use_complex_segment_filters = (
+                video_has_reversed_segments
+                or video_has_speed_adjusted_segments
+                or (source_has_audio and (audio_has_reversed_segments or audio_has_speed_adjusted_segments))
+            )
             if use_complex_segment_filters:
                 filter_complex_parts: list[str] = []
                 video_map = "0:v"
 
-                if video_has_reversed_segments:
+                if video_has_reversed_segments or video_has_speed_adjusted_segments:
                     reversed_video_parts, reversed_video_label = _build_segment_concat_filter_parts(
                         video_segment_entries,
                         "0:v",
@@ -2365,7 +2460,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 audio_map = ""
                 if source_has_audio:
                     base_audio_label = "[0:a]"
-                    if audio_has_reversed_segments:
+                    if audio_has_reversed_segments or audio_has_speed_adjusted_segments:
                         reversed_audio_parts, reversed_audio_label = _build_segment_concat_filter_parts(
                             audio_segment_entries,
                             "0:a",
