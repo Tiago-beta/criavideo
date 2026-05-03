@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v313 loaded");
+console.log("[CriaVideo] app.js v314 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -18809,6 +18809,43 @@ function _editorRippleCloseGaps(track) {
     });
 }
 
+function _editorCaptureTrackLayoutSnapshot(track = "video") {
+    return [..._editorGetSegments(track)]
+        .sort((a, b) => (a.start - b.start) || (a.end - b.end))
+        .map((segment) => ({
+            id: String(segment.id),
+            start: Number(segment.start || 0),
+            end: Number(segment.end || 0),
+            duration: _editorSegTimelineDuration(segment),
+        }));
+}
+
+function _editorRippleTrackFromSnapshot(track = "video", snapshot = [], startSegmentId = "") {
+    if (!Array.isArray(snapshot) || !snapshot.length) return;
+
+    const segmentsById = new Map(
+        _editorGetSegments(track).map((segment) => [String(segment.id), segment])
+    );
+    const startId = String(startSegmentId || snapshot[0]?.id || "");
+    let startIndex = snapshot.findIndex((entry) => entry.id === startId);
+    if (startIndex < 0) startIndex = 0;
+
+    let cumulativeShift = 0;
+    for (let index = startIndex; index < snapshot.length; index += 1) {
+        const entry = snapshot[index];
+        const segment = segmentsById.get(entry.id);
+        if (!segment) continue;
+
+        const duration = _editorSegTimelineDuration(segment);
+        if (index > startIndex) {
+            segment.start = Number(entry.start || 0) + cumulativeShift;
+            segment.end = Number(segment.start || 0) + duration;
+        }
+
+        cumulativeShift += duration - Number(entry.duration || 0);
+    }
+}
+
 function _editorShouldShowAudioTrack() {
     return Boolean(_editor.musicUrl || _editor._musicFile || _editor._musicServerPath);
 }
@@ -19777,7 +19814,7 @@ function _editorIsTrackSelected(track) {
     return _editorGetSelectedSegmentTracks().includes(track);
 }
 
-function _editorToggleTrackSelection(track) {
+function _editorToggleTrackSelection(track, options = {}) {
     if (!_editorIsTrackSelectable(track)) return;
 
     const toggle = Boolean(options.toggle);
@@ -25438,6 +25475,8 @@ function _editorApplyTrackSpeedChange(track = "video", nextSpeed = 1) {
     const segments = _editorGetSegments(track);
     if (!segments.length) return false;
 
+    const snapshot = _editorCaptureTrackLayoutSnapshot(track);
+
     let changed = false;
     segments.forEach((segment) => {
         const currentSpeed = _editorSegmentPlaybackSpeed(segment);
@@ -25452,7 +25491,8 @@ function _editorApplyTrackSpeedChange(track = "video", nextSpeed = 1) {
     if (!changed) return false;
 
     _editorSortSegments(track);
-    _editorRippleCloseGaps(track);
+    _editorRippleTrackFromSnapshot(track, snapshot, snapshot[0]?.id || "");
+    _editorSortSegments(track);
 
     if (track === "video") {
         _editorRecomputeTrimBounds();
@@ -25504,13 +25544,15 @@ function _editorSetSelectedSegmentSpeed(value) {
     if (Math.abs(nextSpeed - currentSpeed) < 0.001) return;
 
     _editorSaveState();
+    const snapshot = _editorCaptureTrackLayoutSnapshot(track);
     const sourceDuration = _editorEnsureSegmentSourceDuration(segment);
     segment.speed = nextSpeed;
     segment.sourceDuration = sourceDuration;
     segment.end = Number(segment.start || 0) + (sourceDuration / nextSpeed);
 
     _editorSortSegments(track);
-    _editorRippleCloseGaps(track);
+    _editorRippleTrackFromSnapshot(track, snapshot, segment.id);
+    _editorSortSegments(track);
 
     if (track === "video") {
         _editorRecomputeTrimBounds();
@@ -27241,6 +27283,21 @@ function _bindEditorEvents() {
         const label = e.target.closest(".editor-track-label");
         if (label) {
             const track = label.closest(".editor-track")?.dataset.track || "";
+            _editor.selectedInsertTrack = track || _editor.selectedInsertTrack;
+            if (_editorIsTrackSelectable(track)) {
+                _editorToggleTrackSelection(track, {
+                    toggle: Boolean(e.ctrlKey || e.metaKey || e.shiftKey),
+                });
+            } else {
+                _editorRefreshTrackSelectionUI();
+            }
+            e.stopPropagation();
+            return;
+        }
+
+        const trackContent = e.target.closest(".editor-track-content");
+        if (trackContent && !e.target.closest(".editor-track-clip") && !e.target.closest(".editor-transition-marker")) {
+            const track = trackContent.closest(".editor-track")?.dataset.track || "";
             _editor.selectedInsertTrack = track || _editor.selectedInsertTrack;
             if (_editorIsTrackSelectable(track)) {
                 _editorToggleTrackSelection(track, {

@@ -138,6 +138,32 @@ def _build_aspect_pad_filter(aspect_ratio: str | None) -> str | None:
     return "pad=w='ceil(max(iw,ih)/2)*2':h='ceil(max(iw,ih)/2)*2':x='(ow-iw)/2':y='(oh-ih)/2':color=black"
 
 
+def _build_aspect_cover_filter(width: int, height: int, aspect_ratio: str | None) -> str | None:
+    ar = _normalize_aspect_ratio(aspect_ratio)
+    if not ar:
+        return None
+
+    safe_width = max(2, _round_up_even(width))
+    safe_height = max(2, _round_up_even(height))
+    if ar == "9:16":
+        target_ratio = 9.0 / 16.0
+    elif ar == "16:9":
+        target_ratio = 16.0 / 9.0
+    else:
+        target_ratio = 1.0
+
+    src_ratio = float(safe_width) / float(safe_height)
+    if abs(src_ratio - target_ratio) <= 0.01:
+        return "setsar=1"
+
+    if src_ratio > target_ratio:
+        crop_width = min(safe_width, max(2, _round_up_even(safe_height * target_ratio)))
+        return f"crop={crop_width}:{safe_height},setsar=1"
+
+    crop_height = min(safe_height, max(2, _round_up_even(safe_width / target_ratio)))
+    return f"crop={safe_width}:{crop_height},setsar=1"
+
+
 def _get_smart_short_target_resolution(quality: str | None) -> tuple[int, int]:
     normalized = (quality or "").strip().lower()
     if normalized in {"fullhd", "enhance"}:
@@ -185,6 +211,31 @@ def _estimate_padded_canvas_size(width: int, height: int, aspect_ratio: str | No
         out_h = mx
 
     return _round_up_even(out_w), _round_up_even(out_h)
+
+
+def _estimate_cover_canvas_size(width: int, height: int, aspect_ratio: str | None) -> tuple[int, int]:
+    """Mirror centered crop geometry used in editor export so overlay sizing matches the filled preview."""
+    w = max(1, int(width or 0))
+    h = max(1, int(height or 0))
+    ar = _normalize_aspect_ratio(aspect_ratio)
+    if not ar:
+        return w, h
+
+    if ar == "9:16":
+        target_ratio = 9.0 / 16.0
+    elif ar == "16:9":
+        target_ratio = 16.0 / 9.0
+    else:
+        target_ratio = 1.0
+
+    src_ratio = float(w) / float(h)
+    if abs(src_ratio - target_ratio) <= 0.01:
+        return _round_up_even(w), _round_up_even(h)
+
+    if src_ratio > target_ratio:
+        return _round_up_even(h * target_ratio), _round_up_even(h)
+
+    return _round_up_even(w), _round_up_even(w / target_ratio)
 
 
 def _probe_video_metadata(video_path: str) -> tuple[float, str]:
@@ -2248,7 +2299,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         vfilters = []
         selected_aspect = _normalize_aspect_ratio(req.aspect_ratio) or _normalize_aspect_ratio(render.format) or "16:9"
         src_width, src_height = _probe_media_dimensions(src_video)
-        _, overlay_canvas_height = _estimate_padded_canvas_size(src_width, src_height, selected_aspect)
+        _, overlay_canvas_height = _estimate_cover_canvas_size(src_width, src_height, selected_aspect)
         overlay_scale = (overlay_canvas_height / 720.0) if overlay_canvas_height > 0 else 1.0
 
         if use_video_segment_filter and not video_has_reversed_segments and not video_has_speed_adjusted_segments:
@@ -2272,7 +2323,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             vfilters.append(filter_map[req.filter])
 
         # Apply output canvas aspect ratio before overlays so positions match preview
-        aspect_filter = _build_aspect_pad_filter(selected_aspect)
+        aspect_filter = _build_aspect_cover_filter(src_width, src_height, selected_aspect)
         if aspect_filter:
             vfilters.append(aspect_filter)
 
