@@ -498,6 +498,23 @@ async def _upload_media_to_atlas(file_path: str, api_key: str) -> str:
     raise RuntimeError("Nao foi possivel enviar a imagem de referencia para o Atlas Cloud")
 
 
+def _resolve_seedance_reference_inputs(
+    image_path: str | None = None,
+    image_paths: list[str] | None = None,
+) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    for raw in [image_path, *(image_paths or [])]:
+        candidate = str(raw or "").strip()
+        if not candidate or candidate in seen or not os.path.exists(candidate):
+            continue
+        seen.add(candidate)
+        ordered.append(candidate)
+
+    return ordered
+
+
 async def generate_realistic_video(
     prompt: str,
     duration: int = 7,
@@ -507,6 +524,7 @@ async def generate_realistic_video(
     resolution: str = "720p",
     generate_audio: bool = True,
     image_path: str | None = None,
+    image_paths: list[str] | None = None,
     timeout_seconds: int = 600,
     on_progress=None,
 ) -> str:
@@ -518,9 +536,9 @@ async def generate_realistic_video(
     if not api_key:
         raise RuntimeError("ATLASCLOUD_API_KEY not configured")
 
-    use_i2v = bool(image_path and os.path.exists(image_path))
-    # Atlas I2V endpoint currently accepts 4..12s durations.
-    duration = max(4, min(int(duration or 5), 12)) if use_i2v else max(1, min(int(duration or 7), 10))
+    reference_inputs = _resolve_seedance_reference_inputs(image_path=image_path, image_paths=image_paths)
+    use_i2v = bool(reference_inputs)
+    duration = max(4, min(int(duration or 5), 15)) if use_i2v else max(1, min(int(duration or 7), 10))
     aspect_ratio = _resolve_aspect_ratio(aspect_ratio)
     if use_i2v:
         resolution = _SEEDANCE_I2V_TARGET_RESOLUTION
@@ -543,15 +561,32 @@ async def generate_realistic_video(
     if seed is not None:
         payload["seed"] = int(seed)
 
-    # Add reference image URL if provided.
+    payload_variants: list[tuple[str, dict]] = []
     if use_i2v:
-        uploaded_image_ref = await _upload_media_to_atlas(image_path, api_key)
-        payload["model"] = SEEDANCE_I2V_MODEL
-        payload["image"] = uploaded_image_ref
-        logger.info("Seedance I2V: uploaded %s", image_path)
+        uploaded_refs: list[str] = []
+        for ref_path in reference_inputs:
+            uploaded_refs.append(await _upload_media_to_atlas(ref_path, api_key))
+
+        if not uploaded_refs:
+            raise RuntimeError("Falha ao preparar as imagens de referencia para o Seedance")
+
+        single_image_payload = dict(payload)
+        single_image_payload["model"] = SEEDANCE_I2V_MODEL
+        single_image_payload["image"] = uploaded_refs[0]
+        payload_variants.append(("single-image", single_image_payload))
+
+        if len(uploaded_refs) > 1:
+            multi_image_payload = dict(single_image_payload)
+            multi_image_payload["images"] = uploaded_refs
+            payload_variants.insert(0, ("multi-image", multi_image_payload))
+
+        logger.info("Seedance I2V: prepared %d reference image(s)", len(uploaded_refs))
+    else:
+        payload_variants.append(("text-to-video", dict(payload)))
 
     # Step 1: Create prediction.
     prediction_id = ""
+    selected_variant = ""
     submit_url = f"{ATLAS_VIDEO_API_BASE_URL}/model/generateVideo"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -559,49 +594,73 @@ async def generate_realistic_video(
     }
 
     async with httpx.AsyncClient(timeout=120) as client:
-        for attempt in range(5):
-            try:
-                resp = await client.post(submit_url, headers=headers, json=payload)
-            except httpx.RequestError as e:
-                if attempt >= 4:
-                    raise RuntimeError(f"Falha de conexao ao iniciar Seedance: {e}")
-                wait_s = min(20, 2 ** attempt)
-                logger.warning(
-                    "Seedance request error on create (attempt %d/5): %s. Retrying in %ds",
-                    attempt + 1,
-                    e,
-                    wait_s,
-                )
-                await asyncio.sleep(wait_s)
+        last_error_message = ""
+        for variant_index, (variant_name, variant_payload) in enumerate(payload_variants):
+            should_try_next_variant = False
+            for attempt in range(5):
+                try:
+                    resp = await client.post(submit_url, headers=headers, json=variant_payload)
+                except httpx.RequestError as e:
+                    if attempt >= 4:
+                        raise RuntimeError(f"Falha de conexao ao iniciar Seedance: {e}")
+                    wait_s = min(20, 2 ** attempt)
+                    logger.warning(
+                        "Seedance request error on create (%s, attempt %d/5): %s. Retrying in %ds",
+                        variant_name,
+                        attempt + 1,
+                        e,
+                        wait_s,
+                    )
+                    await asyncio.sleep(wait_s)
+                    continue
+
+                if resp.status_code == 429:
+                    if attempt >= 4:
+                        raise RuntimeError(SEEDANCE_RATE_LIMIT_MSG)
+                    wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(30, 2 ** (attempt + 2)))
+                    logger.warning(
+                        "Seedance rate-limited on create (%s, attempt %d/5). Retrying in %ds",
+                        variant_name,
+                        attempt + 1,
+                        wait_s,
+                    )
+                    await asyncio.sleep(wait_s)
+                    continue
+
+                if resp.is_error:
+                    details = _extract_atlas_error_message(resp)
+                    last_error_message = f"Erro ao iniciar Seedance (HTTP {resp.status_code}): {details}"
+                    if variant_index < len(payload_variants) - 1 and 400 <= resp.status_code < 500:
+                        logger.warning(
+                            "Seedance rejected %s payload (HTTP %s): %s. Tentando fallback.",
+                            variant_name,
+                            resp.status_code,
+                            details,
+                        )
+                        should_try_next_variant = True
+                        break
+                    raise RuntimeError(last_error_message)
+
+                response_payload = resp.json() if resp.content else {}
+                data_node = response_payload.get("data") if isinstance(response_payload, dict) else None
+                prediction_id = str((data_node or {}).get("id") or response_payload.get("id") or "").strip()
+                if not prediction_id:
+                    raise RuntimeError("Atlas Cloud nao retornou prediction id para o Seedance")
+                selected_variant = variant_name
+                break
+
+            if prediction_id:
+                break
+            if should_try_next_variant:
                 continue
 
-            if resp.status_code == 429:
-                if attempt >= 4:
-                    raise RuntimeError(SEEDANCE_RATE_LIMIT_MSG)
-                wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(30, 2 ** (attempt + 2)))
-                logger.warning(
-                    "Seedance rate-limited on create (attempt %d/5). Retrying in %ds",
-                    attempt + 1,
-                    wait_s,
-                )
-                await asyncio.sleep(wait_s)
-                continue
-
-            if resp.is_error:
-                details = _extract_atlas_error_message(resp)
-                raise RuntimeError(f"Erro ao iniciar Seedance (HTTP {resp.status_code}): {details}")
-
-            response_payload = resp.json() if resp.content else {}
-            data_node = response_payload.get("data") if isinstance(response_payload, dict) else None
-            prediction_id = str((data_node or {}).get("id") or response_payload.get("id") or "").strip()
-            if not prediction_id:
-                raise RuntimeError("Atlas Cloud nao retornou prediction id para o Seedance")
-            break
+        if not prediction_id and last_error_message:
+            raise RuntimeError(last_error_message)
 
     if not prediction_id:
         raise RuntimeError("Nao foi possivel iniciar a geracao no Seedance.")
 
-    logger.info("Seedance prediction created: %s (model=%s)", prediction_id, payload.get("model"))
+    logger.info("Seedance prediction created: %s (model=%s, variant=%s)", prediction_id, payload.get("model"), selected_variant or "default")
 
     if on_progress:
         await on_progress(20, "Gerando video realista com Seedance...")

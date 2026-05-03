@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v314 loaded");
+console.log("[CriaVideo] app.js v315 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2194,6 +2194,8 @@ let similarState = {
     detectedMode: "",
     detectedReason: "",
     detectedConfidence: 0,
+    unifiedEngine: "",
+    unifiedDuration: 10,
 };
 let workflowState = {
     initialized: false,
@@ -2247,14 +2249,17 @@ const SIMILAR_STAGE_LABELS = {
     scene_edited: "Cena atualizada. Gere a previa para validar.",
     scene_image_ready: "Imagem da cena atualizada. Gere a previa desta cena.",
     generating_scene: "Gerando a cena selecionada...",
+    generating_unified_scene: "Gerando a cena unica a partir do prompt consolidado...",
     generating_previews: "Gerando previas das cenas...",
     regenerating_scene: "Regenerando a cena selecionada...",
     preview_ready: "Previas prontas. Ajuste e regenere somente o necessario.",
+    unified_scene_ready: "Cena unica pronta. Revise e gere novamente se quiser.",
     merging_scenes: "Unindo cenas selecionadas...",
     merged: "Video final pronto.",
     analysis_failed: "Falha ao analisar o video de referencia.",
     preview_failed: "Falha ao gerar previas.",
     regenerate_failed: "Falha ao regenerar a cena.",
+    unified_scene_failed: "Falha ao gerar a cena unica.",
     merge_failed: "Falha ao unir as cenas.",
 };
 const SIMILAR_DETECTED_MODE_LABELS = {
@@ -3247,6 +3252,11 @@ function initCreateWizard() {
         similarCopyUnifiedPromptBtn.addEventListener("click", similarCopyUnifiedPrompt);
     }
 
+    const similarGenerateUnifiedSceneBtn = document.getElementById("similar-generate-unified-scene");
+    if (similarGenerateUnifiedSceneBtn) {
+        similarGenerateUnifiedSceneBtn.addEventListener("click", similarGenerateUnifiedScene);
+    }
+
     const similarGenerateAllBtn = document.getElementById("similar-generate-all");
     if (similarGenerateAllBtn) {
         similarGenerateAllBtn.addEventListener("click", similarGenerateAllPreviews);
@@ -3437,6 +3447,8 @@ function initCreateWizard() {
                 scheduleScriptCreditEstimate();
             } else if (durationGroupId === "auto-realistic-duration") {
                 scheduleAutoCreditEstimate();
+            } else if (durationGroupId === "similar-unified-duration-options") {
+                similarState.unifiedDuration = parseInt(dur.dataset.value || "10", 10) || 10;
             } else if (durationGroupId.includes("wizard") || durationGroupId === "wizard-duration-options") {
                 scheduleWizardCreditEstimate();
             } else {
@@ -3720,8 +3732,22 @@ function _clearSimilarUnifiedPrompt() {
     const wrapEl = document.getElementById("similar-unified-prompt-wrap");
     const textEl = document.getElementById("similar-unified-prompt-text");
     const metaEl = document.getElementById("similar-unified-prompt-meta");
+    const enginePickerEl = document.getElementById("similar-unified-engine-picker");
+    const durationEl = document.getElementById("similar-unified-duration-options");
+    const previewWrapEl = document.getElementById("similar-unified-preview-wrap");
+    const previewMetaEl = document.getElementById("similar-unified-preview-meta");
+    const previewStageEl = document.getElementById("similar-unified-preview-stage");
+    const generateBtn = document.getElementById("similar-generate-unified-scene");
     if (textEl) textEl.value = "";
     if (metaEl) metaEl.textContent = "Transforme as partes analisadas em um prompt continuo.";
+    if (enginePickerEl) enginePickerEl.innerHTML = "";
+    if (durationEl) durationEl.innerHTML = "";
+    if (previewMetaEl) previewMetaEl.textContent = "";
+    if (previewStageEl) previewStageEl.innerHTML = "";
+    if (previewWrapEl) previewWrapEl.hidden = true;
+    if (generateBtn) generateBtn.textContent = "Gerar cena unica";
+    similarState.unifiedEngine = "";
+    similarState.unifiedDuration = 10;
     if (wrapEl) wrapEl.hidden = true;
 }
 
@@ -3729,7 +3755,12 @@ function _renderSimilarUnifiedPrompt(project) {
     const wrapEl = document.getElementById("similar-unified-prompt-wrap");
     const textEl = document.getElementById("similar-unified-prompt-text");
     const metaEl = document.getElementById("similar-unified-prompt-meta");
-    if (!wrapEl || !textEl || !metaEl) return;
+    const enginePickerEl = document.getElementById("similar-unified-engine-picker");
+    const previewWrapEl = document.getElementById("similar-unified-preview-wrap");
+    const previewMetaEl = document.getElementById("similar-unified-preview-meta");
+    const previewStageEl = document.getElementById("similar-unified-preview-stage");
+    const generateBtn = document.getElementById("similar-generate-unified-scene");
+    if (!wrapEl || !textEl || !metaEl || !enginePickerEl || !previewWrapEl || !previewMetaEl || !previewStageEl) return;
 
     const tags = _safeSimilarTags(project?.tags);
     const promptText = String(tags.similar_unified_prompt || "").trim();
@@ -3749,8 +3780,65 @@ function _renderSimilarUnifiedPrompt(project) {
         metaText = `${metaText} Atualizado em ${generatedAt}.`;
     }
 
+    const selectedEngine = _getSimilarUnifiedSelectedEngine(tags);
+    const selectedDuration = _getSimilarUnifiedSelectedDuration(tags);
+    similarState.unifiedEngine = selectedEngine;
+    similarState.unifiedDuration = selectedDuration;
+
+    enginePickerEl.innerHTML = ["grok", "wan2", "seedance", "minimax"].map((engineValue) => `
+        <button
+            class="similar-scene-engine-btn${selectedEngine === engineValue ? " selected" : ""}"
+            type="button"
+            onclick="similarSelectUnifiedEngine('${engineValue}')"
+            title="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
+            aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
+        >${_similarSceneEngineLabel(engineValue)}</button>
+    `).join("");
+    _renderDurationButtons("similar-unified-duration-options", [5, 10, 15], selectedDuration);
+
+    const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
+    const unifiedClipUrl = String(tags.similar_unified_clip_url || "").trim();
+    const unifiedReferenceImageUrl = String(tags.similar_unified_reference_image_url || "").trim();
+    const referenceFrameCount = Number(tags.similar_unified_reference_frame_count || 0) || 0;
+    const generatedEngine = _normalizeSimilarEngine(tags.similar_unified_clip_engine || selectedEngine);
+    const generatedDuration = parseInt(tags.similar_unified_clip_duration || selectedDuration || "10", 10) || 10;
+    const previewItems = [];
+    if (unifiedReferenceImageUrl) {
+        previewItems.push(`
+            <div class="similar-preview-box ${previewAspectClass}">
+                <img src="${esc(unifiedReferenceImageUrl)}" alt="Referencia consolidada da cena unica" loading="lazy">
+            </div>
+        `);
+    }
+    if (unifiedClipUrl) {
+        previewItems.push(`
+            <div class="similar-preview-box ${previewAspectClass}">
+                <video src="${esc(unifiedClipUrl)}" controls preload="metadata"></video>
+            </div>
+        `);
+    }
+
+    if (previewItems.length) {
+        const previewMetaParts = [];
+        if (referenceFrameCount > 0) {
+            previewMetaParts.push(`${referenceFrameCount} frame(s) de referencia`);
+        }
+        previewMetaParts.push(`Motor: ${_similarEngineDisplayLabel(generatedEngine)}`);
+        previewMetaParts.push(`Duracao: ${generatedDuration}s`);
+        previewMetaEl.textContent = previewMetaParts.join(" | ");
+        previewStageEl.innerHTML = `<div class="similar-scene-preview${previewItems.length === 1 ? " similar-scene-preview-single" : ""}">${previewItems.join("")}</div>`;
+        previewWrapEl.hidden = false;
+    } else {
+        previewMetaEl.textContent = "";
+        previewStageEl.innerHTML = "";
+        previewWrapEl.hidden = true;
+    }
+
     textEl.value = promptText;
     metaEl.textContent = metaText;
+    if (generateBtn) {
+        generateBtn.textContent = unifiedClipUrl ? "Gerar novamente a cena unica" : "Gerar cena unica";
+    }
     wrapEl.hidden = false;
 }
 
@@ -4154,6 +4242,14 @@ function _similarSceneEngineLabel(engineValue) {
     return "C3";
 }
 
+function _similarEngineDisplayLabel(engineValue) {
+    const normalized = _normalizeSimilarEngine(engineValue);
+    if (normalized === "wan2") return "Ultra High 1.0";
+    if (normalized === "seedance") return "Seedance 2.0";
+    if (normalized === "minimax") return "MiniMax";
+    return "Cria 3.0 speed";
+}
+
 function _getSimilarSceneSelectedEngine(sceneId) {
     const sceneKey = _similarSceneStateKey(sceneId);
     return _normalizeSimilarEngine(
@@ -4172,6 +4268,35 @@ function similarSelectSceneEngine(sceneId, engineValue) {
     _setSimilarSceneSelectedEngine(sceneId, engineValue);
     if (similarState.lastProjectSnapshot) {
         _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+}
+
+function _getSimilarUnifiedSelectedEngine(tags = null) {
+    const safeTags = tags && typeof tags === "object" && !Array.isArray(tags)
+        ? tags
+        : _safeSimilarTags(similarState.lastProjectSnapshot?.tags);
+    return _normalizeSimilarEngine(
+        similarState.unifiedEngine
+        || safeTags.similar_unified_clip_engine
+        || "seedance"
+    );
+}
+
+function _getSimilarUnifiedSelectedDuration(tags = null) {
+    const safeTags = tags && typeof tags === "object" && !Array.isArray(tags)
+        ? tags
+        : _safeSimilarTags(similarState.lastProjectSnapshot?.tags);
+    const preferred = parseInt(
+        similarState.unifiedDuration || safeTags.similar_unified_clip_duration || "10",
+        10,
+    );
+    return _pickClosestDurationOption([5, 10, 15], preferred || 10);
+}
+
+function similarSelectUnifiedEngine(engineValue) {
+    similarState.unifiedEngine = _normalizeSimilarEngine(engineValue);
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
     }
 }
 
@@ -4221,7 +4346,7 @@ function _hideSimilarBusyOverlay() {
 
 function _resolveSimilarBusyStage(stage, status) {
     const normalizedStage = String(stage || "").trim();
-    if (["generating_scene", "regenerating_scene", "generating_previews"].includes(normalizedStage)) {
+    if (["generating_scene", "regenerating_scene", "generating_previews", "generating_unified_scene"].includes(normalizedStage)) {
         return normalizedStage;
     }
 
@@ -4235,6 +4360,7 @@ function _resolveSimilarBusyStage(stage, status) {
 
 function _similarBusyProgressCeiling(stage) {
     if (stage === "generating_previews") return 94;
+    if (stage === "generating_unified_scene") return 96;
     if (stage === "generating_scene" || stage === "regenerating_scene") return 96;
     return 90;
 }
@@ -4311,6 +4437,9 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
     } else if (busyStage === "regenerating_scene") {
         title = sceneNumber ? `Regenerando cena ${sceneNumber}...` : "Regenerando cena...";
         detail = "Criando uma nova versao desta cena. Aguarde a conclusao para continuar.";
+    } else if (busyStage === "generating_unified_scene") {
+        title = "Gerando cena unica...";
+        detail = "Usando o prompt unico e todos os frames de referencia para montar a cena final.";
     } else if (busyStage === "generating_previews") {
         title = "Gerando previas...";
         detail = currentSceneIndex && totalScenes
@@ -4925,6 +5054,7 @@ function _refreshSimilarButtonsDisabled(disabled) {
     [
         "similar-start-analysis",
         "similar-build-unified-prompt",
+        "similar-generate-unified-scene",
         "similar-generate-all",
         "similar-merge-selected",
     ].forEach((id) => {
@@ -7604,6 +7734,8 @@ function _resetSimilarModeState() {
     similarState.sceneMergeSelectionBySceneId = {};
     _clearAllSimilarScenePendingUploads();
     similarState.pendingImageUploadsBySceneId = {};
+    similarState.unifiedEngine = "";
+    similarState.unifiedDuration = 10;
 
     const sourceEl = document.getElementById("similar-source-url");
     if (sourceEl) sourceEl.value = "";
@@ -7732,6 +7864,18 @@ async function similarBuildUnifiedPrompt() {
             similar_unified_prompt_source: String(response?.source || "").trim(),
             similar_unified_prompt_generated_at: String(response?.generated_at || "").trim(),
         };
+        [
+            "similar_unified_clip_path",
+            "similar_unified_clip_url",
+            "similar_unified_clip_engine",
+            "similar_unified_clip_duration",
+            "similar_unified_clip_generated_at",
+            "similar_unified_reference_image_path",
+            "similar_unified_reference_image_url",
+            "similar_unified_reference_frame_count",
+        ].forEach((key) => {
+            delete nextTags[key];
+        });
         const nextProject = {
             ...(project || {}),
             tags: nextTags,
@@ -7774,6 +7918,53 @@ async function similarCopyUnifiedPrompt() {
         showToast("Prompt unico copiado.", "success");
     } catch (error) {
         showToast(`Erro ao copiar prompt unico: ${error.message || error}`, "error");
+    }
+}
+
+async function similarGenerateUnifiedScene() {
+    const projectId = Number(similarState.projectId || 0);
+    const project = similarState.lastProjectSnapshot;
+    const promptEl = document.getElementById("similar-unified-prompt-text");
+    const promptText = String(promptEl?.value || project?.tags?.similar_unified_prompt || "").trim();
+
+    if (!projectId) {
+        alert("Analise o video antes de gerar a cena unica.");
+        return;
+    }
+    if (!promptText) {
+        showToast("Gere ou escreva o prompt unico antes de criar a cena.", "error");
+        return;
+    }
+
+    const tags = _safeSimilarTags(project?.tags);
+    const engine = _getSimilarUnifiedSelectedEngine(tags);
+    const duration = _getSimilarUnifiedSelectedDuration(tags);
+
+    try {
+        _setSimilarBusyIntent("generating_unified_scene");
+        _updateSimilarBusyOverlay(similarState.lastProjectSnapshot, tags, {
+            stage: "generating_unified_scene",
+            status: "generating_clips",
+            progress: 4,
+        });
+        _refreshSimilarButtonsDisabled(true);
+        await api(`/video/projects/${projectId}/similar/generate-unified-scene`, {
+            method: "POST",
+            body: JSON.stringify({
+                engine,
+                duration_seconds: duration,
+                prompt_override: promptText,
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+        _setSimilarStatus("Geracao da cena unica iniciada...", "running");
+        _startSimilarPolling();
+        await _refreshSimilarProject();
+    } catch (error) {
+        showToast(`Erro ao gerar a cena unica: ${error.message}`, "error");
+        _clearSimilarBusyIntent();
+        _hideSimilarBusyOverlay();
+        _refreshSimilarButtonsDisabled(false);
     }
 }
 
@@ -17074,6 +17265,7 @@ window.similarClearSceneUploads = similarClearSceneUploads;
 window.similarGenerateSceneImage = similarGenerateSceneImage;
 window.similarRegenerateScene = similarRegenerateScene;
 window.similarSelectSceneEngine = similarSelectSceneEngine;
+window.similarSelectUnifiedEngine = similarSelectUnifiedEngine;
 window.openRenameProjectModal = openRenameProjectModal;
 window.saveProjectTitle = saveProjectEdit;
 window.openCopyChoiceModal = openCopyChoiceModal;

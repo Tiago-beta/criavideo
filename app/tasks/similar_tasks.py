@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import uuid
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse
 
@@ -32,7 +33,11 @@ from app.services.grok_video import generate_video_clip
 from app.services.minimax_video import generate_minimax_video
 from app.services.multi_clip import concatenate_clips
 from app.services.runpod_video import generate_wan_video
-from app.services.scene_generator import build_similar_scene_continuity_prompt, generate_scene_image
+from app.services.scene_generator import (
+    build_similar_scene_continuity_prompt,
+    generate_scene_image,
+    merge_reference_images_with_nano_banana,
+)
 from app.services.seedance_video import generate_realistic_video
 from app.services.thumbnail_generator import generate_thumbnail_from_frame
 from app.services.video_composer import _get_duration as get_duration
@@ -361,6 +366,80 @@ def _get_similar_scene_reference_frame_path(
     if candidate and os.path.exists(candidate):
         return candidate
     return ""
+
+
+def _clear_similar_unified_clip_tags(tags: dict | None) -> dict:
+    cleaned = _safe_tags_dict(tags)
+    for stale_key in (
+        "similar_unified_clip_path",
+        "similar_unified_clip_engine",
+        "similar_unified_clip_duration",
+        "similar_unified_clip_generated_at",
+        "similar_unified_reference_image_path",
+        "similar_unified_reference_frame_count",
+    ):
+        cleaned.pop(stale_key, None)
+    return cleaned
+
+
+def _collect_similar_reference_frame_paths(
+    scenes: list[VideoScene],
+    reference_frames_by_scene_index: dict[str, str] | None = None,
+) -> list[str]:
+    ordered_paths: list[str] = []
+
+    for scene in scenes or []:
+        candidate = _get_similar_scene_reference_frame_path(scene, reference_frames_by_scene_index)
+        if candidate and candidate not in ordered_paths:
+            ordered_paths.append(candidate)
+
+    if ordered_paths:
+        return ordered_paths
+
+    for _, raw_path in sorted(
+        (reference_frames_by_scene_index or {}).items(),
+        key=lambda item: int(item[0]) if str(item[0]).isdigit() else 999999,
+    ):
+        candidate = str(raw_path or "").strip()
+        if candidate and os.path.exists(candidate) and candidate not in ordered_paths:
+            ordered_paths.append(candidate)
+
+    return ordered_paths
+
+
+async def _prepare_similar_unified_reference_image(
+    reference_image_paths: list[str],
+    prompt_text: str,
+    aspect_ratio: str,
+    output_path: str,
+) -> str:
+    valid_paths = [path for path in (reference_image_paths or []) if path and os.path.exists(path)]
+    if not valid_paths:
+        return ""
+
+    if len(valid_paths) == 1:
+        single_path = valid_paths[0]
+        if output_path and os.path.abspath(single_path) != os.path.abspath(output_path):
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(single_path, output_path)
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                return output_path
+        return single_path
+
+    prompt_seed = str(prompt_text or "").strip() or "Cena cinematografica coerente e realista."
+    loop = asyncio.get_running_loop()
+    merged_path = await loop.run_in_executor(
+        None,
+        merge_reference_images_with_nano_banana,
+        valid_paths,
+        prompt_seed[:1600],
+        aspect_ratio,
+        output_path,
+    )
+    candidate = str(merged_path or "").strip()
+    if candidate and os.path.exists(candidate) and os.path.getsize(candidate) > 0:
+        return candidate
+    return valid_paths[0]
 
 
 def _image_file_to_data_url(path: str) -> str:
@@ -1806,6 +1885,170 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
             project.tags = tags
             project.status = VideoStatus.FAILED
             project.error_message = _safe_error_message(exc, "Falha ao regenerar a cena")[:1000]
+            await db.commit()
+
+
+async def run_similar_generate_unified_scene(
+    project_id: int,
+    engine: str,
+    aspect_ratio: str,
+    duration_seconds: int,
+) -> None:
+    async with async_session() as db:
+        project = await db.get(VideoProject, project_id)
+        if not project:
+            return
+
+        normalized_engine = _normalize_engine(engine)
+        requested_duration = max(5, min(15, int(duration_seconds or 10)))
+
+        if not _is_similar_project(project):
+            project.status = VideoStatus.FAILED
+            project.error_message = "Projeto nao esta no modo Semelhante"
+            await db.commit()
+            return
+
+        try:
+            result = await db.execute(
+                select(VideoScene)
+                .where(VideoScene.project_id == project_id)
+                .order_by(VideoScene.scene_index.asc())
+            )
+            scenes = result.scalars().all()
+            if not scenes:
+                raise RuntimeError("Projeto nao possui cenas analisadas para gerar a cena unica")
+
+            tags = _safe_tags_dict(project.tags)
+            unified_prompt = str(tags.get("similar_unified_prompt") or "").strip()
+            if not unified_prompt:
+                raise RuntimeError("Gere o prompt unico antes de criar a cena")
+
+            reference_frames_by_scene_index = _extract_similar_reference_frames(tags)
+            reference_image_paths = _collect_similar_reference_frame_paths(scenes, reference_frames_by_scene_index)
+            if not reference_image_paths:
+                raise RuntimeError("Nenhum frame de referencia foi encontrado para a cena unica")
+
+            clip_dir = Path(settings.media_dir) / "clips" / str(project_id)
+            image_dir = Path(settings.media_dir) / "images" / str(project_id)
+            clip_dir.mkdir(parents=True, exist_ok=True)
+            image_dir.mkdir(parents=True, exist_ok=True)
+
+            output_path = str(clip_dir / "similar_unified.mp4")
+            merged_reference_path = ""
+
+            tags = _clear_similar_unified_clip_tags(project.tags)
+            tags.update(
+                {
+                    "type": "similar",
+                    "similar_stage": "generating_unified_scene",
+                    "similar_unified_clip_engine": normalized_engine,
+                    "similar_unified_clip_duration": requested_duration,
+                    "similar_unified_reference_frame_count": len(reference_image_paths),
+                }
+            )
+            project.tags = tags
+            project.status = VideoStatus.GENERATING_CLIPS
+            project.progress = 8
+            project.error_message = None
+            await db.commit()
+
+            if normalized_engine == "seedance":
+                await generate_realistic_video(
+                    prompt=unified_prompt,
+                    duration=requested_duration,
+                    aspect_ratio=aspect_ratio,
+                    output_path=output_path,
+                    resolution="480p",
+                    generate_audio=True,
+                    image_paths=reference_image_paths,
+                    image_path=reference_image_paths[0],
+                    on_progress=None,
+                )
+            else:
+                merged_reference_path = await _prepare_similar_unified_reference_image(
+                    reference_image_paths,
+                    unified_prompt,
+                    aspect_ratio,
+                    str(image_dir / "similar_unified_reference.png"),
+                )
+                if not merged_reference_path:
+                    raise RuntimeError("Nao foi possivel consolidar os frames de referencia")
+
+                if normalized_engine == "grok":
+                    await generate_video_clip(
+                        image_path=merged_reference_path,
+                        prompt=unified_prompt,
+                        output_path=output_path,
+                        duration=requested_duration,
+                        aspect_ratio=aspect_ratio,
+                        on_progress=None,
+                        reference_mode="",
+                    )
+                elif normalized_engine == "minimax":
+                    await generate_minimax_video(
+                        prompt=unified_prompt,
+                        duration=requested_duration,
+                        aspect_ratio=aspect_ratio,
+                        output_path=output_path,
+                        image_path=merged_reference_path,
+                        on_progress=None,
+                    )
+                else:
+                    await generate_wan_video(
+                        prompt=unified_prompt,
+                        duration=requested_duration,
+                        aspect_ratio=aspect_ratio,
+                        output_path=output_path,
+                        image_path=merged_reference_path,
+                        generate_audio=True,
+                        on_progress=None,
+                    )
+
+            if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
+                raise RuntimeError("Falha ao gerar a cena unica")
+
+            tags = _clear_similar_unified_clip_tags(project.tags)
+            tags.update(
+                {
+                    "type": "similar",
+                    "similar_stage": "unified_scene_ready",
+                    "similar_unified_clip_path": output_path,
+                    "similar_unified_clip_engine": normalized_engine,
+                    "similar_unified_clip_duration": requested_duration,
+                    "similar_unified_clip_generated_at": datetime.utcnow().isoformat() + "Z",
+                    "similar_unified_reference_frame_count": len(reference_image_paths),
+                }
+            )
+            if merged_reference_path and os.path.exists(merged_reference_path):
+                tags["similar_unified_reference_image_path"] = merged_reference_path
+            project.tags = tags
+            project.status = VideoStatus.PENDING
+            project.progress = 0
+            project.error_message = None
+            await db.commit()
+
+        except Exception as exc:
+            logger.error(
+                "Similar unified scene generation failed for project %s: %s",
+                project_id,
+                exc,
+                exc_info=True,
+            )
+            project = await db.get(VideoProject, project_id)
+            if not project:
+                return
+            tags = _clear_similar_unified_clip_tags(project.tags)
+            tags.update(
+                {
+                    "type": "similar",
+                    "similar_stage": "unified_scene_failed",
+                    "similar_unified_clip_engine": normalized_engine,
+                    "similar_unified_clip_duration": requested_duration,
+                }
+            )
+            project.tags = tags
+            project.status = VideoStatus.FAILED
+            project.error_message = _safe_error_message(exc, "Falha ao gerar a cena unica")[:1000]
             await db.commit()
 
 

@@ -1651,6 +1651,13 @@ class SimilarRegenerateSceneRequest(BaseModel):
     prompt_override: str = ""
 
 
+class SimilarGenerateUnifiedSceneRequest(BaseModel):
+    engine: str = "seedance"
+    aspect_ratio: str = "16:9"
+    duration_seconds: int = 10
+    prompt_override: str = ""
+
+
 class SimilarMergeRequest(BaseModel):
     aspect_ratio: str = "16:9"
     scene_ids: list[int] = Field(default_factory=list)
@@ -1847,6 +1854,12 @@ async def get_project(
         reference_video_url = _to_media_url(str(response_tags.get("similar_local_video_path") or "").strip())
         if reference_video_url:
             response_tags["similar_reference_video_url"] = reference_video_url
+        unified_clip_path = str(response_tags.get("similar_unified_clip_path") or "").strip()
+        if unified_clip_path and os.path.exists(unified_clip_path):
+            response_tags["similar_unified_clip_url"] = _to_media_url(unified_clip_path)
+        unified_reference_image_path = str(response_tags.get("similar_unified_reference_image_path") or "").strip()
+        if unified_reference_image_path and os.path.exists(unified_reference_image_path):
+            response_tags["similar_unified_reference_image_url"] = _to_media_url(unified_reference_image_path)
         reference_frame_map = _extract_similar_reference_frame_map(response_tags)
 
     return {
@@ -1906,6 +1919,16 @@ async def build_similar_unified_prompt(
     prompt_text, prompt_source = await _generate_similar_unified_prompt(project, scenes, tags_data)
     generated_at = datetime.utcnow().isoformat() + "Z"
 
+    for stale_key in (
+        "similar_unified_clip_path",
+        "similar_unified_clip_engine",
+        "similar_unified_clip_duration",
+        "similar_unified_clip_generated_at",
+        "similar_unified_reference_image_path",
+        "similar_unified_reference_frame_count",
+    ):
+        tags_data.pop(stale_key, None)
+
     tags_data.update(
         {
             "type": "similar",
@@ -1922,6 +1945,61 @@ async def build_similar_unified_prompt(
         "source": prompt_source,
         "generated_at": generated_at,
     }
+
+
+@router.post("/projects/{project_id}/similar/generate-unified-scene")
+async def generate_similar_unified_scene(
+    project_id: int,
+    req: SimilarGenerateUnifiedSceneRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not _is_similar_project(project):
+        raise HTTPException(status_code=400, detail="Projeto nao esta no modo Semelhante")
+
+    if project.status in {VideoStatus.GENERATING_SCENES, VideoStatus.GENERATING_CLIPS, VideoStatus.RENDERING}:
+        raise HTTPException(status_code=400, detail="Projeto ainda esta processando")
+
+    engine = str(req.engine or "seedance").strip().lower() or "seedance"
+    if engine not in {"grok", "wan2", "minimax", "seedance"}:
+        raise HTTPException(status_code=400, detail="Engine invalida")
+
+    duration_seconds = int(req.duration_seconds or 0)
+    if duration_seconds not in {5, 10, 15}:
+        raise HTTPException(status_code=400, detail="Duracao invalida. Use 5, 10 ou 15 segundos")
+
+    tags_data = _safe_tags_dict(project.tags)
+    prompt_override = str(req.prompt_override or "").strip()
+    if prompt_override:
+        if len(prompt_override) > 4000:
+            raise HTTPException(status_code=400, detail="Prompt unico muito longo (maximo 4000 caracteres)")
+        tags_data["similar_unified_prompt"] = prompt_override
+
+    if not str(tags_data.get("similar_unified_prompt") or "").strip():
+        raise HTTPException(status_code=400, detail="Gere o prompt unico antes de criar a cena")
+
+    aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
+    project.aspect_ratio = aspect_ratio
+    project.tags = tags_data
+    project.status = VideoStatus.GENERATING_CLIPS
+    project.progress = 1
+    project.error_message = None
+    await db.commit()
+
+    from app.tasks.similar_tasks import run_similar_generate_unified_scene
+
+    background_tasks.add_task(
+        run_similar_generate_unified_scene,
+        project_id,
+        engine,
+        aspect_ratio,
+        duration_seconds,
+    )
+    return {"status": "unified_scene_generation_started", "project_id": project_id}
 
 
 @router.patch("/projects/{project_id}/similar/scenes/{scene_id}")
@@ -2003,6 +2081,12 @@ async def update_similar_scene(
             "similar_unified_prompt",
             "similar_unified_prompt_source",
             "similar_unified_prompt_generated_at",
+            "similar_unified_clip_path",
+            "similar_unified_clip_engine",
+            "similar_unified_clip_duration",
+            "similar_unified_clip_generated_at",
+            "similar_unified_reference_image_path",
+            "similar_unified_reference_frame_count",
         ):
             tags_data.pop(stale_key, None)
         tags_data.update({"type": "similar", "similar_stage": "scene_edited"})
