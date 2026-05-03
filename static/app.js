@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v312 loaded");
+console.log("[CriaVideo] app.js v313 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -3237,6 +3237,16 @@ function initCreateWizard() {
         similarStartBtn.addEventListener("click", similarStartAnalysis);
     }
 
+    const similarBuildUnifiedPromptBtn = document.getElementById("similar-build-unified-prompt");
+    if (similarBuildUnifiedPromptBtn) {
+        similarBuildUnifiedPromptBtn.addEventListener("click", similarBuildUnifiedPrompt);
+    }
+
+    const similarCopyUnifiedPromptBtn = document.getElementById("similar-copy-unified-prompt");
+    if (similarCopyUnifiedPromptBtn) {
+        similarCopyUnifiedPromptBtn.addEventListener("click", similarCopyUnifiedPrompt);
+    }
+
     const similarGenerateAllBtn = document.getElementById("similar-generate-all");
     if (similarGenerateAllBtn) {
         similarGenerateAllBtn.addEventListener("click", similarGenerateAllPreviews);
@@ -3696,6 +3706,52 @@ function _setSimilarStatus(message, kind = "running") {
     } else {
         statusEl.classList.add("status-running");
     }
+}
+
+function _formatSimilarUnifiedPromptGeneratedAt(rawValue) {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return "";
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return "";
+    return parsed.toLocaleString("pt-BR");
+}
+
+function _clearSimilarUnifiedPrompt() {
+    const wrapEl = document.getElementById("similar-unified-prompt-wrap");
+    const textEl = document.getElementById("similar-unified-prompt-text");
+    const metaEl = document.getElementById("similar-unified-prompt-meta");
+    if (textEl) textEl.value = "";
+    if (metaEl) metaEl.textContent = "Transforme as partes analisadas em um prompt continuo.";
+    if (wrapEl) wrapEl.hidden = true;
+}
+
+function _renderSimilarUnifiedPrompt(project) {
+    const wrapEl = document.getElementById("similar-unified-prompt-wrap");
+    const textEl = document.getElementById("similar-unified-prompt-text");
+    const metaEl = document.getElementById("similar-unified-prompt-meta");
+    if (!wrapEl || !textEl || !metaEl) return;
+
+    const tags = _safeSimilarTags(project?.tags);
+    const promptText = String(tags.similar_unified_prompt || "").trim();
+    if (!promptText) {
+        _clearSimilarUnifiedPrompt();
+        return;
+    }
+
+    const source = String(tags.similar_unified_prompt_source || "").trim();
+    const generatedAt = _formatSimilarUnifiedPromptGeneratedAt(tags.similar_unified_prompt_generated_at);
+    let metaText = source === "ai"
+        ? "Prompt unico sintetizado pela IA a partir das cenas analisadas."
+        : source === "fallback"
+            ? "Prompt unico montado com o fallback local a partir da analise salva."
+            : "Prompt unico derivado da analise atual.";
+    if (generatedAt) {
+        metaText = `${metaText} Atualizado em ${generatedAt}.`;
+    }
+
+    textEl.value = promptText;
+    metaEl.textContent = metaText;
+    wrapEl.hidden = false;
 }
 
 function _normalizeSimilarSourceUrl(rawValue) {
@@ -4868,6 +4924,7 @@ function _renderSimilarScenes(project, options = {}) {
 function _refreshSimilarButtonsDisabled(disabled) {
     [
         "similar-start-analysis",
+        "similar-build-unified-prompt",
         "similar-generate-all",
         "similar-merge-selected",
     ].forEach((id) => {
@@ -7485,6 +7542,7 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         _setSimilarStatus(message, kind);
         similarState.lastProjectSnapshot = project;
         _syncSimilarSourcePreview(project);
+        _renderSimilarUnifiedPrompt(project);
         _renderSimilarScenes(project);
         _updateSimilarGenerationStep(project, tags);
         _updateSimilarBusyOverlay(project, tags, {
@@ -7565,6 +7623,7 @@ function _resetSimilarModeState() {
     if (generationStepEl) generationStepEl.hidden = true;
     const profileEl = document.getElementById("similar-detected-profile");
     if (profileEl) profileEl.textContent = "Perfil do vídeo sendo analisado...";
+    _clearSimilarUnifiedPrompt();
     _hideSimilarBusyOverlay();
     _setSimilarStatus("", "running");
     _refreshSimilarButtonsDisabled(false);
@@ -7595,6 +7654,7 @@ async function similarStartAnalysis() {
     similarState.detectedReason = "";
     similarState.detectedConfidence = 0;
     _setSimilarEngineSelection("grok", { markManual: false });
+    _clearSimilarUnifiedPrompt();
 
     _refreshSimilarButtonsDisabled(true);
 
@@ -7640,6 +7700,80 @@ async function similarStartAnalysis() {
         _setSimilarStatus(`Erro ao iniciar analise: ${error.message}`, "error");
     } finally {
         _refreshSimilarButtonsDisabled(false);
+    }
+}
+
+async function similarBuildUnifiedPrompt() {
+    const projectId = Number(similarState.projectId || 0);
+    const project = similarState.lastProjectSnapshot;
+    const scenes = Array.isArray(project?.scenes) ? project.scenes : [];
+
+    if (!projectId || !scenes.length) {
+        alert("Analise o video antes de gerar o prompt unico.");
+        return;
+    }
+
+    _refreshSimilarButtonsDisabled(true);
+    _setSimilarStatus("Transformando a analise em um prompt unico...", "running");
+
+    try {
+        const response = await api(`/video/projects/${projectId}/similar/unified-prompt`, {
+            method: "POST",
+        });
+
+        const promptText = String(response?.prompt || "").trim();
+        if (!promptText) {
+            throw new Error("Resposta invalida ao criar prompt unico");
+        }
+
+        const nextTags = {
+            ..._safeSimilarTags(project?.tags),
+            similar_unified_prompt: promptText,
+            similar_unified_prompt_source: String(response?.source || "").trim(),
+            similar_unified_prompt_generated_at: String(response?.generated_at || "").trim(),
+        };
+        const nextProject = {
+            ...(project || {}),
+            tags: nextTags,
+        };
+
+        similarState.lastProjectSnapshot = nextProject;
+        _renderSimilarUnifiedPrompt(nextProject);
+        _setSimilarStatus("Prompt unico gerado. Revise e copie se quiser.", "success");
+        showToast("Prompt unico criado.", "success");
+    } catch (error) {
+        _setSimilarStatus(`Erro ao gerar prompt unico: ${error.message}`, "error");
+        showToast(`Erro ao gerar prompt unico: ${error.message}`, "error");
+    } finally {
+        _refreshSimilarButtonsDisabled(false);
+    }
+}
+
+async function similarCopyUnifiedPrompt() {
+    const textEl = document.getElementById("similar-unified-prompt-text");
+    const promptText = String(textEl?.value || "").trim();
+    if (!promptText) {
+        showToast("Gere o prompt unico antes de copiar.", "error");
+        return;
+    }
+
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(promptText);
+        } else if (textEl) {
+            textEl.focus();
+            textEl.select();
+            textEl.setSelectionRange(0, textEl.value.length);
+            const copied = document.execCommand("copy");
+            if (!copied) {
+                throw new Error("Falha ao copiar");
+            }
+        } else {
+            throw new Error("Campo indisponivel");
+        }
+        showToast("Prompt unico copiado.", "success");
+    } catch (error) {
+        showToast(`Erro ao copiar prompt unico: ${error.message || error}`, "error");
     }
 }
 

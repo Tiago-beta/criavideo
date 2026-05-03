@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260503-02">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260503-03">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 330;
+        var REQUIRED_VER = 331;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1880,15 +1880,34 @@
 
                     <div class="similar-panel-actions">
                         <button class="btn btn-secondary" id="similar-back" type="button">Voltar</button>
-                        <button class="btn btn-primary" id="similar-start-analysis" type="button">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15v-3"/><path d="M12 15V9"/><path d="M17 15V6"/></svg>
-                            Analisar vídeo
-                        </button>
+                        <div class="similar-panel-actions-right">
+                            <button class="btn btn-primary" id="similar-start-analysis" type="button">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15v-3"/><path d="M12 15V9"/><path d="M17 15V6"/></svg>
+                                Analisar video
+                            </button>
+                            <button class="btn btn-secondary similar-unified-trigger" id="similar-build-unified-prompt" type="button" title="Transformar a analise em um prompt unico">
+                                <span class="similar-a-plus-badge">A+</span>
+                                Prompt unico
+                            </button>
+                        </div>
                     </div>
 
                     <input id="similar-scene-image-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
 
                     <div id="similar-status" class="similar-status" hidden></div>
+
+                    <div id="similar-unified-prompt-wrap" class="similar-unified-prompt" hidden>
+                        <div class="similar-unified-prompt-head">
+                            <div>
+                                <strong>Prompt unico</strong>
+                                <p id="similar-unified-prompt-meta" class="similar-unified-prompt-meta">Transforme as partes analisadas em um prompt continuo.</p>
+                            </div>
+                            <div class="similar-unified-prompt-actions">
+                                <button class="btn btn-secondary btn-sm" id="similar-copy-unified-prompt" type="button">Copiar prompt</button>
+                            </div>
+                        </div>
+                        <textarea id="similar-unified-prompt-text" class="input similar-unified-prompt-text" rows="8" spellcheck="false" placeholder="Use o botao A+ para transformar a analise em um prompt unico."></textarea>
+                    </div>
 
                     <div id="similar-scenes-container" class="similar-scenes-container" hidden>
                         <div class="similar-scenes-toolbar">
@@ -3439,8 +3458,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260503-02"></script>
-    <script src="/video/static/pwa.js?v=20260503-02"></script>
+    <script src="/video/static/app.js?v=20260503-03"></script>
+    <script src="/video/static/pwa.js?v=20260503-03"></script>
 </body>
 </html>
 

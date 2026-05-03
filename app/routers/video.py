@@ -1297,6 +1297,276 @@ def _is_similar_project(project: VideoProject) -> bool:
     return _project_type(project) == "similar"
 
 
+def _normalize_similar_unified_prompt_text(raw: object, *, limit: int = 0) -> str:
+    text = str(raw or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    text = text.strip('"').strip("“”")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    if limit > 0 and len(text) > limit:
+        clipped = text[:limit]
+        if " " in clipped:
+            clipped = clipped.rsplit(" ", 1)[0]
+        text = clipped
+    return text.strip()
+
+
+def _scene_field(scene: Any, name: str, default: Any = "") -> Any:
+    if isinstance(scene, dict):
+        return scene.get(name, default)
+    return getattr(scene, name, default)
+
+
+def _truncate_similar_unified_words(raw: object, *, max_words: int) -> str:
+    text = _normalize_similar_unified_prompt_text(raw)
+    if not text:
+        return ""
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    return " ".join(words[:max_words]).rstrip(" ,;:")
+
+
+def _pick_similar_scene_clause(raw: object, fallback: str) -> str:
+    text = _truncate_similar_unified_words(raw, max_words=24)
+    text = re.sub(r"^(?:scene|shot)\s*\d+\s*[:\-]\s*", "", text, flags=re.IGNORECASE)
+    text = text.strip().rstrip(". ")
+    if not text:
+        return fallback
+    return text[0].lower() + text[1:] if len(text) > 1 else text.lower()
+
+
+def _infer_similar_unified_camera_descriptor(text_blob: str) -> str:
+    lowered = text_blob.lower()
+    keyword_map = (
+        (("drone", "aerial", "bird's-eye", "birds-eye", "top-down"), "drone"),
+        (("pov", "point of view", "first-person"), "POV"),
+        (("macro",), "macro"),
+        (("close-up", "close up"), "close-up handheld"),
+        (("tracking", "follow", "following", "tracking shot"), "tracking handheld"),
+        (("locked-off", "locked off", "static camera", "tripod"), "locked-off"),
+        (("wide shot", "wide-angle", "wide angle", "establishing"), "wide-angle"),
+    )
+    for keywords, label in keyword_map:
+        if any(keyword in lowered for keyword in keywords):
+            return label
+    return "handheld"
+
+
+def _infer_similar_unified_soundscape(text_blob: str, transcript_text: str) -> str:
+    lowered = f"{text_blob} {transcript_text}".lower()
+    sound_parts: list[str] = []
+    if any(token in lowered for token in ("rain", "water", "ocean", "wave")):
+        sound_parts.append("rainfall, water movement")
+    if any(token in lowered for token in ("street", "traffic", "city", "road", "car")):
+        sound_parts.append("distant traffic")
+    if any(token in lowered for token in ("workshop", "wood", "hammer", "tool", "table saw", "drill")):
+        sound_parts.append("subtle tool and material handling sounds")
+    if transcript_text:
+        sound_parts.append("any spoken dialogue present in the original clip")
+    if not sound_parts:
+        sound_parts.append("the original ambient soundscape")
+    return ", ".join(dict.fromkeys(sound_parts))
+
+
+def _infer_similar_unified_lighting(text_blob: str) -> tuple[str, str]:
+    lowered = text_blob.lower()
+    if any(token in lowered for token in ("night", "neon", "club", "streetlight", "city at night")):
+        return (
+            "mixed practical light, neon spill, and directional contrast",
+            "specular highlights, deep contrast, and reflective texture",
+        )
+    if any(token in lowered for token in ("sunset", "golden hour", "dusk", "sunrise")):
+        return (
+            "golden-hour sunlight with soft directional falloff",
+            "warm skin tones, gentle flare, and cinematic depth separation",
+        )
+    if any(token in lowered for token in ("indoor", "interior", "studio", "room", "kitchen", "office")):
+        return (
+            "soft diffused interior light with natural practical highlights",
+            "clean skin detail, balanced contrast, and grounded realism",
+        )
+    return (
+        "natural daylight with directional softness",
+        "realistic contrast, soft shadows, and gentle depth separation",
+    )
+
+
+def _infer_similar_unified_subject(text_blob: str) -> str:
+    lowered = text_blob.lower()
+    if any(token in lowered for token in ("woman", "female", "girl")):
+        return "the same woman from the reference video, preserving age cues, body language, and identity"
+    if any(token in lowered for token in ("man", "male", "boy")):
+        return "the same man from the reference video, preserving age cues, body language, and identity"
+    if any(token in lowered for token in ("couple", "two people", "duo", "pair")):
+        return "the same pair of subjects from the reference video, preserving facial identity, proportions, and chemistry"
+    return "the main subject from the reference video, preserving identity cues, body language, and proportions"
+
+
+def _infer_similar_unified_camera_behavior(text_blob: str) -> str:
+    lowered = text_blob.lower()
+    behavior_parts: list[str] = []
+    if any(token in lowered for token in ("handheld", "shake", "shaky", "micro-shake")):
+        behavior_parts.append("handheld micro-shakes")
+    if any(token in lowered for token in ("tracking", "follow", "moving camera", "push in", "push-in")):
+        behavior_parts.append("subtle tracking adjustments")
+    if any(token in lowered for token in ("focus", "rack focus", "close-up", "close up", "macro")):
+        behavior_parts.append("natural focus breathing")
+    if any(token in lowered for token in ("zoom", "zoom-in", "zoom out", "zoom-out")):
+        behavior_parts.append("gentle zoom corrections")
+    if any(token in lowered for token in ("pan", "tilt", "low angle", "high angle", "orbit")):
+        behavior_parts.append("small pan and tilt corrections")
+    if not behavior_parts:
+        behavior_parts = [
+            "handheld micro-shakes",
+            "natural focus breathing",
+            "minor reframing",
+            "subtle zoom adjustments",
+        ]
+    return ", ".join(dict.fromkeys(behavior_parts))
+
+
+def _build_similar_unified_prompt_context(project: VideoProject, scenes: list[Any], tags_data: dict[str, Any]) -> str:
+    lines = [
+        f"Project title: {str(project.title or '').strip() or 'Video Semelhante'}",
+        f"Aspect ratio: {str(project.aspect_ratio or '').strip() or '16:9'}",
+    ]
+
+    context_summary = _normalize_similar_unified_prompt_text(tags_data.get("similar_context_summary"), limit=1400)
+    transcript_excerpt = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=900)
+    if context_summary:
+        lines.extend(["", "Global visual context:", context_summary])
+    if transcript_excerpt:
+        lines.extend(["", "Transcript/audio context:", transcript_excerpt])
+
+    lines.extend(["", "Analyzed scene breakdown:"])
+    for idx, scene in enumerate(scenes, start=1):
+        start = float(_scene_field(scene, "start_time", 0.0) or 0.0)
+        end = float(_scene_field(scene, "end_time", start) or start)
+        prompt_text = _normalize_similar_unified_prompt_text(_scene_field(scene, "prompt", ""), limit=420)
+        spoken_text = _normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=180)
+        lines.append(f"Scene {idx} | {start:.1f}s - {end:.1f}s")
+        if prompt_text:
+            lines.append(f"Prompt: {prompt_text}")
+        if spoken_text:
+            lines.append(f"Spoken context: {spoken_text}")
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
+def _build_similar_unified_prompt_fallback(project: VideoProject, scenes: list[Any], tags_data: dict[str, Any]) -> str:
+    scene_prompts = [
+        _normalize_similar_unified_prompt_text(_scene_field(scene, "prompt", ""), limit=420)
+        for scene in scenes
+    ]
+    scene_prompts = [prompt for prompt in scene_prompts if prompt]
+    transcript_excerpt = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=320)
+    context_summary = _normalize_similar_unified_prompt_text(tags_data.get("similar_context_summary"), limit=500)
+    combined_text = " ".join(scene_prompts + [context_summary, transcript_excerpt]).strip()
+
+    camera = _infer_similar_unified_camera_descriptor(combined_text)
+    soundscape = _infer_similar_unified_soundscape(combined_text, transcript_excerpt)
+    lighting, visual_effects = _infer_similar_unified_lighting(combined_text)
+    subject = _infer_similar_unified_subject(combined_text)
+    location = "the same environment, spatial layout, and atmosphere seen in the reference video"
+    outfit = "the original wardrobe and styling visible in the reference"
+    accessories = "all props, work tools, and handheld objects already visible in the reference"
+    camera_behavior = _infer_similar_unified_camera_behavior(combined_text)
+
+    intro_clause = _pick_similar_scene_clause(
+        scene_prompts[0] if scene_prompts else context_summary,
+        "the main subject enters the frame and establishes the core action",
+    )
+    middle_clause = _pick_similar_scene_clause(
+        scene_prompts[1] if len(scene_prompts) > 1 else scene_prompts[0] if scene_prompts else context_summary,
+        "the action develops with the same rhythm and environment",
+    )
+    climax_clause = _pick_similar_scene_clause(
+        scene_prompts[-2] if len(scene_prompts) > 2 else scene_prompts[-1] if scene_prompts else context_summary,
+        "the central visual beat peaks with clear momentum",
+    )
+    ending_clause = _pick_similar_scene_clause(
+        scene_prompts[-1] if scene_prompts else context_summary,
+        "the shot resolves on the same subject and atmosphere",
+    )
+
+    prompt = (
+        f"Ultra-realistic cinematic {camera} video set in {location}. "
+        f"Natural environmental audio including {soundscape}. "
+        f"Lighting consists of {lighting}, creating {visual_effects}. "
+        f"Main character is {subject}, maintaining consistent facial features. "
+        f"Outfit is {outfit} (strict lock). "
+        f"Accessories include {accessories}.\n\n"
+        f"The scene unfolds in one continuous shot: {intro_clause}, then {middle_clause}, "
+        f"followed by {climax_clause}, ending with {ending_clause}. "
+        f"Camera behavior includes {camera_behavior}, maintaining a natural and immersive perspective."
+    )
+    return _normalize_similar_unified_prompt_text(prompt, limit=2200)
+
+
+def _is_similar_unified_prompt_valid(raw: object) -> bool:
+    text = _normalize_similar_unified_prompt_text(raw, limit=2400)
+    if len(text) < 120:
+        return False
+    required_parts = (
+        "Ultra-realistic cinematic ",
+        "The scene unfolds in one continuous shot:",
+        "Camera behavior includes ",
+    )
+    if any(part not in text for part in required_parts):
+        return False
+    if "[" in text or "]" in text:
+        return False
+    return True
+
+
+async def _generate_similar_unified_prompt(
+    project: VideoProject,
+    scenes: list[Any],
+    tags_data: dict[str, Any],
+) -> tuple[str, str]:
+    fallback_prompt = _build_similar_unified_prompt_fallback(project, scenes, tags_data)
+    prompt_context = _build_similar_unified_prompt_context(project, scenes, tags_data)
+    preferred_model = (settings.similar_analysis_model or "gpt-4o-mini").strip() or "gpt-4o-mini"
+    system_prompt = (
+        "You transform a scene-by-scene reference video analysis into one single cinematic recreation prompt. "
+        "Return plain text only in English, never markdown, never JSON, never bullet lists, never surrounding quotes. "
+        "Follow this structure strictly: first paragraph starts with 'Ultra-realistic cinematic' and fills camera, location, sound, lighting, subject, outfit, and accessories. "
+        "Second paragraph starts with 'The scene unfolds in one continuous shot:' and describes beginning, middle, climax, ending, then camera behavior. "
+        "Never leave placeholders like [camera] or [location]. Infer missing details from the analysis."
+    )
+    user_prompt = (
+        "Use the analyzed video breakdown below to generate one unified prompt for recreating the whole video as a single continuous shot.\n\n"
+        "Output template to follow:\n"
+        "Ultra-realistic cinematic [camera type] video set in [location]. Natural environmental audio including [sounds]. Lighting consists of [lighting], creating [visual effects]. Main character is [full description], maintaining consistent facial features. Outfit is [description] (strict lock). Accessories include [description].\n\n"
+        "The scene unfolds in one continuous shot: [beginning], then [middle], followed by [climax], ending with [ending]. Camera behavior includes [movement, imperfections, focus, zoom], maintaining a natural and immersive perspective.\n\n"
+        "Analyzed data:\n"
+        f"{prompt_context}"
+    )
+
+    try:
+        response = await _openai.chat.completions.create(
+            model=preferred_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.35,
+            max_tokens=500,
+        )
+        candidate = _normalize_similar_unified_prompt_text(
+            response.choices[0].message.content if response and response.choices else "",
+            limit=2200,
+        )
+        if _is_similar_unified_prompt_valid(candidate):
+            return candidate, "ai"
+        logger.warning("Similar unified prompt AI output invalid for project %s; using fallback", project.id)
+    except Exception as exc:
+        logger.warning("Similar unified prompt generation failed for project %s: %s", project.id, exc)
+
+    return fallback_prompt, "fallback"
+
+
 class CreateProjectRequest(BaseModel):
     track_id: int = 0
     title: str = ""
@@ -1613,6 +1883,47 @@ async def get_project(
     }
 
 
+@router.post("/projects/{project_id}/similar/unified-prompt")
+async def build_similar_unified_prompt(
+    project_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not _is_similar_project(project):
+        raise HTTPException(status_code=400, detail="Projeto nao esta no modo Semelhante")
+
+    result_scenes = await db.execute(
+        select(VideoScene).where(VideoScene.project_id == project_id).order_by(VideoScene.scene_index)
+    )
+    scenes = result_scenes.scalars().all()
+    if not scenes:
+        raise HTTPException(status_code=400, detail="Analise o video antes de criar o prompt unico")
+
+    tags_data = _safe_tags_dict(project.tags)
+    prompt_text, prompt_source = await _generate_similar_unified_prompt(project, scenes, tags_data)
+    generated_at = datetime.utcnow().isoformat() + "Z"
+
+    tags_data.update(
+        {
+            "type": "similar",
+            "similar_unified_prompt": prompt_text,
+            "similar_unified_prompt_source": prompt_source,
+            "similar_unified_prompt_generated_at": generated_at,
+        }
+    )
+    project.tags = tags_data
+    await db.commit()
+
+    return {
+        "prompt": prompt_text,
+        "source": prompt_source,
+        "generated_at": generated_at,
+    }
+
+
 @router.patch("/projects/{project_id}/similar/scenes/{scene_id}")
 async def update_similar_scene(
     project_id: int,
@@ -1688,6 +1999,12 @@ async def update_similar_scene(
         scene.clip_path = ""
         scene.scene_type = "image"
         tags_data = _safe_tags_dict(project.tags)
+        for stale_key in (
+            "similar_unified_prompt",
+            "similar_unified_prompt_source",
+            "similar_unified_prompt_generated_at",
+        ):
+            tags_data.pop(stale_key, None)
         tags_data.update({"type": "similar", "similar_stage": "scene_edited"})
         project.tags = tags_data
         project.status = VideoStatus.PENDING
