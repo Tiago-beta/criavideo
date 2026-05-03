@@ -18486,6 +18486,14 @@ function _editorShouldShowAudioTrack() {
     return Boolean(_editor.musicUrl || _editor._musicFile || _editor._musicServerPath);
 }
 
+function _editorGetAudioTrackEndTime() {
+    if (!_editorShouldShowAudioTrack() || !_editor.audioSegments.length) return 0;
+    return _editor.audioSegments.reduce((maxEnd, seg) => {
+        const end = Math.max(0, Number(seg?.end || 0));
+        return Math.max(maxEnd, end);
+    }, 0);
+}
+
 function _editorGetVideoTrackEndTime() {
     if (!_editor.videoSegments.length) {
         return Math.max(0, Number(_editor.duration || 0));
@@ -18504,10 +18512,166 @@ function _editorGetLayerTrackEndTime() {
     }, 0);
 }
 
+function _editorGetOverlayTrackEndTime() {
+    let maxEnd = 0;
+
+    _editor.texts.forEach((item) => {
+        maxEnd = Math.max(maxEnd, Math.max(0, Number(item?.endTime || 0)));
+    });
+    _editor.subtitles.forEach((item) => {
+        maxEnd = Math.max(maxEnd, Math.max(0, Number(item?.endTime || 0)));
+    });
+    _editor.stickers.forEach((item) => {
+        maxEnd = Math.max(maxEnd, Math.max(0, Number(item?.endTime || 0)));
+    });
+
+    return maxEnd;
+}
+
+function _editorGetVisibleTimelineEndTime() {
+    const baseEnd = _editor.hideBaseVideoTrack ? 0 : _editorGetVideoTrackEndTime();
+    return Math.max(
+        baseEnd,
+        _editorGetLayerTrackEndTime(),
+        _editorGetAudioTrackEndTime(),
+        _editorGetOverlayTrackEndTime(),
+    );
+}
+
+function _editorMergeTimelineRanges(ranges = []) {
+    const normalized = ranges
+        .map((range) => {
+            const start = Math.max(0, Number(range?.[0] || 0));
+            const end = Math.max(start, Number(range?.[1] || 0));
+            return end > start + 0.02 ? [start, end] : null;
+        })
+        .filter(Boolean)
+        .sort((left, right) => left[0] - right[0]);
+
+    const merged = [];
+    normalized.forEach((range) => {
+        const previous = merged[merged.length - 1];
+        if (!previous || range[0] > previous[1] + 0.02) {
+            merged.push([...range]);
+            return;
+        }
+        previous[1] = Math.max(previous[1], range[1]);
+    });
+    return merged;
+}
+
+function _editorCollectNonBaseTimelineRanges() {
+    const ranges = [];
+    const pushRange = (start, end) => {
+        const safeStart = Math.max(0, Number(start || 0));
+        const safeEnd = Math.max(safeStart, Number(end || 0));
+        if (safeEnd > safeStart + 0.02) {
+            ranges.push([safeStart, safeEnd]);
+        }
+    };
+
+    (_editor.mediaLayers || []).forEach((layer) => {
+        pushRange(layer?.startTime, layer?.endTime);
+    });
+    if (_editorShouldShowAudioTrack()) {
+        (_editor.audioSegments || []).forEach((segment) => {
+            pushRange(segment?.start, segment?.end);
+        });
+    }
+    (_editor.texts || []).forEach((item) => pushRange(item?.startTime, item?.endTime));
+    (_editor.subtitles || []).forEach((item) => pushRange(item?.startTime, item?.endTime));
+    (_editor.stickers || []).forEach((item) => pushRange(item?.startTime, item?.endTime));
+
+    return _editorMergeTimelineRanges(ranges);
+}
+
+function _editorMapTimeAcrossRemovedGaps(timeValue, gaps = []) {
+    const safeTime = Math.max(0, Number(timeValue || 0));
+    let removedBefore = 0;
+
+    for (const gap of gaps) {
+        const gapStart = Math.max(0, Number(gap?.start || 0));
+        const gapEnd = Math.max(gapStart, Number(gap?.end || 0));
+        if (safeTime >= gapEnd - 0.0001) {
+            removedBefore += gapEnd - gapStart;
+            continue;
+        }
+        if (safeTime > gapStart + 0.0001) {
+            return Math.max(0, gapStart - removedBefore);
+        }
+        break;
+    }
+
+    return Math.max(0, safeTime - removedBefore);
+}
+
+function _editorCollapseHiddenBaseTimelineGaps() {
+    if (!_editor.hideBaseVideoTrack) return false;
+
+    const mergedRanges = _editorCollectNonBaseTimelineRanges();
+    const gaps = [];
+    for (let index = 0; index < mergedRanges.length - 1; index += 1) {
+        const current = mergedRanges[index];
+        const next = mergedRanges[index + 1];
+        if (next[0] > current[1] + 0.02) {
+            gaps.push({ start: current[1], end: next[0] });
+        }
+    }
+
+    const shiftWindow = (item, startKey, endKey) => {
+        if (!item) return;
+        const start = Math.max(0, Number(item[startKey] || 0));
+        const end = Math.max(start, Number(item[endKey] || 0));
+        item[startKey] = _editorMapTimeAcrossRemovedGaps(start, gaps);
+        item[endKey] = Math.max(item[startKey], _editorMapTimeAcrossRemovedGaps(end, gaps));
+    };
+
+    if (gaps.length) {
+        (_editor.audioSegments || []).forEach((segment) => shiftWindow(segment, "start", "end"));
+        (_editor.mediaLayers || []).forEach((layer) => shiftWindow(layer, "startTime", "endTime"));
+        (_editor.texts || []).forEach((item) => shiftWindow(item, "startTime", "endTime"));
+        (_editor.subtitles || []).forEach((item) => shiftWindow(item, "startTime", "endTime"));
+        (_editor.stickers || []).forEach((item) => shiftWindow(item, "startTime", "endTime"));
+    }
+
+    const recalculatedRanges = _editorCollectNonBaseTimelineRanges();
+    const activeEnd = recalculatedRanges.length
+        ? Math.max(0.1, Number(recalculatedRanges[recalculatedRanges.length - 1][1] || 0.1))
+        : 0.1;
+    const seedSegment = _editor.videoSegments[0] || { id: _editorGenId(), sourceStart: 0, reversed: false };
+    _editor.videoSegments = [{
+        id: seedSegment.id || _editorGenId(),
+        start: 0,
+        end: activeEnd,
+        sourceStart: 0,
+        reversed: Boolean(seedSegment.reversed),
+    }];
+    _editor.trimStart = 0;
+    _editor.trimEnd = activeEnd;
+    if (!_editorShouldShowAudioTrack()) {
+        _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
+    }
+    _editor.timelineTime = Math.max(0, Math.min(Number(_editor.timelineTime || 0), activeEnd));
+    return gaps.length > 0;
+}
+
+function _editorClearExternalAudioTrack() {
+    _editor.musicUrl = "";
+    _editor._musicFile = null;
+    _editor._musicServerPath = "";
+    _editor._musicSource = "audio";
+    _editor.audioSegments = [];
+    _editorSetMusicPreviewSource("");
+    _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
+}
+
 function _editorGetTimelineDuration() {
+    const visibleEnd = Math.max(0.1, Number(_editorGetVisibleTimelineEndTime() || 0.1));
+    if (_editor.hideBaseVideoTrack) {
+        return visibleEnd;
+    }
     const baseDuration = Math.max(0.1, Number(_editor.duration || 0.1));
-    const layerEnd = _editorGetLayerTrackEndTime();
-    return Math.max(baseDuration, layerEnd);
+    return Math.max(baseDuration, visibleEnd);
 }
 
 function _editorGetLayerVideoAppendStart() {
@@ -25286,6 +25450,21 @@ function _editorDeleteSelectedClip() {
     if (selKind === "segment") {
         const trackSegments = _editorGetSegments(selTrack);
         if (trackSegments.length <= 1) {
+            if (selTrack === "audio" && _editorShouldShowAudioTrack()) {
+                _editorSaveState();
+                _editorClearExternalAudioTrack();
+                if (_editor.hideBaseVideoTrack) {
+                    _editorCollapseHiddenBaseTimelineGaps();
+                }
+                _editor.selectedClip = { kind: "", id: "", track: "" };
+                _editorRenderProps();
+                _editorRenderTimeline();
+                _editorRenderMediaLayers();
+                const currentVideo = document.getElementById("editor-video");
+                _editorApplyTimelineFrame(Number(_editor.timelineTime || currentVideo?.currentTime || 0), false);
+                showToast("Áudio removido.", "success");
+                return;
+            }
             const trackLabel = selTrack === "audio" ? "audio" : "video";
             showToast(`Não é possível remover o último trecho do ${trackLabel}.`, "error");
             return;
@@ -25316,15 +25495,14 @@ function _editorDeleteSelectedClip() {
     } else if (selKind === "transition") {
         _editor.transitions = (_editor.transitions || []).filter((transition) => String(transition?.key || "") !== selId);
     } else if (selKind === "music") {
-        _editor.musicUrl = "";
-        _editor._musicFile = null;
-        _editor._musicServerPath = "";
-        _editor._musicSource = "audio";
-        _editorSetMusicPreviewSource("");
-        _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
+        _editorClearExternalAudioTrack();
     } else if (selKind === "audio") {
         _editorSetOriginalVolume(0);
         showToast("Áudio original silenciado.", "success");
+    }
+
+    if (_editor.hideBaseVideoTrack) {
+        _editorCollapseHiddenBaseTimelineGaps();
     }
 
     _editor.selectedClip = { kind: "", id: "", track: "" };
@@ -25332,7 +25510,7 @@ function _editorDeleteSelectedClip() {
     _editorRenderTimeline();
     _editorRenderMediaLayers();
     const video = document.getElementById("editor-video");
-    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorApplyTimelineFrame(Number(_editor.timelineTime || video?.currentTime || 0), false);
 }
 window._editorDeleteSelectedClip = _editorDeleteSelectedClip;
 
