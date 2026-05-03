@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v316 loaded");
+console.log("[CriaVideo] app.js v317 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1911,15 +1911,28 @@ let _copyFormatSourceProjectId = 0;
 let _pendingPublishProjectId = 0;
 let _renameProjectId = 0;
 
+function _isEditorProjectListItem(project) {
+    return Boolean(project?.is_editor_project || String(project?.workflow_type || "").trim().toLowerCase() === "editor");
+}
+
+function _projectVisibleInCreateList(project) {
+    return !_isEditorProjectListItem(project) && !(project?.status === "completed" && project?.video_expired);
+}
+
+function _projectVisibleInEditorList(project) {
+    return _isEditorProjectListItem(project)
+        && String(project?.status || "").trim().toLowerCase() === "completed"
+        && !project?.video_expired;
+}
+
 async function loadProjects() {
     const container = document.getElementById("projects-list");
     try {
         const data = await api("/video/projects");
         _projectsCache = data;
-        // Filter out expired videos — no need to show them
-        const visibleData = data.filter(p => !(p.status === "completed" && p.video_expired));
+        const visibleData = data.filter(_projectVisibleInCreateList);
         if (!visibleData.length) {
-            container.innerHTML = "<p class='loading'>Nenhum projeto ainda. Crie o primeiro.</p>";
+            container.innerHTML = "<p class='loading'>Nenhum vídeo criado ainda. Crie o primeiro.</p>";
             return;
         }
         container.innerHTML = visibleData.map((project) => {
@@ -11864,11 +11877,25 @@ async function deleteProject(id) {
     }
     try {
         await api(`/video/projects/${id}`, { method: "DELETE" });
+        if (Number(_editor.projectId || 0) === Number(id || 0)) {
+            closeEditor();
+        }
         loadProjects();
+        loadEditorVideosList();
     } catch (error) {
         alert(`Erro: ${error.message}`);
     }
 }
+
+async function _editorDeleteProjectCard(event, projectId) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    const parsedProjectId = Number(projectId || 0);
+    if (!parsedProjectId) return;
+    _editorClearDraft(parsedProjectId);
+    await deleteProject(parsedProjectId);
+}
+window._editorDeleteProjectCard = _editorDeleteProjectCard;
 
 function _sortRendersNewestFirst(renders) {
     return [...(Array.isArray(renders) ? renders : [])].sort((a, b) => {
@@ -18193,6 +18220,12 @@ let _editorLayerLibrary = {
     sendProgress: 0,
     sendTotal: 0,
 };
+let _editorSourceLibrary = {
+    open: false,
+    loading: false,
+    error: "",
+    items: [],
+};
 const _EDITOR_AI_MUSIC_MOOD_OPTIONS = [
     { value: "calmo", label: "Calmo" },
     { value: "drama", label: "Drama" },
@@ -18505,7 +18538,7 @@ function _editorHandleEditorPageEntry() {
 
     loadEditorVideosList();
     closeModal("modal-editor-drafts");
-    openModal("modal-editor-start");
+    closeModal("modal-editor-start");
 }
 
 async function _editorContinueDraftFromModal(projectId) {
@@ -20257,18 +20290,38 @@ async function loadEditorVideosList() {
     if (!container) return;
     try {
         const data = await api("/video/projects");
-        const completed = data.filter(p => p.status === "completed" && !p.video_expired);
-        if (!completed.length) {
-            container.innerHTML = "<p class='loading'>Nenhum video finalizado ainda. Use o botao + para enviar um video ou crie um video primeiro.</p>";
+        const draftsByProjectId = new Map(
+            _editorGetSavedDraftProjects().map((draft) => [Number(draft.projectId || 0), draft])
+        );
+        const editProjects = data.filter(_projectVisibleInEditorList);
+        if (!editProjects.length) {
+            container.innerHTML = "<p class='loading'>Nenhuma edição em andamento ainda. Use o botão + para começar uma nova edição.</p>";
             return;
         }
-        container.innerHTML = completed.map(p => {
-            const thumb = p.thumbnail_url
-                ? `<div style="position:relative"><img class="card-thumb" src="${p.thumbnail_url}" alt="" loading="lazy"><div class="editor-video-card-overlay"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></div></div>`
+        container.innerHTML = editProjects.map((project) => {
+            const projectId = Number(project.id || 0);
+            const draft = draftsByProjectId.get(projectId) || null;
+            const title = esc(String(project.title || project.track_title || `Projeto ${projectId}`));
+            const activityText = draft?.savedAt
+                ? `Rascunho salvo em ${_editorFormatDraftDateTime(draft.savedAt)}`
+                : (project.render_created_at
+                    ? `Última exportação em ${_editorFormatDraftDateTime(project.render_created_at)}`
+                    : `Criado em ${_editorFormatDraftDateTime(project.created_at)}`);
+            const thumb = project.thumbnail_url
+                ? `<div style="position:relative"><img class="card-thumb" src="${project.thumbnail_url}" alt="${title}" loading="lazy"><div class="editor-video-card-overlay"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></div></div>`
                 : `<div class="card-thumb card-thumb-placeholder" style="position:relative"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg><div class="editor-video-card-overlay"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></div></div>`;
-            return `<div class="card" style="cursor:pointer" onclick="openEditor(${p.id})">
+            return `<div class="card" style="cursor:pointer" onclick="openEditor(${projectId})">
                 ${thumb}
-                <div class="card-body"><h4 class="card-title">${esc(p.title)}</h4></div>
+                <div class="card-body">
+                    <h4 class="card-title">${title}</h4>
+                    <p class="editor-draft-meta">${esc(activityText)}</p>
+                </div>
+                <div class="card-footer">
+                    <span class="card-date">${draft ? "Rascunho salvo" : "Pronto para editar"}</span>
+                    <div class="card-actions">
+                        <button class="card-btn card-btn-delete" onclick="_editorDeleteProjectCard(event, ${projectId})" type="button" title="Excluir edição"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
+                    </div>
+                </div>
             </div>`;
         }).join("");
     } catch (err) {
@@ -21843,6 +21896,11 @@ function _editorChooseStartMode(mode) {
         return;
     }
 
+    if (selectedMode === "library") {
+        _editorOpenSourceProjectLibrary();
+        return;
+    }
+
     if (selectedMode === "internet") {
         _editorOpenInternetImportModal();
         return;
@@ -21858,7 +21916,7 @@ function _editorChooseStartMode(mode) {
     if (list) {
         list.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-    showToast("Selecione um vídeo da biblioteca para abrir no editor.", "success");
+    showToast("Escolha uma edição em andamento ou use o botão + para iniciar outra.", "success");
 }
 window._editorChooseStartMode = _editorChooseStartMode;
 
@@ -21958,6 +22016,123 @@ function _editorCloseLayerVideoLibrary() {
     document.getElementById("editor-layer-library-overlay")?.remove();
 }
 window._editorCloseLayerVideoLibrary = _editorCloseLayerVideoLibrary;
+
+function _editorCloseSourceProjectLibrary() {
+    _editorSourceLibrary.open = false;
+    _editorSourceLibrary.loading = false;
+    _editorSourceLibrary.error = "";
+    _editorSourceLibrary.items = [];
+    document.getElementById("editor-source-library-overlay")?.remove();
+}
+window._editorCloseSourceProjectLibrary = _editorCloseSourceProjectLibrary;
+
+function _editorRenderSourceProjectLibraryModal() {
+    const existing = document.getElementById("editor-source-library-overlay");
+    if (!_editorSourceLibrary.open) {
+        if (existing) existing.remove();
+        return;
+    }
+
+    const loadingHtml = '<div class="editor-layer-library-loading">Carregando vídeos finalizados...</div>';
+    const errorHtml = _editorSourceLibrary.error
+        ? `<div class="editor-layer-library-error">${esc(_editorSourceLibrary.error)}</div>`
+        : "";
+    const emptyHtml = '<div class="editor-layer-library-empty">Nenhum vídeo finalizado disponível para iniciar uma edição.</div>';
+    const cardsHtml = (_editorSourceLibrary.items || []).map((item) => {
+        const pid = Number(item.id || 0);
+        const title = esc(String(item.title || item.track_title || `Projeto ${pid}`));
+        const formatLabel = esc(String(item.aspect_ratio || "--").toUpperCase());
+        const durationSec = Math.max(0, Number(item.duration || item.track_duration || 0));
+        const durationLabel = durationSec > 0 ? _fmtTime(durationSec) : "--:--";
+        const thumb = item.thumbnail_url
+            ? `<img class="editor-layer-library-thumb" src="${item.thumbnail_url}" alt="${title}" loading="lazy">`
+            : '<div class="editor-layer-library-thumb placeholder">Sem thumbnail</div>';
+        return `
+            <button
+                class="editor-layer-library-card"
+                type="button"
+                onclick="_editorOpenProjectFromSourceLibrary(${pid})"
+                ${_editorSourceLibrary.loading ? "disabled" : ""}
+            >
+                <div class="editor-layer-library-thumb-wrap">
+                    ${thumb}
+                    <div class="editor-layer-library-top-meta">
+                        <span class="editor-layer-library-chip">${formatLabel}</span>
+                        <span class="editor-layer-library-chip">${durationLabel}</span>
+                    </div>
+                </div>
+                <div class="editor-layer-library-meta">
+                    <strong>${title}</strong>
+                    <span>Toque para abrir no editor</span>
+                </div>
+            </button>
+        `;
+    }).join("");
+
+    const bodyHtml = _editorSourceLibrary.loading
+        ? loadingHtml
+        : (_editorSourceLibrary.items.length ? cardsHtml : emptyHtml);
+
+    const overlayHtml = `
+        <div class="editor-layer-library-backdrop" onclick="_editorCloseSourceProjectLibrary()"></div>
+        <div class="editor-layer-library-modal" role="dialog" aria-modal="true" aria-label="Abrir vídeo finalizado no editor">
+            <div class="editor-layer-library-header">
+                <h3>Vídeos finalizados</h3>
+                <span class="editor-layer-library-selected-count">Abra um vídeo para começar a edição</span>
+                <button class="editor-layer-library-close" type="button" onclick="_editorCloseSourceProjectLibrary()">×</button>
+            </div>
+            ${errorHtml}
+            <div class="editor-layer-library-list">${bodyHtml}</div>
+            <div class="editor-layer-library-footer">
+                <button class="editor-add-btn editor-layer-library-send-btn" type="button" onclick="_editorCloseSourceProjectLibrary()">Fechar</button>
+            </div>
+        </div>
+    `;
+
+    if (!existing) {
+        const wrapper = document.createElement("div");
+        wrapper.id = "editor-source-library-overlay";
+        wrapper.className = "editor-layer-library-overlay";
+        wrapper.innerHTML = overlayHtml;
+        document.body.appendChild(wrapper);
+        return;
+    }
+
+    existing.innerHTML = overlayHtml;
+}
+
+async function _editorOpenSourceProjectLibrary() {
+    closeModal("modal-editor-start");
+    _editorSourceLibrary.open = true;
+    _editorSourceLibrary.loading = true;
+    _editorSourceLibrary.error = "";
+    _editorSourceLibrary.items = [];
+    _editorRenderSourceProjectLibraryModal();
+
+    try {
+        const projects = await api("/video/projects");
+        _editorSourceLibrary.items = Array.isArray(projects)
+            ? projects.filter((project) => {
+                const status = String(project?.status || "").toLowerCase();
+                const expired = Boolean(project?.video_expired);
+                return status === "completed" && !expired && !_isEditorProjectListItem(project);
+            })
+            : [];
+    } catch (err) {
+        _editorSourceLibrary.error = err?.message || "Falha ao carregar vídeos finalizados";
+    } finally {
+        _editorSourceLibrary.loading = false;
+        _editorRenderSourceProjectLibraryModal();
+    }
+}
+
+async function _editorOpenProjectFromSourceLibrary(projectId) {
+    const pid = Number(projectId || 0);
+    if (!pid) return;
+    _editorCloseSourceProjectLibrary();
+    await openEditor(pid, { restoreDraft: false });
+}
+window._editorOpenProjectFromSourceLibrary = _editorOpenProjectFromSourceLibrary;
 
 function _editorRenderLayerVideoLibraryModal() {
     const existing = document.getElementById("editor-layer-library-overlay");
@@ -22081,7 +22256,7 @@ async function _editorOpenLayerVideoLibrary() {
                 const status = String(project?.status || "").toLowerCase();
                 const expired = Boolean(project?.video_expired);
                 const sameProject = Number(project?.id || 0) === Number(_editor.projectId || 0);
-                return status === "completed" && !expired && !sameProject;
+                return status === "completed" && !expired && !sameProject && !_isEditorProjectListItem(project);
             })
             : [];
         _editorLayerLibrary.items = items;
@@ -27380,7 +27555,7 @@ async function _editorExport() {
                     } else if (poll.output_url) {
                         const link = document.createElement("a");
                         link.href = poll.output_url;
-                        link.download = "video-editado.mp4";
+                        link.download = `${String(_editor.editProjectName || _editor.sourceProjectTitle || "video-editado").trim() || "video-editado"}.mp4`;
                         link.style.display = "none";
                         document.body.appendChild(link);
                         link.click();
@@ -27389,6 +27564,7 @@ async function _editorExport() {
 
                     closeEditor();
                     loadEditorVideosList();
+                    loadProjects();
                 } else if (poll.status === "failed") {
                     done = true;
                     overlay.remove();

@@ -3636,6 +3636,7 @@ th {
     padding: 0;
     display: flex;
     justify-content: center;
+    align-items: center;
     background: #000;
 }
 
@@ -3690,7 +3691,9 @@ th {
 }
 
 #player-video {
-    width: 100%;
+    width: auto;
+    height: auto;
+    max-width: 100%;
     max-height: 70vh;
     display: block;
     background: #000;

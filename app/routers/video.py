@@ -1884,6 +1884,17 @@ async def list_projects(
         latest_any = ordered[0] if ordered else None
         latest_active = next((r for r in ordered if r.file_path), None)
         display_render = latest_active or latest_any
+        render_paths = [str(r.file_path or "").replace("\\", "/").lower() for r in ordered]
+        description_text = str(p.description or "").strip().lower()
+        workflow_type = str(tags_data.get("type") or "").strip().lower() or "standard"
+        is_editor_project = (
+            workflow_type == "editor"
+            or any("editor_uploads/" in path for path in render_paths)
+            or (
+                bool(getattr(p, "use_custom_video", False))
+                and ("edicao" in description_text or "edição" in description_text)
+            )
+        )
 
         payload.append(
             {
@@ -1902,8 +1913,9 @@ async def list_projects(
                 "style_prompt": p.style_prompt or "",
                 "thumbnail_url": _to_media_url(display_render.thumbnail_path) if display_render else None,
                 "duration": float(display_render.duration) if display_render and display_render.duration else float(p.track_duration or 0),
-                "workflow_type": str(tags_data.get("type") or "").strip().lower() or "standard",
+                "workflow_type": workflow_type,
                 "workflow_stage": str(tags_data.get("similar_stage") or "").strip(),
+                "is_editor_project": is_editor_project,
             }
         )
 

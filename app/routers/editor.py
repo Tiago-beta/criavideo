@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import asyncio
 import uuid
+from collections import Counter
 from pathlib import Path
 from typing import Optional
 
@@ -40,6 +41,7 @@ _SUBTITLE_PROPER_NAMES = ("Senhor", "Deus", "Pastor", "Jesus", "Cristo", "Pai")
 _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS = 5.0
 _EDITOR_IMAGE_SEQUENCE_MAX_FILES = 50
 _EDITOR_MEDIA_SEQUENCE_MAX_FILES = 50
+_EDITOR_CROPDETECT_RE = re.compile(r"crop=(\d+):(\d+):(\d+):(\d+)")
 _EDITOR_TEVOXI_MOOD_MAP = {
     "calmo": "calmo",
     "calma": "calmo",
@@ -236,6 +238,133 @@ def _estimate_cover_canvas_size(width: int, height: int, aspect_ratio: str | Non
         return _round_up_even(h * target_ratio), _round_up_even(h)
 
     return _round_up_even(w), _round_up_even(w / target_ratio)
+
+
+def _detect_embedded_border_crop(video_path: str) -> tuple[int, int, int, int] | None:
+    width, height = _probe_media_dimensions(video_path)
+    if width <= 0 or height <= 0:
+        return None
+
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-i",
+                video_path,
+                "-vf",
+                "cropdetect=limit=0.08:round=2:reset=0",
+                "-frames:v",
+                "96",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        raw_output = f"{proc.stdout or ''}\n{proc.stderr or ''}"
+    except Exception as exc:
+        logger.warning("[editor] Cropdetect failed for %s: %s", video_path, exc)
+        return None
+
+    matches = [
+        (int(cw), int(ch), int(cx), int(cy))
+        for cw, ch, cx, cy in _EDITOR_CROPDETECT_RE.findall(raw_output)
+    ]
+    if not matches:
+        return None
+
+    (crop_w, crop_h, crop_x, crop_y), _ = max(
+        Counter(matches).items(),
+        key=lambda item: (item[1], item[0][0] * item[0][1]),
+    )
+    if crop_w <= 0 or crop_h <= 0:
+        return None
+
+    width_loss = max(0.0, 1.0 - (crop_w / float(width)))
+    height_loss = max(0.0, 1.0 - (crop_h / float(height)))
+    significant_crop = crop_w < max(2, width - 24) or crop_h < max(2, height - 24)
+    if not significant_crop:
+        return None
+    if max(width_loss, height_loss) < 0.08:
+        return None
+
+    return crop_w, crop_h, crop_x, crop_y
+
+
+def _auto_fill_editor_export_frame(video_path: str, aspect_ratio: str | None) -> str:
+    normalized_aspect = _normalize_aspect_ratio(aspect_ratio)
+    if not normalized_aspect or not video_path or not os.path.exists(video_path):
+        return video_path
+
+    detected_crop = _detect_embedded_border_crop(video_path)
+    if not detected_crop:
+        return video_path
+
+    width, height = _probe_media_dimensions(video_path)
+    safe_width = max(2, _round_up_even(width))
+    safe_height = max(2, _round_up_even(height))
+    if safe_width <= 0 or safe_height <= 0:
+        return video_path
+
+    crop_w, crop_h, crop_x, crop_y = detected_crop
+    source_path = Path(video_path)
+    fixed_path = source_path.with_name(f"{source_path.stem}_filled{source_path.suffix or '.mp4'}")
+    fixed_path.unlink(missing_ok=True)
+
+    filter_chain = (
+        f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
+        f"scale={safe_width}:{safe_height}:force_original_aspect_ratio=increase,"
+        f"crop={safe_width}:{safe_height},setsar=1"
+    )
+
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                video_path,
+                "-vf",
+                filter_chain,
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-c:v",
+                "libx264",
+                "-preset",
+                _EDITOR_EXPORT_PRESET,
+                "-crf",
+                _EDITOR_EXPORT_CRF,
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                _EDITOR_EXPORT_AUDIO_BITRATE,
+                "-movflags",
+                "+faststart",
+                str(fixed_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except Exception as exc:
+        logger.warning("[editor] Failed to fill export frame for %s: %s", video_path, exc)
+        fixed_path.unlink(missing_ok=True)
+        return video_path
+
+    if proc.returncode != 0 or not fixed_path.exists() or fixed_path.stat().st_size <= 0:
+        logger.warning("[editor] Filled export frame failed for %s: %s", video_path, (proc.stderr or "")[-1200:])
+        fixed_path.unlink(missing_ok=True)
+        return video_path
+
+    logger.info("[editor] Filled export frame for %s using crop %sx%s+%s+%s", video_path, crop_w, crop_h, crop_x, crop_y)
+    return str(fixed_path)
 
 
 def _probe_video_metadata(video_path: str) -> tuple[float, str]:
@@ -1574,6 +1703,7 @@ async def _create_editor_video_project(
         track_id=0,
         title=title,
         description=description,
+        tags={"type": "editor"},
         aspect_ratio=detected_aspect or "16:9",
         status=VideoStatus.COMPLETED,
         progress=100,
@@ -2759,6 +2889,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
                 final_out_file = layered_out_file
 
+            final_out_file = _auto_fill_editor_export_frame(final_out_file, selected_aspect)
+
         job["progress"] = 95
         job["message"] = "Finalizando..."
 
@@ -2768,16 +2900,18 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         async def _save_render():
             async with async_session() as db:
                 source_title = (project.title or project.track_title or "Vídeo").strip() or "Vídeo"
-                edited_title = f"{source_title} (Editado)"
-                if len(edited_title) > 500:
-                    edited_title = edited_title[:500]
+                edited_title = source_title[:500]
+                source_tags = dict(project.tags) if isinstance(project.tags, dict) else {}
+                source_tags["type"] = "editor"
+                source_tags["editor_export"] = True
+                source_tags["editor_source_project_id"] = int(project.id or 0)
 
                 exported_project = VideoProject(
                     user_id=project.user_id,
                     track_id=int(project.track_id or 0),
                     title=edited_title,
                     description=project.description or "",
-                    tags=project.tags or [],
+                    tags=source_tags,
                     style_prompt=project.style_prompt or "",
                     aspect_ratio=selected_aspect,
                     status=VideoStatus.COMPLETED,
