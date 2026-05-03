@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260503-01">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260503-02">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 329;
+        var REQUIRED_VER = 330;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -219,7 +219,7 @@
                                 <button class="editor-back-btn" id="editor-back-btn" type="button" title="Voltar">
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
                                 </button>
-                                <span class="editor-project-name" id="editor-project-name">Projeto</span>
+                                <span class="editor-project-name" id="editor-project-name" title="Clique para renomear" tabindex="0">Projeto</span>
                                 <div class="editor-topbar-actions">
                                     <button class="btn btn-secondary btn-sm" id="editor-new-btn" type="button" title="Iniciar nova edição">
                                         Novo +
@@ -335,8 +335,11 @@
                                 <button class="editor-quick-icon-btn" id="editor-quick-layer-order" type="button" title="Alternar ordem das camadas" disabled>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h11"/><path d="M4 12h7"/><path d="M4 17h11"/><path d="m15 5 3-3 3 3"/><path d="m15 19 3 3 3-3"/></svg>
                                 </button>
-                                <button class="editor-quick-icon-btn" id="editor-quick-duplicate" type="button" title="Duplicar selecao" disabled>
+                                <button class="editor-quick-icon-btn" id="editor-quick-duplicate" type="button" title="Copiar selecao (Ctrl+C)" disabled>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                </button>
+                                <button class="editor-quick-icon-btn" id="editor-quick-paste" type="button" title="Colar selecao (Ctrl+V)" disabled>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 4h8"/><path d="M9 2h6v4H9z"/><rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 12h6"/><path d="M12 9v6"/></svg>
                                 </button>
                                 <button class="editor-quick-icon-btn" id="editor-quick-delete" type="button" title="Excluir selecao (Delete)" disabled>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
@@ -3436,8 +3439,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260503-01"></script>
-    <script src="/video/static/pwa.js?v=20260503-01"></script>
+    <script src="/video/static/app.js?v=20260503-02"></script>
+    <script src="/video/static/pwa.js?v=20260503-02"></script>
 </body>
 </html>
 
