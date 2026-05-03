@@ -1245,13 +1245,98 @@ def _extract_similar_reference_frame_map(raw_tags: object) -> dict[str, str]:
     return resolved
 
 
-def _serialize_project_scene(scene: VideoScene, reference_frame_map: dict[str, str] | None = None) -> dict[str, Any]:
+def _extract_similar_generated_frame_variant_map(raw_tags: object) -> dict[str, list[str]]:
+    tags = _safe_tags_dict(raw_tags)
+    raw_map = tags.get("similar_generated_frame_variants") if isinstance(tags.get("similar_generated_frame_variants"), dict) else {}
+    if not isinstance(raw_map, dict):
+        return {}
+
+    resolved: dict[str, list[str]] = {}
+    for key, raw_items in raw_map.items():
+        if not isinstance(raw_items, list):
+            continue
+
+        seen: set[str] = set()
+        valid_paths: list[str] = []
+        for raw_path in raw_items:
+            path = str(raw_path or "").strip()
+            if path and os.path.exists(path) and path not in seen:
+                valid_paths.append(path)
+                seen.add(path)
+
+        if valid_paths:
+            resolved[str(key)] = valid_paths
+    return resolved
+
+
+def _set_similar_generated_frame_variants(
+    tags_data: dict[str, Any],
+    scene_id: int,
+    *,
+    active_path: object = "",
+    previous_path: object = "",
+    max_items: int = 6,
+) -> None:
+    variant_map = _extract_similar_generated_frame_variant_map(tags_data)
+    scene_key = str(int(scene_id or 0))
+    next_paths: list[str] = []
+    for candidate in [previous_path, *variant_map.get(scene_key, []), active_path]:
+        path = str(candidate or "").strip()
+        if not path or not os.path.exists(path) or path in next_paths:
+            continue
+        next_paths.append(path)
+
+    if next_paths:
+        variant_map[scene_key] = next_paths[-max_items:]
+    else:
+        variant_map.pop(scene_key, None)
+
+    if variant_map:
+        tags_data["similar_generated_frame_variants"] = variant_map
+    else:
+        tags_data.pop("similar_generated_frame_variants", None)
+
+
+def _clear_similar_generated_frame_variants(tags_data: dict[str, Any], scene_id: int) -> None:
+    variant_map = _extract_similar_generated_frame_variant_map(tags_data)
+    scene_key = str(int(scene_id or 0))
+    if scene_key in variant_map:
+        del variant_map[scene_key]
+
+    if variant_map:
+        tags_data["similar_generated_frame_variants"] = variant_map
+    else:
+        tags_data.pop("similar_generated_frame_variants", None)
+
+
+def _serialize_project_scene(
+    scene: VideoScene,
+    reference_frame_map: dict[str, str] | None = None,
+    generated_frame_variant_map: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
     reference_frame_path = ""
     scene_key = str(int(scene.scene_index or 0))
     if isinstance(reference_frame_map, dict):
         reference_frame_path = str(reference_frame_map.get(scene_key) or "").strip()
         if reference_frame_path and not os.path.exists(reference_frame_path):
             reference_frame_path = ""
+
+    generated_frame_variants: list[dict[str, Any]] = []
+    variant_scene_key = str(int(scene.id or 0))
+    active_image_path = str(scene.image_path or "").strip()
+    if isinstance(generated_frame_variant_map, dict):
+        for index, variant_path in enumerate(generated_frame_variant_map.get(variant_scene_key, [])):
+            path = str(variant_path or "").strip()
+            if not path:
+                continue
+            generated_frame_variants.append(
+                {
+                    "path": path,
+                    "url": _to_media_url(path),
+                    "label": f"V{index + 1}",
+                    "is_active": path == active_image_path,
+                }
+            )
 
     return {
         "id": scene.id,
@@ -1268,6 +1353,7 @@ def _serialize_project_scene(scene: VideoScene, reference_frame_map: dict[str, s
         "end_time": scene.end_time,
         "lyrics_segment": scene.lyrics_segment,
         "is_user_uploaded": bool(scene.is_user_uploaded),
+        "generated_image_variants": generated_frame_variants,
     }
 
 
@@ -1849,6 +1935,7 @@ async def get_project(
 
     response_tags = project.tags
     reference_frame_map: dict[str, str] = {}
+    generated_frame_variant_map: dict[str, list[str]] = {}
     if _is_similar_project(project):
         response_tags = _safe_tags_dict(project.tags)
         reference_video_url = _to_media_url(str(response_tags.get("similar_local_video_path") or "").strip())
@@ -1861,6 +1948,7 @@ async def get_project(
         if unified_reference_image_path and os.path.exists(unified_reference_image_path):
             response_tags["similar_unified_reference_image_url"] = _to_media_url(unified_reference_image_path)
         reference_frame_map = _extract_similar_reference_frame_map(response_tags)
+        generated_frame_variant_map = _extract_similar_generated_frame_variant_map(response_tags)
 
     return {
         "id": project.id,
@@ -1876,7 +1964,7 @@ async def get_project(
         "error_message": project.error_message,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "scenes": [
-            _serialize_project_scene(s, reference_frame_map)
+            _serialize_project_scene(s, reference_frame_map, generated_frame_variant_map)
             for s in scenes
         ],
         "renders": [
@@ -2156,6 +2244,7 @@ async def upsert_similar_scene_image(
     effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     image_dir = Path(settings.media_dir) / "images" / str(project.id)
     image_dir.mkdir(parents=True, exist_ok=True)
+    previous_image_path = str(scene.image_path or "").strip()
 
     upload_ids: list[str] = []
     for raw_id in (req.image_upload_ids or []):
@@ -2175,6 +2264,7 @@ async def upsert_similar_scene_image(
                 raise HTTPException(status_code=400, detail="Uma das imagens enviadas nao foi encontrada. Envie novamente")
             resolved_files.append(source_file)
 
+    track_generated_variant = False
     if req.generate_from_prompt:
         from app.services.scene_generator import (
             edit_frame_with_replacement_references,
@@ -2182,7 +2272,11 @@ async def upsert_similar_scene_image(
             merge_reference_images_with_nano_banana,
         )
 
-        target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.png"
+        track_generated_variant = bool(str(req.edit_instruction or "").strip()) or bool(resolved_files)
+        if track_generated_variant:
+            target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_{uuid.uuid4().hex[:8]}.png"
+        else:
+            target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.png"
         loop = asyncio.get_event_loop()
         if resolved_files and str(req.edit_instruction or "").strip():
             base_edit_image = source_reference_image
@@ -2268,6 +2362,15 @@ async def upsert_similar_scene_image(
     scene.scene_type = "image"
 
     tags_data = _safe_tags_dict(project.tags)
+    if req.generate_from_prompt and track_generated_variant:
+        _set_similar_generated_frame_variants(
+            tags_data,
+            int(scene.id or 0),
+            active_path=scene.image_path,
+            previous_path=previous_image_path,
+        )
+    else:
+        _clear_similar_generated_frame_variants(tags_data, int(scene.id or 0))
     tags_data.update({"type": "similar", "similar_stage": "scene_image_ready"})
     project.tags = tags_data
     project.status = VideoStatus.PENDING
@@ -2276,7 +2379,8 @@ async def upsert_similar_scene_image(
     await db.commit()
 
     reference_frame_map = _extract_similar_reference_frame_map(project.tags)
-    return {"scene": _serialize_project_scene(scene, reference_frame_map)}
+    generated_frame_variant_map = _extract_similar_generated_frame_variant_map(project.tags)
+    return {"scene": _serialize_project_scene(scene, reference_frame_map, generated_frame_variant_map)}
 
 
 @router.post("/projects/{project_id}/similar/generate-previews")
