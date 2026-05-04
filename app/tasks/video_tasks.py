@@ -225,6 +225,42 @@ def _ensure_reference_image_instruction(prompt: str, reference_mode: str = "") -
     return f"{base_prompt}\n\n{reference_rule}"
 
 
+def _ensure_upload_reference_scene_lock(prompt: str, reference_context: str = "") -> str:
+    """Force full-frame upload references to remain the same real scene/project."""
+    base_prompt = (prompt or "").strip()
+    if not base_prompt:
+        return base_prompt
+
+    lowered = base_prompt.lower()
+    blocks: list[str] = []
+
+    if "trava de cena da referencia enviada" not in lowered:
+        blocks.append(
+            "TRAVA DE CENA DA REFERENCIA ENVIADA (OBRIGATORIA): trate a imagem ou as imagens enviadas como o mesmo local, obra, produto ou projeto real. "
+            "Comece a geracao a partir do estado visivel nessas referencias. "
+            "Nao troque terreno, fachada, estrutura, construcoes vizinhas, rua, calcada, poste, vegetacao, materiais, enquadramento principal ou estagio da obra por outro cenario generico. "
+            "Se houver evolucao temporal, a transformacao deve acontecer exatamente no mesmo lugar e no mesmo projeto mostrado nas referencias."
+        )
+
+    cleaned_context = "\n".join(
+        line.strip()
+        for line in str(reference_context or "").splitlines()
+        if line.strip()
+    ).strip()
+    if cleaned_context:
+        if len(cleaned_context) > 1400:
+            cleaned_context = cleaned_context[:1400].rsplit(" ", 1)[0].strip() or cleaned_context[:1400]
+        if "contexto visual observado nas referencias" not in lowered:
+            blocks.append(
+                "CONTEXTO VISUAL OBSERVADO NAS REFERENCIAS (OBRIGATORIO):\n"
+                f"{cleaned_context}"
+            )
+
+    if not blocks:
+        return base_prompt
+    return f"{base_prompt}\n\n" + "\n\n".join(blocks)
+
+
 def _ensure_grok_identity_lock(prompt: str, reference_mode: str = "") -> str:
     """Add a strict identity lock optimized for Grok close-up fidelity."""
     base_prompt = (prompt or "").strip()
@@ -1594,6 +1630,42 @@ async def run_realistic_video_pipeline(project_id: int):
             grok_shadow_video_path = ""
             grok_shadow_audio_path = ""
             grok_shadow_duration = 0.0
+            upload_reference_paths_for_prompt = [
+                str(path).strip()
+                for path in (tags_data.get("reference_upload_image_paths", []) if isinstance(tags_data.get("reference_upload_image_paths", []), list) else [])
+                if str(path).strip() and os.path.exists(str(path).strip())
+            ][:6]
+            upload_reference_lock_mode = (
+                reference_source_early == "upload"
+                and reference_mode == "full_frame"
+                and bool(upload_reference_paths_for_prompt)
+            )
+            upload_reference_context = str(tags_data.get("reference_upload_visual_context", "") or "").strip()
+
+            if upload_reference_lock_mode and not upload_reference_context:
+                try:
+                    from app.services.script_audio import analyze_images_for_context
+
+                    analyzed_context = await analyze_images_for_context(
+                        image_paths=upload_reference_paths_for_prompt,
+                        topic=user_prompt[:800],
+                        tone=optimizer_style_hint or realistic_style or "cinematic",
+                        duration_seconds=duration,
+                    )
+                    upload_reference_context = "\n".join(
+                        line.strip()
+                        for line in str(analyzed_context or "").splitlines()
+                        if line.strip()
+                    ).strip()
+                    if upload_reference_context:
+                        tags_data["reference_upload_visual_context"] = upload_reference_context
+                        project.tags = tags_data
+                        await db.commit()
+                except Exception as e:
+                    logger.warning("Failed to analyze upload reference images for project %s: %s", project_id, e)
+
+            if upload_reference_lock_mode:
+                user_prompt = _ensure_upload_reference_scene_lock(user_prompt, upload_reference_context)
 
             if engine == "wan2":
                 tags_data["wan_shadow_grok_audio"] = False
@@ -1682,6 +1754,12 @@ async def run_realistic_video_pipeline(project_id: int):
             if prompt_optimized:
                 optimized_prompt = user_prompt
                 logger.info(f"Realistic prompt already optimized, using as-is: {optimized_prompt[:200]}...")
+            elif engine == "seedance" and upload_reference_lock_mode:
+                optimized_prompt = user_prompt
+                logger.info(
+                    "Seedance upload reference mode active for project %s: skipping prompt rewrite to preserve uploaded scene fidelity",
+                    project_id,
+                )
             elif dialogue_enabled and engine in ("wan2", "minimax"):
                 # Keep explicit dialogue timeline cues for Wan/MiniMax instead of Seedance-style rewrite.
                 optimized_prompt = user_prompt
@@ -1711,7 +1789,11 @@ async def run_realistic_video_pipeline(project_id: int):
                 optimized_prompt = _ensure_reference_image_instruction(optimized_prompt, reference_mode=reference_mode)
                 if engine == "grok":
                     optimized_prompt = _ensure_grok_identity_lock(optimized_prompt, reference_mode=reference_mode)
+                if upload_reference_lock_mode:
+                    optimized_prompt = _ensure_upload_reference_scene_lock(optimized_prompt, upload_reference_context)
             optimized_prompt = apply_cover_guidance(optimized_prompt, cover_decision)
+            if upload_reference_lock_mode:
+                optimized_prompt = _ensure_upload_reference_scene_lock(optimized_prompt, upload_reference_context)
             if seedance_expect_native_audio:
                 optimized_prompt = _ensure_seedance_audio_instruction(optimized_prompt)
 
