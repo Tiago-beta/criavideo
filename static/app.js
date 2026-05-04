@@ -2344,6 +2344,8 @@ let workflowState = {
     templateModalResolve: null,
     promptPersonaModalResolve: null,
     templateKey: "",
+    templateRuns: {},
+    pendingRunSetupTemplateKey: "",
     imageUploadTargetNodeId: "",
     videoUploadTargetNodeId: "",
     audioUploadTargetNodeId: "",
@@ -6814,12 +6816,7 @@ function workflowUpsertTemplateRecord(template) {
     return saved;
 }
 
-function workflowShouldPreserveUnnamedCurrentWorkflow() {
-    if (workflowState.templateKey) return false;
-    return !!workflowState.loadedFromDraft || workflowState.undoStack.length > 1;
-}
-
-function workflowPersistCurrentWorkflow(options = {}) {
+function workflowPersistCurrentWorkflow() {
     const currentTemplate = workflowFindTemplateByKey(workflowState.templateKey);
     if (currentTemplate) {
         return workflowUpsertTemplateRecord({
@@ -6829,12 +6826,7 @@ function workflowPersistCurrentWorkflow(options = {}) {
             data: workflowSerializeTemplate(),
         });
     }
-    if (!options.ensureNamed) return null;
-    return workflowUpsertTemplateRecord({
-        name: String(options.fallbackName || workflowBuildGeneratedName("Workflow anterior")).trim(),
-        updatedAt: Date.now(),
-        data: workflowSerializeTemplate(),
-    });
+    return null;
 }
 
 function workflowLoadTemplateList() {
@@ -6889,6 +6881,88 @@ function workflowControlSelector(el) {
 function workflowGetEngineLabel(engine) {
     const labels = { grok: "Cria 3.0 speed", wan2: "Ultra High 1.0", seedance: "Mega 2.0 Ultra" };
     return labels[engine] || labels.grok;
+}
+
+function workflowRuntimeTemplateKey(templateKey = "") {
+    const raw = String(templateKey || "").trim();
+    return raw || "__draft__";
+}
+
+function workflowCurrentRuntimeTemplateKey() {
+    return workflowRuntimeTemplateKey(workflowState.templateKey);
+}
+
+function workflowCanRenderOutputForTemplate(templateKey = "") {
+    return workflowRuntimeTemplateKey(templateKey || workflowState.templateKey) === workflowCurrentRuntimeTemplateKey();
+}
+
+function workflowGetTemplateRunState(templateKey = "") {
+    const key = workflowRuntimeTemplateKey(templateKey || workflowState.templateKey);
+    return workflowState.templateRuns?.[key] || null;
+}
+
+function workflowUpdateTemplateRunState(templateKey = "", patch = {}) {
+    const key = workflowRuntimeTemplateKey(templateKey || workflowState.templateKey);
+    const previous = workflowState.templateRuns?.[key] || { key };
+    const next = {
+        ...previous,
+        ...patch,
+        key,
+        updatedAt: Date.now(),
+    };
+    workflowState.templateRuns[key] = next;
+    return next;
+}
+
+function workflowTemplateRunInProgress(templateKey = "") {
+    const state = workflowGetTemplateRunState(templateKey);
+    if (!state) return false;
+    const status = String(state.status || "").toLowerCase();
+    return ["starting", "pending", "generating_scenes", "generating_clips", "rendering"].includes(status);
+}
+
+function workflowRenderStoredTemplateRunState(templateKey = "") {
+    if (!workflowCanRenderOutputForTemplate(templateKey)) return;
+    const state = workflowGetTemplateRunState(templateKey);
+    if (!state) return;
+
+    const status = String(state.status || "").toLowerCase();
+    if (status === "failed") {
+        workflowSetOutputError(state.message || "Falha na geração do vídeo.", templateKey);
+        return;
+    }
+    if (status === "completed") {
+        const outputBox = document.getElementById("workflow-output-box");
+        if (!outputBox) return;
+        if (state.videoUrl) {
+            outputBox.innerHTML = `<video class="workflow-output-video" src="${workflowEscapeHtml(state.videoUrl)}" controls playsinline></video><strong>Vídeo pronto.</strong>`;
+        } else {
+            outputBox.innerHTML = `<strong>Vídeo pronto.</strong><span>${workflowEscapeHtml(state.message || "O resultado apareceu na lista de projetos.")}</span>`;
+        }
+        return;
+    }
+
+    workflowSetOutputProgress(state.progress || 0, state.message || "Criando vídeo...", templateKey);
+}
+
+function workflowStartTemplateRunTracking(projectId, engineLabel, templateKey = "") {
+    const runKey = workflowRuntimeTemplateKey(templateKey || workflowState.templateKey);
+    (async () => {
+        try {
+            await workflowPollVideoProgress(projectId, engineLabel, runKey);
+            await workflowRenderCompletedVideo(projectId, runKey);
+        } catch (error) {
+            const message = error?.message || "Falha na geração do vídeo.";
+            workflowUpdateTemplateRunState(runKey, {
+                status: "failed",
+                isProcessing: false,
+                message,
+            });
+            workflowSetOutputError(message, runKey);
+        } finally {
+            loadProjects();
+        }
+    })();
 }
 
 function workflowEngineDurationOptions(engine) {
@@ -6975,6 +7049,7 @@ function workflowApplyTemplateData(data, options = {}) {
     workflowRenderAudioPreview();
     workflowRenderConnections();
     if (options.fit !== false) workflowFitCanvas();
+    workflowRenderStoredTemplateRunState();
 }
 
 function workflowEnsureDefaultConnections() {
@@ -7120,15 +7195,23 @@ async function workflowSaveTemplate() {
 function workflowLoadTemplate(key) {
     const nextKey = String(key || "").trim();
     if (nextKey === workflowState.templateKey) return;
-    workflowPersistCurrentWorkflow({
-        ensureNamed: workflowShouldPreserveUnnamedCurrentWorkflow(),
-        fallbackName: workflowBuildGeneratedName("Workflow anterior"),
-    });
+    const currentRunKey = workflowCurrentRuntimeTemplateKey();
+    if (
+        workflowState.pendingRunSetupTemplateKey
+        && workflowRuntimeTemplateKey(workflowState.pendingRunSetupTemplateKey) === currentRunKey
+        && workflowRuntimeTemplateKey(nextKey) !== currentRunKey
+    ) {
+        workflowLoadTemplateList();
+        showToast("Aguarde alguns segundos enquanto o envio inicial deste template termina.", "info");
+        return;
+    }
+    workflowPersistCurrentWorkflow();
     workflowState.templateKey = nextKey;
     workflowState.loadedFromDraft = false;
     workflowLoadTemplateList();
     if (!nextKey) {
         workflowSaveDraft();
+        workflowRenderStoredTemplateRunState(nextKey);
         return;
     }
     const template = workflowFindTemplateByKey(nextKey);
@@ -7156,6 +7239,7 @@ function workflowDuplicateTemplate() {
 function workflowDeleteTemplate() {
     if (!workflowState.templateKey) return alert("Selecione um template para excluir.");
     if (!confirm("Excluir este template?")) return;
+    delete workflowState.templateRuns[workflowRuntimeTemplateKey(workflowState.templateKey)];
     workflowWriteTemplates(workflowReadTemplates().filter((tpl) => tpl.key !== workflowState.templateKey));
     workflowState.templateKey = "";
     workflowLoadTemplateList();
@@ -7186,11 +7270,7 @@ async function workflowCreateNamedBlankWorkflow() {
     const name = await workflowOpenTemplateModal("Novo workflow");
     if (!name) return;
 
-    const shouldPreserveUnnamed = workflowShouldPreserveUnnamedCurrentWorkflow();
-    const preservedCurrent = workflowPersistCurrentWorkflow({
-        ensureNamed: shouldPreserveUnnamed,
-        fallbackName: workflowBuildGeneratedName("Workflow anterior"),
-    });
+    workflowPersistCurrentWorkflow();
     const blankData = {
         canvasMode: "blank",
         nodes: [],
@@ -7214,10 +7294,6 @@ async function workflowCreateNamedBlankWorkflow() {
     workflowRecordHistory();
     workflowUpdateHistoryButtons();
     workflowSaveDraft();
-    if (shouldPreserveUnnamed && preservedCurrent) {
-        showToast(`Workflow "${created.name}" criado. O anterior foi preservado como "${preservedCurrent.name}".`, "success");
-        return;
-    }
     showToast(`Workflow "${created.name}" criado.`, "success");
 }
 
@@ -7621,7 +7697,7 @@ function workflowBuildPrompt() {
     return parts.join("\n\n").trim();
 }
 
-async function workflowEnsureUploadedImages() {
+async function workflowEnsureUploadedImages(templateKey = "") {
     workflowCollectGeneratedNodeImages();
     const existingIds = workflowState.images.map((item) => item.upload_id).filter(Boolean);
     if (workflowState.imageUploadIds.length === workflowState.images.length && workflowState.imageUploadIds.length > 0) {
@@ -7630,7 +7706,7 @@ async function workflowEnsureUploadedImages() {
     const uploadIds = existingIds.slice();
     for (let index = 0; index < workflowState.images.length; index += 1) {
         if (workflowState.images[index]?.upload_id) continue;
-        workflowSetOutputProgress(8 + index, `Enviando imagem ${index + 1}/${workflowState.images.length}...`);
+        workflowSetOutputProgress(8 + index, `Enviando imagem ${index + 1}/${workflowState.images.length}...`, templateKey);
         const uploaded = await uploadTempFileWithRetry(workflowState.images[index], "image", `imagem workflow ${index + 1}`, { showProgress: false });
         if (uploaded?.upload_id) {
             workflowState.images[index].upload_id = uploaded.upload_id;
@@ -7641,11 +7717,11 @@ async function workflowEnsureUploadedImages() {
     return uploadIds;
 }
 
-async function workflowConnectedImageUploadIds() {
+async function workflowConnectedImageUploadIds(templateKey = "") {
     const connectedImagePorts = workflowState.connections
         .filter(([, to]) => to === "model-images-in")
         .map(([from]) => from);
-    const allUploadIds = await workflowEnsureUploadedImages();
+    const allUploadIds = await workflowEnsureUploadedImages(templateKey);
     const selectedIds = [];
     if (connectedImagePorts.includes("images-out")) {
         workflowState.images.filter((item) => !workflowIsCollectedNodeImage(item)).forEach((item) => {
@@ -7662,7 +7738,7 @@ async function workflowConnectedImageUploadIds() {
         if (port === "images-out") continue;
         const node = document.querySelector(`#create-panel-workflow .workflow-port[data-port="${CSS.escape(port)}"]`)?.closest(".workflow-node");
         if (!node?._workflowImageFile || node.dataset.uploadId) continue;
-        workflowSetOutputProgress(10, `Enviando imagem do card ${node.dataset.title || node.dataset.nodeId || "imagem"}...`);
+        workflowSetOutputProgress(10, `Enviando imagem do card ${node.dataset.title || node.dataset.nodeId || "imagem"}...`, templateKey);
         const uploaded = await uploadTempFileWithRetry(node._workflowImageFile, "image", `imagem ${node.dataset.title || node.dataset.nodeId || "workflow"}`, { showProgress: false });
         if (uploaded?.upload_id) {
             node.dataset.uploadId = uploaded.upload_id;
@@ -7673,14 +7749,14 @@ async function workflowConnectedImageUploadIds() {
     return uniqueIds.length ? uniqueIds : allUploadIds;
 }
 
-async function workflowEnsureUploadedVideos() {
+async function workflowEnsureUploadedVideos(templateKey = "") {
     const uploadIds = [];
     for (let index = 0; index < workflowState.videos.length; index += 1) {
         if (workflowState.videos[index]?.upload_id) {
             uploadIds.push(workflowState.videos[index].upload_id);
             continue;
         }
-        workflowSetOutputProgress(12 + index, `Enviando vídeo ${index + 1}/${workflowState.videos.length}...`);
+        workflowSetOutputProgress(12 + index, `Enviando vídeo ${index + 1}/${workflowState.videos.length}...`, templateKey);
         const uploaded = await uploadTempFileWithRetry(workflowState.videos[index], "video", `vídeo workflow ${index + 1}`, { showProgress: false });
         if (uploaded?.upload_id) {
             workflowState.videos[index].upload_id = uploaded.upload_id;
@@ -7691,16 +7767,22 @@ async function workflowEnsureUploadedVideos() {
     return workflowState.videoUploadIds.slice();
 }
 
-async function workflowEnsureUploadedAudio() {
+async function workflowEnsureUploadedAudio(templateKey = "") {
     if (!workflowState.audio) return "";
     if (workflowState.audioUploadId) return workflowState.audioUploadId;
-    workflowSetOutputProgress(15, "Enviando áudio do workflow...");
+    workflowSetOutputProgress(15, "Enviando áudio do workflow...", templateKey);
     const uploaded = await uploadTempFileWithRetry(workflowState.audio, "audio", "áudio workflow", { showProgress: false });
     workflowState.audioUploadId = uploaded?.upload_id || "";
     return workflowState.audioUploadId;
 }
 
 async function workflowRunSeedance() {
+    const runTemplateKey = workflowCurrentRuntimeTemplateKey();
+    if (workflowTemplateRunInProgress(runTemplateKey)) {
+        alert("Este template já está gerando um vídeo. Aguarde finalizar ou use outro template.");
+        return;
+    }
+
     const prompt = workflowBuildPrompt();
     if (!prompt) {
         alert("Preencha o bloco Prompt antes de rodar o workflow.");
@@ -7722,14 +7804,21 @@ async function workflowRunSeedance() {
     const progressEl = document.getElementById("create-progress");
     if (progressEl) progressEl.hidden = true;
     _stopSmoothProgress();
-    workflowSetOutputProgress(8, "Preparando criação do vídeo...");
+    workflowState.pendingRunSetupTemplateKey = runTemplateKey;
+    workflowUpdateTemplateRunState(runTemplateKey, {
+        status: "starting",
+        isProcessing: true,
+        progress: 8,
+        message: "Preparando criação do vídeo...",
+    });
+    workflowSetOutputProgress(8, "Preparando criação do vídeo...", runTemplateKey);
 
     try {
-        const imageUploadIds = await workflowConnectedImageUploadIds();
+        const imageUploadIds = await workflowConnectedImageUploadIds(runTemplateKey);
         if (!imageUploadIds.length) throw new Error("Conecte pelo menos uma imagem à entrada do Gerador de vídeo.");
-        await workflowEnsureUploadedVideos();
-        await workflowEnsureUploadedAudio();
-        workflowSetOutputProgress(16, "Enviando referências para o gerador...");
+        await workflowEnsureUploadedVideos(runTemplateKey);
+        await workflowEnsureUploadedAudio(runTemplateKey);
+        workflowSetOutputProgress(16, "Enviando referências para o gerador...", runTemplateKey);
 
         workflowSyncEngineDurationOptions();
         const duration = parseInt(document.getElementById("workflow-duration")?.value || "10", 10) || 10;
@@ -7760,20 +7849,36 @@ async function workflowRunSeedance() {
         });
 
         const projectId = resp.id;
-        workflowSetOutputProgress(25, `${workflowEngineLabel} está criando seu vídeo...`);
-        await workflowPollVideoProgress(projectId, workflowEngineLabel);
-
-        await workflowRenderCompletedVideo(projectId);
+        workflowUpdateTemplateRunState(runTemplateKey, {
+            projectId,
+            engineLabel: workflowEngineLabel,
+            status: "generating_scenes",
+            isProcessing: true,
+            progress: 25,
+            message: `${workflowEngineLabel} está criando seu vídeo...`,
+        });
+        workflowSetOutputProgress(25, `${workflowEngineLabel} está criando seu vídeo...`, runTemplateKey);
+        workflowStartTemplateRunTracking(projectId, workflowEngineLabel, runTemplateKey);
+        showToast("Geração iniciada. Você pode continuar editando outros templates.", "success");
         loadProjects();
     } catch (error) {
         const message = error?.message || "Erro ao executar workflow.";
-        workflowSetOutputError(message);
+        workflowUpdateTemplateRunState(runTemplateKey, {
+            status: "failed",
+            isProcessing: false,
+            message,
+        });
+        workflowSetOutputError(message, runTemplateKey);
     } finally {
+        if (workflowRuntimeTemplateKey(workflowState.pendingRunSetupTemplateKey) === runTemplateKey) {
+            workflowState.pendingRunSetupTemplateKey = "";
+        }
         if (runBtn) runBtn.disabled = false;
     }
 }
 
-function workflowSetOutputProgress(percent, message) {
+function workflowSetOutputProgress(percent, message, templateKey = "") {
+    if (!workflowCanRenderOutputForTemplate(templateKey)) return;
     const outputBox = document.getElementById("workflow-output-box");
     if (!outputBox) return;
     const safePercent = Math.max(0, Math.min(100, Number(percent || 0)));
@@ -7785,13 +7890,15 @@ function workflowSetOutputProgress(percent, message) {
     `;
 }
 
-function workflowSetOutputError(message) {
+function workflowSetOutputError(message, templateKey = "") {
+    if (!workflowCanRenderOutputForTemplate(templateKey)) return;
     const outputBox = document.getElementById("workflow-output-box");
     if (!outputBox) return;
     outputBox.innerHTML = `<strong>Não foi possível criar o vídeo.</strong><span>${workflowEscapeHtml(message || "Erro desconhecido.")}</span>`;
 }
 
-async function workflowPollVideoProgress(projectId, engineLabel) {
+async function workflowPollVideoProgress(projectId, engineLabel, templateKey = "") {
+    const runKey = workflowRuntimeTemplateKey(templateKey || workflowState.templateKey);
     const maxWait = 12 * 60 * 1000;
     const pollInterval = 4000;
     const start = Date.now();
@@ -7801,26 +7908,50 @@ async function workflowPollVideoProgress(projectId, engineLabel) {
         if (!resp.ok) continue;
         const data = await resp.json();
         const progress = Number(data.progress || 0);
-        const status = data.status || "";
-        workflowSetOutputProgress(
+        const status = String(data.status || "").toLowerCase();
+        const message = progress < 80
+            ? `${engineLabel} está criando seu vídeo...`
+            : progress < 95
+                ? "Finalizando vídeo..."
+                : "Preparando resultado...";
+        workflowUpdateTemplateRunState(runKey, {
+            projectId,
+            engineLabel,
+            status,
+            isProcessing: ["pending", "generating_scenes", "generating_clips", "rendering"].includes(status),
             progress,
-            progress < 80 ? `${engineLabel} está criando seu vídeo...` : progress < 95 ? "Finalizando vídeo..." : "Preparando resultado..."
-        );
+            message,
+            errorMessage: data.error_message || "",
+        });
+        workflowSetOutputProgress(progress, message, runKey);
         if (status === "completed") return data;
         if (status === "failed") throw new Error(data.error_message || "Falha na geração do vídeo.");
     }
     throw new Error("Tempo limite excedido. O vídeo pode ainda estar sendo gerado na lista de projetos.");
 }
 
-async function workflowRenderCompletedVideo(projectId) {
+async function workflowRenderCompletedVideo(projectId, templateKey = "") {
+    const runKey = workflowRuntimeTemplateKey(templateKey || workflowState.templateKey);
+    const completionMessage = "O resultado apareceu na lista de projetos.";
     const outputBox = document.getElementById("workflow-output-box");
-    if (!outputBox) return;
     const detail = await api(`/video/projects/${projectId}`);
     const render = _pickLatestAvailableRender(detail.renders || []);
-    if (render?.video_url) {
-        outputBox.innerHTML = `<video class="workflow-output-video" src="${render.video_url}" controls playsinline></video><strong>Vídeo pronto.</strong>`;
+    const videoUrl = String(render?.video_url || "").trim();
+
+    workflowUpdateTemplateRunState(runKey, {
+        projectId,
+        status: "completed",
+        isProcessing: false,
+        progress: 100,
+        message: completionMessage,
+        videoUrl,
+    });
+
+    if (!workflowCanRenderOutputForTemplate(runKey) || !outputBox) return;
+    if (videoUrl) {
+        outputBox.innerHTML = `<video class="workflow-output-video" src="${workflowEscapeHtml(videoUrl)}" controls playsinline></video><strong>Vídeo pronto.</strong>`;
     } else {
-        outputBox.innerHTML = `<strong>Vídeo pronto.</strong><span>O resultado apareceu na lista de projetos.</span>`;
+        outputBox.innerHTML = `<strong>Vídeo pronto.</strong><span>${completionMessage}</span>`;
     }
 }
 
