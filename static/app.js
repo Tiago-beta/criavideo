@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v319 loaded");
+console.log("[CriaVideo] app.js v320 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -673,6 +673,28 @@ function bindNavigation() {
             showAuth("Sessao encerrada.");
         });
     }
+    const sidebarProfileTrigger = document.getElementById("sidebar-profile-trigger");
+    if (sidebarProfileTrigger) {
+        sidebarProfileTrigger.addEventListener("click", (event) => {
+            if (event.target?.closest("#btn-logout")) {
+                return;
+            }
+            navigateTo("profile");
+            if (_isProfileAdminUser()) {
+                _openProfileAdminPanel();
+            }
+        });
+        sidebarProfileTrigger.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" && event.key !== " ") {
+                return;
+            }
+            event.preventDefault();
+            navigateTo("profile");
+            if (_isProfileAdminUser()) {
+                _openProfileAdminPanel();
+            }
+        });
+    }
     const profileAdminOpen = document.getElementById("btn-profile-admin-open");
     if (profileAdminOpen) {
         profileAdminOpen.addEventListener("click", () => {
@@ -1030,14 +1052,25 @@ function initDashboard() {
 function loadPageData(page) {
     if (page === "projects") {
         loadProjects();
+        _closeProfileAdminPanel(false);
     } else if (page === "publish" || page === "accounts") {
         setPublishTab(page === "publish" ? "publish" : page);
+        _closeProfileAdminPanel(false);
     } else if (page === "analyze") {
         loadAnalyzePage();
+        _closeProfileAdminPanel(false);
     } else if (page === "automate") {
         loadAutoSchedules();
+        _closeProfileAdminPanel(false);
     } else if (page === "editor") {
         _editorHandleEditorPageEntry();
+        _closeProfileAdminPanel(false);
+    } else if (page === "profile") {
+        if (_isProfileAdminUser()) {
+            _openProfileAdminPanel();
+        } else {
+            _closeProfileAdminPanel(false);
+        }
     }
 }
 
