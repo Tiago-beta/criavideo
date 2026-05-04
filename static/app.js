@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v327 loaded");
+console.log("[CriaVideo] app.js v328 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2335,6 +2335,7 @@ let workflowState = {
     selectedNodeId: "",
     selectedConnectionIndex: -1,
     pendingPort: "",
+    portSnapTarget: "",
     portDrag: null,
     tempConnection: null,
     undoStack: [],
@@ -6215,8 +6216,16 @@ function workflowDeleteSelectedNode() {
     node.remove();
     workflowState.selectedNodeId = "";
     workflowState.pendingPort = "";
+    workflowState.portSnapTarget = "";
     workflowRenderConnections();
     workflowRecordHistory();
+}
+
+function workflowSetPendingPorts(portNames = []) {
+    const activePorts = new Set((Array.isArray(portNames) ? portNames : [portNames]).map((port) => String(port || "")).filter(Boolean));
+    document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => {
+        el.classList.toggle("pending", activePorts.has(String(el.dataset.port || "")));
+    });
 }
 
 function workflowHandlePortClick(event) {
@@ -6225,14 +6234,16 @@ function workflowHandlePortClick(event) {
     if (!port) return;
     if (!workflowState.pendingPort) {
         workflowState.pendingPort = port;
-        document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.toggle("pending", el.dataset.port === port));
+        workflowState.portSnapTarget = "";
+        workflowSetPendingPorts([port]);
         return;
     }
     if (workflowState.pendingPort !== port) {
         workflowConnectPorts(workflowState.pendingPort, port);
     }
     workflowState.pendingPort = "";
-    document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.remove("pending"));
+    workflowState.portSnapTarget = "";
+    workflowSetPendingPorts();
 }
 
 function workflowStartPortDrag(event) {
@@ -6244,7 +6255,7 @@ function workflowStartPortDrag(event) {
     workflowState.portDrag = { port, pointerId: event.pointerId };
     workflowState.tempConnection = workflowTempConnectionFromEvent(port, event);
     workflowState.pendingPort = port;
-    document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.toggle("pending", el.dataset.port === port));
+    workflowSetPendingPorts([workflowState.pendingPort, workflowState.portSnapTarget]);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.currentTarget.addEventListener("pointermove", workflowPortDragMove);
     workflowRenderConnections();
@@ -6255,20 +6266,106 @@ function workflowPortDragMove(event) {
     const drag = workflowState.portDrag;
     if (!drag || drag.pointerId !== event.pointerId) return;
     workflowState.tempConnection = workflowTempConnectionFromEvent(drag.port, event);
+    workflowSetPendingPorts([drag.port, workflowState.portSnapTarget]);
     workflowRenderConnections();
+}
+
+function workflowNormalizedPortPair(firstPort, secondPort) {
+    const firstDirection = workflowPortDirection(firstPort);
+    const secondDirection = workflowPortDirection(secondPort);
+    if (!firstDirection || !secondDirection || firstDirection === secondDirection) return null;
+    const from = firstDirection === "out" ? firstPort : secondPort;
+    const to = firstDirection === "out" ? secondPort : firstPort;
+    if (!from || !to || from === to || workflowPortDirection(from) !== "out" || workflowPortDirection(to) !== "in") return null;
+    return { from, to };
+}
+
+function workflowDistanceToRect(rect, x, y) {
+    const dx = x < rect.left ? rect.left - x : x > rect.right ? x - rect.right : 0;
+    const dy = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0;
+    return Math.hypot(dx, dy);
+}
+
+function workflowPickBestSnapPort(sourcePort, candidatePorts, event, options = {}) {
+    const maxDistance = Number.isFinite(options.maxDistance) ? options.maxDistance : Number.POSITIVE_INFINITY;
+    const sourceType = workflowConnectionType(sourcePort, "");
+    const pointerX = Number(event?.clientX || 0);
+    const pointerY = Number(event?.clientY || 0);
+    const ranked = candidatePorts
+        .map((port) => {
+            const portName = String(port.dataset.port || "");
+            const rect = port.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            return {
+                portName,
+                distance: Math.hypot(centerX - pointerX, centerY - pointerY),
+                typeMatch: sourceType === workflowConnectionType(portName, ""),
+            };
+        })
+        .filter((item) => item.distance <= maxDistance)
+        .sort((a, b) => Number(b.typeMatch) - Number(a.typeMatch) || a.distance - b.distance);
+    return ranked[0]?.portName || "";
+}
+
+function workflowFindSnapNode(event, candidatePorts) {
+    const targetNode = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".workflow-node");
+    if (targetNode) return targetNode;
+    const pointerX = Number(event?.clientX || 0);
+    const pointerY = Number(event?.clientY || 0);
+    const nodeSnapDistance = 28;
+    const candidateNodes = Array.from(new Set(candidatePorts.map((port) => port.closest(".workflow-node")).filter(Boolean)));
+    let closestNode = null;
+    let closestDistance = nodeSnapDistance;
+    candidateNodes.forEach((node) => {
+        const distance = workflowDistanceToRect(node.getBoundingClientRect(), pointerX, pointerY);
+        if (distance > closestDistance) return;
+        closestNode = node;
+        closestDistance = distance;
+    });
+    return closestNode;
+}
+
+function workflowResolveSmartTargetPort(sourcePort, event) {
+    if (!sourcePort || !event) return "";
+    const directTarget = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".workflow-port");
+    const directPort = String(directTarget?.dataset?.port || "");
+    if (workflowNormalizedPortPair(sourcePort, directPort)) return directPort;
+
+    const oppositeSelector = workflowPortDirection(sourcePort) === "out" ? ".workflow-port-in" : ".workflow-port-out";
+    const candidatePorts = Array.from(document.querySelectorAll(`#create-panel-workflow ${oppositeSelector}`)).filter((port) => {
+        return !!workflowNormalizedPortPair(sourcePort, String(port.dataset.port || ""));
+    });
+    if (!candidatePorts.length) return "";
+
+    const snapNode = workflowFindSnapNode(event, candidatePorts);
+    if (snapNode) {
+        const nodePorts = candidatePorts.filter((port) => snapNode.contains(port));
+        if (nodePorts.length === 1) return String(nodePorts[0].dataset.port || "");
+        const snappedPort = workflowPickBestSnapPort(sourcePort, nodePorts, event);
+        if (snappedPort) return snappedPort;
+    }
+
+    return workflowPickBestSnapPort(sourcePort, candidatePorts, event, { maxDistance: 44 });
 }
 
 function workflowTempConnectionFromEvent(portName, event) {
     const start = workflowPortPoint(portName);
     const canvas = document.getElementById("workflow-canvas");
     if (!start || !canvas || !event) return null;
+    const snapPort = workflowResolveSmartTargetPort(portName, event);
+    workflowState.portSnapTarget = snapPort;
     const zoom = Math.max(0.01, Number(workflowState.zoom || 1));
     const canvasRect = canvas.getBoundingClientRect();
-    const end = {
+    const freeEnd = {
         x: (event.clientX - canvasRect.left) / zoom,
         y: (event.clientY - canvasRect.top) / zoom,
     };
-    return workflowPortDirection(portName) === "out" ? { from: start, to: end, type: workflowConnectionType(portName, "") } : { from: end, to: start, type: workflowConnectionType("", portName) };
+    const snappedEnd = snapPort ? workflowPortPoint(snapPort) : null;
+    const end = snappedEnd || freeEnd;
+    return workflowPortDirection(portName) === "out"
+        ? { from: start, to: end, type: workflowConnectionType(portName, snapPort || "") }
+        : { from: end, to: start, type: workflowConnectionType(snapPort || "", portName) };
 }
 function workflowEndPortDrag(event) {
     const drag = workflowState.portDrag;
@@ -6276,22 +6373,21 @@ function workflowEndPortDrag(event) {
     workflowState.tempConnection = null;
     event.stopPropagation();
     event.currentTarget?.removeEventListener?.("pointermove", workflowPortDragMove);
-    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".workflow-port");
-    const targetPort = target?.dataset?.port || "";
+    const targetPort = workflowState.portSnapTarget || workflowResolveSmartTargetPort(drag.port, event);
     if (targetPort && targetPort !== drag.port) {
         workflowConnectPorts(drag.port, targetPort);
     }
     workflowState.portDrag = null;
     workflowState.pendingPort = "";
-    document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.remove("pending"));
+    workflowState.portSnapTarget = "";
+    workflowSetPendingPorts();
     workflowRenderConnections();
 }
 
 function workflowConnectPorts(firstPort, secondPort) {
-    const firstIsOut = workflowPortDirection(firstPort) === "out";
-    const from = firstIsOut ? firstPort : secondPort;
-    const to = firstIsOut ? secondPort : firstPort;
-    if (!from || !to || from === to || workflowPortDirection(from) !== "out" || workflowPortDirection(to) !== "in") return;
+    const pair = workflowNormalizedPortPair(firstPort, secondPort);
+    if (!pair) return;
+    const { from, to } = pair;
     if (workflowState.connections.some(([a, b]) => a === from && b === to)) return;
     workflowState.connections.push([from, to]);
     workflowRenderConnections();
@@ -6455,7 +6551,8 @@ function workflowStartPan(event) {
     if (event.target.closest(".workflow-link")) return;
     workflowSelectNode("");
     workflowState.pendingPort = "";
-    document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.remove("pending"));
+    workflowState.portSnapTarget = "";
+    workflowSetPendingPorts();
     workflowSetAddPositionFromEvent(event);
     workflowCloseAddMenu();
     workflowState.pan = {
@@ -6514,7 +6611,8 @@ function workflowCancelActivePointerInteractions() {
         workflowState.portDrag = null;
         workflowState.tempConnection = null;
         workflowState.pendingPort = "";
-        document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.remove("pending"));
+        workflowState.portSnapTarget = "";
+        workflowSetPendingPorts();
     }
 
     workflowRenderConnections();
@@ -7167,6 +7265,7 @@ function workflowApplyTemplateData(data, options = {}) {
     workflowState.selectedNodeId = "";
     workflowState.selectedConnectionIndex = -1;
     workflowState.pendingPort = "";
+    workflowState.portSnapTarget = "";
     workflowBindNodeDragging(canvas);
     workflowMigrateWorkflowNodes(defaultNodes);
     workflowCollectGeneratedNodeImages();
