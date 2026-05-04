@@ -1777,12 +1777,19 @@ async def run_realistic_video_pipeline(project_id: int):
                 and reference_source == "upload"
                 and reference_mode == "full_frame"
                 and bool(image_path and os.path.exists(image_path))
+                and len(upload_reference_paths) <= 1
             )
             use_direct_upload_reference_for_seedance = (
                 engine == "seedance"
                 and reference_source == "upload"
                 and reference_mode == "full_frame"
                 and bool(upload_reference_paths)
+            )
+            use_merged_upload_reference_for_single_image_engines = (
+                reference_source == "upload"
+                and reference_mode == "full_frame"
+                and len(upload_reference_paths) > 1
+                and engine in {"grok", "minimax", "wan2"}
             )
             enable_grok_persona_anchor = (
                 engine == "grok"
@@ -1817,6 +1824,45 @@ async def run_realistic_video_pipeline(project_id: int):
                     "Realistic video: Seedance using %d direct uploaded reference image(s) without Nano Banana rewrite",
                     len(upload_reference_paths),
                 )
+            elif use_merged_upload_reference_for_single_image_engines:
+                from app.services.scene_generator import merge_reference_images_with_nano_banana
+
+                await _on_progress(16, "Unificando imagens de referencia enviadas...")
+                merged_ref_dir = render_dir / "upload_ref"
+                merged_ref_dir.mkdir(parents=True, exist_ok=True)
+                merged_reference_path = str(merged_ref_dir / "merged_scene.png")
+                merge_source_prompt = (optimized_prompt or user_prompt or "").strip()
+                loop = asyncio.get_event_loop()
+
+                try:
+                    await loop.run_in_executor(
+                        None,
+                        merge_reference_images_with_nano_banana,
+                        upload_reference_paths,
+                        merge_source_prompt[:1400],
+                        aspect_ratio,
+                        merged_reference_path,
+                    )
+                    if not os.path.exists(merged_reference_path) or os.path.getsize(merged_reference_path) <= 0:
+                        raise RuntimeError("Merged upload reference image missing or empty")
+                    scene_reference_path = merged_reference_path
+                    grok_direct_reference_path = merged_reference_path
+                    logger.info(
+                        "Realistic video: merged %d uploaded references into a single scene anchor for %s (%s)",
+                        len(upload_reference_paths),
+                        engine,
+                        merged_reference_path,
+                    )
+                except Exception as e:
+                    fallback_reference_path = image_path if (image_path and os.path.exists(image_path)) else ""
+                    if not fallback_reference_path and upload_reference_paths:
+                        fallback_reference_path = upload_reference_paths[0]
+                    scene_reference_path = fallback_reference_path
+                    grok_direct_reference_path = fallback_reference_path or grok_direct_reference_path
+                    logger.warning(
+                        "Realistic video: failed to merge uploaded references; falling back to existing reference image: %s",
+                        e,
+                    )
             elif has_reference_image and image_path and engine != "grok":
                 from app.services.scene_generator import build_single_scene_anchor_prompt, generate_scene_image
 
