@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260504-07">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260504-08">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 342;
+        var REQUIRED_VER = 343;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1375,10 +1375,8 @@
                                 </label>
                             </div>
                             <div id="script-photo-area" class="photo-upload-area" hidden>
-                                <div id="script-photo-dropzone" class="photo-dropzone" onclick="document.getElementById('script-photo-input').click()">
-                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                    <p>Clique ou arraste fotos aqui</p>
-                                    <small>JPG, PNG ou WebP &bull; Max 20 fotos &bull; 10MB cada</small>
+                                <div id="script-photo-dropzone" class="photo-dropzone script-photo-dropzone" role="button" tabindex="0" aria-label="Adicionar imagens" onclick="document.getElementById('script-photo-input').click()" onkeydown="if(event.key==='Enter' || event.key===' '){ event.preventDefault(); document.getElementById('script-photo-input').click(); }">
+                                    <span class="script-photo-add-icon" aria-hidden="true">+</span>
                                 </div>
                                 <input id="script-photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handlePhotoSelect(event)">
                                 <div id="script-photo-preview" class="photo-preview-grid"></div>
@@ -3528,8 +3526,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260504-07"></script>
-    <script src="/video/static/pwa.js?v=20260504-07"></script>
+    <script src="/video/static/app.js?v=20260504-08"></script>
+    <script src="/video/static/pwa.js?v=20260504-08"></script>
 </body>
 </html>
 
