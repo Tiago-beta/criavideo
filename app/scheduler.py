@@ -6,7 +6,6 @@ import os
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -103,27 +102,19 @@ async def check_pending_publish_jobs():
 RENDER_EXPIRY_HOURS = 48
 
 
-def _is_tevoxi_music_project(project: Optional[VideoProject]) -> bool:
-    """Return True when the project uses music sourced from Tevoxi."""
-    if not project:
-        return False
+def _resolve_media_storage_path(raw_path: str | None) -> Path | None:
+    source = str(raw_path or "").strip()
+    if not source:
+        return None
 
-    tags = project.tags if isinstance(project.tags, dict) else {}
+    if source.startswith("/video/media/"):
+        source = os.path.join(settings.media_dir, source.split("/video/media/", 1)[-1].lstrip("/"))
+    elif "/video/media/" in source:
+        source = os.path.join(settings.media_dir, source.split("/video/media/", 1)[-1].lstrip("/"))
+    elif not os.path.isabs(source):
+        source = os.path.join(settings.media_dir, source.lstrip("/"))
 
-    if str(tags.get("audio_source", "")).strip().lower() == "tevoxi":
-        return True
-    if str(tags.get("tevoxi_audio_url", "")).strip():
-        return True
-    if str(tags.get("tevoxi_job_id", "")).strip():
-        return True
-    if bool(tags.get("musical_short")):
-        return True
-
-    audio_url = str(tags.get("audio_url", "")).strip().lower()
-    if "/api/create-music/audio/" in audio_url or "tevoxi" in audio_url:
-        return True
-
-    return str(project.track_artist or "").strip().lower() == "tevoxi"
+    return Path(os.path.normpath(source))
 
 
 def _parse_theme_override_date(raw_value: object):
@@ -230,11 +221,7 @@ async def check_auto_channel_pilots():
 
 
 async def cleanup_expired_renders():
-    """Delete render files older than 48 hours to free server storage.
-
-    Tevoxi-music projects are excluded from automatic cleanup and can only be
-    removed by explicit user deletion.
-    """
+    """Delete render files older than 48 hours to free server storage."""
     cutoff = datetime.utcnow() - timedelta(hours=RENDER_EXPIRY_HOURS)
     media_dir = settings.media_dir
 
@@ -250,43 +237,49 @@ async def cleanup_expired_renders():
         expired_renders = result.scalars().all()
 
         deleted_count = 0
-        skipped_tevoxi_count = 0
         for render in expired_renders:
-            if _is_tevoxi_music_project(render.project):
-                skipped_tevoxi_count += 1
-                continue
+            video_path = _resolve_media_storage_path(render.file_path)
+            thumbnail_path = _resolve_media_storage_path(render.thumbnail_path)
+            render_updated = False
+            video_removed = False
+            thumbnail_removed = False
 
-            # Delete video file
-            if render.file_path and os.path.exists(render.file_path):
+            if video_path and video_path.exists():
                 try:
-                    os.remove(render.file_path)
-                except OSError:
-                    pass
+                    os.remove(video_path)
+                    video_removed = True
+                except OSError as err:
+                    logger.warning("Cleanup: failed to delete expired render file %s: %s", video_path, err)
+            if render.file_path and (video_path is None or video_removed or not video_path.exists()):
+                render.file_path = None
+                render_updated = True
 
-            # Delete thumbnail file
-            if render.thumbnail_path and os.path.exists(render.thumbnail_path):
+            if thumbnail_path and thumbnail_path.exists():
                 try:
-                    os.remove(render.thumbnail_path)
-                except OSError:
-                    pass
+                    os.remove(thumbnail_path)
+                    thumbnail_removed = True
+                except OSError as err:
+                    logger.warning("Cleanup: failed to delete expired thumbnail file %s: %s", thumbnail_path, err)
+            if render.thumbnail_path and (thumbnail_path is None or thumbnail_removed or not thumbnail_path.exists()):
+                render.thumbnail_path = None
+                render_updated = True
 
-            # Clean up empty render directory
-            if render.file_path:
-                render_dir = Path(render.file_path).parent
+            if video_path:
+                render_dir = video_path.parent
                 if render_dir.exists() and not any(render_dir.iterdir()):
                     shutil.rmtree(render_dir, ignore_errors=True)
 
-            # Clear paths in DB but keep the record
-            render.file_path = None
-            render.thumbnail_path = None
-            deleted_count += 1
+            if thumbnail_path:
+                thumb_dir = thumbnail_path.parent
+                if thumb_dir.exists() and not any(thumb_dir.iterdir()):
+                    shutil.rmtree(thumb_dir, ignore_errors=True)
+
+            if render_updated:
+                deleted_count += 1
 
         if deleted_count:
             await db.commit()
             logger.info(f"Cleanup: removed files for {deleted_count} expired render(s)")
-
-        if skipped_tevoxi_count:
-            logger.info(f"Cleanup: skipped {skipped_tevoxi_count} Tevoxi render(s) from auto-deletion")
 
         # Also clean up source assets (images, clips, subtitles, audio) for projects
         # where ALL renders have expired (file_path is None)
@@ -295,9 +288,6 @@ async def cleanup_expired_renders():
         )
         projects = result2.scalars().all()
         for project in projects:
-            if _is_tevoxi_music_project(project):
-                continue
-
             # Check if project has any render with files still on disk
             r_result = await db.execute(
                 select(VideoRender).where(
@@ -309,7 +299,7 @@ async def cleanup_expired_renders():
                 continue  # Still has active renders
 
             # All renders expired — clean up source directories
-            for dir_name in ["images", "clips", "subtitles"]:
+            for dir_name in ["images", "clips", "subtitles", "audio", "renders", "thumbnails"]:
                 dir_path = Path(media_dir) / dir_name / str(project.id)
                 if dir_path.exists():
                     shutil.rmtree(dir_path, ignore_errors=True)
