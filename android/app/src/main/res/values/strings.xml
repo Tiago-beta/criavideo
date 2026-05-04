@@ -4,4 +4,8 @@
     <string name="title_activity_main">CriaVideo</string>
     <string name="package_name">pro.criavideo.app</string>
     <string name="custom_url_scheme">pro.criavideo.app</string>
+    <string name="asset_statements"><![CDATA[[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"web","site":"https://criavideo.pro"}},{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"web","site":"https://www.criavideo.pro"}}]]]></string>
+    <string-array name="additional_trusted_origins">
+        <item>https://www.criavideo.pro</item>
+    </string-array>
 </resources>

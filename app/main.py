@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import get_settings
 from app.scheduler import start_scheduler, stop_scheduler
@@ -19,6 +19,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+ANDROID_APP_PACKAGE_NAME = "pro.criavideo.app"
+ANDROID_UPLOAD_KEY_SHA256 = "90:95:28:75:5C:1C:A5:9A:53:BF:68:CD:2E:BA:58:13:AB:0B:40:B9:0C:68:A8:76:FA:6E:19:D1:70:B3:29:99"
+ANDROID_PLAY_SIGNING_SHA256 = "C9:93:9F:09:86:1D:9B:65:5A:78:E7:03:F7:F0:B8:13:DA:EE:8B:F5:8F:BF:FA:D1:35:A9:2F:CE:CE:E9:80:E0"
+ANDROID_ASSETLINKS_STATEMENTS = [
+    {
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {
+            "namespace": "android_app",
+            "package_name": ANDROID_APP_PACKAGE_NAME,
+            "sha256_cert_fingerprints": [
+                ANDROID_UPLOAD_KEY_SHA256,
+                ANDROID_PLAY_SIGNING_SHA256,
+            ],
+        },
+    }
+]
 
 
 @asynccontextmanager
@@ -135,6 +152,12 @@ async def landing():
 async def google_site_verification():
     """Google Search Console domain verification file."""
     return static_file_response("google3b8734f6a78a1e9f.html")
+
+
+@app.get("/.well-known/assetlinks.json", include_in_schema=False)
+async def assetlinks_json():
+    """Serve Digital Asset Links for the Android Trusted Web Activity."""
+    return JSONResponse(ANDROID_ASSETLINKS_STATEMENTS)
 
 
 @app.get("/video")
