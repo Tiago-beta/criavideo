@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260504-08">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260504-09">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 343;
+        var REQUIRED_VER = 344;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2283,9 +2283,18 @@
                         <div id="ai-suggest-custom-image-group" class="photo-upload-area" hidden>
                             <div class="photo-upload-header">
                                 <span class="photo-upload-label">Referências visuais do personalizado</span>
+                                <span class="photo-upload-hint">A IA analisa essas imagens antes de montar o prompt final.</span>
+                            </div>
+                            <div class="ai-suggest-custom-image-generate">
+                                <input id="ai-suggest-custom-image-prompt" type="text" class="input" placeholder="Ex: fachada da casa em construção ao pôr do sol">
+                                <button id="ai-suggest-custom-image-generate-btn" class="btn btn-secondary btn-sm" type="button" onclick="generateAiSuggestCustomImage()">Gerar imagem</button>
+                            </div>
+                            <div id="ai-suggest-custom-image-dropzone" class="photo-dropzone" onclick="triggerAiSuggestCustomImageUpload()">
+                                <p>Clique ou arraste imagens aqui</p>
+                                <small>JPG, PNG ou WebP • Máx 8 imagens • 10MB cada</small>
                             </div>
                             <input id="ai-suggest-custom-image-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handleAiSuggestCustomImageSelect(event)">
-                            <div id="ai-suggest-custom-image-preview" class="photo-preview-grid ai-suggest-custom-image-grid"></div>
+                            <div id="ai-suggest-custom-image-preview" class="photo-preview-grid"></div>
                             <div id="ai-suggest-custom-image-count" class="photo-count" hidden>
                                 <span id="ai-suggest-custom-image-num">0</span> / 8 referências
                             </div>
@@ -2344,25 +2353,6 @@
                     </div>
                 </div>
 
-            </div>
-        </div>
-    </div>
-
-    <div id="modal-ai-suggest-custom-image-prompt" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Gerar imagem de referência</h3>
-                <button class="modal-close" onclick="cancelAiSuggestCustomImagePromptModal()" type="button">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>Prompt da imagem</label>
-                    <textarea id="ai-suggest-custom-image-modal-prompt" class="input" rows="4" placeholder="Ex: casa em construção em time lapse, mostrando cada etapa da obra"></textarea>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="cancelAiSuggestCustomImagePromptModal()" type="button">Cancelar</button>
-                <button id="ai-suggest-custom-image-modal-confirm" class="btn btn-primary" onclick="confirmAiSuggestCustomImagePromptModal()" type="button">Gerar imagem</button>
             </div>
         </div>
     </div>
@@ -3526,8 +3516,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260504-08"></script>
-    <script src="/video/static/pwa.js?v=20260504-08"></script>
+    <script src="/video/static/app.js?v=20260504-09"></script>
+    <script src="/video/static/pwa.js?v=20260504-09"></script>
 </body>
 </html>
 

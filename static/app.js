@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v325 loaded");
+console.log("[CriaVideo] app.js v326 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2358,6 +2358,7 @@ let workflowState = {
     ],
     drag: null,
     pan: null,
+    pinch: null,
     zoom: 1,
     minZoom: 0.25,
     maxZoom: 2.2,
@@ -5325,6 +5326,10 @@ function initWorkflowBuilder() {
         wrap.addEventListener("pointermove", workflowPanMove);
         wrap.addEventListener("pointerup", workflowEndPan);
         wrap.addEventListener("pointercancel", workflowEndPan);
+        wrap.addEventListener("touchstart", workflowHandleTouchStart, { passive: false });
+        wrap.addEventListener("touchmove", workflowHandleTouchMove, { passive: false });
+        wrap.addEventListener("touchend", workflowHandleTouchEnd, { passive: false });
+        wrap.addEventListener("touchcancel", workflowHandleTouchEnd, { passive: false });
         wrap.addEventListener("wheel", workflowHandleZoom, { passive: false });
         wrap.addEventListener("scroll", workflowRenderConnections, { passive: true });
     }
@@ -6231,6 +6236,7 @@ function workflowHandlePortClick(event) {
 }
 
 function workflowStartPortDrag(event) {
+    if (workflowState.pinch) return;
     if (event.button !== 0) return;
     event.stopPropagation();
     const port = event.currentTarget?.dataset?.port || "";
@@ -6316,16 +6322,40 @@ function workflowApplyZoom() {
     const canvas = document.getElementById("workflow-canvas");
     const surface = document.getElementById("workflow-canvas-surface");
     if (!canvas || !surface) return;
-    const safeZoom = Math.max(
-        Number(workflowState.minZoom || 0.6),
-        Math.min(Number(workflowState.maxZoom || 2.2), Number(workflowState.zoom || 1))
-    );
+    const safeZoom = workflowClampZoom(workflowState.zoom || 1);
     workflowState.zoom = safeZoom;
     surface.style.width = `${workflowState.baseWidth * safeZoom}px`;
     surface.style.height = `${workflowState.baseHeight * safeZoom}px`;
     canvas.style.width = `${workflowState.baseWidth}px`;
     canvas.style.height = `${workflowState.baseHeight}px`;
     canvas.style.transform = `scale(${safeZoom})`;
+    workflowRenderConnections();
+}
+
+function workflowClampZoom(value) {
+    return Math.max(
+        Number(workflowState.minZoom || 0.6),
+        Math.min(Number(workflowState.maxZoom || 2.2), Number(value || 1))
+    );
+}
+
+function workflowSetZoomAroundPoint(nextZoom, clientX, clientY, contentAnchor = null) {
+    const wrap = document.getElementById("workflow-canvas-wrap");
+    if (!wrap) return;
+    const currentZoom = Math.max(0.01, Number(workflowState.zoom || 1));
+    const safeZoom = workflowClampZoom(nextZoom);
+    const rect = wrap.getBoundingClientRect();
+    const pointerX = clientX - rect.left;
+    const pointerY = clientY - rect.top;
+    const anchorX = Number(contentAnchor?.x);
+    const anchorY = Number(contentAnchor?.y);
+    const contentX = Number.isFinite(anchorX) ? anchorX : (wrap.scrollLeft + pointerX) / currentZoom;
+    const contentY = Number.isFinite(anchorY) ? anchorY : (wrap.scrollTop + pointerY) / currentZoom;
+    if (Math.abs(safeZoom - currentZoom) < 0.0001 && !Number.isFinite(anchorX) && !Number.isFinite(anchorY)) return;
+    workflowState.zoom = safeZoom;
+    workflowApplyZoom();
+    wrap.scrollLeft = Math.max(0, contentX * safeZoom - pointerX);
+    wrap.scrollTop = Math.max(0, contentY * safeZoom - pointerY);
     workflowRenderConnections();
 }
 
@@ -6368,6 +6398,7 @@ function workflowGetNodeBounds() {
 }
 
 function workflowStartDrag(event, node) {
+    if (workflowState.pinch) return;
     if (!node || event.button !== 0) return;
     if (event.target.closest(".workflow-port")) return;
     if (event.target.closest(".workflow-node-name") && !event.target.closest(".workflow-drag-handle")) return;
@@ -6417,6 +6448,7 @@ function workflowEndDrag(event) {
 }
 
 function workflowStartPan(event) {
+    if (workflowState.pinch) return;
     const wrap = document.getElementById("workflow-canvas-wrap");
     if (!wrap || event.button !== 0) return;
     if (event.target.closest(".workflow-node, textarea, input, select, button, label")) return;
@@ -6449,6 +6481,103 @@ function workflowSetAddPositionFromEvent(event) {
     };
 }
 
+function workflowTouchDistance(firstTouch, secondTouch) {
+    const dx = Number(secondTouch?.clientX || 0) - Number(firstTouch?.clientX || 0);
+    const dy = Number(secondTouch?.clientY || 0) - Number(firstTouch?.clientY || 0);
+    return Math.hypot(dx, dy);
+}
+
+function workflowCancelActivePointerInteractions() {
+    const drag = workflowState.drag;
+    if (drag?.node) {
+        drag.node.classList.remove("dragging");
+        drag.node.releasePointerCapture?.(drag.pointerId);
+        drag.node.removeEventListener("pointermove", workflowDragMove);
+        drag.node.removeEventListener("pointerup", workflowEndDrag);
+        drag.node.removeEventListener("pointercancel", workflowEndDrag);
+        workflowState.drag = null;
+    }
+
+    const wrap = document.getElementById("workflow-canvas-wrap");
+    const pan = workflowState.pan;
+    if (pan && wrap) {
+        wrap.classList.remove("panning");
+        wrap.releasePointerCapture?.(pan.pointerId);
+        workflowState.pan = null;
+    }
+
+    const portDrag = workflowState.portDrag;
+    if (portDrag) {
+        const portEl = document.querySelector(`#create-panel-workflow .workflow-port[data-port="${CSS.escape(portDrag.port)}"]`);
+        portEl?.releasePointerCapture?.(portDrag.pointerId);
+        portEl?.removeEventListener("pointermove", workflowPortDragMove);
+        workflowState.portDrag = null;
+        workflowState.tempConnection = null;
+        workflowState.pendingPort = "";
+        document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((el) => el.classList.remove("pending"));
+    }
+
+    workflowRenderConnections();
+}
+
+function workflowResetPinchFromTouches(touches) {
+    const wrap = document.getElementById("workflow-canvas-wrap");
+    if (!wrap || !touches || touches.length < 2) {
+        workflowState.pinch = null;
+        return;
+    }
+    const firstTouch = touches[0];
+    const secondTouch = touches[1];
+    const distance = workflowTouchDistance(firstTouch, secondTouch);
+    if (!distance) {
+        workflowState.pinch = null;
+        return;
+    }
+    const rect = wrap.getBoundingClientRect();
+    const centerX = (firstTouch.clientX + secondTouch.clientX) / 2;
+    const centerY = (firstTouch.clientY + secondTouch.clientY) / 2;
+    const zoom = Math.max(0.01, Number(workflowState.zoom || 1));
+    workflowState.pinch = {
+        startDistance: distance,
+        startZoom: zoom,
+        contentX: (wrap.scrollLeft + centerX - rect.left) / zoom,
+        contentY: (wrap.scrollTop + centerY - rect.top) / zoom,
+    };
+}
+
+function workflowHandleTouchStart(event) {
+    if (!event?.touches || event.touches.length < 2) return;
+    workflowCancelActivePointerInteractions();
+    workflowResetPinchFromTouches(event.touches);
+    if (workflowState.pinch) event.preventDefault();
+}
+
+function workflowHandleTouchMove(event) {
+    const pinch = workflowState.pinch;
+    if (!pinch || !event?.touches || event.touches.length < 2) return;
+    const firstTouch = event.touches[0];
+    const secondTouch = event.touches[1];
+    const distance = workflowTouchDistance(firstTouch, secondTouch);
+    if (!distance) return;
+    const nextZoom = pinch.startZoom * (distance / Math.max(1, pinch.startDistance));
+    const centerX = (firstTouch.clientX + secondTouch.clientX) / 2;
+    const centerY = (firstTouch.clientY + secondTouch.clientY) / 2;
+    workflowSetZoomAroundPoint(nextZoom, centerX, centerY, {
+        x: pinch.contentX,
+        y: pinch.contentY,
+    });
+    event.preventDefault();
+}
+
+function workflowHandleTouchEnd(event) {
+    if (event?.touches?.length >= 2) {
+        workflowResetPinchFromTouches(event.touches);
+        event.preventDefault();
+        return;
+    }
+    workflowState.pinch = null;
+}
+
 function workflowPanMove(event) {
     const pan = workflowState.pan;
     const wrap = document.getElementById("workflow-canvas-wrap");
@@ -6476,24 +6605,9 @@ function workflowHandleZoom(event) {
 
     const currentZoom = Number(workflowState.zoom || 1);
     const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;
-    const nextZoom = Math.max(
-        Number(workflowState.minZoom || 0.6),
-        Math.min(Number(workflowState.maxZoom || 2.2), currentZoom * zoomFactor)
-    );
+    const nextZoom = workflowClampZoom(currentZoom * zoomFactor);
     if (Math.abs(nextZoom - currentZoom) < 0.0001) return;
-
-    const rect = wrap.getBoundingClientRect();
-    const pointerX = event.clientX - rect.left;
-    const pointerY = event.clientY - rect.top;
-    const contentX = (wrap.scrollLeft + pointerX) / currentZoom;
-    const contentY = (wrap.scrollTop + pointerY) / currentZoom;
-
-    workflowState.zoom = nextZoom;
-    workflowApplyZoom();
-
-    wrap.scrollLeft = contentX * nextZoom - pointerX;
-    wrap.scrollTop = contentY * nextZoom - pointerY;
-    workflowRenderConnections();
+    workflowSetZoomAroundPoint(nextZoom, event.clientX, event.clientY);
 }
 
 function workflowPortPoint(portName) {
@@ -9906,8 +10020,6 @@ const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_AUDIO_SIZE = 80 * 1024 * 1024; // 80MB
 const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB
 let aiSuggestCustomImages = []; // Personalized visual references for AI prompt.
-let aiSuggestCustomImagePromptDraft = "";
-let aiSuggestCustomImagePromptModalResolve = null;
 
 function togglePhotoUpload() {
     const checked = document.getElementById("script-use-photos").checked;
@@ -10274,11 +10386,10 @@ function _syncAiSuggestCustomImageSection() {
 
 function resetAiSuggestCustomImages() {
     aiSuggestCustomImages = [];
-    aiSuggestCustomImagePromptDraft = "";
     const input = document.getElementById("ai-suggest-custom-image-input");
     if (input) input.value = "";
-    const modalInput = document.getElementById("ai-suggest-custom-image-modal-prompt");
-    if (modalInput) modalInput.value = "";
+    const promptInput = document.getElementById("ai-suggest-custom-image-prompt");
+    if (promptInput) promptInput.value = "";
     renderAiSuggestCustomImagePreview();
     _syncAiSuggestCustomImageSection();
 }
@@ -10333,48 +10444,6 @@ function removeAiSuggestCustomImage(index) {
     renderAiSuggestCustomImagePreview();
 }
 
-function openAiSuggestCustomImagePromptModal(defaultValue = "") {
-    const input = document.getElementById("ai-suggest-custom-image-modal-prompt");
-    const confirmBtn = document.getElementById("ai-suggest-custom-image-modal-confirm");
-    if (!input) {
-        return Promise.resolve(defaultValue || "");
-    }
-    input.value = defaultValue || "";
-    if (confirmBtn) {
-        confirmBtn.disabled = false;
-        confirmBtn.textContent = "Gerar imagem";
-    }
-    openModal("modal-ai-suggest-custom-image-prompt");
-    window.setTimeout(() => input.focus(), 30);
-    return new Promise((resolve) => {
-        aiSuggestCustomImagePromptModalResolve = resolve;
-    });
-}
-
-function closeAiSuggestCustomImagePromptModal(value = null) {
-    closeModal("modal-ai-suggest-custom-image-prompt");
-    const resolve = aiSuggestCustomImagePromptModalResolve;
-    aiSuggestCustomImagePromptModalResolve = null;
-    if (resolve) {
-        resolve(value);
-    }
-}
-
-function confirmAiSuggestCustomImagePromptModal() {
-    const input = document.getElementById("ai-suggest-custom-image-modal-prompt");
-    const value = String(input?.value || "").trim();
-    if (!value) {
-        alert("Descreva a imagem desejada para gerar a referência visual.");
-        return;
-    }
-    aiSuggestCustomImagePromptDraft = value;
-    closeAiSuggestCustomImagePromptModal(value);
-}
-
-function cancelAiSuggestCustomImagePromptModal() {
-    closeAiSuggestCustomImagePromptModal(null);
-}
-
 function renderAiSuggestCustomImagePreview() {
     const grid = document.getElementById("ai-suggest-custom-image-preview");
     const countEl = document.getElementById("ai-suggest-custom-image-count");
@@ -10382,18 +10451,6 @@ function renderAiSuggestCustomImagePreview() {
     if (!grid || !countEl || !numEl) return;
 
     grid.innerHTML = "";
-    const hasImages = aiSuggestCustomImages.length > 0;
-
-    const generateTile = document.createElement("button");
-    generateTile.type = "button";
-    generateTile.className = "ai-suggest-custom-image-tile ai-suggest-custom-image-tile-generate";
-    generateTile.innerHTML = `
-        <span class="ai-suggest-custom-image-tile-icon">AI</span>
-        <span class="ai-suggest-custom-image-tile-title">Gerar imagem</span>
-    `;
-    generateTile.onclick = () => generateAiSuggestCustomImage();
-    grid.appendChild(generateTile);
-
     aiSuggestCustomImages.forEach((item, index) => {
         const div = document.createElement("div");
         div.className = "photo-preview-item";
@@ -10421,32 +10478,6 @@ function renderAiSuggestCustomImagePreview() {
         grid.appendChild(div);
     });
 
-    if (aiSuggestCustomImages.length < MAX_AI_SUGGEST_CUSTOM_IMAGES) {
-        const uploadTile = document.createElement("button");
-        uploadTile.type = "button";
-        uploadTile.className = `ai-suggest-custom-image-tile ai-suggest-custom-image-tile-upload${hasImages ? " is-compact" : ""}`;
-        uploadTile.innerHTML = hasImages
-            ? `<span class="ai-suggest-custom-image-tile-icon">+</span>`
-            : `
-                <span class="ai-suggest-custom-image-tile-icon">+</span>
-                <span class="ai-suggest-custom-image-tile-title">Clique ou arraste imagens aqui</span>
-                <span class="ai-suggest-custom-image-tile-copy">JPG, PNG ou WebP • Máx 8 imagens • 10MB cada</span>
-            `;
-        uploadTile.onclick = () => triggerAiSuggestCustomImageUpload();
-        uploadTile.addEventListener("dragover", (event) => {
-            event.preventDefault();
-            uploadTile.classList.add("dragover");
-        });
-        uploadTile.addEventListener("dragleave", () => uploadTile.classList.remove("dragover"));
-        uploadTile.addEventListener("drop", (event) => {
-            event.preventDefault();
-            uploadTile.classList.remove("dragover");
-            const files = Array.from(event.dataTransfer?.files || []).filter((file) => file.type.startsWith("image/"));
-            addAiSuggestCustomImages(files);
-        });
-        grid.appendChild(uploadTile);
-    }
-
     countEl.hidden = aiSuggestCustomImages.length === 0;
     numEl.textContent = aiSuggestCustomImages.length;
 }
@@ -10461,11 +10492,16 @@ async function generateAiSuggestCustomImage() {
         return;
     }
 
-    const topicFallback = String(document.getElementById("ai-suggest-topic")?.value || "").trim();
-    const prompt = await openAiSuggestCustomImagePromptModal(aiSuggestCustomImagePromptDraft || topicFallback);
+    const promptInput = document.getElementById("ai-suggest-custom-image-prompt");
+    const topicFallback = document.getElementById("ai-suggest-topic")?.value || "";
+    const prompt = String(promptInput?.value || topicFallback).trim();
     if (!prompt) {
+        alert("Descreva a imagem desejada para gerar a referência visual.");
         return;
     }
+
+    const button = document.getElementById("ai-suggest-custom-image-generate-btn");
+    if (button) button.disabled = true;
 
     try {
         const aspect = document.getElementById("script-realistic-aspect")?.value
@@ -10490,6 +10526,8 @@ async function generateAiSuggestCustomImage() {
         showToast("Imagem de referência gerada e adicionada ao prompt.", "success");
     } catch (error) {
         alert(`Erro ao gerar imagem de referência: ${error.message}`);
+    } finally {
+        if (button) button.disabled = false;
     }
 }
 
@@ -10561,6 +10599,18 @@ document.addEventListener("DOMContentLoaded", () => {
             const input = document.getElementById("script-video-input");
             if (input) input.value = "";
             handleUserVideoSelect({ target: { files: [file] } });
+        });
+    }
+
+    const aiDz = document.getElementById("ai-suggest-custom-image-dropzone");
+    if (aiDz) {
+        aiDz.addEventListener("dragover", (e) => { e.preventDefault(); aiDz.classList.add("dragover"); });
+        aiDz.addEventListener("dragleave", () => aiDz.classList.remove("dragover"));
+        aiDz.addEventListener("drop", (e) => {
+            e.preventDefault();
+            aiDz.classList.remove("dragover");
+            const files = Array.from(e.dataTransfer.files).filter((file) => file.type.startsWith("image/"));
+            addAiSuggestCustomImages(files);
         });
     }
 
