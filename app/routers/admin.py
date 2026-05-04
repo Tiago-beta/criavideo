@@ -639,24 +639,41 @@ async def admin_change_credits(
         await db.rollback()
         raise HTTPException(status_code=404, detail="Usuario nao encontrado.")
 
+    # Commit credit update first so legacy credit_usage schema issues do not block balance changes.
+    await db.commit()
+
     if await _table_exists(db, "credit_usage"):
         reason = str(req.reason or "Credito admin").strip()[:200] or "Credito admin"
         action = f"admin_add: {reason}" if amount > 0 else f"admin_remove: {reason}"
-        await db.execute(
-            text(
-                """
-                INSERT INTO credit_usage (user_id, credits, action, job_id)
-                VALUES (:uid, :credits, :action, NULL)
-                """
-            ),
-            {
+        usage_cols = await _get_columns(db, "credit_usage")
+        if {"user_id", "credits", "action"}.issubset(usage_cols):
+            usage_columns = ["user_id", "credits", "action"]
+            usage_values = [":uid", ":credits", ":action"]
+            usage_params: dict[str, Any] = {
                 "uid": user_id,
                 "credits": abs(amount),
                 "action": action,
-            },
-        )
+            }
+            if "job_id" in usage_cols:
+                usage_columns.append("job_id")
+                usage_values.append("NULL")
+            if "created_at" in usage_cols:
+                usage_columns.append("created_at")
+                usage_values.append("NOW()")
 
-    await db.commit()
+            try:
+                await db.execute(
+                    text(
+                        f"INSERT INTO credit_usage ({', '.join(usage_columns)}) "
+                        f"VALUES ({', '.join(usage_values)})"
+                    ),
+                    usage_params,
+                )
+                await db.commit()
+            except Exception:
+                # Keep admin credit operation successful even when legacy credit_usage FK/schema is incompatible.
+                await db.rollback()
+
     return {"ai_credits": _as_int(new_balance)}
 
 

@@ -552,6 +552,42 @@
         return res;
     }
 
+    async function readJsonSafe(res) {
+        const raw = await res.text();
+        if (!raw) return {};
+        try {
+            return JSON.parse(raw);
+        } catch (_) {
+            return { error: raw.trim() || "Resposta inválida do servidor." };
+        }
+    }
+
+    function getApiErrorMessage(payload, fallback) {
+        if (payload && typeof payload === "object") {
+            const detail = payload.detail;
+            if (typeof detail === "string" && detail.trim()) {
+                return detail.trim();
+            }
+            if (Array.isArray(detail) && detail.length) {
+                const first = detail[0];
+                const msg = typeof first === "string" ? first : first?.msg;
+                if (typeof msg === "string" && msg.trim()) {
+                    return msg.trim();
+                }
+            }
+            if (typeof payload.error === "string" && payload.error.trim()) {
+                return payload.error.trim();
+            }
+            if (typeof payload.message === "string" && payload.message.trim()) {
+                return payload.message.trim();
+            }
+        }
+        if (typeof payload === "string" && payload.trim()) {
+            return payload.trim();
+        }
+        return fallback;
+    }
+
     function getDashboardCards(data) {
         return [
             { icon: "fa-users", label: "Total de Usuários", value: asNumber(data.totalUsers) },
@@ -653,8 +689,8 @@
 
         try {
             const res = await adminFetch("/admin/stats");
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Erro ao carregar dashboard");
+            const data = await readJsonSafe(res);
+            if (!res.ok) throw new Error(getApiErrorMessage(data, "Erro ao carregar dashboard"));
 
             const cards = getDashboardCards(data);
             document.getElementById("stats-grid").innerHTML = cards.map((c) => `
@@ -700,8 +736,8 @@
             const q = new URLSearchParams({ page: String(usersPage), limit: "50" });
             if (search) q.set("search", search);
             const res = await adminFetch(`/admin/users?${q.toString()}`);
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Erro ao carregar usuários");
+            const data = await readJsonSafe(res);
+            if (!res.ok) throw new Error(getApiErrorMessage(data, "Erro ao carregar usuários"));
 
             let html = `
                 <div style="color: var(--text2); margin-bottom: 12px; font-size: 14px;">
@@ -806,8 +842,8 @@
 
         try {
             const res = await adminFetch(`/admin/users/${userId}`);
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Erro ao carregar usuário");
+            const data = await readJsonSafe(res);
+            if (!res.ok) throw new Error(getApiErrorMessage(data, "Erro ao carregar usuário"));
             const u = data.user || {};
 
             const planExpiry = u.plan_expires_at
@@ -933,8 +969,8 @@
                 amount,
                 reason: multiplier > 0 ? "Adição manual admin" : "Remoção manual admin",
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Falha ao atualizar créditos");
+            const data = await readJsonSafe(res);
+            if (!res.ok) throw new Error(getApiErrorMessage(data, "Falha ao atualizar créditos"));
             showAdminToast(`Créditos atualizados: ${asNumber(data.ai_credits)}`);
             await openUserDetail(userId);
             await loadUsers(usersPage);
@@ -953,8 +989,8 @@
                 plan,
                 durationDays: plan === "pro" ? days : null,
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Falha ao atualizar plano");
+            const data = await readJsonSafe(res);
+            if (!res.ok) throw new Error(getApiErrorMessage(data, "Falha ao atualizar plano"));
             showAdminToast(`Plano atualizado: ${String(data.plan || plan).toUpperCase()}`);
             await openUserDetail(userId);
             await loadUsers(usersPage);
