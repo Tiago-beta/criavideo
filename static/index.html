@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260504-11">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260504-12">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 346;
+        var REQUIRED_VER = 347;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -183,9 +183,11 @@
                                 <h1>Criar vídeos</h1>
                                 <button id="btn-new-project" class="btn btn-primary btn-add-project" type="button" title="Adicionar novo projeto" aria-label="Adicionar novo projeto">+</button>
                             </div>
-                            <div class="sidebar-credits" id="sidebar-credits" title="Clique para adicionar saldo">
-                                <span class="sidebar-credits-label">Saldo</span>
-                                <span id="credits-count">0 créditos</span>
+                            <div class="page-header-right">
+                                <div class="sidebar-credits page-credits-badge" data-credits-trigger title="Clique para adicionar saldo">
+                                    <span class="sidebar-credits-label">Saldo</span>
+                                    <span data-credits-count>0 créditos</span>
+                                </div>
                             </div>
                         </div>
                         <div id="projects-list" class="cards-grid">
@@ -200,6 +202,12 @@
                                 <div class="page-header-left">
                                     <h1>Editar vídeo</h1>
                                     <button id="editor-upload-btn" class="btn btn-primary btn-add-project" type="button" title="Enviar vídeo para editar" aria-label="Enviar vídeo para editar">+</button>
+                                </div>
+                                <div class="page-header-right">
+                                    <div class="sidebar-credits page-credits-badge" data-credits-trigger title="Clique para adicionar saldo">
+                                        <span class="sidebar-credits-label">Saldo</span>
+                                        <span data-credits-count>0 créditos</span>
+                                    </div>
                                 </div>
                             </div>
                             <input id="editor-video-upload-input" type="file" accept="video/*,image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadVideo(this)">
@@ -365,9 +373,15 @@
                     <section id="page-publish" class="page">
                         <div class="page-header">
                             <h1>Publicar vídeos YouTube</h1>
-                            <div class="publish-top-tabs" role="tablist" aria-label="Opções de publicar">
-                                <button class="btn btn-secondary publish-top-tab active" type="button" data-publish-tab="publish">Publicação</button>
-                                <button class="btn btn-secondary publish-top-tab" type="button" data-publish-tab="accounts">Contas</button>
+                            <div class="page-header-right">
+                                <div class="publish-top-tabs" role="tablist" aria-label="Opções de publicar">
+                                    <button class="btn btn-secondary publish-top-tab active" type="button" data-publish-tab="publish">Publicação</button>
+                                    <button class="btn btn-secondary publish-top-tab" type="button" data-publish-tab="accounts">Contas</button>
+                                </div>
+                                <div class="sidebar-credits page-credits-badge" data-credits-trigger title="Clique para adicionar saldo">
+                                    <span class="sidebar-credits-label">Saldo</span>
+                                    <span data-credits-count>0 créditos</span>
+                                </div>
                             </div>
                         </div>
                         <div id="publish-tab-publish" class="publish-tab-content active">
@@ -522,7 +536,13 @@
                     <section id="page-analyze" class="page">
                         <div class="page-header">
                             <h1>Analisar canal</h1>
-                            <button id="analyze-refresh-btn" class="btn btn-secondary btn-sm" type="button">Atualizar contas</button>
+                            <div class="page-header-right">
+                                <button id="analyze-refresh-btn" class="btn btn-secondary btn-sm" type="button">Atualizar contas</button>
+                                <div class="sidebar-credits page-credits-badge" data-credits-trigger title="Clique para adicionar saldo">
+                                    <span class="sidebar-credits-label">Saldo</span>
+                                    <span data-credits-count>0 créditos</span>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="analyze-layout">
@@ -631,6 +651,12 @@
                                 <div class="automate-header-actions">
                                     <button id="btn-auto-pilot" class="btn btn-secondary btn-sm" type="button">Piloto automatico</button>
                                     <button id="btn-new-automation" class="btn btn-primary btn-add-project" type="button" title="Nova automação" aria-label="Nova automação">+</button>
+                                </div>
+                            </div>
+                            <div class="page-header-right">
+                                <div class="sidebar-credits page-credits-badge" data-credits-trigger title="Clique para adicionar saldo">
+                                    <span class="sidebar-credits-label">Saldo</span>
+                                    <span data-credits-count>0 créditos</span>
                                 </div>
                             </div>
                         </div>
@@ -3516,8 +3542,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260504-11"></script>
-    <script src="/video/static/pwa.js?v=20260504-11"></script>
+    <script src="/video/static/app.js?v=20260504-12"></script>
+    <script src="/video/static/pwa.js?v=20260504-12"></script>
 </body>
 </html>
 

@@ -16,6 +16,36 @@ settings = get_settings()
 _openai = openai.AsyncOpenAI(api_key=settings.openai_api_key)
 
 
+def _resolve_tevoxi_service_token() -> str:
+    static_token = str(settings.tevoxi_api_token or "").strip()
+
+    # Prefer a fresh internal JWT so CriaVideo jobs don't depend on the
+    # balance or lifetime of a manually copied Tevoxi token.
+    if settings.tevoxi_jwt_secret:
+        try:
+            from jose import jwt as jose_jwt
+            import time
+
+            payload = {
+                "id": settings.tevoxi_jwt_user_id,
+                "email": settings.tevoxi_jwt_email,
+                "role": "admin",
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 3600,
+            }
+            return jose_jwt.encode(payload, settings.tevoxi_jwt_secret, algorithm="HS256")
+        except Exception as exc:
+            if static_token:
+                logger.warning("Failed to generate Tevoxi service JWT, falling back to static token: %s", exc)
+            else:
+                logger.warning("Failed to generate Tevoxi service JWT: %s", exc)
+
+    if static_token:
+        return static_token
+
+    raise RuntimeError("TEVOXI_API_TOKEN ou TEVOXI_JWT_SECRET nao configurado.")
+
+
 async def expand_theme_to_music_prompt(theme: str) -> dict:
     """Use GPT-4o-mini to expand a simple theme into Suno-compatible music parameters."""
     try:
@@ -76,23 +106,7 @@ async def generate_music_from_theme(
     Returns: {"audio_path": str, "title": str, "lyrics": str, "duration": float, "job_id": str, "audio_url": str}
     """
     api_url = settings.tevoxi_api_url.rstrip("/")
-    api_token = settings.tevoxi_api_token
-
-    # Generate JWT on-the-fly if jwt_secret is configured
-    if not api_token and settings.tevoxi_jwt_secret:
-        from jose import jwt as jose_jwt
-        import time
-        payload = {
-            "id": settings.tevoxi_jwt_user_id,
-            "email": settings.tevoxi_jwt_email,
-            "role": "admin",
-            "iat": int(time.time()),
-            "exp": int(time.time()) + 3600,
-        }
-        api_token = jose_jwt.encode(payload, settings.tevoxi_jwt_secret, algorithm="HS256")
-
-    if not api_token:
-        raise RuntimeError("TEVOXI_API_TOKEN ou TEVOXI_JWT_SECRET nao configurado.")
+    api_token = _resolve_tevoxi_service_token()
 
     headers = {
         "Authorization": f"Bearer {api_token}",

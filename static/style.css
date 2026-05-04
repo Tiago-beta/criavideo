@@ -628,7 +628,7 @@ a {
     letter-spacing: 0.01em;
 }
 
-#credits-count {
+.sidebar-credits [data-credits-count] {
     font-weight: 700;
     font-size: 13px;
 }
@@ -2078,6 +2078,19 @@ a {
     display: flex;
     align-items: center;
     gap: 12px;
+}
+
+.page-header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.page-credits-badge {
+    flex-shrink: 0;
 }
 
 .mobile-profile-btn {
@@ -4897,6 +4910,10 @@ svg.spin {
 
     .page-header {
         align-items: center;
+    }
+
+    .page-header-right {
+        width: 100%;
     }
 
     .publish-top-tabs {

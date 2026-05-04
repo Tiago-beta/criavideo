@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v328 loaded");
+console.log("[CriaVideo] app.js v329 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -18581,8 +18581,9 @@ let _creditPricingVersion = "";
 
 function _renderGlobalBalance() {
     const balanceText = `${_formatCreditsInt(_userCredits)} créditos`;
-    const countEl = document.getElementById("credits-count");
-    if (countEl) countEl.textContent = balanceText;
+    document.querySelectorAll("[data-credits-count]").forEach((el) => {
+        el.textContent = balanceText;
+    });
 }
 
 async function updateCreditsDisplay() {
@@ -18722,9 +18723,11 @@ async function pollCreditStatus(reference) {
     }
 }
 
-// Wire up sidebar credits click
-document.getElementById("sidebar-credits")?.addEventListener("click", () => {
-    showCreditsPurchaseModal();
+// Wire up all page credit badges.
+document.querySelectorAll("[data-credits-trigger]").forEach((el) => {
+    el.addEventListener("click", () => {
+        showCreditsPurchaseModal();
+    });
 });
 
 window.selectCreditPackage = selectCreditPackage;
