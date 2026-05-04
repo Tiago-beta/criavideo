@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CriaVideo Admin</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0f1923;
+            --bg2: #1a2733;
+            --bg3: #243447;
+            --accent: #f5a623;
+            --accent2: #e8961e;
+            --text: #e0e6ed;
+            --text2: #8899a6;
+            --success: #17bf63;
+            --danger: #e0245e;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .admin-gate {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .admin-gate-card {
+            background: var(--bg2);
+            border: 1px solid var(--bg3);
+            border-radius: 14px;
+            width: 100%;
+            max-width: 560px;
+            padding: 24px;
+            text-align: center;
+        }
+        .admin-gate-card h2 {
+            color: var(--accent);
+            font-size: 22px;
+            margin-bottom: 8px;
+        }
+        .admin-gate-card p { color: var(--text2); }
+
+        .hidden { display: none !important; }
+
+        .admin-header {
+            background: var(--bg2);
+            padding: 14px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--bg3);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .admin-header h1 {
+            font-size: 20px;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .header-actions { display: flex; gap: 12px; align-items: center; }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-accent { background: var(--accent); color: #000; }
+        .btn-accent:hover { background: var(--accent2); }
+        .btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--bg3); }
+        .btn-ghost:hover { border-color: var(--text2); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-success { background: var(--success); color: #fff; }
+
+        .admin-tabs {
+            display: flex;
+            gap: 0;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--bg3);
+            padding: 0 20px;
+            overflow-x: auto;
+        }
+        .admin-tab {
+            padding: 12px 18px;
+            cursor: pointer;
+            color: var(--text2);
+            border-bottom: 2px solid transparent;
+            white-space: nowrap;
+            font-size: 14px;
+            transition: all .2s;
+        }
+        .admin-tab:hover { color: var(--text); }
+        .admin-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+        .admin-tab i { margin-right: 6px; }
+
+        .admin-content { padding: 20px; max-width: 1180px; margin: 0 auto; }
+        .admin-panel { display: none; }
+        .admin-panel.active { display: block; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: var(--bg2);
+            border-radius: 12px;
+            padding: 18px;
+            border: 1px solid var(--bg3);
+        }
+        .stat-card .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .stat-card .stat-label {
+            color: var(--text2);
+            font-size: 13px;
+            margin-top: 4px;
+        }
+        .stat-card .stat-icon {
+            float: right;
+            font-size: 24px;
+            color: var(--bg3);
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .chart-card {
+            background: var(--bg2);
+            border-radius: 12px;
+            padding: 18px;
+            border: 1px solid var(--bg3);
+        }
+        .chart-card h3 {
+            font-size: 15px;
+            color: var(--text2);
+            margin-bottom: 12px;
+        }
+        .chart-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+            height: 120px;
+        }
+        .chart-bar-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100%;
+            justify-content: flex-end;
+        }
+        .chart-bar {
+            width: 100%;
+            max-width: 40px;
+            background: var(--accent);
+            border-radius: 4px 4px 0 0;
+            min-height: 4px;
+            transition: height .3s;
+        }
+        .chart-bar-label {
+            font-size: 10px;
+            color: var(--text2);
+            margin-top: 6px;
+            text-align: center;
+        }
+        .chart-bar-value {
+            font-size: 11px;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+
+        .search-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .search-bar input {
+            flex: 1;
+            padding: 10px 16px;
+            border: 1px solid var(--bg3);
+            border-radius: 8px;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 14px;
+        }
+        .search-bar input:focus { outline: none; border-color: var(--accent); }
+
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg2);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .users-table th {
+            background: var(--bg3);
+            padding: 12px 14px;
+            text-align: left;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--text2);
+            letter-spacing: .5px;
+        }
+        .users-table td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--bg3);
+            font-size: 14px;
+        }
+        .users-table tr:hover td { background: rgba(245, 166, 35, 0.05); }
+        .users-table tr { cursor: pointer; }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge-pro { background: var(--accent); color: #000; }
+        .badge-free { background: var(--bg3); color: var(--text2); }
+        .badge-admin { background: var(--danger); color: #fff; }
+
+        .pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .pagination button {
+            padding: 8px 14px;
+            background: var(--bg3);
+            border: none;
+            border-radius: 6px;
+            color: var(--text);
+            cursor: pointer;
+        }
+        .pagination button:disabled { opacity: .4; cursor: default; }
+        .pagination span { color: var(--text2); font-size: 14px; }
+
+        .user-detail-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,.6);
+            z-index: 220;
+            display: flex;
+            justify-content: flex-end;
+        }
+        .user-detail-panel {
+            width: 90%;
+            max-width: 520px;
+            background: var(--bg2);
+            height: 100vh;
+            overflow-y: auto;
+            padding: 24px;
+            animation: slideIn .2s ease-out;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+        .user-detail-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .user-detail-header h2 { font-size: 18px; }
+        .user-detail-close {
+            background: none;
+            border: none;
+            color: var(--text2);
+            font-size: 24px;
+            cursor: pointer;
+        }
+        .user-detail-section {
+            background: var(--bg);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 14px;
+        }
+        .user-detail-section h4 {
+            color: var(--accent);
+            font-size: 13px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 5px 0;
+            font-size: 14px;
+        }
+        .detail-row .label { color: var(--text2); }
+        .detail-row .value { font-weight: 500; text-align: right; }
+
+        .credits-form {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .credits-form input {
+            width: 90px;
+            padding: 8px;
+            border: 1px solid var(--bg3);
+            border-radius: 6px;
+            background: var(--bg2);
+            color: var(--text);
+            font-size: 14px;
+            text-align: center;
+        }
+        .credits-form input:focus { outline: none; border-color: var(--accent); }
+
+        .plan-form { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+        .plan-form select,
+        .plan-form input {
+            padding: 8px;
+            border: 1px solid var(--bg3);
+            border-radius: 6px;
+            background: var(--bg2);
+            color: var(--text);
+            font-size: 14px;
+        }
+
+        .history-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .history-item {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--bg3);
+            font-size: 13px;
+        }
+        .history-item:last-child { border-bottom: none; }
+        .history-item .time { color: var(--text2); font-size: 11px; }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text2);
+        }
+        .loading i { font-size: 24px; color: var(--accent); }
+
+        .admin-toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg3);
+            color: var(--text);
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 999;
+            animation: fadeInUp .3s;
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+
+        @media (max-width: 900px) {
+            .admin-content { padding: 14px; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+            .stat-card { padding: 14px; }
+            .stat-card .stat-value { font-size: 22px; }
+            .charts-grid { grid-template-columns: 1fr; }
+            .users-table th:nth-child(4),
+            .users-table td:nth-child(4) { display: none; }
+            .user-detail-panel { width: 100%; max-width: none; }
+        }
+    </style>
+</head>
+<body>
+    <div id="admin-gate" class="admin-gate hidden">
+        <div class="admin-gate-card">
+            <h2><i class="fas fa-lock"></i> Acesso restrito</h2>
+            <p id="admin-gate-message">Você não tem permissão para acessar o painel administrativo.</p>
+        </div>
+    </div>
+
+    <div id="admin-app" class="hidden">
+        <div class="admin-header">
+            <h1><i class="fas fa-chart-line"></i> CriaVideo Admin</h1>
+            <div class="header-actions">
+                <span id="admin-email" style="color: var(--text2); font-size: 13px;"></span>
+                <button class="btn btn-ghost" id="btn-admin-logout"><i class="fas fa-sign-out-alt"></i> Sair</button>
+            </div>
+        </div>
+
+        <div class="admin-tabs">
+            <div class="admin-tab active" data-tab="dashboard">
+                <i class="fas fa-chart-pie"></i> Dashboard
+            </div>
+            <div class="admin-tab" data-tab="users">
+                <i class="fas fa-users"></i> Usuários
+            </div>
+        </div>
+
+        <div class="admin-content">
+            <div id="panel-dashboard" class="admin-panel active">
+                <div id="stats-loading" class="loading"><i class="fas fa-spinner fa-spin"></i><br>Carregando...</div>
+                <div id="stats-content" class="hidden">
+                    <div class="stats-grid" id="stats-grid"></div>
+                    <div class="charts-grid" id="charts-grid"></div>
+                </div>
+            </div>
+
+            <div id="panel-users" class="admin-panel">
+                <div class="search-bar">
+                    <input type="text" id="user-search" placeholder="Buscar por nome ou email...">
+                    <button class="btn btn-accent" id="btn-user-search"><i class="fas fa-search"></i> Buscar</button>
+                </div>
+                <div id="users-loading" class="loading hidden"><i class="fas fa-spinner fa-spin"></i><br>Carregando...</div>
+                <div id="users-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="user-detail-overlay" class="user-detail-overlay hidden"></div>
+
+    <script>
+    const APP_TOKEN_KEY = "criavideo_token";
+    const API_BASE = "/api";
+    const ADMIN_EMAIL = "tgsantos66@hotmail.com";
+    const PAGE_LABELS = {
+        projects: "Criar",
+        editor: "Editar",
+        analyze: "Analisar",
+        publish: "Publicar",
+        accounts: "Contas",
+        automate: "Automatizar",
+        profile: "Perfil",
+        login: "Login",
+        auth: "Autenticação",
+    };
+
+    let token = localStorage.getItem(APP_TOKEN_KEY) || "";
+    let currentUser = null;
+    let usersPage = 1;
+    let searchTimer = null;
+
+    function escHtml(str) {
+        const div = document.createElement("div");
+        div.textContent = String(str ?? "");
+        return div.innerHTML;
+    }
+
+    function asNumber(value) {
+        const num = Number(value || 0);
+        return Number.isFinite(num) ? num : 0;
+    }
+
+    function formatCurrency(value) {
+        return `R$ ${asNumber(value).toFixed(2)}`;
+    }
+
+    function formatCompactCurrency(value) {
+        return `R$${asNumber(value).toFixed(0)}`;
+    }
+
+    function formatDateTime(value) {
+        if (!value) return "—";
+        const dt = new Date(value);
+        if (Number.isNaN(dt.getTime())) return "—";
+        return dt.toLocaleString("pt-BR", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    }
+
+    function monthLabel(monthIso) {
+        const dt = new Date(monthIso);
+        if (Number.isNaN(dt.getTime())) return "--";
+        return ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"][dt.getMonth()];
+    }
+
+    function isAdminUser(user) {
+        const role = String(user?.role || "").toLowerCase();
+        const email = String(user?.email || "").toLowerCase().trim();
+        return role === "admin" || email === ADMIN_EMAIL;
+    }
+
+    function showGate(message) {
+        document.getElementById("admin-app").classList.add("hidden");
+        const gate = document.getElementById("admin-gate");
+        gate.classList.remove("hidden");
+        document.getElementById("admin-gate-message").textContent = message;
+    }
+
+    async function authCheck() {
+        if (!token) return null;
+        const res = await fetch(`${API_BASE}/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return null;
+        const data = await res.json().catch(() => ({}));
+        return data?.user || null;
+    }
+
+    async function adminFetch(path) {
+        const res = await fetch(`${API_BASE}${path}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.status === 401 || res.status === 403) {
+            throw new Error("Acesso negado");
+        }
+        return res;
+    }
+
+    async function adminPost(path, body) {
+        const res = await fetch(`${API_BASE}${path}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(body || {}),
+        });
+        if (res.status === 401 || res.status === 403) {
+            throw new Error("Acesso negado");
+        }
+        return res;
+    }
+
+    function getDashboardCards(data) {
+        return [
+            { icon: "fa-users", label: "Total de Usuários", value: asNumber(data.totalUsers) },
+            { icon: "fa-crown", label: "Usuários Pro", value: asNumber(data.proUsers) },
+            { icon: "fa-user-plus", label: "Novos (30 dias)", value: asNumber(data.newUsersLast30d) },
+            { icon: "fa-bolt", label: "Ativos (7 dias)", value: asNumber(data.activeUsersLast7d) },
+            { icon: "fa-video", label: "Projetos de Vídeo", value: asNumber(data.totalProjects) },
+            { icon: "fa-film", label: "Renders Finalizados", value: asNumber(data.totalRenders) },
+            { icon: "fa-coins", label: "Créditos em Circulação", value: asNumber(data.totalCreditsInCirculation) },
+            { icon: "fa-money-bill-wave", label: "Receita Total (R$)", value: formatCurrency(data.totalRevenue) },
+        ];
+    }
+
+    function buildChart(title, rows, valueKey, formatter = null) {
+        if (!rows || rows.length === 0) {
+            return `<div class="chart-card"><h3>${escHtml(title)}</h3><p style="color:var(--text2)">Sem dados</p></div>`;
+        }
+
+        const values = rows.map((r) => asNumber(r[valueKey]));
+        const maxVal = Math.max(...values, 1);
+        const barsHtml = rows.map((r) => {
+            const val = asNumber(r[valueKey]);
+            const pct = (val / maxVal) * 100;
+            const display = formatter ? formatter(val) : val;
+            return `
+                <div class="chart-bar-col">
+                    <span class="chart-bar-value">${escHtml(display)}</span>
+                    <div class="chart-bar" style="height:${Math.max(4, pct)}%"></div>
+                    <span class="chart-bar-label">${monthLabel(r.month)}</span>
+                </div>
+            `;
+        }).join("");
+
+        return `
+            <div class="chart-card">
+                <h3>${escHtml(title)}</h3>
+                <div class="chart-bars">${barsHtml}</div>
+            </div>
+        `;
+    }
+
+    function buildPlanDistributionCard(data) {
+        const rows = Array.isArray(data.planDistribution) ? data.planDistribution : [];
+        return `
+            <div class="chart-card">
+                <h3>Distribuição de Planos</h3>
+                ${rows.map((p) => `
+                    <div class="detail-row">
+                        <span class="label">${escHtml(String(p.plan || "free").toUpperCase())}</span>
+                        <span class="value">${asNumber(p.count)} usuários</span>
+                    </div>
+                `).join("") || '<p style="color:var(--text2)">Sem dados</p>'}
+            </div>
+        `;
+    }
+
+    function _pvGet(rows, page) {
+        const row = (rows || []).find((x) => String(x.page || "") === page);
+        return row ? asNumber(row.total) : 0;
+    }
+
+    function buildPageViewsCard(data) {
+        const pages = Object.keys(PAGE_LABELS);
+        if (!pages.length) return "";
+        return `
+            <div class="chart-card" style="grid-column: span 2;">
+                <h3>Acessos - Páginas do App</h3>
+                <table style="width:100%; border-collapse:collapse; margin-top:8px;">
+                    <thead>
+                        <tr style="border-bottom:1px solid var(--bg3);">
+                            <th style="text-align:left; padding:8px; color:var(--text2);">Página</th>
+                            <th style="text-align:right; padding:8px; color:var(--text2);">Hoje</th>
+                            <th style="text-align:right; padding:8px; color:var(--text2);">7 dias</th>
+                            <th style="text-align:right; padding:8px; color:var(--text2);">30 dias</th>
+                            <th style="text-align:right; padding:8px; color:var(--text2);">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${pages.map((page) => `
+                            <tr style="border-bottom:1px solid var(--bg3);">
+                                <td style="padding:8px;">${escHtml(PAGE_LABELS[page])}</td>
+                                <td style="padding:8px; text-align:right; font-weight:600; color:var(--accent);">${_pvGet(data.pageViews?.today, page)}</td>
+                                <td style="padding:8px; text-align:right;">${_pvGet(data.pageViews?.last7d, page)}</td>
+                                <td style="padding:8px; text-align:right;">${_pvGet(data.pageViews?.last30d, page)}</td>
+                                <td style="padding:8px; text-align:right; font-weight:600;">${_pvGet(data.pageViews?.totals, page)}</td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    async function loadDashboard() {
+        const loading = document.getElementById("stats-loading");
+        const content = document.getElementById("stats-content");
+        loading.classList.remove("hidden");
+        content.classList.add("hidden");
+
+        try {
+            const res = await adminFetch("/admin/stats");
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Erro ao carregar dashboard");
+
+            const cards = getDashboardCards(data);
+            document.getElementById("stats-grid").innerHTML = cards.map((c) => `
+                <div class="stat-card">
+                    <i class="fas ${c.icon} stat-icon"></i>
+                    <div class="stat-value">${escHtml(c.value)}</div>
+                    <div class="stat-label">${escHtml(c.label)}</div>
+                </div>
+            `).join("");
+
+            const charts = [];
+            charts.push(buildChart("Cadastros por Mês", data.monthlySignups, "count"));
+            charts.push(buildChart("Projetos por Mês", data.monthlyProjects, "count"));
+            charts.push(buildChart("Renders por Mês", data.monthlyRenders, "count"));
+            charts.push(buildChart("Receita por Mês (R$)", data.monthlyRevenue, "total", (v) => formatCompactCurrency(v)));
+            charts.push(buildPlanDistributionCard(data));
+
+            const pageViewsCard = buildPageViewsCard(data);
+            if (pageViewsCard) charts.push(pageViewsCard);
+
+            document.getElementById("charts-grid").innerHTML = charts.join("");
+            loading.classList.add("hidden");
+            content.classList.remove("hidden");
+        } catch (err) {
+            loading.innerHTML = `<span style="color:var(--danger)">Erro: ${escHtml(err.message || "Falha ao carregar")}</span>`;
+        }
+    }
+
+    function debounceSearch() {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => loadUsers(1), 350);
+    }
+
+    async function loadUsers(page = 1) {
+        usersPage = page;
+        const search = document.getElementById("user-search").value.trim();
+        const loading = document.getElementById("users-loading");
+        const content = document.getElementById("users-content");
+        loading.classList.remove("hidden");
+        content.innerHTML = "";
+
+        try {
+            const q = new URLSearchParams({ page: String(usersPage), limit: "50" });
+            if (search) q.set("search", search);
+            const res = await adminFetch(`/admin/users?${q.toString()}`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Erro ao carregar usuários");
+
+            let html = `
+                <div style="color: var(--text2); margin-bottom: 12px; font-size: 14px;">
+                    ${asNumber(data.total)} usuário(s) em CriaVideo
+                </div>
+                <table class="users-table">
+                    <thead>
+                        <tr>
+                            <th>Usuário</th>
+                            <th>Email</th>
+                            <th>Plano</th>
+                            <th>Créditos</th>
+                            <th>Cadastro</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            for (const u of (data.users || [])) {
+                const planBadge = String(u.role || "").toLowerCase() === "admin"
+                    ? '<span class="badge badge-admin">ADMIN</span>'
+                    : String(u.plan || "free").toLowerCase() === "pro"
+                    ? '<span class="badge badge-pro">PRO</span>'
+                    : '<span class="badge badge-free">FREE</span>';
+                const created = u.created_at ? new Date(u.created_at).toLocaleDateString("pt-BR") : "—";
+
+                html += `
+                    <tr data-user-id="${u.id}">
+                        <td><strong>${escHtml(u.name || "—")}</strong></td>
+                        <td>${escHtml(u.email || "")}</td>
+                        <td>${planBadge}</td>
+                        <td>${asNumber(u.ai_credits)}</td>
+                        <td>${escHtml(created)}</td>
+                    </tr>
+                `;
+            }
+
+            html += "</tbody></table>";
+
+            if (asNumber(data.pages) > 1) {
+                html += `
+                    <div class="pagination">
+                        <button ${usersPage <= 1 ? "disabled" : ""} data-page="${usersPage - 1}"><i class="fas fa-chevron-left"></i></button>
+                        <span>Página ${usersPage} de ${asNumber(data.pages)}</span>
+                        <button ${usersPage >= asNumber(data.pages) ? "disabled" : ""} data-page="${usersPage + 1}"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                `;
+            }
+
+            content.innerHTML = html;
+            content.querySelectorAll("tr[data-user-id]").forEach((tr) => {
+                tr.addEventListener("click", () => openUserDetail(parseInt(tr.dataset.userId || "0", 10) || 0));
+            });
+            content.querySelectorAll(".pagination button[data-page]").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    const next = parseInt(btn.dataset.page || "1", 10) || 1;
+                    loadUsers(next);
+                });
+            });
+            loading.classList.add("hidden");
+        } catch (err) {
+            loading.classList.add("hidden");
+            content.innerHTML = `<p style="color:var(--danger)">Erro: ${escHtml(err.message || "Falha")}</p>`;
+        }
+    }
+
+    function closeUserDetail() {
+        const overlay = document.getElementById("user-detail-overlay");
+        overlay.classList.add("hidden");
+        overlay.innerHTML = "";
+    }
+
+    function formatPaymentMethod(method) {
+        const normalized = String(method || "").trim().toLowerCase();
+        if (normalized === "pix") return "PIX";
+        if (normalized === "card") return "Cartão";
+        return normalized ? normalized.replace(/_/g, " ") : "";
+    }
+
+    function formatPaymentLabel(payment) {
+        const kind = String(payment.kind || "").trim().toLowerCase() === "creditos" ? "Créditos" : "Plano";
+        const method = formatPaymentMethod(payment.method);
+        return method ? `${kind} · ${method}` : kind;
+    }
+
+    function showAdminToast(msg) {
+        const existing = document.querySelector(".admin-toast");
+        if (existing) existing.remove();
+        const el = document.createElement("div");
+        el.className = "admin-toast";
+        el.textContent = String(msg || "");
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 2800);
+    }
+
+    async function openUserDetail(userId) {
+        if (!userId) return;
+        const overlay = document.getElementById("user-detail-overlay");
+        overlay.classList.remove("hidden");
+        overlay.innerHTML = `<div class="user-detail-panel"><div class="loading"><i class="fas fa-spinner fa-spin"></i><br>Carregando...</div></div>`;
+        overlay.onclick = (event) => { if (event.target === overlay) closeUserDetail(); };
+
+        try {
+            const res = await adminFetch(`/admin/users/${userId}`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Erro ao carregar usuário");
+            const u = data.user || {};
+
+            const planExpiry = u.plan_expires_at
+                ? new Date(u.plan_expires_at).toLocaleDateString("pt-BR")
+                : "—";
+
+            const creditHistory = Array.isArray(data.creditHistory) ? data.creditHistory : [];
+            const paymentHistory = Array.isArray(data.paymentHistory) ? data.paymentHistory : [];
+
+            const creditHistoryHtml = creditHistory.length
+                ? creditHistory.map((c) => {
+                    const dt = new Date(c.created_at).toLocaleDateString("pt-BR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                    });
+                    return `<div class="history-item"><strong>${asNumber(c.credits)}</strong> — ${escHtml(c.action || "")}
+                            <span class="time">${escHtml(dt)}</span></div>`;
+                }).join("")
+                : '<p style="color:var(--text2); font-size:13px;">Nenhum histórico</p>';
+
+            const paymentHistoryHtml = paymentHistory.length
+                ? paymentHistory.map((p) => {
+                    const amount = formatCurrency(p.amount);
+                    const dt = formatDateTime(p.created_at);
+                    const status = String(p.status || "").toLowerCase() === "confirmed"
+                        ? "✅"
+                        : String(p.status || "").toLowerCase() === "pending"
+                        ? "⏳"
+                        : "❌";
+                    return `<div class="history-item">${status} ${escHtml(amount)} — ${escHtml(formatPaymentLabel(p))}
+                            <span class="time">${escHtml(dt)}</span></div>`;
+                }).join("")
+                : '<p style="color:var(--text2); font-size:13px;">Nenhum pagamento</p>';
+
+            overlay.innerHTML = `
+                <div class="user-detail-panel">
+                    <div class="user-detail-header">
+                        <h2>${escHtml(u.name || u.email || "Usuário")}</h2>
+                        <button class="user-detail-close" id="btn-close-user-detail">&times;</button>
+                    </div>
+
+                    <div class="user-detail-section">
+                        <h4><i class="fas fa-user"></i> Informações</h4>
+                        <div class="detail-row"><span class="label">Email</span><span class="value">${escHtml(u.email || "—")}</span></div>
+                        <div class="detail-row"><span class="label">Nome</span><span class="value">${escHtml(u.name || "—")}</span></div>
+                        <div class="detail-row"><span class="label">Role</span><span class="value">${escHtml(u.role || "user")}</span></div>
+                        <div class="detail-row"><span class="label">Plano</span><span class="value">${escHtml(String(u.plan || "free").toUpperCase())}</span></div>
+                        <div class="detail-row"><span class="label">Expira em</span><span class="value">${escHtml(planExpiry)}</span></div>
+                        <div class="detail-row"><span class="label">Cadastro</span><span class="value">${escHtml(formatDateTime(u.created_at))}</span></div>
+                        <div class="detail-row"><span class="label">Primeiro acesso</span><span class="value">${escHtml(formatDateTime(u.first_seen_at))}</span></div>
+                        <div class="detail-row"><span class="label">Último acesso</span><span class="value">${escHtml(formatDateTime(u.last_seen_at))}</span></div>
+                    </div>
+
+                    <div class="user-detail-section">
+                        <h4><i class="fas fa-chart-bar"></i> Uso</h4>
+                        <div class="detail-row"><span class="label">Projetos Criados</span><span class="value">${asNumber(data.projectCount)}</span></div>
+                        <div class="detail-row"><span class="label">Renders Finalizados</span><span class="value">${asNumber(data.renderCount)}</span></div>
+                        <div class="detail-row"><span class="label">Contas Conectadas</span><span class="value">${asNumber(data.socialAccountCount)}</span></div>
+                        <div class="detail-row"><span class="label">Publicações</span><span class="value">${asNumber(data.publishJobCount)}</span></div>
+                    </div>
+
+                    <div class="user-detail-section">
+                        <h4><i class="fas fa-coins"></i> Créditos IA: ${asNumber(u.ai_credits)}</h4>
+                        <div class="credits-form">
+                            <input type="number" id="credit-amount" value="100" min="1" max="100000">
+                            <button class="btn btn-success" id="btn-credit-add"><i class="fas fa-plus"></i> Adicionar</button>
+                            <button class="btn btn-danger" id="btn-credit-remove"><i class="fas fa-minus"></i> Remover</button>
+                        </div>
+                    </div>
+
+                    <div class="user-detail-section">
+                        <h4><i class="fas fa-crown"></i> Alterar Plano</h4>
+                        <div class="plan-form">
+                            <select id="plan-select">
+                                <option value="free" ${String(u.plan || "free").toLowerCase() === "free" ? "selected" : ""}>Free</option>
+                                <option value="pro" ${String(u.plan || "free").toLowerCase() === "pro" ? "selected" : ""}>Pro</option>
+                            </select>
+                            <input type="number" id="plan-days" value="30" min="1" max="1825" placeholder="Dias">
+                            <button class="btn btn-accent" id="btn-plan-save"><i class="fas fa-save"></i> Salvar</button>
+                        </div>
+                    </div>
+
+                    <div class="user-detail-section">
+                        <h4><i class="fas fa-history"></i> Histórico de Créditos</h4>
+                        <div class="history-list">${creditHistoryHtml}</div>
+                    </div>
+
+                    <div class="user-detail-section">
+                        <h4><i class="fas fa-receipt"></i> Compras</h4>
+                        <div class="history-list">${paymentHistoryHtml}</div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById("btn-close-user-detail")?.addEventListener("click", closeUserDetail);
+            document.getElementById("btn-credit-add")?.addEventListener("click", () => addCredits(userId, 1));
+            document.getElementById("btn-credit-remove")?.addEventListener("click", () => addCredits(userId, -1));
+            document.getElementById("btn-plan-save")?.addEventListener("click", () => updatePlan(userId));
+        } catch (err) {
+            overlay.innerHTML = `
+                <div class="user-detail-panel">
+                    <div class="user-detail-header">
+                        <h2>Erro</h2>
+                        <button class="user-detail-close" id="btn-close-user-detail">&times;</button>
+                    </div>
+                    <p style="color:var(--danger)">${escHtml(err.message || "Falha ao carregar")}</p>
+                </div>
+            `;
+            document.getElementById("btn-close-user-detail")?.addEventListener("click", closeUserDetail);
+        }
+    }
+
+    async function addCredits(userId, multiplier) {
+        const amountInput = document.getElementById("credit-amount");
+        const baseAmount = parseInt(amountInput?.value || "0", 10) || 0;
+        const amount = baseAmount * multiplier;
+        if (!amount) return;
+
+        try {
+            const res = await adminPost(`/admin/users/${userId}/credits`, {
+                amount,
+                reason: multiplier > 0 ? "Adição manual admin" : "Remoção manual admin",
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Falha ao atualizar créditos");
+            showAdminToast(`Créditos atualizados: ${asNumber(data.ai_credits)}`);
+            await openUserDetail(userId);
+            await loadUsers(usersPage);
+            await loadDashboard();
+        } catch (err) {
+            showAdminToast(err.message || "Falha ao atualizar créditos");
+        }
+    }
+
+    async function updatePlan(userId) {
+        const plan = document.getElementById("plan-select")?.value || "free";
+        const days = parseInt(document.getElementById("plan-days")?.value || "30", 10) || 30;
+
+        try {
+            const res = await adminPost(`/admin/users/${userId}/plan`, {
+                plan,
+                durationDays: plan === "pro" ? days : null,
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Falha ao atualizar plano");
+            showAdminToast(`Plano atualizado: ${String(data.plan || plan).toUpperCase()}`);
+            await openUserDetail(userId);
+            await loadUsers(usersPage);
+            await loadDashboard();
+        } catch (err) {
+            showAdminToast(err.message || "Falha ao atualizar plano");
+        }
+    }
+
+    function switchTab(tab) {
+        document.querySelectorAll(".admin-tab").forEach((t) => t.classList.remove("active"));
+        document.querySelector(`.admin-tab[data-tab="${tab}"]`)?.classList.add("active");
+        document.querySelectorAll(".admin-panel").forEach((p) => p.classList.remove("active"));
+        document.getElementById(`panel-${tab}`)?.classList.add("active");
+
+        if (tab === "dashboard") loadDashboard();
+        if (tab === "users") loadUsers(1);
+    }
+
+    function doLogout() {
+        localStorage.removeItem(APP_TOKEN_KEY);
+        token = "";
+        window.location.reload();
+    }
+
+    function bindEvents() {
+        document.querySelectorAll(".admin-tab").forEach((tab) => {
+            tab.addEventListener("click", () => switchTab(tab.dataset.tab || "dashboard"));
+        });
+        document.getElementById("btn-user-search")?.addEventListener("click", () => loadUsers(1));
+        document.getElementById("user-search")?.addEventListener("input", debounceSearch);
+        document.getElementById("btn-admin-logout")?.addEventListener("click", doLogout);
+    }
+
+    async function showApp() {
+        document.getElementById("admin-gate").classList.add("hidden");
+        document.getElementById("admin-app").classList.remove("hidden");
+        document.getElementById("admin-email").textContent = currentUser?.email || "";
+        await loadDashboard();
+    }
+
+    (async function init() {
+        bindEvents();
+
+        currentUser = await authCheck();
+        if (!currentUser) {
+            showGate("Sessão expirada. Faça login novamente no CriaVideo.");
+            return;
+        }
+        if (!isAdminUser(currentUser)) {
+            showGate("Acesso restrito ao perfil administrativo.");
+            return;
+        }
+
+        await showApp();
+    })();
+    </script>
+</body>
+</html>

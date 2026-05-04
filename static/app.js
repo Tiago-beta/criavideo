@@ -1,9 +1,10 @@
-console.log("[CriaVideo] app.js v317 loaded");
+console.log("[CriaVideo] app.js v318 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
 const LEVITA_TOKEN_KEY = "levita_token";
 const TEVOXI_DEFAULT_SIGNUP_URL = "https://tevoxi.com";
+const ADMIN_PANEL_EMAIL = "tgsantos66@hotmail.com";
 
 let token = localStorage.getItem(APP_TOKEN_KEY) || "";
 let levitaToken = localStorage.getItem(LEVITA_TOKEN_KEY) || "";
@@ -60,6 +61,8 @@ let _autoPilotPersonaEditor = {
 let _autoRealisticPersonaCompositionTypes = ["natureza"];
 let _autoThemeRunState = {};
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
+let _profileAdminIframeLoaded = false;
+let _lastTrackedPage = "";
 
 const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
 const REALISTIC_PERSONA_LABELS = {
@@ -317,7 +320,9 @@ function setSession(accessToken, user, rawLevitaToken = null) {
 function clearSession() {
     token = "";
     currentUser = null;
+    _lastTrackedPage = "";
     localStorage.removeItem(APP_TOKEN_KEY);
+    _closeProfileAdminPanel(true);
     _resetTevoxiRuntimeState();
 }
 
@@ -325,6 +330,60 @@ function clearLevitaSession() {
     levitaToken = "";
     localStorage.removeItem(LEVITA_TOKEN_KEY);
     _resetTevoxiRuntimeState();
+}
+
+function _isProfileAdminUser() {
+    if (!currentUser) return false;
+    const role = String(currentUser.role || "").trim().toLowerCase();
+    const email = String(currentUser.email || "").trim().toLowerCase();
+    return role === "admin" || email === ADMIN_PANEL_EMAIL;
+}
+
+function _openProfileAdminPanel() {
+    if (!_isProfileAdminUser()) {
+        showToast("Acesso restrito ao perfil administrativo.", "error");
+        return;
+    }
+    const host = document.getElementById("profile-admin-host");
+    const iframe = document.getElementById("profile-admin-iframe");
+    if (!host || !iframe) return;
+    host.hidden = false;
+    if (!_profileAdminIframeLoaded) {
+        const src = iframe.dataset.src || "/video/static/admin-panel.html";
+        iframe.src = src;
+        _profileAdminIframeLoaded = true;
+    }
+}
+
+function _closeProfileAdminPanel(forceReset = false) {
+    const host = document.getElementById("profile-admin-host");
+    const iframe = document.getElementById("profile-admin-iframe");
+    if (host) host.hidden = true;
+    if (forceReset && iframe) {
+        iframe.src = "about:blank";
+        _profileAdminIframeLoaded = false;
+    }
+}
+
+function _syncProfileAdminControls() {
+    const openBtn = document.getElementById("btn-profile-admin-open");
+    if (!openBtn) return;
+    const allowed = _isProfileAdminUser();
+    openBtn.hidden = !allowed;
+    if (!allowed) {
+        _closeProfileAdminPanel(true);
+    }
+}
+
+function _trackPageView(pageName) {
+    const page = String(pageName || "").trim().toLowerCase();
+    if (!page || !token || !currentUser) return;
+    if (_lastTrackedPage === page) return;
+    _lastTrackedPage = page;
+    api("/admin/track-view", {
+        method: "POST",
+        body: JSON.stringify({ page }),
+    }).catch(() => {});
 }
 
 function renderSession() {
@@ -353,8 +412,9 @@ function renderSession() {
     if (profileEmail) profileEmail.textContent = currentUser.email || "-";
     if (profileBadge) {
         const src = currentUser.source === "levita" ? "Levita" : currentUser.source === "google" ? "Google" : "Local";
-        profileBadge.textContent = src;
+        profileBadge.textContent = _isProfileAdminUser() ? "Admin" : src;
     }
+    _syncProfileAdminControls();
 }
 
 function showAuth(message = "") {
@@ -573,6 +633,7 @@ function navigateTo(pageName) {
         _editorCloseSubtitleTextModal();
     }
     loadPageData(pageName);
+    _trackPageView(normalizedPage);
 }
 
 function bindNavigation() {
@@ -610,6 +671,18 @@ function bindNavigation() {
             clearSession();
             clearLevitaSession();
             showAuth("Sessao encerrada.");
+        });
+    }
+    const profileAdminOpen = document.getElementById("btn-profile-admin-open");
+    if (profileAdminOpen) {
+        profileAdminOpen.addEventListener("click", () => {
+            _openProfileAdminPanel();
+        });
+    }
+    const profileAdminClose = document.getElementById("btn-profile-admin-close");
+    if (profileAdminClose) {
+        profileAdminClose.addEventListener("click", () => {
+            _closeProfileAdminPanel(false);
         });
     }
     // Mobile profile avatar
@@ -947,9 +1020,11 @@ function initDashboard() {
             duration: parseFloat(params.get("duration")) || 180,
             aspect_ratio: aspectRatio,
         });
+        _trackPageView("projects");
         return;
     }
     loadProjects();
+    _trackPageView("projects");
 }
 
 function loadPageData(page) {

@@ -98,6 +98,7 @@ from app.routers.risc import router as risc_router
 from app.routers.editor import router as editor_router
 from app.routers.persona import router as persona_router
 from app.routers.analyze import router as analyze_router
+from app.routers.admin import router as admin_router
 
 app.include_router(auth_router)
 app.include_router(video_router)
@@ -111,6 +112,7 @@ app.include_router(risc_router)
 app.include_router(editor_router)
 app.include_router(persona_router)
 app.include_router(analyze_router)
+app.include_router(admin_router)
 
 # ── Serve rendered media files ──
 media_path = Path(settings.media_dir)

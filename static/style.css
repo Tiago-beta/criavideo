@@ -937,6 +937,41 @@ a {
 
 .profile-actions {
     margin-top: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    justify-content: center;
+}
+
+.profile-admin-host {
+    width: min(1180px, 100%);
+    margin-top: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(9, 22, 35, 0.92);
+    overflow: hidden;
+}
+
+.profile-admin-host-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(17, 34, 52, 0.95);
+}
+
+.profile-admin-host-header strong {
+    font-family: "Outfit", sans-serif;
+    font-size: 0.98rem;
+    color: var(--accent);
+}
+
+.profile-admin-iframe {
+    width: 100%;
+    min-height: 72vh;
+    border: 0;
 }
 
 /* ── Automate Page ── */
