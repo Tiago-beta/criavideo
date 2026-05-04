@@ -6917,6 +6917,7 @@ th,
 
 .workflow-node:hover .workflow-port,
 .workflow-node.selected .workflow-port,
+.workflow-port.workflow-port-open,
 .workflow-port.pending {
     opacity: 1;
 }

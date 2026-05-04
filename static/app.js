@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v326 loaded");
+console.log("[CriaVideo] app.js v327 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -6623,9 +6623,22 @@ function workflowPortPoint(portName) {
     };
 }
 
+function workflowSyncPortConnectionState() {
+    const connectedPorts = new Set();
+    workflowState.connections.forEach(([from, to]) => {
+        if (from) connectedPorts.add(from);
+        if (to) connectedPorts.add(to);
+    });
+    document.querySelectorAll("#create-panel-workflow .workflow-port").forEach((port) => {
+        const portName = String(port.dataset.port || "");
+        port.classList.toggle("workflow-port-open", !!portName && !connectedPorts.has(portName));
+    });
+}
+
 function workflowRenderConnections() {
     const svg = document.getElementById("workflow-lines");
     if (!svg) return;
+    workflowSyncPortConnectionState();
     const width = Number(workflowState.baseWidth || 1320);
     const height = Number(workflowState.baseHeight || 880);
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
