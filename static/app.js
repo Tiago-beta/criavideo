@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v330 loaded");
+console.log("[CriaVideo] app.js v331 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -5362,15 +5362,63 @@ function workflowHandleEngineSelectChange() {
     workflowRecordHistory();
 }
 
+function workflowEnsureSharedFileInput(kind) {
+    const panel = document.getElementById("create-panel-workflow");
+    if (!panel) return null;
+
+    const config = {
+        image: {
+            id: "workflow-image-input",
+            accept: "image/jpeg,image/png,image/webp",
+            multiple: true,
+            handler: workflowHandleImageInput,
+        },
+        video: {
+            id: "workflow-video-input",
+            accept: "video/mp4,video/quicktime,video/webm,video/x-msvideo",
+            multiple: true,
+            handler: workflowHandleVideoInput,
+        },
+        audio: {
+            id: "workflow-audio-input",
+            accept: "audio/mpeg,audio/wav,audio/mp3,audio/mp4,audio/aac,audio/ogg",
+            multiple: false,
+            handler: workflowHandleAudioInput,
+        },
+    }[kind];
+
+    if (!config) return null;
+
+    let input = document.getElementById(config.id);
+    if (!input) {
+        input = document.createElement("input");
+        input.id = config.id;
+        input.type = "file";
+        input.accept = config.accept;
+        input.hidden = true;
+        input.multiple = !!config.multiple;
+        input.dataset.workflowSharedInput = "1";
+        panel.appendChild(input);
+    }
+
+    if (!input._workflowChangeBound) {
+        input.addEventListener("change", config.handler);
+        input._workflowChangeBound = true;
+    }
+
+    return input;
+}
+
 function workflowBindPrimaryNodeControls() {
+    workflowEnsureSharedFileInput("image");
+    workflowEnsureSharedFileInput("video");
+    workflowEnsureSharedFileInput("audio");
+
     const bindings = [
         { id: "workflow-add-images", eventName: "click", handler: workflowChooseGlobalImages, marker: "_workflowClickBound" },
         { id: "workflow-generate-image", eventName: "click", handler: workflowGenerateImage, marker: "_workflowClickBound" },
-        { id: "workflow-image-input", eventName: "change", handler: workflowHandleImageInput, marker: "_workflowChangeBound" },
         { id: "workflow-add-videos", eventName: "click", handler: workflowChooseVideoFiles, marker: "_workflowClickBound" },
-        { id: "workflow-video-input", eventName: "change", handler: workflowHandleVideoInput, marker: "_workflowChangeBound" },
         { id: "workflow-add-audio", eventName: "click", handler: workflowChooseAudioFile, marker: "_workflowClickBound" },
-        { id: "workflow-audio-input", eventName: "change", handler: workflowHandleAudioInput, marker: "_workflowChangeBound" },
         { id: "workflow-run", eventName: "click", handler: workflowRunSeedance, marker: "_workflowClickBound" },
         { id: "workflow-engine", eventName: "change", handler: workflowHandleEngineSelectChange, marker: "_workflowChangeBound" },
     ];
@@ -5989,13 +6037,13 @@ async function workflowHandleVideoUrlInput(input) {
 
 function workflowChooseGlobalImages() {
     workflowState.imageUploadTargetNodeId = "";
-    document.getElementById("workflow-image-input")?.click();
+    workflowEnsureSharedFileInput("image")?.click();
 }
 
 function workflowChooseNodeImage(button) {
     const node = button?.closest?.(".workflow-node");
     workflowState.imageUploadTargetNodeId = node?.dataset?.nodeId || "";
-    document.getElementById("workflow-image-input")?.click();
+    workflowEnsureSharedFileInput("image")?.click();
 }
 
 function workflowSelectNodeFromEvent(event) {
@@ -7666,13 +7714,13 @@ function workflowReleaseLocalPreviewUrl(file) {
 function workflowChooseVideoFiles(trigger) {
     const node = workflowResolveNodeFromTrigger(trigger);
     workflowState.videoUploadTargetNodeId = node?.dataset?.nodeId && node.dataset.nodeId !== "video" ? node.dataset.nodeId : "";
-    document.getElementById("workflow-video-input")?.click();
+    workflowEnsureSharedFileInput("video")?.click();
 }
 
 function workflowChooseAudioFile(trigger) {
     const node = workflowResolveNodeFromTrigger(trigger);
     workflowState.audioUploadTargetNodeId = node?.dataset?.nodeId && node.dataset.nodeId !== "audio" ? node.dataset.nodeId : "";
-    document.getElementById("workflow-audio-input")?.click();
+    workflowEnsureSharedFileInput("audio")?.click();
 }
 
 function workflowEscapeHtml(value) {
