@@ -4099,6 +4099,7 @@ class GenerateRealisticPromptRequest(BaseModel):
     interaction_persona: str = "natureza"
     persona_profile_id: int = 0
     persona_profile_ids: list[int] = Field(default_factory=list)
+    custom_image_ids: list[str] = Field(default_factory=list)
     has_reference_image: bool = False
 
 
@@ -4300,6 +4301,19 @@ async def generate_realistic_prompt_endpoint(
     if selected_persona_profile_id and selected_persona_profile_id not in selected_persona_profile_ids:
         selected_persona_profile_ids.insert(0, selected_persona_profile_id)
 
+    custom_image_ids: list[str] = []
+    for raw_upload_id in (req.custom_image_ids or []):
+        upload_id = str(raw_upload_id or "").strip()
+        if upload_id and upload_id not in custom_image_ids:
+            custom_image_ids.append(upload_id)
+    custom_image_ids = custom_image_ids[:8]
+
+    custom_image_paths: list[str] = []
+    for upload_id in custom_image_ids:
+        resolved_custom = _resolve_temp_file(user["id"], upload_id, IMAGE_EXTS)
+        if resolved_custom:
+            custom_image_paths.append(str(resolved_custom))
+
     has_reference_image = bool(req.has_reference_image)
     reference_mode = "face_identity_only" if selected_persona_profile_ids else ""
     prompt_for_optimizer = topic_for_optimizer
@@ -4355,6 +4369,29 @@ async def generate_realistic_prompt_endpoint(
                 f"{prompt_for_optimizer}\n\n"
                 "MULTI-PERSONA REFERENCE RULE: mantenha todos os personagens selecionados juntos na mesma cena, "
                 "preservando apenas a identidade facial de cada um."
+            )
+
+    if custom_image_paths:
+        has_reference_image = True
+        image_context = ""
+        try:
+            from app.services.script_audio import analyze_images_for_context
+
+            image_context = await analyze_images_for_context(
+                image_paths=custom_image_paths,
+                topic=topic,
+                tone=req.style,
+                duration_seconds=duration,
+            )
+        except Exception as exc:
+            logger.warning("Failed to analyze custom images for realistic prompt: %s", exc)
+
+        image_context = _sanitize_aux_context(image_context, max_chars=1200)
+        if image_context:
+            prompt_for_optimizer = (
+                f"{prompt_for_optimizer}\n\n"
+                "REFERENCIAS VISUAIS DO USUARIO (apoio contextual; nunca substituir o TEMA PRINCIPAL):\n"
+                f"{image_context}"
             )
 
     if has_reference_image:
