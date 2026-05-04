@@ -76,6 +76,15 @@ def _safe_tags_dict(raw: object) -> dict:
 
 
 def _safe_error_message(err: Exception, fallback: str) -> str:
+    detail = getattr(err, "detail", None)
+    if isinstance(detail, str) and detail.strip():
+        return detail.strip()
+    if isinstance(detail, dict):
+        for key in ("message", "detail", "error"):
+            value = detail.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
     try:
         raw = str(err or "").strip()
     except Exception:

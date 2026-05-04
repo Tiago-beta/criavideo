@@ -40,6 +40,20 @@ from app.services.credit_pricing import estimate_auto_theme_credits
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+
+def _readable_task_error_message(err, fallback: str = "Erro inesperado") -> str:
+    detail = getattr(err, "detail", None)
+    if isinstance(detail, str) and detail.strip():
+        return detail.strip()
+    if isinstance(detail, dict):
+        for key in ("message", "detail", "error"):
+            value = detail.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    raw = str(err or "").strip()
+    return raw or fallback
+
 # Default settings for auto mode when AI doesn't specify
 _AUTO_DEFAULTS = {
     "tone": "informativo",
@@ -932,7 +946,7 @@ async def _run_auto_creation_for_theme(schedule: AutoSchedule, theme_entry: Auto
             theme = await db.get(AutoScheduleTheme, theme_entry.id)
             if theme:
                 theme.status = "failed"
-                theme.error_message = str(e)[:500]
+                theme.error_message = _readable_task_error_message(e, "Falha ao gerar o vídeo automático.")[:500]
                 await db.commit()
 
 

@@ -256,6 +256,69 @@ def estimate_quick_create_credits(duration_seconds: float | int) -> dict[str, An
     )
 
 
+def estimate_similar_scene_credits(
+    engine: str,
+    duration_seconds: float | int,
+) -> dict[str, Any]:
+    return estimate_realistic_credits(
+        engine=engine,
+        duration_seconds=duration_seconds,
+        has_reference_image=True,
+        add_music=False,
+        add_narration=False,
+        enable_subtitles=False,
+        use_external_audio=False,
+    )
+
+
+def estimate_similar_previews_credits(
+    engine: str,
+    scene_durations: list[float | int] | tuple[float | int, ...],
+) -> dict[str, Any]:
+    normalized_durations = [max(1.0, float(item or 0)) for item in (scene_durations or []) if float(item or 0) > 0]
+    if not normalized_durations:
+        normalized_durations = [5.0]
+
+    scene_estimates = [estimate_similar_scene_credits(engine=engine, duration_seconds=duration) for duration in normalized_durations]
+    total_credits = sum(int(item.get("credits_needed", 0) or 0) for item in scene_estimates)
+    total_exact = sum(float(item.get("credits_exact", 0.0) or 0.0) for item in scene_estimates)
+    total_provider_usd = sum(float(item.get("provider_cost_usd", 0.0) or 0.0) for item in scene_estimates)
+    total_provider_brl = sum(float(item.get("provider_cost_brl", 0.0) or 0.0) for item in scene_estimates)
+    total_billed_brl = sum(float(item.get("billed_cost_brl", 0.0) or 0.0) for item in scene_estimates)
+
+    return {
+        "rules_version": CREDIT_PRICING_RULES_VERSION,
+        "credits_needed": total_credits,
+        "credits_exact": round(total_exact, 2),
+        "provider_cost_usd": round(total_provider_usd, 6),
+        "provider_cost_brl": round(total_provider_brl, 4),
+        "billed_cost_brl": round(total_billed_brl, 4),
+        "brl_per_credit": round(get_credit_value_brl(CREDIT_PACKAGES), 6),
+        "margin_multiplier": MARGIN_MULTIPLIER,
+        "breakdown": {
+            "mode": "similar_previews",
+            "engine": str(engine or "").strip().lower() or "wan2",
+            "scene_count": len(normalized_durations),
+            "scene_durations": [round(float(duration), 2) for duration in normalized_durations],
+        },
+    }
+
+
+def estimate_local_video_processing_credits(duration_seconds: float | int) -> dict[str, Any]:
+    duration = max(1.0, _safe_duration_seconds(duration_seconds))
+    provider_cost_usd = (duration / 60.0) * CUSTOM_VIDEO_PROCESS_USD_PER_MIN
+    estimate = _credits_from_provider_cost(provider_cost_usd, floor_credits=8)
+    estimate.breakdown = {
+        "mode": "local_video_processing",
+        "duration_seconds": round(duration, 2),
+        "floor_credits": 8,
+        "components_usd": {
+            "local_processing": round(provider_cost_usd, 6),
+        },
+    }
+    return estimate.to_dict()
+
+
 def estimate_auto_theme_credits(
     video_type: str,
     default_settings: dict[str, Any] | None,

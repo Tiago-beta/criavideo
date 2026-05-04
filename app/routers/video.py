@@ -31,8 +31,11 @@ from app.services.persona_registry import (
     resolve_persona_reference_images,
 )
 from app.services.credit_pricing import (
+    estimate_local_video_processing_credits,
     estimate_quick_create_credits,
     estimate_realistic_credits,
+    estimate_similar_previews_credits,
+    estimate_similar_scene_credits,
     estimate_standard_credits,
 )
 from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
@@ -134,6 +137,25 @@ _SCENE_RANGE_ONLY_RE = re.compile(r"^(?P<start>\d+(?:\.\d)?)s\s*-\s*(?P<end>\d+(
 _DIALOGUE_TIMING_LINE_RE = re.compile(
     r"^(?P<start>\d+(?:\.\d)?)s\s*-\s*(?P<end>\d+(?:\.\d)?)s\s*\|\s*Speaker:\s*(?P<speaker>.+)$"
 )
+
+
+def _similar_scene_duration_seconds(scene: VideoScene | None) -> float:
+    if not scene:
+        return float(max(1, int(settings.similar_scene_default_seconds or 5)))
+
+    try:
+        start_time = float(scene.start_time or 0)
+    except Exception:
+        start_time = 0.0
+    try:
+        end_time = float(scene.end_time or 0)
+    except Exception:
+        end_time = 0.0
+
+    duration = end_time - start_time
+    if duration > 0.1:
+        return max(1.0, duration)
+    return float(max(1, int(settings.similar_scene_default_seconds or 5)))
 
 
 def _ensure_reference_image_instruction(prompt: str, reference_mode: str = "") -> str:
@@ -2082,6 +2104,12 @@ async def generate_similar_unified_scene(
     if not str(tags_data.get("similar_unified_prompt") or "").strip():
         raise HTTPException(status_code=400, detail="Gere o prompt unico antes de criar a cena")
 
+    from app.routers.credits import deduct_credits
+
+    estimate = estimate_similar_scene_credits(engine=engine, duration_seconds=duration_seconds)
+    credits_needed = int(estimate.get("credits_needed", 0) or 0)
+    await deduct_credits(db, user["id"], credits_needed)
+
     aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     project.aspect_ratio = aspect_ratio
     project.tags = tags_data
@@ -2425,6 +2453,15 @@ async def generate_similar_previews(
     if engine not in {"grok", "wan2", "minimax", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
+    from app.routers.credits import deduct_credits
+
+    estimate = estimate_similar_previews_credits(
+        engine=engine,
+        scene_durations=[_similar_scene_duration_seconds(scene) for scene in scenes],
+    )
+    credits_needed = int(estimate.get("credits_needed", 0) or 0)
+    await deduct_credits(db, user["id"], credits_needed)
+
     aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     project.aspect_ratio = aspect_ratio
     project.status = VideoStatus.GENERATING_CLIPS
@@ -2459,6 +2496,15 @@ async def regenerate_similar_scene(
     engine = str(req.engine or "grok").strip().lower() or "grok"
     if engine not in {"grok", "wan2", "minimax", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
+
+    from app.routers.credits import deduct_credits
+
+    estimate = estimate_similar_scene_credits(
+        engine=engine,
+        duration_seconds=_similar_scene_duration_seconds(scene),
+    )
+    credits_needed = int(estimate.get("credits_needed", 0) or 0)
+    await deduct_credits(db, user["id"], credits_needed)
 
     prompt_override = str(req.prompt_override or "").strip()
     if prompt_override:
@@ -2507,6 +2553,27 @@ async def merge_similar_scenes(
             continue
         if parsed_id > 0 and parsed_id not in scene_ids:
             scene_ids.append(parsed_id)
+
+    result = await db.execute(
+        select(VideoScene)
+        .where(VideoScene.project_id == project_id)
+        .order_by(VideoScene.scene_index.asc())
+    )
+    scenes = result.scalars().all()
+    if scene_ids:
+        selected_ids = set(scene_ids)
+        scenes = [scene for scene in scenes if int(scene.id or 0) in selected_ids]
+    if not scenes:
+        raise HTTPException(status_code=400, detail="Nenhuma cena pronta foi selecionada para unir")
+
+    from app.routers.credits import deduct_credits
+
+    estimated_duration = sum(_similar_scene_duration_seconds(scene) for scene in scenes)
+    estimate = estimate_local_video_processing_credits(
+        estimated_duration or float(project.track_duration or 0) or 10.0
+    )
+    credits_needed = int(estimate.get("credits_needed", 0) or 0)
+    await deduct_credits(db, user["id"], credits_needed)
 
     project.aspect_ratio = aspect_ratio
     project.status = VideoStatus.RENDERING
@@ -2762,6 +2829,14 @@ async def copy_project_with_format(
         raise HTTPException(status_code=400, detail="Projeto origem sem vídeo renderizado")
     if not os.path.exists(source_render.file_path):
         raise HTTPException(status_code=400, detail="Arquivo do vídeo origem não foi encontrado")
+
+    from app.routers.credits import deduct_credits
+
+    estimate = estimate_local_video_processing_credits(
+        float(source_render.duration or source.track_duration or 0) or 60.0
+    )
+    credits_needed = int(estimate.get("credits_needed", 0) or 0)
+    await deduct_credits(db, user["id"], credits_needed)
 
     title = (source.title or source.track_title or "Video").strip()
     new_title = f"{title} [{req.aspect_ratio}]"

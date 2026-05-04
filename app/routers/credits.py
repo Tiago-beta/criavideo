@@ -31,6 +31,51 @@ INITIAL_CREDITS = 50
 CREDITS_PER_MINUTE = 5
 
 
+def _extract_error_detail_message(detail) -> str:
+    if isinstance(detail, str):
+        return detail.strip()
+    if isinstance(detail, dict):
+        for key in ("message", "detail", "error"):
+            value = detail.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+    if isinstance(detail, list):
+        messages: list[str] = []
+        for item in detail:
+            message = _extract_error_detail_message(item)
+            if message:
+                messages.append(message)
+        return " | ".join(messages)
+    return ""
+
+
+def extract_api_error_message(err, fallback: str = "Erro inesperado") -> str:
+    message = _extract_error_detail_message(getattr(err, "detail", None))
+    if message:
+        return message
+
+    raw = str(err or "").strip()
+    if raw:
+        return raw
+    return fallback
+
+
+def build_insufficient_credits_message(current: int, amount: int) -> str:
+    return (
+        f"Créditos insuficientes. Você tem {current} créditos, mas precisa de {amount}. "
+        "O vídeo não foi gerado."
+    )
+
+
+async def get_credit_balance(db: AsyncSession, user_id: int) -> int:
+    row = await db.execute(
+        text("SELECT credits FROM auth_users WHERE id = :uid"),
+        {"uid": user_id},
+    )
+    return int(row.scalar() or 0)
+
+
 def _generate_reference() -> str:
     return f"CV{secrets.token_hex(8).upper()}"
 
@@ -346,19 +391,27 @@ async def is_levita_credit_bypass_user(
 
 async def deduct_credits(db: AsyncSession, user_id: int, amount: int) -> int:
     """Deduct credits. Returns remaining balance. Raises HTTPException if insufficient."""
-    row = await db.execute(
-        text("SELECT credits FROM auth_users WHERE id = :uid"),
-        {"uid": user_id},
+    normalized_amount = max(0, int(amount or 0))
+    if normalized_amount <= 0:
+        return await get_credit_balance(db, user_id)
+
+    result = await db.execute(
+        text(
+            """
+            UPDATE auth_users
+            SET credits = credits - :amount
+            WHERE id = :uid AND credits >= :amount
+            RETURNING credits
+            """
+        ),
+        {"amount": normalized_amount, "uid": user_id},
     )
-    current = row.scalar() or 0
-    if current < amount:
+    remaining = result.scalar()
+    if remaining is None:
+        current = await get_credit_balance(db, user_id)
         raise HTTPException(
             status_code=402,
-            detail=f"Créditos insuficientes. Você tem {current} créditos, precisa de {amount}.",
+            detail=build_insufficient_credits_message(current, normalized_amount),
         )
-    await db.execute(
-        text("UPDATE auth_users SET credits = credits - :amount WHERE id = :uid"),
-        {"amount": amount, "uid": user_id},
-    )
     await db.commit()
-    return current - amount
+    return int(remaining or 0)

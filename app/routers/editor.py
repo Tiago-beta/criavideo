@@ -26,6 +26,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import VideoProject, VideoRender, VideoStatus
 from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
+from app.services.credit_pricing import estimate_local_video_processing_credits
 from app.services.tevoxi_music import generate_music_from_theme
 
 logger = logging.getLogger(__name__)
@@ -2011,6 +2012,14 @@ async def start_export(
     render = next((r for r in sorted(project.renders, key=lambda rr: rr.id or 0, reverse=True) if r.file_path), None)
     if not render:
         raise HTTPException(400, "Nenhum vídeo disponível para editar")
+
+    from app.routers.credits import deduct_credits
+
+    estimate = estimate_local_video_processing_credits(
+        float(render.duration or project.track_duration or 0) or 60.0
+    )
+    credits_needed = int(estimate.get("credits_needed", 0) or 0)
+    await deduct_credits(db, user["id"], credits_needed)
 
     job_id = uuid.uuid4().hex[:12]
     _export_jobs[job_id] = {
