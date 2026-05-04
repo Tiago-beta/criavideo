@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v321 loaded");
+console.log("[CriaVideo] app.js v322 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -6908,17 +6908,26 @@ function workflowSyncEngineDurationOptions() {
     durationSelect.value = String(nextValue);
 }
 
+function workflowIsCollectedNodeImage(item) {
+    const sourceNodeId = String(item?.source_node_id || "").trim();
+    return !!sourceNodeId && sourceNodeId !== "images";
+}
+
 function workflowCollectGeneratedNodeImages() {
-    const generated = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node-images[data-upload-id]")).map((node) => ({
-        name: `${node.dataset.nodeId || "imagem"}.png`,
-        type: "image/generated",
-        generated: true,
-        upload_id: node.dataset.uploadId || "",
-        preview_url: node.dataset.previewUrl || "",
-    })).filter((item) => item.upload_id && item.preview_url);
-    const manual = workflowState.images.filter((item) => !item.generated || !item.upload_id);
-    const known = new Set(manual.map((item) => item.upload_id).filter(Boolean));
-    workflowState.images = manual.concat(generated.filter((item) => !known.has(item.upload_id))).slice(0, 9);
+    const generated = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node-images[data-upload-id]"))
+        .filter((node) => String(node.dataset.nodeId || "").trim() !== "images")
+        .map((node) => ({
+            name: `${node.dataset.nodeId || "imagem"}.png`,
+            type: "image/generated",
+            generated: true,
+            upload_id: node.dataset.uploadId || "",
+            preview_url: node.dataset.previewUrl || "",
+            source_node_id: node.dataset.nodeId || "",
+        }))
+        .filter((item) => item.upload_id && item.preview_url);
+    const preserved = workflowState.images.filter((item) => !workflowIsCollectedNodeImage(item));
+    const known = new Set(preserved.map((item) => item.upload_id).filter(Boolean));
+    workflowState.images = preserved.concat(generated.filter((item) => !known.has(item.upload_id))).slice(0, 9);
     workflowState.imageUploadIds = workflowState.images.map((item) => item.upload_id).filter(Boolean);
 }
 
@@ -7409,6 +7418,7 @@ async function workflowGenerateImage() {
             generated: true,
             upload_id: response.upload_id,
             preview_url: response.image_url,
+            source_node_id: "images",
         };
         workflowState.images = workflowState.images.concat(generatedFile).slice(0, 9);
         workflowState.imageUploadIds = workflowState.images.map((item) => item.upload_id).filter(Boolean);
@@ -7638,7 +7648,7 @@ async function workflowConnectedImageUploadIds() {
     const allUploadIds = await workflowEnsureUploadedImages();
     const selectedIds = [];
     if (connectedImagePorts.includes("images-out")) {
-        workflowState.images.filter((item) => !item.generated).forEach((item) => {
+        workflowState.images.filter((item) => !workflowIsCollectedNodeImage(item)).forEach((item) => {
             if (item.upload_id) selectedIds.push(item.upload_id);
         });
     }
