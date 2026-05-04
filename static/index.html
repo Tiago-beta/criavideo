@@ -2285,18 +2285,9 @@
                         <div id="ai-suggest-custom-image-group" class="photo-upload-area" hidden>
                             <div class="photo-upload-header">
                                 <span class="photo-upload-label">Referências visuais do personalizado</span>
-                                <span class="photo-upload-hint">A IA analisa essas imagens antes de montar o prompt final.</span>
-                            </div>
-                            <div class="ai-suggest-custom-image-generate">
-                                <input id="ai-suggest-custom-image-prompt" type="text" class="input" placeholder="Ex: fachada da casa em construção ao pôr do sol">
-                                <button id="ai-suggest-custom-image-generate-btn" class="btn btn-secondary btn-sm" type="button" onclick="generateAiSuggestCustomImage()">Gerar imagem</button>
-                            </div>
-                            <div id="ai-suggest-custom-image-dropzone" class="photo-dropzone" onclick="triggerAiSuggestCustomImageUpload()">
-                                <p>Clique ou arraste imagens aqui</p>
-                                <small>JPG, PNG ou WebP • Máx 8 imagens • 10MB cada</small>
                             </div>
                             <input id="ai-suggest-custom-image-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handleAiSuggestCustomImageSelect(event)">
-                            <div id="ai-suggest-custom-image-preview" class="photo-preview-grid"></div>
+                            <div id="ai-suggest-custom-image-preview" class="photo-preview-grid ai-suggest-custom-image-grid"></div>
                             <div id="ai-suggest-custom-image-count" class="photo-count" hidden>
                                 <span id="ai-suggest-custom-image-num">0</span> / 8 referências
                             </div>
@@ -2355,6 +2346,25 @@
                     </div>
                 </div>
 
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-ai-suggest-custom-image-prompt" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Gerar imagem de referência</h3>
+                <button class="modal-close" onclick="cancelAiSuggestCustomImagePromptModal()" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Prompt da imagem</label>
+                    <textarea id="ai-suggest-custom-image-modal-prompt" class="input" rows="4" placeholder="Ex: casa em construção em time lapse, mostrando cada etapa da obra"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cancelAiSuggestCustomImagePromptModal()" type="button">Cancelar</button>
+                <button id="ai-suggest-custom-image-modal-confirm" class="btn btn-primary" onclick="confirmAiSuggestCustomImagePromptModal()" type="button">Gerar imagem</button>
             </div>
         </div>
     </div>

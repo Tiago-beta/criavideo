@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v323 loaded");
+console.log("[CriaVideo] app.js v324 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -9906,6 +9906,8 @@ const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_AUDIO_SIZE = 80 * 1024 * 1024; // 80MB
 const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB
 let aiSuggestCustomImages = []; // Personalized visual references for AI prompt.
+let aiSuggestCustomImagePromptDraft = "";
+let aiSuggestCustomImagePromptModalResolve = null;
 
 function togglePhotoUpload() {
     const checked = document.getElementById("script-use-photos").checked;
@@ -10272,10 +10274,11 @@ function _syncAiSuggestCustomImageSection() {
 
 function resetAiSuggestCustomImages() {
     aiSuggestCustomImages = [];
+    aiSuggestCustomImagePromptDraft = "";
     const input = document.getElementById("ai-suggest-custom-image-input");
     if (input) input.value = "";
-    const promptInput = document.getElementById("ai-suggest-custom-image-prompt");
-    if (promptInput) promptInput.value = "";
+    const modalInput = document.getElementById("ai-suggest-custom-image-modal-prompt");
+    if (modalInput) modalInput.value = "";
     renderAiSuggestCustomImagePreview();
     _syncAiSuggestCustomImageSection();
 }
@@ -10330,6 +10333,48 @@ function removeAiSuggestCustomImage(index) {
     renderAiSuggestCustomImagePreview();
 }
 
+function openAiSuggestCustomImagePromptModal(defaultValue = "") {
+    const input = document.getElementById("ai-suggest-custom-image-modal-prompt");
+    const confirmBtn = document.getElementById("ai-suggest-custom-image-modal-confirm");
+    if (!input) {
+        return Promise.resolve(defaultValue || "");
+    }
+    input.value = defaultValue || "";
+    if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = "Gerar imagem";
+    }
+    openModal("modal-ai-suggest-custom-image-prompt");
+    window.setTimeout(() => input.focus(), 30);
+    return new Promise((resolve) => {
+        aiSuggestCustomImagePromptModalResolve = resolve;
+    });
+}
+
+function closeAiSuggestCustomImagePromptModal(value = null) {
+    closeModal("modal-ai-suggest-custom-image-prompt");
+    const resolve = aiSuggestCustomImagePromptModalResolve;
+    aiSuggestCustomImagePromptModalResolve = null;
+    if (resolve) {
+        resolve(value);
+    }
+}
+
+function confirmAiSuggestCustomImagePromptModal() {
+    const input = document.getElementById("ai-suggest-custom-image-modal-prompt");
+    const value = String(input?.value || "").trim();
+    if (!value) {
+        alert("Descreva a imagem desejada para gerar a referência visual.");
+        return;
+    }
+    aiSuggestCustomImagePromptDraft = value;
+    closeAiSuggestCustomImagePromptModal(value);
+}
+
+function cancelAiSuggestCustomImagePromptModal() {
+    closeAiSuggestCustomImagePromptModal(null);
+}
+
 function renderAiSuggestCustomImagePreview() {
     const grid = document.getElementById("ai-suggest-custom-image-preview");
     const countEl = document.getElementById("ai-suggest-custom-image-count");
@@ -10337,6 +10382,18 @@ function renderAiSuggestCustomImagePreview() {
     if (!grid || !countEl || !numEl) return;
 
     grid.innerHTML = "";
+    const hasImages = aiSuggestCustomImages.length > 0;
+
+    const generateTile = document.createElement("button");
+    generateTile.type = "button";
+    generateTile.className = "ai-suggest-custom-image-tile ai-suggest-custom-image-tile-generate";
+    generateTile.innerHTML = `
+        <span class="ai-suggest-custom-image-tile-icon">AI</span>
+        <span class="ai-suggest-custom-image-tile-title">Gerar imagem</span>
+    `;
+    generateTile.onclick = () => generateAiSuggestCustomImage();
+    grid.appendChild(generateTile);
+
     aiSuggestCustomImages.forEach((item, index) => {
         const div = document.createElement("div");
         div.className = "photo-preview-item";
@@ -10364,6 +10421,32 @@ function renderAiSuggestCustomImagePreview() {
         grid.appendChild(div);
     });
 
+    if (aiSuggestCustomImages.length < MAX_AI_SUGGEST_CUSTOM_IMAGES) {
+        const uploadTile = document.createElement("button");
+        uploadTile.type = "button";
+        uploadTile.className = `ai-suggest-custom-image-tile ai-suggest-custom-image-tile-upload${hasImages ? " is-compact" : ""}`;
+        uploadTile.innerHTML = hasImages
+            ? `<span class="ai-suggest-custom-image-tile-icon">+</span>`
+            : `
+                <span class="ai-suggest-custom-image-tile-icon">+</span>
+                <span class="ai-suggest-custom-image-tile-title">Clique ou arraste imagens aqui</span>
+                <span class="ai-suggest-custom-image-tile-copy">JPG, PNG ou WebP • Máx 8 imagens • 10MB cada</span>
+            `;
+        uploadTile.onclick = () => triggerAiSuggestCustomImageUpload();
+        uploadTile.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            uploadTile.classList.add("dragover");
+        });
+        uploadTile.addEventListener("dragleave", () => uploadTile.classList.remove("dragover"));
+        uploadTile.addEventListener("drop", (event) => {
+            event.preventDefault();
+            uploadTile.classList.remove("dragover");
+            const files = Array.from(event.dataTransfer?.files || []).filter((file) => file.type.startsWith("image/"));
+            addAiSuggestCustomImages(files);
+        });
+        grid.appendChild(uploadTile);
+    }
+
     countEl.hidden = aiSuggestCustomImages.length === 0;
     numEl.textContent = aiSuggestCustomImages.length;
 }
@@ -10378,16 +10461,11 @@ async function generateAiSuggestCustomImage() {
         return;
     }
 
-    const promptInput = document.getElementById("ai-suggest-custom-image-prompt");
-    const topicFallback = document.getElementById("ai-suggest-topic")?.value || "";
-    const prompt = String(promptInput?.value || topicFallback).trim();
+    const topicFallback = String(document.getElementById("ai-suggest-topic")?.value || "").trim();
+    const prompt = await openAiSuggestCustomImagePromptModal(aiSuggestCustomImagePromptDraft || topicFallback);
     if (!prompt) {
-        alert("Descreva a imagem desejada para gerar a referência visual.");
         return;
     }
-
-    const button = document.getElementById("ai-suggest-custom-image-generate-btn");
-    if (button) button.disabled = true;
 
     try {
         const aspect = document.getElementById("script-realistic-aspect")?.value
@@ -10412,8 +10490,6 @@ async function generateAiSuggestCustomImage() {
         showToast("Imagem de referência gerada e adicionada ao prompt.", "success");
     } catch (error) {
         alert(`Erro ao gerar imagem de referência: ${error.message}`);
-    } finally {
-        if (button) button.disabled = false;
     }
 }
 
@@ -10485,18 +10561,6 @@ document.addEventListener("DOMContentLoaded", () => {
             const input = document.getElementById("script-video-input");
             if (input) input.value = "";
             handleUserVideoSelect({ target: { files: [file] } });
-        });
-    }
-
-    const aiDz = document.getElementById("ai-suggest-custom-image-dropzone");
-    if (aiDz) {
-        aiDz.addEventListener("dragover", (e) => { e.preventDefault(); aiDz.classList.add("dragover"); });
-        aiDz.addEventListener("dragleave", () => aiDz.classList.remove("dragover"));
-        aiDz.addEventListener("drop", (e) => {
-            e.preventDefault();
-            aiDz.classList.remove("dragover");
-            const files = Array.from(e.dataTransfer.files).filter((file) => file.type.startsWith("image/"));
-            addAiSuggestCustomImages(files);
         });
     }
 
