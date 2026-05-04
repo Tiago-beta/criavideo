@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v329 loaded");
+console.log("[CriaVideo] app.js v330 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -827,12 +827,6 @@ function bindDashboardEvents() {
             setPublishTab(tabBtn.dataset.publishTab || "publish");
         });
     });
-    const analyzeRefreshBtn = document.getElementById("analyze-refresh-btn");
-    if (analyzeRefreshBtn) {
-        analyzeRefreshBtn.addEventListener("click", () => {
-            loadAnalyzePage(true);
-        });
-    }
     const analyzeAccountSelect = document.getElementById("analyze-account-select");
     if (analyzeAccountSelect) {
         analyzeAccountSelect.addEventListener("change", () => {
@@ -17805,6 +17799,7 @@ async function loadAccounts() {
             container.innerHTML = "<p class='loading'>Nenhuma conta conectada.</p>";
             renderPublishAccountSelectors(true);
             refreshScheduleAccountOptions();
+            await loadAnalyzePage(true);
             return;
         }
         container.innerHTML = accounts.map((account) => {
@@ -17836,6 +17831,7 @@ async function loadAccounts() {
         }).join("");
         renderPublishAccountSelectors(true);
         refreshScheduleAccountOptions();
+        await loadAnalyzePage(true);
     } catch (error) {
         container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
     }
@@ -17925,7 +17921,7 @@ async function disconnectAccount(id) {
     }
     try {
         await api(`/social/accounts/${id}`, { method: "DELETE" });
-        loadAccounts();
+        await loadAccounts();
     } catch (error) {
         alert(`Erro: ${error.message}`);
     }

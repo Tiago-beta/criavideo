@@ -2093,6 +2093,26 @@ a {
     flex-shrink: 0;
 }
 
+.page-subheader {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: -0.6rem 0 1.35rem;
+    flex-wrap: wrap;
+}
+
+.publish-subheader {
+    justify-content: flex-start;
+}
+
+.automate-header-main {
+    gap: 10px;
+}
+
+.automate-subheader {
+    justify-content: flex-start;
+}
+
 .mobile-profile-btn {
     display: none;
     align-items: center;
@@ -2127,6 +2147,7 @@ a {
     font-size: 28px;
     font-weight: 700;
     color: var(--text);
+    white-space: nowrap;
 }
 
 .page-header h3,
@@ -4910,10 +4931,39 @@ svg.spin {
 
     .page-header {
         align-items: center;
+        flex-wrap: nowrap;
+        gap: 0.75rem;
     }
 
     .page-header-right {
-        width: 100%;
+        width: auto;
+        gap: 8px;
+        justify-content: flex-end;
+        margin-left: auto;
+        flex-wrap: nowrap;
+        flex-shrink: 0;
+    }
+
+    .page-header-left {
+        min-width: 0;
+        gap: 8px;
+    }
+
+    .page-subheader {
+        margin: -0.45rem 0 1.1rem;
+    }
+
+    .sidebar-credits {
+        padding: 6px 10px;
+        gap: 4px;
+    }
+
+    .sidebar-credits-label {
+        font-size: 10px;
+    }
+
+    .sidebar-credits [data-credits-count] {
+        font-size: 12px;
     }
 
     .publish-top-tabs {
@@ -4925,7 +4975,7 @@ svg.spin {
     }
 
     .page-header h1 {
-        font-size: 24px;
+        font-size: 22px;
     }
 
     .cards-grid {

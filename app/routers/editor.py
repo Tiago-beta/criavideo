@@ -1272,6 +1272,7 @@ async def generate_tevoxi_music(
             project_id=project.id,
             duration=target_duration,
             language="pt-BR",
+            user_id=project.user_id,
             manual_settings={
                 "music_mode": "instrumental",
                 "music_genre": mood_settings["genre"],

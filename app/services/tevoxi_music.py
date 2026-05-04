@@ -10,10 +10,26 @@ import httpx
 import openai
 
 from app.config import get_settings
+from app.database import async_session
+from app.models import AppUser
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 _openai = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+
+
+def _build_tevoxi_jwt(subject_id: int, email: str, role: str) -> str:
+    from jose import jwt as jose_jwt
+    import time
+
+    payload = {
+        "id": int(subject_id),
+        "email": str(email or "").strip().lower(),
+        "role": str(role or "user"),
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 3600,
+    }
+    return jose_jwt.encode(payload, settings.tevoxi_jwt_secret, algorithm="HS256")
 
 
 def _resolve_tevoxi_service_token() -> str:
@@ -23,17 +39,11 @@ def _resolve_tevoxi_service_token() -> str:
     # balance or lifetime of a manually copied Tevoxi token.
     if settings.tevoxi_jwt_secret:
         try:
-            from jose import jwt as jose_jwt
-            import time
-
-            payload = {
-                "id": settings.tevoxi_jwt_user_id,
-                "email": settings.tevoxi_jwt_email,
-                "role": "admin",
-                "iat": int(time.time()),
-                "exp": int(time.time()) + 3600,
-            }
-            return jose_jwt.encode(payload, settings.tevoxi_jwt_secret, algorithm="HS256")
+            return _build_tevoxi_jwt(
+                subject_id=int(settings.tevoxi_jwt_user_id or 0),
+                email=str(settings.tevoxi_jwt_email or "").strip().lower(),
+                role="admin",
+            )
         except Exception as exc:
             if static_token:
                 logger.warning("Failed to generate Tevoxi service JWT, falling back to static token: %s", exc)
@@ -44,6 +54,41 @@ def _resolve_tevoxi_service_token() -> str:
         return static_token
 
     raise RuntimeError("TEVOXI_API_TOKEN ou TEVOXI_JWT_SECRET nao configurado.")
+
+
+async def _resolve_tevoxi_token_for_user(user_id: int | None = None) -> str:
+    resolved_user_id = int(user_id or 0)
+    if resolved_user_id <= 0 or not settings.tevoxi_jwt_secret:
+        return _resolve_tevoxi_service_token()
+
+    try:
+        async with async_session() as db:
+            app_user = await db.get(AppUser, resolved_user_id)
+
+        if not app_user or not app_user.is_active:
+            return _resolve_tevoxi_service_token()
+
+        source = str(app_user.auth_source or "").strip().lower()
+        external_user_id = str(app_user.external_user_id or "").strip()
+        if source != "levita" or not external_user_id:
+            return _resolve_tevoxi_service_token()
+
+        tevoxi_user_id = int(external_user_id)
+        if tevoxi_user_id <= 0:
+            return _resolve_tevoxi_service_token()
+
+        email = str(app_user.email or "").strip().lower()
+        if not email:
+            email = f"user-{tevoxi_user_id}@tevoxi.local"
+
+        return _build_tevoxi_jwt(
+            subject_id=tevoxi_user_id,
+            email=email,
+            role="user",
+        )
+    except Exception as exc:
+        logger.warning("Failed to resolve Tevoxi user token for user_id=%s: %s", resolved_user_id, exc)
+        return _resolve_tevoxi_service_token()
 
 
 async def expand_theme_to_music_prompt(theme: str) -> dict:
@@ -100,13 +145,14 @@ async def generate_music_from_theme(
     duration: int = 120,
     language: str = "pt-BR",
     manual_settings: dict | None = None,
+    user_id: int | None = None,
 ) -> dict:
     """Generate music via Tevoxi API and download the audio file.
 
     Returns: {"audio_path": str, "title": str, "lyrics": str, "duration": float, "job_id": str, "audio_url": str}
     """
     api_url = settings.tevoxi_api_url.rstrip("/")
-    api_token = _resolve_tevoxi_service_token()
+    api_token = await _resolve_tevoxi_token_for_user(user_id=user_id)
 
     headers = {
         "Authorization": f"Bearer {api_token}",

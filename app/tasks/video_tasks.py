@@ -2543,6 +2543,7 @@ async def run_realistic_video_pipeline(project_id: int):
                                 theme=music_theme,
                                 project_id=project_id,
                                 duration=max(int(video_duration) + 5, 30),
+                                user_id=project.user_id,
                                 manual_settings={
                                     "music_mode": "instrumental",
                                     "music_duration": max(int(video_duration) + 5, 30),

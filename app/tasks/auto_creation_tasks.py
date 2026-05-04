@@ -1103,6 +1103,7 @@ async def _create_music_video(
         project_id=0,
         duration=cfg.get("duration_seconds", 120),
         manual_settings=manual_music,
+        user_id=user_id,
     )
 
     audio_path = music_result["audio_path"]
