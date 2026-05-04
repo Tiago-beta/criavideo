@@ -218,8 +218,9 @@ def _ensure_reference_image_instruction(prompt: str, reference_mode: str = "") -
         return base_prompt
 
     reference_rule = (
-        "REGRA OBRIGATORIA DE IMAGEM DE REFERENCIA: use a imagem enviada como ancora visual principal. "
-        "Mantenha a mesma identidade do sujeito, tracos de rosto, cabelo, paleta de cores e estilo visual geral da referencia."
+        "REGRA OBRIGATORIA DE IMAGEM DE REFERENCIA: use a imagem ou as imagens enviadas como base visual obrigatoria da geracao. "
+        "Crie o video a partir dessas referencias e nao troque o sujeito, a obra, o produto ou o ambiente principal por elementos sem relacao. "
+        "Preserve a identidade visual, a estrutura, os materiais, as cores dominantes e os elementos centrais realmente mostrados nas referencias."
     )
     return f"{base_prompt}\n\n{reference_rule}"
 
@@ -1755,6 +1756,11 @@ async def run_realistic_video_pipeline(project_id: int):
                 generate_audio = True
             scene_reference_path = image_path
             grok_direct_reference_path = image_path if (image_path and os.path.exists(image_path)) else ""
+            upload_reference_paths = [
+                str(path).strip()
+                for path in (tags_data.get("reference_upload_image_paths", []) if isinstance(tags_data.get("reference_upload_image_paths", []), list) else [])
+                if str(path).strip() and os.path.exists(str(path).strip())
+            ][:6]
 
             reference_source = str(tags_data.get("reference_source", "") or "").strip().lower()
             raw_persona_ids = tags_data.get("persona_profile_ids", []) if isinstance(tags_data.get("persona_profile_ids", []), list) else []
@@ -1771,6 +1777,12 @@ async def run_realistic_video_pipeline(project_id: int):
                 and reference_source == "upload"
                 and reference_mode == "full_frame"
                 and bool(image_path and os.path.exists(image_path))
+            )
+            use_direct_upload_reference_for_seedance = (
+                engine == "seedance"
+                and reference_source == "upload"
+                and reference_mode == "full_frame"
+                and bool(upload_reference_paths)
             )
             enable_grok_persona_anchor = (
                 engine == "grok"
@@ -1798,6 +1810,12 @@ async def run_realistic_video_pipeline(project_id: int):
                 logger.info(
                     "Realistic video: Wan using direct uploaded reference image without Nano Banana rewrite (%s)",
                     scene_reference_path,
+                )
+            elif use_direct_upload_reference_for_seedance:
+                scene_reference_path = upload_reference_paths[0]
+                logger.info(
+                    "Realistic video: Seedance using %d direct uploaded reference image(s) without Nano Banana rewrite",
+                    len(upload_reference_paths),
                 )
             elif has_reference_image and image_path and engine != "grok":
                 from app.services.scene_generator import build_single_scene_anchor_prompt, generate_scene_image
@@ -2170,6 +2188,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     clip_output_path: str,
                     clip_duration: int,
                     clip_image_path: str | None,
+                    clip_image_paths: list[str] | None,
                     clip_progress,
                 ) -> None:
                     nonlocal final_prompt
@@ -2183,6 +2202,7 @@ async def run_realistic_video_pipeline(project_id: int):
                                 output_path=clip_output_path,
                                 generate_audio=generate_audio,
                                 image_path=clip_image_path,
+                                image_paths=clip_image_paths,
                                 on_progress=clip_progress,
                             )
                             final_prompt = prompt_for_attempt
@@ -2208,6 +2228,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     clip_output_path=output_path,
                     clip_duration=duration,
                     clip_image_path=scene_reference_path,
+                    clip_image_paths=upload_reference_paths if use_direct_upload_reference_for_seedance else ([scene_reference_path] if scene_reference_path else []),
                     clip_progress=_on_progress,
                 )
 

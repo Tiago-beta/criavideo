@@ -186,8 +186,9 @@ def _ensure_reference_image_instruction(prompt: str, reference_mode: str = "") -
         return base_prompt
 
     reference_rule = (
-        "REGRA OBRIGATORIA DE IMAGEM DE REFERENCIA: use a imagem enviada como ancora visual principal. "
-        "Mantenha a mesma identidade do sujeito, tracos de rosto, cabelo, paleta de cores e estilo visual geral da referencia."
+        "REGRA OBRIGATORIA DE IMAGEM DE REFERENCIA: use a imagem ou as imagens enviadas como base visual obrigatoria da geracao. "
+        "Crie o video a partir dessas referencias e nao troque o sujeito, a obra, o produto ou o ambiente principal por elementos sem relacao. "
+        "Preserve a identidade visual, a estrutura, os materiais, as cores dominantes e os elementos centrais realmente mostrados nas referencias."
     )
     return f"{base_prompt}\n\n{reference_rule}"
 
@@ -4393,6 +4394,13 @@ async def generate_realistic_prompt_endpoint(
                 "REFERENCIAS VISUAIS DO USUARIO (apoio contextual; nunca substituir o TEMA PRINCIPAL):\n"
                 f"{image_context}"
             )
+        if len(custom_image_paths) > 1:
+            prompt_for_optimizer = (
+                f"{prompt_for_optimizer}\n\n"
+                "MULTI-IMAGE REFERENCE RULE (OBRIGATORIA): trate as imagens enviadas como referencias complementares do mesmo sujeito, local ou projeto. "
+                "Use essas imagens para preservar etapas, estrutura, materiais, fachada, ambiente e identidade visual reais mostrados nelas. "
+                "Nao substitua por outra casa, outro personagem, outro produto ou outro cenario sem relacao."
+            )
 
     if has_reference_image:
         prompt_for_optimizer = _ensure_reference_image_instruction(prompt_for_optimizer, reference_mode=reference_mode)
@@ -4644,7 +4652,14 @@ async def generate_realistic_endpoint(
     reference_mode = "full_frame" if upload_ids else ("face_identity_only" if has_reference_image else "")
     if has_reference_image:
         prompt = _ensure_reference_image_instruction(prompt, reference_mode=reference_mode)
-        if reference_count > 1:
+        if upload_ids and reference_count > 1:
+            prompt = (
+                f"{prompt}\n\n"
+                "MULTI-IMAGE REFERENCE RULE (OBRIGATORIA): trate as imagens enviadas como referencias complementares do mesmo sujeito, local ou projeto. "
+                "Use essas imagens para preservar etapas, estrutura, materiais, fachada, ambiente e identidade visual reais mostrados nelas. "
+                "Nao substitua por outra casa, outro personagem, outro produto ou outro cenario sem relacao."
+            )
+        elif reference_count > 1:
             prompt = (
                 f"{prompt}\n\n"
                 "MULTI-PERSONA REFERENCE RULE: Use all uploaded reference identities together in the same scene. "
