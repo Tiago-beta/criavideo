@@ -4488,6 +4488,8 @@ async def generate_realistic_endpoint(
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
+    elif engine == "seedance":
+        duration = max(1, min(int(req.duration or 10), 15))
     else:
         duration = max(1, min(int(req.duration or 10), 10))
 

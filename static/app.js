@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v320 loaded");
+console.log("[CriaVideo] app.js v321 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -129,7 +129,7 @@ function showToast(msg, type = "info") {
 
 const WAN_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const DEFAULT_REALISTIC_DURATION_OPTIONS = [5, 10, 15, 20, 45, 60];
-const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10];
+const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
 const WORKFLOW_PROMPT_AI_STYLE_OPTIONS = [
     { value: "commercial", label: "Comercial" },

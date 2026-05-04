@@ -1563,6 +1563,8 @@ async def run_realistic_video_pipeline(project_id: int):
                 duration = max(1, min(duration, 60))
             elif engine == "wan2":
                 duration = _resolve_wan_effective_duration(duration)
+            elif engine == "seedance":
+                duration = max(1, min(duration, 15))
             else:
                 duration = max(1, min(duration, 10))
 
