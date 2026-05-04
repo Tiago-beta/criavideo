@@ -576,7 +576,8 @@ async def generate_realistic_video(
         payload_variants.append(("single-image", single_image_payload))
 
         if len(uploaded_refs) > 1:
-            multi_image_payload = dict(single_image_payload)
+            multi_image_payload = dict(payload)
+            multi_image_payload["model"] = SEEDANCE_I2V_MODEL
             multi_image_payload["images"] = uploaded_refs
             payload_variants.insert(0, ("multi-image", multi_image_payload))
 
