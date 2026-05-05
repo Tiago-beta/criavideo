@@ -555,6 +555,8 @@ async def generate_realistic_video(
         "ratio": aspect_ratio,
         "resolution": resolution,
         "generate_audio": generate_audio,
+        "watermark": False,
+        "return_last_frame": False,
         "camera_fixed": False,
     }
 
@@ -570,16 +572,25 @@ async def generate_realistic_video(
         if not uploaded_refs:
             raise RuntimeError("Falha ao preparar as imagens de referencia para o Seedance")
 
-        single_image_payload = dict(payload)
-        single_image_payload["model"] = SEEDANCE_I2V_MODEL
-        single_image_payload["image"] = uploaded_refs[0]
-        payload_variants.append(("single-image", single_image_payload))
+        first_image_payload = dict(payload)
+        first_image_payload["model"] = SEEDANCE_I2V_MODEL
+        first_image_payload["image"] = uploaded_refs[0]
+
+        if len(uploaded_refs) > 1:
+            last_image_ref = uploaded_refs[-1]
+            if last_image_ref and last_image_ref != uploaded_refs[0]:
+                first_image_payload["last_image"] = last_image_ref
+                payload_variants.append(("first-and-last-image", first_image_payload))
+            else:
+                payload_variants.append(("single-image", first_image_payload))
+        else:
+            payload_variants.append(("single-image", first_image_payload))
 
         if len(uploaded_refs) > 1:
             multi_image_payload = dict(payload)
             multi_image_payload["model"] = SEEDANCE_I2V_MODEL
             multi_image_payload["images"] = uploaded_refs
-            payload_variants.insert(0, ("multi-image", multi_image_payload))
+            payload_variants.append(("multi-image", multi_image_payload))
 
         logger.info("Seedance I2V: prepared %d reference image(s)", len(uploaded_refs))
     else:
