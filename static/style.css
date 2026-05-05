@@ -7059,6 +7059,16 @@ th,
 .workflow-port-in-audio { top: 76%; background: #38bdf8; }
 .workflow-port-out-model { background: #fb923c; }
 
+.workflow-credit-estimate {
+    width: 100%;
+    margin-top: 10px;
+    justify-content: center;
+    text-align: center;
+    white-space: normal;
+    line-height: 1.35;
+    box-sizing: border-box;
+}
+
 .workflow-output-box {
     min-height: 150px;
     border: 1px solid rgba(130, 173, 213, 0.24);

@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260505-01">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260505-02">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 351;
+        var REQUIRED_VER = 352;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2161,6 +2161,7 @@
                                     </select>
                                     <label class="workflow-switch"><input id="workflow-generate-audio" type="checkbox" checked> Gerar áudio</label>
                                     <button class="btn btn-primary btn-sm" id="workflow-run" type="button">Criar vídeo</button>
+                                    <div class="credit-estimate-pill workflow-credit-estimate" id="workflow-credit-estimate" hidden>Calculando custo...</div>
                                     <span class="workflow-port workflow-port-in workflow-port-in-prompt" data-port="model-prompt-in"></span>
                                     <span class="workflow-port workflow-port-in workflow-port-in-images" data-port="model-images-in"></span>
                                     <span class="workflow-port workflow-port-in workflow-port-in-video" data-port="model-video-in"></span>
@@ -3569,8 +3570,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260505-01"></script>
-    <script src="/video/static/pwa.js?v=20260505-01"></script>
+    <script src="/video/static/app.js?v=20260505-02"></script>
+    <script src="/video/static/pwa.js?v=20260505-02"></script>
 </body>
 </html>
 

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v333 loaded");
+console.log("[CriaVideo] app.js v334 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2356,8 +2356,8 @@ const SIMILAR_MODE_ENGINE_DEFAULT = {
     unknown: "grok",
 };
 const _creditEstimateTimers = {};
-const _creditEstimateSeq = { wizard: 0, script: 0, auto: 0 };
-let _latestCreditEstimate = { wizard: null, script: null, auto: null };
+const _creditEstimateSeq = { wizard: 0, script: 0, auto: 0, workflow: 0 };
+let _latestCreditEstimate = { wizard: null, script: null, auto: null, workflow: null };
 const _creditEstimateAddButtonByBadge = {
     "wizard-credit-estimate": "wizard-credit-add-btn",
     "script-credit-estimate": "script-credit-add-btn",
@@ -2636,6 +2636,25 @@ function _buildAutoEstimatePayload() {
     };
 }
 
+function _buildWorkflowEstimatePayload() {
+    const engine = document.getElementById("workflow-engine")?.value || "grok";
+    let durationSeconds = parseInt(document.getElementById("workflow-duration")?.value || "15", 10) || 15;
+    if (engine === "wan2") {
+        durationSeconds = _normalizeWanDurationMultiple(durationSeconds);
+    }
+
+    return {
+        mode: "realistic",
+        engine,
+        duration_seconds: durationSeconds,
+        has_reference_image: workflowHasImageReference(),
+        add_music: false,
+        add_narration: false,
+        enable_subtitles: false,
+        use_external_audio: false,
+    };
+}
+
 async function _refreshCreditEstimate(key, badgeId, payload, messageBuilder, warningCreditsResolver = null) {
     const seq = (_creditEstimateSeq[key] || 0) + 1;
     _creditEstimateSeq[key] = seq;
@@ -2675,6 +2694,10 @@ function scheduleScriptCreditEstimate() {
 
 function scheduleAutoCreditEstimate() {
     _queueCreditEstimate("auto", updateAutoCreditEstimate);
+}
+
+function scheduleWorkflowCreditEstimate() {
+    _queueCreditEstimate("workflow", updateWorkflowCreditEstimate);
 }
 
 async function updateWizardCreditEstimate() {
@@ -2728,6 +2751,24 @@ async function updateAutoCreditEstimate() {
             return `Custo por video: ${_formatCreditsInt(creditsNeeded)} créditos${totalChunk}${balanceChunk}`;
         },
         (_estimate, creditsNeeded) => creditsNeeded * themeCount,
+    );
+}
+
+async function updateWorkflowCreditEstimate() {
+    workflowEnsureCreditEstimateBadge();
+    const createBtn = document.getElementById("workflow-run");
+    const badge = document.getElementById("workflow-credit-estimate");
+    if (!createBtn || !badge) {
+        _setCreditEstimateBadge("workflow-credit-estimate", "", "ready", true);
+        return;
+    }
+
+    const payload = _buildWorkflowEstimatePayload();
+    await _refreshCreditEstimate(
+        "workflow",
+        "workflow-credit-estimate",
+        payload,
+        (creditsNeeded) => `Custo estimado: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
     );
 }
 
@@ -5317,12 +5358,31 @@ function initWorkflowBuilder() {
     setTimeout(workflowFitCanvas, 50);
 }
 
+function workflowEnsureCreditEstimateBadge(modelNode = null) {
+    const model = modelNode || document.querySelector('#create-panel-workflow .workflow-node[data-node-id="model"]');
+    const runBtn = model?.querySelector("#workflow-run");
+    if (!model || !runBtn || model.querySelector("#workflow-credit-estimate")) return;
+    runBtn.insertAdjacentHTML("afterend", '<div class="credit-estimate-pill workflow-credit-estimate" id="workflow-credit-estimate" hidden>Calculando custo...</div>');
+}
+
+function workflowHandleGeneratorConfigChange(event) {
+    if (event?.target?.id === "workflow-duration") {
+        document.querySelectorAll("#create-panel-workflow .workflow-node-prompt").forEach((node) => {
+            workflowSyncPromptAiDurationButtons(node);
+        });
+    }
+    scheduleWorkflowCreditEstimate();
+    workflowRecordHistory();
+}
+
 function workflowHandleEngineSelectChange() {
     workflowSyncEngineDurationOptions();
     document.querySelectorAll("#create-panel-workflow .workflow-node-prompt").forEach((node) => {
         workflowEnsurePromptAiTools(node, { force: true, keepOpen: true });
         workflowBindAiControls(node);
     });
+    workflowEnsureCreditEstimateBadge();
+    scheduleWorkflowCreditEstimate();
     workflowRecordHistory();
 }
 
@@ -5377,6 +5437,7 @@ function workflowBindPrimaryNodeControls() {
     workflowEnsureSharedFileInput("image");
     workflowEnsureSharedFileInput("video");
     workflowEnsureSharedFileInput("audio");
+    workflowEnsureCreditEstimateBadge();
 
     const bindings = [
         { id: "workflow-add-images", eventName: "click", handler: workflowChooseGlobalImages, marker: "_workflowClickBound" },
@@ -5385,6 +5446,11 @@ function workflowBindPrimaryNodeControls() {
         { id: "workflow-add-audio", eventName: "click", handler: workflowChooseAudioFile, marker: "_workflowClickBound" },
         { id: "workflow-run", eventName: "click", handler: workflowRunSeedance, marker: "_workflowClickBound" },
         { id: "workflow-engine", eventName: "change", handler: workflowHandleEngineSelectChange, marker: "_workflowChangeBound" },
+        { id: "workflow-duration", eventName: "change", handler: workflowHandleGeneratorConfigChange, marker: "_workflowChangeBound" },
+        { id: "workflow-resolution", eventName: "change", handler: workflowHandleGeneratorConfigChange, marker: "_workflowChangeBound" },
+        { id: "workflow-aspect", eventName: "change", handler: workflowHandleGeneratorConfigChange, marker: "_workflowChangeBound" },
+        { id: "workflow-generate-audio", eventName: "change", handler: workflowHandleGeneratorConfigChange, marker: "_workflowChangeBound" },
+        { id: "workflow-seedance-last-frame", eventName: "change", handler: workflowHandleGeneratorConfigChange, marker: "_workflowChangeBound" },
     ];
     bindings.forEach(({ id, eventName, handler, marker }) => {
         const element = document.getElementById(id);
@@ -5698,6 +5764,7 @@ function workflowSelectPromptAiDuration(button) {
         durationSelect.value = String(selectedDuration);
     }
     workflowSyncPromptAiDurationButtons(node);
+    scheduleWorkflowCreditEstimate();
     workflowRecordHistory();
 }
 
@@ -6929,6 +6996,7 @@ function workflowAddNode(kind) {
             </select>
             <label class="workflow-switch"><input id="workflow-generate-audio" type="checkbox" checked> Gerar áudio</label>
             <button class="btn btn-primary btn-sm" id="workflow-run" type="button">Criar vídeo</button>
+            <div class="credit-estimate-pill workflow-credit-estimate" id="workflow-credit-estimate" hidden>Calculando custo...</div>
             <span class="workflow-port workflow-port-in workflow-port-in-prompt" data-port="model-prompt-in"></span>
             <span class="workflow-port workflow-port-in workflow-port-in-images" data-port="model-images-in"></span>
             <span class="workflow-port workflow-port-in workflow-port-in-video" data-port="model-video-in"></span>
@@ -7226,6 +7294,14 @@ function workflowIsCollectedNodeImage(item) {
     return !!sourceNodeId && sourceNodeId !== "images";
 }
 
+function workflowHasImageReference() {
+    workflowCollectGeneratedNodeImages();
+    if (workflowState.images.length > 0) return true;
+    return Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node-images")).some((node) => (
+        node.dataset.nodeId !== "images" && (node._workflowImageFile || node.dataset.uploadId || node.dataset.previewUrl)
+    ));
+}
+
 function workflowCollectGeneratedNodeImages() {
     const generated = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node-images[data-upload-id]"))
         .filter((node) => String(node.dataset.nodeId || "").trim() !== "images")
@@ -7390,6 +7466,7 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
         if (durationLabel) durationLabel.insertAdjacentHTML("beforebegin", html);
         else model.querySelector("header")?.insertAdjacentHTML("afterend", html);
     }
+    workflowEnsureCreditEstimateBadge(model);
     workflowBindNodeDragging(document.getElementById("create-panel-workflow"));
     workflowBindPrimaryNodeControls();
 }
@@ -7638,6 +7715,7 @@ function workflowRenderImagePreview() {
         `;
     }).join("");
     preview.innerHTML = thumbs;
+    scheduleWorkflowCreditEstimate();
 }
 
 function workflowHasAllowedExtension(fileName, allowedExtensions) {
@@ -8033,13 +8111,16 @@ async function workflowRunSeedance() {
         workflowFocusNode("prompt");
         return;
     }
-    workflowCollectGeneratedNodeImages();
-    const hasDynamicImageReference = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-node-images")).some((node) => (
-        node.dataset.nodeId !== "images" && (node._workflowImageFile || node.dataset.uploadId || node.dataset.previewUrl)
-    ));
-    if (!workflowState.images.length && !hasDynamicImageReference) {
+    if (!workflowHasImageReference()) {
         alert("Adicione ou gere pelo menos uma imagem no workflow antes de criar o vídeo.");
         workflowFocusNode("images");
+        return;
+    }
+
+    const workflowEstimatePayload = _buildWorkflowEstimatePayload();
+    const creditsNeeded = await _resolveCreditsNeededForAction(workflowEstimatePayload, "workflow");
+    if (creditsNeeded > 0 && _userCredits < creditsNeeded) {
+        showCreditsPurchaseModal();
         return;
     }
 
@@ -8106,6 +8187,7 @@ async function workflowRunSeedance() {
         });
         workflowSetOutputProgress(25, `${workflowEngineLabel} está criando seu vídeo...`, runTemplateKey);
         workflowStartTemplateRunTracking(projectId, workflowEngineLabel, runTemplateKey);
+        await updateCreditsDisplay();
         showToast("Geração iniciada. Você pode continuar editando outros templates.", "success");
         loadProjects();
     } catch (error) {
@@ -18633,6 +18715,7 @@ async function updateCreditsDisplay() {
         scheduleWizardCreditEstimate();
         scheduleScriptCreditEstimate();
         scheduleAutoCreditEstimate();
+        scheduleWorkflowCreditEstimate();
     } catch {}
 }
 
