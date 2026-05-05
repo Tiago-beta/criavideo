@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v336 loaded");
+console.log("[CriaVideo] app.js v337 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -4763,12 +4763,16 @@ function _resolveSimilarDetectedMode(tags) {
 function _updateSimilarGenerationStep(project, tags) {
     const generationStepEl = document.getElementById("similar-generation-step");
     const profileEl = document.getElementById("similar-detected-profile");
+    const unifiedPromptBtn = document.getElementById("similar-build-unified-prompt");
     if (!generationStepEl) return;
 
     const stage = String(tags?.similar_stage || "").trim();
     const scenes = Array.isArray(project?.scenes) ? project.scenes : [];
     const canConfigure = scenes.length > 0 && !["queued_analysis", "downloading_reference", "analyzing_reference"].includes(stage);
     generationStepEl.hidden = !canConfigure;
+    if (unifiedPromptBtn) {
+        unifiedPromptBtn.hidden = !canConfigure;
+    }
     if (!canConfigure) {
         return;
     }
