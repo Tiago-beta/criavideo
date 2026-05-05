@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     tevoxi_jwt_secret: str = ""
     tevoxi_jwt_user_id: int = 5
     tevoxi_jwt_email: str = "tgsantos66@hotmail.com"
+    criavideo_to_tevoxi_shared_secret: str = ""
     baixatudo_api_url: str = "https://baixatudo.pro"
     baixatudo_api_key: str = ""
     baixatudo_timeout_seconds: int = 120

@@ -16,6 +16,7 @@ from app.models import AppUser
 logger = logging.getLogger(__name__)
 settings = get_settings()
 _openai = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+_TEVOXI_INTEGRATION_NAME = "music-generation"
 
 
 def _build_tevoxi_jwt(subject_id: int, email: str, role: str) -> str:
@@ -138,6 +139,29 @@ async def expand_theme_to_music_prompt(theme: str) -> dict:
         }
 
 
+def _build_tevoxi_request_headers(api_token: str, endpoint: str) -> dict:
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json",
+    }
+
+    shared_secret = str(settings.criavideo_to_tevoxi_shared_secret or "").strip()
+    if not shared_secret:
+        logger.warning(
+            "[tevoxi] Missing integration headers for %s: CRIAVIDEO_TO_TEVOXI_SHARED_SECRET not configured",
+            endpoint,
+        )
+        return headers
+
+    headers["x-criavideo-integration"] = _TEVOXI_INTEGRATION_NAME
+    headers["x-criavideo-secret"] = shared_secret
+
+    if not headers.get("x-criavideo-integration") or not headers.get("x-criavideo-secret"):
+        logger.warning("[tevoxi] Sending %s without expected integration headers", endpoint)
+
+    return headers
+
+
 async def generate_music_from_theme(
     theme: str,
     project_id: int,
@@ -152,11 +176,7 @@ async def generate_music_from_theme(
     """
     api_url = settings.tevoxi_api_url.rstrip("/")
     api_token = await _resolve_tevoxi_token_for_user(user_id=user_id)
-
-    headers = {
-        "Authorization": f"Bearer {api_token}",
-        "Content-Type": "application/json",
-    }
+    headers = _build_tevoxi_request_headers(api_token, "/api/create-music")
 
     if manual_settings:
         # Use manual music settings from the user
