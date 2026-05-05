@@ -7,6 +7,7 @@ import logging
 import shutil
 import httpx
 from pathlib import Path
+from PIL import Image, ImageOps
 from app.config import get_settings
 from app.database import async_session
 from app.models import VideoProject, VideoScene, VideoRender, VideoStatus
@@ -44,6 +45,60 @@ def _aspect_to_resolution(aspect_ratio: str) -> tuple[int, int]:
     if aspect_ratio == "1:1":
         return 1080, 1080
     return 1920, 1080
+
+
+def _prepare_reference_delivery_images(
+    project_id: int,
+    image_paths: list[str],
+    prefix: str = "upload_ref",
+) -> list[str]:
+    """Create canonical reference files so all engines receive the same normalized image bytes."""
+    reference_dir = Path(settings.media_dir) / "reference_inputs" / str(project_id)
+    reference_dir.mkdir(parents=True, exist_ok=True)
+
+    prepared_paths: list[str] = []
+    seen_sources: set[str] = set()
+    for index, raw_path in enumerate(image_paths or []):
+        source_path = str(raw_path or "").strip()
+        if not source_path or source_path in seen_sources or not os.path.exists(source_path):
+            continue
+        seen_sources.add(source_path)
+
+        try:
+            with Image.open(source_path) as source_image:
+                normalized = ImageOps.exif_transpose(source_image)
+                if max(normalized.size) > 2048:
+                    normalized.thumbnail((2048, 2048), Image.LANCZOS)
+
+                has_alpha = normalized.mode in {"RGBA", "LA"} or "transparency" in getattr(normalized, "info", {})
+                if has_alpha:
+                    output_path = reference_dir / f"{prefix}_{index:02d}.png"
+                    normalized.convert("RGBA").save(output_path, format="PNG", optimize=True)
+                else:
+                    output_path = reference_dir / f"{prefix}_{index:02d}.jpg"
+                    normalized.convert("RGB").save(output_path, format="JPEG", quality=95, optimize=True)
+
+            if output_path.exists() and output_path.stat().st_size > 0:
+                prepared_paths.append(str(output_path))
+                logger.info(
+                    "Prepared canonical reference image for project %s: %s -> %s (%s bytes)",
+                    project_id,
+                    source_path,
+                    output_path,
+                    output_path.stat().st_size,
+                )
+                continue
+        except Exception as exc:
+            logger.warning(
+                "Failed to normalize reference image for project %s (%s): %s. Using original file.",
+                project_id,
+                source_path,
+                exc,
+            )
+
+        prepared_paths.append(source_path)
+
+    return prepared_paths
 
 
 async def _normalize_video_aspect(input_path: str, aspect_ratio: str, output_path: str) -> str:
@@ -1562,6 +1617,31 @@ async def run_realistic_video_pipeline(project_id: int):
                 logger.warning("Realistic video reference image path missing on disk: %s", project.style_prompt)
             has_reference_image = bool(image_path)
 
+            raw_upload_reference_paths_early = [
+                str(path).strip()
+                for path in (
+                    tags_data_early.get("reference_delivery_image_paths", [])
+                    if isinstance(tags_data_early.get("reference_delivery_image_paths", []), list)
+                    else tags_data_early.get("reference_upload_image_paths", [])
+                    if isinstance(tags_data_early.get("reference_upload_image_paths", []), list)
+                    else []
+                )
+                if str(path).strip() and os.path.exists(str(path).strip())
+            ][:6]
+            prepared_upload_reference_paths_early: list[str] = []
+            if reference_source_early == "upload" and raw_upload_reference_paths_early:
+                prepared_upload_reference_paths_early = _prepare_reference_delivery_images(
+                    project_id,
+                    raw_upload_reference_paths_early,
+                )
+                if prepared_upload_reference_paths_early:
+                    image_path = prepared_upload_reference_paths_early[0]
+                    has_reference_image = True
+                    tags_data_early = dict(tags_data_early or {})
+                    tags_data_early["reference_delivery_image_paths"] = prepared_upload_reference_paths_early
+                    project.tags = tags_data_early
+                    project.style_prompt = image_path
+
             if engine == "grok" and reference_source_early == "persona" and not has_reference_image:
                 raise RuntimeError(
                     "Imagem de referencia da persona nao encontrada. Reabra as personas selecionadas e gere novamente."
@@ -1630,9 +1710,19 @@ async def run_realistic_video_pipeline(project_id: int):
             grok_shadow_video_path = ""
             grok_shadow_audio_path = ""
             grok_shadow_duration = 0.0
+            if prepared_upload_reference_paths_early:
+                tags_data["reference_delivery_image_paths"] = prepared_upload_reference_paths_early
+                project.tags = tags_data
+                project.style_prompt = prepared_upload_reference_paths_early[0]
             upload_reference_paths_for_prompt = [
                 str(path).strip()
-                for path in (tags_data.get("reference_upload_image_paths", []) if isinstance(tags_data.get("reference_upload_image_paths", []), list) else [])
+                for path in (
+                    tags_data.get("reference_delivery_image_paths", [])
+                    if isinstance(tags_data.get("reference_delivery_image_paths", []), list)
+                    else tags_data.get("reference_upload_image_paths", [])
+                    if isinstance(tags_data.get("reference_upload_image_paths", []), list)
+                    else []
+                )
                 if str(path).strip() and os.path.exists(str(path).strip())
             ][:6]
             upload_reference_lock_mode = (
@@ -1840,7 +1930,13 @@ async def run_realistic_video_pipeline(project_id: int):
             grok_direct_reference_path = image_path if (image_path and os.path.exists(image_path)) else ""
             upload_reference_paths = [
                 str(path).strip()
-                for path in (tags_data.get("reference_upload_image_paths", []) if isinstance(tags_data.get("reference_upload_image_paths", []), list) else [])
+                for path in (
+                    tags_data.get("reference_delivery_image_paths", [])
+                    if isinstance(tags_data.get("reference_delivery_image_paths", []), list)
+                    else tags_data.get("reference_upload_image_paths", [])
+                    if isinstance(tags_data.get("reference_upload_image_paths", []), list)
+                    else []
+                )
                 if str(path).strip() and os.path.exists(str(path).strip())
             ][:6]
 
