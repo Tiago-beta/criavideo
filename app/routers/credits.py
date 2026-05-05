@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/credits", tags=["credits"])
 settings = get_settings()
 
-INITIAL_CREDITS = 50
+INITIAL_CREDITS = 100
 CREDITS_PER_MINUTE = 5
 
 
