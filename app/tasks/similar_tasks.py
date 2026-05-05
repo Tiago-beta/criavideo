@@ -60,6 +60,7 @@ _SIMILAR_CONTEXT_FRAME_SAMPLE_COUNT = 6
 _SIMILAR_CONTEXT_SUMMARY_LIMIT = 1800
 _SIMILAR_TRANSCRIPT_LIMIT = 4200
 _SIMILAR_SCENE_DIALOGUE_LIMIT = 420
+_SIMILAR_GENERAL_PROMPT_DURATION_SECONDS = 15
 
 
 def _safe_tags_dict(raw: object) -> dict:
@@ -120,6 +121,272 @@ def _normalize_source_url(raw_url: object) -> str:
         return normalized
     except Exception:
         return raw.lower().rstrip("/")
+
+
+def _normalize_similar_general_prompt_text(raw: object, limit: int = 3200) -> str:
+    text = str(raw or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()[:limit].strip()
+
+
+def _truncate_similar_general_clause(raw: object, fallback: str) -> str:
+    text = _normalize_similar_general_prompt_text(raw, limit=260)
+    if not text:
+        return fallback
+    text = text.split("\n", 1)[0].strip(" .")
+    if len(text) > 190:
+        text = f"{text[:187].rstrip(' ,.;:')}..."
+    return text or fallback
+
+
+def _collect_similar_reference_frame_paths_from_map(reference_frames_by_scene_index: dict[str, str]) -> list[str]:
+    if not isinstance(reference_frames_by_scene_index, dict):
+        return []
+
+    ordered_items = sorted(
+        reference_frames_by_scene_index.items(),
+        key=lambda item: int(item[0]) if str(item[0]).isdigit() else 999999,
+    )
+    collected: list[str] = []
+    seen: set[str] = set()
+    for _scene_index, raw_path in ordered_items:
+        candidate = str(raw_path or "").strip()
+        if not candidate or not os.path.exists(candidate) or candidate in seen:
+            continue
+        seen.add(candidate)
+        collected.append(candidate)
+    return collected
+
+
+def _build_similar_general_prompt_context(
+    *,
+    scene_payloads: list[dict],
+    context_summary: str,
+    transcript_text: str,
+    duration_seconds: float,
+) -> str:
+    lines = [
+        f"Duracao do video analisado: {max(1.0, float(duration_seconds or 0.0)):.1f}s",
+        f"Duracao alvo do prompt final: {_SIMILAR_GENERAL_PROMPT_DURATION_SECONDS}s",
+    ]
+
+    normalized_context = _normalize_similar_general_prompt_text(context_summary, limit=1400)
+    normalized_transcript = _normalize_similar_general_prompt_text(transcript_text, limit=1200)
+    if normalized_context:
+        lines.extend(["", "Resumo visual global:", normalized_context])
+    if normalized_transcript:
+        lines.extend(["", "Audio/transcricao:", normalized_transcript])
+
+    lines.extend(["", "Cenas analisadas:"])
+    for idx, payload in enumerate(scene_payloads, start=1):
+        start = float(payload.get("start_time", 0.0) or 0.0)
+        end = float(payload.get("end_time", start) or start)
+        prompt = _normalize_similar_general_prompt_text(payload.get("prompt"), limit=420)
+        spoken = _normalize_similar_general_prompt_text(payload.get("spoken_context"), limit=200)
+        lines.append(f"Cena {idx} | {start:.1f}s - {end:.1f}s")
+        if prompt:
+            lines.append(f"Visual: {prompt}")
+        if spoken:
+            lines.append(f"Audio: {spoken}")
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
+def _build_similar_general_prompt_fallback(
+    *,
+    scene_payloads: list[dict],
+    context_summary: str,
+    transcript_text: str,
+) -> str:
+    prompts = [
+        _normalize_similar_general_prompt_text(payload.get("prompt"), limit=260)
+        for payload in (scene_payloads or [])
+    ]
+    prompts = [prompt for prompt in prompts if prompt]
+    transcript_excerpt = _normalize_similar_general_prompt_text(transcript_text, limit=260)
+    context_excerpt = _normalize_similar_general_prompt_text(context_summary, limit=360)
+
+    first_prompt = prompts[0] if prompts else context_excerpt
+    second_prompt = prompts[1] if len(prompts) > 1 else first_prompt
+    middle_prompt = prompts[len(prompts) // 2] if prompts else context_excerpt
+    closing_prompt = prompts[-1] if prompts else context_excerpt
+    penultimate_prompt = prompts[-2] if len(prompts) > 1 else closing_prompt
+
+    audio = transcript_excerpt or "Sons ambientes coerentes com o video de referencia, preservando ambiencia, passos, objetos e reacoes naturais."
+    lighting = "Iluminacao coerente com o video original, mantendo sombras, contraste, temperatura de cor e relevo visual do ambiente."
+    main_character = "Mesmo personagem principal do video de referencia, mantendo identidade facial, idade aparente, postura corporal e expressao predominante."
+    outfit = "Mesmas roupas, tecidos, modelagens e cores vistos no video de referencia, sem trocar nenhuma peca durante toda a cena."
+    accessories = "Mesmos acessorios, objetos de mao e elementos de cena ja visiveis no video de referencia."
+    rules = "Manter identidade, figurino, cenario, escala, paleta, continuidade de movimento, camera e direcao do olhar; nao trocar rosto, roupa, idade, local ou iluminacao."
+
+    scene_0_3 = _truncate_similar_general_clause(
+        first_prompt,
+        "Apresentar o personagem principal no mesmo ambiente do video original com enquadramento inicial claro e camera entrando suavemente na acao.",
+    )
+    scene_3_6 = _truncate_similar_general_clause(
+        second_prompt,
+        "Desenvolver a acao principal mantendo a mesma postura, ritmo visual e foco no personagem e no ambiente.",
+    )
+    scene_6_10 = _truncate_similar_general_clause(
+        middle_prompt,
+        "Levar a cena ao ponto de maior intensidade visual, reforcando gesto, movimento e destaque narrativo principal.",
+    )
+    scene_10_13 = _truncate_similar_general_clause(
+        penultimate_prompt,
+        "Conduzir o fechamento com detalhe importante do personagem, objeto ou deslocamento de camera preservando a continuidade.",
+    )
+    scene_13_15 = _truncate_similar_general_clause(
+        closing_prompt,
+        "Finalizar a cena com saida natural de quadro, repouso do movimento ou detalhe final coerente com o video de referencia.",
+    )
+
+    return _normalize_similar_general_prompt_text(
+        "\n".join(
+            [
+                "Audio:",
+                audio,
+                "",
+                "💡 Lighting:",
+                lighting,
+                "",
+                "🎭 Main Character:",
+                main_character,
+                "",
+                "👕 Outfit (STRICT LOCK):",
+                outfit,
+                "",
+                "🕶️ Accessories:",
+                accessories,
+                "",
+                "⚠️ Rules:",
+                rules,
+                "",
+                "🎬 SCENE",
+                "",
+                "⏱️ 0–3s:",
+                scene_0_3,
+                "",
+                "⏱️ 3–6s:",
+                scene_3_6,
+                "",
+                "⏱️ 6–10s:",
+                scene_6_10,
+                "",
+                "⏱️ 10–13s:",
+                scene_10_13,
+                "",
+                "⏱️ 13–15s:",
+                scene_13_15,
+            ]
+        ),
+        limit=3200,
+    )
+
+
+def _is_similar_general_prompt_valid(raw: object) -> bool:
+    text = _normalize_similar_general_prompt_text(raw, limit=3600)
+    required_parts = (
+        "Audio:",
+        "💡 Lighting:",
+        "🎭 Main Character:",
+        "👕 Outfit (STRICT LOCK):",
+        "🕶️ Accessories:",
+        "⚠️ Rules:",
+        "🎬 SCENE",
+        "⏱️ 0–3s:",
+        "⏱️ 3–6s:",
+        "⏱️ 6–10s:",
+        "⏱️ 10–13s:",
+        "⏱️ 13–15s:",
+    )
+    if len(text) < 220:
+        return False
+    if any(part not in text for part in required_parts):
+        return False
+    if "[" in text or "]" in text:
+        return False
+    return True
+
+
+async def _generate_similar_general_prompt(
+    client: openai.AsyncOpenAI,
+    *,
+    scene_payloads: list[dict],
+    context_summary: str,
+    transcript_text: str,
+    duration_seconds: float,
+) -> tuple[str, str]:
+    fallback_prompt = _build_similar_general_prompt_fallback(
+        scene_payloads=scene_payloads,
+        context_summary=context_summary,
+        transcript_text=transcript_text,
+    )
+    prompt_context = _build_similar_general_prompt_context(
+        scene_payloads=scene_payloads,
+        context_summary=context_summary,
+        transcript_text=transcript_text,
+        duration_seconds=duration_seconds,
+    )
+    preferred_model = (settings.similar_analysis_model or "gpt-4o-mini").strip() or "gpt-4o-mini"
+    system_prompt = (
+        "Voce converte a analise completa de um video de referencia em um unico prompt estruturado em portugues do Brasil. "
+        "Retorne texto puro, sem markdown, sem JSON, sem comentarios extras e sem placeholders. "
+        "Preencha exatamente as secoes pedidas e mantenha a timeline final em 15 segundos com os marcadores informados."
+    )
+    user_prompt = (
+        "Use a analise abaixo para montar um prompt unico de recriacao do video. "
+        "Retorne EXATAMENTE com esta estrutura e preencha todos os campos com texto concreto:\n\n"
+        "Audio:\n"
+        "[Descrever sons ambientes aqui]\n\n"
+        "💡 Lighting:\n"
+        "[Descrever iluminacao e sombras aqui]\n\n"
+        "🎭 Main Character:\n"
+        "[ID do personagem, tracos fisicos e expressao]\n\n"
+        "👕 Outfit (STRICT LOCK):\n"
+        "[Descrever pecas de roupa, tecidos e cores]\n\n"
+        "🕶️ Accessories:\n"
+        "[Descrever oculos, relogio ou outros itens]\n\n"
+        "⚠️ Rules:\n"
+        "[Regras de consistencia]\n\n"
+        "🎬 SCENE\n\n"
+        "⏱️ 0–3s:\n"
+        "[Acao inicial e movimento de camera]\n\n"
+        "⏱️ 3–6s:\n"
+        "[Desenvolvimento da cena e mudanca de foco]\n\n"
+        "⏱️ 6–10s:\n"
+        "[Climax da acao ou interacao principal]\n\n"
+        "⏱️ 10–13s:\n"
+        "[Acao de fechamento e zoom/detalhe]\n\n"
+        "⏱️ 13–15s:\n"
+        "[Finalizacao e saida de cena/veiculos]\n\n"
+        "Regras adicionais: use portugues do Brasil, preserve o mesmo personagem, o mesmo figurino, a mesma ambientacao e a mesma continuidade visual do video de referencia. "
+        "Nao deixe campos vazios, nao use colchetes no resultado, nao invente secoes extras.\n\n"
+        f"Analise do video:\n{prompt_context}"
+    )
+
+    try:
+        response = await client.chat.completions.create(
+            model=preferred_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            max_tokens=900,
+        )
+        candidate = _normalize_similar_general_prompt_text(
+            response.choices[0].message.content if response and response.choices else "",
+            limit=3400,
+        )
+        if _is_similar_general_prompt_valid(candidate):
+            return candidate, "ai"
+        logger.warning("Similar general prompt AI output invalid for project analysis; using fallback")
+    except Exception as exc:
+        logger.warning("Similar general prompt generation failed: %s", exc)
+
+    return fallback_prompt, "fallback"
 
 
 async def _try_reuse_cached_reference_video(
@@ -1500,6 +1767,7 @@ async def run_similar_reference_analysis(
     source_url: str,
     source_upload_path: str = "",
     source_upload_name: str = "",
+    analysis_mode: str = "scene",
 ) -> None:
     async with async_session() as db:
         project = await db.get(VideoProject, project_id)
@@ -1515,6 +1783,7 @@ async def run_similar_reference_analysis(
                 "similar_source_url": source_url,
                 "similar_source_type": source_type,
                 "similar_source_upload_name": source_upload_name,
+                "similar_analysis_mode": "general" if str(analysis_mode or "scene").strip().lower() == "general" else "scene",
             }
         )
         project.tags = tags
@@ -1594,6 +1863,7 @@ async def run_similar_reference_analysis(
                     "similar_reused_cache": bool(reused_video),
                     "similar_source_type": source_type,
                     "similar_source_upload_name": source_upload_name,
+                    "similar_analysis_mode": "general" if str(analysis_mode or "scene").strip().lower() == "general" else "scene",
                 }
             )
             if reused_project_id > 0:
@@ -1686,29 +1956,34 @@ async def run_similar_reference_analysis(
             detected_confidence = max(0.0, min(1.0, detected_confidence))
             detected_reason = str(detected_profile.get("reason") or "").strip()[:220]
 
+            normalized_analysis_mode = "general" if str(analysis_mode or "scene").strip().lower() == "general" else "scene"
+            generated_at = datetime.utcnow().isoformat() + "Z"
+
             await db.execute(delete(VideoScene).where(VideoScene.project_id == project_id))
 
-            for payload in scene_payloads:
-                db.add(
-                    VideoScene(
-                        project_id=project_id,
-                        scene_index=int(payload["scene_index"]),
-                        scene_type="image",
-                        prompt=str(payload["prompt"]),
-                        image_path="",
-                        clip_path="",
-                        start_time=float(payload["start_time"]),
-                        end_time=float(payload["end_time"]),
-                        lyrics_segment=str(payload.get("spoken_context") or ""),
-                        is_user_uploaded=False,
+            if normalized_analysis_mode == "scene":
+                for payload in scene_payloads:
+                    db.add(
+                        VideoScene(
+                            project_id=project_id,
+                            scene_index=int(payload["scene_index"]),
+                            scene_type="image",
+                            prompt=str(payload["prompt"]),
+                            image_path="",
+                            clip_path="",
+                            start_time=float(payload["start_time"]),
+                            end_time=float(payload["end_time"]),
+                            lyrics_segment=str(payload.get("spoken_context") or ""),
+                            is_user_uploaded=False,
+                        )
                     )
-                )
 
             tags = _safe_tags_dict(project.tags)
             tags.update(
                 {
                     "type": "similar",
-                    "similar_stage": "analysis_ready",
+                    "similar_stage": "analysis_general_ready" if normalized_analysis_mode == "general" else "analysis_ready",
+                    "similar_analysis_mode": normalized_analysis_mode,
                     "similar_scene_seconds": scene_seconds,
                     "similar_scene_count": len(scene_payloads),
                     "similar_scene_strategy": "shot_detect",
@@ -1724,9 +1999,30 @@ async def run_similar_reference_analysis(
                 }
             )
             tags.setdefault("similar_engine", detected_engine)
+
+            if normalized_analysis_mode == "general":
+                prompt_text, prompt_source = await _generate_similar_general_prompt(
+                    openai_client,
+                    scene_payloads=scene_payloads,
+                    context_summary=context_summary,
+                    transcript_text=transcript_text,
+                    duration_seconds=duration_seconds,
+                )
+                tags.update(
+                    {
+                        "similar_unified_prompt": prompt_text,
+                        "similar_unified_prompt_source": prompt_source,
+                        "similar_unified_prompt_generated_at": generated_at,
+                    }
+                )
+
             project.tags = tags
             project.track_duration = float(duration_seconds)
-            project.lyrics_text = _build_temporal_prompt(scene_payloads)
+            project.lyrics_text = (
+                str(tags.get("similar_unified_prompt") or "")
+                if normalized_analysis_mode == "general"
+                else _build_temporal_prompt(scene_payloads)
+            )
             project.status = VideoStatus.PENDING
             project.progress = 0
             project.error_message = None
@@ -1942,22 +2238,27 @@ async def run_similar_generate_unified_scene(
             return
 
         try:
+            tags = _safe_tags_dict(project.tags)
+            analysis_mode = str(tags.get("similar_analysis_mode") or "scene").strip().lower() or "scene"
+
             result = await db.execute(
                 select(VideoScene)
                 .where(VideoScene.project_id == project_id)
                 .order_by(VideoScene.scene_index.asc())
             )
             scenes = result.scalars().all()
-            if not scenes:
+            if not scenes and analysis_mode != "general":
                 raise RuntimeError("Projeto nao possui cenas analisadas para gerar a cena unica")
 
-            tags = _safe_tags_dict(project.tags)
             unified_prompt = str(tags.get("similar_unified_prompt") or "").strip()
             if not unified_prompt:
                 raise RuntimeError("Gere o prompt unico antes de criar a cena")
 
             reference_frames_by_scene_index = _extract_similar_reference_frames(tags)
-            reference_image_paths = _collect_similar_reference_frame_paths(scenes, reference_frames_by_scene_index)
+            if scenes:
+                reference_image_paths = _collect_similar_reference_frame_paths(scenes, reference_frames_by_scene_index)
+            else:
+                reference_image_paths = _collect_similar_reference_frame_paths_from_map(reference_frames_by_scene_index)
             uploaded_reference_paths = [
                 str(path).strip()
                 for path in (tags.get("similar_unified_upload_image_paths", []) if isinstance(tags.get("similar_unified_upload_image_paths", []), list) else [])

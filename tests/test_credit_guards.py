@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from app.routers.credits import build_insufficient_credits_message, deduct_credits
 from app.services.credit_pricing import (
     estimate_local_video_processing_credits,
+    estimate_similar_analysis_credits,
     estimate_similar_previews_credits,
     estimate_similar_scene_credits,
 )
@@ -57,6 +58,15 @@ class TestCreditGuards(unittest.IsolatedAsyncioTestCase):
 
 
 class TestSimilarCreditPricing(unittest.TestCase):
+    def test_similar_analysis_estimate_distinguishes_general_and_scene_modes(self):
+        general = estimate_similar_analysis_credits(duration_seconds=15, analysis_mode="general")
+        scene = estimate_similar_analysis_credits(duration_seconds=15, analysis_mode="scene")
+
+        self.assertEqual(general["breakdown"]["mode"], "similar_analysis")
+        self.assertEqual(general["breakdown"]["analysis_mode"], "general")
+        self.assertEqual(scene["breakdown"]["analysis_mode"], "scene")
+        self.assertGreater(scene["credits_needed"], general["credits_needed"])
+
     def test_similar_preview_estimate_sums_scene_costs(self):
         single = estimate_similar_scene_credits(engine="grok", duration_seconds=5)
         combined = estimate_similar_previews_credits(engine="grok", scene_durations=[5, 10])

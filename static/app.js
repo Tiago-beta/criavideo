@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v337 loaded");
+console.log("[CriaVideo] app.js v339 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2256,6 +2256,9 @@ let similarState = {
     sourceVideoFile: null,
     sourceVideoObjectUrl: "",
     sourceVideoName: "",
+    sourceVideoDurationSeconds: 0,
+    sourceVideoDurationStatus: "idle",
+    sourceDurationProbeToken: 0,
     pollingTimer: null,
     engineManuallySelected: false,
     selectedEngine: "grok",
@@ -2333,6 +2336,7 @@ const SIMILAR_STAGE_LABELS = {
     downloading_reference: "Baixando video de referencia...",
     analyzing_reference: "Analisando frames e criando prompts por cena...",
     analysis_ready: "Analise concluida. Revise as cenas abaixo.",
+    analysis_general_ready: "Analise geral concluida. O prompt unico ja esta pronto.",
     scene_edited: "Cena atualizada. Gere a previa para validar.",
     scene_image_ready: "Imagem da cena atualizada. Gere a previa desta cena.",
     generating_scene: "Gerando a cena selecionada...",
@@ -2715,7 +2719,7 @@ async function updateWizardCreditEstimate() {
         "wizard",
         "wizard-credit-estimate",
         payload,
-        (creditsNeeded) => `Custo estimado: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
+        (creditsNeeded) => `Custo: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
     );
 }
 
@@ -2773,6 +2777,102 @@ async function updateWorkflowCreditEstimate() {
         "workflow-credit-estimate",
         payload,
         (creditsNeeded) => `Custo estimado: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
+    );
+}
+
+function _hasSimilarAnalysisSource() {
+    const sourceEl = document.getElementById("similar-source-url");
+    const sourceUrl = String(sourceEl?.value || "").trim();
+    return !!sourceUrl || !!similarState.sourceVideoFile;
+}
+
+function _setSimilarSourceDurationState(status = "idle", durationSeconds = 0) {
+    similarState.sourceVideoDurationStatus = String(status || "idle").trim() || "idle";
+    const parsedDuration = Number(durationSeconds || 0);
+    similarState.sourceVideoDurationSeconds = Number.isFinite(parsedDuration) && parsedDuration > 0.05
+        ? parsedDuration
+        : 0;
+    scheduleSimilarAnalysisCreditEstimates();
+}
+
+function _beginSimilarSourceDurationProbe(videoEl) {
+    similarState.sourceDurationProbeToken = Number(similarState.sourceDurationProbeToken || 0) + 1;
+    const token = similarState.sourceDurationProbeToken;
+
+    if (!videoEl) {
+        _setSimilarSourceDurationState("unavailable", 0);
+        return;
+    }
+
+    const finish = (status, value = 0) => {
+        if (similarState.sourceDurationProbeToken !== token) return;
+        _setSimilarSourceDurationState(status, value);
+    };
+
+    const immediateDuration = Number(videoEl.duration || 0);
+    if (Number(videoEl.readyState || 0) >= 1 && Number.isFinite(immediateDuration) && immediateDuration > 0.05) {
+        finish("ready", immediateDuration);
+        return;
+    }
+
+    finish("pending", 0);
+    videoEl.onloadedmetadata = () => finish("ready", Number(videoEl.duration || 0));
+    videoEl.onerror = () => finish("unavailable", 0);
+    window.setTimeout(() => finish("unavailable", Number(videoEl.duration || 0)), 5000);
+}
+
+function _resolveSimilarAnalysisDurationSeconds() {
+    const localDuration = Number(similarState.sourceVideoDurationSeconds || 0);
+    if (Number.isFinite(localDuration) && localDuration > 0.05) {
+        return localDuration;
+    }
+
+    const projectDuration = Number(similarState.lastProjectSnapshot?.track_duration || 0);
+    if (Number.isFinite(projectDuration) && projectDuration > 0.05) {
+        return projectDuration;
+    }
+
+    return 0;
+}
+
+async function updateSimilarAnalysisCreditEstimate(analysisMode, badgeId) {
+    if (!_hasSimilarAnalysisSource()) {
+        _setCreditEstimateBadge(badgeId, "", "ready", true);
+        return;
+    }
+
+    const durationSeconds = _resolveSimilarAnalysisDurationSeconds();
+    if (!(durationSeconds > 0.05)) {
+        const durationStatus = String(similarState.sourceVideoDurationStatus || "idle").trim();
+        const message = durationStatus === "pending"
+            ? "Lendo duracao do video..."
+            : "Custo exibido quando a duracao estiver disponivel";
+        _setCreditEstimateBadge(badgeId, message, durationStatus === "pending" ? "loading" : "ready");
+        return;
+    }
+
+    await _refreshCreditEstimate(
+        `similar-analysis-${analysisMode}`,
+        badgeId,
+        {
+            mode: "similar-analysis",
+            duration_seconds: durationSeconds,
+            analysis_mode: analysisMode,
+        },
+        (creditsNeeded) => `${analysisMode === "general" ? "Custo geral" : "Custo por cena"}: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
+    );
+}
+
+function scheduleSimilarAnalysisCreditEstimates() {
+    _queueCreditEstimate(
+        "similar-analysis-general",
+        () => updateSimilarAnalysisCreditEstimate("general", "similar-general-analysis-estimate"),
+        120,
+    );
+    _queueCreditEstimate(
+        "similar-analysis-scene",
+        () => updateSimilarAnalysisCreditEstimate("scene", "similar-scene-analysis-estimate"),
+        120,
     );
 }
 
@@ -3365,9 +3465,14 @@ function initCreateWizard() {
     document.getElementById("script-create-btn").addEventListener("click", handleScriptCreate);
 
     // Similar mode controls
-    const similarStartBtn = document.getElementById("similar-start-analysis");
-    if (similarStartBtn) {
-        similarStartBtn.addEventListener("click", similarStartAnalysis);
+    const similarStartGeneralBtn = document.getElementById("similar-start-analysis-general");
+    if (similarStartGeneralBtn) {
+        similarStartGeneralBtn.addEventListener("click", () => similarStartAnalysis("general"));
+    }
+
+    const similarStartScenesBtn = document.getElementById("similar-start-analysis-scenes");
+    if (similarStartScenesBtn) {
+        similarStartScenesBtn.addEventListener("click", () => similarStartAnalysis("scene"));
     }
 
     const similarBuildUnifiedPromptBtn = document.getElementById("similar-build-unified-prompt");
@@ -3467,7 +3572,7 @@ function initCreateWizard() {
         similarSourceInput.addEventListener("keydown", (event) => {
             if (event.key === "Enter") {
                 event.preventDefault();
-                similarStartAnalysis();
+                similarStartAnalysis("scene");
             }
         });
         similarSourceInput.addEventListener("input", () => {
@@ -3480,21 +3585,24 @@ function initCreateWizard() {
         similarSourceInput.addEventListener("blur", () => {
             if (similarState.sourceVideoFile && String(similarSourceInput.value || "").trim()) {
                 _clearSimilarSourceFile();
+                _renderSimilarSourcePreview(similarSourceInput.value);
             } else {
-                _clearSimilarSourcePreview();
+                _renderSimilarSourcePreview(similarSourceInput.value);
             }
         });
         similarSourceInput.addEventListener("paste", () => {
             window.setTimeout(() => {
                 if (similarState.sourceVideoFile && String(similarSourceInput.value || "").trim()) {
                     _clearSimilarSourceFile();
+                    _renderSimilarSourcePreview(similarSourceInput.value);
                 } else {
-                    _clearSimilarSourcePreview();
+                    _renderSimilarSourcePreview(similarSourceInput.value);
                 }
             }, 0);
         });
     }
     _syncSimilarSourceFileUi();
+    scheduleSimilarAnalysisCreditEstimates();
 
     // Script char count
     document.getElementById("script-text").addEventListener("input", () => {
@@ -4009,6 +4117,7 @@ function _renderSimilarUnifiedPrompt(project) {
 
     const tags = _safeSimilarTags(project?.tags);
     const promptText = String(tags.similar_unified_prompt || "").trim();
+    const analysisMode = String(tags.similar_analysis_mode || "scene").trim().toLowerCase() || "scene";
     if (!promptText) {
         _clearSimilarUnifiedPrompt();
         return;
@@ -4016,11 +4125,17 @@ function _renderSimilarUnifiedPrompt(project) {
 
     const source = String(tags.similar_unified_prompt_source || "").trim();
     const generatedAt = _formatSimilarUnifiedPromptGeneratedAt(tags.similar_unified_prompt_generated_at);
-    let metaText = source === "ai"
-        ? "Prompt unico sintetizado pela IA a partir das cenas analisadas."
-        : source === "fallback"
-            ? "Prompt unico montado com o fallback local a partir da analise salva."
-            : "Prompt unico derivado da analise atual.";
+    let metaText = analysisMode === "general"
+        ? source === "ai"
+            ? "Prompt geral sintetizado pela IA a partir do video inteiro."
+            : source === "fallback"
+                ? "Prompt geral montado com o fallback local a partir da analise salva."
+                : "Prompt geral derivado da analise atual."
+        : source === "ai"
+            ? "Prompt unico sintetizado pela IA a partir das cenas analisadas."
+            : source === "fallback"
+                ? "Prompt unico montado com o fallback local a partir da analise salva."
+                : "Prompt unico derivado da analise atual.";
     if (generatedAt) {
         metaText = `${metaText} Atualizado em ${generatedAt}.`;
     }
@@ -4140,6 +4255,8 @@ function _clearSimilarSourceFile(options = {}) {
     _revokeSimilarSourceVideoObjectUrl();
     similarState.sourceVideoFile = null;
     similarState.sourceVideoName = "";
+    similarState.sourceDurationProbeToken = Number(similarState.sourceDurationProbeToken || 0) + 1;
+    _setSimilarSourceDurationState("idle", 0);
     const inputEl = document.getElementById("similar-source-file-input");
     if (inputEl) {
         inputEl.value = "";
@@ -4284,6 +4401,11 @@ function _clearSimilarSourcePreview() {
     if (wrapEl) {
         wrapEl.hidden = true;
     }
+
+    const sourceEl = document.getElementById("similar-source-url");
+    const hasAnySource = !!String(sourceEl?.value || "").trim() || !!similarState.sourceVideoFile;
+    similarState.sourceDurationProbeToken = Number(similarState.sourceDurationProbeToken || 0) + 1;
+    _setSimilarSourceDurationState(hasAnySource ? "unavailable" : "idle", 0);
 }
 
 function _renderSimilarResolvedSourcePreview(previewUrl, options = {}) {
@@ -4312,6 +4434,9 @@ function _renderSimilarResolvedSourcePreview(previewUrl, options = {}) {
         videoEl.playsInline = true;
         videoEl.preload = "metadata";
         stageEl.appendChild(videoEl);
+        _beginSimilarSourceDurationProbe(videoEl);
+    } else {
+        _beginSimilarSourceDurationProbe(existingVideo);
     }
 
     titleEl.textContent = title;
@@ -4370,6 +4495,9 @@ function _renderSimilarUploadedSourcePreview() {
         videoEl.playsInline = true;
         videoEl.preload = "metadata";
         stageEl.appendChild(videoEl);
+        _beginSimilarSourceDurationProbe(videoEl);
+    } else {
+        _beginSimilarSourceDurationProbe(existingUploadVideo);
     }
 
     titleEl.textContent = "Prévia do vídeo enviado";
@@ -4410,6 +4538,7 @@ function _renderSimilarSourcePreview(rawValue = null) {
         videoEl.playsInline = true;
         videoEl.preload = "metadata";
         stageEl.appendChild(videoEl);
+        _beginSimilarSourceDurationProbe(videoEl);
     } else {
         const iframeEl = document.createElement("iframe");
         iframeEl.src = payload.previewUrl;
@@ -4419,6 +4548,7 @@ function _renderSimilarSourcePreview(rawValue = null) {
         iframeEl.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
         iframeEl.allowFullscreen = true;
         stageEl.appendChild(iframeEl);
+        _setSimilarSourceDurationState("unavailable", 0);
     }
 
     openLinkEl.href = payload.sourceUrl;
@@ -4459,7 +4589,11 @@ function _handleSimilarSourceFileInput(event) {
         similarState.sourceVideoObjectUrl = "";
     }
     _syncSimilarSourceFileUi();
-    _clearSimilarSourcePreview();
+    if (similarState.sourceVideoObjectUrl) {
+        _renderSimilarUploadedSourcePreview();
+    } else {
+        _clearSimilarSourcePreview();
+    }
 }
 
 function _similarSceneDuration(scene) {
@@ -4767,11 +4901,14 @@ function _updateSimilarGenerationStep(project, tags) {
     if (!generationStepEl) return;
 
     const stage = String(tags?.similar_stage || "").trim();
+    const analysisMode = String(tags?.similar_analysis_mode || "scene").trim().toLowerCase() || "scene";
     const scenes = Array.isArray(project?.scenes) ? project.scenes : [];
-    const canConfigure = scenes.length > 0 && !["queued_analysis", "downloading_reference", "analyzing_reference"].includes(stage);
+    const canConfigure = analysisMode !== "general"
+        && scenes.length > 0
+        && !["queued_analysis", "downloading_reference", "analyzing_reference"].includes(stage);
     generationStepEl.hidden = !canConfigure;
     if (unifiedPromptBtn) {
-        unifiedPromptBtn.hidden = !canConfigure;
+        unifiedPromptBtn.hidden = analysisMode === "general" || !canConfigure;
     }
     if (!canConfigure) {
         return;
@@ -4975,18 +5112,18 @@ function _syncSimilarDraftsFromDom() {
         const existingDraft = similarState.sceneDraftsBySceneId[sceneKey] || {};
 
         const promptValue = String(promptEl.value || "");
-        const serverStart = scene ? Number(scene.start_time || 0).toFixed(1) : String(startEl?.dataset.serverValue || "");
-        const serverDuration = scene ? String(_similarSceneDuration(scene)) : String(durationEl?.dataset.serverValue || "");
-        const startValue = startEl ? String(startEl.value || "") : serverStart;
-        const durationValue = durationEl ? String(durationEl.value || "") : serverDuration;
-
-        let serverPrompt = "";
         const serverPromptRaw = String(promptEl.dataset.serverValue || "");
+        let serverPrompt = serverPromptRaw;
         try {
             serverPrompt = decodeURIComponent(serverPromptRaw);
         } catch (_) {
             serverPrompt = serverPromptRaw;
         }
+
+        const serverStart = scene ? Number(scene.start_time || 0).toFixed(1) : String(startEl?.dataset.serverValue || "");
+        const serverDuration = scene ? String(_similarSceneDuration(scene)) : String(durationEl?.dataset.serverValue || "");
+        const startValue = startEl ? String(startEl.value || "") : serverStart;
+        const durationValue = durationEl ? String(durationEl.value || "") : serverDuration;
 
         const hasPromptDraft = promptValue !== serverPrompt;
         const hasStartDraft = startValue !== serverStart;
@@ -5038,7 +5175,6 @@ function _syncSimilarDraftsFromDom() {
         }
     });
 }
-
 function _similarSceneEditorHasFocus() {
     const active = document.activeElement;
     if (!active || !active.id) return false;
@@ -5046,18 +5182,33 @@ function _similarSceneEditorHasFocus() {
 }
 
 function _cleanupSimilarSceneTransientState(sceneIds) {
-    const keep = new Set((sceneIds || []).map((id) => _similarSceneStateKey(id)).filter(Boolean));
+                _setSimilarStatus(
+                    normalizedAnalysisMode === "general"
+                        ? "Iniciando analise geral do video enviado..."
+                        : "Iniciando analise do video enviado por cenas...",
+                    "running",
+                );
 
     Object.keys(similarState.sceneDraftsBySceneId || {}).forEach((sceneKey) => {
         if (!keep.has(sceneKey)) {
-            delete similarState.sceneDraftsBySceneId[sceneKey];
+                _setSimilarStatus(
+                    normalizedAnalysisMode === "general"
+                        ? "Iniciando analise geral do video de referencia..."
+                        : "Iniciando analise do video de referencia por cenas...",
+                    "running",
+                );
         }
     });
 
     Object.keys(similarState.sceneMergeSelectionBySceneId || {}).forEach((sceneKey) => {
         if (!keep.has(sceneKey)) {
             delete similarState.sceneMergeSelectionBySceneId[sceneKey];
-        }
+            _setSimilarStatus(
+                normalizedAnalysisMode === "general"
+                    ? "Analise geral iniciada. Aguardando o prompt unico..."
+                    : "Analise por cenas iniciada. Aguardando retorno da IA...",
+                "running",
+            );
     });
 
     Object.keys(similarState.sceneEngineSelectionBySceneId || {}).forEach((sceneKey) => {
@@ -5363,7 +5514,8 @@ function _renderSimilarScenes(project, options = {}) {
 
 function _refreshSimilarButtonsDisabled(disabled) {
     [
-        "similar-start-analysis",
+        "similar-start-analysis-general",
+        "similar-start-analysis-scenes",
         "similar-build-unified-prompt",
         "similar-generate-unified-scene",
         "similar-generate-all",
@@ -7150,9 +7302,9 @@ function workflowAddNode(kind) {
             </div>
             <label>Duração</label>
             <select id="workflow-duration" class="input workflow-input">
-                <option value="5">5s</option>
+                <option value="5" selected>5s</option>
                 <option value="10">10s</option>
-                <option value="15" selected>15s</option>
+                <option value="15">15s</option>
             </select>
             <label>Resolução</label>
             <select id="workflow-resolution" class="input workflow-input">
@@ -8624,7 +8776,7 @@ async function _refreshSimilarProject({ silent = false } = {}) {
             message = project.error_message;
         } else if (status === "completed") {
             message = "Video final pronto. Voce pode assistir na lista de projetos.";
-        } else if (stage === "analysis_ready" && detectedModeLabel) {
+        } else if ((stage === "analysis_ready" || stage === "analysis_general_ready") && detectedModeLabel) {
             message = `${stageLabel} ${detectedModeLabel}`;
         } else if (progress > 0) {
             message = `${stageLabel} (${progress}%)`;
@@ -8633,6 +8785,7 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         _setSimilarStatus(message, kind);
         similarState.lastProjectSnapshot = project;
         _syncSimilarSourcePreview(project);
+        scheduleSimilarAnalysisCreditEstimates();
         _renderSimilarUnifiedPrompt(project);
         _renderSimilarScenes(project);
         _updateSimilarGenerationStep(project, tags);
@@ -8700,9 +8853,13 @@ function _resetSimilarModeState() {
     _clearSimilarUnifiedPendingUploads();
     similarState.unifiedUseLastImageAsFinalFrame = false;
     similarState.unifiedLastFrameDirty = false;
+    similarState.sourceVideoDurationSeconds = 0;
+    similarState.sourceVideoDurationStatus = "idle";
+    similarState.sourceDurationProbeToken = 0;
 
     const sourceEl = document.getElementById("similar-source-url");
     if (sourceEl) sourceEl.value = "";
+    _setSimilarSourceDurationState("idle", 0);
     const titleEl = document.getElementById("similar-title");
     if (titleEl) titleEl.value = "";
     const aspectEl = document.getElementById("similar-aspect");
@@ -8725,10 +8882,11 @@ function _resetSimilarModeState() {
     _refreshSimilarButtonsDisabled(false);
 }
 
-async function similarStartAnalysis() {
+async function similarStartAnalysis(analysisMode = "scene") {
     const sourceEl = document.getElementById("similar-source-url");
     const titleEl = document.getElementById("similar-title");
     const aspectEl = document.getElementById("similar-aspect");
+    const normalizedAnalysisMode = analysisMode === "general" ? "general" : "scene";
 
     const sourceUrl = String(sourceEl?.value || "").trim();
     const sourceFile = similarState.sourceVideoFile;
@@ -8743,6 +8901,7 @@ async function similarStartAnalysis() {
         source_upload_name: "",
         title: String(titleEl?.value || "").trim(),
         aspect_ratio: aspectEl?.value || "16:9",
+        analysis_mode: normalizedAnalysisMode,
     };
 
     similarState.engineManuallySelected = false;
@@ -8757,7 +8916,12 @@ async function similarStartAnalysis() {
     try {
         if (sourceFile) {
             _clearSimilarSourcePreview();
-            _setSimilarStatus("Enviando video de referencia...", "running");
+            _setSimilarStatus(
+                normalizedAnalysisMode === "general"
+                    ? "Enviando video para analise geral..."
+                    : "Enviando video de referencia para analise por cena...",
+                "running",
+            );
             const uploaded = await uploadTempFileWithRetry(sourceFile, "video", "video de referencia");
             const uploadId = String(uploaded?.upload_id || "").trim();
             if (!uploadId) {
@@ -8765,11 +8929,21 @@ async function similarStartAnalysis() {
             }
             payload.source_upload_id = uploadId;
             payload.source_upload_name = String(similarState.sourceVideoName || sourceFile.name || "video").trim();
-            _setSimilarStatus("Iniciando analise do video enviado...", "running");
+            _setSimilarStatus(
+                normalizedAnalysisMode === "general"
+                    ? "Iniciando analise geral do video enviado..."
+                    : "Iniciando analise do video enviado por cenas...",
+                "running",
+            );
         } else {
             payload.source_url = sourceUrl;
             _clearSimilarSourcePreview();
-            _setSimilarStatus("Iniciando analise do video de referencia...", "running");
+            _setSimilarStatus(
+                normalizedAnalysisMode === "general"
+                    ? "Iniciando analise geral do video de referencia..."
+                    : "Iniciando analise do video de referencia por cenas...",
+                "running",
+            );
         }
 
         const response = await api("/video/similar/analyze", {
@@ -8792,7 +8966,12 @@ async function similarStartAnalysis() {
         _clearSimilarUnifiedPendingUploads();
         similarState.unifiedUseLastImageAsFinalFrame = false;
         similarState.unifiedLastFrameDirty = false;
-        _setSimilarStatus("Analise iniciada. Aguardando retorno da IA...", "running");
+        _setSimilarStatus(
+            normalizedAnalysisMode === "general"
+                ? "Analise geral iniciada. Aguardando o prompt unico..."
+                : "Analise por cenas iniciada. Aguardando retorno da IA...",
+            "running",
+        );
         _startSimilarPolling();
         await _refreshSimilarProject();
     } catch (error) {
@@ -9747,15 +9926,11 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         setCreateProgress(0, "Erro", msg);
         alert(msg);
     }
-}
-
-async function pollRealisticProgress(projectId, engineLabel) {
     const maxWait = 12 * 60 * 1000; // 12 minutes
     const pollInterval = 4000;
     const start = Date.now();
     const label = engineLabel || "IA";
 
-    while (Date.now() - start < maxWait) {
         await new Promise(r => setTimeout(r, pollInterval));
 
         try {
@@ -9763,16 +9938,14 @@ async function pollRealisticProgress(projectId, engineLabel) {
                 headers: getHeaders(),
             });
             if (!resp.ok) continue;
-            const data = await resp.json();
 
             const progress = data.progress || 0;
             const status = data.status || "";
 
-            _smoothProgressTarget = Math.max(_smoothProgressTarget, progress);
+            if (narrationValue) {
             setCreateProgress(progress, "Gerando vídeo realista...",
                 progress < 15 ? "Otimizando prompt com IA..." :
                 progress < 80 ? `${label} está criando seu vídeo...` :
-                progress < 90 ? "Baixando vídeo gerado..." :
                 progress < 95 ? "Gerando thumbnail..." :
                 "Finalizando..."
             );
@@ -10395,17 +10568,10 @@ async function handleScriptCreate() {
         : 0;
     scriptData.useCustomVideo = useVideoSelected && !!scriptUserVideoFile;
     scriptData.useCustomImages = !scriptData.useCustomVideo && usePhotosSelected && scriptPhotos.length > 0;
-    scriptData.useCustomAudio = !scriptData.useCustomVideo && !useTevoxiAudio && useAudioSelected && !!scriptUserAudioFile;
     scriptData.useTevoxiAudio = useTevoxiAudio;
     scriptData.audioIsMusic = useTevoxiAudio
         ? true
         : (scriptData.useCustomAudio ? !!document.getElementById("script-audio-is-music")?.checked : false);
-    scriptData.removeVocals = scriptData.useCustomAudio && scriptData.audioIsMusic;
-
-    if (scriptData.useCustomVideo) {
-        const videoNarCb = document.getElementById("script-video-create-narration");
-        scriptData.createNarration = videoNarCb ? videoNarCb.checked : false;
-        scriptData.enableSubtitles = document.getElementById("script-enable-subtitles").checked;
     } else {
         scriptData.createNarration = scriptData.useCustomAudio
             ? false

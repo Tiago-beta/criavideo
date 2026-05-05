@@ -7870,6 +7870,30 @@ th,
     gap: 10px;
 }
 
+.similar-analysis-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.similar-analysis-action {
+    display: grid;
+    gap: 6px;
+    min-width: 220px;
+}
+
+.similar-analysis-action .btn {
+    width: 100%;
+}
+
+.similar-analysis-estimate {
+    min-height: 36px;
+    justify-content: center;
+    text-align: center;
+    padding-inline: 12px;
+}
+
 .similar-unified-trigger {
     display: inline-flex;
     align-items: center;
@@ -7951,6 +7975,11 @@ th,
     }
 
     .similar-panel-actions-right {
+        width: 100%;
+    }
+
+    .similar-analysis-actions,
+    .similar-analysis-action {
         width: 100%;
     }
 

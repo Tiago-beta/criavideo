@@ -45,6 +45,12 @@ TTS_USD_PER_SEC = 0.00048
 STT_USD_PER_SEC = 0.00010
 CUSTOM_VIDEO_PROCESS_USD_PER_MIN = 0.010
 KARAOKE_REMOVE_VOCALS_USD = 0.030
+SIMILAR_ANALYSIS_FRAME_USD = 0.0042
+SIMILAR_ANALYSIS_SUMMARY_USD = 0.010
+SIMILAR_ANALYSIS_SCENE_PROMPT_USD = 0.007
+SIMILAR_ANALYSIS_GENERAL_PROMPT_USD = 0.014
+SIMILAR_ANALYSIS_SCENE_SECONDS = 5.0
+SIMILAR_ANALYSIS_CONTEXT_FRAMES = 6
 
 
 @dataclass
@@ -302,6 +308,59 @@ def estimate_similar_previews_credits(
             "scene_durations": [round(float(duration), 2) for duration in normalized_durations],
         },
     }
+
+
+def estimate_similar_analysis_credits(
+    duration_seconds: float | int,
+    analysis_mode: str = "scene",
+) -> dict[str, Any]:
+    duration = max(1.0, _safe_duration_seconds(duration_seconds))
+    normalized_mode = str(analysis_mode or "scene").strip().lower()
+    if normalized_mode not in {"scene", "general"}:
+        normalized_mode = "scene"
+
+    scene_count = max(1, int(math.ceil(duration / SIMILAR_ANALYSIS_SCENE_SECONDS)))
+    transcript_usd = duration * STT_USD_PER_SEC
+
+    if normalized_mode == "general":
+        reference_frame_count = min(8, max(4, int(math.ceil(duration / 6.0))))
+        provider_cost_usd = (
+            transcript_usd
+            + (reference_frame_count * SIMILAR_ANALYSIS_FRAME_USD)
+            + SIMILAR_ANALYSIS_SUMMARY_USD
+            + SIMILAR_ANALYSIS_GENERAL_PROMPT_USD
+        )
+        floor_credits = max(6, (int(math.ceil(duration / 20.0)) * 2) + 4)
+    else:
+        reference_frame_count = scene_count + SIMILAR_ANALYSIS_CONTEXT_FRAMES
+        provider_cost_usd = (
+            transcript_usd
+            + (reference_frame_count * SIMILAR_ANALYSIS_FRAME_USD)
+            + (scene_count * SIMILAR_ANALYSIS_SCENE_PROMPT_USD)
+            + SIMILAR_ANALYSIS_SUMMARY_USD
+        )
+        floor_credits = max(10, scene_count * 3)
+
+    estimate = _credits_from_provider_cost(provider_cost_usd, floor_credits=floor_credits)
+    estimate.breakdown = {
+        "mode": "similar_analysis",
+        "analysis_mode": normalized_mode,
+        "duration_seconds": round(duration, 2),
+        "scene_count": scene_count,
+        "reference_frame_count": reference_frame_count,
+        "floor_credits": floor_credits,
+        "components_usd": {
+            "transcript": round(transcript_usd, 6),
+            "frame_analysis": round(reference_frame_count * SIMILAR_ANALYSIS_FRAME_USD, 6),
+            "summary": round(SIMILAR_ANALYSIS_SUMMARY_USD, 6),
+            "prompt_structuring": round(
+                SIMILAR_ANALYSIS_GENERAL_PROMPT_USD if normalized_mode == "general"
+                else scene_count * SIMILAR_ANALYSIS_SCENE_PROMPT_USD,
+                6,
+            ),
+        },
+    }
+    return estimate.to_dict()
 
 
 def estimate_local_video_processing_credits(duration_seconds: float | int) -> dict[str, Any]:

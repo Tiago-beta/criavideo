@@ -34,6 +34,7 @@ from app.services.credit_pricing import (
     estimate_local_video_processing_credits,
     estimate_quick_create_credits,
     estimate_realistic_credits,
+    estimate_similar_analysis_credits,
     estimate_similar_previews_credits,
     estimate_similar_scene_credits,
     estimate_standard_credits,
@@ -1730,6 +1731,7 @@ class StartSimilarAnalysisRequest(BaseModel):
     source_upload_name: str = ""
     title: str = ""
     aspect_ratio: str = "16:9"
+    analysis_mode: str = "scene"
 
 
 class SimilarUpdateSceneRequest(BaseModel):
@@ -1829,6 +1831,10 @@ async def start_similar_analysis(
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
         raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1")
 
+    analysis_mode = str(req.analysis_mode or "scene").strip().lower() or "scene"
+    if analysis_mode not in {"scene", "general"}:
+        raise HTTPException(status_code=400, detail="Modo de analise invalido")
+
     if source_url and not (settings.baixatudo_api_url and settings.baixatudo_api_key):
         raise HTTPException(status_code=503, detail="Integracao Baixa Tudo nao configurada no servidor")
 
@@ -1842,6 +1848,7 @@ async def start_similar_analysis(
         "similar_source_type": source_type,
         "similar_source_upload_id": source_upload_id,
         "similar_source_upload_name": source_upload_name,
+        "similar_analysis_mode": analysis_mode,
         "similar_scene_seconds": max(int(settings.similar_scene_default_seconds or 5), 1),
     }
 
@@ -1875,6 +1882,7 @@ async def start_similar_analysis(
         source_url,
         str(source_upload_path or ""),
         source_upload_name,
+        analysis_mode,
     )
     return {
         "project_id": project.id,
@@ -3103,9 +3111,10 @@ class GenerateTTSRequest(BaseModel):
 
 
 class EstimateCreditsRequest(BaseModel):
-    mode: str = "standard"  # standard | realistic | quick-create
+    mode: str = "standard"  # standard | realistic | quick-create | similar-analysis
     duration_seconds: float = 0
     word_count: int = 0
+    analysis_mode: str = "scene"
 
     # Standard mode
     has_ai_images: bool = True
@@ -3147,6 +3156,12 @@ async def estimate_credits_endpoint(
 
     if mode == "quick-create":
         return estimate_quick_create_credits(req.duration_seconds)
+
+    if mode == "similar-analysis":
+        return estimate_similar_analysis_credits(
+            duration_seconds=req.duration_seconds,
+            analysis_mode=req.analysis_mode,
+        )
 
     return estimate_standard_credits(
         duration_seconds=req.duration_seconds,
