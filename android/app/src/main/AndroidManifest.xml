@@ -14,10 +14,10 @@
             android:resource="@string/asset_statements" />
 
         <activity
-            android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:name=".TwaLauncherActivity"
             android:label="@string/title_activity_main"
             android:launchMode="singleTask"
-            android:theme="@style/LauncherActivityTheme"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:exported="true">
 
             <meta-data
@@ -25,12 +25,40 @@
                 android:value="https://criavideo.pro/video" />
 
             <meta-data
-                android:name="android.support.customtabs.trusted.ADDITIONAL_TRUSTED_ORIGINS"
-                android:resource="@array/additional_trusted_origins" />
+                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
+                android:resource="@color/statusBarColor" />
 
             <meta-data
-                android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY"
-                android:value="webview" />
+                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
+                android:resource="@color/colorPrimaryDark" />
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR_DARK"
+                android:resource="@color/colorPrimaryDark" />
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE"
+                android:resource="@mipmap/ic_launcher" />
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR"
+                android:resource="@color/splashBackground" />
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.SPLASH_SCREEN_FADE_OUT_DURATION"
+                android:value="220" />
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY"
+                android:value="${applicationId}.fileprovider" />
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.SCREEN_ORIENTATION"
+                android:value="portrait" />
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.ADDITIONAL_TRUSTED_ORIGINS"
+                android:resource="@array/additional_trusted_origins" />
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
