@@ -2306,6 +2306,7 @@ let workflowState = {
     templateModalResolve: null,
     promptPersonaModalResolve: null,
     templateKey: "",
+    storageUserKey: "",
     templateRuns: {},
     pendingRunSetupTemplateKey: "",
     imageUploadTargetNodeId: "",
@@ -3779,7 +3780,11 @@ function switchCreateMode(mode) {
         }
     } else if (mode === "workflow") {
         initWorkflowBuilder();
+        workflowSyncUserTemplateScope();
+        workflowEnsureTemplateCatalogInitialized();
         workflowLoadDraft();
+        workflowLoadTemplateList();
+        workflowSelectInitialTemplate();
         requestAnimationFrame(() => {
             workflowFitCanvas();
             workflowRenderConnections();
@@ -5477,9 +5482,24 @@ function initWorkflowBuilder() {
 
 function workflowEnsureCreditEstimateBadge(modelNode = null) {
     const model = modelNode || document.querySelector('#create-panel-workflow .workflow-node[data-node-id="model"]');
+    const audioToggle = model?.querySelector(".workflow-switch");
     const runBtn = model?.querySelector("#workflow-run");
-    if (!model || !runBtn || model.querySelector("#workflow-credit-estimate")) return;
-    runBtn.insertAdjacentHTML("afterend", '<div class="credit-estimate-pill workflow-credit-estimate" id="workflow-credit-estimate" hidden>Calculando custo...</div>');
+    if (!model || !audioToggle || !runBtn) return;
+
+    runBtn.classList.add("workflow-run-btn");
+    runBtn.classList.remove("btn-sm");
+
+    let badge = model.querySelector("#workflow-credit-estimate");
+    if (!badge) {
+        runBtn.insertAdjacentHTML("beforebegin", '<div class="credit-estimate-pill workflow-credit-estimate" id="workflow-credit-estimate" hidden>Calculando custo...</div>');
+        badge = model.querySelector("#workflow-credit-estimate");
+    }
+    if (!badge) return;
+
+    badge.classList.add("credit-estimate-pill", "workflow-credit-estimate");
+    if (runBtn.previousElementSibling !== badge) {
+        runBtn.insertAdjacentElement("beforebegin", badge);
+    }
 }
 
 function workflowHandleGeneratorConfigChange(event) {
@@ -6315,8 +6335,39 @@ function workflowRecordHistory() {
     workflowQueueAutosave();
 }
 
+function workflowCurrentStorageScopeKey() {
+    const numericUserId = parseInt(currentUser?.id || "0", 10);
+    if (Number.isFinite(numericUserId) && numericUserId > 0) {
+        return `user-${numericUserId}`;
+    }
+
+    const normalizedEmail = String(currentUser?.email || "").trim().toLowerCase();
+    if (normalizedEmail) {
+        const safeEmail = normalizedEmail.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        if (safeEmail) return `email-${safeEmail}`;
+    }
+
+    return "guest";
+}
+
 function workflowDraftStorageKey() {
-    return "criavideo.workflow.draft.v2";
+    return `criavideo.workflow.draft.v3.${workflowCurrentStorageScopeKey()}`;
+}
+
+function workflowSyncUserTemplateScope() {
+    const nextScope = workflowCurrentStorageScopeKey();
+    if (workflowState.storageUserKey === nextScope) return false;
+
+    workflowState.storageUserKey = nextScope;
+    workflowState.templateKey = "";
+    workflowState.templateRuns = {};
+    workflowState.pendingRunSetupTemplateKey = "";
+    workflowState.loadedFromDraft = false;
+    workflowState.undoStack = [];
+    workflowState.redoStack = [];
+    clearTimeout(workflowState.autosaveTimer);
+    workflowState.autosaveTimer = null;
+    return true;
 }
 
 function workflowQueueAutosave() {
@@ -7112,8 +7163,8 @@ function workflowAddNode(kind) {
                 <option value="1:1">1:1</option>
             </select>
             <label class="workflow-switch"><input id="workflow-generate-audio" type="checkbox" checked> Gerar áudio</label>
-            <button class="btn btn-primary btn-sm" id="workflow-run" type="button">Criar vídeo</button>
             <div class="credit-estimate-pill workflow-credit-estimate" id="workflow-credit-estimate" hidden>Calculando custo...</div>
+            <button class="btn btn-primary workflow-run-btn" id="workflow-run" type="button">Criar vídeo</button>
             <span class="workflow-port workflow-port-in workflow-port-in-prompt" data-port="model-prompt-in"></span>
             <span class="workflow-port workflow-port-in workflow-port-in-images" data-port="model-images-in"></span>
             <span class="workflow-port workflow-port-in workflow-port-in-video" data-port="model-video-in"></span>
@@ -7191,7 +7242,131 @@ function workflowPromptForNode(node) {
 }
 
 function workflowTemplateStorageKey() {
-    return "criavideo.workflow.templates.v1";
+    return `criavideo.workflow.templates.v2.${workflowCurrentStorageScopeKey()}`;
+}
+
+function workflowBuildTemplateSnapshotFromDefaults(configureNode = null) {
+    const canvas = document.getElementById("workflow-canvas");
+    const defaults = workflowState.defaultNodes instanceof Map ? workflowState.defaultNodes : workflowCaptureDefaultNodes(canvas);
+    const nodeOrder = ["prompt", "images", "video", "audio", "model", "output"];
+    const nodes = nodeOrder.map((nodeId) => {
+        const defaultNode = defaults?.get?.(nodeId);
+        if (!defaultNode) return null;
+
+        const node = defaultNode.cloneNode(true);
+        if (typeof configureNode === "function") {
+            configureNode(nodeId, node);
+        }
+
+        return {
+            id: node.dataset.nodeId || nodeId,
+            dataset: workflowSerializableNodeDataset(node),
+            className: node.className,
+            left: parseFloat(node.style.left || "0") || 0,
+            top: parseFloat(node.style.top || "0") || 0,
+            html: node.innerHTML,
+            values: Array.from(node.querySelectorAll("textarea, input, select")).map((el) => ({
+                selector: workflowControlSelector(el),
+                value: el.type === "checkbox" ? !!el.checked : el.value,
+                checked: el.type === "checkbox" ? !!el.checked : undefined,
+            })),
+        };
+    }).filter(Boolean);
+
+    return {
+        canvasMode: "default",
+        nodes,
+        connections: [
+            ["prompt-out", "model-prompt-in"],
+            ["images-out", "model-images-in"],
+            ["video-out", "model-video-in"],
+            ["audio-out", "model-audio-in"],
+            ["model-out", "output-in"],
+        ],
+        nodeSeq: nodeOrder.length,
+        zoom: 1,
+    };
+}
+
+function workflowBuildExampleTemplateData() {
+    return workflowBuildTemplateSnapshotFromDefaults((nodeId, node) => {
+        if (nodeId === "prompt") {
+            const promptField = node.querySelector("#workflow-prompt");
+            if (promptField) {
+                promptField.value = "Exemplo: apresente um produto ou personagem em um cenário premium, com câmera avançando devagar, luz suave, profundidade cinematográfica e foco total no elemento principal.";
+            }
+            return;
+        }
+
+        if (nodeId === "images") {
+            const imagePromptField = node.querySelector("#workflow-image-prompt");
+            if (imagePromptField) {
+                imagePromptField.value = "Exemplo: gere ou envie a imagem principal que vai definir o visual da cena.";
+            }
+            return;
+        }
+
+        if (nodeId === "video") {
+            const videoNotesField = node.querySelector("#workflow-video-notes");
+            if (videoNotesField) {
+                videoNotesField.value = "Opcional: envie um vídeo para copiar enquadramento, movimento ou ritmo.";
+            }
+            return;
+        }
+
+        if (nodeId === "audio") {
+            const audioNotesField = node.querySelector("#workflow-audio-notes");
+            if (audioNotesField) {
+                audioNotesField.value = "Opcional: envie trilha ou narração de referência para orientar o clima do vídeo.";
+            }
+            return;
+        }
+
+        if (nodeId === "model") {
+            const engineField = node.querySelector("#workflow-engine");
+            const durationField = node.querySelector("#workflow-duration");
+            const resolutionField = node.querySelector("#workflow-resolution");
+            const aspectField = node.querySelector("#workflow-aspect");
+            const audioToggleField = node.querySelector("#workflow-generate-audio");
+            if (engineField) engineField.value = "grok";
+            if (durationField) durationField.value = "5";
+            if (resolutionField) resolutionField.value = "720p";
+            if (aspectField) aspectField.value = "16:9";
+            if (audioToggleField) audioToggleField.checked = true;
+        }
+    });
+}
+
+function workflowEnsureTemplateCatalogInitialized() {
+    const templates = workflowReadTemplates();
+    if (templates.length) return templates;
+
+    const exampleTemplate = workflowUpsertTemplateRecord({
+        key: "workflow-example",
+        name: "Exemplo",
+        updatedAt: Date.now(),
+        data: workflowBuildExampleTemplateData(),
+    });
+    return [exampleTemplate];
+}
+
+function workflowSelectInitialTemplate() {
+    if (workflowState.loadedFromDraft || workflowState.templateKey) return;
+
+    const templates = workflowReadTemplates();
+    if (!templates.length) return;
+
+    const nextTemplate = templates.find((tpl) => tpl.key === "workflow-example") || templates[0];
+    if (!nextTemplate) return;
+
+    workflowState.templateKey = nextTemplate.key;
+    workflowLoadTemplateList();
+    workflowApplyTemplateData(nextTemplate.data, { fit: true });
+    workflowState.undoStack = [];
+    workflowState.redoStack = [];
+    workflowRecordHistory();
+    workflowUpdateHistoryButtons();
+    workflowSaveDraft();
 }
 
 function workflowReadTemplates() {
@@ -7677,10 +7852,23 @@ function workflowDuplicateTemplate() {
 function workflowDeleteTemplate() {
     if (!workflowState.templateKey) return alert("Selecione um template para excluir.");
     if (!confirm("Excluir este template?")) return;
-    delete workflowState.templateRuns[workflowRuntimeTemplateKey(workflowState.templateKey)];
-    workflowWriteTemplates(workflowReadTemplates().filter((tpl) => tpl.key !== workflowState.templateKey));
-    workflowState.templateKey = "";
+    const removedKey = workflowState.templateKey;
+    delete workflowState.templateRuns[workflowRuntimeTemplateKey(removedKey)];
+
+    let templates = workflowReadTemplates().filter((tpl) => tpl.key !== removedKey);
+    workflowWriteTemplates(templates);
+    if (!templates.length) {
+        templates = workflowEnsureTemplateCatalogInitialized();
+    }
+
+    const nextTemplate = templates.find((tpl) => tpl.key === "workflow-example") || templates[0] || null;
+    workflowState.templateKey = nextTemplate?.key || "";
+    workflowState.loadedFromDraft = false;
     workflowLoadTemplateList();
+    if (nextTemplate?.data) {
+        workflowApplyTemplateData(nextTemplate.data, { fit: true });
+        workflowSaveDraft();
+    }
     showToast("Template excluído.", "success");
 }
 

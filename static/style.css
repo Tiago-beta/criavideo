@@ -2487,23 +2487,20 @@ a {
     margin-bottom: 0.9rem;
 }
 
-.pub-render-picker-display {
+.pub-render-picker-btn {
     display: flex;
     align-items: center;
-    min-height: 52px;
+    justify-content: space-between;
+    gap: 0.5rem;
     text-align: left;
+    cursor: pointer;
+}
+
+.pub-render-picker-btn::after {
+    content: "\25BE";
     color: var(--text-muted);
-    line-height: 1.45;
-    word-break: break-word;
-}
-
-.pub-render-picker-display.has-value {
-    color: var(--text);
-    border-color: var(--border-strong);
-}
-
-.pub-render-picker-display.loading {
-    opacity: 0.7;
+    font-size: 0.78rem;
+    flex: 0 0 auto;
 }
 
 .pub-render-picker-btn.has-value {
@@ -7065,24 +7062,22 @@ th,
 .workflow-port-out-model { background: #fb923c; }
 
 .workflow-credit-estimate {
-    max-width: 100%;
-    width: auto;
-    margin: 2px 0 10px;
-    justify-content: flex-start;
-    align-self: flex-start;
-    padding: 0.26rem 0.62rem;
-    font-size: 0.7rem;
+    width: 100%;
+    margin: 10px 0 8px;
+    justify-content: center;
+    padding: 0.22rem 0.56rem;
+    font-size: 0.68rem;
     font-weight: 700;
-    text-align: left;
+    text-align: center;
     white-space: normal;
-    line-height: 1.25;
+    line-height: 1.22;
     box-sizing: border-box;
 }
 
 .workflow-run-btn {
     width: 100%;
     min-height: 54px;
-    margin-top: 14px;
+    margin-top: 0;
     border-radius: 16px;
     border: 1px solid rgba(255, 230, 148, 0.8);
     background: linear-gradient(135deg, #ffd666 0%, #f6a52f 52%, #ea8f1f 100%);
