@@ -1,8 +1,9 @@
-console.log("[CriaVideo] app.js v336 loaded");
+console.log("[CriaVideo] app.js v337 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
 const LEVITA_TOKEN_KEY = "levita_token";
+const SOCIAL_CONNECT_RETURN_PAGE_KEY = "criavideo_social_return_page";
 const TEVOXI_DEFAULT_SIGNUP_URL = "https://tevoxi.com";
 const ADMIN_PANEL_EMAIL = "tgsantos66@hotmail.com";
 
@@ -28,6 +29,7 @@ let _publishThumbReferenceUploadId = "";
 let _publishThumbReferenceObjectUrl = "";
 let _publishLastThumbnailPrompt = "";
 let _pendingConnectPlatform = "";
+let _pendingConnectReturnPage = "accounts";
 let _editingSocialAccountId = 0;
 let _tevoxiPendingToggleContext = "";
 let _tevoxiAccountStatusCache = {
@@ -686,47 +688,14 @@ function bindNavigation() {
         });
     }
     // Mobile profile avatar
-    const mobileProfileBtn = document.getElementById("mobile-profile-btn");
-    if (mobileProfileBtn) {
+    document.querySelectorAll(".mobile-profile-btn").forEach((mobileProfileBtn) => {
         mobileProfileBtn.addEventListener("click", () => {
             navigateTo("profile");
         });
-    }
-}
-
-function ensurePublishDraftSelector() {
-    const formArea = document.getElementById("publish-form-area");
-    const renderSelect = document.getElementById("pub-render-select");
-    if (!formArea || !renderSelect) {
-        return;
-    }
-
-    if (document.getElementById("pub-draft-select")) {
-        return;
-    }
-
-    const renderGroup = renderSelect.closest(".form-group");
-    if (!renderGroup || !renderGroup.parentNode) {
-        return;
-    }
-
-    let row = renderGroup.closest(".publish-select-row");
-    if (!row) {
-        row = document.createElement("div");
-        row.className = "publish-select-row";
-        renderGroup.parentNode.insertBefore(row, renderGroup);
-        row.appendChild(renderGroup);
-    }
-
-    const draftGroup = document.createElement("div");
-    draftGroup.className = "form-group publish-form-group";
-    draftGroup.innerHTML = "<select id=\"pub-draft-select\" class=\"input\" aria-label=\"Selecionar rascunho salvo\"><option value=\"\">Meus rascunhos...</option></select>";
-    row.appendChild(draftGroup);
+    });
 }
 
 function bindDashboardEvents() {
-    ensurePublishDraftSelector();
-
     document.getElementById("btn-new-project").addEventListener("click", () => {
         resetCreateWizard();
         openModal("modal-new-project");
@@ -736,10 +705,16 @@ function bindDashboardEvents() {
     document.getElementById("btn-schedule-publish").addEventListener("click", openPublishScheduleModal);
     document.getElementById("pub-links-toggle").addEventListener("click", togglePublishLinks);
     document.getElementById("btn-save-links").addEventListener("click", savePublishLinksForAccount);
-    const renderPickerBtn = document.getElementById("pub-render-picker-btn");
-    if (renderPickerBtn) {
-        renderPickerBtn.addEventListener("click", () => {
+    const newPublishBtn = document.getElementById("btn-new-publish-video");
+    if (newPublishBtn) {
+        newPublishBtn.addEventListener("click", () => {
             _publishOpenRenderSourceModal();
+        });
+    }
+    const analyzeConnectBtn = document.getElementById("btn-analyze-connect-account");
+    if (analyzeConnectBtn) {
+        analyzeConnectBtn.addEventListener("click", () => {
+            connectPlatform("youtube", "analyze");
         });
     }
     const renderSelect = document.getElementById("pub-render-select");
@@ -919,19 +894,29 @@ function handleSocialCallbackResult() {
     const socialReason = (params.get("social_reason") || "").trim();
     if (!connected && !socialError) return;
 
+    const returnPage = (() => {
+        try {
+            const storedPage = String(window.sessionStorage.getItem(SOCIAL_CONNECT_RETURN_PAGE_KEY) || "").trim().toLowerCase();
+            window.sessionStorage.removeItem(SOCIAL_CONNECT_RETURN_PAGE_KEY);
+            return ["accounts", "analyze", "publish", "automate"].includes(storedPage) ? storedPage : "accounts";
+        } catch (_) {
+            return "accounts";
+        }
+    })();
+
     const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
     window.history.replaceState({}, "", cleanUrl);
 
     if (connected) {
         alert(`${socialPlatformName(connected)} conectada com sucesso.`);
-        navigateTo("accounts");
+        navigateTo(returnPage);
         return;
     }
 
     const platformName = socialPlatformName(socialError || "social");
     const reasonText = socialReason ? `\n\nDetalhes: ${socialReason}` : "";
     alert(`Não foi possível conectar ${platformName}.${reasonText}`);
-    navigateTo("accounts");
+    navigateTo(returnPage);
 }
 
 function initDashboard() {
@@ -12993,8 +12978,8 @@ async function watchVideo(projectId) {
 
 function _publishSyncRenderPicker() {
     const select = document.getElementById("pub-render-select");
-    const pickerBtn = document.getElementById("pub-render-picker-btn");
-    if (!select || !pickerBtn) {
+    const pickerDisplay = document.getElementById("pub-render-picker-display");
+    if (!select || !pickerDisplay) {
         return;
     }
 
@@ -13002,12 +12987,12 @@ function _publishSyncRenderPicker() {
     const selectedItem = (_publishRenderLibrary.items || []).find(
         (item) => String(item.render_id) === selectedRenderId
     );
-    const fallbackLabel = selectedRenderId ? getPublishRenderLabel(selectedRenderId) : "Selecione aqui...";
-    const rawLabel = selectedItem?.picker_label || fallbackLabel || "Selecione aqui...";
+    const fallbackLabel = selectedRenderId ? getPublishRenderLabel(selectedRenderId) : "Use o botão + para selecionar um vídeo.";
+    const rawLabel = selectedItem?.picker_label || fallbackLabel || "Use o botão + para selecionar um vídeo.";
     const compactLabel = rawLabel.length > 84 ? `${rawLabel.slice(0, 84)}...` : rawLabel;
 
-    pickerBtn.textContent = compactLabel;
-    pickerBtn.classList.toggle("has-value", Boolean(selectedRenderId));
+    pickerDisplay.textContent = selectedRenderId ? `Vídeo selecionado: ${compactLabel}` : compactLabel;
+    pickerDisplay.classList.toggle("has-value", Boolean(selectedRenderId));
 }
 
 function _publishOpenRenderSourceModal() {
@@ -13247,7 +13232,7 @@ window._publishOpenRenderLibrary = _publishOpenRenderLibrary;
 
 async function loadRenders(preselectProjectId = 0) {
     const select = document.getElementById("pub-render-select");
-    const pickerBtn = document.getElementById("pub-render-picker-btn");
+    const pickerDisplay = document.getElementById("pub-render-picker-display");
     if (!select) {
         _publishRenderOptions = {};
         _publishRenderLibrary.items = [];
@@ -13255,8 +13240,8 @@ async function loadRenders(preselectProjectId = 0) {
         return false;
     }
 
-    if (pickerBtn) {
-        pickerBtn.disabled = true;
+    if (pickerDisplay) {
+        pickerDisplay.classList.add("loading");
     }
 
     try {
@@ -13352,8 +13337,8 @@ async function loadRenders(preselectProjectId = 0) {
         _publishSyncRenderPicker();
         return false;
     } finally {
-        if (pickerBtn) {
-            pickerBtn.disabled = false;
+        if (pickerDisplay) {
+            pickerDisplay.classList.remove("loading");
         }
         if (_publishRenderLibrary.open) {
             _publishRenderLibrary.loading = false;
@@ -17997,7 +17982,7 @@ async function createAutoSchedule() {
     }
 }
 
-async function connectPlatform(platform) {
+async function connectPlatform(platform, returnPage = "accounts") {
     const normalized = String(platform || "").toLowerCase();
     if (!["youtube", "tiktok", "instagram"].includes(normalized)) {
         alert("Plataforma invalida.");
@@ -18005,6 +17990,9 @@ async function connectPlatform(platform) {
     }
 
     _pendingConnectPlatform = normalized;
+    _pendingConnectReturnPage = ["accounts", "analyze", "publish", "automate"].includes(String(returnPage || "").toLowerCase())
+        ? String(returnPage).toLowerCase()
+        : "accounts";
     const platformEl = document.getElementById("connect-account-platform");
     if (platformEl) {
         platformEl.textContent = `Plataforma: ${socialPlatformName(normalized)}`;
@@ -18070,6 +18058,11 @@ async function confirmConnectPlatform() {
     }
 
     try {
+        try {
+            window.sessionStorage.setItem(SOCIAL_CONNECT_RETURN_PAGE_KEY, _pendingConnectReturnPage || "accounts");
+        } catch (_) {
+            // ignore storage failures and use default return page
+        }
         const query = new URLSearchParams({ account_label: accountLabel });
         if (tiktokClientKey) query.set("client_key", tiktokClientKey);
         if (tiktokClientSecret) query.set("client_secret", tiktokClientSecret);
