@@ -8051,6 +8051,74 @@ th,
     margin-top: 14px;
 }
 
+.similar-upload-card-mini {
+    width: 92px;
+    min-width: 92px;
+    min-height: 92px;
+    padding: 10px;
+    border-radius: 12px;
+}
+
+.similar-upload-card-mini .similar-upload-card-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+}
+
+.similar-unified-upload-section {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.similar-unified-upload-head {
+    margin-bottom: 8px;
+}
+
+.similar-unified-upload-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.similar-unified-upload-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.similar-unified-upload-actions .field-hint {
+    min-width: min(100%, 320px);
+}
+
+.similar-unified-upload-status {
+    margin-top: 12px;
+    margin-bottom: 0;
+}
+
+.similar-unified-last-frame-group {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(var(--accent-rgb), 0.18);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.similar-unified-last-frame-toggle {
+    color: var(--text) !important;
+}
+
+.similar-unified-last-frame-toggle input {
+    accent-color: var(--accent);
+}
+
+.similar-unified-last-frame-group .pause-hint {
+    display: block;
+    margin-top: 8px;
+}
+
 .similar-unified-preview {
     margin-top: 14px;
 }
@@ -8822,6 +8890,18 @@ th,
 
     .similar-unified-toolbar {
         grid-template-columns: 1fr;
+    }
+
+    .similar-unified-upload-controls {
+        align-items: flex-start;
+    }
+
+    .similar-unified-upload-actions {
+        width: 100%;
+    }
+
+    .similar-unified-upload-actions .btn {
+        width: 100%;
     }
 
     .similar-unified-preview-head {

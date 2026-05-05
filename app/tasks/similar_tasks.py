@@ -416,6 +416,30 @@ def _collect_similar_reference_frame_paths(
     return ordered_paths
 
 
+def _compose_similar_unified_reference_paths(
+    reference_image_paths: list[str],
+    uploaded_image_paths: list[str],
+) -> list[str]:
+    ordered_paths: list[str] = []
+    valid_uploaded_paths = [path for path in (uploaded_image_paths or []) if path and os.path.exists(path)]
+    valid_reference_paths = [path for path in (reference_image_paths or []) if path and os.path.exists(path)]
+
+    if valid_uploaded_paths:
+        ordered_paths.append(valid_uploaded_paths[0])
+        for candidate in valid_reference_paths:
+            if candidate not in ordered_paths:
+                ordered_paths.append(candidate)
+        for candidate in valid_uploaded_paths[1:]:
+            if candidate not in ordered_paths:
+                ordered_paths.append(candidate)
+        return ordered_paths
+
+    for candidate in valid_reference_paths:
+        if candidate not in ordered_paths:
+            ordered_paths.append(candidate)
+    return ordered_paths
+
+
 async def _prepare_similar_unified_reference_image(
     reference_image_paths: list[str],
     prompt_text: str,
@@ -1934,8 +1958,15 @@ async def run_similar_generate_unified_scene(
 
             reference_frames_by_scene_index = _extract_similar_reference_frames(tags)
             reference_image_paths = _collect_similar_reference_frame_paths(scenes, reference_frames_by_scene_index)
-            if not reference_image_paths:
+            uploaded_reference_paths = [
+                str(path).strip()
+                for path in (tags.get("similar_unified_upload_image_paths", []) if isinstance(tags.get("similar_unified_upload_image_paths", []), list) else [])
+                if str(path).strip() and os.path.exists(str(path).strip())
+            ][:6]
+            combined_reference_paths = _compose_similar_unified_reference_paths(reference_image_paths, uploaded_reference_paths)
+            if not combined_reference_paths:
                 raise RuntimeError("Nenhum frame de referencia foi encontrado para a cena unica")
+            use_last_image_as_final_frame = bool(tags.get("similar_unified_use_last_image_as_final_frame")) and normalized_engine == "seedance" and len(uploaded_reference_paths) > 1
 
             clip_dir = Path(settings.media_dir) / "clips" / str(project_id)
             image_dir = Path(settings.media_dir) / "images" / str(project_id)
@@ -1952,7 +1983,7 @@ async def run_similar_generate_unified_scene(
                     "similar_stage": "generating_unified_scene",
                     "similar_unified_clip_engine": normalized_engine,
                     "similar_unified_clip_duration": requested_duration,
-                    "similar_unified_reference_frame_count": len(reference_image_paths),
+                    "similar_unified_reference_frame_count": len(combined_reference_paths),
                 }
             )
             project.tags = tags
@@ -1969,13 +2000,14 @@ async def run_similar_generate_unified_scene(
                     output_path=output_path,
                     resolution="480p",
                     generate_audio=True,
-                    image_paths=reference_image_paths,
-                    image_path=reference_image_paths[0],
+                    image_paths=combined_reference_paths,
+                    image_path=combined_reference_paths[0],
+                    use_last_image_as_final_frame=use_last_image_as_final_frame,
                     on_progress=None,
                 )
             else:
                 merged_reference_path = await _prepare_similar_unified_reference_image(
-                    reference_image_paths,
+                    combined_reference_paths,
                     unified_prompt,
                     aspect_ratio,
                     str(image_dir / "similar_unified_reference.png"),
@@ -2025,7 +2057,7 @@ async def run_similar_generate_unified_scene(
                     "similar_unified_clip_engine": normalized_engine,
                     "similar_unified_clip_duration": requested_duration,
                     "similar_unified_clip_generated_at": datetime.utcnow().isoformat() + "Z",
-                    "similar_unified_reference_frame_count": len(reference_image_paths),
+                    "similar_unified_reference_frame_count": len(combined_reference_paths),
                 }
             )
             if merged_reference_path and os.path.exists(merged_reference_path):

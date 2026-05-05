@@ -1765,6 +1765,9 @@ class SimilarGenerateUnifiedSceneRequest(BaseModel):
     aspect_ratio: str = "16:9"
     duration_seconds: int = 10
     prompt_override: str = ""
+    image_upload_id: str = ""
+    image_upload_ids: list[str] = Field(default_factory=list)
+    use_last_image_as_final_frame: bool = False
 
 
 class SimilarMergeRequest(BaseModel):
@@ -2104,6 +2107,37 @@ async def generate_similar_unified_scene(
 
     if not str(tags_data.get("similar_unified_prompt") or "").strip():
         raise HTTPException(status_code=400, detail="Gere o prompt unico antes de criar a cena")
+
+    upload_ids: list[str] = []
+    for raw_id in (req.image_upload_ids or []):
+        value = str(raw_id or "").strip()
+        if value and value not in upload_ids:
+            upload_ids.append(value)
+
+    single_upload_id = str(req.image_upload_id or "").strip()
+    if single_upload_id and single_upload_id not in upload_ids:
+        upload_ids.insert(0, single_upload_id)
+
+    upload_ids = upload_ids[:6]
+    unified_upload_paths: list[str] = []
+    if upload_ids:
+        image_dir = Path(settings.media_dir) / "images" / str(project.id)
+        image_dir.mkdir(parents=True, exist_ok=True)
+
+        for index, upload_id in enumerate(upload_ids):
+            source_file = _resolve_temp_file(user["id"], upload_id, IMAGE_EXTS)
+            if not source_file:
+                raise HTTPException(status_code=400, detail="Uma das imagens enviadas nao foi encontrada. Envie novamente")
+
+            ext = source_file.suffix.lower()
+            if ext not in IMAGE_EXTS:
+                ext = ".png"
+            target_file = image_dir / f"similar_unified_user_{index:03d}{ext}"
+            shutil.copy2(source_file, target_file)
+            unified_upload_paths.append(str(target_file))
+
+    tags_data["similar_unified_upload_image_paths"] = unified_upload_paths
+    tags_data["similar_unified_use_last_image_as_final_frame"] = bool(req.use_last_image_as_final_frame) and engine == "seedance" and len(unified_upload_paths) > 1
 
     from app.routers.credits import deduct_credits
 

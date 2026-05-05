@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v334 loaded");
+console.log("[CriaVideo] app.js v335 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2275,6 +2275,9 @@ let similarState = {
     detectedConfidence: 0,
     unifiedEngine: "",
     unifiedDuration: 10,
+    unifiedPendingImageUploads: [],
+    unifiedUseLastImageAsFinalFrame: false,
+    unifiedLastFrameDirty: false,
 };
 let workflowState = {
     initialized: false,
@@ -3381,6 +3384,39 @@ function initCreateWizard() {
         similarGenerateUnifiedSceneBtn.addEventListener("click", similarGenerateUnifiedScene);
     }
 
+    const similarUnifiedUploadInput = document.getElementById("similar-unified-image-input");
+    if (similarUnifiedUploadInput) {
+        similarUnifiedUploadInput.addEventListener("change", _handleSimilarUnifiedImageInput);
+    }
+
+    const similarUnifiedUploadTrigger = document.getElementById("similar-unified-upload-trigger");
+    if (similarUnifiedUploadTrigger) {
+        similarUnifiedUploadTrigger.addEventListener("click", similarUploadUnifiedImages);
+    }
+
+    const similarUnifiedUploadButton = document.getElementById("similar-unified-upload-button");
+    if (similarUnifiedUploadButton) {
+        similarUnifiedUploadButton.addEventListener("click", similarUploadUnifiedImages);
+    }
+
+    const similarUnifiedClearButton = document.getElementById("similar-unified-clear-button");
+    if (similarUnifiedClearButton) {
+        similarUnifiedClearButton.addEventListener("click", similarClearUnifiedUploads);
+    }
+
+    const similarUnifiedClearInlineButton = document.getElementById("similar-unified-upload-clear-inline");
+    if (similarUnifiedClearInlineButton) {
+        similarUnifiedClearInlineButton.addEventListener("click", similarClearUnifiedUploads);
+    }
+
+    const similarUnifiedLastFrameCheckbox = document.getElementById("similar-unified-seedance-last-frame");
+    if (similarUnifiedLastFrameCheckbox) {
+        similarUnifiedLastFrameCheckbox.addEventListener("change", () => {
+            similarState.unifiedUseLastImageAsFinalFrame = !!similarUnifiedLastFrameCheckbox.checked;
+            similarState.unifiedLastFrameDirty = true;
+        });
+    }
+
     const similarGenerateAllBtn = document.getElementById("similar-generate-all");
     if (similarGenerateAllBtn) {
         similarGenerateAllBtn.addEventListener("click", similarGenerateAllPreviews);
@@ -3872,7 +3908,87 @@ function _clearSimilarUnifiedPrompt() {
     if (generateBtn) generateBtn.textContent = "Gerar cena unica";
     similarState.unifiedEngine = "";
     similarState.unifiedDuration = 10;
+    _setSimilarUnifiedUploadStatus("");
+    _syncSimilarUnifiedUploadUi();
     if (wrapEl) wrapEl.hidden = true;
+}
+
+function _setSimilarUnifiedUploadStatus(message = "", kind = "running") {
+    const statusEl = document.getElementById("similar-unified-upload-status");
+    if (!statusEl) return;
+
+    const text = String(message || "").trim();
+    if (!text) {
+        statusEl.hidden = true;
+        statusEl.textContent = "";
+        statusEl.className = "similar-status similar-unified-upload-status";
+        return;
+    }
+
+    statusEl.hidden = false;
+    statusEl.textContent = text;
+    statusEl.className = `similar-status similar-unified-upload-status status-${kind === "error" ? "error" : kind === "success" ? "success" : "running"}`;
+}
+
+function _getSimilarUnifiedPendingUploads() {
+    if (!Array.isArray(similarState.unifiedPendingImageUploads)) {
+        similarState.unifiedPendingImageUploads = [];
+    }
+    return similarState.unifiedPendingImageUploads;
+}
+
+function _clearSimilarUnifiedPendingUploads() {
+    _getSimilarUnifiedPendingUploads().forEach((item) => _revokeSimilarPreviewUrl(item?.preview_url));
+    similarState.unifiedPendingImageUploads = [];
+}
+
+function _syncSimilarUnifiedUploadUi(project = null) {
+    const tags = _safeSimilarTags(project?.tags);
+    const uploadListEl = document.getElementById("similar-unified-upload-list");
+    const uploadGridEl = document.getElementById("similar-unified-upload-grid");
+    const uploadCountEl = document.getElementById("similar-unified-upload-count");
+    const clearBtnEl = document.getElementById("similar-unified-clear-button");
+    const toggleGroupEl = document.getElementById("similar-unified-seedance-last-frame-group");
+    const toggleEl = document.getElementById("similar-unified-seedance-last-frame");
+
+    const pendingUploads = _getSimilarUnifiedPendingUploads();
+    if (uploadGridEl) {
+        uploadGridEl.innerHTML = pendingUploads.map((item, index) => {
+            const previewUrl = esc(item?.preview_url || "");
+            const fileName = esc(_formatSimilarUploadFileName(item?.file_name || `imagem-${index + 1}`));
+            return `
+                <figure class="similar-upload-thumb">
+                    <img src="${previewUrl}" alt="Referencia da cena unica ${index + 1}" loading="lazy">
+                    <figcaption>${fileName}</figcaption>
+                </figure>
+            `;
+        }).join("");
+    }
+
+    if (uploadListEl) {
+        uploadListEl.hidden = pendingUploads.length === 0;
+    }
+    if (uploadCountEl) {
+        uploadCountEl.textContent = pendingUploads.length
+            ? `${pendingUploads.length} imagem(ns) pronta(s) para a cena unica`
+            : "0 imagem(ns)";
+    }
+    if (clearBtnEl) {
+        clearBtnEl.hidden = pendingUploads.length === 0;
+    }
+
+    const selectedEngine = _getSimilarUnifiedSelectedEngine(tags);
+    if (toggleGroupEl) {
+        toggleGroupEl.hidden = selectedEngine !== "seedance";
+    }
+    if (toggleEl) {
+        if (!similarState.unifiedLastFrameDirty) {
+            toggleEl.checked = !!tags.similar_unified_use_last_image_as_final_frame;
+            similarState.unifiedUseLastImageAsFinalFrame = !!toggleEl.checked;
+        } else {
+            toggleEl.checked = !!similarState.unifiedUseLastImageAsFinalFrame;
+        }
+    }
 }
 
 function _renderSimilarUnifiedPrompt(project) {
@@ -3963,6 +4079,7 @@ function _renderSimilarUnifiedPrompt(project) {
     if (generateBtn) {
         generateBtn.textContent = unifiedClipUrl ? "Gerar novamente a cena unica" : "Gerar cena unica";
     }
+    _syncSimilarUnifiedUploadUi(project);
     wrapEl.hidden = false;
 }
 
@@ -8388,6 +8505,9 @@ function _resetSimilarModeState() {
     similarState.pendingImageUploadsBySceneId = {};
     similarState.unifiedEngine = "";
     similarState.unifiedDuration = 10;
+    _clearSimilarUnifiedPendingUploads();
+    similarState.unifiedUseLastImageAsFinalFrame = false;
+    similarState.unifiedLastFrameDirty = false;
 
     const sourceEl = document.getElementById("similar-source-url");
     if (sourceEl) sourceEl.value = "";
@@ -8477,6 +8597,9 @@ async function similarStartAnalysis() {
         similarState.sceneMergeSelectionBySceneId = {};
         _clearAllSimilarScenePendingUploads();
         similarState.pendingImageUploadsBySceneId = {};
+        _clearSimilarUnifiedPendingUploads();
+        similarState.unifiedUseLastImageAsFinalFrame = false;
+        similarState.unifiedLastFrameDirty = false;
         _setSimilarStatus("Analise iniciada. Aguardando retorno da IA...", "running");
         _startSimilarPolling();
         await _refreshSimilarProject();
@@ -8591,6 +8714,15 @@ async function similarGenerateUnifiedScene() {
     const tags = _safeSimilarTags(project?.tags);
     const engine = _getSimilarUnifiedSelectedEngine(tags);
     const duration = _getSimilarUnifiedSelectedDuration(tags);
+    const uploadIds = [];
+    _getSimilarUnifiedPendingUploads().forEach((item) => {
+        const uploadId = String(item?.upload_id || "").trim();
+        if (uploadId && !uploadIds.includes(uploadId)) {
+            uploadIds.push(uploadId);
+        }
+    });
+    const useLastImageAsFinalFrame = engine === "seedance"
+        && !!document.getElementById("similar-unified-seedance-last-frame")?.checked;
 
     try {
         _setSimilarBusyIntent("generating_unified_scene");
@@ -8607,6 +8739,8 @@ async function similarGenerateUnifiedScene() {
                 duration_seconds: duration,
                 prompt_override: promptText,
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+                image_upload_ids: uploadIds,
+                use_last_image_as_final_frame: useLastImageAsFinalFrame,
             }),
         });
         _setSimilarStatus("Geracao da cena unica iniciada...", "running");
@@ -8618,6 +8752,76 @@ async function similarGenerateUnifiedScene() {
         _hideSimilarBusyOverlay();
         _refreshSimilarButtonsDisabled(false);
     }
+}
+
+function similarUploadUnifiedImages() {
+    const input = document.getElementById("similar-unified-image-input");
+    if (!input) return;
+    input.value = "";
+    input.click();
+}
+
+async function _handleSimilarUnifiedImageInput(event) {
+    const projectId = Number(similarState.projectId || 0);
+    const files = Array.from(event.target?.files || []);
+    event.target.value = "";
+
+    if (!projectId || !files.length) {
+        return;
+    }
+
+    try {
+        const existingUploads = _getSimilarUnifiedPendingUploads();
+        const remainingSlots = Math.max(0, 6 - existingUploads.length);
+        if (!remainingSlots) {
+            showToast("A cena unica ja possui 6 imagens enviadas. Limpe antes de enviar novas.", "error");
+            return;
+        }
+
+        const selectedFiles = files.slice(0, remainingSlots);
+        if (files.length > selectedFiles.length) {
+            showToast(`Limite de 6 imagens para a cena unica. So ${selectedFiles.length} nova(s) imagem(ns) foi(ram) adicionada(s).`, "error");
+        }
+
+        for (let index = 0; index < selectedFiles.length; index += 1) {
+            const file = selectedFiles[index];
+            if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+                throw new Error("Use somente imagens JPG, PNG ou WebP.");
+            }
+            _setSimilarUnifiedUploadStatus(`Enviando imagem ${index + 1}/${selectedFiles.length} da cena unica...`, "running");
+            const uploaded = await uploadTempFileWithRetry(file, "image", "imagem da cena unica", { showProgress: false });
+            const uploadId = String(uploaded?.upload_id || "").trim();
+            if (!uploadId) {
+                throw new Error("Upload da imagem retornou sem identificador. Tente novamente.");
+            }
+
+            existingUploads.push({
+                upload_id: uploadId,
+                file_name: String(file.name || `imagem-${existingUploads.length + 1}`),
+                preview_url: URL.createObjectURL(file),
+            });
+        }
+
+        _setSimilarUnifiedUploadStatus(
+            "Imagem(ns) enviada(s). Envie mais se quiser; elas entram na geracao da cena unica.",
+            "running",
+        );
+        _syncSimilarUnifiedUploadUi(similarState.lastProjectSnapshot);
+        showToast("Imagem(ns) enviada(s) para a cena unica.", "success");
+    } catch (error) {
+        _setSimilarUnifiedUploadStatus(`Erro ao enviar imagem: ${error.message}`, "error");
+        showToast(`Erro ao enviar imagem: ${error.message}`, "error");
+    }
+}
+
+function similarClearUnifiedUploads() {
+    const pendingUploads = _getSimilarUnifiedPendingUploads();
+    if (!pendingUploads.length) return;
+
+    _clearSimilarUnifiedPendingUploads();
+    _setSimilarUnifiedUploadStatus("");
+    _syncSimilarUnifiedUploadUi(similarState.lastProjectSnapshot);
+    showToast("Imagens da cena unica removidas.", "success");
 }
 
 async function similarSaveScene(sceneId) {
