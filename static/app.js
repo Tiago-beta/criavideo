@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v339 loaded");
+console.log("[CriaVideo] app.js v340 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -5182,33 +5182,22 @@ function _similarSceneEditorHasFocus() {
 }
 
 function _cleanupSimilarSceneTransientState(sceneIds) {
-                _setSimilarStatus(
-                    normalizedAnalysisMode === "general"
-                        ? "Iniciando analise geral do video enviado..."
-                        : "Iniciando analise do video enviado por cenas...",
-                    "running",
-                );
+    const keep = new Set(
+        (Array.isArray(sceneIds) ? sceneIds : [])
+            .map((sceneId) => _similarSceneStateKey(sceneId))
+            .filter(Boolean),
+    );
 
     Object.keys(similarState.sceneDraftsBySceneId || {}).forEach((sceneKey) => {
         if (!keep.has(sceneKey)) {
-                _setSimilarStatus(
-                    normalizedAnalysisMode === "general"
-                        ? "Iniciando analise geral do video de referencia..."
-                        : "Iniciando analise do video de referencia por cenas...",
-                    "running",
-                );
+            delete similarState.sceneDraftsBySceneId[sceneKey];
         }
     });
 
     Object.keys(similarState.sceneMergeSelectionBySceneId || {}).forEach((sceneKey) => {
         if (!keep.has(sceneKey)) {
             delete similarState.sceneMergeSelectionBySceneId[sceneKey];
-            _setSimilarStatus(
-                normalizedAnalysisMode === "general"
-                    ? "Analise geral iniciada. Aguardando o prompt unico..."
-                    : "Analise por cenas iniciada. Aguardando retorno da IA...",
-                "running",
-            );
+        }
     });
 
     Object.keys(similarState.sceneEngineSelectionBySceneId || {}).forEach((sceneKey) => {
@@ -9926,28 +9915,40 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         setCreateProgress(0, "Erro", msg);
         alert(msg);
     }
+}
+
+async function pollRealisticProgress(projectId, engineLabel) {
     const maxWait = 12 * 60 * 1000; // 12 minutes
     const pollInterval = 4000;
     const start = Date.now();
     const label = engineLabel || "IA";
 
-        await new Promise(r => setTimeout(r, pollInterval));
+    while (Date.now() - start < maxWait) {
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
 
         try {
             const resp = await fetch(`${API}/video/projects/${projectId}`, {
                 headers: getHeaders(),
             });
             if (!resp.ok) continue;
+            const data = await resp.json();
 
-            const progress = data.progress || 0;
-            const status = data.status || "";
+            const progress = Number(data.progress || 0);
+            const status = String(data.status || "").toLowerCase();
 
-            if (narrationValue) {
-            setCreateProgress(progress, "Gerando vídeo realista...",
-                progress < 15 ? "Otimizando prompt com IA..." :
-                progress < 80 ? `${label} está criando seu vídeo...` :
-                progress < 95 ? "Gerando thumbnail..." :
-                "Finalizando..."
+            _smoothProgressTarget = Math.max(_smoothProgressTarget, progress);
+            setCreateProgress(
+                progress,
+                "Gerando vídeo realista...",
+                progress < 15
+                    ? "Otimizando prompt com IA..."
+                    : progress < 80
+                        ? `${label} está criando seu vídeo...`
+                        : progress < 90
+                            ? "Baixando vídeo gerado..."
+                            : progress < 95
+                                ? "Gerando thumbnail..."
+                                : "Finalizando...",
             );
 
             if (status === "completed") return;
@@ -9958,6 +9959,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             if (e.message && !e.message.includes("fetch")) throw e;
         }
     }
+
     throw new Error("Tempo limite excedido. O vídeo pode ainda estar sendo gerado — verifique seus projetos.");
 }
 
@@ -10568,18 +10570,24 @@ async function handleScriptCreate() {
         : 0;
     scriptData.useCustomVideo = useVideoSelected && !!scriptUserVideoFile;
     scriptData.useCustomImages = !scriptData.useCustomVideo && usePhotosSelected && scriptPhotos.length > 0;
+    scriptData.useCustomAudio = !scriptData.useCustomVideo && !useTevoxiAudio && useAudioSelected && !!scriptUserAudioFile;
     scriptData.useTevoxiAudio = useTevoxiAudio;
     scriptData.audioIsMusic = useTevoxiAudio
         ? true
         : (scriptData.useCustomAudio ? !!document.getElementById("script-audio-is-music")?.checked : false);
-    } else {
-        scriptData.createNarration = scriptData.useCustomAudio
+    scriptData.removeVocals = scriptData.useCustomAudio && scriptData.audioIsMusic;
+
+    const createNarration = scriptData.useCustomVideo
+        ? (!!document.getElementById("script-video-create-narration")?.checked && !!scriptData.text)
+        : (scriptData.useCustomAudio || scriptData.useTevoxiAudio)
             ? false
-            : (scriptData.useTevoxiAudio
-                ? false
-                : (!scriptData.useCustomImages || document.getElementById("script-create-narration").checked));
-        scriptData.enableSubtitles = document.getElementById("script-enable-subtitles").checked;
-    }
+            : (!scriptData.useCustomImages || !!document.getElementById("script-create-narration")?.checked);
+
+    scriptData.createNarration = createNarration;
+    scriptData.text = (scriptData.useCustomAudio || scriptData.useTevoxiAudio)
+        ? scriptData.text
+        : (createNarration ? scriptData.text : "");
+    scriptData.enableSubtitles = document.getElementById("script-enable-subtitles").checked;
 
     const subtitlePosEl = document.getElementById("script-subtitle-position-y");
     const parsedSubtitlePos = parseInt(subtitlePosEl ? subtitlePosEl.value : "80", 10);
