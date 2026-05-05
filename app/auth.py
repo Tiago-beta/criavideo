@@ -123,17 +123,24 @@ async def find_user_by_id(user_id: int, db: AsyncSession) -> AppUser | None:
 async def resolve_user_from_token(token: str, db: AsyncSession) -> AppUser:
     payload = _decode_token(token)
 
-    if payload.get("iss") == "criavideo":
-        user_id = payload.get("id") or payload.get("sub")
-        if user_id is None:
-            raise _unauthorized()
-        user = await find_user_by_id(int(user_id), db)
-        if not user or not user.is_active:
-            raise _unauthorized("User not found")
-        user.last_login_at = datetime.utcnow()
-        await db.commit()
-        await db.refresh(user)
-        return user
+    if payload.get("iss") != "criavideo":
+        raise _unauthorized()
+
+    user_id = payload.get("id") or payload.get("sub")
+    if user_id is None:
+        raise _unauthorized()
+
+    user = await find_user_by_id(int(user_id), db)
+    if not user or not user.is_active:
+        raise _unauthorized("User not found")
+    user.last_login_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def sync_legacy_levita_user_from_token(token: str, db: AsyncSession) -> AppUser:
+    payload = _decode_token(token)
 
     external_user_id = payload.get("id") or payload.get("sub")
     if external_user_id is None:

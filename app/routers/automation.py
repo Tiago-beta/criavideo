@@ -67,9 +67,8 @@ async def _resolve_tevoxi_token_for_user(user: dict, db: AsyncSession) -> tuple[
     if not app_user or not app_user.is_active:
         raise HTTPException(status_code=401, detail="Usuário inválido.")
 
-    source = str(app_user.auth_source or "").strip().lower()
     external_user_id = str(app_user.external_user_id or "").strip()
-    if source != "levita" or not external_user_id:
+    if not external_user_id:
         raise HTTPException(
             status_code=409,
             detail=_tevoxi_error_detail(

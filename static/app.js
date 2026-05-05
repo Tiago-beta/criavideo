@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v331 loaded");
+console.log("[CriaVideo] app.js v332 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -7,12 +7,10 @@ const TEVOXI_DEFAULT_SIGNUP_URL = "https://tevoxi.com";
 const ADMIN_PANEL_EMAIL = "tgsantos66@hotmail.com";
 
 let token = localStorage.getItem(APP_TOKEN_KEY) || "";
-let levitaToken = localStorage.getItem(LEVITA_TOKEN_KEY) || "";
 let currentUser = null;
 let providers = {
     google_enabled: false,
     google_client_id: "",
-    levita_url: "https://levita.pro",
 };
 let authMode = "login";
 let levitaSongs = [];
@@ -305,15 +303,11 @@ async function apiForm(path, formData, options = {}) {
     return response.json();
 }
 
-function setSession(accessToken, user, rawLevitaToken = null) {
+function setSession(accessToken, user) {
     token = accessToken;
     currentUser = user;
     localStorage.setItem(APP_TOKEN_KEY, accessToken);
     _resetTevoxiRuntimeState();
-    if (rawLevitaToken) {
-        levitaToken = rawLevitaToken;
-        localStorage.setItem(LEVITA_TOKEN_KEY, rawLevitaToken);
-    }
     renderSession();
 }
 
@@ -327,7 +321,6 @@ function clearSession() {
 }
 
 function clearLevitaSession() {
-    levitaToken = "";
     localStorage.removeItem(LEVITA_TOKEN_KEY);
     _resetTevoxiRuntimeState();
 }
@@ -396,12 +389,7 @@ function renderSession() {
         sessionName.textContent = currentUser.name || "Cliente";
     }
     if (sessionMeta) {
-        const sourceLabel =
-            currentUser.source === "levita"
-                ? "Levita"
-                : currentUser.source === "google"
-                    ? "Google"
-                    : "Local";
+        const sourceLabel = currentUser.source === "google" ? "Google" : "CriaVideo";
         sessionMeta.textContent = sourceLabel;
     }
     // Profile page
@@ -411,7 +399,7 @@ function renderSession() {
     if (profileName) profileName.textContent = currentUser.name || "Usuário";
     if (profileEmail) profileEmail.textContent = currentUser.email || "-";
     if (profileBadge) {
-        const src = currentUser.source === "levita" ? "Levita" : currentUser.source === "google" ? "Google" : "Local";
+        const src = currentUser.source === "google" ? "Google" : "CriaVideo";
         profileBadge.textContent = _isProfileAdminUser() ? "Admin" : src;
     }
     _syncProfileAdminControls();
@@ -449,7 +437,7 @@ function setAuthMode(mode) {
     const subtitle = document.getElementById("auth-subtitle");
     if (subtitle) subtitle.textContent = isLogin
         ? "Acesse seus projetos e publique em múltiplos canais."
-        : "Crie sua conta para receber clientes e gerar vídeos fora do Levita.";
+        : "Crie sua conta para gerenciar seus vídeos diretamente no CriaVideo.";
     document.getElementById("auth-switch-copy").textContent = isLogin ? "Não tem conta?" : "Já tem conta?";
     document.getElementById("auth-switch-button").textContent = isLogin ? "Criar conta" : "Entrar";
     setAuthStatus("");
@@ -467,6 +455,11 @@ async function loadProviders() {
     } catch (_) {
         providers = { ...providers };
     }
+    const hasGoogleProvider = !!(providers.google_enabled && providers.google_client_id);
+    const authDivider = document.querySelector(".auth-divider");
+    const providerStack = document.querySelector(".provider-stack");
+    if (authDivider) authDivider.hidden = !hasGoogleProvider;
+    if (providerStack) providerStack.hidden = !hasGoogleProvider;
     initGoogleLogin();
 }
 
@@ -528,32 +521,9 @@ async function hydrateSession() {
     }
 }
 
-async function exchangeLevitaToken(rawToken) {
-    const response = await fetch("/api/auth/exchange/levita", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: rawToken }),
-    });
-    if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(getApiErrorMessage(error, "Não foi possível validar o login do Levita"));
-    }
-    const data = await response.json();
-    setSession(data.access_token, data.user, rawToken);
-    cleanUrlTokenParam();
-}
-
-function redirectToLevita() {
-    const redirect = encodeURIComponent(`${window.location.origin}/video`);
-    window.location.href = `${providers.levita_url || "https://levita.pro"}/?redirect=${redirect}`;
-}
-
 function bindAuthEvents() {
     document.getElementById("auth-switch-button").addEventListener("click", () => {
         setAuthMode(authMode === "login" ? "register" : "login");
-    });
-    document.getElementById("btn-levita-login").addEventListener("click", () => {
-        redirectToLevita();
     });
     document.getElementById("login-form").addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -922,15 +892,8 @@ async function bootstrap() {
     bindNavigation();
     bindDashboardEvents();
     await loadProviders();
-    const params = new URLSearchParams(window.location.search);
-    const levitaUrlToken = params.get("token");
-    if (levitaUrlToken) {
-        try {
-            await exchangeLevitaToken(levitaUrlToken.trim());
-        } catch (error) {
-            showAuth(error.message);
-            return;
-        }
+    if (new URLSearchParams(window.location.search).has("token")) {
+        cleanUrlTokenParam();
     }
     const authenticated = await hydrateSession();
     if (!authenticated) {
@@ -1968,20 +1931,13 @@ async function requestGrokAnchorApproval(payload) {
 }
 
 async function loadLevitaSongs() {
-    const levitaAuthToken = levitaToken || token;
-    if (!levitaAuthToken) {
+    if (!token) {
         levitaSongs = [];
         return [];
     }
     try {
-        const response = await fetch(`${providers.levita_url || "https://levita.pro"}/api/feed/my-created-music`, {
-            headers: { Authorization: `Bearer ${levitaAuthToken}` },
-        });
-        if (!response.ok) {
-            return [];
-        }
-        const data = await response.json();
-        levitaSongs = data.songs || [];
+        const data = await api("/automation/tevoxi-songs");
+        levitaSongs = Array.isArray(data) ? data : [];
         return levitaSongs;
     } catch (_) {
         levitaSongs = [];
@@ -12572,7 +12528,7 @@ async function createProjectFromLibrary() {
         const song = levitaSongs[parseInt(songValue, 10)];
         trackTitle = song.title || "";
         trackArtist = song.artist || "";
-        audioPath = `${providers.levita_url || "https://levita.pro"}${song.audio_url}`;
+        audioPath = song.audio_url || "";
         lyricsText = song.lyrics || "";
         trackDuration = Math.round(song.duration) || 180;
     } else {

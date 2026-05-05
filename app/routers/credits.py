@@ -358,35 +358,11 @@ async def is_levita_credit_bypass_user(
     user: dict | None = None,
     user_id: int | None = None,
 ) -> bool:
-    """Return True when credits should be handled by Levita instead of CriaVideo."""
-    source = ""
-    resolved_user_id = 0
-
-    if isinstance(user, dict):
-        source = str(user.get("source") or user.get("auth_source") or "").strip().lower()
-        try:
-            resolved_user_id = int(user.get("id") or 0)
-        except Exception:
-            resolved_user_id = 0
-
-    if user_id is not None:
-        try:
-            resolved_user_id = int(user_id or 0)
-        except Exception:
-            resolved_user_id = 0
-
-    if source:
-        return source == "levita"
-
-    if resolved_user_id <= 0:
-        return False
-
-    row = await db.execute(
-        text("SELECT auth_source FROM auth_users WHERE id = :uid"),
-        {"uid": resolved_user_id},
-    )
-    resolved_source = str(row.scalar() or "").strip().lower()
-    return resolved_source == "levita"
+    """Levita credit bypass is disabled after auth separation between apps."""
+    _ = db
+    _ = user
+    _ = user_id
+    return False
 
 
 async def deduct_credits(db: AsyncSession, user_id: int, amount: int) -> int:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from urllib.parse import urljoin
 
 from fastapi import APIRouter, Depends, HTTPException
 from google.auth.transport.requests import Request as GoogleRequest
@@ -16,7 +15,7 @@ from app.auth import (
     find_user_by_email,
     get_current_user,
     hash_password,
-    resolve_user_from_token,
+    sync_legacy_levita_user_from_token,
     user_to_dict,
 )
 from app.config import get_settings
@@ -59,12 +58,79 @@ def _session_response(user: AppUser) -> dict:
     }
 
 
+async def _migrate_legacy_levita_login(
+    email: str,
+    password: str,
+    db: AsyncSession,
+    existing_user: AppUser | None,
+) -> AppUser:
+    levita_base = (settings.levita_url or "https://levita.pro").rstrip("/")
+    levita_login_url = f"{levita_base}/api/auth/login"
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(
+                levita_login_url,
+                json={
+                    "email": email,
+                    "password": password,
+                },
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Falha ao validar credenciais legadas no Levita") from exc
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=401, detail="Email ou senha inválidos")
+
+    payload = response.json()
+    payload_user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
+    levita_token = payload.get("token") or payload.get("access_token")
+    if not levita_token:
+        raise HTTPException(status_code=502, detail="Levita não retornou token de sessão")
+
+    migrated_user = existing_user
+    try:
+        migrated_user = await sync_legacy_levita_user_from_token(str(levita_token), db)
+    except HTTPException:
+        pass
+
+    if not migrated_user:
+        migrated_user = AppUser(
+            email=email,
+            display_name=str(payload_user.get("name") or payload_user.get("display_name") or email.split("@", 1)[0]).strip(),
+            auth_source="local",
+            role=str(payload_user.get("role") or "user").strip() or "user",
+            is_active=True,
+            email_verified=True,
+            last_login_at=datetime.utcnow(),
+        )
+        db.add(migrated_user)
+
+    migrated_user.email = email
+    if not str(migrated_user.external_user_id or "").strip():
+        external_user_id = payload_user.get("id") or payload_user.get("sub")
+        if external_user_id is not None:
+            migrated_user.external_user_id = str(external_user_id)
+    migrated_user.display_name = str(
+        payload_user.get("name") or payload_user.get("display_name") or migrated_user.display_name or email.split("@", 1)[0]
+    ).strip()
+    migrated_user.role = str(payload_user.get("role") or migrated_user.role or "user").strip() or "user"
+    migrated_user.password_hash = hash_password(password)
+    migrated_user.auth_source = "local"
+    migrated_user.is_active = True
+    migrated_user.email_verified = True
+    migrated_user.last_login_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(migrated_user)
+    return migrated_user
+
+
 @router.get("/providers")
 async def get_auth_providers():
     return {
         "google_enabled": bool(settings.google_oauth_client_id),
         "google_client_id": settings.google_oauth_client_id,
-        "levita_url": settings.levita_url,
     }
 
 
@@ -104,11 +170,18 @@ async def login(
     req: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await authenticate_local_user(req.email, req.password, db)
+    normalized_email = req.email.strip().lower()
+    user = await authenticate_local_user(normalized_email, req.password, db)
     if not user:
-        existing = await find_user_by_email(req.email, db)
-        if existing and existing.auth_source == "levita" and not existing.password_hash:
-            raise HTTPException(status_code=401, detail="Esta conta usa login pelo Levita. Clique em 'Entrar com Levita'.")
+        existing = await find_user_by_email(normalized_email, db)
+        if existing and existing.auth_source == "levita":
+            migrated_user = await _migrate_legacy_levita_login(
+                email=normalized_email,
+                password=req.password,
+                db=db,
+                existing_user=existing,
+            )
+            return _session_response(migrated_user)
         if existing and existing.auth_source == "google" and not existing.password_hash:
             raise HTTPException(status_code=401, detail="Esta conta usa login Google. Clique em 'Fazer login com o Google'.")
         raise HTTPException(status_code=401, detail="Email ou senha inválidos")
@@ -165,8 +238,10 @@ async def exchange_levita_token(
     req: TokenExchangeRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await resolve_user_from_token(req.token, db)
-    return _session_response(user)
+    raise HTTPException(
+        status_code=410,
+        detail="Login via Levita foi descontinuado. Entre com email e senha no CriaVideo.",
+    )
 
 
 @router.post("/login/levita")
@@ -174,37 +249,10 @@ async def login_with_levita_credentials(
     req: LevitaLoginRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    levita_base = (settings.levita_url or "https://levita.pro").rstrip("/") + "/"
-    levita_login_url = urljoin(levita_base, "api/auth/login")
-
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(
-                levita_login_url,
-                json={
-                    "email": req.email.strip().lower(),
-                    "password": req.password,
-                },
-            )
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Falha ao conectar com o Levita") from exc
-
-    if response.status_code >= 400:
-        detail = "Credenciais inválidas no Levita"
-        try:
-            payload = response.json()
-            detail = payload.get("detail") or payload.get("message") or detail
-        except ValueError:
-            pass
-        raise HTTPException(status_code=401, detail=detail)
-
-    payload = response.json()
-    levita_token = payload.get("token") or payload.get("access_token")
-    if not levita_token:
-        raise HTTPException(status_code=502, detail="Levita não retornou token de sessão")
-
-    user = await resolve_user_from_token(str(levita_token), db)
-    return _session_response(user)
+    raise HTTPException(
+        status_code=410,
+        detail="Login via Levita foi descontinuado. Entre com email e senha no CriaVideo.",
+    )
 
 
 @router.post("/logout")

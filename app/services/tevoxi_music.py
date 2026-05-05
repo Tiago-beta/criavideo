@@ -68,9 +68,8 @@ async def _resolve_tevoxi_token_for_user(user_id: int | None = None) -> str:
         if not app_user or not app_user.is_active:
             return _resolve_tevoxi_service_token()
 
-        source = str(app_user.auth_source or "").strip().lower()
         external_user_id = str(app_user.external_user_id or "").strip()
-        if source != "levita" or not external_user_id:
+        if not external_user_id:
             return _resolve_tevoxi_service_token()
 
         tevoxi_user_id = int(external_user_id)
