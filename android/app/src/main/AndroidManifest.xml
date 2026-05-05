@@ -16,7 +16,8 @@
         <activity
             android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
             android:label="@string/title_activity_main"
-            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:theme="@style/LauncherActivityTheme"
             android:exported="true">
 
             <meta-data
@@ -26,6 +27,10 @@
             <meta-data
                 android:name="android.support.customtabs.trusted.ADDITIONAL_TRUSTED_ORIGINS"
                 android:resource="@array/additional_trusted_origins" />
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY"
+                android:value="webview" />
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
