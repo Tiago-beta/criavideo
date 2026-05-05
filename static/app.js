@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v335 loaded");
+console.log("[CriaVideo] app.js v336 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -5477,9 +5477,24 @@ function initWorkflowBuilder() {
 
 function workflowEnsureCreditEstimateBadge(modelNode = null) {
     const model = modelNode || document.querySelector('#create-panel-workflow .workflow-node[data-node-id="model"]');
+    const header = model?.querySelector("header");
     const runBtn = model?.querySelector("#workflow-run");
-    if (!model || !runBtn || model.querySelector("#workflow-credit-estimate")) return;
-    runBtn.insertAdjacentHTML("afterend", '<div class="credit-estimate-pill workflow-credit-estimate" id="workflow-credit-estimate" hidden>Calculando custo...</div>');
+    if (!model || !header || !runBtn) return;
+
+    runBtn.classList.add("workflow-run-btn");
+    runBtn.classList.remove("btn-sm");
+
+    let badge = model.querySelector("#workflow-credit-estimate");
+    if (!badge) {
+        header.insertAdjacentHTML("afterend", '<div class="credit-estimate-pill workflow-credit-estimate" id="workflow-credit-estimate" hidden>Calculando custo...</div>');
+        badge = model.querySelector("#workflow-credit-estimate");
+    }
+    if (!badge) return;
+
+    badge.classList.add("credit-estimate-pill", "workflow-credit-estimate");
+    if (header.nextElementSibling !== badge) {
+        header.insertAdjacentElement("afterend", badge);
+    }
 }
 
 function workflowHandleGeneratorConfigChange(event) {
@@ -7111,9 +7126,9 @@ function workflowAddNode(kind) {
                 <option value="9:16">9:16</option>
                 <option value="1:1">1:1</option>
             </select>
-            <label class="workflow-switch"><input id="workflow-generate-audio" type="checkbox" checked> Gerar áudio</label>
-            <button class="btn btn-primary btn-sm" id="workflow-run" type="button">Criar vídeo</button>
             <div class="credit-estimate-pill workflow-credit-estimate" id="workflow-credit-estimate" hidden>Calculando custo...</div>
+            <label class="workflow-switch"><input id="workflow-generate-audio" type="checkbox" checked> Gerar áudio</label>
+            <button class="btn btn-primary workflow-run-btn" id="workflow-run" type="button">Criar vídeo</button>
             <span class="workflow-port workflow-port-in workflow-port-in-prompt" data-port="model-prompt-in"></span>
             <span class="workflow-port workflow-port-in workflow-port-in-images" data-port="model-images-in"></span>
             <span class="workflow-port workflow-port-in workflow-port-in-video" data-port="model-video-in"></span>
