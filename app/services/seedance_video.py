@@ -525,6 +525,7 @@ async def generate_realistic_video(
     generate_audio: bool = True,
     image_path: str | None = None,
     image_paths: list[str] | None = None,
+    use_last_image_as_final_frame: bool = False,
     timeout_seconds: int = 600,
     on_progress=None,
 ) -> str:
@@ -578,13 +579,12 @@ async def generate_realistic_video(
 
         if len(uploaded_refs) > 1:
             last_image_ref = uploaded_refs[-1]
-            if last_image_ref and last_image_ref != uploaded_refs[0]:
-                first_image_payload["last_image"] = last_image_ref
-                payload_variants.append(("first-and-last-image", first_image_payload))
-            else:
-                payload_variants.append(("single-image", first_image_payload))
-        else:
-            payload_variants.append(("single-image", first_image_payload))
+            if use_last_image_as_final_frame and last_image_ref and last_image_ref != uploaded_refs[0]:
+                first_last_image_payload = dict(first_image_payload)
+                first_last_image_payload["last_image"] = last_image_ref
+                payload_variants.append(("first-and-last-image", first_last_image_payload))
+
+        payload_variants.append(("single-image", first_image_payload))
 
         if len(uploaded_refs) > 1:
             multi_image_payload = dict(payload)
@@ -592,7 +592,11 @@ async def generate_realistic_video(
             multi_image_payload["images"] = uploaded_refs
             payload_variants.append(("multi-image", multi_image_payload))
 
-        logger.info("Seedance I2V: prepared %d reference image(s)", len(uploaded_refs))
+        logger.info(
+            "Seedance I2V: prepared %d reference image(s) (last-frame=%s)",
+            len(uploaded_refs),
+            use_last_image_as_final_frame,
+        )
     else:
         payload_variants.append(("text-to-video", dict(payload)))
 

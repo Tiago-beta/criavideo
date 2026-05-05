@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260504-15">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260505-01">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 350;
+        var REQUIRED_VER = 351;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1274,6 +1274,14 @@
                             </div>
                         </div>
 
+                        <div class="form-group realistic-audio-toggle" id="wizard-seedance-last-frame-group" hidden>
+                            <label class="toggle-label">
+                                <input type="checkbox" id="wizard-seedance-last-frame">
+                                <span>Ultima imagem = quadro final</span>
+                            </label>
+                            <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                        </div>
+
                         <div class="form-group" id="wizard-realistic-duration-group">
                             <label>Duração</label>
                             <div class="duration-options" id="wizard-realistic-duration">
@@ -1791,6 +1799,14 @@
                             </div>
                         </div>
 
+                        <div class="form-group realistic-audio-toggle" id="script-seedance-last-frame-group" hidden>
+                            <label class="toggle-label">
+                                <input type="checkbox" id="script-seedance-last-frame">
+                                <span>Ultima imagem = quadro final</span>
+                            </label>
+                            <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                        </div>
+
                         <div class="form-group" id="script-realistic-duration-group">
                             <label>Duração</label>
                             <div class="duration-options" id="script-realistic-duration">
@@ -2121,6 +2137,10 @@
                                         <option value="grok" selected>Cria 3.0 speed</option>
                                         <option value="seedance">Mega 2.0 Ultra</option>
                                     </select>
+                                    <div id="workflow-seedance-last-frame-group" hidden>
+                                        <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
+                                        <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                                    </div>
                                     <label>Duração</label>
                                     <select id="workflow-duration" class="input workflow-input">
                                         <option value="5">5s</option>
@@ -2944,6 +2964,13 @@
                                 <button class="engine-option" data-value="minimax" type="button" hidden><strong>MiniMax</strong></button>
                             </div>
                         </div>
+                        <div class="form-group realistic-audio-toggle" id="auto-seedance-last-frame-group" hidden>
+                            <label class="toggle-label">
+                                <input type="checkbox" id="auto-seedance-last-frame">
+                                <span>Ultima imagem = quadro final</span>
+                            </label>
+                            <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                        </div>
                         <div class="form-group">
                             <label>Duração do vídeo</label>
                             <div class="duration-options" id="auto-realistic-duration">
@@ -3542,8 +3569,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260504-15"></script>
-    <script src="/video/static/pwa.js?v=20260504-15"></script>
+    <script src="/video/static/app.js?v=20260505-01"></script>
+    <script src="/video/static/pwa.js?v=20260505-01"></script>
 </body>
 </html>
 

@@ -1511,6 +1511,7 @@ async def run_realistic_video_pipeline(project_id: int):
             persona_instruction_input = interaction_personas or interaction_persona
             reference_source_early = str(tags_data_early.get("reference_source", "") or "").strip().lower()
             reference_mode = str(tags_data_early.get("reference_mode", "") or "").strip().lower()
+            use_last_image_as_final_frame = bool(tags_data_early.get("use_last_image_as_final_frame")) and engine == "seedance"
             cover_context_early = str(tags_data_early.get("cover_context", "") or "")
             cover_visual_mode_early = str(
                 tags_data_early.get("cover_visual_mode", "")
@@ -1693,6 +1694,9 @@ async def run_realistic_video_pipeline(project_id: int):
             add_music = bool(tags_data.get("add_music", False))
             provider_generate_audio_requested = bool(tags_data.get("provider_generate_audio", False))
             seedance_native_audio_only = bool(tags_data.get("seedance_native_audio_only", False))
+            use_last_image_as_final_frame = bool(
+                tags_data.get("use_last_image_as_final_frame", use_last_image_as_final_frame)
+            ) and engine == "seedance"
             external_audio_url_for_prompt = str(tags_data.get("audio_url", "") or "").strip()
             grok_text_only = engine == "grok" and bool(
                 tags_data.get("grok_text_only") or tags_data.get("disable_persona_reference")
@@ -2427,6 +2431,7 @@ async def run_realistic_video_pipeline(project_id: int):
                                 generate_audio=generate_audio,
                                 image_path=clip_image_path,
                                 image_paths=clip_image_paths,
+                                use_last_image_as_final_frame=use_last_image_as_final_frame,
                                 on_progress=clip_progress,
                             )
                             final_prompt = prompt_for_attempt

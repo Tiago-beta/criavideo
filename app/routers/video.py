@@ -4451,6 +4451,7 @@ class GenerateRealisticRequest(BaseModel):
     title: str = ""
     image_upload_id: str = ""
     image_upload_ids: list[str] = Field(default_factory=list)
+    use_last_image_as_final_frame: bool = False
     cover_context: str = ""
     cover_visual_mode: str = ""
     cover_persona: str = ""
@@ -4546,6 +4547,7 @@ async def generate_realistic_endpoint(
     if req.image_upload_id and req.image_upload_id not in upload_ids:
         upload_ids.insert(0, req.image_upload_id)
     upload_ids = upload_ids[:6]
+    use_last_image_as_final_frame = bool(req.use_last_image_as_final_frame) and engine == "seedance"
 
     disable_persona_reference = bool(req.disable_persona_reference) and engine == "grok" and not bool(upload_ids)
     if disable_persona_reference:
@@ -4746,6 +4748,7 @@ async def generate_realistic_endpoint(
         "reference_source": reference_source,
         "reference_mode": reference_mode,
         "reference_count": max(0, reference_count),
+        "use_last_image_as_final_frame": use_last_image_as_final_frame,
         "disable_persona_reference": disable_persona_reference,
         "grok_text_only": disable_persona_reference and engine == "grok",
         "add_music": effective_add_music,

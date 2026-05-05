@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v332 loaded");
+console.log("[CriaVideo] app.js v333 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -178,6 +178,14 @@ function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
             ? SEEDANCE_REALISTIC_DURATION_OPTIONS
             : DEFAULT_REALISTIC_DURATION_OPTIONS;
     _renderDurationButtons(`${prefix}-realistic-duration`, options, preferredValue);
+    _syncSeedanceLastFrameToggle(prefix);
+}
+
+function _syncSeedanceLastFrameToggle(prefix) {
+    const toggleGroup = document.getElementById(`${prefix}-seedance-last-frame-group`);
+    if (!toggleGroup) return;
+    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "grok";
+    toggleGroup.hidden = engine !== "seedance";
 }
 
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
@@ -6897,6 +6905,10 @@ function workflowAddNode(kind) {
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
             </select>
+            <div id="workflow-seedance-last-frame-group" hidden>
+                <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
+                <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+            </div>
             <label>Duração</label>
             <select id="workflow-duration" class="input workflow-input">
                 <option value="5">5s</option>
@@ -7203,6 +7215,10 @@ function workflowSyncEngineDurationOptions() {
     const nextValue = _pickClosestDurationOption(options, current || options[0]);
     durationSelect.innerHTML = options.map((value) => `<option value="${value}">${value}s</option>`).join("");
     durationSelect.value = String(nextValue);
+    const toggleGroup = document.getElementById("workflow-seedance-last-frame-group");
+    if (toggleGroup) {
+        toggleGroup.hidden = (engineSelect.value || "grok") !== "seedance";
+    }
 }
 
 function workflowIsCollectedNodeImage(item) {
@@ -7366,6 +7382,10 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
             </select>
+            <div id="workflow-seedance-last-frame-group" hidden>
+                <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
+                <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+            </div>
         `;
         if (durationLabel) durationLabel.insertAdjacentHTML("beforebegin", html);
         else model.querySelector("header")?.insertAdjacentHTML("afterend", html);
@@ -8050,6 +8070,8 @@ async function workflowRunSeedance() {
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
         const resolution = document.getElementById("workflow-resolution")?.value || "720p";
         const workflowEngine = document.getElementById("workflow-engine")?.value || "grok";
+        const useLastImageAsFinalFrame = workflowEngine === "seedance"
+            && !!document.getElementById("workflow-seedance-last-frame")?.checked;
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
 
         const resp = await api("/video/generate-realistic", {
@@ -8065,6 +8087,7 @@ async function workflowRunSeedance() {
                 image_upload_id: imageUploadIds[0] || "",
                 image_upload_ids: imageUploadIds,
                 engine: workflowEngine,
+                use_last_image_as_final_frame: useLastImageAsFinalFrame,
                 prompt_optimized: false,
                 realistic_style: `workflow_visual_${resolution}`,
                 interaction_persona: "nenhum",
@@ -9204,6 +9227,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 image_upload_id: imageUploadId,
                 image_upload_ids: imageUploadIds,
                 engine: engine,
+                use_last_image_as_final_frame: engine === "seedance"
+                    && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
                 audio_url: selectedTevoxiSong ? (selectedTevoxiSong.audio_url || "") : "",
                 lyrics: selectedTevoxiSong
                     ? (selectedTevoxiClip?.lyrics_excerpt || selectedTevoxiSong.lyrics || "")
@@ -15442,6 +15467,11 @@ function _setAutoRealisticEngine(engineValue) {
         if (selected) selected.classList.add("selected");
     }
 
+    const toggleGroup = document.getElementById("auto-seedance-last-frame-group");
+    if (toggleGroup) {
+        toggleGroup.hidden = (selected?.dataset.value || "grok") !== "seedance";
+    }
+
     _syncAutoRealisticDurationOptions();
     scheduleAutoCreditEstimate();
 }
@@ -17608,6 +17638,9 @@ async function createAutoSchedule() {
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",
             add_music: useMusic && !useTevoxi,
             use_tevoxi: useTevoxi,
+            use_last_image_as_final_frame: !useTevoxi
+                && (selectedEngine?.dataset.value || "") === "seedance"
+                && !!document.getElementById("auto-seedance-last-frame")?.checked,
             enable_subtitles: enableSubs,
         };
 
