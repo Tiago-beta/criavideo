@@ -6344,7 +6344,8 @@ th,
     margin-top: 12px;
 }
 
-#wizard-video-type-grid {
+#wizard-video-type-grid,
+#modal-new-automation .auto-video-type-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     max-width: 680px;
     margin-left: auto;
@@ -9073,7 +9074,8 @@ th,
         grid-template-columns: 1fr;
         gap: 10px;
     }
-    #wizard-video-type-grid {
+    #wizard-video-type-grid,
+    #modal-new-automation .auto-video-type-grid {
         grid-template-columns: 1fr;
         max-width: none;
     }
