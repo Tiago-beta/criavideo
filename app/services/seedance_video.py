@@ -526,6 +526,7 @@ async def generate_realistic_video(
     image_path: str | None = None,
     image_paths: list[str] | None = None,
     use_last_image_as_final_frame: bool = False,
+    preserve_prompt_exactly: bool = False,
     timeout_seconds: int = 600,
     on_progress=None,
 ) -> str:
@@ -546,7 +547,7 @@ async def generate_realistic_video(
     else:
         resolution = str(resolution or "720p").strip() or "720p"
     model_id = SEEDANCE_I2V_MODEL if use_i2v else SEEDANCE_T2V_MODEL
-    prompt_for_model = _ensure_seedance_resolution_instruction(prompt, resolution) if use_i2v else prompt
+    prompt_for_model = prompt if preserve_prompt_exactly else (_ensure_seedance_resolution_instruction(prompt, resolution) if use_i2v else prompt)
 
     payload = {
         "model": model_id,

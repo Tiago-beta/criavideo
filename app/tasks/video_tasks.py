@@ -1525,6 +1525,7 @@ async def run_realistic_video_pipeline(project_id: int):
             persona_instruction_input = interaction_personas or interaction_persona
             reference_source_early = str(tags_data_early.get("reference_source", "") or "").strip().lower()
             reference_mode = str(tags_data_early.get("reference_mode", "") or "").strip().lower()
+            preserve_prompt_exactly = bool(tags_data_early.get("preserve_prompt_exactly"))
             use_last_image_as_final_frame = bool(tags_data_early.get("use_last_image_as_final_frame")) and engine == "seedance"
             cover_context_early = str(tags_data_early.get("cover_context", "") or "")
             cover_visual_mode_early = str(
@@ -1854,61 +1855,77 @@ async def run_realistic_video_pipeline(project_id: int):
                     project.tags = tags_data
                     await db.commit()
 
-            if seedance_expect_native_audio:
-                user_prompt = _ensure_seedance_audio_instruction(user_prompt)
-
-            style_labels = {
-                "cinematic": "estilo cinematografico epico",
-                "commercial": "estilo comercial/produto premium",
-                "meme": "estilo meme viral engracado",
-                "anime": "estilo anime japones",
-                "drama": "estilo drama emotivo",
-                "vfx": "estilo efeitos visuais/surrealista",
-            }
-            style_hint_source = style_labels.get(realistic_style, realistic_style)
-            if not optimizer_style_hint:
-                optimizer_style_hint = build_cover_optimizer_tone(style_hint_source, cover_decision.visual_mode)
-            if optimizer_style_hint and not prompt_optimized:
-                user_prompt = f"{user_prompt}. Estilo: {optimizer_style_hint}"
-
-            if prompt_optimized:
-                optimized_prompt = user_prompt
-                logger.info(f"Realistic prompt already optimized, using as-is: {optimized_prompt[:200]}...")
-            elif engine == "seedance" and upload_reference_lock_mode:
+            if preserve_prompt_exactly:
+                user_prompt = (project.lyrics_text or "").strip()
                 optimized_prompt = user_prompt
                 logger.info(
-                    "Seedance upload reference mode active for project %s: skipping prompt rewrite to preserve uploaded scene fidelity",
+                    "Realistic exact-prompt mode active for project %s: preserving user prompt without augmentation",
                     project_id,
                 )
-            elif dialogue_enabled and engine in ("wan2", "minimax"):
-                # Keep explicit dialogue timeline cues for Wan/MiniMax instead of Seedance-style rewrite.
-                optimized_prompt = user_prompt
-                logger.info("Dialogue mode active: using direct prompt for %s to preserve sync timeline", engine)
-            elif engine == "grok":
-                from app.services.grok_video import optimize_prompt_for_grok
-                optimized_prompt = await optimize_prompt_for_grok(
-                    user_description=user_prompt,
-                    duration=duration,
-                    has_reference_image=has_reference_image,
-                    tone=optimizer_style_hint,
-                    reference_mode=reference_mode,
-                )
-                logger.info(f"Grok prompt optimized: {optimized_prompt[:200]}...")
             else:
-                seedance_optimizer_temperature = 0.2 if engine == "wan2" else None
-                optimized_prompt = await optimize_prompt_for_seedance(
-                    user_description=user_prompt,
-                    duration=duration,
-                    tone=optimizer_style_hint,
-                    has_reference_image=has_reference_image,
-                    temperature=seedance_optimizer_temperature,
-                )
-                logger.info(f"Seedance prompt optimized: {optimized_prompt[:200]}...")
+                if seedance_expect_native_audio:
+                    user_prompt = _ensure_seedance_audio_instruction(user_prompt)
 
-            if has_reference_image:
-                optimized_prompt = _ensure_reference_image_instruction(optimized_prompt, reference_mode=reference_mode)
-                if engine == "grok":
-                    optimized_prompt = _ensure_grok_identity_lock(optimized_prompt, reference_mode=reference_mode)
+                style_labels = {
+                    "cinematic": "estilo cinematografico epico",
+                    "commercial": "estilo comercial/produto premium",
+                    "meme": "estilo meme viral engracado",
+                    "anime": "estilo anime japones",
+                    "drama": "estilo drama emotivo",
+                    "vfx": "estilo efeitos visuais/surrealista",
+                }
+                style_hint_source = style_labels.get(realistic_style, realistic_style)
+                if not optimizer_style_hint:
+                    optimizer_style_hint = build_cover_optimizer_tone(style_hint_source, cover_decision.visual_mode)
+                if optimizer_style_hint and not prompt_optimized:
+                    user_prompt = f"{user_prompt}. Estilo: {optimizer_style_hint}"
+
+                if prompt_optimized:
+                    optimized_prompt = user_prompt
+                    logger.info(f"Realistic prompt already optimized, using as-is: {optimized_prompt[:200]}...")
+                elif engine == "seedance" and upload_reference_lock_mode:
+                    optimized_prompt = user_prompt
+                    logger.info(
+                        "Seedance upload reference mode active for project %s: skipping prompt rewrite to preserve uploaded scene fidelity",
+                        project_id,
+                    )
+                elif dialogue_enabled and engine in ("wan2", "minimax"):
+                    # Keep explicit dialogue timeline cues for Wan/MiniMax instead of Seedance-style rewrite.
+                    optimized_prompt = user_prompt
+                    logger.info("Dialogue mode active: using direct prompt for %s to preserve sync timeline", engine)
+                elif engine == "grok":
+                    from app.services.grok_video import optimize_prompt_for_grok
+                    optimized_prompt = await optimize_prompt_for_grok(
+                        user_description=user_prompt,
+                        duration=duration,
+                        has_reference_image=has_reference_image,
+                        tone=optimizer_style_hint,
+                        reference_mode=reference_mode,
+                    )
+                    logger.info(f"Grok prompt optimized: {optimized_prompt[:200]}...")
+                else:
+                    seedance_optimizer_temperature = 0.2 if engine == "wan2" else None
+                    optimized_prompt = await optimize_prompt_for_seedance(
+                        user_description=user_prompt,
+                        duration=duration,
+                        tone=optimizer_style_hint,
+                        has_reference_image=has_reference_image,
+                        temperature=seedance_optimizer_temperature,
+                    )
+                    logger.info(f"Seedance prompt optimized: {optimized_prompt[:200]}...")
+
+                if has_reference_image:
+                    optimized_prompt = _ensure_reference_image_instruction(optimized_prompt, reference_mode=reference_mode)
+                    if engine == "grok":
+                        optimized_prompt = _ensure_grok_identity_lock(optimized_prompt, reference_mode=reference_mode)
+                    if upload_reference_lock_mode:
+                        optimized_prompt = _ensure_upload_reference_scene_lock(optimized_prompt, upload_reference_context)
+                        optimized_prompt = _ensure_upload_reference_temporal_order(
+                            optimized_prompt,
+                            use_last_image_as_final_frame=use_last_image_as_final_frame,
+                            reference_count=len(upload_reference_paths_for_prompt),
+                        )
+                optimized_prompt = apply_cover_guidance(optimized_prompt, cover_decision)
                 if upload_reference_lock_mode:
                     optimized_prompt = _ensure_upload_reference_scene_lock(optimized_prompt, upload_reference_context)
                     optimized_prompt = _ensure_upload_reference_temporal_order(
@@ -1916,16 +1933,8 @@ async def run_realistic_video_pipeline(project_id: int):
                         use_last_image_as_final_frame=use_last_image_as_final_frame,
                         reference_count=len(upload_reference_paths_for_prompt),
                     )
-            optimized_prompt = apply_cover_guidance(optimized_prompt, cover_decision)
-            if upload_reference_lock_mode:
-                optimized_prompt = _ensure_upload_reference_scene_lock(optimized_prompt, upload_reference_context)
-                optimized_prompt = _ensure_upload_reference_temporal_order(
-                    optimized_prompt,
-                    use_last_image_as_final_frame=use_last_image_as_final_frame,
-                    reference_count=len(upload_reference_paths_for_prompt),
-                )
-            if seedance_expect_native_audio:
-                optimized_prompt = _ensure_seedance_audio_instruction(optimized_prompt)
+                if seedance_expect_native_audio:
+                    optimized_prompt = _ensure_seedance_audio_instruction(optimized_prompt)
 
             if shadow_audio_from_grok:
                 try:
@@ -2416,13 +2425,14 @@ async def run_realistic_video_pipeline(project_id: int):
                                 image_path=clip_image_path,
                                 image_paths=clip_image_paths,
                                 use_last_image_as_final_frame=use_last_image_as_final_frame,
+                                preserve_prompt_exactly=preserve_prompt_exactly,
                                 on_progress=clip_progress,
                             )
                             final_prompt = prompt_for_attempt
                             return
                         except RuntimeError as e:
                             error_msg = str(e)
-                            if ("flagged as sensitive" in error_msg or "E005" in error_msg) and attempt < max_retries:
+                            if not preserve_prompt_exactly and ("flagged as sensitive" in error_msg or "E005" in error_msg) and attempt < max_retries:
                                 logger.warning(
                                     "Seedance content filter triggered (attempt %d/%d), sanitizing prompt...",
                                     attempt + 1,

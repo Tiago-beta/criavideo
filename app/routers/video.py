@@ -4513,6 +4513,7 @@ async def generate_realistic_prompt_endpoint(
 
 class GenerateRealisticRequest(BaseModel):
     prompt: str
+    preserve_prompt_exactly: bool = False
     duration: int = 5
     aspect_ratio: str = "16:9"
     generate_audio: bool = True
@@ -4561,6 +4562,8 @@ async def generate_realistic_endpoint(
         raise HTTPException(status_code=400, detail="Descreva a cena que você quer ver no vídeo.")
     if len(prompt) > 5000:
         raise HTTPException(status_code=400, detail="Descrição muito longa (máximo 5000 caracteres).")
+
+    preserve_prompt_exactly = bool(req.preserve_prompt_exactly)
 
     engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
     if engine == "grok":
@@ -4714,11 +4717,11 @@ async def generate_realistic_endpoint(
     if not has_reference_image and not (engine == "grok" and disable_persona_reference):
         raise HTTPException(status_code=400, detail="Vídeo realista exige imagem de referência.")
 
-    if disable_persona_reference:
+    if disable_persona_reference and not preserve_prompt_exactly:
         prompt = _inject_interaction_persona_instruction(prompt, interaction_persona)
 
     reference_mode = "full_frame" if upload_ids else ("face_identity_only" if has_reference_image else "")
-    if has_reference_image:
+    if has_reference_image and not preserve_prompt_exactly:
         prompt = _ensure_reference_image_instruction(prompt, reference_mode=reference_mode)
         if upload_ids and reference_count > 1:
             prompt = (
@@ -4758,7 +4761,8 @@ async def generate_realistic_endpoint(
         music_driven=bool(external_audio_url or external_lyrics or str(req.cover_source or "").strip()),
     )
     optimizer_style_hint = build_cover_optimizer_tone(req.realistic_style, cover_decision.visual_mode)
-    prompt = apply_cover_guidance(prompt, cover_decision)
+    if not preserve_prompt_exactly:
+        prompt = apply_cover_guidance(prompt, cover_decision)
     narration_text = (req.narration_text or "").strip() if req.add_narration and not dialogue_enabled else ""
     effective_add_narration = bool(req.add_narration and narration_text and not dialogue_enabled)
     effective_add_music = bool(req.add_music or external_audio_url)
@@ -4852,6 +4856,7 @@ async def generate_realistic_endpoint(
         "dialogue_tone": dialogue_tone,
         "dialogue_duration": dialogue_duration,
         "reference_upload_image_paths": upload_image_paths[:6],
+        "preserve_prompt_exactly": preserve_prompt_exactly,
     }
     if external_audio_url:
         tags_data["audio_url"] = external_audio_url

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v340 loaded");
+console.log("[CriaVideo] app.js v360 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -9857,6 +9857,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             method: "POST",
             body: JSON.stringify({
                 prompt: finalPrompt,
+                preserve_prompt_exactly: prefix === "script",
                 duration,
                 aspect_ratio: aspect,
                 generate_audio: addMusicRequested || addNarration || !!selectedTevoxiSong,
@@ -10540,7 +10541,9 @@ async function handleScriptCreate() {
             "script-realistic-aspect",
             "script-realistic-music",
             realisticTitle,
-            "script-realistic-engine"
+            "script-realistic-engine",
+            "script",
+            ""
         );
         return;
     }
@@ -16431,7 +16434,7 @@ async function _fetchTevoxiSongs() {
         method: "GET",
         headers: getHeaders(),
         credentials: "same-origin",
-    });
+                preserve_prompt_exactly: prefix === "script"
 
     if (response.status === 401) {
         clearSession();
