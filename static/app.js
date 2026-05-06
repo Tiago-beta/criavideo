@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v360 loaded");
+console.log("[CriaVideo] app.js v361 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -16434,7 +16434,7 @@ async function _fetchTevoxiSongs() {
         method: "GET",
         headers: getHeaders(),
         credentials: "same-origin",
-                preserve_prompt_exactly: prefix === "script"
+    });
 
     if (response.status === 401) {
         clearSession();
