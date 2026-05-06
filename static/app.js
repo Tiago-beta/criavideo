@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v362 loaded");
+console.log("[CriaVideo] app.js v363 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -171,7 +171,7 @@ function _renderDurationButtons(containerId, options, preferredValue = null) {
 }
 
 function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
-    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "grok";
+    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
     const options = engine === "wan2"
         ? WAN_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
@@ -184,14 +184,14 @@ function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
 function _syncSeedanceLastFrameToggle(prefix) {
     const toggleGroup = document.getElementById(`${prefix}-seedance-last-frame-group`);
     if (!toggleGroup) return;
-    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "grok";
+    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
     toggleGroup.hidden = engine !== "seedance";
 }
 
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected")
         || document.querySelector("#wizard-realistic-engine .engine-option.selected");
-    const engine = engineBtn?.dataset.value || "grok";
+    const engine = engineBtn?.dataset.value || "wan2";
     const options = engine === "wan2"
         ? WAN_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
@@ -201,7 +201,7 @@ function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
 }
 
 function _syncAutoRealisticDurationOptions(preferredValue = null) {
-    const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "grok";
+    const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "wan2";
     const options = engine === "grok"
         ? AUTO_GROK_DURATION_OPTIONS
         : engine === "seedance"
@@ -2261,7 +2261,7 @@ let similarState = {
     sourceDurationProbeToken: 0,
     pollingTimer: null,
     engineManuallySelected: false,
-    selectedEngine: "grok",
+    selectedEngine: "wan2",
     sceneEngineSelectionBySceneId: {},
     pendingBusyStage: "",
     pendingBusySceneId: 0,
@@ -2359,9 +2359,9 @@ const SIMILAR_DETECTED_MODE_LABELS = {
     unknown: "Não foi possível identificar com confiança o perfil visual do vídeo.",
 };
 const SIMILAR_MODE_ENGINE_DEFAULT = {
-    static_narrated: "grok",
+    static_narrated: "wan2",
     realistic: "wan2",
-    unknown: "grok",
+    unknown: "wan2",
 };
 const _creditEstimateTimers = {};
 const _creditEstimateSeq = { wizard: 0, script: 0, auto: 0, workflow: 0 };
@@ -2464,8 +2464,8 @@ function _getSelectedDurationSeconds(containerId, fallbackSeconds = 8) {
 
 function _buildRealisticEstimatePayload(prefix) {
     const useTevoxi = !!document.getElementById(`${prefix}-realistic-tevoxi`)?.checked;
-    const selectedEngine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "grok";
-    const engine = (prefix === "auto" && useTevoxi) ? "grok" : selectedEngine;
+    const selectedEngine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
+    const engine = (prefix === "auto" && useTevoxi) ? "wan2" : selectedEngine;
 
     let durationSeconds = _getSelectedDurationSeconds(`${prefix}-realistic-duration`, 5);
     if (engine === "wan2") {
@@ -3053,7 +3053,7 @@ async function createSimilar(projectId) {
     if (sourceLooksRealistic) {
         const desiredDuration = Math.max(1, Math.round(Number(projectDetail?.track_duration || project.track_duration || tagsData.dialogue_duration || 8)));
 
-        const selectedEngine = normalizeEngine(tagsData.engine || project.track_artist || projectDetail?.track_artist || "grok");
+        const selectedEngine = normalizeEngine(tagsData.engine || project.track_artist || projectDetail?.track_artist || "wan2");
         const engineOptions = Array.from(document.querySelectorAll("#script-realistic-engine .engine-option"));
         let selectedEngineBtn = engineOptions.find((btn) => (btn.dataset.value || "") === selectedEngine);
         if (!selectedEngineBtn) {
@@ -4609,7 +4609,7 @@ function _normalizeSimilarEngine(rawValue) {
     if (value === "wan2" || value === "seedance") {
         return value;
     }
-    return "grok";
+    return "wan2";
 }
 
 function _similarSceneEngineLabel(engineValue) {
@@ -4631,7 +4631,7 @@ function _getSimilarSceneSelectedEngine(sceneId) {
     return _normalizeSimilarEngine(
         similarState.sceneEngineSelectionBySceneId?.[sceneKey]
         || similarState.selectedEngine
-        || "grok"
+        || "wan2"
     );
 }
 
@@ -4861,13 +4861,13 @@ function _setSimilarEngineSelection(engineValue, options = {}) {
     });
 
     if (!found) {
-        const fallback = document.querySelector("#similar-engine-options .engine-option[data-value='grok']");
+        const fallback = document.querySelector("#similar-engine-options .engine-option[data-value='wan2']");
         if (fallback) {
             fallback.classList.add("selected");
         }
     }
 
-    similarState.selectedEngine = found ? normalized : "grok";
+    similarState.selectedEngine = found ? normalized : "wan2";
     if (markManual) {
         similarState.engineManuallySelected = true;
     }
@@ -4879,7 +4879,7 @@ function _getSimilarSelectedEngine() {
     if (selected) {
         return _normalizeSimilarEngine(selected.dataset.value);
     }
-    return _normalizeSimilarEngine(similarState.selectedEngine || "grok");
+    return _normalizeSimilarEngine(similarState.selectedEngine || "wan2");
 }
 
 function _resolveSimilarDetectedMode(tags) {
@@ -4928,7 +4928,7 @@ function _updateSimilarGenerationStep(project, tags) {
     }
 
     const suggestedEngine = _normalizeSimilarEngine(
-        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "grok"
+        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "wan2"
     );
     if (!similarState.engineManuallySelected) {
         _setSimilarEngineSelection(suggestedEngine, { markManual: false });
@@ -5887,7 +5887,7 @@ function workflowDefaultAiToolsMarkup() {
 }
 
 function workflowResolvePromptAiDuration(node) {
-    const allowed = workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "grok");
+    const allowed = workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "wan2");
     const nodeDuration = parseInt(node?.dataset?.promptAiDuration || "0", 10);
     if (allowed.includes(nodeDuration)) return nodeDuration;
     const workflowDuration = parseInt(document.getElementById("workflow-duration")?.value || "0", 10);
@@ -5902,7 +5902,7 @@ function workflowPromptAiStyleButtonsMarkup() {
 }
 
 function workflowPromptAiDurationButtonsMarkup(selectedDuration) {
-    return workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "grok")
+    return workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "wan2")
         .map((duration) => (
             `<button type="button" data-workflow-ai-duration="${duration}" aria-pressed="${selectedDuration === duration ? "true" : "false"}">${duration}s</button>`
         ))
@@ -6035,7 +6035,7 @@ function workflowSyncPromptAiPersonaButtons(node) {
 function workflowSelectPromptAiDuration(button) {
     const node = button?.closest?.(".workflow-node");
     const selectedDuration = parseInt(button?.dataset?.workflowAiDuration || "0", 10);
-    if (!node || !workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "grok").includes(selectedDuration)) return;
+    if (!node || !workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "wan2").includes(selectedDuration)) return;
     node.dataset.promptAiDuration = String(selectedDuration);
     const durationSelect = document.getElementById("workflow-duration");
     if (durationSelect && Array.from(durationSelect.options).some((option) => option.value === String(selectedDuration))) {
@@ -6399,7 +6399,7 @@ async function workflowImproveCardPrompt(button) {
     button.disabled = true;
     button.textContent = "Gerando...";
     try {
-        const engine = document.getElementById("workflow-engine")?.value || "grok";
+        const engine = document.getElementById("workflow-engine")?.value || "wan2";
         const interactionPersona = node?.classList?.contains("workflow-node-prompt")
             ? workflowResolvePromptAiPersona(node)
             : "nenhum";
@@ -7712,13 +7712,13 @@ function workflowSyncEngineDurationOptions() {
     const durationSelect = document.getElementById("workflow-duration");
     if (!engineSelect || !durationSelect) return;
     const current = parseInt(durationSelect.value || "15", 10) || 15;
-    const options = workflowEngineDurationOptions(engineSelect.value || "grok");
+    const options = workflowEngineDurationOptions(engineSelect.value || "wan2");
     const nextValue = _pickClosestDurationOption(options, current || options[0]);
     durationSelect.innerHTML = options.map((value) => `<option value="${value}">${value}s</option>`).join("");
     durationSelect.value = String(nextValue);
     const toggleGroup = document.getElementById("workflow-seedance-last-frame-group");
     if (toggleGroup) {
-        toggleGroup.hidden = (engineSelect.value || "grok") !== "seedance";
+        toggleGroup.hidden = (engineSelect.value || "wan2") !== "seedance";
     }
 }
 
@@ -8596,7 +8596,7 @@ async function workflowRunSeedance() {
         const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
         const resolution = document.getElementById("workflow-resolution")?.value || "720p";
-        const workflowEngine = document.getElementById("workflow-engine")?.value || "grok";
+        const workflowEngine = document.getElementById("workflow-engine")?.value || "wan2";
         const useLastImageAsFinalFrame = workflowEngine === "seedance"
             && !!document.getElementById("workflow-seedance-last-frame")?.checked;
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
@@ -16110,13 +16110,13 @@ function _setAutoRealisticEngine(engineValue) {
     });
 
     if (!selected) {
-        selected = document.querySelector('#auto-realistic-engine [data-value="grok"]');
+        selected = document.querySelector('#auto-realistic-engine [data-value="wan2"]');
         if (selected) selected.classList.add("selected");
     }
 
     const toggleGroup = document.getElementById("auto-seedance-last-frame-group");
     if (toggleGroup) {
-        toggleGroup.hidden = (selected?.dataset.value || "grok") !== "seedance";
+        toggleGroup.hidden = (selected?.dataset.value || "wan2") !== "seedance";
     }
 
     _syncAutoRealisticDurationOptions();
@@ -16125,16 +16125,16 @@ function _setAutoRealisticEngine(engineValue) {
 
 function _applyAutoRealisticEngineRules() {
     const engineGroup = document.getElementById("auto-realistic-engine-group");
-    const forceGrok = _isAutoTevoxiShortMode();
-    if (engineGroup) engineGroup.hidden = forceGrok;
+    const forceWan2 = _isAutoTevoxiShortMode();
+    if (engineGroup) engineGroup.hidden = forceWan2;
 
-    if (forceGrok) {
-        _setAutoRealisticEngine("grok");
+    if (forceWan2) {
+        _setAutoRealisticEngine("wan2");
         return;
     }
 
     const selected = document.querySelector("#auto-realistic-engine .engine-option.selected");
-    if (!selected) _setAutoRealisticEngine("grok");
+    if (!selected) _setAutoRealisticEngine("wan2");
 }
 
 function autoStepNext() {
@@ -16183,9 +16183,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const eng = e.target.closest("#auto-realistic-engine .engine-option");
         if (eng) {
             if (_isAutoTevoxiShortMode()) {
-                _setAutoRealisticEngine("grok");
+                _setAutoRealisticEngine("wan2");
             } else {
-                _setAutoRealisticEngine(eng.dataset.value || "grok");
+                _setAutoRealisticEngine(eng.dataset.value || "wan2");
             }
         }
         // Duration option click
@@ -18280,7 +18280,7 @@ async function createAutoSchedule() {
             persona_profile_id: personaProfileId,
             persona_profile_ids: personaProfileIds,
             persona_composition: personaCandidates,
-            engine: useTevoxi ? "grok" : (selectedEngine ? selectedEngine.dataset.value : "wan2"),
+            engine: useTevoxi ? "wan2" : (selectedEngine ? selectedEngine.dataset.value : "wan2"),
             duration: selectedDur ? parseInt(selectedDur.dataset.value) : 8,
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",
             add_music: useMusic && !useTevoxi,

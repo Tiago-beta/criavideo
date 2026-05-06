@@ -1774,13 +1774,13 @@ class SimilarSceneImageRequest(BaseModel):
 
 
 class SimilarGeneratePreviewsRequest(BaseModel):
-    engine: str = "grok"
+    engine: str = "wan2"
     aspect_ratio: str = "16:9"
 
 
 class SimilarRegenerateSceneRequest(BaseModel):
     scene_id: int
-    engine: str = "grok"
+    engine: str = "wan2"
     aspect_ratio: str = "16:9"
     prompt_override: str = ""
 
@@ -2515,7 +2515,7 @@ async def generate_similar_previews(
     if not scenes:
         raise HTTPException(status_code=400, detail="Projeto nao possui cenas para gerar")
 
-    engine = str(req.engine or "grok").strip().lower() or "grok"
+    engine = str(req.engine or "wan2").strip().lower() or "wan2"
     if engine not in {"grok", "wan2", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
@@ -2559,7 +2559,7 @@ async def regenerate_similar_scene(
     if not scene or scene.project_id != project_id:
         raise HTTPException(status_code=404, detail="Cena nao encontrada")
 
-    engine = str(req.engine or "grok").strip().lower() or "grok"
+    engine = str(req.engine or "wan2").strip().lower() or "wan2"
     if engine not in {"grok", "wan2", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
