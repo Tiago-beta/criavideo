@@ -2437,11 +2437,14 @@ async def run_realistic_video_pipeline(project_id: int):
                                 await db.commit()
                                 continue
                             raise
+                seedance_clip_image_path = upload_reference_paths[0] if upload_reference_paths else scene_reference_path
+                seedance_clip_image_paths = upload_reference_paths or ([scene_reference_path] if scene_reference_path else [])
+
                 await _generate_seedance_clip_with_retry(
                     clip_output_path=output_path,
                     clip_duration=duration,
-                    clip_image_path=scene_reference_path,
-                    clip_image_paths=upload_reference_paths if use_direct_upload_reference_for_seedance else ([scene_reference_path] if scene_reference_path else []),
+                    clip_image_path=seedance_clip_image_path,
+                    clip_image_paths=seedance_clip_image_paths,
                     clip_progress=_on_progress,
                 )
 

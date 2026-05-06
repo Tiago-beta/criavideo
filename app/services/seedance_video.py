@@ -584,13 +584,13 @@ async def generate_realistic_video(
                 first_last_image_payload["last_image"] = last_image_ref
                 payload_variants.append(("first-and-last-image", first_last_image_payload))
 
-        payload_variants.append(("single-image", first_image_payload))
-
         if len(uploaded_refs) > 1:
             multi_image_payload = dict(payload)
             multi_image_payload["model"] = SEEDANCE_I2V_MODEL
             multi_image_payload["images"] = uploaded_refs
             payload_variants.append(("multi-image", multi_image_payload))
+
+        payload_variants.append(("single-image", first_image_payload))
 
         logger.info(
             "Seedance I2V: prepared %d reference image(s) (last-frame=%s)",
