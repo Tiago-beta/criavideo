@@ -32,7 +32,7 @@ else:
     SEEDANCE_I2V_MODEL = _seedance_i2v_cfg
 SEEDANCE_RATE_LIMIT_MSG = (
     "Seedance esta com alta demanda no momento (429). "
-    "Tente novamente em alguns segundos ou use MiniMax/Wan 2.6."
+    "Tente novamente em alguns segundos ou use Ultra High 1.0."
 )
 _ALLOWED_ASPECT_RATIOS = {"21:9", "16:9", "9:16", "1:1", "4:3", "3:4"}
 

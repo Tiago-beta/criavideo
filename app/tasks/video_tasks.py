@@ -1494,9 +1494,9 @@ async def run_realistic_video_pipeline(project_id: int):
 
             # Determine engine from audio_path field (used to store engine choice)
             engine = (project.audio_path or "").strip()
-            if engine not in ("seedance", "minimax", "wan2", "grok"):
+            if engine not in ("seedance", "wan2", "grok"):
                 engine = "wan2"
-            engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
+            engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
             engine_label = engine_labels.get(engine, "Wan 2.6")
             logger.info(f"Realistic video pipeline for project {project_id} using engine: {engine}")
 
@@ -1889,8 +1889,8 @@ async def run_realistic_video_pipeline(project_id: int):
                         "Seedance upload reference mode active for project %s: skipping prompt rewrite to preserve uploaded scene fidelity",
                         project_id,
                     )
-                elif dialogue_enabled and engine in ("wan2", "minimax"):
-                    # Keep explicit dialogue timeline cues for Wan/MiniMax instead of Seedance-style rewrite.
+                elif dialogue_enabled and engine == "wan2":
+                    # Keep explicit dialogue timeline cues for Wan instead of Seedance-style rewrite.
                     optimized_prompt = user_prompt
                     logger.info("Dialogue mode active: using direct prompt for %s to preserve sync timeline", engine)
                 elif engine == "grok":
@@ -2233,17 +2233,6 @@ async def run_realistic_video_pipeline(project_id: int):
                     project.tags = tags_data
                     await db.commit()
 
-            elif engine == "minimax":
-                # ── MiniMax Hailuo ──
-                from app.services.minimax_video import generate_minimax_video
-                await generate_minimax_video(
-                    prompt=optimized_prompt,
-                    duration=duration,
-                    aspect_ratio=aspect_ratio,
-                    output_path=output_path,
-                    image_path=scene_reference_path,
-                    on_progress=_on_progress,
-                )
             elif engine == "wan2":
                 # ── Wan via Atlas Cloud ──
                 from app.services.runpod_video import generate_wan_video
@@ -2590,7 +2579,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     grok_shadow_audio_path,
                 )
 
-            elif engine in ("minimax", "wan2", "grok", "seedance") and (add_narration or add_music or dialogue_enabled or seedance_missing_audio):
+            elif engine in ("wan2", "grok", "seedance") and (add_narration or add_music or dialogue_enabled or seedance_missing_audio):
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
                 audio_dir.mkdir(parents=True, exist_ok=True)
 

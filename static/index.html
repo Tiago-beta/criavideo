@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260505-11">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260506-12">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 361;
+        var REQUIRED_VER = 362;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1268,9 +1268,6 @@
                                     <strong>Mega 2.0 Ultra</strong>
                                     <small class="engine-option-desc">1080p, áudio nativo e velocidade normal.</small>
                                 </button>
-                                <button class="engine-option" data-value="minimax" type="button" hidden>
-                                    <strong>MiniMax</strong>
-                                </button>
                             </div>
                         </div>
 
@@ -1793,9 +1790,6 @@
                                     <strong>Mega 2.0 Ultra</strong>
                                     <small class="engine-option-desc">1080p, áudio nativo e velocidade normal.</small>
                                 </button>
-                                <button class="engine-option" data-value="minimax" type="button" hidden>
-                                    <strong>MiniMax</strong>
-                                </button>
                             </div>
                         </div>
 
@@ -2060,10 +2054,6 @@
                             <button class="engine-option" data-value="seedance" type="button">
                                 <strong>Mega 2.0 Ultra</strong>
                                 <span class="engine-option-desc">1080p, áudio nativo e velocidade normal.</span>
-                            </button>
-                            <button class="engine-option" data-value="minimax" type="button">
-                                <strong>MiniMax</strong>
-                                <span class="engine-option-desc">Modelo alternativo para variações de movimento.</span>
                             </button>
                         </div>
 
@@ -3007,7 +2997,6 @@
                                     <strong>Mega 2.0 Ultra</strong>
                                     <small class="engine-option-desc">1080p, áudio nativo e velocidade normal.</small>
                                 </button>
-                                <button class="engine-option" data-value="minimax" type="button" hidden><strong>MiniMax</strong></button>
                             </div>
                         </div>
                         <div class="form-group realistic-audio-toggle" id="auto-seedance-last-frame-group" hidden>
@@ -3615,8 +3604,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260505-11"></script>
-    <script src="/video/static/pwa.js?v=20260505-11"></script>
+    <script src="/video/static/app.js?v=20260506-12"></script>
+    <script src="/video/static/pwa.js?v=20260506-12"></script>
 </body>
 </html>
 

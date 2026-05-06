@@ -30,7 +30,6 @@ from app.database import async_session
 from app.models import VideoProject, VideoRender, VideoScene, VideoStatus
 from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
 from app.services.grok_video import generate_video_clip
-from app.services.minimax_video import generate_minimax_video
 from app.services.multi_clip import concatenate_clips
 from app.services.runpod_video import generate_wan_video
 from app.services.scene_generator import (
@@ -1442,12 +1441,10 @@ def _scene_duration_seconds(scene: VideoScene) -> float:
 
 def _normalize_engine(value: str) -> str:
     raw = str(value or "").strip().lower()
-    if raw in {"grok", "wan2", "minimax", "seedance"}:
+    if raw in {"grok", "wan2", "seedance"}:
         return raw
     if "seedance" in raw:
         return "seedance"
-    if "mini" in raw:
-        return "minimax"
     if "wan" in raw or "ultra" in raw:
         return "wan2"
     return "grok"
@@ -1462,7 +1459,7 @@ def _engine_duration(engine: str, duration: int) -> int:
         if safe in allowed:
             return safe
         return min(allowed, key=lambda candidate: (abs(candidate - safe), candidate))
-    if engine in {"minimax", "seedance"}:
+    if engine == "seedance":
         return max(5, min(10, safe))
     return max(5, min(15, safe))
 
@@ -1471,7 +1468,7 @@ def _engine_min_duration(engine: str) -> float:
     normalized_engine = _normalize_engine(engine)
     if normalized_engine == "grok":
         return 1.0
-    if normalized_engine in {"wan2", "minimax"}:
+    if normalized_engine == "wan2":
         return 5.0
     if normalized_engine == "seedance":
         return 4.0
@@ -1716,15 +1713,6 @@ async def _generate_clip_for_scene(
                 aspect_ratio=aspect_ratio,
                 on_progress=None,
                 reference_mode="",
-            )
-        elif normalized_engine == "minimax":
-            await generate_minimax_video(
-                prompt=prompt,
-                duration=clip_duration,
-                aspect_ratio=aspect_ratio,
-                output_path=output_path,
-                image_path=image_path,
-                on_progress=None,
             )
         elif normalized_engine == "wan2":
             await generate_wan_video(
@@ -2325,15 +2313,6 @@ async def run_similar_generate_unified_scene(
                         aspect_ratio=aspect_ratio,
                         on_progress=None,
                         reference_mode="",
-                    )
-                elif normalized_engine == "minimax":
-                    await generate_minimax_video(
-                        prompt=unified_prompt,
-                        duration=requested_duration,
-                        aspect_ratio=aspect_ratio,
-                        output_path=output_path,
-                        image_path=merged_reference_path,
-                        on_progress=None,
                     )
                 else:
                     await generate_wan_video(

@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     fish_audio_api_key: str = ""
     elevenlabs_api_key: str = ""
     replicate_api_token: str = ""
-    minimax_api_key: str = ""
     runpod_api_key: str = ""
     atlascloud_api_key: str = ""
     atlascloud_api_base_url: str = "https://api.atlascloud.ai/api/v1"

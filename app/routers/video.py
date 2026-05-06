@@ -2122,7 +2122,7 @@ async def generate_similar_unified_scene(
         raise HTTPException(status_code=400, detail="Projeto ainda esta processando")
 
     engine = str(req.engine or "seedance").strip().lower() or "seedance"
-    if engine not in {"grok", "wan2", "minimax", "seedance"}:
+    if engine not in {"grok", "wan2", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
     duration_seconds = int(req.duration_seconds or 0)
@@ -2516,7 +2516,7 @@ async def generate_similar_previews(
         raise HTTPException(status_code=400, detail="Projeto nao possui cenas para gerar")
 
     engine = str(req.engine or "grok").strip().lower() or "grok"
-    if engine not in {"grok", "wan2", "minimax", "seedance"}:
+    if engine not in {"grok", "wan2", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
     from app.routers.credits import deduct_credits
@@ -2560,7 +2560,7 @@ async def regenerate_similar_scene(
         raise HTTPException(status_code=404, detail="Cena nao encontrada")
 
     engine = str(req.engine or "grok").strip().lower() or "grok"
-    if engine not in {"grok", "wan2", "minimax", "seedance"}:
+    if engine not in {"grok", "wan2", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
     from app.routers.credits import deduct_credits
@@ -4348,15 +4348,13 @@ async def generate_realistic_prompt_endpoint(
     else:
         topic_for_optimizer = topic
 
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
+    engine = req.engine if req.engine in ("seedance", "wan2", "grok") else "wan2"
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
-    elif engine == "seedance":
-        duration = max(1, min(int(req.duration or 10), 15))
     else:
-        duration = max(1, min(int(req.duration or 10), 10))
+        duration = max(1, min(int(req.duration or 10), 15))
 
     interaction_persona = _normalize_interaction_persona(req.interaction_persona)
     selected_persona_profile_id = int(req.persona_profile_id or 0)
@@ -4531,7 +4529,7 @@ class GenerateRealisticRequest(BaseModel):
     cover_custom_prompt: str = ""
     cover_source: str = ""
     tevoxi_has_official_cover_reference: bool = False
-    engine: str = "wan2"  # "seedance", "minimax", "wan2" or "grok"
+    engine: str = "wan2"  # "seedance", "wan2" or "grok"
     audio_url: str = ""       # External audio URL (e.g. from Tevoxi)
     lyrics: str = ""          # Lyrics/transcription for the audio clip
     clip_start: float = 0     # Start time in seconds for audio clip
@@ -4565,15 +4563,13 @@ async def generate_realistic_endpoint(
 
     preserve_prompt_exactly = bool(req.preserve_prompt_exactly)
 
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
+    engine = req.engine if req.engine in ("seedance", "wan2", "grok") else "wan2"
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
-    elif engine == "seedance":
-        duration = max(1, min(int(req.duration or 10), 15))
     else:
-        duration = max(1, min(int(req.duration or 10), 10))
+        duration = max(1, min(int(req.duration or 10), 15))
 
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
         raise HTTPException(status_code=400, detail="Formato inválido. Use 16:9, 9:16 ou 1:1.")
@@ -4806,7 +4802,7 @@ async def generate_realistic_endpoint(
     if not project_title:
         project_title = prompt[:100]
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
+    engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
     engine_label = engine_labels.get(engine, "Wan 2.6")
 
     # Narration config stored in tags JSON

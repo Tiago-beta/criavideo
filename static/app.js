@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v361 loaded");
+console.log("[CriaVideo] app.js v362 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2978,7 +2978,6 @@ async function createSimilar(projectId) {
     }
 
     const realisticArtists = new Set([
-        "MiniMax Hailuo",
         "Wan 2.2",
         "Ultra High 1.0",
         "Ultra High 2.2",
@@ -3003,10 +3002,9 @@ async function createSimilar(projectId) {
 
     const normalizeEngine = (value) => {
         const raw = String(value || "").trim().toLowerCase();
-        if (["wan2", "grok", "minimax", "seedance"].includes(raw)) {
+        if (["wan2", "grok", "seedance"].includes(raw)) {
             return raw;
         }
-        if (raw.includes("minimax")) return "minimax";
         if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
         if (raw.includes("cria 3.0") || raw.includes("grok")) return "grok";
@@ -4145,7 +4143,7 @@ function _renderSimilarUnifiedPrompt(project) {
     similarState.unifiedEngine = selectedEngine;
     similarState.unifiedDuration = selectedDuration;
 
-    enginePickerEl.innerHTML = ["grok", "wan2", "seedance", "minimax"].map((engineValue) => `
+    enginePickerEl.innerHTML = ["grok", "wan2", "seedance"].map((engineValue) => `
         <button
             class="similar-scene-engine-btn${selectedEngine === engineValue ? " selected" : ""}"
             type="button"
@@ -4608,7 +4606,7 @@ function _similarSceneDuration(scene) {
 
 function _normalizeSimilarEngine(rawValue) {
     const value = String(rawValue || "").trim().toLowerCase();
-    if (value === "wan2" || value === "minimax" || value === "seedance") {
+    if (value === "wan2" || value === "seedance") {
         return value;
     }
     return "grok";
@@ -4618,7 +4616,6 @@ function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
     if (normalized === "wan2") return "U1";
     if (normalized === "seedance") return "S2";
-    if (normalized === "minimax") return "MM";
     return "C3";
 }
 
@@ -4626,7 +4623,6 @@ function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
     if (normalized === "wan2") return "Ultra High 1.0";
     if (normalized === "seedance") return "Seedance 2.0";
-    if (normalized === "minimax") return "MiniMax";
     return "Cria 3.0 speed";
 }
 
@@ -5478,13 +5474,13 @@ function _renderSimilarScenes(project, options = {}) {
                 ${uploadsSectionMarkup}
 
                 <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
-                    ${["grok", "wan2", "seedance", "minimax"].map((engineValue) => `
+                    ${["grok", "wan2", "seedance"].map((engineValue) => `
                         <button
                             class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
                             type="button"
                             onclick="similarSelectSceneEngine(${sceneId}, '${engineValue}')"
-                            title="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : engineValue === "seedance" ? "Seedance 2.0" : "MiniMax"} nesta cena"
-                            aria-label="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : engineValue === "seedance" ? "Seedance 2.0" : "MiniMax"} nesta cena"
+                            title="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : "Seedance 2.0"} nesta cena"
+                            aria-label="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : "Seedance 2.0"} nesta cena"
                         >${_similarSceneEngineLabel(engineValue)}</button>
                     `).join("")}
                 </div>
@@ -9728,9 +9724,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
         }
     }
-    const engineLabel = engine === "minimax"
-        ? "MiniMax Hailuo"
-        : engine === "wan2"
+    const engineLabel = engine === "wan2"
             ? "Ultra High 1.0"
             : engine === "grok"
                 ? "Cria 3.0 speed"
@@ -12976,9 +12970,7 @@ async function generateAiScript() {
         const hasPersonaReference = !disablePersonaReference && selectedPersonaIds.length > 0;
         const engineLabel = engine === "grok"
             ? "Cria 3.0 speed"
-            : engine === "minimax"
-                ? "MiniMax"
-                : engine === "wan2"
+            : engine === "wan2"
                     ? "Ultra High 1.0"
                     : "Mega 2.0 Ultra";
         try {

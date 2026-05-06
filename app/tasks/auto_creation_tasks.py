@@ -1222,7 +1222,7 @@ async def _create_music_video(
 async def _create_realistic_video(theme_text: str, user_id: int, cfg: dict) -> int:
     """Create a realistic video from a theme prompt.
 
-    Uses the realistic video pipeline (Wan2/Grok/Seedance/MiniMax).
+    Uses the realistic video pipeline (Wan2/Grok/Seedance).
     Optionally adds Tevoxi music or background music.
     """
     from app.tasks.video_tasks import run_realistic_video_pipeline
