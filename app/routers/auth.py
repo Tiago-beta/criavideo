@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2 import id_token as google_id_token
 import httpx
@@ -15,7 +15,9 @@ from app.auth import (
     find_user_by_email,
     get_current_user,
     hash_password,
+    is_valid_tevoxy_integration,
     sync_legacy_levita_user_from_token,
+    sync_tevoxy_user_from_token,
     user_to_dict,
 )
 from app.config import get_settings
@@ -236,12 +238,20 @@ async def google_login(
 @router.post("/exchange/levita")
 async def exchange_levita_token(
     req: TokenExchangeRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    raise HTTPException(
-        status_code=410,
-        detail="Login via Levita foi descontinuado. Entre com email e senha no CriaVideo.",
-    )
+    integration_name = str(request.headers.get("x-tevoxy-integration") or "").strip().lower()
+    integration_secret = str(request.headers.get("x-tevoxy-secret") or "").strip()
+
+    if not is_valid_tevoxy_integration(integration_name, integration_secret):
+        raise HTTPException(
+            status_code=410,
+            detail="Login via Levita foi descontinuado. Entre com email e senha no CriaVideo.",
+        )
+
+    user = await sync_tevoxy_user_from_token(req.token, db)
+    return _session_response(user)
 
 
 @router.post("/login/levita")

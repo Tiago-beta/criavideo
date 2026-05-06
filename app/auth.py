@@ -81,6 +81,34 @@ def _decode_token(token: str) -> dict:
         raise _unauthorized() from exc
 
 
+def _decode_tevoxy_token(token: str) -> dict:
+    settings = get_settings()
+    secret = str(settings.tevoxi_jwt_secret or "").strip()
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Integração Tevoxy não configurada no servidor.",
+        )
+    try:
+        return jwt.decode(token, secret, algorithms=["HS256"])
+    except JWTError as exc:
+        raise _unauthorized("Invalid Tevoxy integration token") from exc
+
+
+def is_valid_tevoxy_integration(integration_name: str = "", secret: str = "") -> bool:
+    settings = get_settings()
+    expected_secret = str(settings.criavideo_to_tevoxi_shared_secret or "").strip()
+    normalized_name = str(integration_name or "").strip().lower()
+    provided_secret = str(secret or "").strip()
+
+    return (
+        normalized_name == "tevoxy-video-proxy"
+        and bool(expected_secret)
+        and bool(provided_secret)
+        and hmac.compare_digest(provided_secret, expected_secret)
+    )
+
+
 def _normalize_email(payload: dict, external_user_id: str) -> str:
     email = (payload.get("email") or "").strip().lower()
     if email:
@@ -145,6 +173,55 @@ async def sync_legacy_levita_user_from_token(token: str, db: AsyncSession) -> Ap
     external_user_id = payload.get("id") or payload.get("sub")
     if external_user_id is None:
         raise _unauthorized()
+
+    external_user_id = str(external_user_id)
+    email = _normalize_email(payload, external_user_id)
+    display_name = _normalize_name(payload, email)
+    role = payload.get("role") or "user"
+
+    result = await db.execute(
+        select(AppUser).where(
+            AppUser.auth_source == "levita",
+            AppUser.external_user_id == external_user_id,
+        )
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        user = await find_user_by_email(email, db)
+
+    if user:
+        user.email = email
+        user.display_name = display_name
+        user.external_user_id = external_user_id
+        user.auth_source = "levita"
+        user.role = role
+        user.email_verified = True
+        user.last_login_at = datetime.utcnow()
+    else:
+        user = AppUser(
+            email=email,
+            display_name=display_name,
+            auth_source="levita",
+            external_user_id=external_user_id,
+            role=role,
+            is_active=True,
+            email_verified=True,
+            last_login_at=datetime.utcnow(),
+        )
+        db.add(user)
+
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def sync_tevoxy_user_from_token(token: str, db: AsyncSession) -> AppUser:
+    payload = _decode_tevoxy_token(token)
+
+    external_user_id = payload.get("id") or payload.get("sub")
+    if external_user_id is None:
+        raise _unauthorized("Missing Tevoxy user id")
 
     external_user_id = str(external_user_id)
     email = _normalize_email(payload, external_user_id)
