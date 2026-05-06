@@ -2113,6 +2113,19 @@ a {
     justify-content: flex-start;
 }
 
+.automate-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin: 2rem 0 1rem;
+}
+
+.automate-section-head .section-title {
+    margin: 0;
+}
+
 .mobile-profile-btn {
     display: none;
     align-items: center;
@@ -2496,11 +2509,23 @@ a {
     cursor: pointer;
 }
 
+.pub-render-picker-display {
+    cursor: default;
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .pub-render-picker-btn::after {
     content: "\25BE";
     color: var(--text-muted);
     font-size: 0.78rem;
     flex: 0 0 auto;
+}
+
+.pub-render-picker-display::after {
+    content: none;
 }
 
 .pub-render-picker-btn.has-value {
@@ -4976,6 +5001,10 @@ svg.spin {
 
     .page-header h1 {
         font-size: 22px;
+    }
+
+    .automate-section-head {
+        align-items: flex-start;
     }
 
     .cards-grid {

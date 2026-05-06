@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v364 loaded");
+console.log("[CriaVideo] app.js v365 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -728,9 +728,9 @@ function bindDashboardEvents() {
     document.getElementById("btn-schedule-publish").addEventListener("click", openPublishScheduleModal);
     document.getElementById("pub-links-toggle").addEventListener("click", togglePublishLinks);
     document.getElementById("btn-save-links").addEventListener("click", savePublishLinksForAccount);
-    const renderPickerBtn = document.getElementById("pub-render-picker-btn");
-    if (renderPickerBtn) {
-        renderPickerBtn.addEventListener("click", () => {
+    const publishSourceOpenBtn = document.getElementById("btn-publish-source-open");
+    if (publishSourceOpenBtn) {
+        publishSourceOpenBtn.addEventListener("click", () => {
             _publishOpenRenderSourceModal();
         });
     }
@@ -808,6 +808,12 @@ function bindDashboardEvents() {
     if (analyzeRunBtn) {
         analyzeRunBtn.addEventListener("click", () => {
             runAnalyzeChannel();
+        });
+    }
+    const analyzeAddBtn = document.getElementById("btn-new-analyze-channel");
+    if (analyzeAddBtn) {
+        analyzeAddBtn.addEventListener("click", () => {
+            connectPlatform("youtube");
         });
     }
     const analyzeHistoryBtn = document.getElementById("btn-analyze-history");
@@ -13344,8 +13350,8 @@ function _publishSyncRenderPicker() {
     const selectedItem = (_publishRenderLibrary.items || []).find(
         (item) => String(item.render_id) === selectedRenderId
     );
-    const fallbackLabel = selectedRenderId ? getPublishRenderLabel(selectedRenderId) : "Selecione aqui...";
-    const rawLabel = selectedItem?.picker_label || fallbackLabel || "Selecione aqui...";
+    const fallbackLabel = selectedRenderId ? getPublishRenderLabel(selectedRenderId) : "Nenhum video selecionado";
+    const rawLabel = selectedItem?.picker_label || fallbackLabel || "Nenhum video selecionado";
     const compactLabel = rawLabel.length > 84 ? `${rawLabel.slice(0, 84)}...` : rawLabel;
 
     pickerBtn.textContent = compactLabel;

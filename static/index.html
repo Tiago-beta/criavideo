@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260506-14">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260506-15">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 364;
+        var REQUIRED_VER = 365;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -371,7 +371,10 @@
 
                     <section id="page-publish" class="page">
                         <div class="page-header">
-                            <h1>Publicar</h1>
+                            <div class="page-header-left">
+                                <h1>Publicar</h1>
+                                <button id="btn-publish-source-open" class="btn btn-primary btn-add-project" type="button" title="Selecionar video para publicar" aria-label="Selecionar video para publicar">+</button>
+                            </div>
                             <div class="page-header-right">
                                 <div class="sidebar-credits page-credits-badge" data-credits-trigger title="Clique para adicionar saldo">
                                     <span class="sidebar-credits-label">Saldo</span>
@@ -392,12 +395,13 @@
                                         <div class="form-group publish-form-group">
                                             <button
                                                 id="pub-render-picker-btn"
-                                                class="input pub-render-picker-btn"
+                                                class="input pub-render-picker-btn pub-render-picker-display"
                                                 type="button"
-                                                aria-label="Selecione o vídeo renderizado"
-                                                aria-haspopup="dialog"
+                                                aria-label="Video selecionado para publicar"
+                                                aria-live="polite"
+                                                tabindex="-1"
                                             >
-                                                Selecione aqui...
+                                                Nenhum video selecionado
                                             </button>
                                             <select id="pub-render-select" class="input pub-render-select-native" aria-label="Selecione o vídeo renderizado" hidden tabindex="-1">
                                                 <option value="">Selecione aqui...</option>
@@ -536,7 +540,10 @@
 
                     <section id="page-analyze" class="page">
                         <div class="page-header">
-                            <h1>Analisar</h1>
+                            <div class="page-header-left">
+                                <h1>Analisar</h1>
+                                <button id="btn-new-analyze-channel" class="btn btn-primary btn-add-project" type="button" title="Adicionar canal para analisar" aria-label="Adicionar canal para analisar">+</button>
+                            </div>
                             <div class="page-header-right">
                                 <div class="sidebar-credits page-credits-badge" data-credits-trigger title="Clique para adicionar saldo">
                                     <span class="sidebar-credits-label">Saldo</span>
@@ -647,8 +654,8 @@
                     <section id="page-automate" class="page">
                         <div class="page-header">
                             <div class="page-header-left automate-header-main">
-                                <button id="btn-new-automation" class="btn btn-primary btn-add-project" type="button" title="Nova automação" aria-label="Nova automação">+</button>
                                 <h1>Automatizar</h1>
+                                <button id="btn-new-automation" class="btn btn-primary btn-add-project" type="button" title="Nova automação" aria-label="Nova automação">+</button>
                             </div>
                             <div class="page-header-right">
                                 <div class="sidebar-credits page-credits-badge" data-credits-trigger title="Clique para adicionar saldo">
@@ -657,12 +664,12 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="page-subheader automate-subheader">
-                            <button id="btn-auto-pilot" class="btn btn-secondary btn-sm" type="button">Piloto automatico</button>
-                        </div>
                         <div class="automate-sections">
                             <div class="automate-section">
-                                <h3 class="section-title">Criação automática</h3>
+                                <div class="automate-section-head">
+                                    <h3 class="section-title">Criação automática</h3>
+                                    <button id="btn-auto-pilot" class="btn btn-secondary btn-sm" type="button">Piloto automatico</button>
+                                </div>
                                 <p class="section-subtitle">Crie e publique vídeos automaticamente com IA. Defina temas, frequência e deixe o sistema trabalhar.</p>
                                 <div id="auto-schedules-list" class="cards-grid">
                                     <div class="loading">Carregando automações...</div>
@@ -3600,8 +3607,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260506-14"></script>
-    <script src="/video/static/pwa.js?v=20260506-14"></script>
+    <script src="/video/static/app.js?v=20260506-15"></script>
+    <script src="/video/static/pwa.js?v=20260506-15"></script>
 </body>
 </html>
 
