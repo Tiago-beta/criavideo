@@ -7,7 +7,7 @@ import logging
 import shutil
 import httpx
 from pathlib import Path
-from PIL import Image, ImageOps
+from PIL import Image
 from app.config import get_settings
 from app.database import async_session
 from app.models import VideoProject, VideoScene, VideoRender, VideoStatus
@@ -52,7 +52,7 @@ def _prepare_reference_delivery_images(
     image_paths: list[str],
     prefix: str = "upload_ref",
 ) -> list[str]:
-    """Create canonical reference files so all engines receive the same normalized image bytes."""
+    """Copy uploaded references into project storage without altering the source bytes."""
     reference_dir = Path(settings.media_dir) / "reference_inputs" / str(project_id)
     reference_dir.mkdir(parents=True, exist_ok=True)
 
@@ -64,24 +64,15 @@ def _prepare_reference_delivery_images(
             continue
         seen_sources.add(source_path)
 
+        source_suffix = Path(source_path).suffix.lower() or ".img"
+        output_path = reference_dir / f"{prefix}_{index:02d}{source_suffix}"
+
         try:
-            with Image.open(source_path) as source_image:
-                normalized = ImageOps.exif_transpose(source_image)
-                if max(normalized.size) > 2048:
-                    normalized.thumbnail((2048, 2048), Image.LANCZOS)
-
-                has_alpha = normalized.mode in {"RGBA", "LA"} or "transparency" in getattr(normalized, "info", {})
-                if has_alpha:
-                    output_path = reference_dir / f"{prefix}_{index:02d}.png"
-                    normalized.convert("RGBA").save(output_path, format="PNG", optimize=True)
-                else:
-                    output_path = reference_dir / f"{prefix}_{index:02d}.jpg"
-                    normalized.convert("RGB").save(output_path, format="JPEG", quality=95, optimize=True)
-
+            shutil.copyfile(source_path, output_path)
             if output_path.exists() and output_path.stat().st_size > 0:
                 prepared_paths.append(str(output_path))
                 logger.info(
-                    "Prepared canonical reference image for project %s: %s -> %s (%s bytes)",
+                    "Copied reference image for project %s without re-encoding: %s -> %s (%s bytes)",
                     project_id,
                     source_path,
                     output_path,
@@ -90,7 +81,7 @@ def _prepare_reference_delivery_images(
                 continue
         except Exception as exc:
             logger.warning(
-                "Failed to normalize reference image for project %s (%s): %s. Using original file.",
+                "Failed to copy reference image for project %s (%s): %s. Using original file.",
                 project_id,
                 source_path,
                 exc,
