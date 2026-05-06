@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260506-15">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260506-16">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 365;
+        var REQUIRED_VER = 366;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -391,28 +391,14 @@
                         <div id="publish-tab-publish" class="publish-tab-content active">
                             <div class="panel">
                                 <div id="publish-form-area">
-                                    <div class="publish-select-row">
-                                        <div class="form-group publish-form-group">
-                                            <button
-                                                id="pub-render-picker-btn"
-                                                class="input pub-render-picker-btn pub-render-picker-display"
-                                                type="button"
-                                                aria-label="Video selecionado para publicar"
-                                                aria-live="polite"
-                                                tabindex="-1"
-                                            >
-                                                Nenhum video selecionado
-                                            </button>
-                                            <select id="pub-render-select" class="input pub-render-select-native" aria-label="Selecione o vídeo renderizado" hidden tabindex="-1">
-                                                <option value="">Selecione aqui...</option>
-                                            </select>
-                                            <input id="pub-upload-video-input" type="file" accept="video/*" hidden onchange="_publishUploadVideoAndSelect(this)">
-                                        </div>
-                                        <div class="form-group publish-form-group">
-                                            <select id="pub-draft-select" class="input" aria-label="Selecionar rascunho salvo">
-                                                <option value="">Meus rascunhos...</option>
-                                            </select>
-                                        </div>
+                                    <div id="publish-form-state" hidden>
+                                        <select id="pub-render-select" class="input pub-render-select-native" aria-label="Selecione o vídeo renderizado" hidden tabindex="-1">
+                                            <option value="">Selecione aqui...</option>
+                                        </select>
+                                        <input id="pub-upload-video-input" type="file" accept="video/*" hidden onchange="_publishUploadVideoAndSelect(this)">
+                                        <select id="pub-draft-select" class="input" aria-label="Selecionar rascunho salvo" hidden tabindex="-1">
+                                            <option value="">Meus rascunhos...</option>
+                                        </select>
                                     </div>
                                     <div id="pub-ai-loading" class="pub-ai-loading" hidden>
                                         <div class="spinner-small"></div>
@@ -2729,6 +2715,29 @@
         </div>
     </div>
 
+    <div id="modal-auto-theme-date" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Editar data do tema</h3>
+                <button class="modal-close" onclick="closeModal('modal-auto-theme-date')" type="button">&times;</button>
+            </div>
+            <div class="modal-body auto-theme-edit-modal">
+                <p class="section-subtitle">Tema: <strong id="auto-theme-edit-title">-</strong></p>
+                <p id="auto-theme-edit-current" class="auto-theme-edit-current" hidden></p>
+                <div class="form-group">
+                    <label for="auto-theme-edit-date">Data manual</label>
+                    <input id="auto-theme-edit-date" class="input" type="date">
+                    <small id="auto-theme-edit-time" class="pause-hint">Horário configurado: -</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-auto-theme-date')" type="button">Cancelar</button>
+                <button class="btn btn-secondary" id="auto-theme-edit-clear-btn" onclick="clearAutoThemeDateFromModal()" type="button">Limpar</button>
+                <button class="btn btn-primary" id="auto-theme-edit-save-btn" onclick="saveAutoThemeDateFromModal()" type="button">Salvar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="modal-analyze-history" class="modal">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
@@ -3607,8 +3616,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260506-15"></script>
-    <script src="/video/static/pwa.js?v=20260506-15"></script>
+    <script src="/video/static/app.js?v=20260506-16"></script>
+    <script src="/video/static/pwa.js?v=20260506-16"></script>
 </body>
 </html>
 

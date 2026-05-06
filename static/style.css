@@ -1403,6 +1403,30 @@ a {
     font-weight: 600;
 }
 
+.auto-theme-item .theme-edit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid rgba(96, 129, 162, 0.35);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.auto-theme-item .theme-edit-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+.auto-theme-item .theme-edit-btn:hover {
+    border-color: rgba(246, 165, 47, 0.44);
+    color: var(--text);
+}
+
 .auto-theme-item .theme-date-editor {
     display: inline-flex;
     align-items: center;
@@ -1808,6 +1832,21 @@ a {
     background: rgba(246, 165, 47, 0.12);
     color: #ffd997;
     white-space: nowrap;
+}
+
+.auto-theme-edit-modal .form-group {
+    margin-bottom: 0;
+}
+
+.auto-theme-edit-current {
+    margin: 0 0 1rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.auto-theme-edit-current.theme-date-custom {
+    color: #34d399;
+    font-weight: 600;
 }
 
 /* ── Automation Video Type Grid (matching project wizard) ── */
@@ -5163,11 +5202,13 @@ svg.spin {
     }
 
     .auto-theme-item .theme-error-btn,
+    .auto-theme-item .theme-edit-btn,
     .auto-theme-item .theme-run-btn {
         font-size: 0.6rem;
         padding: 1px 4px;
     }
 
+    .auto-theme-item .theme-edit-btn,
     .auto-theme-item .theme-run-btn {
         width: 24px;
         height: 24px;

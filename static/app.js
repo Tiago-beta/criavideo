@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v365 loaded");
+console.log("[CriaVideo] app.js v366 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -59,6 +59,10 @@ let _autoPilotPersonaEditor = {
 };
 let _autoRealisticPersonaCompositionTypes = ["natureza"];
 let _autoThemeRunState = {};
+let _autoThemeDateEditMetaById = {};
+let _autoThemeDateEditState = {
+    themeId: 0,
+};
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 let _profileAdminIframeLoaded = false;
 let _lastTrackedPage = "";
@@ -687,33 +691,7 @@ function bindNavigation() {
 }
 
 function ensurePublishDraftSelector() {
-    const formArea = document.getElementById("publish-form-area");
-    const renderSelect = document.getElementById("pub-render-select");
-    if (!formArea || !renderSelect) {
-        return;
-    }
-
-    if (document.getElementById("pub-draft-select")) {
-        return;
-    }
-
-    const renderGroup = renderSelect.closest(".form-group");
-    if (!renderGroup || !renderGroup.parentNode) {
-        return;
-    }
-
-    let row = renderGroup.closest(".publish-select-row");
-    if (!row) {
-        row = document.createElement("div");
-        row.className = "publish-select-row";
-        renderGroup.parentNode.insertBefore(row, renderGroup);
-        row.appendChild(renderGroup);
-    }
-
-    const draftGroup = document.createElement("div");
-    draftGroup.className = "form-group publish-form-group";
-    draftGroup.innerHTML = "<select id=\"pub-draft-select\" class=\"input\" aria-label=\"Selecionar rascunho salvo\"><option value=\"\">Meus rascunhos...</option></select>";
-    row.appendChild(draftGroup);
+    return;
 }
 
 function bindDashboardEvents() {
@@ -1811,6 +1789,9 @@ function closeModal(id) {
             btn.disabled = false;
             btn.textContent = "Agendar";
         }
+    }
+    if (id === "modal-auto-theme-date") {
+        _resetAutoThemeDateModal();
     }
     if (id === "modal-player") {
         const video = document.getElementById("player-video");
@@ -15620,6 +15601,7 @@ async function toggleAutoPilotChannel(socialAccountId, enabled) {
 async function loadAutoSchedules() {
     const container = document.getElementById("auto-schedules-list");
     if (!container) return;
+    _autoThemeDateEditMetaById = {};
     try {
         const data = await api("/automation/schedules");
         if (!data.length) {
@@ -15726,13 +15708,21 @@ function renderAutoCard(s) {
             ? `<span class="theme-date ${t.scheduled_date_overridden ? "theme-date-custom" : ""}">${t.scheduled_date_overridden ? "Manual" : "Previsto"}: ${esc(scheduledDateText)}</span>`
             : "";
         const canEditReleaseDate = allowMusicDateEdit && t.status === "pending";
-        const dateEditor = canEditReleaseDate
-            ? `
-            <div class="theme-date-editor">
-                <input type="date" id="theme-date-input-${t.id}" class="theme-date-input" value="${esc(t.scheduled_date_iso || "")}">
-                <button class="theme-date-save" id="theme-date-save-${t.id}" onclick="saveAutoThemeDate(${t.id})" type="button" title="Salvar data">Salvar</button>
-                <button class="theme-date-clear" onclick="clearAutoThemeDate(${t.id})" type="button" title="Limpar data">Limpar</button>
-            </div>`
+        if (canEditReleaseDate) {
+            _autoThemeDateEditMetaById[t.id] = {
+                theme: String(t.theme || ""),
+                scheduledDateIso: String(t.scheduled_date_iso || ""),
+                displayDate: scheduledDateText,
+                publishTimeLocal,
+                isManual: !!t.scheduled_date_overridden,
+            };
+        }
+        const editBtn = canEditReleaseDate
+            ? `<button class="theme-edit-btn" onclick="openAutoThemeDateModal(${t.id})" type="button" title="Editar data" aria-label="Editar data manual">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                </svg>
+            </button>`
             : "";
         const statusBadge = statusLabel ? `<span class="theme-badge ${statusClass}">${statusLabel}</span>` : "";
         const estimatedCredits = parseInt(t.estimated_credits || "0", 10) || 0;
@@ -15756,7 +15746,7 @@ function renderAutoCard(s) {
             <span class="theme-status">${icon}</span>
             <span class="theme-text">${esc(t.theme)}</span>
             ${dateLabel}
-            ${dateEditor}
+            ${editBtn}
             ${statusBadge}
             ${creditBadge}
             ${runBtn}
@@ -15859,9 +15849,9 @@ async function runAutoThemeNow(themeId, pilotStream = "", triggerBtn = null) {
     }
 }
 
-async function saveAutoThemeDate(themeId) {
-    const input = document.getElementById(`theme-date-input-${themeId}`);
-    const saveBtn = document.getElementById(`theme-date-save-${themeId}`);
+async function saveAutoThemeDate(themeId, options = {}) {
+    const input = options.input || document.getElementById(`theme-date-input-${themeId}`) || document.getElementById("auto-theme-edit-date");
+    const saveBtn = options.saveBtn || document.getElementById(`theme-date-save-${themeId}`) || document.getElementById("auto-theme-edit-save-btn");
     if (!input) return;
 
     const rawDate = (input.value || "").trim();
@@ -15877,9 +15867,11 @@ async function saveAutoThemeDate(themeId) {
                 scheduled_date: rawDate || null,
             }),
         });
-        loadAutoSchedules();
+        await loadAutoSchedules();
+        return true;
     } catch (error) {
         alert(`Erro: ${error.message}`);
+        return false;
     } finally {
         if (saveBtn) {
             saveBtn.disabled = false;
@@ -15888,11 +15880,104 @@ async function saveAutoThemeDate(themeId) {
     }
 }
 
-async function clearAutoThemeDate(themeId) {
-    const input = document.getElementById(`theme-date-input-${themeId}`);
+async function clearAutoThemeDate(themeId, options = {}) {
+    const input = options.input || document.getElementById(`theme-date-input-${themeId}`) || document.getElementById("auto-theme-edit-date");
     if (!input) return;
     input.value = "";
-    await saveAutoThemeDate(themeId);
+    return await saveAutoThemeDate(themeId, options);
+}
+
+function _resetAutoThemeDateModal() {
+    _autoThemeDateEditState.themeId = 0;
+
+    const titleEl = document.getElementById("auto-theme-edit-title");
+    if (titleEl) titleEl.textContent = "-";
+
+    const currentEl = document.getElementById("auto-theme-edit-current");
+    if (currentEl) {
+        currentEl.textContent = "";
+        currentEl.hidden = true;
+        currentEl.classList.remove("theme-date-custom");
+    }
+
+    const timeEl = document.getElementById("auto-theme-edit-time");
+    if (timeEl) timeEl.textContent = "Horário configurado: -";
+
+    const input = document.getElementById("auto-theme-edit-date");
+    if (input) input.value = "";
+
+    const saveBtn = document.getElementById("auto-theme-edit-save-btn");
+    if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Salvar";
+    }
+
+    const clearBtn = document.getElementById("auto-theme-edit-clear-btn");
+    if (clearBtn) clearBtn.disabled = false;
+}
+
+function openAutoThemeDateModal(themeId) {
+    const parsedThemeId = parseInt(themeId || "0", 10) || 0;
+    const meta = _autoThemeDateEditMetaById[parsedThemeId];
+    if (!parsedThemeId || !meta) return;
+
+    _autoThemeDateEditState.themeId = parsedThemeId;
+
+    const titleEl = document.getElementById("auto-theme-edit-title");
+    if (titleEl) titleEl.textContent = meta.theme || `Tema ${parsedThemeId}`;
+
+    const currentEl = document.getElementById("auto-theme-edit-current");
+    if (currentEl) {
+        const hasDisplayDate = !!String(meta.displayDate || "").trim();
+        currentEl.textContent = hasDisplayDate
+            ? `${meta.isManual ? "Manual" : "Previsto"}: ${meta.displayDate}`
+            : "Nenhuma data definida para este tema.";
+        currentEl.hidden = false;
+        currentEl.classList.toggle("theme-date-custom", !!meta.isManual);
+    }
+
+    const timeEl = document.getElementById("auto-theme-edit-time");
+    if (timeEl) {
+        timeEl.textContent = meta.publishTimeLocal
+            ? `Horário configurado: ${meta.publishTimeLocal}`
+            : "Horário configurado automaticamente pelo piloto.";
+    }
+
+    const input = document.getElementById("auto-theme-edit-date");
+    if (input) input.value = meta.scheduledDateIso || "";
+
+    openModal("modal-auto-theme-date");
+}
+
+async function saveAutoThemeDateFromModal() {
+    const themeId = _autoThemeDateEditState.themeId;
+    if (!themeId) return;
+
+    const input = document.getElementById("auto-theme-edit-date");
+    const saveBtn = document.getElementById("auto-theme-edit-save-btn");
+    const ok = await saveAutoThemeDate(themeId, { input, saveBtn });
+    if (ok) {
+        closeModal("modal-auto-theme-date");
+    }
+}
+
+async function clearAutoThemeDateFromModal() {
+    const themeId = _autoThemeDateEditState.themeId;
+    if (!themeId) return;
+
+    const input = document.getElementById("auto-theme-edit-date");
+    const saveBtn = document.getElementById("auto-theme-edit-save-btn");
+    const clearBtn = document.getElementById("auto-theme-edit-clear-btn");
+
+    if (clearBtn) clearBtn.disabled = true;
+    try {
+        const ok = await clearAutoThemeDate(themeId, { input, saveBtn });
+        if (ok) {
+            closeModal("modal-auto-theme-date");
+        }
+    } finally {
+        if (clearBtn) clearBtn.disabled = false;
+    }
 }
 
 async function deleteAutoTheme(themeId, scheduleId) {
