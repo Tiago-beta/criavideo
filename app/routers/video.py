@@ -194,6 +194,29 @@ def _ensure_reference_image_instruction(prompt: str, reference_mode: str = "") -
     return f"{base_prompt}\n\n{reference_rule}"
 
 
+def _ensure_upload_reference_temporal_order(
+    prompt: str,
+    *,
+    use_last_image_as_final_frame: bool = False,
+    reference_count: int = 0,
+) -> str:
+    base_prompt = (prompt or "").strip()
+    if not base_prompt or not use_last_image_as_final_frame or int(reference_count or 0) < 2:
+        return base_prompt
+
+    lowered = base_prompt.lower()
+    if "ordem temporal das referencias enviadas" in lowered:
+        return base_prompt
+
+    temporal_rule = (
+        "ORDEM TEMPORAL DAS REFERENCIAS ENVIADAS (OBRIGATORIA): a primeira imagem enviada define o estado inicial e o quadro de abertura obrigatorios. "
+        "A ultima imagem enviada define o estado final e o quadro de encerramento obrigatorios. "
+        "Se houver transformacao, construcao, reforma, crescimento, montagem, melhoria ou evolucao visual, ela deve acontecer exatamente do primeiro estado para o ultimo. "
+        "Nunca inverter a direcao do tempo, nunca comecar pelo resultado final e nunca terminar no estado inicial."
+    )
+    return f"{base_prompt}\n\n{temporal_rule}"
+
+
 def _normalize_interaction_persona(value: str) -> str:
     raw = str(value or "").strip().lower()
     mapping = {
@@ -4617,12 +4640,8 @@ async def generate_realistic_endpoint(
                 raise HTTPException(status_code=400, detail="Uma das imagens de referência não foi encontrada. Envie novamente.")
             upload_image_paths.append(str(resolved))
 
-        image_path_str = build_persona_reference_montage(
-            user_id=user["id"],
-            image_paths=upload_image_paths,
-            prefix="upload_refs",
-        )
         reference_count = len(upload_image_paths)
+        image_path_str = upload_image_paths[0] if upload_image_paths else ""
     elif not disable_persona_reference:
         try:
             resolved_personas, persona_image_paths = await resolve_persona_reference_images(
@@ -4707,6 +4726,11 @@ async def generate_realistic_endpoint(
                 "MULTI-IMAGE REFERENCE RULE (OBRIGATORIA): trate as imagens enviadas como referencias complementares do mesmo sujeito, local ou projeto. "
                 "Use essas imagens para preservar etapas, estrutura, materiais, fachada, ambiente e identidade visual reais mostrados nelas. "
                 "Nao substitua por outra casa, outro personagem, outro produto ou outro cenario sem relacao."
+            )
+            prompt = _ensure_upload_reference_temporal_order(
+                prompt,
+                use_last_image_as_final_frame=use_last_image_as_final_frame,
+                reference_count=reference_count,
             )
         elif reference_count > 1:
             prompt = (
