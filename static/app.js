@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v369 loaded");
+console.log("[CriaVideo] app.js v370 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -92,17 +92,6 @@ let _personaMultiSelectionByContext = {
     auto: {},
     pilot: {},
 };
-let _personaNoReferenceByContext = {
-    wizard: {},
-    script: {},
-    ai: {},
-    auto: {},
-    pilot: {},
-};
-let _personaManagerContext = "script";
-let _personaManagerType = "natureza";
-let _personaManagerMulti = false;
-let personaManagerReferenceImageFile = null;
 let _personaVoiceBuilderProfileId = 0;
 let _personaPromptEditorProfileId = 0;
 const PERSONA_REFERENCE_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -1145,17 +1134,6 @@ function _analyzeRenderConnectedAccounts(accounts) {
         const username = (account.platform_username && account.platform_username !== accountName)
             ? account.platform_username
             : "";
-        const selectedClass = account.id === _analyzeState.selectedAccountId ? " selected" : "";
-        return `
-            <button class="analyze-connected-card${selectedClass}" data-account-id="${account.id}" type="button">
-                <span class="social-account-icon" aria-hidden="true">${socialPlatformIcon(platform)}</span>
-                <span class="analyze-connected-meta">
-                    <strong>${esc(accountName)}</strong>
-                    <small>${esc(socialPlatformName(platform))}${username ? ` · ${esc(username)}` : ""}</small>
-                </span>
-                <span class="analyze-account-status">Conectada</span>
-            </button>
-        `;
     }).join("");
 
     container.querySelectorAll(".analyze-connected-card").forEach((card) => {
@@ -10833,17 +10811,8 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
         maxReferences: 5,
     },
     {
-        id: "alibaba/wan-2.7-pro/text-to-image",
-        label: "WAN 2.7 Pro Texto para Imagem",
-        requiresReference: false,
-        supportsSize: true,
-        supportsThinkingMode: true,
-        maxOutputs: 4,
-        maxReferences: 5,
-    },
-    {
-        id: "alibaba/wan-2.7-pro/image-edit",
-        label: "WAN 2.7 Pro Imagem para Imagem",
+        id: "ultra-high-3.0",
+        label: "Ultra High 3.0",
         requiresReference: true,
         supportsSize: true,
         supportsThinkingMode: true,
@@ -11009,7 +10978,9 @@ function syncScriptImageCreatorControls() {
             : "Descreva a imagem que voce quer criar. Use referencias se quiser guiar enquadramento, pose ou estilo...";
     }
     if (referenceHelp) {
-        referenceHelp.textContent = meta.requiresReference
+        referenceHelp.textContent = meta.id === "ultra-high-3.0"
+            ? `Opcional: envie ate ${meta.maxReferences} referencias para guiar a criacao.`
+            : meta.requiresReference
             ? `Esse modelo exige ao menos 1 referencia e aceita ate ${meta.maxReferences}.`
             : `Opcional: envie ate ${meta.maxReferences} referencias para orientar o resultado.`;
     }

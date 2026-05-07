@@ -80,6 +80,18 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "max_references": 9,
     },
 }
+_SCRIPT_IMAGE_MODEL_ALIASES: dict[str, dict[str, Any]] = {
+    "ultra-high-3.0": {
+        "label": "Ultra High 3.0",
+        "description": "Cria qualquer imagem sem restricao.",
+        "text_model": "alibaba/wan-2.7-pro/text-to-image",
+        "edit_model": "alibaba/wan-2.7-pro/image-edit",
+        "supports_size": True,
+        "supports_thinking_mode": True,
+        "max_outputs": 4,
+        "max_references": 9,
+    },
+}
 _ALLOWED_ASPECT_RATIOS = {"1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
 _ALLOWED_WAN_TEXT_SIZES = {"1K", "2K", "4K"}
 _ALLOWED_WAN_EDIT_SIZES = {"1K", "2K"}
@@ -92,13 +104,39 @@ def normalize_supported_model(model: str) -> str:
     return candidate if candidate in _SUPPORTED_MODELS else ""
 
 
+def normalize_script_image_model(model: str) -> str:
+    candidate = str(model or "").strip()
+    if candidate in _SCRIPT_IMAGE_MODEL_ALIASES:
+        return candidate
+    return normalize_supported_model(candidate)
+
+
 def is_supported_atlas_image_model(model: str) -> bool:
     return bool(normalize_supported_model(model))
+
+
+def is_supported_script_image_model(model: str) -> bool:
+    return bool(normalize_script_image_model(model))
 
 
 def get_supported_model_meta(model: str) -> dict[str, Any]:
     normalized = normalize_supported_model(model)
     return dict(_SUPPORTED_MODELS.get(normalized, {}))
+
+
+def get_script_image_model_meta(model: str) -> dict[str, Any]:
+    normalized = normalize_script_image_model(model)
+    if normalized in _SCRIPT_IMAGE_MODEL_ALIASES:
+        return dict(_SCRIPT_IMAGE_MODEL_ALIASES.get(normalized, {}))
+    return get_supported_model_meta(normalized)
+
+
+def resolve_script_image_model(model: str, has_reference: bool = False) -> str:
+    normalized = normalize_script_image_model(model)
+    if normalized in _SCRIPT_IMAGE_MODEL_ALIASES:
+        alias_meta = _SCRIPT_IMAGE_MODEL_ALIASES[normalized]
+        return str(alias_meta["edit_model"] if has_reference else alias_meta["text_model"])
+    return normalize_supported_model(normalized)
 
 
 def model_requires_reference(model: str) -> bool:

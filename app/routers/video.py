@@ -1073,10 +1073,11 @@ async def generate_script_image(
 ):
     from app.services.atlas_image import (
         generate_atlas_images,
-        get_supported_model_meta,
-        is_supported_atlas_image_model,
+        get_script_image_model_meta,
+        is_supported_script_image_model,
         model_requires_reference,
-        normalize_supported_model,
+        normalize_script_image_model,
+        resolve_script_image_model,
     )
 
     prompt = str(req.prompt or "").strip()
@@ -1085,8 +1086,8 @@ async def generate_script_image(
     if len(prompt) > 5000:
         raise HTTPException(status_code=400, detail="Prompt de imagem muito longo.")
 
-    model = normalize_supported_model(req.model)
-    if not is_supported_atlas_image_model(model):
+    requested_model = normalize_script_image_model(req.model)
+    if not is_supported_script_image_model(requested_model):
         raise HTTPException(status_code=400, detail="Modelo de imagem nao suportado.")
 
     reference_paths: list[str] = []
@@ -1098,13 +1099,15 @@ async def generate_script_image(
         if resolved and resolved.exists():
             reference_paths.append(str(resolved))
 
-    if model_requires_reference(model) and not reference_paths:
+    resolved_model = resolve_script_image_model(requested_model, bool(reference_paths))
+
+    if model_requires_reference(resolved_model) and not reference_paths:
         raise HTTPException(status_code=400, detail="Esse motor exige ao menos uma imagem de referencia.")
 
     try:
         outputs = await generate_atlas_images(
             prompt=prompt,
-            model=model,
+            model=resolved_model,
             aspect_ratio=req.aspect_ratio,
             size=req.size,
             count=req.n,
@@ -1120,8 +1123,8 @@ async def generate_script_image(
         raise HTTPException(status_code=502, detail=message) from exc
 
     images: list[dict[str, Any]] = []
-    model_meta = get_supported_model_meta(model)
-    model_label = str(model_meta.get("label") or model)
+    model_meta = get_script_image_model_meta(requested_model)
+    model_label = str(model_meta.get("label") or requested_model)
     user_dir = _temp_user_dir(user["id"])
 
     for index, item in enumerate(outputs, start=1):
@@ -1147,7 +1150,8 @@ async def generate_script_image(
             "mime_type": mime_type,
             "file_name": f"imagem-gerada-{index}{ext}",
             "label": model_label,
-            "model": model,
+            "model": requested_model,
+            "provider_model": resolved_model,
             "size": len(raw_bytes),
         })
 
@@ -1160,7 +1164,8 @@ async def generate_script_image(
         "upload_id": first["upload_id"],
         "image_url": first["image_url"],
         "size": first["size"],
-        "model": model,
+        "model": requested_model,
+        "provider_model": resolved_model,
         "label": model_label,
     }
 

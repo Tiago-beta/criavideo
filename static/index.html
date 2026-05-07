@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260506-19">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260506-20">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 369;
+        var REQUIRED_VER = 370;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -3641,8 +3641,7 @@
                                 <option value="google/nano-banana-2/text-to-image">Nano Banana 2</option>
                                 <option value="google/nano-banana/text-to-image">Nano Banana</option>
                                 <option value="openai/gpt-image-1/text-to-image">GPT Image</option>
-                                <option value="alibaba/wan-2.7-pro/text-to-image">WAN 2.7 Pro Texto para Imagem</option>
-                                <option value="alibaba/wan-2.7-pro/image-edit">WAN 2.7 Pro Imagem para Imagem</option>
+                                <option value="ultra-high-3.0">Ultra High 3.0</option>
                             </select>
                             <div class="script-image-generator-model-options" role="listbox" aria-label="Modelos de IA">
                                 <button type="button" class="script-image-model-card" data-model="google/nano-banana-pro/text-to-image" onclick="selectScriptImageCreatorModel('google/nano-banana-pro/text-to-image')">
@@ -3681,22 +3680,13 @@
                                         <small>Excelente para direcao artistica.</small>
                                     </span>
                                 </button>
-                                <button type="button" class="script-image-model-card" data-model="alibaba/wan-2.7-pro/text-to-image" onclick="selectScriptImageCreatorModel('alibaba/wan-2.7-pro/text-to-image')">
+                                <button type="button" class="script-image-model-card" data-model="ultra-high-3.0" onclick="selectScriptImageCreatorModel('ultra-high-3.0')">
                                     <span class="script-image-model-card-icon script-image-model-card-icon--wan">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 16 9.5 8l3.2 5 2.8-4 3.5 7"/><path d="M4 19h16"/><path d="M8 5h8"/></svg>
                                     </span>
                                     <span class="script-image-model-card-copy">
-                                        <strong>WAN 2.7 Pro T2I</strong>
-                                        <small>Mais controle para compor a cena.</small>
-                                    </span>
-                                </button>
-                                <button type="button" class="script-image-model-card" data-model="alibaba/wan-2.7-pro/image-edit" onclick="selectScriptImageCreatorModel('alibaba/wan-2.7-pro/image-edit')">
-                                    <span class="script-image-model-card-icon script-image-model-card-icon--wan-edit">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h10"/><path d="M4 12h8"/><path d="M4 17h12"/><path d="m15 6 3-3 3 3-8.5 8.5L9 15l.5-3.5L15 6Z"/></svg>
-                                    </span>
-                                    <span class="script-image-model-card-copy">
-                                        <strong>WAN 2.7 Pro I2I</strong>
-                                        <small>Usa referencias para editar e ajustar.</small>
+                                        <strong>Ultra High 3.0</strong>
+                                        <small>Cria qualquer imagem sem restricao.</small>
                                     </span>
                                 </button>
                             </div>
@@ -3811,8 +3801,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260506-19"></script>
-    <script src="/video/static/pwa.js?v=20260506-19"></script>
+    <script src="/video/static/app.js?v=20260506-20"></script>
+    <script src="/video/static/pwa.js?v=20260506-20"></script>
 </body>
 </html>
 

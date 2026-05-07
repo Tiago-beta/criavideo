@@ -291,6 +291,8 @@ def estimate_image_generation_credits(
     thinking_mode: bool = False,
 ) -> dict[str, Any]:
     normalized_model = str(model or "google/nano-banana-pro/text-to-image").strip()
+    if normalized_model == "ultra-high-3.0":
+        normalized_model = "alibaba/wan-2.7-pro/image-edit" if int(reference_image_count or 0) > 0 else "alibaba/wan-2.7-pro/text-to-image"
     if normalized_model not in IMAGE_GENERATION_MODEL_USD:
         normalized_model = "google/nano-banana-pro/text-to-image"
 
