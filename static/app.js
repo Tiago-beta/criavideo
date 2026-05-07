@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v370 loaded");
+console.log("[CriaVideo] app.js v371 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -86,6 +86,13 @@ let _personaSelectionByContext = {
     pilot: {},
 };
 let _personaMultiSelectionByContext = {
+    wizard: {},
+    script: {},
+    ai: {},
+    auto: {},
+    pilot: {},
+};
+let _personaNoReferenceByContext = {
     wizard: {},
     script: {},
     ai: {},
