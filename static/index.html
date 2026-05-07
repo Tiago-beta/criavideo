@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260506-23">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260507-01">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 373;
+        var REQUIRED_VER = 374;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -3649,7 +3649,7 @@
                                     </span>
                                     <span class="script-image-model-card-copy">
                                         <strong>Nano Banana Pro</strong>
-                                        <small>Rapido, polido e versatil.</small>
+                                        <small>Rápido, polido e versátil.</small>
                                     </span>
                                 </button>
                                 <button type="button" class="script-image-model-card" data-model="google/nano-banana-2/text-to-image" onclick="selectScriptImageCreatorModel('google/nano-banana-2/text-to-image')">
@@ -3658,7 +3658,7 @@
                                     </span>
                                     <span class="script-image-model-card-copy">
                                         <strong>Nano Banana 2</strong>
-                                        <small>Equilibrio entre rapidez e detalhe.</small>
+                                        <small>Equilíbrio entre rapidez e detalhe.</small>
                                     </span>
                                 </button>
                                 <button type="button" class="script-image-model-card" data-model="google/nano-banana/text-to-image" onclick="selectScriptImageCreatorModel('google/nano-banana/text-to-image')">
@@ -3667,7 +3667,7 @@
                                     </span>
                                     <span class="script-image-model-card-copy">
                                         <strong>Nano Banana</strong>
-                                        <small>Economico para ideias rapidas.</small>
+                                        <small>Econômico para ideias rápidas.</small>
                                     </span>
                                 </button>
                                 <button type="button" class="script-image-model-card" data-model="openai/gpt-image-1/text-to-image" onclick="selectScriptImageCreatorModel('openai/gpt-image-1/text-to-image')">
@@ -3676,7 +3676,7 @@
                                     </span>
                                     <span class="script-image-model-card-copy">
                                         <strong>GPT Image</strong>
-                                        <small>Excelente para direcao artistica.</small>
+                                        <small>Excelente para direção artística.</small>
                                     </span>
                                 </button>
                                 <button type="button" class="script-image-model-card" data-model="ultra-high-3.0" onclick="selectScriptImageCreatorModel('ultra-high-3.0')">
@@ -3685,7 +3685,7 @@
                                     </span>
                                     <span class="script-image-model-card-copy">
                                         <strong>Ultra High 3.0</strong>
-                                        <small>Cria qualquer imagem sem restricao.</small>
+                                        <small>Cria qualquer imagem sem restrição.</small>
                                     </span>
                                 </button>
                             </div>
@@ -3693,17 +3693,17 @@
 
                         <div class="form-group">
                             <label for="script-image-generator-prompt">Prompt</label>
-                            <textarea id="script-image-generator-prompt" class="wizard-textarea script-image-generator-prompt" rows="9" maxlength="5000" placeholder="Descreva a imagem que voce quer criar..."></textarea>
+                            <textarea id="script-image-generator-prompt" class="wizard-textarea script-image-generator-prompt" rows="9" maxlength="5000" placeholder="Descreva a imagem que você quer criar."></textarea>
                         </div>
 
                         <div id="script-image-generator-reference-group" class="form-group">
                             <div class="script-image-generator-section-head">
-                                <label>Imagens de referencia</label>
+                                <label>Imagens de referência</label>
                                 <span id="script-image-generator-reference-count" class="photo-upload-hint">0/5</span>
                             </div>
                             <button type="button" class="script-image-generator-dropzone" onclick="triggerScriptImageCreatorReferenceUpload()">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 14v3a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-3"/></svg>
-                                <strong>Adicionar referencias</strong>
+                                <strong>Adicionar referências</strong>
                             </button>
                             <input id="script-image-generator-reference-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handleScriptImageCreatorReferenceSelect(event)">
                             <div id="script-image-generator-reference-preview" class="photo-preview-grid script-image-generator-reference-preview"></div>
@@ -3712,7 +3712,7 @@
                         <div class="script-image-generator-settings">
                             <div id="script-image-generator-aspect-group" class="form-group">
                                 <div class="script-image-generator-section-head">
-                                    <label for="script-image-generator-aspect">Proporcao de aspecto</label>
+                                    <label for="script-image-generator-aspect">Proporção de aspecto</label>
                                 </div>
                                 <select id="script-image-generator-aspect" class="input script-image-generator-native-select" hidden>
                                     <option value="1:1">1:1</option>
@@ -3731,7 +3731,7 @@
                             </div>
                             <div id="script-image-generator-count-group" class="form-group">
                                 <div class="script-image-generator-section-head">
-                                    <label for="script-image-generator-count">Numero de imagens</label>
+                                    <label for="script-image-generator-count">Número de imagens</label>
                                 </div>
                                 <select id="script-image-generator-count" class="input script-image-generator-native-select" hidden>
                                     <option value="1">1</option>
@@ -3766,7 +3766,7 @@
                                 <span class="toggle-slider"></span>
                             </label>
                             <div class="script-image-generator-toggle-copy">
-                                <strong>Thinking mode</strong>
+                                <strong>Expansão de prompt</strong>
                             </div>
                         </div>
 
@@ -3784,7 +3784,7 @@
                             <h4>Resultados</h4>
                         </div>
                         <div id="script-image-generator-results" class="script-image-generator-results">
-                            <div class="script-image-generator-empty">Escolha um motor, escreva o prompt e gere sua imagem.</div>
+                            <div class="script-image-generator-empty">Escolha um modelo, escreva o prompt e gere sua imagem.</div>
                         </div>
                     </div>
                 </div>
@@ -3792,8 +3792,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260506-23"></script>
-    <script src="/video/static/pwa.js?v=20260506-23"></script>
+    <script src="/video/static/app.js?v=20260507-01"></script>
+    <script src="/video/static/pwa.js?v=20260507-01"></script>
 </body>
 </html>
 

@@ -59,23 +59,23 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "max_outputs": 4,
         "max_references": 5,
     },
-    "alibaba/wan-2.7-pro/text-to-image": {
-        "label": "WAN 2.7 Pro Texto para Imagem",
+    "alibaba/wan-2.6/text-to-image": {
+        "label": "WAN 2.6 Texto para Imagem",
         "kind": "text",
         "supports_aspect_ratio": False,
         "supports_size": True,
         "supports_thinking_mode": True,
-        "supports_batch_request": True,
+        "supports_batch_request": False,
         "max_outputs": 4,
         "max_references": 5,
     },
-    "alibaba/wan-2.7-pro/image-edit": {
-        "label": "WAN 2.7 Pro Imagem para Imagem",
+    "alibaba/wan-2.6/image-edit": {
+        "label": "WAN 2.6 Imagem para Imagem",
         "kind": "edit",
         "supports_aspect_ratio": False,
         "supports_size": True,
         "supports_thinking_mode": True,
-        "supports_batch_request": True,
+        "supports_batch_request": False,
         "max_outputs": 4,
         "max_references": 9,
     },
@@ -84,8 +84,8 @@ _SCRIPT_IMAGE_MODEL_ALIASES: dict[str, dict[str, Any]] = {
     "ultra-high-3.0": {
         "label": "Ultra High 3.0",
         "description": "Cria qualquer imagem sem restricao.",
-        "text_model": "alibaba/wan-2.7-pro/text-to-image",
-        "edit_model": "alibaba/wan-2.7-pro/image-edit",
+        "text_model": "alibaba/wan-2.6/text-to-image",
+        "edit_model": "alibaba/wan-2.6/image-edit",
         "supports_size": True,
         "supports_thinking_mode": True,
         "max_outputs": 4,
@@ -95,6 +95,24 @@ _SCRIPT_IMAGE_MODEL_ALIASES: dict[str, dict[str, Any]] = {
 _ALLOWED_ASPECT_RATIOS = {"1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
 _ALLOWED_WAN_TEXT_SIZES = {"1K", "2K", "4K"}
 _ALLOWED_WAN_EDIT_SIZES = {"1K", "2K"}
+_WAN_26_MODELS = {"alibaba/wan-2.6/text-to-image", "alibaba/wan-2.6/image-edit"}
+_WAN_26_SIZE_PRESETS = {
+    "1K": {
+        "1:1": "1024*1024",
+        "16:9": "1024*576",
+        "9:16": "576*1024",
+    },
+    "2K": {
+        "1:1": "1280*1280",
+        "16:9": "1280*720",
+        "9:16": "720*1280",
+    },
+    "4K": {
+        "1:1": "2048*2048",
+        "16:9": "2048*1152",
+        "9:16": "1152*2048",
+    },
+}
 _HTTP_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 _BASE64_RE = re.compile(r"^[A-Za-z0-9+/=\r\n]+$")
 
@@ -178,6 +196,11 @@ def model_supports_batch_request(model: str) -> bool:
     return bool(normalized and _SUPPORTED_MODELS[normalized].get("supports_batch_request"))
 
 
+def model_uses_wan_26_payload(model: str) -> bool:
+    normalized = normalize_supported_model(model)
+    return bool(normalized and normalized in _WAN_26_MODELS)
+
+
 def resolve_aspect_ratio(aspect_ratio: str) -> str:
     candidate = str(aspect_ratio or "1:1").strip()
     if candidate in _ALLOWED_ASPECT_RATIOS:
@@ -185,15 +208,21 @@ def resolve_aspect_ratio(aspect_ratio: str) -> str:
     return "1:1"
 
 
-def resolve_size(model: str, size: str) -> str:
+def resolve_size(model: str, size: str, aspect_ratio: str = "1:1") -> str:
     normalized = normalize_supported_model(model)
     candidate = str(size or "2K").strip().upper()
     if not normalized:
         return "2K"
     allowed = _ALLOWED_WAN_EDIT_SIZES if model_requires_reference(normalized) else _ALLOWED_WAN_TEXT_SIZES
     if candidate in allowed:
-        return candidate
-    return "2K"
+        resolved_size = candidate
+    else:
+        resolved_size = "2K"
+    if model_uses_wan_26_payload(normalized):
+        resolved_aspect_ratio = resolve_aspect_ratio(aspect_ratio)
+        preset = _WAN_26_SIZE_PRESETS.get(resolved_size) or _WAN_26_SIZE_PRESETS["2K"]
+        return str(preset.get(resolved_aspect_ratio) or preset["1:1"])
+    return resolved_size
 
 
 def _atlas_api_key() -> str:
@@ -496,18 +525,21 @@ async def generate_atlas_images(
         results: list[dict[str, Any]] = []
         while len(results) < requested_count:
             remaining = requested_count - len(results)
+            prompt_payload = prompt_text
+            if not model_supports_aspect_ratio(normalized_model) and not model_uses_wan_26_payload(normalized_model):
+                prompt_payload = f"{prompt_text}\n\nDesired aspect ratio: {resolved_aspect_ratio}."
             payload: dict[str, Any] = {
                 "model": normalized_model,
-                "prompt": prompt_text if model_supports_aspect_ratio(normalized_model) else f"{prompt_text}\n\nDesired aspect ratio: {resolved_aspect_ratio}.",
+                "prompt": prompt_payload,
                 "enable_sync_mode": False,
                 "enable_base64_output": False,
             }
             if model_supports_aspect_ratio(normalized_model):
                 payload["aspect_ratio"] = resolved_aspect_ratio
             if model_supports_size(normalized_model):
-                payload["size"] = resolve_size(normalized_model, size)
+                payload["size"] = resolve_size(normalized_model, size, resolved_aspect_ratio)
             if model_supports_thinking_mode(normalized_model):
-                payload["thinking_mode"] = bool(thinking_mode)
+                payload["enable_prompt_expansion"] = bool(thinking_mode)
                 payload["seed"] = int(seed if seed is not None else -1)
             if supports_batch_request and remaining > 1:
                 payload["n"] = remaining

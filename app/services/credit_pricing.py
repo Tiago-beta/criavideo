@@ -54,8 +54,8 @@ IMAGE_GENERATION_MODEL_USD = {
     "google/nano-banana-2/text-to-image": 0.017,
     "google/nano-banana/text-to-image": 0.014,
     "openai/gpt-image-1/text-to-image": 0.032,
-    "alibaba/wan-2.7-pro/text-to-image": 0.040,
-    "alibaba/wan-2.7-pro/image-edit": 0.044,
+    "alibaba/wan-2.6/text-to-image": 0.040,
+    "alibaba/wan-2.6/image-edit": 0.044,
 }
 IMAGE_GENERATION_SIZE_MULTIPLIERS = {
     "1K": 1.0,
@@ -69,8 +69,8 @@ IMAGE_GENERATION_BASE_FLOOR = {
     "google/nano-banana-2/text-to-image": 7,
     "google/nano-banana/text-to-image": 6,
     "openai/gpt-image-1/text-to-image": 11,
-    "alibaba/wan-2.7-pro/text-to-image": 13,
-    "alibaba/wan-2.7-pro/image-edit": 15,
+    "alibaba/wan-2.6/text-to-image": 13,
+    "alibaba/wan-2.6/image-edit": 15,
 }
 
 
@@ -292,7 +292,7 @@ def estimate_image_generation_credits(
 ) -> dict[str, Any]:
     normalized_model = str(model or "google/nano-banana-pro/text-to-image").strip()
     if normalized_model == "ultra-high-3.0":
-        normalized_model = "alibaba/wan-2.7-pro/image-edit" if int(reference_image_count or 0) > 0 else "alibaba/wan-2.7-pro/text-to-image"
+        normalized_model = "alibaba/wan-2.6/image-edit" if int(reference_image_count or 0) > 0 else "alibaba/wan-2.6/text-to-image"
     if normalized_model not in IMAGE_GENERATION_MODEL_USD:
         normalized_model = "google/nano-banana-pro/text-to-image"
 

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v373 loaded");
+console.log("[CriaVideo] app.js v374 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -10977,8 +10977,8 @@ function syncScriptImageCreatorControls() {
 
     if (promptInput) {
         promptInput.placeholder = meta.requiresReference
-            ? "Descreva como as referencias devem ser transformadas, corrigidas ou estilizadas..."
-            : "Descreva a imagem que voce quer criar. Use referencias se quiser guiar enquadramento, pose ou estilo...";
+            ? "Descreva como as referências devem ser transformadas, corrigidas ou estilizadas."
+            : "Descreva a imagem que você quer criar. Use referências se quiser guiar enquadramento, pose ou estilo.";
     }
     if (countSelect) {
         const parsedCount = Number.parseInt(countSelect.value || "1", 10) || 1;
@@ -11015,11 +11015,11 @@ function addScriptImageCreatorReferences(files) {
 
     for (const file of files) {
         if (_scriptImageCreatorState.referenceFiles.length >= maxReferences) {
-            alert(`Maximo de ${maxReferences} referencias atingido.`);
+            alert(`Máximo de ${maxReferences} referências atingido.`);
             break;
         }
         if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
-            alert(`Formato nao suportado: ${file.name}. Use JPG, PNG ou WebP.`);
+            alert(`Formato não suportado: ${file.name}. Use JPG, PNG ou WebP.`);
             continue;
         }
         if (file.size > MAX_PHOTO_SIZE) {
@@ -11093,7 +11093,7 @@ function scheduleScriptImageCreatorEstimate(delayMs = 140) {
     _clearScriptImageCreatorEstimateTimer();
     _scriptImageCreatorState.estimateTimer = setTimeout(() => {
         updateScriptImageCreatorEstimate().catch(() => {
-            _setScriptImageCreatorEstimate("Nao foi possivel calcular o custo agora.", "error");
+            _setScriptImageCreatorEstimate("Não foi possível calcular o custo agora.", "error");
         });
     }, Math.max(0, delayMs));
 }
@@ -11106,7 +11106,7 @@ async function updateScriptImageCreatorEstimate() {
     const referenceCount = _scriptImageCreatorState.referenceFiles.length;
     const seq = (_scriptImageCreatorState.estimateSeq || 0) + 1;
     _scriptImageCreatorState.estimateSeq = seq;
-    _setScriptImageCreatorEstimate("Calculando custo estimado...", "loading");
+    _setScriptImageCreatorEstimate("Calculando o custo estimado...", "loading");
 
     try {
         const estimate = await api("/video/estimate-credits", {
@@ -11126,16 +11126,17 @@ async function updateScriptImageCreatorEstimate() {
 
         const creditsNeeded = _extractEstimateCredits(estimate);
         const billedBrl = _extractEstimateCostBrl(estimate);
-        const referenceChunk = referenceCount > 0 ? ` • ${referenceCount} referencia(s)` : "";
+        const imageLabel = imageCount === 1 ? "1 imagem" : `${imageCount} imagens`;
+        const referenceChunk = referenceCount > 0 ? ` • ${referenceCount} ${referenceCount === 1 ? "referência" : "referências"}` : "";
         const sizeChunk = meta.supportsSize ? ` • ${size}` : "";
-        const thinkingChunk = meta.supportsThinkingMode && thinkingMode ? " • thinking on" : "";
+        const thinkingChunk = meta.supportsThinkingMode && thinkingMode ? " • expansão de prompt" : "";
         _setScriptImageCreatorEstimate(
-            `Custo estimado: ${_formatCreditsInt(creditsNeeded)} creditos (${_formatBrl(billedBrl)}) para ${imageCount} imagem(ns)${sizeChunk}${referenceChunk}${thinkingChunk}${_buildBalanceSuffix(creditsNeeded)}`,
+            `Custo estimado: ${_formatCreditsInt(creditsNeeded)} créditos (${_formatBrl(billedBrl)}) para ${imageLabel}${sizeChunk}${referenceChunk}${thinkingChunk}${_buildBalanceSuffix(creditsNeeded)}`,
             "ready",
         );
     } catch (_error) {
         if (_scriptImageCreatorState.estimateSeq === seq) {
-            _setScriptImageCreatorEstimate("Nao foi possivel calcular o custo agora.", "error");
+            _setScriptImageCreatorEstimate("Não foi possível calcular o custo agora.", "error");
         }
     }
 }
@@ -11146,7 +11147,7 @@ function renderScriptImageCreatorResults() {
 
     const items = _scriptImageCreatorState.generatedImages;
     if (!items.length) {
-        host.innerHTML = '<div class="script-image-generator-empty">Escolha um motor, escreva o prompt e gere sua imagem.</div>';
+        host.innerHTML = '<div class="script-image-generator-empty">Escolha um modelo, escreva o prompt e gere sua imagem.</div>';
         return;
     }
 
@@ -11190,7 +11191,7 @@ async function useScriptImageCreatorResult(index) {
     const item = _scriptImageCreatorState.generatedImages[index];
     if (!item?.image_url || !item?.upload_id) return;
     if (scriptPhotos.length >= MAX_PHOTOS) {
-        alert(`Maximo de ${MAX_PHOTOS} fotos atingido.`);
+        alert(`Máximo de ${MAX_PHOTOS} fotos atingido.`);
         return;
     }
 
@@ -11214,7 +11215,7 @@ async function useScriptImageCreatorResult(index) {
         renderPhotoPreview();
         showToast("Imagem adicionada ao sistema.", "success");
     } catch (error) {
-        alert(`Nao foi possivel usar a imagem no sistema: ${error.message}`);
+        alert(`Não foi possível usar a imagem no sistema: ${error.message}`);
     }
 }
 
@@ -11228,10 +11229,10 @@ async function _prepareScriptImageCreatorReferenceUploadIds() {
             continue;
         }
 
-        const uploaded = await uploadTempFileWithRetry(item.file, "image", `referencia ${index + 1}`, { showProgress: false });
+        const uploaded = await uploadTempFileWithRetry(item.file, "image", `referência ${index + 1}`, { showProgress: false });
         const uploadId = String(uploaded?.upload_id || "").trim();
         if (!uploadId) {
-            throw new Error(`Falha ao enviar a referencia ${index + 1}.`);
+            throw new Error(`Falha ao enviar a referência ${index + 1}.`);
         }
         item.upload_id = uploadId;
         uploadIds.push(uploadId);
@@ -11251,7 +11252,7 @@ async function generateScriptImageFromModal() {
         return;
     }
     if (meta.requiresReference && !_scriptImageCreatorState.referenceFiles.length) {
-        alert("Envie ao menos uma imagem de referencia para esse motor.");
+        alert("Envie ao menos uma imagem de referência para esse modelo.");
         return;
     }
 
@@ -11284,7 +11285,7 @@ async function generateScriptImageFromModal() {
 
         const images = Array.isArray(response?.images) ? response.images : [];
         if (!images.length) {
-            throw new Error("A imagem foi gerada, mas o servidor nao retornou arquivos validos.");
+            throw new Error("A imagem foi gerada, mas o servidor não retornou arquivos válidos.");
         }
 
         _scriptImageCreatorState.generatedImages = images.map((item, index) => ({
@@ -11301,7 +11302,10 @@ async function generateScriptImageFromModal() {
         }
 
         renderScriptImageCreatorResults();
-        setScriptImageCreatorStatus(`${_scriptImageCreatorState.generatedImages.length} imagem(ns) pronta(s).`, "success");
+        setScriptImageCreatorStatus(
+            _scriptImageCreatorState.generatedImages.length === 1 ? "1 imagem pronta." : `${_scriptImageCreatorState.generatedImages.length} imagens prontas.`,
+            "success",
+        );
         showToast("Imagem gerada com sucesso.", "success");
     } catch (error) {
         setScriptImageCreatorStatus(`Erro ao gerar imagem: ${error.message}`, "error");
