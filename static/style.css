@@ -1357,26 +1357,59 @@ a {
 
 .auto-theme-item {
     display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45rem;
     font-size: 0.85rem;
-    padding: 0.35rem 0.5rem;
+    padding: 0.5rem 0.65rem;
     border-radius: 6px;
     background: var(--bg-input);
+}
+
+.auto-theme-item .theme-top-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    min-width: 0;
 }
 
 .auto-theme-item .theme-status {
     flex-shrink: 0;
     font-size: 0.8rem;
+    margin-top: 0.1rem;
 }
 
 .auto-theme-item .theme-text {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+.auto-theme-item .theme-bottom-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.auto-theme-item .theme-meta-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.auto-theme-item .theme-actions-row {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    flex-shrink: 0;
 }
 
 .auto-theme-item .theme-remove {
@@ -5182,6 +5215,7 @@ svg.spin {
         min-width: 0;
         max-width: 100%;
         gap: 0.35rem;
+        padding: 0.5rem 0.55rem;
     }
 
     .auto-theme-item span {
@@ -5189,6 +5223,30 @@ svg.spin {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    .auto-theme-item .theme-top-row {
+        align-items: flex-start;
+    }
+
+    .auto-theme-item .theme-text {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+        line-height: 1.35;
+    }
+
+    .auto-theme-item .theme-bottom-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+    }
+
+    .auto-theme-item .theme-meta-row {
+        gap: 0.3rem;
+    }
+
+    .auto-theme-item .theme-actions-row {
+        gap: 0.25rem;
     }
 
     .auto-theme-item .theme-badge {

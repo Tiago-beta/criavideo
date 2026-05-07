@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v366 loaded");
+console.log("[CriaVideo] app.js v367 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -15743,15 +15743,23 @@ function renderAutoCard(s) {
             ? `<button class="theme-error-btn" data-error="${esc(t.error_message).replace(/"/g, '&quot;')}" onclick="showThemeError(this)" type="button" title="Ver motivo">Ver motivo</button>`
             : "";
         return `<li class="auto-theme-item ${statusClass}">
-            <span class="theme-status">${icon}</span>
-            <span class="theme-text">${esc(t.theme)}</span>
-            ${dateLabel}
-            ${editBtn}
-            ${statusBadge}
-            ${creditBadge}
-            ${runBtn}
-            ${errorBtn}
-            <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
+            <div class="theme-top-row">
+                <span class="theme-status">${icon}</span>
+                <span class="theme-text">${esc(t.theme)}</span>
+            </div>
+            <div class="theme-bottom-row">
+                <div class="theme-meta-row">
+                    ${dateLabel}
+                    ${statusBadge}
+                    ${creditBadge}
+                </div>
+                <div class="theme-actions-row">
+                    ${editBtn}
+                    ${runBtn}
+                    ${errorBtn}
+                    <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
+                </div>
+            </div>
         </li>`;
     }).join("");
 
