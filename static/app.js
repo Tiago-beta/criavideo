@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v371 loaded");
+console.log("[CriaVideo] app.js v372 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -10820,7 +10820,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "ultra-high-3.0",
         label: "Ultra High 3.0",
-        requiresReference: true,
+        requiresReference: false,
         supportsSize: true,
         supportsThinkingMode: true,
         maxOutputs: 4,
