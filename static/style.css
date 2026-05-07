@@ -4555,14 +4555,10 @@ svg.spin {
 }
 
 .script-image-generator-shell {
-    display: grid;
-    grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
-    gap: 20px;
-    align-items: start;
+    display: block;
 }
 
-.script-image-generator-controls,
-.script-image-generator-results-panel {
+.script-image-generator-controls {
     border: 1px solid rgba(96, 129, 162, 0.22);
     border-radius: 24px;
     background:
@@ -4572,29 +4568,26 @@ svg.spin {
     box-shadow: 0 22px 50px rgba(2, 10, 19, 0.26);
 }
 
-.script-image-generator-results-panel {
-    min-height: 100%;
-    display: grid;
-    gap: 14px;
-    align-content: start;
-}
-
 .script-image-generator-prompt {
     min-height: 180px;
 }
 
 .script-image-generator-model-options {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
     gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
 }
 
 .script-image-model-card {
     display: flex;
     align-items: center;
     gap: 12px;
-    width: 100%;
-    padding: 12px;
+    flex: 0 0 210px;
+    min-width: 210px;
+    padding: 12px 14px;
     border: 1px solid rgba(110, 143, 175, 0.24);
     border-radius: 18px;
     background: rgba(7, 24, 41, 0.74);
@@ -4718,7 +4711,49 @@ svg.spin {
 }
 
 .script-image-generator-reference-preview {
-    margin-top: 12px;
+    margin-top: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    grid-template-columns: none;
+}
+
+.script-image-generator-reference-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-top: 4px;
+}
+
+.script-image-generator-reference-add {
+    width: 74px;
+    height: 74px;
+    border: 1px dashed rgba(0, 212, 255, 0.34);
+    border-radius: 18px;
+    background: rgba(6, 24, 42, 0.72);
+    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.script-image-generator-reference-add:hover,
+.script-image-generator-reference-add:focus-visible {
+    outline: none;
+    border-color: var(--tech-neon);
+    background: rgba(0, 212, 255, 0.08);
+    transform: translateY(-1px);
+}
+
+.script-image-generator-reference-preview .photo-preview-item {
+    width: 74px;
+    min-width: 74px;
+    border-radius: 18px;
+    border: 1px solid rgba(96, 129, 162, 0.26);
 }
 
 .script-image-generator-settings {
@@ -4863,9 +4898,14 @@ svg.spin {
     padding-top: 0;
 }
 
+.script-image-generator-inline-results {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+}
+
 .script-image-generator-results {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 12px;
 }
 
@@ -4880,6 +4920,27 @@ svg.spin {
     justify-content: center;
     text-align: center;
     padding: 20px;
+    aspect-ratio: var(--script-image-result-ratio, 1 / 1);
+}
+
+.script-image-generator-empty--inline {
+    min-height: unset;
+}
+
+.script-image-generator-stage {
+    width: min(100%, 860px);
+    aspect-ratio: var(--script-image-result-ratio, 1 / 1);
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1px solid rgba(96, 129, 162, 0.22);
+    background: rgba(4, 18, 33, 0.56);
+}
+
+.script-image-generator-stage img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 
 .script-image-generator-result-card {
@@ -4889,6 +4950,7 @@ svg.spin {
     border-radius: 16px;
     border: 1px solid rgba(96, 129, 162, 0.22);
     background: rgba(4, 18, 33, 0.56);
+    width: min(100%, 860px);
 }
 
 .script-image-generator-result-card img {
@@ -4940,6 +5002,43 @@ svg.spin {
     color: #c8ffde;
 }
 
+.script-image-generator-result-thumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.script-image-generator-result-thumb {
+    width: 76px;
+    height: 76px;
+    padding: 0;
+    border: 1px solid rgba(96, 129, 162, 0.22);
+    border-radius: 16px;
+    overflow: hidden;
+    background: rgba(4, 18, 33, 0.56);
+    cursor: pointer;
+    transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.script-image-generator-result-thumb:hover,
+.script-image-generator-result-thumb:focus-visible {
+    outline: none;
+    transform: translateY(-1px);
+    border-color: rgba(255, 193, 92, 0.6);
+}
+
+.script-image-generator-result-thumb.is-active {
+    border-color: rgba(196, 255, 98, 0.72);
+    box-shadow: 0 0 0 1px rgba(196, 255, 98, 0.16);
+}
+
+.script-image-generator-result-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
 @media (max-width: 720px) {
     .media-toggle-row {
         align-items: flex-start;
@@ -4958,16 +5057,12 @@ svg.spin {
         min-width: 0;
     }
 
-    .script-image-generator-shell {
-        grid-template-columns: 1fr;
-    }
-
     .script-image-generator-settings {
         grid-template-columns: 1fr;
     }
 
     .script-image-generator-model-options {
-        grid-template-columns: 1fr;
+        padding-bottom: 6px;
     }
 }
 
