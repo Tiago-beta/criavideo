@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260507-02">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260507-04">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 375;
+        var REQUIRED_VER = 377;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -3768,16 +3768,6 @@
                             </div>
                         </div>
 
-                        <div id="script-image-generator-thinking-group" class="script-image-generator-toggle">
-                            <label class="toggle-switch">
-                                <input id="script-image-generator-thinking" type="checkbox" onchange="handleScriptImageCreatorMetaChange()">
-                                <span class="toggle-slider"></span>
-                            </label>
-                            <div class="script-image-generator-toggle-copy">
-                                <strong>Expansão de prompt</strong>
-                            </div>
-                        </div>
-
                         <p id="script-image-generator-status" class="script-image-generator-status" hidden></p>
                         <div id="script-image-generator-estimate" class="script-image-generator-estimate" aria-live="polite">Defina o modelo para calcular o custo estimado.</div>
 
@@ -3791,8 +3781,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260507-02"></script>
-    <script src="/video/static/pwa.js?v=20260507-02"></script>
+    <script src="/video/static/app.js?v=20260507-04"></script>
+    <script src="/video/static/pwa.js?v=20260507-04"></script>
 </body>
 </html>
 

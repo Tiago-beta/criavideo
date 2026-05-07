@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v375 loaded");
+console.log("[CriaVideo] app.js v377 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -11155,13 +11155,9 @@ async function updateScriptImageCreatorEstimate() {
         }
 
         const creditsNeeded = _extractEstimateCredits(estimate);
-        const billedBrl = _extractEstimateCostBrl(estimate);
-        const imageLabel = imageCount === 1 ? "1 imagem" : `${imageCount} imagens`;
-        const referenceChunk = referenceCount > 0 ? ` • ${referenceCount} ${referenceCount === 1 ? "referência" : "referências"}` : "";
-        const sizeChunk = meta.supportsSize ? ` • ${size}` : "";
-        const thinkingChunk = meta.supportsThinkingMode && thinkingMode ? " • expansão de prompt" : "";
+        const balanceCredits = Math.max(0, parseInt(_userCredits || "0", 10) || 0);
         _setScriptImageCreatorEstimate(
-            `Custo estimado: ${_formatCreditsInt(creditsNeeded)} créditos (${_formatBrl(billedBrl)}) para ${imageLabel}${sizeChunk}${referenceChunk}${thinkingChunk}${_buildBalanceSuffix(creditsNeeded)}`,
+            `Custo ${_formatCreditsInt(creditsNeeded)} créditos • Saldo ${_formatCreditsInt(balanceCredits)} créditos`,
             "ready",
         );
     } catch (_error) {
