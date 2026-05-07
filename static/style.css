@@ -10079,6 +10079,17 @@ th,
     gap: 10px;
 }
 
+.persona-manager-empty {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 1rem 1.1rem;
+    border-radius: 16px;
+    border: 1px dashed rgba(0, 212, 255, 0.18);
+    background: rgba(7, 23, 39, 0.58);
+    color: var(--text-muted);
+    text-align: center;
+}
+
 .persona-manager-card {
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -10229,6 +10240,137 @@ th,
     margin: 14px 0;
 }
 
+.persona-manager-modal .modal-body {
+    display: grid;
+    gap: 1rem;
+}
+
+.persona-manager-create-shell {
+    display: grid;
+    gap: 1rem;
+    padding: 1.15rem;
+    border-radius: 22px;
+    border: 1px solid rgba(0, 212, 255, 0.18);
+    background: linear-gradient(180deg, rgba(16, 42, 68, 0.94), rgba(11, 31, 51, 0.82));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.persona-manager-create-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.persona-manager-create-kicker {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.72rem;
+    border-radius: 999px;
+    border: 1px solid rgba(247, 197, 98, 0.3);
+    background: rgba(247, 197, 98, 0.12);
+    color: #ffe1ab;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.persona-manager-create-header h4 {
+    margin: 0;
+    font-family: "Outfit", sans-serif;
+    font-size: 1.08rem;
+    letter-spacing: -0.02em;
+}
+
+.persona-manager-create-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 0.8rem;
+    align-items: start;
+}
+
+.persona-manager-create-grid .form-group {
+    margin-bottom: 0;
+}
+
+.persona-manager-human-fields {
+    display: contents;
+}
+
+.persona-manager-field-name {
+    grid-column: span 4;
+}
+
+.persona-manager-field-age {
+    grid-column: span 3;
+}
+
+.persona-manager-field-skin {
+    grid-column: span 5;
+}
+
+.persona-manager-field-hair {
+    grid-column: span 4;
+}
+
+.persona-manager-field-description {
+    grid-column: span 5;
+}
+
+.persona-manager-field-voice {
+    grid-column: span 3;
+}
+
+.persona-manager-field-inline {
+    grid-column: span 6;
+}
+
+.persona-manager-field-reference {
+    grid-column: 1 / -1;
+}
+
+.persona-manager-create-shell label {
+    margin-bottom: 0.42rem;
+    font-size: 0.83rem;
+    font-weight: 600;
+    color: #dce9f6;
+}
+
+.persona-manager-create-shell .input {
+    min-height: 48px;
+    border-radius: 14px;
+    background: rgba(6, 23, 39, 0.82);
+}
+
+.persona-manager-create-shell textarea.input {
+    min-height: 132px;
+    resize: vertical;
+}
+
+.persona-manager-field-voice .persona-manager-voice-create-row {
+    align-items: stretch;
+}
+
+.persona-manager-field-voice .persona-manager-voice-create-row .input {
+    min-width: 0;
+}
+
+.persona-manager-field-voice .persona-manager-voice-play {
+    width: 44px;
+    min-width: 44px;
+    height: 48px;
+    border-radius: 14px;
+}
+
+.persona-manager-create-shell .persona-reference-upload {
+    padding: 0.75rem 0.85rem;
+    border-radius: 16px;
+    border: 1px dashed rgba(0, 212, 255, 0.18);
+    background: rgba(6, 23, 39, 0.42);
+}
+
 .persona-reference-upload {
     display: flex;
     align-items: center;
@@ -10336,6 +10478,47 @@ th,
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 900px) {
+    .persona-manager-create-grid {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+
+    .persona-manager-field-name,
+    .persona-manager-field-description,
+    .persona-manager-field-inline,
+    .persona-manager-field-reference {
+        grid-column: 1 / -1;
+    }
+
+    .persona-manager-field-age,
+    .persona-manager-field-skin,
+    .persona-manager-field-hair,
+    .persona-manager-field-voice {
+        grid-column: span 3;
+    }
+}
+
+@media (max-width: 680px) {
+    .persona-manager-create-shell {
+        padding: 0.95rem;
+    }
+
+    .persona-manager-create-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .persona-manager-field-name,
+    .persona-manager-field-age,
+    .persona-manager-field-skin,
+    .persona-manager-field-hair,
+    .persona-manager-field-description,
+    .persona-manager-field-voice,
+    .persona-manager-field-inline,
+    .persona-manager-field-reference {
+        grid-column: 1 / -1;
+    }
 }
 
 /* ══════════════════════════════════════════════════════════════

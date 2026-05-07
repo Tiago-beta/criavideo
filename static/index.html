@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260507-04">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260507-05">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 377;
+        var REQUIRED_VER = 378;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -3365,7 +3365,7 @@
 
     <!-- Persona Manager Modal -->
     <div id="modal-persona-manager" class="modal">
-        <div class="modal-content modal-content-wide">
+        <div class="modal-content modal-content-wide persona-manager-modal">
             <div class="modal-header">
                 <h3 id="persona-manager-title">Gerenciar personas</h3>
                 <button class="modal-close" onclick="closeModal('modal-persona-manager')" type="button">&times;</button>
@@ -3379,90 +3379,102 @@
 
                 <div class="persona-manager-divider"></div>
 
-                <h4 style="margin-bottom:0.6rem">Criar nova persona</h4>
-                <div class="form-group">
-                    <label>Nome (opcional)</label>
-                    <input id="persona-manager-name" class="input" type="text" maxlength="80" placeholder="Ex: Minha personagem principal">
-                </div>
-                <div id="persona-manager-human-fields">
-                    <div class="form-group">
-                        <label>Idade *</label>
-                        <input id="persona-manager-age" class="input" type="text" maxlength="40" placeholder="Ex: 28 anos">
+                <section class="persona-manager-create-shell" aria-labelledby="persona-manager-create-title">
+                    <div class="persona-manager-create-header">
+                        <div class="persona-manager-create-kicker">Nova persona</div>
+                        <h4 id="persona-manager-create-title">Criar nova persona</h4>
                     </div>
-                    <div class="form-group">
-                        <label>Cor da pele *</label>
-                        <input id="persona-manager-skin" class="input" type="text" maxlength="60" placeholder="Ex: morena clara">
+                    <div class="persona-manager-create-grid">
+                        <div class="form-group persona-manager-field persona-manager-field-name">
+                            <label>Nome (opcional)</label>
+                            <input id="persona-manager-name" class="input" type="text" maxlength="80" placeholder="Ex: Minha personagem principal">
+                        </div>
+
+                        <div id="persona-manager-human-fields" class="persona-manager-human-fields">
+                            <div class="form-group persona-manager-field persona-manager-field-age">
+                                <label>Idade *</label>
+                                <input id="persona-manager-age" class="input" type="text" maxlength="40" placeholder="Ex: 28 anos">
+                            </div>
+                            <div class="form-group persona-manager-field persona-manager-field-skin">
+                                <label>Cor da pele *</label>
+                                <input id="persona-manager-skin" class="input" type="text" maxlength="60" placeholder="Ex: morena clara">
+                            </div>
+                            <div class="form-group persona-manager-field persona-manager-field-hair">
+                                <label>Cor do cabelo *</label>
+                                <input id="persona-manager-hair" class="input" type="text" maxlength="60" placeholder="Ex: castanho escuro">
+                            </div>
+                        </div>
+
+                        <div class="form-group persona-manager-field persona-manager-field-inline" id="persona-manager-nature-subtype-group" hidden>
+                            <label>Tipo de natureza</label>
+                            <select id="persona-manager-nature-subtype" class="input">
+                                <option value="gato">Gato</option>
+                                <option value="cachorro">Cachorro</option>
+                                <option value="papagaio">Papagaio</option>
+                                <option value="outros">Outros</option>
+                            </select>
+                        </div>
+                        <div class="form-group persona-manager-field persona-manager-field-inline" id="persona-manager-nature-other-group" hidden>
+                            <label>Descreva "outros"</label>
+                            <input id="persona-manager-nature-other" class="input" type="text" maxlength="80" placeholder="Ex: tartaruga marinha">
+                        </div>
+                        <div class="form-group persona-manager-field persona-manager-field-inline" id="persona-manager-drawing-style-group" hidden>
+                            <label>Estilo de desenho</label>
+                            <select id="persona-manager-drawing-style" class="input">
+                                <option value="cartoon">Cartoon</option>
+                                <option value="3d">3D</option>
+                                <option value="anime">Anime</option>
+                                <option value="comic">Comic</option>
+                                <option value="manga">Manga</option>
+                                <option value="pixar">Pixar</option>
+                                <option value="pixel_art">Pixel Art</option>
+                                <option value="aquarela">Aquarela</option>
+                                <option value="outros">Outros</option>
+                            </select>
+                        </div>
+                        <div class="form-group persona-manager-field persona-manager-field-inline" id="persona-manager-drawing-other-group" hidden>
+                            <label>Descreva o estilo personalizado</label>
+                            <input id="persona-manager-drawing-other" class="input" type="text" maxlength="80" placeholder="Ex: claymation retro com texturas artesanais">
+                        </div>
+                        <div class="form-group persona-manager-field persona-manager-field-description" id="persona-manager-custom-desc-group" hidden>
+                            <label>Descrição da persona personalizada *</label>
+                            <textarea id="persona-manager-custom-desc" class="input" rows="4" placeholder="Ex: guerreira futurista afro-brasileira com armadura leve dourada e capa azul, olhar determinado"></textarea>
+                        </div>
+
+                        <div class="form-group persona-manager-field persona-manager-field-description">
+                            <label>Descrição (opcional)</label>
+                            <textarea id="persona-manager-extra" class="input" rows="4" placeholder="Ex: luz dourada no fim da tarde, expressão tranquila" onpaste="handlePersonaReferenceImagePaste(event)"></textarea>
+                        </div>
+
+                        <div class="form-group persona-manager-field persona-manager-field-voice">
+                            <label>Voz vinculada (opcional)</label>
+                            <div class="persona-manager-voice-create-row">
+                                <select id="persona-manager-voice-profile" class="input"></select>
+                                <button id="persona-manager-voice-play" class="btn btn-secondary btn-sm persona-manager-voice-play" type="button" onclick="previewPersonaCreateVoice()" title="Ouvir prévia da voz">▶</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group persona-manager-field persona-manager-field-reference">
+                            <label>Imagem de referência (opcional)</label>
+                            <div class="persona-reference-upload">
+                                <input
+                                    id="persona-manager-reference-image"
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    onchange="handlePersonaReferenceImageSelect(event)"
+                                    hidden>
+                                <button
+                                    class="btn btn-secondary btn-sm"
+                                    type="button"
+                                    onclick="document.getElementById('persona-manager-reference-image').click()">
+                                    Enviar imagem
+                                </button>
+                                <img id="persona-manager-reference-preview" class="persona-reference-preview" src="" alt="Imagem de referência" hidden>
+                                <button id="persona-manager-reference-remove" class="btn btn-secondary btn-sm" type="button" onclick="removePersonaReferenceImage()" hidden>Remover</button>
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label>Cor do cabelo *</label>
-                        <input id="persona-manager-hair" class="input" type="text" maxlength="60" placeholder="Ex: castanho escuro">
-                    </div>
-                </div>
-                <div class="form-group" id="persona-manager-nature-subtype-group" hidden>
-                    <label>Tipo de natureza</label>
-                    <select id="persona-manager-nature-subtype" class="input">
-                        <option value="gato">Gato</option>
-                        <option value="cachorro">Cachorro</option>
-                        <option value="papagaio">Papagaio</option>
-                        <option value="outros">Outros</option>
-                    </select>
-                </div>
-                <div class="form-group" id="persona-manager-nature-other-group" hidden>
-                    <label>Descreva "outros"</label>
-                    <input id="persona-manager-nature-other" class="input" type="text" maxlength="80" placeholder="Ex: tartaruga marinha">
-                </div>
-                <div class="form-group" id="persona-manager-drawing-style-group" hidden>
-                    <label>Estilo de desenho</label>
-                    <select id="persona-manager-drawing-style" class="input">
-                        <option value="cartoon">Cartoon</option>
-                        <option value="3d">3D</option>
-                        <option value="anime">Anime</option>
-                        <option value="comic">Comic</option>
-                        <option value="manga">Manga</option>
-                        <option value="pixar">Pixar</option>
-                        <option value="pixel_art">Pixel Art</option>
-                        <option value="aquarela">Aquarela</option>
-                        <option value="outros">Outros</option>
-                    </select>
-                </div>
-                <div class="form-group" id="persona-manager-drawing-other-group" hidden>
-                    <label>Descreva o estilo personalizado</label>
-                    <input id="persona-manager-drawing-other" class="input" type="text" maxlength="80" placeholder="Ex: claymation retro com texturas artesanais">
-                </div>
-                <div class="form-group" id="persona-manager-custom-desc-group" hidden>
-                    <label>Descrição da persona personalizada *</label>
-                    <textarea id="persona-manager-custom-desc" class="input" rows="3" placeholder="Ex: guerreira futurista afro-brasileira com armadura leve dourada e capa azul, olhar determinado"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Descrição extra (opcional)</label>
-                    <textarea id="persona-manager-extra" class="input" rows="2" placeholder="Ex: luz dourada no fim da tarde, expressão tranquila" onpaste="handlePersonaReferenceImagePaste(event)"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Voz da persona (opcional)</label>
-                    <div class="persona-manager-voice-create-row">
-                        <select id="persona-manager-voice-profile" class="input"></select>
-                        <button id="persona-manager-voice-play" class="btn btn-secondary btn-sm persona-manager-voice-play" type="button" onclick="previewPersonaCreateVoice()" title="Ouvir prévia da voz">▶</button>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Imagem de referência (opcional)</label>
-                    <div class="persona-reference-upload">
-                        <input
-                            id="persona-manager-reference-image"
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            onchange="handlePersonaReferenceImageSelect(event)"
-                            hidden>
-                        <button
-                            class="btn btn-secondary btn-sm"
-                            type="button"
-                            onclick="document.getElementById('persona-manager-reference-image').click()">
-                            Enviar imagem
-                        </button>
-                        <img id="persona-manager-reference-preview" class="persona-reference-preview" src="" alt="Imagem de referência" hidden>
-                        <button id="persona-manager-reference-remove" class="btn btn-secondary btn-sm" type="button" onclick="removePersonaReferenceImage()" hidden>Remover</button>
-                    </div>
-                </div>
+                </section>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" type="button" onclick="closeModal('modal-persona-manager')">Fechar</button>
@@ -3781,8 +3793,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260507-04"></script>
-    <script src="/video/static/pwa.js?v=20260507-04"></script>
+    <script src="/video/static/app.js?v=20260507-05"></script>
+    <script src="/video/static/pwa.js?v=20260507-05"></script>
 </body>
 </html>
 

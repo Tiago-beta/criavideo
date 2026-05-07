@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v377 loaded");
+console.log("[CriaVideo] app.js v378 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -12609,6 +12609,28 @@ function _buildPersonaVoiceOptions(selectedVoiceProfileId = 0) {
     return options.join("");
 }
 
+function _sanitizePersonaManagerListArtifacts() {
+    const listEl = document.getElementById("persona-manager-list");
+    if (!listEl) return null;
+
+    if (String(listEl.textContent || "").trim() === "{}") {
+        listEl.textContent = "";
+    }
+
+    return listEl;
+}
+
+function _setPersonaManagerListMessage(message) {
+    const listEl = _sanitizePersonaManagerListArtifacts();
+    if (!listEl) return null;
+
+    const text = String(message || "").trim();
+    listEl.innerHTML = text
+        ? `<p class="persona-manager-empty">${esc(text)}</p>`
+        : "";
+    return listEl;
+}
+
 function _renderPersonaManagerCreateVoiceSelect() {
     const selectEl = document.getElementById("persona-manager-voice-profile");
     if (!selectEl) return;
@@ -12652,12 +12674,12 @@ function _buildPersonaManagerMeta(profile) {
 }
 
 function _renderPersonaManagerList() {
-    const listEl = document.getElementById("persona-manager-list");
+    const listEl = _sanitizePersonaManagerListArtifacts();
     if (!listEl) return;
 
     const profiles = _getPersonaProfiles(_personaManagerType);
     if (!profiles.length) {
-        listEl.innerHTML = '<p class="muted">Nenhuma persona criada ainda para este tipo.</p>';
+        _setPersonaManagerListMessage("Nenhuma persona criada ainda para este tipo.");
         return;
     }
 
@@ -12813,14 +12835,13 @@ function openPersonaImagePreview(profileId, event) {
 }
 
 async function _refreshPersonaManagerList() {
-    const listEl = document.getElementById("persona-manager-list");
-    if (listEl) listEl.innerHTML = '<p class="muted">Carregando personas...</p>';
+    _setPersonaManagerListMessage("Carregando personas...");
     try {
         await _loadPersonaProfiles(_personaManagerType, false);
         _renderPersonaManagerList();
         _refreshAllPersonaPreviews();
     } catch (error) {
-        if (listEl) listEl.innerHTML = `<p class="muted">${esc(error.message || "Falha ao carregar personas")}</p>`;
+        _setPersonaManagerListMessage(error.message || "Falha ao carregar personas");
     }
 }
 
