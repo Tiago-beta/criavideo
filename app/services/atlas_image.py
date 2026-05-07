@@ -1,0 +1,480 @@
+"""Atlas image generation helpers for the new-project image creator modal."""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import logging
+import mimetypes
+import os
+import re
+from typing import Any
+
+import httpx
+
+from app.config import get_settings
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
+
+ATLAS_IMAGE_API_BASE_URL = (settings.atlascloud_api_base_url or "https://api.atlascloud.ai/api/v1").rstrip("/")
+_SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
+    "google/nano-banana-pro/text-to-image": {
+        "label": "Nano Banana Pro",
+        "kind": "text",
+        "supports_aspect_ratio": True,
+        "supports_size": False,
+        "supports_thinking_mode": False,
+        "max_outputs": 1,
+        "max_references": 0,
+    },
+    "google/nano-banana-2/text-to-image": {
+        "label": "Nano Banana 2",
+        "kind": "text",
+        "supports_aspect_ratio": True,
+        "supports_size": False,
+        "supports_thinking_mode": False,
+        "max_outputs": 1,
+        "max_references": 0,
+    },
+    "google/nano-banana/text-to-image": {
+        "label": "Nano Banana",
+        "kind": "text",
+        "supports_aspect_ratio": True,
+        "supports_size": False,
+        "supports_thinking_mode": False,
+        "max_outputs": 1,
+        "max_references": 0,
+    },
+    "openai/gpt-image-1/text-to-image": {
+        "label": "GPT Image",
+        "kind": "text",
+        "supports_aspect_ratio": True,
+        "supports_size": False,
+        "supports_thinking_mode": False,
+        "max_outputs": 1,
+        "max_references": 0,
+    },
+    "alibaba/wan-2.7-pro/text-to-image": {
+        "label": "WAN 2.7 Pro Texto para Imagem",
+        "kind": "text",
+        "supports_aspect_ratio": False,
+        "supports_size": True,
+        "supports_thinking_mode": True,
+        "max_outputs": 4,
+        "max_references": 0,
+    },
+    "alibaba/wan-2.7-pro/image-edit": {
+        "label": "WAN 2.7 Pro Imagem para Imagem",
+        "kind": "edit",
+        "supports_aspect_ratio": False,
+        "supports_size": True,
+        "supports_thinking_mode": True,
+        "max_outputs": 4,
+        "max_references": 9,
+    },
+}
+_ALLOWED_ASPECT_RATIOS = {"1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
+_ALLOWED_WAN_TEXT_SIZES = {"1K", "2K", "4K"}
+_ALLOWED_WAN_EDIT_SIZES = {"1K", "2K"}
+_HTTP_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
+_BASE64_RE = re.compile(r"^[A-Za-z0-9+/=\r\n]+$")
+
+
+def normalize_supported_model(model: str) -> str:
+    candidate = str(model or "").strip()
+    return candidate if candidate in _SUPPORTED_MODELS else ""
+
+
+def is_supported_atlas_image_model(model: str) -> bool:
+    return bool(normalize_supported_model(model))
+
+
+def get_supported_model_meta(model: str) -> dict[str, Any]:
+    normalized = normalize_supported_model(model)
+    return dict(_SUPPORTED_MODELS.get(normalized, {}))
+
+
+def model_requires_reference(model: str) -> bool:
+    normalized = normalize_supported_model(model)
+    return bool(normalized and _SUPPORTED_MODELS[normalized]["kind"] == "edit")
+
+
+def model_supports_aspect_ratio(model: str) -> bool:
+    normalized = normalize_supported_model(model)
+    return bool(normalized and _SUPPORTED_MODELS[normalized]["supports_aspect_ratio"])
+
+
+def model_supports_size(model: str) -> bool:
+    normalized = normalize_supported_model(model)
+    return bool(normalized and _SUPPORTED_MODELS[normalized]["supports_size"])
+
+
+def model_supports_thinking_mode(model: str) -> bool:
+    normalized = normalize_supported_model(model)
+    return bool(normalized and _SUPPORTED_MODELS[normalized]["supports_thinking_mode"])
+
+
+def model_max_outputs(model: str) -> int:
+    normalized = normalize_supported_model(model)
+    if not normalized:
+        return 1
+    return int(_SUPPORTED_MODELS[normalized]["max_outputs"] or 1)
+
+
+def model_max_references(model: str) -> int:
+    normalized = normalize_supported_model(model)
+    if not normalized:
+        return 0
+    return int(_SUPPORTED_MODELS[normalized]["max_references"] or 0)
+
+
+def resolve_aspect_ratio(aspect_ratio: str) -> str:
+    candidate = str(aspect_ratio or "1:1").strip()
+    if candidate in _ALLOWED_ASPECT_RATIOS:
+        return candidate
+    return "1:1"
+
+
+def resolve_size(model: str, size: str) -> str:
+    normalized = normalize_supported_model(model)
+    candidate = str(size or "2K").strip().upper()
+    if not normalized:
+        return "2K"
+    allowed = _ALLOWED_WAN_EDIT_SIZES if model_requires_reference(normalized) else _ALLOWED_WAN_TEXT_SIZES
+    if candidate in allowed:
+        return candidate
+    return "2K"
+
+
+def _atlas_api_key() -> str:
+    key = (settings.atlascloud_api_key or "").strip()
+    if key:
+        return key
+    return (os.getenv("ATLASCLOUD_API_KEY") or "").strip()
+
+
+def _extract_atlas_error_message(resp: httpx.Response) -> str:
+    body_text = (resp.text or "").strip()
+    try:
+        payload = resp.json()
+    except Exception:
+        return body_text
+
+    if isinstance(payload, dict):
+        detail = payload.get("detail") or payload.get("message") or payload.get("error")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+        if isinstance(detail, dict):
+            nested = detail.get("message") or detail.get("error")
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+
+        data = payload.get("data")
+        if isinstance(data, dict):
+            nested = data.get("error") or data.get("message")
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+
+    return body_text
+
+
+def _retry_delay_from_header(retry_after: str | None, default_seconds: int = 5) -> int:
+    if not retry_after:
+        return default_seconds
+    try:
+        return max(1, min(int(float(retry_after)), 90))
+    except Exception:
+        return default_seconds
+
+
+def _extract_upload_reference(payload: dict) -> str:
+    if not isinstance(payload, dict):
+        return ""
+
+    url_keys = (
+        "url",
+        "image",
+        "image_url",
+        "file_url",
+        "media_url",
+        "public_url",
+        "secure_url",
+        "download_url",
+        "asset",
+        "asset_ref",
+    )
+    id_keys = ("asset_id", "assetId", "media_id", "file_id", "id")
+
+    nodes: list[dict[str, Any]] = [payload]
+    data_node = payload.get("data")
+    if isinstance(data_node, dict):
+        nodes.append(data_node)
+
+    for node in nodes:
+        for key in url_keys:
+            value = node.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    for node in nodes:
+        for key in id_keys:
+            value = node.get(key)
+            if value is None:
+                continue
+            raw = str(value).strip()
+            if not raw:
+                continue
+            if raw.startswith(("asset://", "http://", "https://", "data:")):
+                return raw
+            return f"asset://{raw}"
+
+    return ""
+
+
+def _extract_output_ref(item: Any) -> str:
+    if isinstance(item, str):
+        return item.strip()
+    if not isinstance(item, dict):
+        return ""
+
+    for key in ("url", "image", "image_url", "output", "download_url", "public_url", "secure_url"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _extract_output_refs(payload: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    nodes: list[Any] = [payload]
+    data_node = payload.get("data")
+    if isinstance(data_node, dict):
+        nodes.append(data_node)
+
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        outputs = node.get("outputs")
+        if not isinstance(outputs, list):
+            continue
+        for item in outputs:
+            ref = _extract_output_ref(item)
+            if ref:
+                refs.append(ref)
+
+    return refs
+
+
+def _data_url_to_bytes(data_url: str) -> tuple[bytes, str]:
+    header, _, body = str(data_url or "").partition(",")
+    if not header.startswith("data:") or not body:
+        raise RuntimeError("Atlas retornou um data URL invalido")
+    mime_type = "image/png"
+    if ";" in header:
+        mime_type = header[5:].split(";", 1)[0].strip() or mime_type
+    raw = base64.b64decode(body)
+    return raw, mime_type
+
+
+def _looks_like_base64(value: str) -> bool:
+    stripped = str(value or "").strip()
+    if not stripped or len(stripped) < 64:
+        return False
+    return bool(_BASE64_RE.fullmatch(stripped))
+
+
+async def _fetch_output_bytes(client: httpx.AsyncClient, output_ref: str) -> tuple[bytes, str]:
+    ref = str(output_ref or "").strip()
+    if not ref:
+        raise RuntimeError("Atlas nao retornou imagem valida")
+
+    if ref.startswith("data:"):
+        return _data_url_to_bytes(ref)
+
+    if _HTTP_URL_RE.match(ref):
+        resp = await client.get(ref)
+        resp.raise_for_status()
+        mime_type = (resp.headers.get("content-type") or "image/png").split(";", 1)[0].strip() or "image/png"
+        return resp.content, mime_type
+
+    if _looks_like_base64(ref):
+        return base64.b64decode(ref), "image/png"
+
+    raise RuntimeError("Atlas retornou uma referencia de imagem nao suportada")
+
+
+async def _upload_media_to_atlas(client: httpx.AsyncClient, file_path: str, api_key: str) -> str:
+    endpoint = f"{ATLAS_IMAGE_API_BASE_URL}/model/uploadMedia"
+    mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+
+    with open(file_path, "rb") as source:
+        files = {"file": (os.path.basename(file_path), source, mime_type)}
+        resp = await client.post(endpoint, headers={"Authorization": f"Bearer {api_key}"}, files=files)
+
+    if resp.status_code >= 400:
+        message = _extract_atlas_error_message(resp) or f"HTTP {resp.status_code}"
+        raise RuntimeError(f"Falha ao enviar imagem de referencia para o Atlas Cloud: {message}")
+
+    payload = resp.json()
+    ref = _extract_upload_reference(payload)
+    if ref:
+        return ref
+
+    raise RuntimeError("Atlas Cloud nao retornou URL temporaria para a imagem enviada")
+
+
+async def _submit_generation(client: httpx.AsyncClient, payload: dict[str, Any], api_key: str) -> str:
+    endpoint = f"{ATLAS_IMAGE_API_BASE_URL}/model/generateImage"
+
+    for attempt in range(3):
+        resp = await client.post(
+            endpoint,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        if resp.status_code == 429:
+            await asyncio.sleep(_retry_delay_from_header(resp.headers.get("Retry-After"), 5))
+            continue
+        if resp.status_code >= 400:
+            message = _extract_atlas_error_message(resp) or f"HTTP {resp.status_code}"
+            raise RuntimeError(f"Falha ao iniciar geracao no Atlas Cloud: {message}")
+
+        body = resp.json()
+        data = body.get("data") if isinstance(body, dict) else None
+        if isinstance(data, dict):
+            prediction_id = str(data.get("id") or "").strip()
+            if prediction_id:
+                return prediction_id
+        prediction_id = str(body.get("id") or "").strip() if isinstance(body, dict) else ""
+        if prediction_id:
+            return prediction_id
+        raise RuntimeError("Atlas Cloud nao retornou prediction id para a imagem")
+
+    raise RuntimeError("Atlas Cloud esta com alta demanda para gerar a imagem")
+
+
+async def _fetch_result_outputs(client: httpx.AsyncClient, prediction_id: str, api_key: str) -> list[str]:
+    endpoint = f"{ATLAS_IMAGE_API_BASE_URL}/model/result/{prediction_id}"
+    resp = await client.get(endpoint, headers={"Authorization": f"Bearer {api_key}"})
+    if resp.status_code >= 400:
+        return []
+    try:
+        payload = resp.json()
+    except Exception:
+        return []
+    return _extract_output_refs(payload)
+
+
+async def _wait_for_outputs(client: httpx.AsyncClient, prediction_id: str, api_key: str, timeout_seconds: int) -> list[str]:
+    endpoint = f"{ATLAS_IMAGE_API_BASE_URL}/model/prediction/{prediction_id}"
+    start_time = asyncio.get_running_loop().time()
+
+    while (asyncio.get_running_loop().time() - start_time) < timeout_seconds:
+        resp = await client.get(endpoint, headers={"Authorization": f"Bearer {api_key}"})
+        if resp.status_code == 429:
+            await asyncio.sleep(_retry_delay_from_header(resp.headers.get("Retry-After"), 3))
+            continue
+        if resp.status_code >= 400:
+            message = _extract_atlas_error_message(resp) or f"HTTP {resp.status_code}"
+            raise RuntimeError(f"Falha ao consultar o Atlas Cloud: {message}")
+
+        payload = resp.json()
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            data = payload if isinstance(payload, dict) else {}
+
+        status = str(data.get("status") or "").strip().lower()
+        if status in {"completed", "succeeded", "success"}:
+            refs = _extract_output_refs(payload)
+            if refs:
+                return refs
+            fallback_refs = await _fetch_result_outputs(client, prediction_id, api_key)
+            if fallback_refs:
+                return fallback_refs
+            raise RuntimeError("Atlas Cloud concluiu a geracao, mas nao retornou imagens")
+
+        if status in {"failed", "error", "cancelled", "canceled"}:
+            message = str(data.get("error") or data.get("message") or "Falha ao gerar imagem").strip()
+            raise RuntimeError(message or "Falha ao gerar imagem")
+
+        await asyncio.sleep(2)
+
+    raise RuntimeError("Tempo limite excedido ao aguardar a imagem do Atlas Cloud")
+
+
+async def generate_atlas_images(
+    *,
+    prompt: str,
+    model: str,
+    aspect_ratio: str = "1:1",
+    size: str = "2K",
+    count: int = 1,
+    seed: int = -1,
+    thinking_mode: bool = False,
+    reference_paths: list[str] | None = None,
+    timeout_seconds: int = 240,
+) -> list[dict[str, Any]]:
+    normalized_model = normalize_supported_model(model)
+    if not normalized_model:
+        raise RuntimeError("Modelo de imagem nao suportado")
+
+    api_key = _atlas_api_key()
+    if not api_key:
+        raise RuntimeError("ATLASCLOUD_API_KEY not configured")
+
+    prompt_text = str(prompt or "").strip()
+    if not prompt_text:
+        raise RuntimeError("Descreva a imagem antes de gerar")
+
+    requested_count = max(1, min(int(count or 1), model_max_outputs(normalized_model)))
+    uploaded_refs: list[str] = []
+    source_refs = [str(path or "").strip() for path in (reference_paths or []) if str(path or "").strip()]
+
+    timeout = httpx.Timeout(60.0, connect=20.0, read=60.0, write=60.0)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        if model_requires_reference(normalized_model):
+            if not source_refs:
+                raise RuntimeError("Envie pelo menos uma imagem de referencia para este motor")
+            for ref_path in source_refs[:model_max_references(normalized_model)]:
+                uploaded_refs.append(await _upload_media_to_atlas(client, ref_path, api_key))
+
+        payload: dict[str, Any] = {
+            "model": normalized_model,
+            "prompt": prompt_text,
+            "enable_sync_mode": False,
+            "enable_base64_output": False,
+        }
+        if model_supports_aspect_ratio(normalized_model):
+            payload["aspect_ratio"] = resolve_aspect_ratio(aspect_ratio)
+        if model_supports_size(normalized_model):
+            payload["size"] = resolve_size(normalized_model, size)
+        if model_supports_thinking_mode(normalized_model):
+            payload["thinking_mode"] = bool(thinking_mode)
+            payload["seed"] = int(seed if seed is not None else -1)
+            if requested_count > 1:
+                payload["n"] = requested_count
+        if uploaded_refs:
+            payload["images"] = uploaded_refs
+
+        prediction_id = await _submit_generation(client, payload, api_key)
+        output_refs = await _wait_for_outputs(client, prediction_id, api_key, timeout_seconds)
+
+        results: list[dict[str, Any]] = []
+        for output_ref in output_refs[:requested_count]:
+            raw_bytes, mime_type = await _fetch_output_bytes(client, output_ref)
+            if not raw_bytes:
+                continue
+            results.append({
+                "bytes": raw_bytes,
+                "mime_type": mime_type,
+                "source": output_ref,
+            })
+
+        if results:
+            return results
+
+    raise RuntimeError("Atlas Cloud nao retornou imagem utilizavel")

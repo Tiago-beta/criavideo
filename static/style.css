@@ -4510,10 +4510,255 @@ svg.spin {
     min-height: 40px;
 }
 
+.media-toggle-chip-action {
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+}
+
+.media-toggle-chip-action:hover,
+.media-toggle-chip-action:focus-visible {
+    outline: none;
+}
+
+.media-toggle-chip-action:hover .media-toggle-chip-body,
+.media-toggle-chip-action:focus-visible .media-toggle-chip-body {
+    border-color: rgba(var(--accent-rgb), 0.7);
+    background: rgba(var(--accent-rgb), 0.14);
+    color: var(--text);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.16);
+}
+
 .script-media-panel {
     border-top: 0;
     padding-top: 4px;
     margin-top: 8px;
+}
+
+#modal-script-image-creator {
+    padding: 0.5rem;
+}
+
+#modal-script-image-creator .modal-content-wide {
+    width: min(calc(100vw - 1rem), 1120px);
+    max-height: calc(100vh - 1rem);
+    display: flex;
+    flex-direction: column;
+}
+
+#modal-script-image-creator .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+.script-image-generator-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+    gap: 18px;
+    align-items: start;
+}
+
+.script-image-generator-controls,
+.script-image-generator-results-panel {
+    border: 1px solid rgba(96, 129, 162, 0.22);
+    border-radius: 20px;
+    background: rgba(8, 27, 46, 0.54);
+    padding: 16px;
+}
+
+.script-image-generator-results-panel {
+    min-height: 100%;
+}
+
+.script-image-generator-prompt {
+    min-height: 220px;
+}
+
+.script-image-generator-section-head,
+.script-image-generator-results-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.script-image-generator-results-head h4 {
+    margin: 0;
+    color: var(--text);
+    font-size: 1rem;
+}
+
+.script-image-generator-results-head small {
+    color: var(--text-muted);
+}
+
+.script-image-generator-dropzone {
+    width: 100%;
+    margin-top: 4px;
+    padding: 16px;
+    border: 1px dashed rgba(0, 212, 255, 0.3);
+    border-radius: 16px;
+    background: rgba(6, 24, 42, 0.72);
+    color: var(--text);
+    display: grid;
+    gap: 6px;
+    justify-items: center;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.script-image-generator-dropzone:hover {
+    border-color: var(--tech-neon);
+    background: rgba(0, 212, 255, 0.08);
+    transform: translateY(-1px);
+}
+
+.script-image-generator-dropzone strong {
+    font-size: 0.95rem;
+}
+
+.script-image-generator-dropzone small {
+    color: var(--text-muted);
+}
+
+.script-image-generator-reference-preview {
+    margin-top: 12px;
+}
+
+.script-image-generator-settings {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.script-image-generator-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 2px;
+    margin-bottom: 4px;
+}
+
+.script-image-generator-toggle-copy {
+    display: grid;
+    gap: 3px;
+}
+
+.script-image-generator-toggle-copy strong {
+    color: var(--text);
+}
+
+.script-image-generator-toggle-copy small {
+    color: var(--text-muted);
+}
+
+.script-image-generator-status {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 212, 255, 0.16);
+    background: rgba(0, 212, 255, 0.08);
+    color: #dff7ff;
+    font-size: 0.9rem;
+}
+
+.script-image-generator-status.is-error {
+    border-color: rgba(255, 122, 108, 0.24);
+    background: rgba(255, 122, 108, 0.08);
+    color: #ffd1c8;
+}
+
+.script-image-generator-status.is-success {
+    border-color: rgba(122, 221, 171, 0.24);
+    background: rgba(122, 221, 171, 0.08);
+    color: #dbffe9;
+}
+
+.script-image-generator-footer {
+    margin-top: 16px;
+    padding-top: 0;
+}
+
+.script-image-generator-results {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.script-image-generator-empty {
+    min-height: 220px;
+    border: 1px dashed rgba(96, 129, 162, 0.24);
+    border-radius: 18px;
+    background: rgba(4, 18, 33, 0.42);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+}
+
+.script-image-generator-result-card {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 16px;
+    border: 1px solid rgba(96, 129, 162, 0.22);
+    background: rgba(4, 18, 33, 0.56);
+}
+
+.script-image-generator-result-card img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.script-image-generator-result-meta {
+    display: grid;
+    gap: 3px;
+}
+
+.script-image-generator-result-meta strong {
+    color: var(--text);
+    font-size: 0.92rem;
+}
+
+.script-image-generator-result-meta span {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.3;
+}
+
+.script-image-generator-result-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.script-image-generator-result-actions .btn-icon-sm {
+    width: 36px;
+    height: 36px;
+}
+
+.script-image-generator-result-actions .btn-icon-sm svg {
+    width: 16px;
+    height: 16px;
+}
+
+.script-image-generator-result-actions .script-image-generator-use-btn {
+    border-color: rgba(122, 221, 171, 0.26);
+    color: #9df0bd;
+}
+
+.script-image-generator-result-actions .script-image-generator-use-btn:hover {
+    border-color: rgba(122, 221, 171, 0.48);
+    color: #c8ffde;
 }
 
 @media (max-width: 720px) {
@@ -4523,7 +4768,7 @@ svg.spin {
     }
 
     .script-media-toggle-group {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .media-toggle-group {
@@ -4532,6 +4777,24 @@ svg.spin {
 
     .media-toggle-chip--compact .media-toggle-chip-body {
         min-width: 0;
+    }
+
+    .script-image-generator-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .script-image-generator-settings {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 520px) {
+    .script-media-toggle-group {
+        grid-template-columns: 1fr;
+    }
+
+    .script-image-generator-settings {
+        grid-template-columns: 1fr;
     }
 }
 

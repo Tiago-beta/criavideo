@@ -1014,6 +1014,17 @@ class WorkflowGenerateImageRequest(BaseModel):
     aspect_ratio: str = "16:9"
 
 
+class ScriptImageGeneratorRequest(BaseModel):
+    prompt: str
+    model: str
+    aspect_ratio: str = "1:1"
+    size: str = "2K"
+    n: int = Field(default=1, ge=1, le=4)
+    seed: int = -1
+    thinking_mode: bool = False
+    reference_upload_ids: list[str] = Field(default_factory=list)
+
+
 class WorkflowImportVideoUrlRequest(BaseModel):
     source_url: str
     formato: str = "video_melhor"
@@ -1052,6 +1063,105 @@ async def workflow_generate_image(
     raw = output_path.read_bytes()
     image_data_url = f"data:image/png;base64,{base64.b64encode(raw).decode('ascii')}"
     return {"upload_id": upload_id, "image_url": image_data_url, "size": len(raw)}
+
+
+@router.post("/script-image/generate")
+async def generate_script_image(
+    req: ScriptImageGeneratorRequest,
+    user: dict = Depends(get_current_user),
+):
+    from app.services.atlas_image import (
+        generate_atlas_images,
+        get_supported_model_meta,
+        is_supported_atlas_image_model,
+        model_requires_reference,
+        normalize_supported_model,
+    )
+
+    prompt = str(req.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Descreva a imagem antes de gerar.")
+    if len(prompt) > 5000:
+        raise HTTPException(status_code=400, detail="Prompt de imagem muito longo.")
+
+    model = normalize_supported_model(req.model)
+    if not is_supported_atlas_image_model(model):
+        raise HTTPException(status_code=400, detail="Modelo de imagem nao suportado.")
+
+    reference_paths: list[str] = []
+    for raw_upload_id in (req.reference_upload_ids or []):
+        upload_id = str(raw_upload_id or "").strip()
+        if not upload_id:
+            continue
+        resolved = _resolve_temp_file(user["id"], upload_id, IMAGE_EXTS)
+        if resolved and resolved.exists():
+            reference_paths.append(str(resolved))
+
+    if model_requires_reference(model) and not reference_paths:
+        raise HTTPException(status_code=400, detail="Esse motor exige ao menos uma imagem de referencia.")
+
+    try:
+        outputs = await generate_atlas_images(
+            prompt=prompt,
+            model=model,
+            aspect_ratio=req.aspect_ratio,
+            size=req.size,
+            count=req.n,
+            seed=req.seed,
+            thinking_mode=bool(req.thinking_mode),
+            reference_paths=reference_paths,
+        )
+    except RuntimeError as exc:
+        message = str(exc or "Falha ao gerar imagem").strip() or "Falha ao gerar imagem"
+        lowered = message.lower()
+        if "not configured" in lowered or "nao configurado" in lowered:
+            raise HTTPException(status_code=503, detail="Atlas Cloud nao esta configurado no servidor.") from exc
+        raise HTTPException(status_code=502, detail=message) from exc
+
+    images: list[dict[str, Any]] = []
+    model_meta = get_supported_model_meta(model)
+    model_label = str(model_meta.get("label") or model)
+    user_dir = _temp_user_dir(user["id"])
+
+    for index, item in enumerate(outputs, start=1):
+        raw_bytes = item.get("bytes") if isinstance(item, dict) else b""
+        mime_type = str(item.get("mime_type") or "image/png") if isinstance(item, dict) else "image/png"
+        if not isinstance(raw_bytes, (bytes, bytearray)) or not raw_bytes:
+            continue
+
+        ext = mimetypes.guess_extension(mime_type) or ".png"
+        if ext == ".jpe":
+            ext = ".jpg"
+        if ext not in IMAGE_EXTS:
+            ext = ".png"
+
+        upload_id = f"{uuid.uuid4().hex}{ext}"
+        output_path = user_dir / upload_id
+        output_path.write_bytes(bytes(raw_bytes))
+
+        image_data_url = f"data:{mime_type};base64,{base64.b64encode(bytes(raw_bytes)).decode('ascii')}"
+        images.append({
+            "upload_id": upload_id,
+            "image_url": image_data_url,
+            "mime_type": mime_type,
+            "file_name": f"imagem-gerada-{index}{ext}",
+            "label": model_label,
+            "model": model,
+            "size": len(raw_bytes),
+        })
+
+    if not images:
+        raise HTTPException(status_code=500, detail="Atlas Cloud nao retornou imagens utilizaveis.")
+
+    first = images[0]
+    return {
+        "images": images,
+        "upload_id": first["upload_id"],
+        "image_url": first["image_url"],
+        "size": first["size"],
+        "model": model,
+        "label": model_label,
+    }
 
 
 @router.post("/workflow/import-video-url")
@@ -1774,13 +1884,13 @@ class SimilarSceneImageRequest(BaseModel):
 
 
 class SimilarGeneratePreviewsRequest(BaseModel):
-    engine: str = "wan2"
+    engine: str = "grok"
     aspect_ratio: str = "16:9"
 
 
 class SimilarRegenerateSceneRequest(BaseModel):
     scene_id: int
-    engine: str = "wan2"
+    engine: str = "grok"
     aspect_ratio: str = "16:9"
     prompt_override: str = ""
 
@@ -2122,7 +2232,7 @@ async def generate_similar_unified_scene(
         raise HTTPException(status_code=400, detail="Projeto ainda esta processando")
 
     engine = str(req.engine or "seedance").strip().lower() or "seedance"
-    if engine not in {"grok", "wan2", "seedance"}:
+    if engine not in {"grok", "wan2", "minimax", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
     duration_seconds = int(req.duration_seconds or 0)
@@ -2515,8 +2625,8 @@ async def generate_similar_previews(
     if not scenes:
         raise HTTPException(status_code=400, detail="Projeto nao possui cenas para gerar")
 
-    engine = str(req.engine or "wan2").strip().lower() or "wan2"
-    if engine not in {"grok", "wan2", "seedance"}:
+    engine = str(req.engine or "grok").strip().lower() or "grok"
+    if engine not in {"grok", "wan2", "minimax", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
     from app.routers.credits import deduct_credits
@@ -2559,8 +2669,8 @@ async def regenerate_similar_scene(
     if not scene or scene.project_id != project_id:
         raise HTTPException(status_code=404, detail="Cena nao encontrada")
 
-    engine = str(req.engine or "wan2").strip().lower() or "wan2"
-    if engine not in {"grok", "wan2", "seedance"}:
+    engine = str(req.engine or "grok").strip().lower() or "grok"
+    if engine not in {"grok", "wan2", "minimax", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
     from app.routers.credits import deduct_credits
@@ -4348,13 +4458,15 @@ async def generate_realistic_prompt_endpoint(
     else:
         topic_for_optimizer = topic
 
-    engine = req.engine if req.engine in ("seedance", "wan2", "grok") else "wan2"
+    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
-    else:
+    elif engine == "seedance":
         duration = max(1, min(int(req.duration or 10), 15))
+    else:
+        duration = max(1, min(int(req.duration or 10), 10))
 
     interaction_persona = _normalize_interaction_persona(req.interaction_persona)
     selected_persona_profile_id = int(req.persona_profile_id or 0)
@@ -4529,7 +4641,7 @@ class GenerateRealisticRequest(BaseModel):
     cover_custom_prompt: str = ""
     cover_source: str = ""
     tevoxi_has_official_cover_reference: bool = False
-    engine: str = "wan2"  # "seedance", "wan2" or "grok"
+    engine: str = "wan2"  # "seedance", "minimax", "wan2" or "grok"
     audio_url: str = ""       # External audio URL (e.g. from Tevoxi)
     lyrics: str = ""          # Lyrics/transcription for the audio clip
     clip_start: float = 0     # Start time in seconds for audio clip
@@ -4563,13 +4675,15 @@ async def generate_realistic_endpoint(
 
     preserve_prompt_exactly = bool(req.preserve_prompt_exactly)
 
-    engine = req.engine if req.engine in ("seedance", "wan2", "grok") else "wan2"
+    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
-    else:
+    elif engine == "seedance":
         duration = max(1, min(int(req.duration or 10), 15))
+    else:
+        duration = max(1, min(int(req.duration or 10), 10))
 
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
         raise HTTPException(status_code=400, detail="Formato inválido. Use 16:9, 9:16 ou 1:1.")
@@ -4802,7 +4916,7 @@ async def generate_realistic_endpoint(
     if not project_title:
         project_title = prompt[:100]
 
-    engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
     engine_label = engine_labels.get(engine, "Wan 2.6")
 
     # Narration config stored in tags JSON

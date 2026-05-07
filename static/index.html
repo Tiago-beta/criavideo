@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260506-17">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260506-18">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 367;
+        var REQUIRED_VER = 368;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1385,6 +1385,10 @@
                                         <span>Tevoxi</span>
                                     </span>
                                 </label>
+                                <button id="script-open-image-creator" class="media-toggle-chip-action media-toggle-chip-body" type="button" onclick="openScriptImageCreatorModal()">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M3 12h18"/><path d="m17 7 2 2"/><path d="m5 19 2-2"/></svg>
+                                    <span>Criar imagem</span>
+                                </button>
                             </div>
                             <div id="script-photo-area" class="photo-upload-area" hidden>
                                 <div id="script-photo-dropzone" class="photo-dropzone script-photo-dropzone" role="button" tabindex="0" aria-label="Adicionar imagens" onclick="document.getElementById('script-photo-input').click()" onkeydown="if(event.key==='Enter' || event.key===' '){ event.preventDefault(); document.getElementById('script-photo-input').click(); }">
@@ -3616,8 +3620,116 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260506-17"></script>
-    <script src="/video/static/pwa.js?v=20260506-17"></script>
+    <div id="modal-script-image-creator" class="modal" style="z-index:3210">
+        <div class="modal-content modal-content-wide script-image-generator-modal">
+            <div class="modal-header">
+                <h3>Criar imagem</h3>
+                <button class="modal-close" type="button" onclick="closeScriptImageCreatorModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="script-image-generator-shell">
+                    <div class="script-image-generator-controls">
+                        <div class="form-group">
+                            <label for="script-image-generator-model">Motor de IA</label>
+                            <select id="script-image-generator-model" class="input" onchange="handleScriptImageCreatorModelChange()">
+                                <option value="google/nano-banana-pro/text-to-image">Nano Banana Pro</option>
+                                <option value="google/nano-banana-2/text-to-image">Nano Banana 2</option>
+                                <option value="google/nano-banana/text-to-image">Nano Banana</option>
+                                <option value="openai/gpt-image-1/text-to-image">GPT Image</option>
+                                <option value="alibaba/wan-2.7-pro/text-to-image">WAN 2.7 Pro Texto para Imagem</option>
+                                <option value="alibaba/wan-2.7-pro/image-edit">WAN 2.7 Pro Imagem para Imagem</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="script-image-generator-prompt">Prompt</label>
+                            <textarea id="script-image-generator-prompt" class="wizard-textarea script-image-generator-prompt" rows="9" maxlength="5000" placeholder="Descreva a imagem que voce quer criar..."></textarea>
+                        </div>
+
+                        <div id="script-image-generator-reference-group" class="form-group" hidden>
+                            <div class="script-image-generator-section-head">
+                                <label>Imagens de referencia</label>
+                                <span id="script-image-generator-reference-count" class="photo-upload-hint">0/9</span>
+                            </div>
+                            <p id="script-image-generator-reference-help" class="photo-upload-hint">Envie uma ou mais imagens para orientar a edicao.</p>
+                            <button type="button" class="script-image-generator-dropzone" onclick="triggerScriptImageCreatorReferenceUpload()">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 14v3a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-3"/></svg>
+                                <strong>Adicionar referencias</strong>
+                                <small>JPG, PNG ou WebP. O WAN 2.7 Pro imagem-para-imagem aceita ate 9.</small>
+                            </button>
+                            <input id="script-image-generator-reference-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handleScriptImageCreatorReferenceSelect(event)">
+                            <div id="script-image-generator-reference-preview" class="photo-preview-grid script-image-generator-reference-preview"></div>
+                        </div>
+
+                        <div class="script-image-generator-settings">
+                            <div id="script-image-generator-aspect-group" class="form-group">
+                                <label for="script-image-generator-aspect">Proporcao</label>
+                                <select id="script-image-generator-aspect" class="input">
+                                    <option value="1:1">1:1</option>
+                                    <option value="16:9">16:9</option>
+                                    <option value="9:16">9:16</option>
+                                    <option value="4:5">4:5</option>
+                                    <option value="3:4">3:4</option>
+                                </select>
+                            </div>
+                            <div id="script-image-generator-size-group" class="form-group" hidden>
+                                <label for="script-image-generator-size">Tamanho</label>
+                                <select id="script-image-generator-size" class="input">
+                                    <option value="1K">1K</option>
+                                    <option value="2K" selected>2K</option>
+                                    <option value="4K">4K</option>
+                                </select>
+                            </div>
+                            <div id="script-image-generator-count-group" class="form-group" hidden>
+                                <label for="script-image-generator-count">Quantidade</label>
+                                <select id="script-image-generator-count" class="input">
+                                    <option value="1">1</option>
+                                    <option value="2">2</option>
+                                    <option value="3">3</option>
+                                    <option value="4">4</option>
+                                </select>
+                            </div>
+                            <div id="script-image-generator-seed-group" class="form-group" hidden>
+                                <label for="script-image-generator-seed">Semente</label>
+                                <input id="script-image-generator-seed" class="input" type="number" min="-1" step="1" value="-1">
+                            </div>
+                        </div>
+
+                        <div id="script-image-generator-thinking-group" class="script-image-generator-toggle" hidden>
+                            <label class="toggle-switch">
+                                <input id="script-image-generator-thinking" type="checkbox">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <div class="script-image-generator-toggle-copy">
+                                <strong>Thinking mode</strong>
+                                <small>Melhora a composicao e o raciocinio visual nos modelos WAN.</small>
+                            </div>
+                        </div>
+
+                        <p id="script-image-generator-status" class="script-image-generator-status" hidden></p>
+
+                        <div class="modal-footer modal-footer-space script-image-generator-footer">
+                            <button class="btn btn-secondary" type="button" onclick="closeScriptImageCreatorModal()">Fechar</button>
+                            <button id="script-image-generator-submit" class="btn btn-primary" type="button" onclick="generateScriptImageFromModal()">Gerar imagem</button>
+                        </div>
+                    </div>
+
+                    <div class="script-image-generator-results-panel">
+                        <div class="script-image-generator-results-head">
+                            <h4>Resultados</h4>
+                            <small>Baixe ou use direto no sistema.</small>
+                        </div>
+                        <div id="script-image-generator-results" class="script-image-generator-results">
+                            <div class="script-image-generator-empty">Escolha um motor, escreva o prompt e gere sua imagem.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/video/static/app.js?v=20260506-18"></script>
+    <script src="/video/static/pwa.js?v=20260506-18"></script>
 </body>
 </html>
 
