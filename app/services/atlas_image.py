@@ -25,8 +25,9 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "supports_aspect_ratio": True,
         "supports_size": False,
         "supports_thinking_mode": False,
-        "max_outputs": 1,
-        "max_references": 0,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 5,
     },
     "google/nano-banana-2/text-to-image": {
         "label": "Nano Banana 2",
@@ -34,8 +35,9 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "supports_aspect_ratio": True,
         "supports_size": False,
         "supports_thinking_mode": False,
-        "max_outputs": 1,
-        "max_references": 0,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 5,
     },
     "google/nano-banana/text-to-image": {
         "label": "Nano Banana",
@@ -43,8 +45,9 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "supports_aspect_ratio": True,
         "supports_size": False,
         "supports_thinking_mode": False,
-        "max_outputs": 1,
-        "max_references": 0,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 5,
     },
     "openai/gpt-image-1/text-to-image": {
         "label": "GPT Image",
@@ -52,8 +55,9 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "supports_aspect_ratio": True,
         "supports_size": False,
         "supports_thinking_mode": False,
-        "max_outputs": 1,
-        "max_references": 0,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 5,
     },
     "alibaba/wan-2.7-pro/text-to-image": {
         "label": "WAN 2.7 Pro Texto para Imagem",
@@ -61,8 +65,9 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "supports_aspect_ratio": False,
         "supports_size": True,
         "supports_thinking_mode": True,
+        "supports_batch_request": True,
         "max_outputs": 4,
-        "max_references": 0,
+        "max_references": 5,
     },
     "alibaba/wan-2.7-pro/image-edit": {
         "label": "WAN 2.7 Pro Imagem para Imagem",
@@ -70,6 +75,7 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "supports_aspect_ratio": False,
         "supports_size": True,
         "supports_thinking_mode": True,
+        "supports_batch_request": True,
         "max_outputs": 4,
         "max_references": 9,
     },
@@ -127,6 +133,11 @@ def model_max_references(model: str) -> int:
     if not normalized:
         return 0
     return int(_SUPPORTED_MODELS[normalized]["max_references"] or 0)
+
+
+def model_supports_batch_request(model: str) -> bool:
+    normalized = normalize_supported_model(model)
+    return bool(normalized and _SUPPORTED_MODELS[normalized].get("supports_batch_request"))
 
 
 def resolve_aspect_ratio(aspect_ratio: str) -> str:
@@ -429,52 +440,65 @@ async def generate_atlas_images(
     prompt_text = str(prompt or "").strip()
     if not prompt_text:
         raise RuntimeError("Descreva a imagem antes de gerar")
+    resolved_aspect_ratio = resolve_aspect_ratio(aspect_ratio)
 
     requested_count = max(1, min(int(count or 1), model_max_outputs(normalized_model)))
     uploaded_refs: list[str] = []
     source_refs = [str(path or "").strip() for path in (reference_paths or []) if str(path or "").strip()]
+    supports_batch_request = model_supports_batch_request(normalized_model)
 
     timeout = httpx.Timeout(60.0, connect=20.0, read=60.0, write=60.0)
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        if model_requires_reference(normalized_model):
-            if not source_refs:
-                raise RuntimeError("Envie pelo menos uma imagem de referencia para este motor")
-            for ref_path in source_refs[:model_max_references(normalized_model)]:
+        if model_requires_reference(normalized_model) and not source_refs:
+            raise RuntimeError("Envie pelo menos uma imagem de referencia para este motor")
+
+        for ref_path in source_refs[:model_max_references(normalized_model)]:
                 uploaded_refs.append(await _upload_media_to_atlas(client, ref_path, api_key))
 
-        payload: dict[str, Any] = {
-            "model": normalized_model,
-            "prompt": prompt_text,
-            "enable_sync_mode": False,
-            "enable_base64_output": False,
-        }
-        if model_supports_aspect_ratio(normalized_model):
-            payload["aspect_ratio"] = resolve_aspect_ratio(aspect_ratio)
-        if model_supports_size(normalized_model):
-            payload["size"] = resolve_size(normalized_model, size)
-        if model_supports_thinking_mode(normalized_model):
-            payload["thinking_mode"] = bool(thinking_mode)
-            payload["seed"] = int(seed if seed is not None else -1)
-            if requested_count > 1:
-                payload["n"] = requested_count
-        if uploaded_refs:
-            payload["images"] = uploaded_refs
-
-        prediction_id = await _submit_generation(client, payload, api_key)
-        output_refs = await _wait_for_outputs(client, prediction_id, api_key, timeout_seconds)
-
         results: list[dict[str, Any]] = []
-        for output_ref in output_refs[:requested_count]:
-            raw_bytes, mime_type = await _fetch_output_bytes(client, output_ref)
-            if not raw_bytes:
-                continue
-            results.append({
-                "bytes": raw_bytes,
-                "mime_type": mime_type,
-                "source": output_ref,
-            })
+        while len(results) < requested_count:
+            remaining = requested_count - len(results)
+            payload: dict[str, Any] = {
+                "model": normalized_model,
+                "prompt": prompt_text if model_supports_aspect_ratio(normalized_model) else f"{prompt_text}\n\nDesired aspect ratio: {resolved_aspect_ratio}.",
+                "enable_sync_mode": False,
+                "enable_base64_output": False,
+            }
+            if model_supports_aspect_ratio(normalized_model):
+                payload["aspect_ratio"] = resolved_aspect_ratio
+            if model_supports_size(normalized_model):
+                payload["size"] = resolve_size(normalized_model, size)
+            if model_supports_thinking_mode(normalized_model):
+                payload["thinking_mode"] = bool(thinking_mode)
+                payload["seed"] = int(seed if seed is not None else -1)
+            if supports_batch_request and remaining > 1:
+                payload["n"] = remaining
+            if uploaded_refs:
+                payload["images"] = uploaded_refs
+
+            prediction_id = await _submit_generation(client, payload, api_key)
+            output_refs = await _wait_for_outputs(client, prediction_id, api_key, timeout_seconds)
+
+            batch_target = remaining if supports_batch_request else 1
+            batch_results: list[dict[str, Any]] = []
+            for output_ref in output_refs[:batch_target]:
+                raw_bytes, mime_type = await _fetch_output_bytes(client, output_ref)
+                if not raw_bytes:
+                    continue
+                batch_results.append({
+                    "bytes": raw_bytes,
+                    "mime_type": mime_type,
+                    "source": output_ref,
+                })
+
+            if not batch_results:
+                break
+
+            results.extend(batch_results)
+            if supports_batch_request:
+                break
 
         if results:
-            return results
+            return results[:requested_count]
 
     raise RuntimeError("Atlas Cloud nao retornou imagem utilizavel")

@@ -4495,7 +4495,7 @@ svg.spin {
 
 .script-media-toggle-group {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 10px;
     width: 100%;
 }
@@ -4510,7 +4510,7 @@ svg.spin {
     min-height: 40px;
 }
 
-.media-toggle-chip-action {
+.media-toggle-chip-button {
     width: 100%;
     padding: 0;
     border: 0;
@@ -4518,13 +4518,13 @@ svg.spin {
     cursor: pointer;
 }
 
-.media-toggle-chip-action:hover,
-.media-toggle-chip-action:focus-visible {
+.media-toggle-chip-button:hover,
+.media-toggle-chip-button:focus-visible {
     outline: none;
 }
 
-.media-toggle-chip-action:hover .media-toggle-chip-body,
-.media-toggle-chip-action:focus-visible .media-toggle-chip-body {
+.media-toggle-chip-button:hover .media-toggle-chip-body,
+.media-toggle-chip-button:focus-visible .media-toggle-chip-body {
     border-color: rgba(var(--accent-rgb), 0.7);
     background: rgba(var(--accent-rgb), 0.14);
     color: var(--text);
@@ -4556,25 +4556,116 @@ svg.spin {
 
 .script-image-generator-shell {
     display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
-    gap: 18px;
+    grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+    gap: 20px;
     align-items: start;
 }
 
 .script-image-generator-controls,
 .script-image-generator-results-panel {
     border: 1px solid rgba(96, 129, 162, 0.22);
-    border-radius: 20px;
-    background: rgba(8, 27, 46, 0.54);
-    padding: 16px;
+    border-radius: 24px;
+    background:
+        radial-gradient(circle at top right, rgba(255, 193, 92, 0.14), transparent 36%),
+        linear-gradient(180deg, rgba(12, 36, 61, 0.92), rgba(6, 23, 40, 0.92));
+    padding: 18px;
+    box-shadow: 0 22px 50px rgba(2, 10, 19, 0.26);
 }
 
 .script-image-generator-results-panel {
     min-height: 100%;
+    display: grid;
+    gap: 14px;
+    align-content: start;
 }
 
 .script-image-generator-prompt {
-    min-height: 220px;
+    min-height: 180px;
+}
+
+.script-image-generator-model-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.script-image-model-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px;
+    border: 1px solid rgba(110, 143, 175, 0.24);
+    border-radius: 18px;
+    background: rgba(7, 24, 41, 0.74);
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.script-image-model-card:hover,
+.script-image-model-card:focus-visible {
+    outline: none;
+    transform: translateY(-1px);
+    border-color: rgba(255, 193, 92, 0.6);
+    background: rgba(15, 44, 73, 0.9);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+}
+
+.script-image-model-card.is-active {
+    border-color: rgba(255, 193, 92, 0.82);
+    background: linear-gradient(180deg, rgba(40, 58, 26, 0.96), rgba(22, 31, 18, 0.96));
+    box-shadow: 0 0 0 1px rgba(255, 193, 92, 0.24), 0 12px 28px rgba(255, 193, 92, 0.12);
+}
+
+.script-image-model-card-icon {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff8dc;
+}
+
+.script-image-model-card-icon svg {
+    width: 22px;
+    height: 22px;
+}
+
+.script-image-model-card-icon--banana {
+    background: linear-gradient(135deg, #f2c94c, #b88a17);
+}
+
+.script-image-model-card-icon--gpt {
+    background: linear-gradient(135deg, #6dd5ed, #2193b0);
+}
+
+.script-image-model-card-icon--wan {
+    background: linear-gradient(135deg, #ff9966, #ff5e62);
+}
+
+.script-image-model-card-icon--wan-edit {
+    background: linear-gradient(135deg, #f9d423, #e65c00);
+}
+
+.script-image-model-card-copy {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.script-image-model-card-copy strong {
+    color: var(--text);
+    font-size: 0.95rem;
+}
+
+.script-image-model-card-copy small {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    line-height: 1.35;
 }
 
 .script-image-generator-section-head,
@@ -4632,16 +4723,81 @@ svg.spin {
 
 .script-image-generator-settings {
     display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.script-image-generator-segmented {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.script-image-generator-segmented--count {
+    display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px;
+}
+
+.script-image-generator-segment {
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid rgba(110, 143, 175, 0.26);
+    border-radius: 12px;
+    background: rgba(4, 19, 33, 0.7);
+    color: var(--text-muted);
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.script-image-generator-segment:hover,
+.script-image-generator-segment:focus-visible {
+    outline: none;
+    transform: translateY(-1px);
+    border-color: rgba(255, 193, 92, 0.5);
+    color: var(--text);
+}
+
+.script-image-generator-segment.is-active {
+    border-color: rgba(196, 255, 98, 0.72);
+    background: rgba(140, 186, 43, 0.16);
+    color: #eaffc2;
+    box-shadow: 0 0 0 1px rgba(196, 255, 98, 0.16);
+}
+
+.script-image-generator-segment.is-disabled,
+.script-image-generator-segment:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+    transform: none;
+}
+
+.script-image-generator-field-note {
+    display: block;
+    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.form-group.is-disabled .input,
+.script-image-generator-toggle.is-disabled {
+    opacity: 0.62;
+}
+
+.form-group.is-disabled .input {
+    cursor: not-allowed;
 }
 
 .script-image-generator-toggle {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-top: 2px;
-    margin-bottom: 4px;
+    margin-top: 4px;
+    margin-bottom: 2px;
+    padding: 12px 14px;
+    border: 1px solid rgba(96, 129, 162, 0.18);
+    border-radius: 16px;
+    background: rgba(3, 17, 31, 0.5);
 }
 
 .script-image-generator-toggle-copy {
@@ -4677,6 +4833,29 @@ svg.spin {
     border-color: rgba(122, 221, 171, 0.24);
     background: rgba(122, 221, 171, 0.08);
     color: #dbffe9;
+}
+
+.script-image-generator-estimate {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 193, 92, 0.24);
+    background: rgba(255, 193, 92, 0.08);
+    color: #ffe5a6;
+    font-size: 0.92rem;
+    line-height: 1.45;
+}
+
+.script-image-generator-estimate.is-loading {
+    border-color: rgba(0, 212, 255, 0.2);
+    background: rgba(0, 212, 255, 0.08);
+    color: #dff7ff;
+}
+
+.script-image-generator-estimate.is-error {
+    border-color: rgba(255, 122, 108, 0.24);
+    background: rgba(255, 122, 108, 0.08);
+    color: #ffd1c8;
 }
 
 .script-image-generator-footer {
@@ -4784,7 +4963,11 @@ svg.spin {
     }
 
     .script-image-generator-settings {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1fr;
+    }
+
+    .script-image-generator-model-options {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -4793,8 +4976,8 @@ svg.spin {
         grid-template-columns: 1fr;
     }
 
-    .script-image-generator-settings {
-        grid-template-columns: 1fr;
+    .script-image-generator-segmented--count {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 

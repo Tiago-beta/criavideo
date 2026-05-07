@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v368 loaded");
+console.log("[CriaVideo] app.js v369 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -10800,57 +10800,51 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
         id: "google/nano-banana-pro/text-to-image",
         label: "Nano Banana Pro",
         requiresReference: false,
-        supportsAspectRatio: true,
         supportsSize: false,
         supportsThinkingMode: false,
-        maxOutputs: 1,
-        maxReferences: 0,
+        maxOutputs: 4,
+        maxReferences: 5,
     },
     {
         id: "google/nano-banana-2/text-to-image",
         label: "Nano Banana 2",
         requiresReference: false,
-        supportsAspectRatio: true,
         supportsSize: false,
         supportsThinkingMode: false,
-        maxOutputs: 1,
-        maxReferences: 0,
+        maxOutputs: 4,
+        maxReferences: 5,
     },
     {
         id: "google/nano-banana/text-to-image",
         label: "Nano Banana",
         requiresReference: false,
-        supportsAspectRatio: true,
         supportsSize: false,
         supportsThinkingMode: false,
-        maxOutputs: 1,
-        maxReferences: 0,
+        maxOutputs: 4,
+        maxReferences: 5,
     },
     {
         id: "openai/gpt-image-1/text-to-image",
         label: "GPT Image",
         requiresReference: false,
-        supportsAspectRatio: true,
         supportsSize: false,
         supportsThinkingMode: false,
-        maxOutputs: 1,
-        maxReferences: 0,
+        maxOutputs: 4,
+        maxReferences: 5,
     },
     {
         id: "alibaba/wan-2.7-pro/text-to-image",
         label: "WAN 2.7 Pro Texto para Imagem",
         requiresReference: false,
-        supportsAspectRatio: false,
         supportsSize: true,
         supportsThinkingMode: true,
         maxOutputs: 4,
-        maxReferences: 0,
+        maxReferences: 5,
     },
     {
         id: "alibaba/wan-2.7-pro/image-edit",
         label: "WAN 2.7 Pro Imagem para Imagem",
         requiresReference: true,
-        supportsAspectRatio: false,
         supportsSize: true,
         supportsThinkingMode: true,
         maxOutputs: 4,
@@ -10861,7 +10855,16 @@ let _scriptImageCreatorState = {
     referenceFiles: [],
     generatedImages: [],
     busy: false,
+    estimateTimer: null,
+    estimateSeq: 0,
 };
+
+function _clearScriptImageCreatorEstimateTimer() {
+    if (_scriptImageCreatorState.estimateTimer) {
+        clearTimeout(_scriptImageCreatorState.estimateTimer);
+        _scriptImageCreatorState.estimateTimer = null;
+    }
+}
 
 function _getScriptImageCreatorModelMeta() {
     const modelSelect = document.getElementById("script-image-generator-model");
@@ -10869,11 +10872,45 @@ function _getScriptImageCreatorModelMeta() {
     return SCRIPT_IMAGE_CREATOR_MODELS.find((item) => item.id === selectedId) || SCRIPT_IMAGE_CREATOR_MODELS[0];
 }
 
+function _setScriptImageCreatorEstimate(message, tone = "ready") {
+    const estimateEl = document.getElementById("script-image-generator-estimate");
+    if (!estimateEl) return;
+    estimateEl.textContent = String(message || "").trim();
+    estimateEl.className = "script-image-generator-estimate";
+    if (tone === "loading") estimateEl.classList.add("is-loading");
+    if (tone === "error") estimateEl.classList.add("is-error");
+}
+
+function _syncScriptImageCreatorChoiceButtons() {
+    const meta = _getScriptImageCreatorModelMeta();
+    const selectedAspect = String(document.getElementById("script-image-generator-aspect")?.value || "1:1").trim();
+    const selectedCount = Number.parseInt(document.getElementById("script-image-generator-count")?.value || "1", 10) || 1;
+
+    document.querySelectorAll(".script-image-model-card").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.model === meta.id);
+    });
+
+    document.querySelectorAll("#script-image-generator-aspect-options .script-image-generator-segment").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.aspect === selectedAspect);
+    });
+
+    document.querySelectorAll("#script-image-generator-count-options .script-image-generator-segment").forEach((button) => {
+        const count = Number.parseInt(button.dataset.count || "1", 10) || 1;
+        const disabled = count > meta.maxOutputs;
+        button.disabled = disabled;
+        button.classList.toggle("is-disabled", disabled);
+        button.classList.toggle("is-active", !disabled && count === selectedCount);
+    });
+}
+
 function resetScriptImageCreatorModalState() {
+    _clearScriptImageCreatorEstimateTimer();
     _scriptImageCreatorState = {
         referenceFiles: [],
         generatedImages: [],
         busy: false,
+        estimateTimer: null,
+        estimateSeq: _scriptImageCreatorState.estimateSeq || 0,
     };
 
     const promptInput = document.getElementById("script-image-generator-prompt");
@@ -10897,6 +10934,7 @@ function resetScriptImageCreatorModalState() {
     syncScriptImageCreatorControls();
     renderScriptImageCreatorReferencePreview();
     renderScriptImageCreatorResults();
+    scheduleScriptImageCreatorEstimate(0);
 }
 
 function openScriptImageCreatorModal() {
@@ -10908,6 +10946,7 @@ function openScriptImageCreatorModal() {
     syncScriptImageCreatorControls();
     renderScriptImageCreatorReferencePreview();
     renderScriptImageCreatorResults();
+    scheduleScriptImageCreatorEstimate(0);
     openModal("modal-script-image-creator");
 }
 
@@ -10915,56 +10954,97 @@ function closeScriptImageCreatorModal() {
     closeModal("modal-script-image-creator");
 }
 
+function selectScriptImageCreatorModel(modelId) {
+    const modelSelect = document.getElementById("script-image-generator-model");
+    if (!modelSelect) return;
+    modelSelect.value = modelId;
+    handleScriptImageCreatorModelChange();
+}
+
+function setScriptImageCreatorAspect(aspectRatio) {
+    const aspectSelect = document.getElementById("script-image-generator-aspect");
+    if (!aspectSelect) return;
+    aspectSelect.value = aspectRatio;
+    _syncScriptImageCreatorChoiceButtons();
+    scheduleScriptImageCreatorEstimate(0);
+}
+
+function setScriptImageCreatorCount(count) {
+    const countSelect = document.getElementById("script-image-generator-count");
+    if (!countSelect) return;
+    countSelect.value = String(count);
+    _syncScriptImageCreatorChoiceButtons();
+    scheduleScriptImageCreatorEstimate(0);
+}
+
+function handleScriptImageCreatorMetaChange() {
+    syncScriptImageCreatorControls();
+    scheduleScriptImageCreatorEstimate(0);
+}
+
 function handleScriptImageCreatorModelChange() {
     syncScriptImageCreatorControls();
     renderScriptImageCreatorReferencePreview();
+    scheduleScriptImageCreatorEstimate(0);
 }
 
 function syncScriptImageCreatorControls() {
     const meta = _getScriptImageCreatorModelMeta();
     const promptInput = document.getElementById("script-image-generator-prompt");
-    const aspectGroup = document.getElementById("script-image-generator-aspect-group");
     const sizeGroup = document.getElementById("script-image-generator-size-group");
-    const countGroup = document.getElementById("script-image-generator-count-group");
     const seedGroup = document.getElementById("script-image-generator-seed-group");
     const thinkingGroup = document.getElementById("script-image-generator-thinking-group");
-    const referenceGroup = document.getElementById("script-image-generator-reference-group");
     const referenceHelp = document.getElementById("script-image-generator-reference-help");
     const sizeSelect = document.getElementById("script-image-generator-size");
+    const sizeNote = document.getElementById("script-image-generator-size-note");
     const countSelect = document.getElementById("script-image-generator-count");
+    const seedInput = document.getElementById("script-image-generator-seed");
+    const seedNote = document.getElementById("script-image-generator-seed-note");
+    const thinkingToggle = document.getElementById("script-image-generator-thinking");
+    const thinkingNote = document.getElementById("script-image-generator-thinking-note");
 
     if (promptInput) {
         promptInput.placeholder = meta.requiresReference
-            ? "Descreva como a imagem enviada deve ser transformada..."
-            : "Descreva a imagem que voce quer criar...";
+            ? "Descreva como as referencias devem ser transformadas, corrigidas ou estilizadas..."
+            : "Descreva a imagem que voce quer criar. Use referencias se quiser guiar enquadramento, pose ou estilo...";
     }
-    if (aspectGroup) aspectGroup.hidden = !meta.supportsAspectRatio;
-    if (sizeGroup) sizeGroup.hidden = !meta.supportsSize;
-    if (countGroup) countGroup.hidden = meta.maxOutputs <= 1;
-    if (seedGroup) seedGroup.hidden = !meta.supportsThinkingMode;
-    if (thinkingGroup) thinkingGroup.hidden = !meta.supportsThinkingMode;
-    if (referenceGroup) referenceGroup.hidden = !meta.requiresReference;
     if (referenceHelp) {
         referenceHelp.textContent = meta.requiresReference
-            ? `Envie de 1 a ${meta.maxReferences} imagens para orientar a edicao.`
-            : "Esse motor cria a imagem apenas pelo prompt.";
-    }
-    if (sizeSelect) {
-        Array.from(sizeSelect.options).forEach((option) => {
-            option.hidden = meta.requiresReference && option.value === "4K";
-        });
-        if (meta.requiresReference && sizeSelect.value === "4K") {
-            sizeSelect.value = "2K";
-        }
+            ? `Esse modelo exige ao menos 1 referencia e aceita ate ${meta.maxReferences}.`
+            : `Opcional: envie ate ${meta.maxReferences} referencias para orientar o resultado.`;
     }
     if (countSelect) {
-        Array.from(countSelect.options).forEach((option) => {
-            option.hidden = Number.parseInt(option.value, 10) > meta.maxOutputs;
-        });
-        if ((Number.parseInt(countSelect.value, 10) || 1) > meta.maxOutputs) {
-            countSelect.value = String(meta.maxOutputs || 1);
+        const parsedCount = Number.parseInt(countSelect.value || "1", 10) || 1;
+        if (parsedCount > meta.maxOutputs) {
+            countSelect.value = String(meta.maxOutputs);
         }
     }
+    if (sizeGroup) sizeGroup.classList.toggle("is-disabled", !meta.supportsSize);
+    if (sizeSelect) sizeSelect.disabled = !meta.supportsSize;
+    if (sizeNote) {
+        sizeNote.textContent = meta.supportsSize
+            ? "1K, 2K e 4K ficam disponiveis nos modelos WAN."
+            : "Esse motor usa o tamanho padrao do proprio provedor.";
+    }
+    if (seedGroup) seedGroup.classList.toggle("is-disabled", !meta.supportsThinkingMode);
+    if (seedInput) seedInput.disabled = !meta.supportsThinkingMode;
+    if (seedNote) {
+        seedNote.textContent = meta.supportsThinkingMode
+            ? "Use -1 para deixar aleatorio ou fixe um numero para repetir a ideia."
+            : "Disponivel somente nos modelos WAN.";
+    }
+    if (thinkingGroup) thinkingGroup.classList.toggle("is-disabled", !meta.supportsThinkingMode);
+    if (thinkingToggle) {
+        thinkingToggle.disabled = !meta.supportsThinkingMode;
+        if (!meta.supportsThinkingMode) thinkingToggle.checked = false;
+    }
+    if (thinkingNote) {
+        thinkingNote.textContent = meta.supportsThinkingMode
+            ? "Melhora composicao e refinamento visual nos modelos WAN."
+            : "Disponivel somente nos modelos WAN.";
+    }
+
+    _syncScriptImageCreatorChoiceButtons();
 }
 
 function triggerScriptImageCreatorReferenceUpload() {
@@ -10979,13 +11059,11 @@ function handleScriptImageCreatorReferenceSelect(event) {
 
 function addScriptImageCreatorReferences(files) {
     const meta = _getScriptImageCreatorModelMeta();
-    if (!meta.requiresReference) {
-        return;
-    }
+    const maxReferences = meta.maxReferences || 5;
 
     for (const file of files) {
-        if (_scriptImageCreatorState.referenceFiles.length >= meta.maxReferences) {
-            alert(`Maximo de ${meta.maxReferences} referencias atingido.`);
+        if (_scriptImageCreatorState.referenceFiles.length >= maxReferences) {
+            alert(`Maximo de ${maxReferences} referencias atingido.`);
             break;
         }
         if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
@@ -11004,11 +11082,13 @@ function addScriptImageCreatorReferences(files) {
     }
 
     renderScriptImageCreatorReferencePreview();
+    scheduleScriptImageCreatorEstimate(0);
 }
 
 function removeScriptImageCreatorReference(index) {
     _scriptImageCreatorState.referenceFiles.splice(index, 1);
     renderScriptImageCreatorReferencePreview();
+    scheduleScriptImageCreatorEstimate(0);
 }
 
 function renderScriptImageCreatorReferencePreview() {
@@ -11017,8 +11097,8 @@ function renderScriptImageCreatorReferencePreview() {
     if (!preview || !count) return;
 
     const meta = _getScriptImageCreatorModelMeta();
-    const maxRefs = meta.maxReferences || 0;
-    count.textContent = maxRefs ? `${_scriptImageCreatorState.referenceFiles.length}/${maxRefs}` : "0/0";
+    const maxRefs = meta.maxReferences || 5;
+    count.textContent = `${_scriptImageCreatorState.referenceFiles.length}/${maxRefs}`;
     preview.innerHTML = "";
 
     _scriptImageCreatorState.referenceFiles.forEach((item, index) => {
@@ -11055,6 +11135,57 @@ function setScriptImageCreatorStatus(message, tone = "info") {
     status.classList.remove("is-error", "is-success");
     if (tone === "error") status.classList.add("is-error");
     if (tone === "success") status.classList.add("is-success");
+}
+
+function scheduleScriptImageCreatorEstimate(delayMs = 140) {
+    _clearScriptImageCreatorEstimateTimer();
+    _scriptImageCreatorState.estimateTimer = setTimeout(() => {
+        updateScriptImageCreatorEstimate().catch(() => {
+            _setScriptImageCreatorEstimate("Nao foi possivel calcular o custo agora.", "error");
+        });
+    }, Math.max(0, delayMs));
+}
+
+async function updateScriptImageCreatorEstimate() {
+    const meta = _getScriptImageCreatorModelMeta();
+    const imageCount = Number.parseInt(document.getElementById("script-image-generator-count")?.value || "1", 10) || 1;
+    const size = String(document.getElementById("script-image-generator-size")?.value || "2K").trim();
+    const thinkingMode = !!document.getElementById("script-image-generator-thinking")?.checked;
+    const referenceCount = _scriptImageCreatorState.referenceFiles.length;
+    const seq = (_scriptImageCreatorState.estimateSeq || 0) + 1;
+    _scriptImageCreatorState.estimateSeq = seq;
+    _setScriptImageCreatorEstimate("Calculando custo estimado...", "loading");
+
+    try {
+        const estimate = await api("/video/estimate-credits", {
+            method: "POST",
+            body: JSON.stringify({
+                mode: "image-generation",
+                image_model: meta.id,
+                image_count: imageCount,
+                image_size: size,
+                reference_image_count: referenceCount,
+                image_thinking_mode: thinkingMode,
+            }),
+        });
+        if (_scriptImageCreatorState.estimateSeq !== seq) {
+            return;
+        }
+
+        const creditsNeeded = _extractEstimateCredits(estimate);
+        const billedBrl = _extractEstimateCostBrl(estimate);
+        const referenceChunk = referenceCount > 0 ? ` • ${referenceCount} referencia(s)` : "";
+        const sizeChunk = meta.supportsSize ? ` • ${size}` : "";
+        const thinkingChunk = meta.supportsThinkingMode && thinkingMode ? " • thinking on" : "";
+        _setScriptImageCreatorEstimate(
+            `Custo estimado: ${_formatCreditsInt(creditsNeeded)} creditos (${_formatBrl(billedBrl)}) para ${imageCount} imagem(ns)${sizeChunk}${referenceChunk}${thinkingChunk}${_buildBalanceSuffix(creditsNeeded)}`,
+            "ready",
+        );
+    } catch (_error) {
+        if (_scriptImageCreatorState.estimateSeq === seq) {
+            _setScriptImageCreatorEstimate("Nao foi possivel calcular o custo agora.", "error");
+        }
+    }
 }
 
 function renderScriptImageCreatorResults() {
@@ -11182,7 +11313,9 @@ async function generateScriptImageFromModal() {
     setScriptImageCreatorStatus(`Gerando imagem com ${meta.label}...`, "info");
 
     try {
-        const referenceUploadIds = meta.requiresReference ? await _prepareScriptImageCreatorReferenceUploadIds() : [];
+        const referenceUploadIds = _scriptImageCreatorState.referenceFiles.length
+            ? await _prepareScriptImageCreatorReferenceUploadIds()
+            : [];
         const response = await api("/video/script-image/generate", {
             method: "POST",
             body: JSON.stringify({
@@ -11226,6 +11359,7 @@ async function generateScriptImageFromModal() {
             submitBtn.disabled = false;
             submitBtn.textContent = originalLabel;
         }
+        scheduleScriptImageCreatorEstimate(0);
     }
 }
 

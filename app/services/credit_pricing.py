@@ -49,6 +49,29 @@ SIMILAR_ANALYSIS_SCENE_PROMPT_USD = 0.007
 SIMILAR_ANALYSIS_GENERAL_PROMPT_USD = 0.014
 SIMILAR_ANALYSIS_SCENE_SECONDS = 5.0
 SIMILAR_ANALYSIS_CONTEXT_FRAMES = 6
+IMAGE_GENERATION_MODEL_USD = {
+    "google/nano-banana-pro/text-to-image": 0.020,
+    "google/nano-banana-2/text-to-image": 0.017,
+    "google/nano-banana/text-to-image": 0.014,
+    "openai/gpt-image-1/text-to-image": 0.032,
+    "alibaba/wan-2.7-pro/text-to-image": 0.040,
+    "alibaba/wan-2.7-pro/image-edit": 0.044,
+}
+IMAGE_GENERATION_SIZE_MULTIPLIERS = {
+    "1K": 1.0,
+    "2K": 1.35,
+    "4K": 1.85,
+}
+IMAGE_GENERATION_REFERENCE_USD = 0.0032
+IMAGE_GENERATION_THINKING_MULTIPLIER = 1.12
+IMAGE_GENERATION_BASE_FLOOR = {
+    "google/nano-banana-pro/text-to-image": 8,
+    "google/nano-banana-2/text-to-image": 7,
+    "google/nano-banana/text-to-image": 6,
+    "openai/gpt-image-1/text-to-image": 11,
+    "alibaba/wan-2.7-pro/text-to-image": 13,
+    "alibaba/wan-2.7-pro/image-edit": 15,
+}
 
 
 @dataclass
@@ -258,6 +281,56 @@ def estimate_quick_create_credits(duration_seconds: float | int) -> dict[str, An
         add_narration=False,
         add_music=False,
     )
+
+
+def estimate_image_generation_credits(
+    model: str,
+    image_count: int = 1,
+    size: str = "2K",
+    reference_image_count: int = 0,
+    thinking_mode: bool = False,
+) -> dict[str, Any]:
+    normalized_model = str(model or "google/nano-banana-pro/text-to-image").strip()
+    if normalized_model not in IMAGE_GENERATION_MODEL_USD:
+        normalized_model = "google/nano-banana-pro/text-to-image"
+
+    normalized_size = str(size or "2K").strip().upper()
+    if normalized_size not in IMAGE_GENERATION_SIZE_MULTIPLIERS:
+        normalized_size = "2K"
+
+    outputs = max(1, min(int(image_count or 1), 4))
+    references = max(0, min(int(reference_image_count or 0), 9))
+    thinking_enabled = bool(thinking_mode)
+
+    base_usd = IMAGE_GENERATION_MODEL_USD[normalized_model]
+    size_multiplier = IMAGE_GENERATION_SIZE_MULTIPLIERS[normalized_size]
+    thinking_multiplier = IMAGE_GENERATION_THINKING_MULTIPLIER if thinking_enabled else 1.0
+    provider_cost_usd = (base_usd * size_multiplier * thinking_multiplier * outputs) + (references * IMAGE_GENERATION_REFERENCE_USD)
+
+    base_floor = IMAGE_GENERATION_BASE_FLOOR[normalized_model]
+    size_floor_multiplier = 1.0 if normalized_size == "1K" else (1.25 if normalized_size == "2K" else 1.55)
+    thinking_floor_multiplier = 1.12 if thinking_enabled else 1.0
+    floor_credits = max(
+        base_floor,
+        int(math.ceil(base_floor * outputs * size_floor_multiplier * thinking_floor_multiplier))
+        + max(0, references - 1),
+    )
+
+    estimate = _credits_from_provider_cost(provider_cost_usd, floor_credits=floor_credits)
+    estimate.breakdown = {
+        "mode": "image_generation",
+        "model": normalized_model,
+        "image_count": outputs,
+        "size": normalized_size,
+        "reference_image_count": references,
+        "thinking_mode": thinking_enabled,
+        "floor_credits": floor_credits,
+        "components_usd": {
+            "images": round(base_usd * size_multiplier * thinking_multiplier * outputs, 6),
+            "references": round(references * IMAGE_GENERATION_REFERENCE_USD, 6),
+        },
+    }
+    return estimate.to_dict()
 
 
 def estimate_similar_scene_credits(

@@ -31,6 +31,7 @@ from app.services.persona_registry import (
     resolve_persona_reference_images,
 )
 from app.services.credit_pricing import (
+    estimate_image_generation_credits,
     estimate_local_video_processing_credits,
     estimate_quick_create_credits,
     estimate_realistic_credits,
@@ -3244,7 +3245,7 @@ class GenerateTTSRequest(BaseModel):
 
 
 class EstimateCreditsRequest(BaseModel):
-    mode: str = "standard"  # standard | realistic | quick-create | similar-analysis
+    mode: str = "standard"  # standard | realistic | quick-create | similar-analysis | image-generation
     duration_seconds: float = 0
     word_count: int = 0
     analysis_mode: str = "scene"
@@ -3265,6 +3266,13 @@ class EstimateCreditsRequest(BaseModel):
     engine: str = "wan2"
     has_reference_image: bool = True
     use_external_audio: bool = False
+
+    # Image generation mode
+    image_model: str = "google/nano-banana-pro/text-to-image"
+    image_count: int = 1
+    image_size: str = "2K"
+    reference_image_count: int = 0
+    image_thinking_mode: bool = False
 
 
 @router.post("/estimate-credits")
@@ -3294,6 +3302,15 @@ async def estimate_credits_endpoint(
         return estimate_similar_analysis_credits(
             duration_seconds=req.duration_seconds,
             analysis_mode=req.analysis_mode,
+        )
+
+    if mode == "image-generation":
+        return estimate_image_generation_credits(
+            model=req.image_model,
+            image_count=req.image_count,
+            size=req.image_size,
+            reference_image_count=req.reference_image_count,
+            thinking_mode=req.image_thinking_mode,
         )
 
     return estimate_standard_credits(
