@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v372 loaded");
+console.log("[CriaVideo] app.js v373 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -10970,26 +10970,15 @@ function syncScriptImageCreatorControls() {
     const sizeGroup = document.getElementById("script-image-generator-size-group");
     const seedGroup = document.getElementById("script-image-generator-seed-group");
     const thinkingGroup = document.getElementById("script-image-generator-thinking-group");
-    const referenceHelp = document.getElementById("script-image-generator-reference-help");
     const sizeSelect = document.getElementById("script-image-generator-size");
-    const sizeNote = document.getElementById("script-image-generator-size-note");
     const countSelect = document.getElementById("script-image-generator-count");
     const seedInput = document.getElementById("script-image-generator-seed");
-    const seedNote = document.getElementById("script-image-generator-seed-note");
     const thinkingToggle = document.getElementById("script-image-generator-thinking");
-    const thinkingNote = document.getElementById("script-image-generator-thinking-note");
 
     if (promptInput) {
         promptInput.placeholder = meta.requiresReference
             ? "Descreva como as referencias devem ser transformadas, corrigidas ou estilizadas..."
             : "Descreva a imagem que voce quer criar. Use referencias se quiser guiar enquadramento, pose ou estilo...";
-    }
-    if (referenceHelp) {
-        referenceHelp.textContent = meta.id === "ultra-high-3.0"
-            ? `Opcional: envie ate ${meta.maxReferences} referencias para guiar a criacao.`
-            : meta.requiresReference
-            ? `Esse modelo exige ao menos 1 referencia e aceita ate ${meta.maxReferences}.`
-            : `Opcional: envie ate ${meta.maxReferences} referencias para orientar o resultado.`;
     }
     if (countSelect) {
         const parsedCount = Number.parseInt(countSelect.value || "1", 10) || 1;
@@ -10999,27 +10988,12 @@ function syncScriptImageCreatorControls() {
     }
     if (sizeGroup) sizeGroup.classList.toggle("is-disabled", !meta.supportsSize);
     if (sizeSelect) sizeSelect.disabled = !meta.supportsSize;
-    if (sizeNote) {
-        sizeNote.textContent = meta.supportsSize
-            ? "1K, 2K e 4K ficam disponiveis nos modelos WAN."
-            : "Esse motor usa o tamanho padrao do proprio provedor.";
-    }
     if (seedGroup) seedGroup.classList.toggle("is-disabled", !meta.supportsThinkingMode);
     if (seedInput) seedInput.disabled = !meta.supportsThinkingMode;
-    if (seedNote) {
-        seedNote.textContent = meta.supportsThinkingMode
-            ? "Use -1 para deixar aleatorio ou fixe um numero para repetir a ideia."
-            : "Disponivel somente nos modelos WAN.";
-    }
     if (thinkingGroup) thinkingGroup.classList.toggle("is-disabled", !meta.supportsThinkingMode);
     if (thinkingToggle) {
         thinkingToggle.disabled = !meta.supportsThinkingMode;
         if (!meta.supportsThinkingMode) thinkingToggle.checked = false;
-    }
-    if (thinkingNote) {
-        thinkingNote.textContent = meta.supportsThinkingMode
-            ? "Melhora composicao e refinamento visual nos modelos WAN."
-            : "Disponivel somente nos modelos WAN.";
     }
 
     _syncScriptImageCreatorChoiceButtons();

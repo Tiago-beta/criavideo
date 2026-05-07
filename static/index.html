@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260506-22">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260506-23">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 372;
+        var REQUIRED_VER = 373;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -3634,7 +3634,6 @@
                         <div class="form-group">
                             <div class="script-image-generator-section-head">
                                 <label for="script-image-generator-model">Modelo de IA</label>
-                                <span class="photo-upload-hint">Atlas Cloud</span>
                             </div>
                             <select id="script-image-generator-model" class="input script-image-generator-native-select" hidden onchange="handleScriptImageCreatorModelChange()">
                                 <option value="google/nano-banana-pro/text-to-image">Nano Banana Pro</option>
@@ -3702,11 +3701,9 @@
                                 <label>Imagens de referencia</label>
                                 <span id="script-image-generator-reference-count" class="photo-upload-hint">0/5</span>
                             </div>
-                            <p id="script-image-generator-reference-help" class="photo-upload-hint">Adicione imagens para guiar estilo, enquadramento e detalhes finos do resultado.</p>
                             <button type="button" class="script-image-generator-dropzone" onclick="triggerScriptImageCreatorReferenceUpload()">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 14v3a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-3"/></svg>
                                 <strong>Adicionar referencias</strong>
-                                <small>JPG, PNG ou WebP. Use as referencias em qualquer modelo; WAN I2I aceita ate 9.</small>
                             </button>
                             <input id="script-image-generator-reference-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handleScriptImageCreatorReferenceSelect(event)">
                             <div id="script-image-generator-reference-preview" class="photo-preview-grid script-image-generator-reference-preview"></div>
@@ -3716,7 +3713,6 @@
                             <div id="script-image-generator-aspect-group" class="form-group">
                                 <div class="script-image-generator-section-head">
                                     <label for="script-image-generator-aspect">Proporcao de aspecto</label>
-                                    <span class="photo-upload-hint">Escolha o quadro</span>
                                 </div>
                                 <select id="script-image-generator-aspect" class="input script-image-generator-native-select" hidden>
                                     <option value="1:1">1:1</option>
@@ -3736,7 +3732,6 @@
                             <div id="script-image-generator-count-group" class="form-group">
                                 <div class="script-image-generator-section-head">
                                     <label for="script-image-generator-count">Numero de imagens</label>
-                                    <span class="photo-upload-hint">1 a 4 saídas</span>
                                 </div>
                                 <select id="script-image-generator-count" class="input script-image-generator-native-select" hidden>
                                     <option value="1">1</option>
@@ -3758,12 +3753,10 @@
                                     <option value="2K" selected>2K</option>
                                     <option value="4K">4K</option>
                                 </select>
-                                <small id="script-image-generator-size-note" class="script-image-generator-field-note">Qualidade extra nos modelos WAN.</small>
                             </div>
                             <div id="script-image-generator-seed-group" class="form-group">
                                 <label for="script-image-generator-seed">Semente</label>
                                 <input id="script-image-generator-seed" class="input" type="number" min="-1" step="1" value="-1" onchange="handleScriptImageCreatorMetaChange()">
-                                <small id="script-image-generator-seed-note" class="script-image-generator-field-note">Use -1 para deixar aleatorio.</small>
                             </div>
                         </div>
 
@@ -3774,7 +3767,6 @@
                             </label>
                             <div class="script-image-generator-toggle-copy">
                                 <strong>Thinking mode</strong>
-                                <small id="script-image-generator-thinking-note">Melhora composicao e refinamento nos modelos WAN.</small>
                             </div>
                         </div>
 
@@ -3790,7 +3782,6 @@
                     <div class="script-image-generator-results-panel">
                         <div class="script-image-generator-results-head">
                             <h4>Resultados</h4>
-                            <small>Baixe ou use direto no sistema.</small>
                         </div>
                         <div id="script-image-generator-results" class="script-image-generator-results">
                             <div class="script-image-generator-empty">Escolha um motor, escreva o prompt e gere sua imagem.</div>
@@ -3801,8 +3792,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260506-22"></script>
-    <script src="/video/static/pwa.js?v=20260506-22"></script>
+    <script src="/video/static/app.js?v=20260506-23"></script>
+    <script src="/video/static/pwa.js?v=20260506-23"></script>
 </body>
 </html>
 
