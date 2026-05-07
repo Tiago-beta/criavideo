@@ -1,11 +1,10 @@
-console.log("[CriaVideo] app.js v379 loaded");
+console.log("[CriaVideo] app.js v380 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
 const LEVITA_TOKEN_KEY = "levita_token";
 const TEVOXI_DEFAULT_SIGNUP_URL = "https://tevoxi.com";
 const ADMIN_PANEL_EMAIL = "tgsantos66@hotmail.com";
-const ADMIN_PANEL_URL = "/video/static/admin-panel.html?v=20260504-07";
 
 let token = localStorage.getItem(APP_TOKEN_KEY) || "";
 let currentUser = null;
@@ -59,10 +58,6 @@ let _autoPilotPersonaEditor = {
 };
 let _autoRealisticPersonaCompositionTypes = ["natureza"];
 let _autoThemeRunState = {};
-let _autoThemeDateEditMetaById = {};
-let _autoThemeDateEditState = {
-    themeId: 0,
-};
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 let _profileAdminIframeLoaded = false;
 let _lastTrackedPage = "";
@@ -99,6 +94,10 @@ let _personaNoReferenceByContext = {
     auto: {},
     pilot: {},
 };
+let _personaManagerContext = "script";
+let _personaManagerType = "natureza";
+let _personaManagerMulti = false;
+let personaManagerReferenceImageFile = null;
 let _personaVoiceBuilderProfileId = 0;
 let _personaPromptEditorProfileId = 0;
 const PERSONA_REFERENCE_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -172,7 +171,7 @@ function _renderDurationButtons(containerId, options, preferredValue = null) {
 }
 
 function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
-    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "grok";
+    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
     const options = engine === "wan2"
         ? WAN_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
@@ -185,14 +184,14 @@ function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
 function _syncSeedanceLastFrameToggle(prefix) {
     const toggleGroup = document.getElementById(`${prefix}-seedance-last-frame-group`);
     if (!toggleGroup) return;
-    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "grok";
+    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
     toggleGroup.hidden = engine !== "seedance";
 }
 
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected")
         || document.querySelector("#wizard-realistic-engine .engine-option.selected");
-    const engine = engineBtn?.dataset.value || "grok";
+    const engine = engineBtn?.dataset.value || "wan2";
     const options = engine === "wan2"
         ? WAN_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
@@ -202,7 +201,7 @@ function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
 }
 
 function _syncAutoRealisticDurationOptions(preferredValue = null) {
-    const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "grok";
+    const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "wan2";
     const options = engine === "grok"
         ? AUTO_GROK_DURATION_OPTIONS
         : engine === "seedance"
@@ -346,12 +345,15 @@ function _openProfileAdminPanel() {
         showToast("Acesso restrito ao perfil administrativo.", "error");
         return;
     }
-    const adminWindow = window.open(ADMIN_PANEL_URL, "_blank", "noopener");
-    if (!adminWindow) {
-        showToast("Nao foi possivel abrir o painel administrativo em uma nova guia.", "error");
-        return;
+    const host = document.getElementById("profile-admin-host");
+    const iframe = document.getElementById("profile-admin-iframe");
+    if (!host || !iframe) return;
+    host.hidden = false;
+    if (!_profileAdminIframeLoaded) {
+        const src = iframe.dataset.src || "/video/static/admin-panel.html";
+        iframe.src = src;
+        _profileAdminIframeLoaded = true;
     }
-    if (typeof adminWindow.focus === "function") adminWindow.focus();
 }
 
 function _closeProfileAdminPanel(forceReset = false) {
@@ -656,6 +658,9 @@ function bindNavigation() {
                 return;
             }
             navigateTo("profile");
+            if (_isProfileAdminUser()) {
+                _openProfileAdminPanel();
+            }
         });
         sidebarProfileTrigger.addEventListener("keydown", (event) => {
             if (event.key !== "Enter" && event.key !== " ") {
@@ -663,6 +668,9 @@ function bindNavigation() {
             }
             event.preventDefault();
             navigateTo("profile");
+            if (_isProfileAdminUser()) {
+                _openProfileAdminPanel();
+            }
         });
     }
     const profileAdminOpen = document.getElementById("btn-profile-admin-open");
@@ -687,7 +695,33 @@ function bindNavigation() {
 }
 
 function ensurePublishDraftSelector() {
-    return;
+    const formArea = document.getElementById("publish-form-area");
+    const renderSelect = document.getElementById("pub-render-select");
+    if (!formArea || !renderSelect) {
+        return;
+    }
+
+    if (document.getElementById("pub-draft-select")) {
+        return;
+    }
+
+    const renderGroup = renderSelect.closest(".form-group");
+    if (!renderGroup || !renderGroup.parentNode) {
+        return;
+    }
+
+    let row = renderGroup.closest(".publish-select-row");
+    if (!row) {
+        row = document.createElement("div");
+        row.className = "publish-select-row";
+        renderGroup.parentNode.insertBefore(row, renderGroup);
+        row.appendChild(renderGroup);
+    }
+
+    const draftGroup = document.createElement("div");
+    draftGroup.className = "form-group publish-form-group";
+    draftGroup.innerHTML = "<select id=\"pub-draft-select\" class=\"input\" aria-label=\"Selecionar rascunho salvo\"><option value=\"\">Meus rascunhos...</option></select>";
+    row.appendChild(draftGroup);
 }
 
 function bindDashboardEvents() {
@@ -702,9 +736,9 @@ function bindDashboardEvents() {
     document.getElementById("btn-schedule-publish").addEventListener("click", openPublishScheduleModal);
     document.getElementById("pub-links-toggle").addEventListener("click", togglePublishLinks);
     document.getElementById("btn-save-links").addEventListener("click", savePublishLinksForAccount);
-    const publishSourceOpenBtn = document.getElementById("btn-publish-source-open");
-    if (publishSourceOpenBtn) {
-        publishSourceOpenBtn.addEventListener("click", () => {
+    const renderPickerBtn = document.getElementById("pub-render-picker-btn");
+    if (renderPickerBtn) {
+        renderPickerBtn.addEventListener("click", () => {
             _publishOpenRenderSourceModal();
         });
     }
@@ -782,12 +816,6 @@ function bindDashboardEvents() {
     if (analyzeRunBtn) {
         analyzeRunBtn.addEventListener("click", () => {
             runAnalyzeChannel();
-        });
-    }
-    const analyzeAddBtn = document.getElementById("btn-new-analyze-channel");
-    if (analyzeAddBtn) {
-        analyzeAddBtn.addEventListener("click", () => {
-            connectPlatform("youtube");
         });
     }
     const analyzeHistoryBtn = document.getElementById("btn-analyze-history");
@@ -1003,7 +1031,11 @@ function loadPageData(page) {
         _editorHandleEditorPageEntry();
         _closeProfileAdminPanel(false);
     } else if (page === "profile") {
-        _syncProfileAdminControls();
+        if (_isProfileAdminUser()) {
+            _openProfileAdminPanel();
+        } else {
+            _closeProfileAdminPanel(false);
+        }
     }
 }
 
@@ -1141,6 +1173,17 @@ function _analyzeRenderConnectedAccounts(accounts) {
         const username = (account.platform_username && account.platform_username !== accountName)
             ? account.platform_username
             : "";
+        const selectedClass = account.id === _analyzeState.selectedAccountId ? " selected" : "";
+        return `
+            <button class="analyze-connected-card${selectedClass}" data-account-id="${account.id}" type="button">
+                <span class="social-account-icon" aria-hidden="true">${socialPlatformIcon(platform)}</span>
+                <span class="analyze-connected-meta">
+                    <strong>${esc(accountName)}</strong>
+                    <small>${esc(socialPlatformName(platform))}${username ? ` · ${esc(username)}` : ""}</small>
+                </span>
+                <span class="analyze-account-status">Conectada</span>
+            </button>
+        `;
     }).join("");
 
     container.querySelectorAll(".analyze-connected-card").forEach((card) => {
@@ -1732,14 +1775,13 @@ function closeModal(id) {
     }
     modal.classList.remove("open");
     modal.style.display = "";
+    if (id === "modal-persona-manager") {
+        closeModal("modal-persona-manager-create");
+    }
     if (id === "modal-new-project") {
         stopKaraokeProgressPolling();
         _stopSimilarPolling();
-        closeModal("modal-script-image-creator");
         _setNewProjectModalWorkflowLayout(false);
-    }
-    if (id === "modal-script-image-creator") {
-        resetScriptImageCreatorModalState();
     }
     if (id === "modal-edit-project") {
         _renameProjectId = 0;
@@ -1778,9 +1820,6 @@ function closeModal(id) {
             btn.disabled = false;
             btn.textContent = "Agendar";
         }
-    }
-    if (id === "modal-auto-theme-date") {
-        _resetAutoThemeDateModal();
     }
     if (id === "modal-player") {
         const video = document.getElementById("player-video");
@@ -2225,7 +2264,7 @@ let similarState = {
     sourceDurationProbeToken: 0,
     pollingTimer: null,
     engineManuallySelected: false,
-    selectedEngine: "grok",
+    selectedEngine: "wan2",
     sceneEngineSelectionBySceneId: {},
     pendingBusyStage: "",
     pendingBusySceneId: 0,
@@ -2323,9 +2362,9 @@ const SIMILAR_DETECTED_MODE_LABELS = {
     unknown: "Não foi possível identificar com confiança o perfil visual do vídeo.",
 };
 const SIMILAR_MODE_ENGINE_DEFAULT = {
-    static_narrated: "grok",
+    static_narrated: "wan2",
     realistic: "wan2",
-    unknown: "grok",
+    unknown: "wan2",
 };
 const _creditEstimateTimers = {};
 const _creditEstimateSeq = { wizard: 0, script: 0, auto: 0, workflow: 0 };
@@ -2428,8 +2467,8 @@ function _getSelectedDurationSeconds(containerId, fallbackSeconds = 8) {
 
 function _buildRealisticEstimatePayload(prefix) {
     const useTevoxi = !!document.getElementById(`${prefix}-realistic-tevoxi`)?.checked;
-    const selectedEngine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "grok";
-    const engine = (prefix === "auto" && useTevoxi) ? "grok" : selectedEngine;
+    const selectedEngine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
+    const engine = (prefix === "auto" && useTevoxi) ? "wan2" : selectedEngine;
 
     let durationSeconds = _getSelectedDurationSeconds(`${prefix}-realistic-duration`, 5);
     if (engine === "wan2") {
@@ -2942,7 +2981,6 @@ async function createSimilar(projectId) {
     }
 
     const realisticArtists = new Set([
-        "MiniMax Hailuo",
         "Wan 2.2",
         "Ultra High 1.0",
         "Ultra High 2.2",
@@ -2967,10 +3005,9 @@ async function createSimilar(projectId) {
 
     const normalizeEngine = (value) => {
         const raw = String(value || "").trim().toLowerCase();
-        if (["wan2", "grok", "minimax", "seedance"].includes(raw)) {
+        if (["wan2", "grok", "seedance"].includes(raw)) {
             return raw;
         }
-        if (raw.includes("minimax")) return "minimax";
         if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
         if (raw.includes("cria 3.0") || raw.includes("grok")) return "grok";
@@ -3019,7 +3056,7 @@ async function createSimilar(projectId) {
     if (sourceLooksRealistic) {
         const desiredDuration = Math.max(1, Math.round(Number(projectDetail?.track_duration || project.track_duration || tagsData.dialogue_duration || 8)));
 
-        const selectedEngine = normalizeEngine(tagsData.engine || project.track_artist || projectDetail?.track_artist || "grok");
+        const selectedEngine = normalizeEngine(tagsData.engine || project.track_artist || projectDetail?.track_artist || "wan2");
         const engineOptions = Array.from(document.querySelectorAll("#script-realistic-engine .engine-option"));
         let selectedEngineBtn = engineOptions.find((btn) => (btn.dataset.value || "") === selectedEngine);
         if (!selectedEngineBtn) {
@@ -4109,7 +4146,7 @@ function _renderSimilarUnifiedPrompt(project) {
     similarState.unifiedEngine = selectedEngine;
     similarState.unifiedDuration = selectedDuration;
 
-    enginePickerEl.innerHTML = ["grok", "wan2", "seedance", "minimax"].map((engineValue) => `
+    enginePickerEl.innerHTML = ["grok", "wan2", "seedance"].map((engineValue) => `
         <button
             class="similar-scene-engine-btn${selectedEngine === engineValue ? " selected" : ""}"
             type="button"
@@ -4572,17 +4609,16 @@ function _similarSceneDuration(scene) {
 
 function _normalizeSimilarEngine(rawValue) {
     const value = String(rawValue || "").trim().toLowerCase();
-    if (value === "wan2" || value === "minimax" || value === "seedance") {
+    if (value === "wan2" || value === "seedance") {
         return value;
     }
-    return "grok";
+    return "wan2";
 }
 
 function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
     if (normalized === "wan2") return "U1";
     if (normalized === "seedance") return "S2";
-    if (normalized === "minimax") return "MM";
     return "C3";
 }
 
@@ -4590,7 +4626,6 @@ function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
     if (normalized === "wan2") return "Ultra High 1.0";
     if (normalized === "seedance") return "Seedance 2.0";
-    if (normalized === "minimax") return "MiniMax";
     return "Cria 3.0 speed";
 }
 
@@ -4599,7 +4634,7 @@ function _getSimilarSceneSelectedEngine(sceneId) {
     return _normalizeSimilarEngine(
         similarState.sceneEngineSelectionBySceneId?.[sceneKey]
         || similarState.selectedEngine
-        || "grok"
+        || "wan2"
     );
 }
 
@@ -4829,13 +4864,13 @@ function _setSimilarEngineSelection(engineValue, options = {}) {
     });
 
     if (!found) {
-        const fallback = document.querySelector("#similar-engine-options .engine-option[data-value='grok']");
+        const fallback = document.querySelector("#similar-engine-options .engine-option[data-value='wan2']");
         if (fallback) {
             fallback.classList.add("selected");
         }
     }
 
-    similarState.selectedEngine = found ? normalized : "grok";
+    similarState.selectedEngine = found ? normalized : "wan2";
     if (markManual) {
         similarState.engineManuallySelected = true;
     }
@@ -4847,7 +4882,7 @@ function _getSimilarSelectedEngine() {
     if (selected) {
         return _normalizeSimilarEngine(selected.dataset.value);
     }
-    return _normalizeSimilarEngine(similarState.selectedEngine || "grok");
+    return _normalizeSimilarEngine(similarState.selectedEngine || "wan2");
 }
 
 function _resolveSimilarDetectedMode(tags) {
@@ -4896,7 +4931,7 @@ function _updateSimilarGenerationStep(project, tags) {
     }
 
     const suggestedEngine = _normalizeSimilarEngine(
-        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "grok"
+        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "wan2"
     );
     if (!similarState.engineManuallySelected) {
         _setSimilarEngineSelection(suggestedEngine, { markManual: false });
@@ -5442,13 +5477,13 @@ function _renderSimilarScenes(project, options = {}) {
                 ${uploadsSectionMarkup}
 
                 <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
-                    ${["grok", "wan2", "seedance", "minimax"].map((engineValue) => `
+                    ${["grok", "wan2", "seedance"].map((engineValue) => `
                         <button
                             class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
                             type="button"
                             onclick="similarSelectSceneEngine(${sceneId}, '${engineValue}')"
-                            title="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : engineValue === "seedance" ? "Seedance 2.0" : "MiniMax"} nesta cena"
-                            aria-label="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : engineValue === "seedance" ? "Seedance 2.0" : "MiniMax"} nesta cena"
+                            title="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : "Seedance 2.0"} nesta cena"
+                            aria-label="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : "Seedance 2.0"} nesta cena"
                         >${_similarSceneEngineLabel(engineValue)}</button>
                     `).join("")}
                 </div>
@@ -5855,7 +5890,7 @@ function workflowDefaultAiToolsMarkup() {
 }
 
 function workflowResolvePromptAiDuration(node) {
-    const allowed = workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "grok");
+    const allowed = workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "wan2");
     const nodeDuration = parseInt(node?.dataset?.promptAiDuration || "0", 10);
     if (allowed.includes(nodeDuration)) return nodeDuration;
     const workflowDuration = parseInt(document.getElementById("workflow-duration")?.value || "0", 10);
@@ -5870,7 +5905,7 @@ function workflowPromptAiStyleButtonsMarkup() {
 }
 
 function workflowPromptAiDurationButtonsMarkup(selectedDuration) {
-    return workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "grok")
+    return workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "wan2")
         .map((duration) => (
             `<button type="button" data-workflow-ai-duration="${duration}" aria-pressed="${selectedDuration === duration ? "true" : "false"}">${duration}s</button>`
         ))
@@ -6003,7 +6038,7 @@ function workflowSyncPromptAiPersonaButtons(node) {
 function workflowSelectPromptAiDuration(button) {
     const node = button?.closest?.(".workflow-node");
     const selectedDuration = parseInt(button?.dataset?.workflowAiDuration || "0", 10);
-    if (!node || !workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "grok").includes(selectedDuration)) return;
+    if (!node || !workflowEngineDurationOptions(document.getElementById("workflow-engine")?.value || "wan2").includes(selectedDuration)) return;
     node.dataset.promptAiDuration = String(selectedDuration);
     const durationSelect = document.getElementById("workflow-duration");
     if (durationSelect && Array.from(durationSelect.options).some((option) => option.value === String(selectedDuration))) {
@@ -6367,7 +6402,7 @@ async function workflowImproveCardPrompt(button) {
     button.disabled = true;
     button.textContent = "Gerando...";
     try {
-        const engine = document.getElementById("workflow-engine")?.value || "grok";
+        const engine = document.getElementById("workflow-engine")?.value || "wan2";
         const interactionPersona = node?.classList?.contains("workflow-node-prompt")
             ? workflowResolvePromptAiPersona(node)
             : "nenhum";
@@ -7680,13 +7715,13 @@ function workflowSyncEngineDurationOptions() {
     const durationSelect = document.getElementById("workflow-duration");
     if (!engineSelect || !durationSelect) return;
     const current = parseInt(durationSelect.value || "15", 10) || 15;
-    const options = workflowEngineDurationOptions(engineSelect.value || "grok");
+    const options = workflowEngineDurationOptions(engineSelect.value || "wan2");
     const nextValue = _pickClosestDurationOption(options, current || options[0]);
     durationSelect.innerHTML = options.map((value) => `<option value="${value}">${value}s</option>`).join("");
     durationSelect.value = String(nextValue);
     const toggleGroup = document.getElementById("workflow-seedance-last-frame-group");
     if (toggleGroup) {
-        toggleGroup.hidden = (engineSelect.value || "grok") !== "seedance";
+        toggleGroup.hidden = (engineSelect.value || "wan2") !== "seedance";
     }
 }
 
@@ -8564,7 +8599,7 @@ async function workflowRunSeedance() {
         const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
         const resolution = document.getElementById("workflow-resolution")?.value || "720p";
-        const workflowEngine = document.getElementById("workflow-engine")?.value || "grok";
+        const workflowEngine = document.getElementById("workflow-engine")?.value || "wan2";
         const useLastImageAsFinalFrame = workflowEngine === "seedance"
             && !!document.getElementById("workflow-seedance-last-frame")?.checked;
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
@@ -9692,9 +9727,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
         }
     }
-    const engineLabel = engine === "minimax"
-        ? "MiniMax Hailuo"
-        : engine === "wan2"
+    const engineLabel = engine === "wan2"
             ? "Ultra High 1.0"
             : engine === "grok"
                 ? "Cria 3.0 speed"
@@ -10035,7 +10068,6 @@ function resetCreateWizard() {
     // Reset photo upload
     scriptPhotos = [];
     resetAiSuggestCustomImages();
-    resetScriptImageCreatorModalState();
     const photoCb = document.getElementById("script-use-photos");
     if (photoCb) photoCb.checked = false;
     const photoArea = document.getElementById("script-photo-area");
@@ -10735,11 +10767,6 @@ async function handleScriptCreate() {
 }
 
 async function uploadTempFileWithRetry(file, kind, label, options = {}) {
-    const existingUploadId = String(file?.upload_id || "").trim();
-    if (existingUploadId) {
-        return { upload_id: existingUploadId, reused: true };
-    }
-
     // Try simple direct upload first (most reliable)
     const endpoint = kind === "audio" ? "/video/upload-temp-audio" : kind === "video" ? "/video/upload-temp-video" : "/video/upload-temp-image";
     const maxRetries = 5;
@@ -10780,612 +10807,6 @@ const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_AUDIO_SIZE = 80 * 1024 * 1024; // 80MB
 const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB
 let aiSuggestCustomImages = []; // Personalized visual references for AI prompt.
-const SCRIPT_IMAGE_CREATOR_MODELS = [
-    {
-        id: "google/nano-banana-pro/text-to-image",
-        label: "Nano Banana Pro",
-        requiresReference: false,
-        supportsSize: false,
-        supportsThinkingMode: false,
-        maxOutputs: 4,
-        maxReferences: 5,
-    },
-    {
-        id: "google/nano-banana-2/text-to-image",
-        label: "Nano Banana 2",
-        requiresReference: false,
-        supportsSize: false,
-        supportsThinkingMode: false,
-        maxOutputs: 4,
-        maxReferences: 5,
-    },
-    {
-        id: "google/nano-banana/text-to-image",
-        label: "Nano Banana",
-        requiresReference: false,
-        supportsSize: false,
-        supportsThinkingMode: false,
-        maxOutputs: 4,
-        maxReferences: 5,
-    },
-    {
-        id: "openai/gpt-image-1/text-to-image",
-        label: "GPT Image",
-        requiresReference: false,
-        supportsSize: false,
-        supportsThinkingMode: false,
-        maxOutputs: 4,
-        maxReferences: 5,
-    },
-    {
-        id: "ultra-high-3.0",
-        label: "Ultra High 3.0",
-        requiresReference: false,
-        supportsSize: true,
-        supportsThinkingMode: true,
-        maxOutputs: 4,
-        maxReferences: 9,
-    },
-];
-let _scriptImageCreatorState = {
-    referenceFiles: [],
-    generatedImages: [],
-    activeResultIndex: 0,
-    busy: false,
-    estimateTimer: null,
-    estimateSeq: 0,
-};
-
-function _clearScriptImageCreatorEstimateTimer() {
-    if (_scriptImageCreatorState.estimateTimer) {
-        clearTimeout(_scriptImageCreatorState.estimateTimer);
-        _scriptImageCreatorState.estimateTimer = null;
-    }
-}
-
-function _getScriptImageCreatorModelMeta() {
-    const modelSelect = document.getElementById("script-image-generator-model");
-    const selectedId = String(modelSelect?.value || SCRIPT_IMAGE_CREATOR_MODELS[0].id).trim();
-    return SCRIPT_IMAGE_CREATOR_MODELS.find((item) => item.id === selectedId) || SCRIPT_IMAGE_CREATOR_MODELS[0];
-}
-
-function _setScriptImageCreatorEstimate(message, tone = "ready") {
-    const estimateEl = document.getElementById("script-image-generator-estimate");
-    if (!estimateEl) return;
-    estimateEl.textContent = String(message || "").trim();
-    estimateEl.className = "script-image-generator-estimate";
-    if (tone === "loading") estimateEl.classList.add("is-loading");
-    if (tone === "error") estimateEl.classList.add("is-error");
-}
-
-function _syncScriptImageCreatorChoiceButtons() {
-    const meta = _getScriptImageCreatorModelMeta();
-    const selectedAspect = String(document.getElementById("script-image-generator-aspect")?.value || "1:1").trim();
-    const selectedCount = Number.parseInt(document.getElementById("script-image-generator-count")?.value || "1", 10) || 1;
-
-    document.querySelectorAll(".script-image-model-card").forEach((button) => {
-        button.classList.toggle("is-active", button.dataset.model === meta.id);
-    });
-
-    document.querySelectorAll("#script-image-generator-aspect-options .script-image-generator-segment").forEach((button) => {
-        button.classList.toggle("is-active", button.dataset.aspect === selectedAspect);
-    });
-
-    document.querySelectorAll("#script-image-generator-count-options .script-image-generator-segment").forEach((button) => {
-        const count = Number.parseInt(button.dataset.count || "1", 10) || 1;
-        const disabled = count > meta.maxOutputs;
-        button.disabled = disabled;
-        button.classList.toggle("is-disabled", disabled);
-        button.classList.toggle("is-active", !disabled && count === selectedCount);
-    });
-}
-
-function resetScriptImageCreatorModalState() {
-    _clearScriptImageCreatorEstimateTimer();
-    _scriptImageCreatorState = {
-        referenceFiles: [],
-        generatedImages: [],
-        activeResultIndex: 0,
-        busy: false,
-        estimateTimer: null,
-        estimateSeq: _scriptImageCreatorState.estimateSeq || 0,
-    };
-
-    const promptInput = document.getElementById("script-image-generator-prompt");
-    if (promptInput) promptInput.value = "";
-    const modelSelect = document.getElementById("script-image-generator-model");
-    if (modelSelect) modelSelect.value = SCRIPT_IMAGE_CREATOR_MODELS[0].id;
-    const aspectSelect = document.getElementById("script-image-generator-aspect");
-    if (aspectSelect) aspectSelect.value = "1:1";
-    const sizeSelect = document.getElementById("script-image-generator-size");
-    if (sizeSelect) sizeSelect.value = "2K";
-    const countSelect = document.getElementById("script-image-generator-count");
-    if (countSelect) countSelect.value = "1";
-    const seedInput = document.getElementById("script-image-generator-seed");
-    if (seedInput) seedInput.value = "-1";
-    const thinkingToggle = document.getElementById("script-image-generator-thinking");
-    if (thinkingToggle) thinkingToggle.checked = false;
-    const refInput = document.getElementById("script-image-generator-reference-input");
-    if (refInput) refInput.value = "";
-
-    setScriptImageCreatorStatus("", "info");
-    syncScriptImageCreatorControls();
-    renderScriptImageCreatorReferencePreview();
-    renderScriptImageCreatorResults();
-    scheduleScriptImageCreatorEstimate(0);
-}
-
-function openScriptImageCreatorModal() {
-    const promptInput = document.getElementById("script-image-generator-prompt");
-    const scriptPrompt = String(document.getElementById("script-text")?.value || "").trim();
-    if (promptInput && !String(promptInput.value || "").trim() && scriptPrompt) {
-        promptInput.value = scriptPrompt;
-    }
-    syncScriptImageCreatorControls();
-    renderScriptImageCreatorReferencePreview();
-    renderScriptImageCreatorResults();
-    scheduleScriptImageCreatorEstimate(0);
-    openModal("modal-script-image-creator");
-}
-
-function closeScriptImageCreatorModal() {
-    closeModal("modal-script-image-creator");
-}
-
-function selectScriptImageCreatorModel(modelId) {
-    const modelSelect = document.getElementById("script-image-generator-model");
-    if (!modelSelect) return;
-    modelSelect.value = modelId;
-    handleScriptImageCreatorModelChange();
-}
-
-function setScriptImageCreatorAspect(aspectRatio) {
-    const aspectSelect = document.getElementById("script-image-generator-aspect");
-    if (!aspectSelect) return;
-    aspectSelect.value = aspectRatio;
-    _syncScriptImageCreatorPreviewAspect();
-    _syncScriptImageCreatorChoiceButtons();
-    renderScriptImageCreatorResults();
-    scheduleScriptImageCreatorEstimate(0);
-}
-
-function setScriptImageCreatorCount(count) {
-    const countSelect = document.getElementById("script-image-generator-count");
-    if (!countSelect) return;
-    countSelect.value = String(count);
-    _syncScriptImageCreatorChoiceButtons();
-    scheduleScriptImageCreatorEstimate(0);
-}
-
-function handleScriptImageCreatorMetaChange() {
-    syncScriptImageCreatorControls();
-    scheduleScriptImageCreatorEstimate(0);
-}
-
-function handleScriptImageCreatorModelChange() {
-    syncScriptImageCreatorControls();
-    renderScriptImageCreatorReferencePreview();
-    renderScriptImageCreatorResults();
-    scheduleScriptImageCreatorEstimate(0);
-}
-
-function syncScriptImageCreatorControls() {
-    const meta = _getScriptImageCreatorModelMeta();
-    const promptInput = document.getElementById("script-image-generator-prompt");
-    const sizeGroup = document.getElementById("script-image-generator-size-group");
-    const seedGroup = document.getElementById("script-image-generator-seed-group");
-    const thinkingGroup = document.getElementById("script-image-generator-thinking-group");
-    const sizeSelect = document.getElementById("script-image-generator-size");
-    const countSelect = document.getElementById("script-image-generator-count");
-    const seedInput = document.getElementById("script-image-generator-seed");
-    const thinkingToggle = document.getElementById("script-image-generator-thinking");
-    if (promptInput) {
-        promptInput.placeholder = meta.requiresReference
-            ? "Descreva como as referências devem ser transformadas, corrigidas ou estilizadas."
-            : "Descreva a imagem que você quer criar. Use referências se quiser guiar enquadramento, pose ou estilo.";
-    }
-    if (countSelect) {
-        const parsedCount = Number.parseInt(countSelect.value || "1", 10) || 1;
-        if (parsedCount > meta.maxOutputs) {
-            countSelect.value = String(meta.maxOutputs);
-        }
-    }
-    if (sizeGroup) sizeGroup.classList.toggle("is-disabled", !meta.supportsSize);
-    if (sizeSelect) sizeSelect.disabled = !meta.supportsSize;
-    if (seedGroup) seedGroup.classList.toggle("is-disabled", !meta.supportsThinkingMode);
-    if (seedInput) seedInput.disabled = !meta.supportsThinkingMode;
-    if (thinkingGroup) thinkingGroup.classList.toggle("is-disabled", !meta.supportsThinkingMode);
-    if (thinkingToggle) {
-        thinkingToggle.disabled = !meta.supportsThinkingMode;
-        if (!meta.supportsThinkingMode) thinkingToggle.checked = false;
-    }
-    _syncScriptImageCreatorPreviewAspect();
-
-    _syncScriptImageCreatorChoiceButtons();
-}
-
-function _scriptImageCreatorAspectToCssValue(aspectRatio) {
-    const [width, height] = String(aspectRatio || "1:1").split(":").map((value) => Number.parseFloat(value) || 1);
-    return `${width} / ${height}`;
-}
-
-function _syncScriptImageCreatorPreviewAspect() {
-    const resultPanel = document.getElementById("script-image-generator-results-panel");
-    if (!resultPanel) return;
-    const selectedAspect = String(document.getElementById("script-image-generator-aspect")?.value || "1:1").trim();
-    resultPanel.dataset.aspect = selectedAspect;
-    resultPanel.style.setProperty("--script-image-result-ratio", _scriptImageCreatorAspectToCssValue(selectedAspect));
-}
-
-function _shouldShowScriptImageCreatorResults() {
-    return !!(_scriptImageCreatorState.busy || _scriptImageCreatorState.generatedImages.length);
-}
-
-function setActiveScriptImageCreatorResult(index) {
-    const parsed = Number.parseInt(String(index), 10);
-    if (!Number.isFinite(parsed)) return;
-    if (parsed < 0 || parsed >= _scriptImageCreatorState.generatedImages.length) return;
-    _scriptImageCreatorState.activeResultIndex = parsed;
-    renderScriptImageCreatorResults();
-}
-
-function triggerScriptImageCreatorReferenceUpload() {
-    document.getElementById("script-image-generator-reference-input")?.click();
-}
-
-function handleScriptImageCreatorReferenceSelect(event) {
-    const files = Array.from(event?.target?.files || []);
-    addScriptImageCreatorReferences(files);
-    if (event?.target) event.target.value = "";
-}
-
-function addScriptImageCreatorReferences(files) {
-    const meta = _getScriptImageCreatorModelMeta();
-    const maxReferences = meta.maxReferences || 5;
-
-    for (const file of files) {
-        if (_scriptImageCreatorState.referenceFiles.length >= maxReferences) {
-            alert(`Máximo de ${maxReferences} referências atingido.`);
-            break;
-        }
-        if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
-            alert(`Formato não suportado: ${file.name}. Use JPG, PNG ou WebP.`);
-            continue;
-        }
-        if (file.size > MAX_PHOTO_SIZE) {
-            alert(`${file.name} excede 10MB. Reduza o tamanho.`);
-            continue;
-        }
-        _scriptImageCreatorState.referenceFiles.push({
-            file,
-            upload_id: "",
-            preview_url: "",
-        });
-    }
-
-    renderScriptImageCreatorReferencePreview();
-    scheduleScriptImageCreatorEstimate(0);
-}
-
-function removeScriptImageCreatorReference(index) {
-    _scriptImageCreatorState.referenceFiles.splice(index, 1);
-    renderScriptImageCreatorReferencePreview();
-    scheduleScriptImageCreatorEstimate(0);
-}
-
-function renderScriptImageCreatorReferencePreview() {
-    const preview = document.getElementById("script-image-generator-reference-preview");
-    const count = document.getElementById("script-image-generator-reference-count");
-    if (!preview || !count) return;
-
-    const meta = _getScriptImageCreatorModelMeta();
-    const maxRefs = meta.maxReferences || 5;
-    count.textContent = `${_scriptImageCreatorState.referenceFiles.length}/${maxRefs}`;
-    preview.innerHTML = "";
-
-    _scriptImageCreatorState.referenceFiles.forEach((item, index) => {
-        const tile = document.createElement("div");
-        tile.className = "photo-preview-item";
-
-        const img = document.createElement("img");
-        const previewUrl = String(item?.preview_url || "").trim();
-        if (previewUrl) {
-            img.src = previewUrl;
-        } else if (item?.file) {
-            img.src = URL.createObjectURL(item.file);
-            img.onload = () => URL.revokeObjectURL(img.src);
-        }
-
-        const btn = document.createElement("button");
-        btn.className = "photo-remove-btn";
-        btn.type = "button";
-        btn.textContent = "\u00d7";
-        btn.onclick = () => removeScriptImageCreatorReference(index);
-
-        tile.appendChild(img);
-        tile.appendChild(btn);
-        preview.appendChild(tile);
-    });
-}
-
-function setScriptImageCreatorStatus(message, tone = "info") {
-    const status = document.getElementById("script-image-generator-status");
-    if (!status) return;
-    const text = String(message || "").trim();
-    status.hidden = !text;
-    status.textContent = text;
-    status.classList.remove("is-error", "is-success");
-    if (tone === "error") status.classList.add("is-error");
-    if (tone === "success") status.classList.add("is-success");
-}
-
-function scheduleScriptImageCreatorEstimate(delayMs = 140) {
-    _clearScriptImageCreatorEstimateTimer();
-    _scriptImageCreatorState.estimateTimer = setTimeout(() => {
-        updateScriptImageCreatorEstimate().catch(() => {
-            _setScriptImageCreatorEstimate("Não foi possível calcular o custo agora.", "error");
-        });
-    }, Math.max(0, delayMs));
-}
-
-async function updateScriptImageCreatorEstimate() {
-    const meta = _getScriptImageCreatorModelMeta();
-    const imageCount = Number.parseInt(document.getElementById("script-image-generator-count")?.value || "1", 10) || 1;
-    const size = String(document.getElementById("script-image-generator-size")?.value || "2K").trim();
-    const thinkingMode = !!document.getElementById("script-image-generator-thinking")?.checked;
-    const referenceCount = _scriptImageCreatorState.referenceFiles.length;
-    const seq = (_scriptImageCreatorState.estimateSeq || 0) + 1;
-    _scriptImageCreatorState.estimateSeq = seq;
-    _setScriptImageCreatorEstimate("Calculando o custo estimado...", "loading");
-
-    try {
-        const estimate = await api("/video/estimate-credits", {
-            method: "POST",
-            body: JSON.stringify({
-                mode: "image-generation",
-                image_model: meta.id,
-                image_count: imageCount,
-                image_size: size,
-                reference_image_count: referenceCount,
-                image_thinking_mode: thinkingMode,
-            }),
-        });
-        if (_scriptImageCreatorState.estimateSeq !== seq) {
-            return;
-        }
-
-        const creditsNeeded = _extractEstimateCredits(estimate);
-        const balanceCredits = Math.max(0, parseInt(_userCredits || "0", 10) || 0);
-        _setScriptImageCreatorEstimate(
-            `Custo ${_formatCreditsInt(creditsNeeded)} créditos • Saldo ${_formatCreditsInt(balanceCredits)} créditos`,
-            "ready",
-        );
-    } catch (_error) {
-        if (_scriptImageCreatorState.estimateSeq === seq) {
-            _setScriptImageCreatorEstimate("Não foi possível calcular o custo agora.", "error");
-        }
-    }
-}
-
-function renderScriptImageCreatorResults() {
-    const host = document.getElementById("script-image-generator-results");
-    if (!host) return;
-
-    const items = _scriptImageCreatorState.generatedImages;
-    const panel = document.getElementById("script-image-generator-results-panel");
-    if (panel) {
-        panel.hidden = !_shouldShowScriptImageCreatorResults();
-    }
-
-    if (_scriptImageCreatorState.busy && !items.length) {
-        host.innerHTML = `
-            <div class="script-image-generator-stage is-loading">
-                <div class="script-image-generator-empty script-image-generator-empty--inline">
-                    Gerando imagem...
-                </div>
-            </div>
-        `;
-        return;
-    }
-
-    if (!items.length) {
-        host.innerHTML = "";
-        return;
-    }
-
-    const activeIndex = Math.min(_scriptImageCreatorState.activeResultIndex || 0, items.length - 1);
-    _scriptImageCreatorState.activeResultIndex = activeIndex;
-    const activeItem = items[activeIndex];
-    const thumbMarkup = items.length > 1
-        ? `
-            <div class="script-image-generator-result-thumbs">
-                ${items.map((item, index) => `
-                    <button
-                        type="button"
-                        class="script-image-generator-result-thumb${index === activeIndex ? " is-active" : ""}"
-                        onclick="setActiveScriptImageCreatorResult(${index})"
-                        aria-label="Selecionar resultado ${index + 1}"
-                    >
-                        <img src="${workflowEscapeHtml(item.image_url)}" alt="Resultado ${index + 1}">
-                    </button>
-                `).join("")}
-            </div>
-        `
-        : "";
-
-    host.innerHTML = `
-        <div class="script-image-generator-stage">
-            <img src="${workflowEscapeHtml(activeItem.image_url)}" alt="${workflowEscapeHtml(activeItem.label || "Imagem gerada")}">
-        </div>
-        <div class="script-image-generator-result-card">
-            <div class="script-image-generator-result-meta">
-                <strong>${workflowEscapeHtml(activeItem.label || "Imagem gerada")}</strong>
-                <span>${workflowEscapeHtml(activeItem.file_name || `imagem-${activeIndex + 1}.png`)}</span>
-            </div>
-            <div class="script-image-generator-result-actions">
-                <button class="btn-icon-sm" type="button" title="Baixar imagem" aria-label="Baixar imagem" onclick="downloadScriptImageCreatorResult(${activeIndex})">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
-                </button>
-                <button class="btn-icon-sm script-image-generator-use-btn" type="button" title="Usar no sistema" aria-label="Usar no sistema" onclick="useScriptImageCreatorResult(${activeIndex})">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                </button>
-            </div>
-        </div>
-        ${thumbMarkup}
-    `;
-}
-
-function downloadScriptImageCreatorResult(index) {
-    const item = _scriptImageCreatorState.generatedImages[index];
-    if (!item?.image_url) return;
-    const link = document.createElement("a");
-    link.href = item.image_url;
-    link.download = item.file_name || `imagem-gerada-${index + 1}.png`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-}
-
-async function _dataUrlToImageFile(dataUrl, fileName) {
-    const response = await fetch(dataUrl);
-    const blob = await response.blob();
-    return new File([blob], fileName, { type: blob.type || "image/png" });
-}
-
-async function useScriptImageCreatorResult(index) {
-    const item = _scriptImageCreatorState.generatedImages[index];
-    if (!item?.image_url || !item?.upload_id) return;
-    if (scriptPhotos.length >= MAX_PHOTOS) {
-        alert(`Máximo de ${MAX_PHOTOS} fotos atingido.`);
-        return;
-    }
-
-    try {
-        const generatedFile = await _dataUrlToImageFile(
-            item.image_url,
-            item.file_name || `imagem-gerada-${Date.now()}.png`,
-        );
-        generatedFile.upload_id = item.upload_id;
-        generatedFile.preview_url = item.image_url;
-        generatedFile.generated = true;
-        generatedFile.source_label = item.label || "";
-        scriptPhotos.push(generatedFile);
-
-        const photoCb = document.getElementById("script-use-photos");
-        if (photoCb && !photoCb.checked) {
-            photoCb.checked = true;
-            togglePhotoUpload();
-        }
-
-        renderPhotoPreview();
-        showToast("Imagem adicionada ao sistema.", "success");
-    } catch (error) {
-        alert(`Não foi possível usar a imagem no sistema: ${error.message}`);
-    }
-}
-
-async function _prepareScriptImageCreatorReferenceUploadIds() {
-    const uploadIds = [];
-    for (let index = 0; index < _scriptImageCreatorState.referenceFiles.length; index += 1) {
-        const item = _scriptImageCreatorState.referenceFiles[index];
-        const existingUploadId = String(item?.upload_id || "").trim();
-        if (existingUploadId) {
-            uploadIds.push(existingUploadId);
-            continue;
-        }
-
-        const uploaded = await uploadTempFileWithRetry(item.file, "image", `referência ${index + 1}`, { showProgress: false });
-        const uploadId = String(uploaded?.upload_id || "").trim();
-        if (!uploadId) {
-            throw new Error(`Falha ao enviar a referência ${index + 1}.`);
-        }
-        item.upload_id = uploadId;
-        uploadIds.push(uploadId);
-    }
-    return uploadIds;
-}
-
-async function generateScriptImageFromModal() {
-    if (_scriptImageCreatorState.busy) {
-        return;
-    }
-
-    const meta = _getScriptImageCreatorModelMeta();
-    const prompt = String(document.getElementById("script-image-generator-prompt")?.value || "").trim();
-    if (!prompt) {
-        alert("Descreva a imagem antes de gerar.");
-        return;
-    }
-    if (meta.requiresReference && !_scriptImageCreatorState.referenceFiles.length) {
-        alert("Envie ao menos uma imagem de referência para esse modelo.");
-        return;
-    }
-
-    const submitBtn = document.getElementById("script-image-generator-submit");
-    const originalLabel = submitBtn?.textContent || "Gerar imagem";
-    _scriptImageCreatorState.busy = true;
-    if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.textContent = "Gerando...";
-    }
-    setScriptImageCreatorStatus(`Gerando imagem com ${meta.label}...`, "info");
-    renderScriptImageCreatorResults();
-
-    try {
-        const referenceUploadIds = _scriptImageCreatorState.referenceFiles.length
-            ? await _prepareScriptImageCreatorReferenceUploadIds()
-            : [];
-        const response = await api("/video/script-image/generate", {
-            method: "POST",
-            body: JSON.stringify({
-                prompt,
-                model: meta.id,
-                aspect_ratio: document.getElementById("script-image-generator-aspect")?.value || "1:1",
-                size: document.getElementById("script-image-generator-size")?.value || "2K",
-                n: Number.parseInt(document.getElementById("script-image-generator-count")?.value || "1", 10) || 1,
-                seed: Number.parseInt(document.getElementById("script-image-generator-seed")?.value || "-1", 10) || -1,
-                thinking_mode: !!document.getElementById("script-image-generator-thinking")?.checked,
-                reference_upload_ids: referenceUploadIds,
-            }),
-        });
-
-        const images = Array.isArray(response?.images) ? response.images : [];
-        if (!images.length) {
-            throw new Error("A imagem foi gerada, mas o servidor não retornou arquivos válidos.");
-        }
-
-        _scriptImageCreatorState.generatedImages = images.map((item, index) => ({
-            upload_id: String(item?.upload_id || "").trim(),
-            image_url: String(item?.image_url || "").trim(),
-            mime_type: String(item?.mime_type || "image/png").trim(),
-            file_name: String(item?.file_name || `imagem-gerada-${index + 1}.png`).trim(),
-            label: String(item?.label || meta.label).trim(),
-            model: String(item?.model || meta.id).trim(),
-        })).filter((item) => item.upload_id && item.image_url);
-        _scriptImageCreatorState.activeResultIndex = 0;
-
-        if (!_scriptImageCreatorState.generatedImages.length) {
-            throw new Error("A imagem foi gerada, mas o retorno veio vazio.");
-        }
-
-        renderScriptImageCreatorResults();
-        setScriptImageCreatorStatus(
-            _scriptImageCreatorState.generatedImages.length === 1 ? "1 imagem pronta." : `${_scriptImageCreatorState.generatedImages.length} imagens prontas.`,
-            "success",
-        );
-        showToast("Imagem gerada com sucesso.", "success");
-    } catch (error) {
-        setScriptImageCreatorStatus(`Erro ao gerar imagem: ${error.message}`, "error");
-    } finally {
-        _scriptImageCreatorState.busy = false;
-        renderScriptImageCreatorResults();
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = originalLabel;
-        }
-        scheduleScriptImageCreatorEstimate(0);
-    }
-}
 
 function togglePhotoUpload() {
     const checked = document.getElementById("script-use-photos").checked;
@@ -11712,20 +11133,14 @@ function renderPhotoPreview() {
     const grid = document.getElementById("script-photo-preview");
     const countEl = document.getElementById("script-photo-count");
     const numEl = document.getElementById("script-photo-num");
-    if (!grid || !countEl || !numEl) return;
 
     grid.innerHTML = "";
     scriptPhotos.forEach((file, i) => {
         const div = document.createElement("div");
         div.className = "photo-preview-item";
         const img = document.createElement("img");
-        const previewUrl = String(file?.preview_url || "").trim();
-        if (previewUrl) {
-            img.src = previewUrl;
-        } else {
-            img.src = URL.createObjectURL(file);
-            img.onload = () => URL.revokeObjectURL(img.src);
-        }
+        img.src = URL.createObjectURL(file);
+        img.onload = () => URL.revokeObjectURL(img.src);
         const btn = document.createElement("button");
         btn.className = "photo-remove-btn";
         btn.type = "button";
@@ -12609,28 +12024,6 @@ function _buildPersonaVoiceOptions(selectedVoiceProfileId = 0) {
     return options.join("");
 }
 
-function _sanitizePersonaManagerListArtifacts() {
-    const listEl = document.getElementById("persona-manager-list");
-    if (!listEl) return null;
-
-    if (String(listEl.textContent || "").trim() === "{}") {
-        listEl.textContent = "";
-    }
-
-    return listEl;
-}
-
-function _setPersonaManagerListMessage(message) {
-    const listEl = _sanitizePersonaManagerListArtifacts();
-    if (!listEl) return null;
-
-    const text = String(message || "").trim();
-    listEl.innerHTML = text
-        ? `<p class="persona-manager-empty">${esc(text)}</p>`
-        : "";
-    return listEl;
-}
-
 function _renderPersonaManagerCreateVoiceSelect() {
     const selectEl = document.getElementById("persona-manager-voice-profile");
     if (!selectEl) return;
@@ -12674,12 +12067,12 @@ function _buildPersonaManagerMeta(profile) {
 }
 
 function _renderPersonaManagerList() {
-    const listEl = _sanitizePersonaManagerListArtifacts();
+    const listEl = document.getElementById("persona-manager-list");
     if (!listEl) return;
 
     const profiles = _getPersonaProfiles(_personaManagerType);
     if (!profiles.length) {
-        _setPersonaManagerListMessage("Nenhuma persona criada ainda para este tipo.");
+        listEl.innerHTML = '<p class="muted">Nenhuma persona criada ainda para este tipo.</p>';
         return;
     }
 
@@ -12835,13 +12228,14 @@ function openPersonaImagePreview(profileId, event) {
 }
 
 async function _refreshPersonaManagerList() {
-    _setPersonaManagerListMessage("Carregando personas...");
+    const listEl = document.getElementById("persona-manager-list");
+    if (listEl) listEl.innerHTML = '<p class="muted">Carregando personas...</p>';
     try {
         await _loadPersonaProfiles(_personaManagerType, false);
         _renderPersonaManagerList();
         _refreshAllPersonaPreviews();
     } catch (error) {
-        _setPersonaManagerListMessage(error.message || "Falha ao carregar personas");
+        if (listEl) listEl.innerHTML = `<p class="muted">${esc(error.message || "Falha ao carregar personas")}</p>`;
     }
 }
 
@@ -13128,21 +12522,7 @@ function handlePersonaReferenceImagePaste(event) {
     _setPersonaReferenceImage(file);
 }
 
-async function openPersonaManager(context = "script") {
-    _personaManagerContext = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
-    _personaManagerType = _getRealisticPersonaTypeByContext(_personaManagerContext);
-    _personaManagerMulti = _isMultiPersonaEnabled(_personaManagerContext);
-
-    const titleEl = document.getElementById("persona-manager-title");
-    if (titleEl) titleEl.textContent = `Gerenciar personas (${REALISTIC_PERSONA_LABELS[_personaManagerType] || _personaManagerType})`;
-
-    const subtitleEl = document.getElementById("persona-manager-subtitle");
-    if (subtitleEl) {
-        subtitleEl.textContent = _personaManagerMulti
-            ? "Selecione varias personas para compor cenas com casal, amigos ou grupos."
-            : "Escolha ou gere personas para manter o mesmo personagem nos videos realistas.";
-    }
-
+function _resetPersonaManagerCreateForm() {
     const nameEl = document.getElementById("persona-manager-name");
     if (nameEl) nameEl.value = "";
     const ageEl = document.getElementById("persona-manager-age");
@@ -13164,6 +12544,33 @@ async function openPersonaManager(context = "script") {
     const customDescEl = document.getElementById("persona-manager-custom-desc");
     if (customDescEl) customDescEl.value = "";
     removePersonaReferenceImage();
+}
+
+async function openPersonaCreateModal() {
+    _resetPersonaManagerCreateForm();
+    await loadVoiceProfiles();
+    _renderPersonaManagerCreateVoiceSelect();
+    _updatePersonaManagerFormByType();
+    openModal("modal-persona-manager-create");
+}
+
+async function openPersonaManager(context = "script") {
+    _personaManagerContext = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
+    _personaManagerType = _getRealisticPersonaTypeByContext(_personaManagerContext);
+    _personaManagerMulti = _isMultiPersonaEnabled(_personaManagerContext);
+
+    const titleEl = document.getElementById("persona-manager-title");
+    if (titleEl) titleEl.textContent = "Gerenciar";
+
+    const subtitleEl = document.getElementById("persona-manager-subtitle");
+    if (subtitleEl) {
+        subtitleEl.textContent = _personaManagerMulti
+            ? "Selecione varias personas para compor cenas com casal, amigos ou grupos."
+            : "Escolha ou gere personas para manter o mesmo personagem nos videos realistas.";
+    }
+
+    closeModal("modal-persona-manager-create");
+    _resetPersonaManagerCreateForm();
 
     await loadVoiceProfiles();
     _renderPersonaManagerCreateVoiceSelect();
@@ -13275,6 +12682,7 @@ async function createPersonaFromManager() {
 
         await _refreshPersonaManagerList();
         removePersonaReferenceImage();
+        closeModal("modal-persona-manager-create");
     } catch (error) {
         alert(`Erro ao criar persona: ${error.message}`);
     } finally {
@@ -13579,9 +12987,7 @@ async function generateAiScript() {
         const hasPersonaReference = !disablePersonaReference && selectedPersonaIds.length > 0;
         const engineLabel = engine === "grok"
             ? "Cria 3.0 speed"
-            : engine === "minimax"
-                ? "MiniMax"
-                : engine === "wan2"
+            : engine === "wan2"
                     ? "Ultra High 1.0"
                     : "Mega 2.0 Ultra";
         try {
@@ -13959,8 +13365,8 @@ function _publishSyncRenderPicker() {
     const selectedItem = (_publishRenderLibrary.items || []).find(
         (item) => String(item.render_id) === selectedRenderId
     );
-    const fallbackLabel = selectedRenderId ? getPublishRenderLabel(selectedRenderId) : "Nenhum video selecionado";
-    const rawLabel = selectedItem?.picker_label || fallbackLabel || "Nenhum video selecionado";
+    const fallbackLabel = selectedRenderId ? getPublishRenderLabel(selectedRenderId) : "Selecione aqui...";
+    const rawLabel = selectedItem?.picker_label || fallbackLabel || "Selecione aqui...";
     const compactLabel = rawLabel.length > 84 ? `${rawLabel.slice(0, 84)}...` : rawLabel;
 
     pickerBtn.textContent = compactLabel;
@@ -16229,7 +15635,6 @@ async function toggleAutoPilotChannel(socialAccountId, enabled) {
 async function loadAutoSchedules() {
     const container = document.getElementById("auto-schedules-list");
     if (!container) return;
-    _autoThemeDateEditMetaById = {};
     try {
         const data = await api("/automation/schedules");
         if (!data.length) {
@@ -16336,21 +15741,13 @@ function renderAutoCard(s) {
             ? `<span class="theme-date ${t.scheduled_date_overridden ? "theme-date-custom" : ""}">${t.scheduled_date_overridden ? "Manual" : "Previsto"}: ${esc(scheduledDateText)}</span>`
             : "";
         const canEditReleaseDate = allowMusicDateEdit && t.status === "pending";
-        if (canEditReleaseDate) {
-            _autoThemeDateEditMetaById[t.id] = {
-                theme: String(t.theme || ""),
-                scheduledDateIso: String(t.scheduled_date_iso || ""),
-                displayDate: scheduledDateText,
-                publishTimeLocal,
-                isManual: !!t.scheduled_date_overridden,
-            };
-        }
-        const editBtn = canEditReleaseDate
-            ? `<button class="theme-edit-btn" onclick="openAutoThemeDateModal(${t.id})" type="button" title="Editar data" aria-label="Editar data manual">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                    <path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
-                </svg>
-            </button>`
+        const dateEditor = canEditReleaseDate
+            ? `
+            <div class="theme-date-editor">
+                <input type="date" id="theme-date-input-${t.id}" class="theme-date-input" value="${esc(t.scheduled_date_iso || "")}">
+                <button class="theme-date-save" id="theme-date-save-${t.id}" onclick="saveAutoThemeDate(${t.id})" type="button" title="Salvar data">Salvar</button>
+                <button class="theme-date-clear" onclick="clearAutoThemeDate(${t.id})" type="button" title="Limpar data">Limpar</button>
+            </div>`
             : "";
         const statusBadge = statusLabel ? `<span class="theme-badge ${statusClass}">${statusLabel}</span>` : "";
         const estimatedCredits = parseInt(t.estimated_credits || "0", 10) || 0;
@@ -16371,23 +15768,15 @@ function renderAutoCard(s) {
             ? `<button class="theme-error-btn" data-error="${esc(t.error_message).replace(/"/g, '&quot;')}" onclick="showThemeError(this)" type="button" title="Ver motivo">Ver motivo</button>`
             : "";
         return `<li class="auto-theme-item ${statusClass}">
-            <div class="theme-top-row">
-                <span class="theme-status">${icon}</span>
-                <span class="theme-text">${esc(t.theme)}</span>
-            </div>
-            <div class="theme-bottom-row">
-                <div class="theme-meta-row">
-                    ${dateLabel}
-                    ${statusBadge}
-                    ${creditBadge}
-                </div>
-                <div class="theme-actions-row">
-                    ${editBtn}
-                    ${runBtn}
-                    ${errorBtn}
-                    <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
-                </div>
-            </div>
+            <span class="theme-status">${icon}</span>
+            <span class="theme-text">${esc(t.theme)}</span>
+            ${dateLabel}
+            ${dateEditor}
+            ${statusBadge}
+            ${creditBadge}
+            ${runBtn}
+            ${errorBtn}
+            <button class="theme-remove" onclick="deleteAutoTheme(${t.id}, ${s.id})" type="button" title="Remover">&times;</button>
         </li>`;
     }).join("");
 
@@ -16485,9 +15874,9 @@ async function runAutoThemeNow(themeId, pilotStream = "", triggerBtn = null) {
     }
 }
 
-async function saveAutoThemeDate(themeId, options = {}) {
-    const input = options.input || document.getElementById(`theme-date-input-${themeId}`) || document.getElementById("auto-theme-edit-date");
-    const saveBtn = options.saveBtn || document.getElementById(`theme-date-save-${themeId}`) || document.getElementById("auto-theme-edit-save-btn");
+async function saveAutoThemeDate(themeId) {
+    const input = document.getElementById(`theme-date-input-${themeId}`);
+    const saveBtn = document.getElementById(`theme-date-save-${themeId}`);
     if (!input) return;
 
     const rawDate = (input.value || "").trim();
@@ -16503,11 +15892,9 @@ async function saveAutoThemeDate(themeId, options = {}) {
                 scheduled_date: rawDate || null,
             }),
         });
-        await loadAutoSchedules();
-        return true;
+        loadAutoSchedules();
     } catch (error) {
         alert(`Erro: ${error.message}`);
-        return false;
     } finally {
         if (saveBtn) {
             saveBtn.disabled = false;
@@ -16516,104 +15903,11 @@ async function saveAutoThemeDate(themeId, options = {}) {
     }
 }
 
-async function clearAutoThemeDate(themeId, options = {}) {
-    const input = options.input || document.getElementById(`theme-date-input-${themeId}`) || document.getElementById("auto-theme-edit-date");
+async function clearAutoThemeDate(themeId) {
+    const input = document.getElementById(`theme-date-input-${themeId}`);
     if (!input) return;
     input.value = "";
-    return await saveAutoThemeDate(themeId, options);
-}
-
-function _resetAutoThemeDateModal() {
-    _autoThemeDateEditState.themeId = 0;
-
-    const titleEl = document.getElementById("auto-theme-edit-title");
-    if (titleEl) titleEl.textContent = "-";
-
-    const currentEl = document.getElementById("auto-theme-edit-current");
-    if (currentEl) {
-        currentEl.textContent = "";
-        currentEl.hidden = true;
-        currentEl.classList.remove("theme-date-custom");
-    }
-
-    const timeEl = document.getElementById("auto-theme-edit-time");
-    if (timeEl) timeEl.textContent = "Horário configurado: -";
-
-    const input = document.getElementById("auto-theme-edit-date");
-    if (input) input.value = "";
-
-    const saveBtn = document.getElementById("auto-theme-edit-save-btn");
-    if (saveBtn) {
-        saveBtn.disabled = false;
-        saveBtn.textContent = "Salvar";
-    }
-
-    const clearBtn = document.getElementById("auto-theme-edit-clear-btn");
-    if (clearBtn) clearBtn.disabled = false;
-}
-
-function openAutoThemeDateModal(themeId) {
-    const parsedThemeId = parseInt(themeId || "0", 10) || 0;
-    const meta = _autoThemeDateEditMetaById[parsedThemeId];
-    if (!parsedThemeId || !meta) return;
-
-    _autoThemeDateEditState.themeId = parsedThemeId;
-
-    const titleEl = document.getElementById("auto-theme-edit-title");
-    if (titleEl) titleEl.textContent = meta.theme || `Tema ${parsedThemeId}`;
-
-    const currentEl = document.getElementById("auto-theme-edit-current");
-    if (currentEl) {
-        const hasDisplayDate = !!String(meta.displayDate || "").trim();
-        currentEl.textContent = hasDisplayDate
-            ? `${meta.isManual ? "Manual" : "Previsto"}: ${meta.displayDate}`
-            : "Nenhuma data definida para este tema.";
-        currentEl.hidden = false;
-        currentEl.classList.toggle("theme-date-custom", !!meta.isManual);
-    }
-
-    const timeEl = document.getElementById("auto-theme-edit-time");
-    if (timeEl) {
-        timeEl.textContent = meta.publishTimeLocal
-            ? `Horário configurado: ${meta.publishTimeLocal}`
-            : "Horário configurado automaticamente pelo piloto.";
-    }
-
-    const input = document.getElementById("auto-theme-edit-date");
-    if (input) input.value = meta.scheduledDateIso || "";
-
-    openModal("modal-auto-theme-date");
-}
-
-async function saveAutoThemeDateFromModal() {
-    const themeId = _autoThemeDateEditState.themeId;
-    if (!themeId) return;
-
-    const input = document.getElementById("auto-theme-edit-date");
-    const saveBtn = document.getElementById("auto-theme-edit-save-btn");
-    const ok = await saveAutoThemeDate(themeId, { input, saveBtn });
-    if (ok) {
-        closeModal("modal-auto-theme-date");
-    }
-}
-
-async function clearAutoThemeDateFromModal() {
-    const themeId = _autoThemeDateEditState.themeId;
-    if (!themeId) return;
-
-    const input = document.getElementById("auto-theme-edit-date");
-    const saveBtn = document.getElementById("auto-theme-edit-save-btn");
-    const clearBtn = document.getElementById("auto-theme-edit-clear-btn");
-
-    if (clearBtn) clearBtn.disabled = true;
-    try {
-        const ok = await clearAutoThemeDate(themeId, { input, saveBtn });
-        if (ok) {
-            closeModal("modal-auto-theme-date");
-        }
-    } finally {
-        if (clearBtn) clearBtn.disabled = false;
-    }
+    await saveAutoThemeDate(themeId);
 }
 
 async function deleteAutoTheme(themeId, scheduleId) {
@@ -16833,13 +16127,13 @@ function _setAutoRealisticEngine(engineValue) {
     });
 
     if (!selected) {
-        selected = document.querySelector('#auto-realistic-engine [data-value="grok"]');
+        selected = document.querySelector('#auto-realistic-engine [data-value="wan2"]');
         if (selected) selected.classList.add("selected");
     }
 
     const toggleGroup = document.getElementById("auto-seedance-last-frame-group");
     if (toggleGroup) {
-        toggleGroup.hidden = (selected?.dataset.value || "grok") !== "seedance";
+        toggleGroup.hidden = (selected?.dataset.value || "wan2") !== "seedance";
     }
 
     _syncAutoRealisticDurationOptions();
@@ -16848,16 +16142,16 @@ function _setAutoRealisticEngine(engineValue) {
 
 function _applyAutoRealisticEngineRules() {
     const engineGroup = document.getElementById("auto-realistic-engine-group");
-    const forceGrok = _isAutoTevoxiShortMode();
-    if (engineGroup) engineGroup.hidden = forceGrok;
+    const forceWan2 = _isAutoTevoxiShortMode();
+    if (engineGroup) engineGroup.hidden = forceWan2;
 
-    if (forceGrok) {
-        _setAutoRealisticEngine("grok");
+    if (forceWan2) {
+        _setAutoRealisticEngine("wan2");
         return;
     }
 
     const selected = document.querySelector("#auto-realistic-engine .engine-option.selected");
-    if (!selected) _setAutoRealisticEngine("grok");
+    if (!selected) _setAutoRealisticEngine("wan2");
 }
 
 function autoStepNext() {
@@ -16906,9 +16200,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const eng = e.target.closest("#auto-realistic-engine .engine-option");
         if (eng) {
             if (_isAutoTevoxiShortMode()) {
-                _setAutoRealisticEngine("grok");
+                _setAutoRealisticEngine("wan2");
             } else {
-                _setAutoRealisticEngine(eng.dataset.value || "grok");
+                _setAutoRealisticEngine(eng.dataset.value || "wan2");
             }
         }
         // Duration option click
@@ -19003,7 +18297,7 @@ async function createAutoSchedule() {
             persona_profile_id: personaProfileId,
             persona_profile_ids: personaProfileIds,
             persona_composition: personaCandidates,
-            engine: useTevoxi ? "grok" : (selectedEngine ? selectedEngine.dataset.value : "wan2"),
+            engine: useTevoxi ? "wan2" : (selectedEngine ? selectedEngine.dataset.value : "wan2"),
             duration: selectedDur ? parseInt(selectedDur.dataset.value) : 8,
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",
             add_music: useMusic && !useTevoxi,
@@ -19950,6 +19244,7 @@ window.handlePersonaUpload = handlePersonaUpload;
 window.savePersonaVoice = savePersonaVoice;
 window.cancelPersonaPreview = cancelPersonaPreview;
 window.openPersonaManager = openPersonaManager;
+window.openPersonaCreateModal = openPersonaCreateModal;
 window.handlePersonaReferenceImageSelect = handlePersonaReferenceImageSelect;
 window.handlePersonaReferenceImagePaste = handlePersonaReferenceImagePaste;
 window.removePersonaReferenceImage = removePersonaReferenceImage;
