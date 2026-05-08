@@ -82,6 +82,26 @@ function Get-LocalHashes([string]$RootPath) {
     return $hashes
 }
 
+function Get-Sha256Hex([byte[]]$Bytes) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([System.BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $sha.Dispose()
+    }
+}
+
+function Get-LocalNormalizedTextHashes([string]$RootPath) {
+    $hashes = @{}
+    foreach ($file in $bundleFiles) {
+        $text = Read-RawFile (Join-Path $RootPath $file)
+        $normalized = $text -replace "`r`n", "`n" -replace "`r", "`n"
+        $hashes[$file] = Get-Sha256Hex ([System.Text.Encoding]::UTF8.GetBytes($normalized))
+    }
+    return $hashes
+}
+
 function Get-RemoteHashes([string]$Target, [string]$Command, [string]$Label) {
     $output = & ssh $Target $Command
     if ($LASTEXITCODE -ne 0) {
@@ -95,7 +115,7 @@ function Get-RemoteHashes([string]$Target, [string]$Command, [string]$Label) {
             continue
         }
 
-        $match = [regex]::Match($trimmed, '^(?<hash>[a-f0-9]{64})\s+(?<path>.+)$')
+        $match = [regex]::Match($trimmed, '^(?<hash>[a-f0-9]{64})\s*(?<path>.+)$')
         if (-not $match.Success) {
             Fail "Saida inesperada ao ler hashes de ${Label}: $trimmed"
         }
@@ -167,6 +187,12 @@ if ($CompareStaging) {
 
 $hostCommand = "cd $RemoteRoot && sha256sum static/app.js static/index.html static/style.css static/pwa.js static/sw.js"
 $containerCommand = "docker exec $ContainerName sha256sum /app/static/app.js /app/static/index.html /app/static/style.css /app/static/pwa.js /app/static/sw.js"
+
+if ($CompareStaging) {
+    $localHashes = Get-LocalNormalizedTextHashes $RepoRoot
+    $hostCommand = 'cd {0} && for f in static/app.js static/index.html static/style.css static/pwa.js static/sw.js; do h=$(tr -d ''\r'' < "$f" | sha256sum | cut -d'' '' -f1); echo "$h  $f"; done' -f $RemoteRoot
+    $containerCommand = 'for f in /app/static/app.js /app/static/index.html /app/static/style.css /app/static/pwa.js /app/static/sw.js; do h=$(docker exec {0} cat "$f" | tr -d ''\r'' | sha256sum | cut -d'' '' -f1); echo "$h  $f"; done' -f $ContainerName
+}
 
 $hostHashes = Get-RemoteHashes $SshTarget $hostCommand "o host do VPS"
 $containerHashes = Get-RemoteHashes $SshTarget $containerCommand "o container em execucao"

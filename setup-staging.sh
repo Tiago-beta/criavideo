@@ -34,6 +34,7 @@ set -e
 
 STAGING_REPO="/opt/levita-video-staging-repo.git"
 STAGING_APP="/opt/levita-video-staging"
+TRAEFIK_DYNAMIC_DIR="/data/coolify/proxy/dynamic"
 
 echo "========================================="
 echo "  CRIAVIDEO STAGING - Deploying..."
