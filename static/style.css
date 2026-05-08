@@ -4413,10 +4413,563 @@ svg.spin {
     min-height: 40px;
 }
 
+.media-toggle-chip-button {
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+}
+
+.media-toggle-chip-button:hover,
+.media-toggle-chip-button:focus-visible {
+    outline: none;
+}
+
+.media-toggle-chip-button:hover .media-toggle-chip-body,
+.media-toggle-chip-button:focus-visible .media-toggle-chip-body {
+    border-color: rgba(var(--accent-rgb), 0.7);
+    background: rgba(var(--accent-rgb), 0.14);
+    color: var(--text);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.16);
+}
+
 .script-media-panel {
     border-top: 0;
     padding-top: 4px;
     margin-top: 8px;
+}
+
+#modal-script-image-creator {
+    padding: 0.5rem;
+}
+
+#modal-script-image-creator .modal-content-wide {
+    width: min(calc(100vw - 1rem), 1120px);
+    max-height: calc(100vh - 1rem);
+    display: flex;
+    flex-direction: column;
+}
+
+#modal-script-image-creator .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+.script-image-generator-shell {
+    display: block;
+}
+
+.script-image-generator-controls {
+    border: 1px solid rgba(96, 129, 162, 0.22);
+    border-radius: 24px;
+    background:
+        radial-gradient(circle at top right, rgba(255, 193, 92, 0.14), transparent 36%),
+        linear-gradient(180deg, rgba(12, 36, 61, 0.92), rgba(6, 23, 40, 0.92));
+    padding: 18px;
+    box-shadow: 0 22px 50px rgba(2, 10, 19, 0.26);
+}
+
+.script-image-generator-prompt {
+    min-height: 180px;
+}
+
+.script-image-generator-model-options {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 138px));
+    justify-content: space-between;
+    gap: 8px;
+    align-items: stretch;
+}
+
+.script-image-model-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    align-content: flex-start;
+    justify-content: flex-start;
+    gap: 7px;
+    width: 100%;
+    min-width: 0;
+    aspect-ratio: 1 / 1;
+    padding: 9px;
+    border: 1px solid rgba(110, 143, 175, 0.24);
+    border-radius: 18px;
+    background: rgba(7, 24, 41, 0.74);
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.script-image-model-card:hover,
+.script-image-model-card:focus-visible {
+    outline: none;
+    transform: translateY(-1px);
+    border-color: rgba(255, 193, 92, 0.6);
+    background: rgba(15, 44, 73, 0.9);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+}
+
+.script-image-model-card.is-active {
+    border-color: rgba(255, 193, 92, 0.82);
+    background: linear-gradient(180deg, rgba(40, 58, 26, 0.96), rgba(22, 31, 18, 0.96));
+    box-shadow: 0 0 0 1px rgba(255, 193, 92, 0.24), 0 12px 28px rgba(255, 193, 92, 0.12);
+}
+
+.script-image-model-card-icon {
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff8dc;
+}
+
+.script-image-model-card-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.script-image-model-card-icon--banana {
+    background: linear-gradient(135deg, #f2c94c, #b88a17);
+}
+
+.script-image-model-card-icon--gpt {
+    background: linear-gradient(135deg, #6dd5ed, #2193b0);
+}
+
+.script-image-model-card-icon--wan {
+    background: linear-gradient(135deg, #ff9966, #ff5e62);
+}
+
+.script-image-model-card-icon--wan-edit {
+    background: linear-gradient(135deg, #f9d423, #e65c00);
+}
+
+.script-image-model-card-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    width: 100%;
+    align-self: start;
+}
+
+.script-image-model-card-copy strong {
+    color: var(--text);
+    font-size: 0.8rem;
+    line-height: 1.12;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.script-image-model-card-copy small {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.script-image-generator-section-head,
+.script-image-generator-results-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.script-image-generator-results-head h4 {
+    margin: 0;
+    color: var(--text);
+    font-size: 1rem;
+}
+
+.script-image-generator-results-head small {
+    color: var(--text-muted);
+}
+
+.script-image-generator-dropzone {
+    width: 100%;
+    margin-top: 4px;
+    padding: 16px;
+    border: 1px dashed rgba(0, 212, 255, 0.3);
+    border-radius: 16px;
+    background: rgba(6, 24, 42, 0.72);
+    color: var(--text);
+    display: grid;
+    gap: 6px;
+    justify-items: center;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.script-image-generator-dropzone:hover {
+    border-color: var(--tech-neon);
+    background: rgba(0, 212, 255, 0.08);
+    transform: translateY(-1px);
+}
+
+.script-image-generator-dropzone strong {
+    font-size: 0.95rem;
+}
+
+.script-image-generator-dropzone small {
+    color: var(--text-muted);
+}
+
+.script-image-generator-reference-preview {
+    margin-top: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    grid-template-columns: none;
+}
+
+.script-image-generator-reference-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-top: 4px;
+}
+
+.script-image-generator-reference-add {
+    width: 74px;
+    height: 74px;
+    border: 1px dashed rgba(0, 212, 255, 0.34);
+    border-radius: 18px;
+    background: rgba(6, 24, 42, 0.72);
+    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.script-image-generator-reference-add:hover,
+.script-image-generator-reference-add:focus-visible {
+    outline: none;
+    border-color: var(--tech-neon);
+    background: rgba(0, 212, 255, 0.08);
+    transform: translateY(-1px);
+}
+
+.script-image-generator-reference-preview .photo-preview-item {
+    width: 74px;
+    min-width: 74px;
+    border-radius: 18px;
+    border: 1px solid rgba(96, 129, 162, 0.26);
+}
+
+.script-image-generator-settings {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.script-image-generator-segmented {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.script-image-generator-segmented--count {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.script-image-generator-segment {
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid rgba(110, 143, 175, 0.26);
+    border-radius: 12px;
+    background: rgba(4, 19, 33, 0.7);
+    color: var(--text-muted);
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.script-image-generator-segment:hover,
+.script-image-generator-segment:focus-visible {
+    outline: none;
+    transform: translateY(-1px);
+    border-color: rgba(255, 193, 92, 0.5);
+    color: var(--text);
+}
+
+.script-image-generator-segment.is-active {
+    border-color: rgba(196, 255, 98, 0.72);
+    background: rgba(140, 186, 43, 0.16);
+    color: #eaffc2;
+    box-shadow: 0 0 0 1px rgba(196, 255, 98, 0.16);
+}
+
+.script-image-generator-segment.is-disabled,
+.script-image-generator-segment:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+    transform: none;
+}
+
+.script-image-generator-field-note {
+    display: block;
+    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.form-group.is-disabled .input,
+.script-image-generator-toggle.is-disabled {
+    opacity: 0.62;
+}
+
+.form-group.is-disabled .input {
+    cursor: not-allowed;
+}
+
+.script-image-generator-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+    margin-bottom: 2px;
+    padding: 12px 14px;
+    border: 1px solid rgba(96, 129, 162, 0.18);
+    border-radius: 16px;
+    background: rgba(3, 17, 31, 0.5);
+}
+
+.script-image-generator-toggle-copy {
+    display: grid;
+    gap: 3px;
+}
+
+.script-image-generator-toggle-copy strong {
+    color: var(--text);
+}
+
+.script-image-generator-toggle-copy small {
+    color: var(--text-muted);
+}
+
+.script-image-generator-status {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 212, 255, 0.16);
+    background: rgba(0, 212, 255, 0.08);
+    color: #dff7ff;
+    font-size: 0.9rem;
+}
+
+.script-image-generator-status.is-error {
+    border-color: rgba(255, 122, 108, 0.24);
+    background: rgba(255, 122, 108, 0.08);
+    color: #ffd1c8;
+}
+
+.script-image-generator-status.is-success {
+    border-color: rgba(122, 221, 171, 0.24);
+    background: rgba(122, 221, 171, 0.08);
+    color: #dbffe9;
+}
+
+.script-image-generator-estimate {
+    margin-top: 0;
+    padding: 8px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 193, 92, 0.24);
+    background: rgba(255, 193, 92, 0.08);
+    color: #ffe5a6;
+    font-size: 0.84rem;
+    line-height: 1.2;
+    display: inline-flex;
+    width: fit-content;
+    max-width: min(100%, 340px);
+    align-self: flex-end;
+}
+
+.script-image-generator-estimate.is-loading {
+    border-color: rgba(0, 212, 255, 0.2);
+    background: rgba(0, 212, 255, 0.08);
+    color: #dff7ff;
+}
+
+.script-image-generator-estimate.is-error {
+    border-color: rgba(255, 122, 108, 0.24);
+    background: rgba(255, 122, 108, 0.08);
+    color: #ffd1c8;
+}
+
+.script-image-generator-footer {
+    margin-top: 16px;
+    padding-top: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.script-image-generator-footer-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    max-width: 100%;
+}
+
+.script-image-generator-inline-results {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.script-image-generator-results {
+    display: grid;
+    gap: 12px;
+}
+
+.script-image-generator-empty {
+    min-height: 220px;
+    border: 1px dashed rgba(96, 129, 162, 0.24);
+    border-radius: 18px;
+    background: rgba(4, 18, 33, 0.42);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    aspect-ratio: var(--script-image-result-ratio, 1 / 1);
+}
+
+.script-image-generator-empty--inline {
+    min-height: unset;
+}
+
+.script-image-generator-stage {
+    width: min(100%, 860px);
+    aspect-ratio: var(--script-image-result-ratio, 1 / 1);
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1px solid rgba(96, 129, 162, 0.22);
+    background: rgba(4, 18, 33, 0.56);
+}
+
+.script-image-generator-stage img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.script-image-generator-result-card {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 16px;
+    border: 1px solid rgba(96, 129, 162, 0.22);
+    background: rgba(4, 18, 33, 0.56);
+    width: min(100%, 860px);
+}
+
+.script-image-generator-result-card img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.script-image-generator-result-meta {
+    display: grid;
+    gap: 3px;
+}
+
+.script-image-generator-result-meta strong {
+    color: var(--text);
+    font-size: 0.92rem;
+}
+
+.script-image-generator-result-meta span {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.3;
+}
+
+.script-image-generator-result-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.script-image-generator-result-actions .btn-icon-sm {
+    width: 36px;
+    height: 36px;
+}
+
+.script-image-generator-result-actions .btn-icon-sm svg {
+    width: 16px;
+    height: 16px;
+}
+
+.script-image-generator-result-actions .script-image-generator-use-btn {
+    border-color: rgba(122, 221, 171, 0.26);
+    color: #9df0bd;
+}
+
+.script-image-generator-result-actions .script-image-generator-use-btn:hover {
+    border-color: rgba(122, 221, 171, 0.48);
+    color: #c8ffde;
+}
+
+.script-image-generator-result-thumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.script-image-generator-result-thumb {
+    width: 76px;
+    height: 76px;
+    padding: 0;
+    border: 1px solid rgba(96, 129, 162, 0.22);
+    border-radius: 16px;
+    overflow: hidden;
+    background: rgba(4, 18, 33, 0.56);
+    cursor: pointer;
+    transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.script-image-generator-result-thumb:hover,
+.script-image-generator-result-thumb:focus-visible {
+    outline: none;
+    transform: translateY(-1px);
+    border-color: rgba(255, 193, 92, 0.6);
+}
+
+.script-image-generator-result-thumb.is-active {
+    border-color: rgba(196, 255, 98, 0.72);
+    box-shadow: 0 0 0 1px rgba(196, 255, 98, 0.16);
+}
+
+.script-image-generator-result-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 
 @media (max-width: 720px) {
@@ -4426,7 +4979,7 @@ svg.spin {
     }
 
     .script-media-toggle-group {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .media-toggle-group {
@@ -4435,6 +4988,30 @@ svg.spin {
 
     .media-toggle-chip--compact .media-toggle-chip-body {
         min-width: 0;
+    }
+
+    .script-image-generator-settings {
+        grid-template-columns: 1fr;
+    }
+
+    .script-image-generator-model-options {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        justify-content: stretch;
+    }
+
+    .script-image-generator-footer {
+        flex-direction: column-reverse;
+        align-items: stretch;
+    }
+
+    .script-image-generator-footer-actions {
+        align-items: stretch;
+    }
+
+    .script-image-generator-estimate {
+        align-self: stretch;
+        width: 100%;
+        max-width: none;
     }
 }
 
