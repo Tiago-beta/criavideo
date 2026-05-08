@@ -4048,38 +4048,175 @@ th {
 
 #wizard-realistic-engine,
 #script-realistic-engine,
-#auto-realistic-engine {
+#auto-realistic-engine,
+#similar-engine-options {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
 }
 
 #wizard-realistic-engine .engine-option,
 #script-realistic-engine .engine-option,
-#auto-realistic-engine .engine-option {
-    min-height: 78px;
-    padding: 10px 8px;
+#auto-realistic-engine .engine-option,
+#similar-engine-options .engine-option {
+    --engine-accent: var(--accent);
+    --engine-accent-soft: rgba(var(--accent-rgb), 0.22);
+    --engine-panel: linear-gradient(180deg, rgba(16, 39, 63, 0.96), rgba(11, 30, 49, 0.92));
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    min-height: 164px;
+    padding: 18px 18px 18px 82px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 22px;
+    background: var(--engine-panel);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 14px 28px rgba(2, 9, 20, 0.24);
+    text-align: left;
+    color: var(--text);
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 4px;
+    justify-content: flex-start;
+    align-items: flex-start;
+    gap: 7px;
+    overflow: hidden;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 #wizard-realistic-engine .engine-option strong,
 #script-realistic-engine .engine-option strong,
-#auto-realistic-engine .engine-option strong {
-    line-height: 1.2;
+#auto-realistic-engine .engine-option strong,
+#similar-engine-options .engine-option strong {
+    font-size: 1rem;
+    line-height: 1.15;
+    max-width: 15ch;
 }
 
-.engine-option-desc {
+#wizard-realistic-engine .engine-option::before,
+#script-realistic-engine .engine-option::before,
+#auto-realistic-engine .engine-option::before,
+#similar-engine-options .engine-option::before {
+    content: attr(data-badge);
+    position: absolute;
+    top: 18px;
+    left: 18px;
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--engine-accent), rgba(255, 255, 255, 0.16));
+    box-shadow: 0 14px 26px var(--engine-accent-soft);
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    z-index: 1;
+}
+
+#wizard-realistic-engine .engine-option::after,
+#script-realistic-engine .engine-option::after,
+#auto-realistic-engine .engine-option::after,
+#similar-engine-options .engine-option::after {
+    content: "";
+    position: absolute;
+    right: -34px;
+    bottom: -60px;
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--engine-accent-soft) 0%, transparent 70%);
+    opacity: 0.95;
+    pointer-events: none;
+}
+
+#wizard-realistic-engine .engine-option[data-value="wan2"],
+#script-realistic-engine .engine-option[data-value="wan2"],
+#auto-realistic-engine .engine-option[data-value="wan2"],
+#similar-engine-options .engine-option[data-value="wan2"] {
+    --engine-accent: #f0c04a;
+    --engine-accent-soft: rgba(240, 192, 74, 0.22);
+    --engine-panel: linear-gradient(180deg, rgba(40, 59, 26, 0.96), rgba(19, 33, 23, 0.94));
+}
+
+#wizard-realistic-engine .engine-option[data-value="grok"],
+#script-realistic-engine .engine-option[data-value="grok"],
+#auto-realistic-engine .engine-option[data-value="grok"],
+#similar-engine-options .engine-option[data-value="grok"] {
+    --engine-accent: #46c9ff;
+    --engine-accent-soft: rgba(70, 201, 255, 0.22);
+    --engine-panel: linear-gradient(180deg, rgba(13, 36, 63, 0.96), rgba(11, 24, 43, 0.94));
+}
+
+#wizard-realistic-engine .engine-option[data-value="seedance"],
+#script-realistic-engine .engine-option[data-value="seedance"],
+#auto-realistic-engine .engine-option[data-value="seedance"],
+#similar-engine-options .engine-option[data-value="seedance"] {
+    --engine-accent: #ff7a6c;
+    --engine-accent-soft: rgba(255, 122, 108, 0.22);
+    --engine-panel: linear-gradient(180deg, rgba(26, 42, 70, 0.96), rgba(15, 24, 41, 0.94));
+}
+
+#wizard-realistic-engine .engine-option:hover,
+#script-realistic-engine .engine-option:hover,
+#auto-realistic-engine .engine-option:hover,
+#similar-engine-options .engine-option:hover {
+    transform: translateY(-3px);
+    border-color: var(--engine-accent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 20px 38px rgba(2, 9, 20, 0.32), 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+#wizard-realistic-engine .engine-option.selected,
+#script-realistic-engine .engine-option.selected,
+#auto-realistic-engine .engine-option.selected,
+#similar-engine-options .engine-option.selected {
+    transform: translateY(-4px);
+    border-color: var(--engine-accent);
+    background: var(--engine-panel);
+    color: var(--text);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 20px 38px rgba(2, 9, 20, 0.36), 0 0 0 4px var(--engine-accent-soft);
+}
+
+#wizard-realistic-engine .engine-option .engine-option-meta,
+#script-realistic-engine .engine-option .engine-option-meta,
+#auto-realistic-engine .engine-option .engine-option-meta,
+#similar-engine-options .engine-option .engine-option-meta,
+#wizard-realistic-engine .engine-option .engine-option-desc,
+#script-realistic-engine .engine-option .engine-option-desc,
+#auto-realistic-engine .engine-option .engine-option-desc,
+#similar-engine-options .engine-option .engine-option-desc {
     display: block;
-    font-size: 0.66rem;
-    line-height: 1.28;
-    color: var(--text-muted);
 }
 
-.engine-option.selected .engine-option-desc {
-    color: rgba(var(--accent-rgb), 0.95);
+#wizard-realistic-engine .engine-option .engine-option-meta,
+#script-realistic-engine .engine-option .engine-option-meta,
+#auto-realistic-engine .engine-option .engine-option-meta,
+#similar-engine-options .engine-option .engine-option-meta {
+    font-size: 0.76rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+#wizard-realistic-engine .engine-option .engine-option-desc,
+#script-realistic-engine .engine-option .engine-option-desc,
+#auto-realistic-engine .engine-option .engine-option-desc,
+#similar-engine-options .engine-option .engine-option-desc {
+    font-size: 0.81rem;
+    line-height: 1.45;
+    color: rgba(221, 233, 244, 0.8);
+    max-width: 30ch;
+}
+
+#wizard-realistic-engine .engine-option.selected .engine-option-meta,
+#script-realistic-engine .engine-option.selected .engine-option-meta,
+#auto-realistic-engine .engine-option.selected .engine-option-meta,
+#similar-engine-options .engine-option.selected .engine-option-meta,
+#wizard-realistic-engine .engine-option.selected .engine-option-desc,
+#script-realistic-engine .engine-option.selected .engine-option-desc,
+#auto-realistic-engine .engine-option.selected .engine-option-desc,
+#similar-engine-options .engine-option.selected .engine-option-desc {
+    color: #f5fbff;
 }
 
 /* Realistic narration options */
@@ -4097,6 +4234,7 @@ th {
     grid-template-columns: 1fr 1fr;
     gap: 8px;
 }
+
 .voice-btn {
     display: flex;
     flex-direction: column;
@@ -4111,6 +4249,7 @@ th {
     font-weight: 600;
     transition: border-color .2s, background .2s;
 }
+
 .voice-btn small { font-weight: 400; opacity: 0.7; font-size: 0.72rem; }
 .voice-btn:hover { border-color: var(--accent); }
 .voice-btn.selected {
@@ -5226,18 +5365,49 @@ svg.spin {
 
     #wizard-realistic-engine,
     #script-realistic-engine,
-    #auto-realistic-engine {
+    #auto-realistic-engine,
+    #similar-engine-options {
         grid-template-columns: 1fr;
+        gap: 10px;
     }
 
     #wizard-realistic-engine .engine-option,
     #script-realistic-engine .engine-option,
-    #auto-realistic-engine .engine-option {
+    #auto-realistic-engine .engine-option,
+    #similar-engine-options .engine-option {
         min-height: 0;
+        padding: 16px 16px 16px 72px;
+        border-radius: 18px;
     }
 
-    .engine-option-desc {
-        font-size: 0.64rem;
+    #wizard-realistic-engine .engine-option::before,
+    #script-realistic-engine .engine-option::before,
+    #auto-realistic-engine .engine-option::before,
+    #similar-engine-options .engine-option::before {
+        top: 16px;
+        left: 16px;
+        width: 40px;
+        height: 40px;
+        font-size: 0.72rem;
+    }
+
+    #wizard-realistic-engine .engine-option strong,
+    #script-realistic-engine .engine-option strong,
+    #auto-realistic-engine .engine-option strong,
+    #similar-engine-options .engine-option strong {
+        font-size: 0.92rem;
+        max-width: none;
+    }
+
+    #wizard-realistic-engine .engine-option .engine-option-meta,
+    #script-realistic-engine .engine-option .engine-option-meta,
+    #auto-realistic-engine .engine-option .engine-option-meta,
+    #similar-engine-options .engine-option .engine-option-meta,
+    #wizard-realistic-engine .engine-option .engine-option-desc,
+    #script-realistic-engine .engine-option .engine-option-desc,
+    #auto-realistic-engine .engine-option .engine-option-desc,
+    #similar-engine-options .engine-option .engine-option-desc {
+        font-size: 0.72rem;
     }
 
     .realistic-inspiration-tags {
@@ -5852,52 +6022,23 @@ svg.spin {
 }
 
 .nav-item.active {
-    background: linear-gradient(120deg, rgba(0, 212, 255, 0.16), rgba(123, 97, 255, 0.2));
-    border-color: rgba(0, 212, 255, 0.35);
+    border-color: rgba(0, 212, 255, 0.45);
     box-shadow: inset 0 0 0 1px rgba(0, 212, 255, 0.16), 0 0 16px rgba(0, 212, 255, 0.16);
-}
 
 .nav-item.active svg,
 .mobile-nav-tab.active svg,
 .create-tab.active svg,
-.wizard-dot.active {
-    filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.42));
 }
-
-.sidebar-credits {
     background: linear-gradient(130deg, rgba(var(--accent-rgb), 0.18), rgba(var(--accent-strong-rgb), 0.2));
     border: 1px solid rgba(var(--accent-rgb), 0.38);
-    color: var(--accent-strong);
-    box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.12), 0 8px 16px rgba(var(--accent-rgb), 0.12);
+    inset: 0;
 }
 
-.sidebar-credits:hover {
-    background: linear-gradient(130deg, rgba(var(--accent-rgb), 0.24), rgba(var(--accent-strong-rgb), 0.28));
-    box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.24);
-}
-
-.user-avatar,
-.profile-avatar {
-    background: linear-gradient(145deg, rgba(23, 58, 94, 0.88), rgba(19, 47, 76, 0.92));
-    border: 1px solid rgba(0, 212, 255, 0.2);
-}
-
-.panel,
-.card,
-.song-details,
-.modal-content,
-.credits-modal,
-.pix-modal,
-.persona-panel,
-.vm-profile-card,
-.copy-choice-card {
-    background: linear-gradient(158deg, rgba(19, 47, 76, 0.84), rgba(23, 58, 94, 0.68));
-    border-color: rgba(0, 212, 255, 0.22);
-    box-shadow: 0 18px 38px rgba(1, 8, 20, 0.38), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
-    backdrop-filter: blur(11px);
-}
-
-.panel,
+.editor-layer-library-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(3, 10, 20, 0.72);
+    backdrop-filter: blur(4px);
 .song-details,
 .card,
 .modal-content,
@@ -8236,15 +8377,7 @@ th,
 }
 
 #similar-engine-options {
-    margin-top: 10px;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-}
-
-#similar-engine-options .engine-option {
-    width: 100%;
-    min-width: 0;
+    margin-top: 12px;
 }
 
 .similar-generation-actions {
@@ -10145,8 +10278,8 @@ th,
 
 .editor-layer-library-overlay {
     position: fixed;
-    inset: 0;
     z-index: 4000;
+    inset: 0;
 }
 
 .editor-layer-library-backdrop {

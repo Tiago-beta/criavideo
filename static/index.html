@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260507-07">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260508-01">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 380;
+        var REQUIRED_VER = 381;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1081,7 +1081,7 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Vídeo realista com Cria 3.0 speed, Ultra High 1.0 e Mega 2.0 Ultra</small>
+                                <small>Vídeo realista com Ultra High 3.0, Cria 2.5 Speed e Mega 2.0 Ultra</small>
                                 <span class="credit-badge credit-high">Custo: Alto</span>
                             </div>
                         </div>
@@ -1256,17 +1256,20 @@
                         <div class="form-group" id="wizard-realistic-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="wizard-realistic-engine">
-                                <button class="engine-option selected" data-value="wan2" type="button">
-                                    <strong>Ultra High 1.0</strong>
-                                    <small class="engine-option-desc">720p, sem áudio nativo e velocidade normal.</small>
+                                <button class="engine-option selected" data-value="wan2" data-badge="UH3" type="button">
+                                    <strong>Ultra High 3.0</strong>
+                                    <span class="engine-option-meta">720 p, áudio nativo, velocidade normal.</span>
+                                    <span class="engine-option-desc">Crie seus vídeos sem restrição com esse modelo de última geração. Qualidade boa.</span>
                                 </button>
-                                <button class="engine-option" data-value="grok" type="button">
-                                    <strong>Cria 3.0 speed</strong>
-                                    <small class="engine-option-desc">720p, áudio nativo e velocidade rápida.</small>
+                                <button class="engine-option" data-value="grok" data-badge="C25" type="button">
+                                    <strong>Cria 2.5 Speed</strong>
+                                    <span class="engine-option-meta">720 p, áudio nativo, velocidade rápida.</span>
+                                    <span class="engine-option-desc">Crie seus vídeos com cores vívidas. Em poucos minutos. Poucas restrições. Qualidade boa.</span>
                                 </button>
-                                <button class="engine-option" data-value="seedance" type="button">
+                                <button class="engine-option" data-value="seedance" data-badge="M2U" type="button">
                                     <strong>Mega 2.0 Ultra</strong>
-                                    <small class="engine-option-desc">1080p, áudio nativo e velocidade normal.</small>
+                                    <span class="engine-option-meta">720 p, áudio nativo, velocidade normal.</span>
+                                    <span class="engine-option-desc">Modelo de ultra-realismo, mais restritivo, ideal para objetos e animais. Não recomendado para imagens com humanos. Qualidade excelente.</span>
                                 </button>
                             </div>
                         </div>
@@ -1549,7 +1552,7 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Vídeo realista com Cria 3.0 speed, Ultra High 1.0 e Mega 2.0 Ultra</small>
+                                <small>Vídeo realista com Ultra High 3.0, Cria 2.5 Speed e Mega 2.0 Ultra</small>
                                 <span class="credit-badge credit-high">Custo: Alto</span>
                             </div>
                         </div>
@@ -1778,17 +1781,20 @@
                         <div class="form-group" id="script-realistic-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="script-realistic-engine">
-                                <button class="engine-option selected" data-value="wan2" type="button">
-                                    <strong>Ultra High 1.0</strong>
-                                    <small class="engine-option-desc">720p, sem áudio nativo e velocidade normal.</small>
+                                <button class="engine-option selected" data-value="wan2" data-badge="UH3" type="button">
+                                    <strong>Ultra High 3.0</strong>
+                                    <span class="engine-option-meta">720 p, áudio nativo, velocidade normal.</span>
+                                    <span class="engine-option-desc">Crie seus vídeos sem restrição com esse modelo de última geração. Qualidade boa.</span>
                                 </button>
-                                <button class="engine-option" data-value="grok" type="button">
-                                    <strong>Cria 3.0 speed</strong>
-                                    <small class="engine-option-desc">720p, áudio nativo e velocidade rápida.</small>
+                                <button class="engine-option" data-value="grok" data-badge="C25" type="button">
+                                    <strong>Cria 2.5 Speed</strong>
+                                    <span class="engine-option-meta">720 p, áudio nativo, velocidade rápida.</span>
+                                    <span class="engine-option-desc">Crie seus vídeos com cores vívidas. Em poucos minutos. Poucas restrições. Qualidade boa.</span>
                                 </button>
-                                <button class="engine-option" data-value="seedance" type="button">
+                                <button class="engine-option" data-value="seedance" data-badge="M2U" type="button">
                                     <strong>Mega 2.0 Ultra</strong>
-                                    <small class="engine-option-desc">1080p, áudio nativo e velocidade normal.</small>
+                                    <span class="engine-option-meta">720 p, áudio nativo, velocidade normal.</span>
+                                    <span class="engine-option-desc">Modelo de ultra-realismo, mais restritivo, ideal para objetos e animais. Não recomendado para imagens com humanos. Qualidade excelente.</span>
                                 </button>
                             </div>
                         </div>
@@ -2043,17 +2049,20 @@
                         </div>
 
                         <div id="similar-engine-options" class="engine-options">
-                            <button class="engine-option selected" data-value="wan2" type="button">
-                                <strong>Ultra High 1.0</strong>
-                                <span class="engine-option-desc">720p, sem áudio nativo e velocidade normal.</span>
+                            <button class="engine-option selected" data-value="wan2" data-badge="UH3" type="button">
+                                <strong>Ultra High 3.0</strong>
+                                <span class="engine-option-meta">720 p, áudio nativo, velocidade normal.</span>
+                                <span class="engine-option-desc">Crie seus vídeos sem restrição com esse modelo de última geração. Qualidade boa.</span>
                             </button>
-                            <button class="engine-option" data-value="grok" type="button">
-                                <strong>Cria 3.0 speed</strong>
-                                <span class="engine-option-desc">720p, áudio nativo e velocidade rápida.</span>
+                            <button class="engine-option" data-value="grok" data-badge="C25" type="button">
+                                <strong>Cria 2.5 Speed</strong>
+                                <span class="engine-option-meta">720 p, áudio nativo, velocidade rápida.</span>
+                                <span class="engine-option-desc">Crie seus vídeos com cores vívidas. Em poucos minutos. Poucas restrições. Qualidade boa.</span>
                             </button>
-                            <button class="engine-option" data-value="seedance" type="button">
+                            <button class="engine-option" data-value="seedance" data-badge="M2U" type="button">
                                 <strong>Mega 2.0 Ultra</strong>
-                                <span class="engine-option-desc">1080p, áudio nativo e velocidade normal.</span>
+                                <span class="engine-option-meta">720 p, áudio nativo, velocidade normal.</span>
+                                <span class="engine-option-desc">Modelo de ultra-realismo, mais restritivo, ideal para objetos e animais. Não recomendado para imagens com humanos. Qualidade excelente.</span>
                             </button>
                         </div>
 
@@ -2069,7 +2078,7 @@
                     <div class="workflow-panel-head">
                         <div>
                             <h3 class="wizard-question">Criar vídeo com workflow</h3>
-                            <p class="wizard-hint">Arraste os blocos, conecte referências e rode o motor Seedance 2.0.</p>
+                            <p class="wizard-hint">Arraste os blocos, conecte referências e rode o motor Mega 2.0 Ultra.</p>
                         </div>
                         <div class="workflow-head-actions">
                             <button class="btn btn-secondary btn-sm workflow-head-btn" id="workflow-new-blank" type="button" title="Novo workflow" aria-label="Novo workflow">
@@ -2168,8 +2177,8 @@
                                     <header>Gerador de vídeo</header>
                                     <label>Motor de IA</label>
                                     <select id="workflow-engine" class="input workflow-input">
-                                        <option value="wan2" selected>Ultra High 1.0</option>
-                                        <option value="grok">Cria 3.0 speed</option>
+                                        <option value="wan2" selected>Ultra High 3.0</option>
+                                        <option value="grok">Cria 2.5 Speed</option>
                                         <option value="seedance">Mega 2.0 Ultra</option>
                                     </select>
                                     <div id="workflow-seedance-last-frame-group" hidden>
@@ -2985,17 +2994,20 @@
                         <div class="form-group" id="auto-realistic-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="auto-realistic-engine">
-                                <button class="engine-option selected" data-value="wan2" type="button">
-                                    <strong>Ultra High 1.0</strong>
-                                    <small class="engine-option-desc">720p, sem áudio nativo e velocidade normal.</small>
+                                <button class="engine-option selected" data-value="wan2" data-badge="UH3" type="button">
+                                    <strong>Ultra High 3.0</strong>
+                                    <span class="engine-option-meta">720 p, áudio nativo, velocidade normal.</span>
+                                    <span class="engine-option-desc">Crie seus vídeos sem restrição com esse modelo de última geração. Qualidade boa.</span>
                                 </button>
-                                <button class="engine-option" data-value="grok" type="button">
-                                    <strong>Cria 3.0 speed</strong>
-                                    <small class="engine-option-desc">720p, áudio nativo e velocidade rápida.</small>
+                                <button class="engine-option" data-value="grok" data-badge="C25" type="button">
+                                    <strong>Cria 2.5 Speed</strong>
+                                    <span class="engine-option-meta">720 p, áudio nativo, velocidade rápida.</span>
+                                    <span class="engine-option-desc">Crie seus vídeos com cores vívidas. Em poucos minutos. Poucas restrições. Qualidade boa.</span>
                                 </button>
-                                <button class="engine-option" data-value="seedance" type="button">
+                                <button class="engine-option" data-value="seedance" data-badge="M2U" type="button">
                                     <strong>Mega 2.0 Ultra</strong>
-                                    <small class="engine-option-desc">1080p, áudio nativo e velocidade normal.</small>
+                                    <span class="engine-option-meta">720 p, áudio nativo, velocidade normal.</span>
+                                    <span class="engine-option-desc">Modelo de ultra-realismo, mais restritivo, ideal para objetos e animais. Não recomendado para imagens com humanos. Qualidade excelente.</span>
                                 </button>
                             </div>
                         </div>
@@ -3504,7 +3516,7 @@
     <div id="modal-grok-anchor-preview" class="modal">
         <div class="modal-content modal-content-wide grok-anchor-preview-content">
             <div class="modal-header">
-                <h3>Prévia da imagem-base (Cria 3.0 speed)</h3>
+                <h3>Prévia da imagem-base (Cria 2.5 Speed)</h3>
                 <button class="modal-close" onclick="cancelGrokAnchorPreview()" type="button">&times;</button>
             </div>
             <div class="modal-body grok-anchor-preview-body">
@@ -3512,7 +3524,7 @@
                 <div class="grok-anchor-preview-frame">
                     <img id="grok-anchor-preview-img" class="grok-anchor-preview-img" src="" alt="Prévia da imagem-base" hidden>
                 </div>
-                <p class="muted">Se aprovar esta imagem, ela será enviada ao Cria 3.0 speed para animar o vídeo.</p>
+                <p class="muted">Se aprovar esta imagem, ela será enviada ao Cria 2.5 Speed para animar o vídeo.</p>
             </div>
             <div class="modal-footer modal-footer-space">
                 <button class="btn btn-secondary" type="button" onclick="cancelGrokAnchorPreview()">Cancelar</button>
@@ -3637,8 +3649,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260507-07"></script>
-    <script src="/video/static/pwa.js?v=20260507-07"></script>
+    <script src="/video/static/app.js?v=20260508-01"></script>
+    <script src="/video/static/pwa.js?v=20260508-01"></script>
 </body>
 </html>
 

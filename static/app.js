@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v380 loaded");
+    console.log("[CriaVideo] app.js v381 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2984,9 +2984,11 @@ async function createSimilar(projectId) {
         "Wan 2.2",
         "Ultra High 1.0",
         "Ultra High 2.2",
+        "Ultra High 3.0",
         "Mega 2.0 Ultra",
         "Seedance 2.0",
         "Grok",
+        "Cria 2.5 Speed",
         "Cria 3.0 speed",
     ]);
     const tagsType = String(tagsData.type || "").trim().toLowerCase();
@@ -3009,8 +3011,7 @@ async function createSimilar(projectId) {
             return raw;
         }
         if (raw.includes("mega 2.0")) return "seedance";
-        if (raw.includes("seedance")) return "seedance";
-        if (raw.includes("cria 3.0") || raw.includes("grok")) return "grok";
+        if (raw.includes("cria 3.0") || raw.includes("cria 2.5") || raw.includes("grok")) return "grok";
         if (raw.includes("wan") || raw.includes("ultra high")) return "wan2";
         return "wan2";
     };
@@ -4609,7 +4610,7 @@ function _similarSceneDuration(scene) {
 
 function _normalizeSimilarEngine(rawValue) {
     const value = String(rawValue || "").trim().toLowerCase();
-    if (value === "wan2" || value === "seedance") {
+    if (value === "wan2" || value === "grok" || value === "seedance") {
         return value;
     }
     return "wan2";
@@ -4617,16 +4618,16 @@ function _normalizeSimilarEngine(rawValue) {
 
 function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "wan2") return "U1";
-    if (normalized === "seedance") return "S2";
-    return "C3";
+    if (normalized === "wan2") return "UH3";
+    if (normalized === "seedance") return "M2U";
+    return "C25";
 }
 
 function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "wan2") return "Ultra High 1.0";
-    if (normalized === "seedance") return "Seedance 2.0";
-    return "Cria 3.0 speed";
+    if (normalized === "wan2") return "Ultra High 3.0";
+    if (normalized === "seedance") return "Mega 2.0 Ultra";
+    return "Cria 2.5 Speed";
 }
 
 function _getSimilarSceneSelectedEngine(sceneId) {
@@ -5482,8 +5483,8 @@ function _renderSimilarScenes(project, options = {}) {
                             class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
                             type="button"
                             onclick="similarSelectSceneEngine(${sceneId}, '${engineValue}')"
-                            title="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : "Seedance 2.0"} nesta cena"
-                            aria-label="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : "Seedance 2.0"} nesta cena"
+                            title="Usar ${engineValue === "grok" ? "Cria 2.5 Speed" : engineValue === "wan2" ? "Ultra High 3.0" : "Mega 2.0 Ultra"} nesta cena"
+                            aria-label="Usar ${engineValue === "grok" ? "Cria 2.5 Speed" : engineValue === "wan2" ? "Ultra High 3.0" : "Mega 2.0 Ultra"} nesta cena"
                         >${_similarSceneEngineLabel(engineValue)}</button>
                     `).join("")}
                 </div>
@@ -7280,8 +7281,8 @@ function workflowAddNode(kind) {
             <header>Gerador de vídeo</header>
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
-                <option value="wan2">Ultra High 1.0</option>
-                <option value="grok" selected>Cria 3.0 speed</option>
+                <option value="wan2">Ultra High 3.0</option>
+                <option value="grok" selected>Cria 2.5 Speed</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
@@ -7618,7 +7619,7 @@ function workflowControlSelector(el) {
 }
 
 function workflowGetEngineLabel(engine) {
-    const labels = { grok: "Cria 3.0 speed", wan2: "Ultra High 1.0", seedance: "Mega 2.0 Ultra" };
+    const labels = { grok: "Cria 2.5 Speed", wan2: "Ultra High 3.0", seedance: "Mega 2.0 Ultra" };
     return labels[engine] || labels.grok;
 }
 
@@ -7890,8 +7891,8 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
         const html = `
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
-                <option value="wan2">Ultra High 1.0</option>
-                <option value="grok" selected>Cria 3.0 speed</option>
+                <option value="wan2">Ultra High 3.0</option>
+                <option value="grok" selected>Cria 2.5 Speed</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
@@ -9724,13 +9725,13 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             duration = normalizedDuration;
             _syncCreateRealisticDurationOptions(prefix, duration);
             _syncAiSuggestRealisticDurationOptions(duration);
-            showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
+            showToast("Ultra High 3.0 usa duracao em multiplos de 8 segundos.");
         }
     }
     const engineLabel = engine === "wan2"
-            ? "Ultra High 1.0"
+            ? "Ultra High 3.0"
             : engine === "grok"
-                ? "Cria 3.0 speed"
+                ? "Cria 2.5 Speed"
                 : "Mega 2.0 Ultra";
     const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
     const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
@@ -9809,7 +9810,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         let imageUploadIds = [];
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
         if (disablePersonaReference && engine !== "grok" && !shouldUploadReferenceImage) {
-            throw new Error("O modo Nenhum sem foto funciona no Cria 3.0 speed. Para outros motores, envie uma imagem de referência.");
+            throw new Error("O modo Nenhum sem foto funciona no Cria 2.5 Speed. Para outros motores, envie uma imagem de referência.");
         }
         if (shouldUploadReferenceImage) {
             setCreateProgress(5, "Gerando vídeo realista...", "Enviando imagem de referência...");
@@ -12969,7 +12970,7 @@ async function generateAiScript() {
             if (normalized !== realisticDuration) {
                 realisticDuration = normalized;
                 _syncAiSuggestRealisticDurationOptions(realisticDuration);
-                showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
+                showToast("Ultra High 3.0 usa duracao em multiplos de 8 segundos.");
             }
         }
         const disablePersonaReference = _isPersonaNoReferenceEnabled("ai", interactionPersona);
@@ -12986,9 +12987,10 @@ async function generateAiScript() {
         const usePhotosToggle = document.getElementById("script-use-photos");
         const hasPersonaReference = !disablePersonaReference && selectedPersonaIds.length > 0;
         const engineLabel = engine === "grok"
-            ? "Cria 3.0 speed"
-            : engine === "wan2"
-                    ? "Ultra High 1.0"
+            const engineLabel = engine === "grok"
+                ? "Cria 2.5 Speed"
+                : engine === "wan2"
+                    ? "Ultra High 3.0"
                     : "Mega 2.0 Ultra";
         try {
             let customImageIds = [];
