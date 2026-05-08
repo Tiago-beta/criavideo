@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v385 loaded");
+console.log("[CriaVideo] app.js v386 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2292,6 +2292,8 @@ let similarState = {
     unifiedFrameBusy: false,
     unifiedFrameBusyLabel: "",
     unifiedFrameInstruction: "",
+    unifiedAutoImageKey: "",
+    unifiedAutoImageStatus: "idle",
 };
 let workflowState = {
     initialized: false,
@@ -4036,13 +4038,15 @@ function _clearSimilarUnifiedPrompt() {
     if (previewStageEl) previewStageEl.innerHTML = "";
     if (previewWrapEl) previewWrapEl.hidden = true;
     if (generateBtn) generateBtn.textContent = "Gerar cena unica";
-    if (createImageBtn) createImageBtn.textContent = "Criar imagem";
+    if (createImageBtn) createImageBtn.hidden = true;
     similarState.unifiedEngine = "";
     similarState.unifiedDuration = 10;
     similarState.unifiedFrameEditorOpen = false;
     similarState.unifiedFrameBusy = false;
     similarState.unifiedFrameBusyLabel = "";
     similarState.unifiedFrameInstruction = "";
+    similarState.unifiedAutoImageKey = "";
+    similarState.unifiedAutoImageStatus = "idle";
     _setSimilarUnifiedUploadStatus("");
     _syncSimilarUnifiedUploadUi();
     if (wrapEl) wrapEl.hidden = true;
@@ -4120,10 +4124,17 @@ function _syncSimilarUnifiedUploadUi(project = null) {
     }
 
     const selectedEngine = _getSimilarUnifiedSelectedEngine(tags);
+    const canUseLastFrame = selectedEngine === "seedance" && pendingUploads.length > 1;
     if (toggleGroupEl) {
-        toggleGroupEl.hidden = selectedEngine !== "seedance";
+        toggleGroupEl.hidden = !canUseLastFrame;
     }
     if (toggleEl) {
+        if (!canUseLastFrame) {
+            toggleEl.checked = false;
+            similarState.unifiedUseLastImageAsFinalFrame = false;
+            similarState.unifiedLastFrameDirty = false;
+            return;
+        }
         if (!similarState.unifiedLastFrameDirty) {
             toggleEl.checked = !!tags.similar_unified_use_last_image_as_final_frame;
             similarState.unifiedUseLastImageAsFinalFrame = !!toggleEl.checked;
@@ -4131,6 +4142,52 @@ function _syncSimilarUnifiedUploadUi(project = null) {
             toggleEl.checked = !!similarState.unifiedUseLastImageAsFinalFrame;
         }
     }
+}
+
+function _buildSimilarUnifiedAutoImageKey(project, tags = null) {
+    const safeTags = tags && typeof tags === "object" && !Array.isArray(tags)
+        ? tags
+        : _safeSimilarTags(project?.tags);
+    const promptText = String(safeTags?.similar_unified_prompt || "").trim();
+    const projectId = Number(project?.id || similarState.projectId || 0);
+    if (!projectId || !promptText) {
+        return "";
+    }
+
+    const generatedAt = String(safeTags?.similar_unified_prompt_generated_at || "").trim();
+    const promptSource = String(safeTags?.similar_unified_prompt_source || "").trim();
+    return `${projectId}:${generatedAt}:${promptSource}:${promptText.slice(0, 160)}`;
+}
+
+async function _maybeAutoGenerateSimilarUnifiedReferenceImage(project) {
+    const tags = _safeSimilarTags(project?.tags);
+    const promptText = String(tags.similar_unified_prompt || "").trim();
+    const unifiedReferenceImageUrl = String(tags.similar_unified_reference_image_url || "").trim();
+    const autoImageKey = _buildSimilarUnifiedAutoImageKey(project, tags);
+
+    if (!promptText || !autoImageKey) {
+        similarState.unifiedAutoImageKey = "";
+        similarState.unifiedAutoImageStatus = "idle";
+        return;
+    }
+
+    if (unifiedReferenceImageUrl) {
+        similarState.unifiedAutoImageKey = autoImageKey;
+        similarState.unifiedAutoImageStatus = "success";
+        return;
+    }
+
+    if (similarState.unifiedAutoImageKey === autoImageKey && ["running", "success", "error"].includes(String(similarState.unifiedAutoImageStatus || ""))) {
+        return;
+    }
+
+    similarState.unifiedAutoImageKey = autoImageKey;
+    similarState.unifiedAutoImageStatus = "running";
+    const created = await similarGenerateUnifiedReferenceImage({
+        auto: true,
+        promptOverride: promptText,
+    });
+    similarState.unifiedAutoImageStatus = created ? "success" : "error";
 }
 
 function _renderSimilarUnifiedReferencePanel(project) {
@@ -4156,6 +4213,7 @@ function _renderSimilarUnifiedReferencePanel(project) {
     const frameBusyDisabledAttr = frameBusy ? "disabled" : "";
     const frameInstructionValue = esc(String(similarState.unifiedFrameInstruction || ""));
     const frameBusyLabel = esc(String(similarState.unifiedFrameBusyLabel || "Criando uma nova imagem base..."));
+    const editActionIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
     const summary = pendingCount
         ? `${pendingCount} apoio(s) pronto(s) para refinar esta base.`
         : "Contexto visual consolidado da cena unica.";
@@ -4195,16 +4253,13 @@ function _renderSimilarUnifiedReferencePanel(project) {
                     <strong>Frame base</strong>
                     <span>${summary}</span>
                 </div>
-                <div class="similar-reference-frame-tools">
-                    <button class="similar-frame-tool-btn similar-frame-tool-btn-primary" type="button" onclick="similarGenerateUnifiedReferenceImage()" ${frameBusyDisabledAttr}>Gerar novamente</button>
-                    <button class="similar-frame-tool-btn${frameEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleUnifiedFrameEdit()" ${frameBusyDisabledAttr}>${frameEditorOpen ? "Fechar edicao IA" : "Editar com IA"}</button>
-                </div>
             </div>
             <div class="similar-reference-frame-body">
                 <div class="similar-reference-frame-gallery similar-reference-frame-gallery-single">
                     <article class="similar-frame-gallery-item is-base">
                         <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}">
                             <img src="${esc(unifiedReferenceImageUrl)}" alt="Frame base da cena unica" loading="lazy">
+                            <button class="similar-frame-image-action" type="button" onclick="similarOpenUnifiedFrameEdit()" title="Editar imagem base" aria-label="Editar imagem base" ${frameBusyDisabledAttr}>${editActionIcon}</button>
                             <span class="similar-frame-gallery-badge">Base</span>
                         </div>
                     </article>
@@ -4318,7 +4373,7 @@ function _renderSimilarUnifiedPrompt(project) {
     textEl.value = promptText;
     metaEl.textContent = metaText;
     if (createImageBtn) {
-        createImageBtn.textContent = unifiedReferenceImageUrl ? "Gerar novamente" : "Criar imagem";
+        createImageBtn.hidden = true;
     }
     if (generateBtn) {
         generateBtn.textContent = unifiedClipUrl ? "Gerar novamente a cena unica" : "Gerar cena unica";
@@ -4326,6 +4381,9 @@ function _renderSimilarUnifiedPrompt(project) {
     _renderSimilarUnifiedReferencePanel(project);
     _syncSimilarUnifiedUploadUi(project);
     wrapEl.hidden = false;
+    queueMicrotask(() => {
+        void _maybeAutoGenerateSimilarUnifiedReferenceImage(project);
+    });
 }
 
 function _normalizeSimilarSourceUrl(rawValue) {
@@ -8966,6 +9024,8 @@ function _resetSimilarModeState() {
     _clearSimilarUnifiedPendingUploads();
     similarState.unifiedUseLastImageAsFinalFrame = false;
     similarState.unifiedLastFrameDirty = false;
+    similarState.unifiedAutoImageKey = "";
+    similarState.unifiedAutoImageStatus = "idle";
     similarState.sourceVideoDurationSeconds = 0;
     similarState.sourceVideoDurationStatus = "idle";
     similarState.sourceDurationProbeToken = 0;
@@ -9320,6 +9380,17 @@ function similarToggleUnifiedFrameEdit() {
     }
 }
 
+function similarOpenUnifiedFrameEdit() {
+    _syncSimilarUnifiedFrameDraftFromDom();
+    if (!similarState.unifiedFrameEditorOpen) {
+        similarState.unifiedFrameEditorOpen = true;
+        _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
+    }
+    setTimeout(() => {
+        document.getElementById("similar-unified-frame-instruction")?.focus();
+    }, 0);
+}
+
 function similarCloseUnifiedFrameEdit() {
     _syncSimilarUnifiedFrameDraftFromDom();
     similarState.unifiedFrameEditorOpen = false;
@@ -9328,9 +9399,12 @@ function similarCloseUnifiedFrameEdit() {
 
 async function similarGenerateUnifiedReferenceImage(options = {}) {
     const projectId = Number(similarState.projectId || 0);
+    const isAuto = !!options.auto;
     if (!projectId) {
-        alert("Analise o video antes de criar a imagem base.");
-        return;
+        if (!isAuto) {
+            alert("Analise o video antes de criar a imagem base.");
+        }
+        return false;
     }
 
     _syncSimilarUnifiedFrameDraftFromDom();
@@ -9338,17 +9412,19 @@ async function similarGenerateUnifiedReferenceImage(options = {}) {
     const instructionEl = document.getElementById("similar-unified-frame-instruction");
     const project = similarState.lastProjectSnapshot;
     const promptEl = document.getElementById("similar-unified-prompt-text");
-    const promptOverride = String(promptEl?.value || project?.tags?.similar_unified_prompt || "").trim();
+    const promptOverride = String(options.promptOverride || promptEl?.value || project?.tags?.similar_unified_prompt || "").trim();
     const editInstruction = String(similarState.unifiedFrameInstruction || "").trim();
 
     if (!promptOverride) {
-        showToast("Gere ou escreva o prompt unico antes de criar a imagem base.", "error");
-        return;
+        if (!isAuto) {
+            showToast("Gere ou escreva o prompt unico antes de criar a imagem base.", "error");
+        }
+        return false;
     }
     if (requireInstruction && !editInstruction) {
         showToast("Descreva primeiro o que deve mudar na imagem base.", "error");
         instructionEl?.focus();
-        return;
+        return false;
     }
 
     const uploadIds = [];
@@ -9371,9 +9447,16 @@ async function similarGenerateUnifiedReferenceImage(options = {}) {
         if (requireInstruction) {
             similarState.unifiedFrameEditorOpen = true;
         }
+        if (isAuto) {
+            _setSimilarUnifiedUploadStatus("Criando imagem base automaticamente...", "running");
+        }
         _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
         _setSimilarStatus(
-            requireInstruction ? "Editando a imagem base da cena unica..." : "Criando a imagem base da cena unica...",
+            isAuto
+                ? "Criando automaticamente a imagem base da cena unica..."
+                : requireInstruction
+                    ? "Editando a imagem base da cena unica..."
+                    : "Criando a imagem base da cena unica...",
             "running",
         );
         _refreshSimilarButtonsDisabled(true);
@@ -9389,13 +9472,24 @@ async function similarGenerateUnifiedReferenceImage(options = {}) {
         });
         similarState.unifiedFrameBusy = false;
         similarState.unifiedFrameBusyLabel = "";
-        showToast(requireInstruction ? "Imagem base atualizada." : "Imagem base criada.", "success");
+        if (isAuto) {
+            _setSimilarUnifiedUploadStatus("");
+            _setSimilarStatus("Imagem base criada automaticamente. Use o lapis sobre a imagem para editar.", "success");
+        } else {
+            showToast(requireInstruction ? "Imagem base atualizada." : "Imagem base criada.", "success");
+        }
         await _refreshSimilarProject();
+        return true;
     } catch (error) {
         similarState.unifiedFrameBusy = false;
         similarState.unifiedFrameBusyLabel = "";
         _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
-        showToast(`Erro ao criar a imagem base: ${error.message}`, "error");
+        if (isAuto) {
+            _setSimilarUnifiedUploadStatus(`Erro ao criar automaticamente a imagem base: ${error.message}`, "error");
+        } else {
+            showToast(`Erro ao criar a imagem base: ${error.message}`, "error");
+        }
+        return false;
     } finally {
         _refreshSimilarButtonsDisabled(false);
     }
