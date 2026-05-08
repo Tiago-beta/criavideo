@@ -1476,30 +1476,31 @@ async def _generate_similar_wan_image(
         if path and os.path.exists(path) and path not in atlas_references:
             atlas_references.append(path)
 
-    model = "alibaba/wan-2.7/image-edit" if atlas_references else "alibaba/wan-2.7/text-to-image"
+    use_reference_edit = bool(atlas_references)
+    model = "alibaba/wan-2.6/image-edit" if use_reference_edit else "alibaba/wan-2.7/text-to-image"
     results = await generate_atlas_images(
         prompt=prompt,
         model=model,
         aspect_ratio=aspect_ratio,
         size="2K",
         count=1,
-        thinking_mode=True,
+        thinking_mode=not use_reference_edit,
         reference_paths=atlas_references,
         timeout_seconds=240,
     )
     if not results:
-        raise RuntimeError("WAN 2.7 nao retornou imagem utilizavel")
+        raise RuntimeError("WAN nao retornou imagem utilizavel")
 
     first_result = results[0] if isinstance(results[0], dict) else {}
     raw_bytes = first_result.get("bytes")
     if not isinstance(raw_bytes, (bytes, bytearray)) or not raw_bytes:
-        raise RuntimeError("WAN 2.7 retornou imagem invalida")
+        raise RuntimeError("WAN retornou imagem invalida")
 
     output_path = f"{output_stem}{_image_extension_from_mime_type(first_result.get('mime_type'))}"
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     Path(output_path).write_bytes(bytes(raw_bytes))
     if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
-        raise RuntimeError("WAN 2.7 falhou ao salvar a imagem gerada")
+        raise RuntimeError("WAN falhou ao salvar a imagem gerada")
 
     return output_path, len(atlas_references)
 

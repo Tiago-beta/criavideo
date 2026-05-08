@@ -9191,9 +9191,36 @@ th,
     transition: opacity 0.2s ease, transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
+.similar-frame-image-actions {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 4;
+    display: flex;
+    gap: 8px;
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.similar-frame-image-actions .similar-frame-image-action {
+    position: static;
+    top: auto;
+    right: auto;
+    opacity: 1;
+    transform: none;
+}
+
 .similar-frame-gallery-item:hover .similar-frame-image-action,
 .similar-frame-gallery-item.is-active .similar-frame-image-action,
 .similar-frame-gallery-box:focus-within .similar-frame-image-action {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.similar-frame-gallery-item:hover .similar-frame-image-actions,
+.similar-frame-gallery-item.is-active .similar-frame-image-actions,
+.similar-frame-gallery-box:focus-within .similar-frame-image-actions {
     opacity: 1;
     transform: translateY(0);
 }

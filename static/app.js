@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v390 loaded");
+console.log("[CriaVideo] app.js v391 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4308,6 +4308,7 @@ function _renderSimilarUnifiedReferencePanel(project) {
     const frameInstructionValue = esc(String(similarState.unifiedFrameInstruction || ""));
     const frameBusyLabel = esc(String(similarState.unifiedFrameBusyLabel || "Criando uma nova imagem base..."));
     const editActionIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
+    const downloadActionIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
     const summary = pendingCount
         ? `${pendingCount} apoio(s) pronto(s) para refinar esta base.`
         : "Contexto visual consolidado da cena unica.";
@@ -4353,7 +4354,10 @@ function _renderSimilarUnifiedReferencePanel(project) {
                     <article class="similar-frame-gallery-item is-base">
                         <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}">
                             <img src="${esc(unifiedReferenceImageUrl)}" alt="Frame base da cena unica" loading="lazy">
-                            <button class="similar-frame-image-action" type="button" onclick="similarOpenUnifiedFrameEdit()" title="Editar imagem base" aria-label="Editar imagem base" ${frameBusyDisabledAttr}>${editActionIcon}</button>
+                            <div class="similar-frame-image-actions">
+                                <a class="similar-frame-image-action" href="${esc(unifiedReferenceImageUrl)}" download title="Baixar imagem base" aria-label="Baixar imagem base">${downloadActionIcon}</a>
+                                <button class="similar-frame-image-action" type="button" onclick="similarOpenUnifiedFrameEdit()" title="Editar imagem base" aria-label="Editar imagem base" ${frameBusyDisabledAttr}>${editActionIcon}</button>
+                            </div>
                             <span class="similar-frame-gallery-badge">Base</span>
                         </div>
                     </article>
