@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260507-07">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260507-08">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 380;
+        var REQUIRED_VER = 381;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1307,14 +1307,14 @@
                                     <input type="checkbox" id="wizard-realistic-music">
                                     <span class="media-toggle-chip-body">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                                        <span>Audio</span>
+                                        <span>Enviar áudio</span>
                                     </span>
                                 </label>
                                 <label class="media-toggle-chip media-toggle-chip--compact">
                                     <input type="checkbox" id="wizard-realistic-tevoxi" onchange="toggleWizardTevoxiSongs()">
                                     <span class="media-toggle-chip-body">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                                        <span>Tevoxi</span>
+                                        <span>Usar Tevoxi</span>
                                     </span>
                                 </label>
                             </div>
@@ -1394,16 +1394,22 @@
                                     <input type="checkbox" id="script-use-user-audio" onchange="toggleUserAudioUpload()">
                                     <span class="media-toggle-chip-body">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                                        <span>Audio</span>
+                                        <span>Enviar áudio</span>
                                     </span>
                                 </label>
                                 <label class="media-toggle-chip media-toggle-chip--full">
                                     <input type="checkbox" id="script-realistic-tevoxi" onchange="toggleScriptTevoxiSongs()">
                                     <span class="media-toggle-chip-body">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                                        <span>Tevoxi</span>
+                                        <span>Usar Tevoxi</span>
                                     </span>
                                 </label>
+                                <button id="script-open-image-creator" class="media-toggle-chip media-toggle-chip--full media-toggle-chip-button" type="button" onclick="openScriptImageCreatorModal()">
+                                    <span class="media-toggle-chip-body">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 1.7 4.9L19 9.5l-4.1 3 1.5 5-4.4-3.2L7.6 17.5l1.5-5L5 9.5l5.3-1.6L12 3Z"/><path d="M19 3v4"/><path d="M21 5h-4"/></svg>
+                                        <span>Criar imagem</span>
+                                    </span>
+                                </button>
                             </div>
                             <div id="script-photo-area" class="photo-upload-area" hidden>
                                 <div id="script-photo-dropzone" class="photo-dropzone script-photo-dropzone" role="button" tabindex="0" aria-label="Adicionar imagens" onclick="document.getElementById('script-photo-input').click()" onkeydown="if(event.key==='Enter' || event.key===' '){ event.preventDefault(); document.getElementById('script-photo-input').click(); }">
@@ -3637,8 +3643,169 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260507-07"></script>
-    <script src="/video/static/pwa.js?v=20260507-07"></script>
+    <div id="modal-script-image-creator" class="modal" style="z-index:3210">
+        <div class="modal-content modal-content-wide script-image-generator-modal">
+            <div class="modal-header">
+                <h3>Criar imagem</h3>
+                <button class="modal-close" type="button" onclick="closeScriptImageCreatorModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="script-image-generator-shell">
+                    <div class="script-image-generator-controls">
+                        <div class="form-group">
+                            <div class="script-image-generator-section-head">
+                                <label for="script-image-generator-model">Modelo de IA</label>
+                            </div>
+                            <select id="script-image-generator-model" class="input script-image-generator-native-select" hidden onchange="handleScriptImageCreatorModelChange()">
+                                <option value="google/nano-banana-pro/text-to-image">Nano Banana Pro</option>
+                                <option value="google/nano-banana-2/text-to-image">Nano Banana 2</option>
+                                <option value="google/nano-banana/text-to-image">Nano Banana</option>
+                                <option value="openai/gpt-image-1/text-to-image">GPT Image</option>
+                                <option value="ultra-high-3.0">Ultra High 3.0</option>
+                            </select>
+                            <div class="script-image-generator-model-options" role="listbox" aria-label="Modelos de IA">
+                                <button type="button" class="script-image-model-card" data-model="google/nano-banana-pro/text-to-image" onclick="selectScriptImageCreatorModel('google/nano-banana-pro/text-to-image')">
+                                    <span class="script-image-model-card-icon script-image-model-card-icon--banana">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 13c4.2 0 7.7-3.1 8.4-7.1 1.7.4 2.8 1.8 2.8 3.7 0 5.2-4.2 9.4-9.4 9.4-1.7 0-3-.7-4-2 0 0 1-.9 2.2-4Z"/><path d="M6.5 12.8c-.6 1.4-.7 2.7-.2 4"/></svg>
+                                    </span>
+                                    <span class="script-image-model-card-copy">
+                                        <strong>Nano Banana Pro</strong>
+                                        <small>Rápido, polido e versátil.</small>
+                                    </span>
+                                </button>
+                                <button type="button" class="script-image-model-card" data-model="google/nano-banana-2/text-to-image" onclick="selectScriptImageCreatorModel('google/nano-banana-2/text-to-image')">
+                                    <span class="script-image-model-card-icon script-image-model-card-icon--banana">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 13c4.2 0 7.7-3.1 8.4-7.1 1.7.4 2.8 1.8 2.8 3.7 0 5.2-4.2 9.4-9.4 9.4-1.7 0-3-.7-4-2 0 0 1-.9 2.2-4Z"/><path d="M6.5 12.8c-.6 1.4-.7 2.7-.2 4"/></svg>
+                                    </span>
+                                    <span class="script-image-model-card-copy">
+                                        <strong>Nano Banana 2</strong>
+                                        <small>Equilíbrio entre rapidez e detalhe.</small>
+                                    </span>
+                                </button>
+                                <button type="button" class="script-image-model-card" data-model="google/nano-banana/text-to-image" onclick="selectScriptImageCreatorModel('google/nano-banana/text-to-image')">
+                                    <span class="script-image-model-card-icon script-image-model-card-icon--banana">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 13c4.2 0 7.7-3.1 8.4-7.1 1.7.4 2.8 1.8 2.8 3.7 0 5.2-4.2 9.4-9.4 9.4-1.7 0-3-.7-4-2 0 0 1-.9 2.2-4Z"/><path d="M6.5 12.8c-.6 1.4-.7 2.7-.2 4"/></svg>
+                                    </span>
+                                    <span class="script-image-model-card-copy">
+                                        <strong>Nano Banana</strong>
+                                        <small>Econômico para ideias rápidas.</small>
+                                    </span>
+                                </button>
+                                <button type="button" class="script-image-model-card" data-model="openai/gpt-image-1/text-to-image" onclick="selectScriptImageCreatorModel('openai/gpt-image-1/text-to-image')">
+                                    <span class="script-image-model-card-icon script-image-model-card-icon--gpt">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c2.5 0 4.5 2 4.5 4.5v1.2c1.7.4 3 1.9 3 3.8 0 2.2-1.8 4-4 4h-1.2A4.5 4.5 0 1 1 7.5 12V7.5C7.5 5 9.5 3 12 3Z"/><path d="M9.5 16.8 14.8 7"/></svg>
+                                    </span>
+                                    <span class="script-image-model-card-copy">
+                                        <strong>GPT Image</strong>
+                                        <small>Excelente para direção artística.</small>
+                                    </span>
+                                </button>
+                                <button type="button" class="script-image-model-card" data-model="ultra-high-3.0" onclick="selectScriptImageCreatorModel('ultra-high-3.0')">
+                                    <span class="script-image-model-card-icon script-image-model-card-icon--wan">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 16 9.5 8l3.2 5 2.8-4 3.5 7"/><path d="M4 19h16"/><path d="M8 5h8"/></svg>
+                                    </span>
+                                    <span class="script-image-model-card-copy">
+                                        <strong>Ultra High 3.0</strong>
+                                        <small>Cria qualquer imagem sem restrição.</small>
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="script-image-generator-prompt">Prompt</label>
+                            <textarea id="script-image-generator-prompt" class="wizard-textarea script-image-generator-prompt" rows="9" maxlength="5000" placeholder="Descreva a imagem que você quer criar."></textarea>
+                        </div>
+
+                        <div id="script-image-generator-results-panel" class="script-image-generator-inline-results" hidden>
+                            <div class="script-image-generator-results-head">
+                                <h4>Resultado</h4>
+                            </div>
+                            <div id="script-image-generator-results" class="script-image-generator-results"></div>
+                        </div>
+
+                        <div id="script-image-generator-reference-group" class="form-group">
+                            <div class="script-image-generator-section-head">
+                                <label>Imagens de referência</label>
+                                <span id="script-image-generator-reference-count" class="photo-upload-hint">0/5</span>
+                            </div>
+                            <div class="script-image-generator-reference-strip">
+                                <button type="button" class="script-image-generator-reference-add" onclick="triggerScriptImageCreatorReferenceUpload()" aria-label="Adicionar referências">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                </button>
+                                <div id="script-image-generator-reference-preview" class="photo-preview-grid script-image-generator-reference-preview"></div>
+                            </div>
+                            <input id="script-image-generator-reference-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handleScriptImageCreatorReferenceSelect(event)">
+                        </div>
+
+                        <div class="script-image-generator-settings">
+                            <div id="script-image-generator-aspect-group" class="form-group">
+                                <div class="script-image-generator-section-head">
+                                    <label for="script-image-generator-aspect">Proporção de aspecto</label>
+                                </div>
+                                <select id="script-image-generator-aspect" class="input script-image-generator-native-select" hidden>
+                                    <option value="1:1">1:1</option>
+                                    <option value="16:9">16:9</option>
+                                    <option value="9:16">9:16</option>
+                                    <option value="4:3">4:3</option>
+                                    <option value="3:4">3:4</option>
+                                </select>
+                                <div id="script-image-generator-aspect-options" class="script-image-generator-segmented">
+                                    <button type="button" class="script-image-generator-segment" data-aspect="1:1" onclick="setScriptImageCreatorAspect('1:1')">1:1</button>
+                                    <button type="button" class="script-image-generator-segment" data-aspect="16:9" onclick="setScriptImageCreatorAspect('16:9')">16:9</button>
+                                    <button type="button" class="script-image-generator-segment" data-aspect="9:16" onclick="setScriptImageCreatorAspect('9:16')">9:16</button>
+                                    <button type="button" class="script-image-generator-segment" data-aspect="4:3" onclick="setScriptImageCreatorAspect('4:3')">4:3</button>
+                                    <button type="button" class="script-image-generator-segment" data-aspect="3:4" onclick="setScriptImageCreatorAspect('3:4')">3:4</button>
+                                </div>
+                            </div>
+                            <div id="script-image-generator-count-group" class="form-group">
+                                <div class="script-image-generator-section-head">
+                                    <label for="script-image-generator-count">Número de imagens</label>
+                                </div>
+                                <select id="script-image-generator-count" class="input script-image-generator-native-select" hidden>
+                                    <option value="1">1</option>
+                                    <option value="2">2</option>
+                                    <option value="3">3</option>
+                                    <option value="4">4</option>
+                                </select>
+                                <div id="script-image-generator-count-options" class="script-image-generator-segmented script-image-generator-segmented--count">
+                                    <button type="button" class="script-image-generator-segment" data-count="1" onclick="setScriptImageCreatorCount(1)">1</button>
+                                    <button type="button" class="script-image-generator-segment" data-count="2" onclick="setScriptImageCreatorCount(2)">2</button>
+                                    <button type="button" class="script-image-generator-segment" data-count="3" onclick="setScriptImageCreatorCount(3)">3</button>
+                                    <button type="button" class="script-image-generator-segment" data-count="4" onclick="setScriptImageCreatorCount(4)">4</button>
+                                </div>
+                            </div>
+                            <div id="script-image-generator-size-group" class="form-group" hidden>
+                                <label for="script-image-generator-size">Tamanho</label>
+                                <select id="script-image-generator-size" class="input" onchange="handleScriptImageCreatorMetaChange()">
+                                    <option value="1K">1K</option>
+                                    <option value="2K" selected>2K</option>
+                                    <option value="4K">4K</option>
+                                </select>
+                            </div>
+                            <div id="script-image-generator-seed-group" class="form-group" hidden>
+                                <label for="script-image-generator-seed">Semente</label>
+                                <input id="script-image-generator-seed" class="input" type="number" min="-1" step="1" value="-1" onchange="handleScriptImageCreatorMetaChange()">
+                            </div>
+                        </div>
+
+                        <p id="script-image-generator-status" class="script-image-generator-status" hidden></p>
+
+                        <div class="modal-footer modal-footer-space script-image-generator-footer">
+                            <button class="btn btn-secondary" type="button" onclick="closeScriptImageCreatorModal()">Fechar</button>
+                            <div class="script-image-generator-footer-actions">
+                                <div id="script-image-generator-estimate" class="script-image-generator-estimate" aria-live="polite">Defina o modelo para calcular o custo estimado.</div>
+                                <button id="script-image-generator-submit" class="btn btn-primary" type="button" onclick="generateScriptImageFromModal()">Gerar imagem</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/video/static/app.js?v=20260507-08"></script>
+    <script src="/video/static/pwa.js?v=20260507-08"></script>
 </body>
 </html>
 

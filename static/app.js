@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v380 loaded");
+console.log("[CriaVideo] app.js v381 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -1781,7 +1781,11 @@ function closeModal(id) {
     if (id === "modal-new-project") {
         stopKaraokeProgressPolling();
         _stopSimilarPolling();
+        closeModal("modal-script-image-creator");
         _setNewProjectModalWorkflowLayout(false);
+    }
+    if (id === "modal-script-image-creator") {
+        resetScriptImageCreatorModalState();
     }
     if (id === "modal-edit-project") {
         _renameProjectId = 0;
@@ -10068,6 +10072,7 @@ function resetCreateWizard() {
     // Reset photo upload
     scriptPhotos = [];
     resetAiSuggestCustomImages();
+    resetScriptImageCreatorModalState();
     const photoCb = document.getElementById("script-use-photos");
     if (photoCb) photoCb.checked = false;
     const photoArea = document.getElementById("script-photo-area");
@@ -10807,6 +10812,613 @@ const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_AUDIO_SIZE = 80 * 1024 * 1024; // 80MB
 const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB
 let aiSuggestCustomImages = []; // Personalized visual references for AI prompt.
+
+const SCRIPT_IMAGE_CREATOR_MODELS = [
+    {
+        id: "google/nano-banana-pro/text-to-image",
+        label: "Nano Banana Pro",
+        requiresReference: false,
+        supportsSize: false,
+        supportsThinkingMode: false,
+        maxOutputs: 4,
+        maxReferences: 5,
+    },
+    {
+        id: "google/nano-banana-2/text-to-image",
+        label: "Nano Banana 2",
+        requiresReference: false,
+        supportsSize: false,
+        supportsThinkingMode: false,
+        maxOutputs: 4,
+        maxReferences: 5,
+    },
+    {
+        id: "google/nano-banana/text-to-image",
+        label: "Nano Banana",
+        requiresReference: false,
+        supportsSize: false,
+        supportsThinkingMode: false,
+        maxOutputs: 4,
+        maxReferences: 5,
+    },
+    {
+        id: "openai/gpt-image-1/text-to-image",
+        label: "GPT Image",
+        requiresReference: false,
+        supportsSize: false,
+        supportsThinkingMode: false,
+        maxOutputs: 4,
+        maxReferences: 5,
+    },
+    {
+        id: "ultra-high-3.0",
+        label: "Ultra High 3.0",
+        requiresReference: false,
+        supportsSize: true,
+        supportsThinkingMode: true,
+        maxOutputs: 4,
+        maxReferences: 9,
+    },
+];
+
+let _scriptImageCreatorState = {
+    referenceFiles: [],
+    generatedImages: [],
+    activeResultIndex: 0,
+    busy: false,
+    estimateTimer: null,
+    estimateSeq: 0,
+};
+
+function _clearScriptImageCreatorEstimateTimer() {
+    if (_scriptImageCreatorState.estimateTimer) {
+        clearTimeout(_scriptImageCreatorState.estimateTimer);
+        _scriptImageCreatorState.estimateTimer = null;
+    }
+}
+
+function _getScriptImageCreatorModelMeta() {
+    const modelSelect = document.getElementById("script-image-generator-model");
+    const selectedId = String(modelSelect?.value || SCRIPT_IMAGE_CREATOR_MODELS[0].id).trim();
+    return SCRIPT_IMAGE_CREATOR_MODELS.find((item) => item.id === selectedId) || SCRIPT_IMAGE_CREATOR_MODELS[0];
+}
+
+function _setScriptImageCreatorEstimate(message, tone = "ready") {
+    const estimateEl = document.getElementById("script-image-generator-estimate");
+    if (!estimateEl) return;
+    estimateEl.textContent = String(message || "").trim();
+    estimateEl.className = "script-image-generator-estimate";
+    if (tone === "loading") estimateEl.classList.add("is-loading");
+    if (tone === "error") estimateEl.classList.add("is-error");
+}
+
+function _syncScriptImageCreatorChoiceButtons() {
+    const meta = _getScriptImageCreatorModelMeta();
+    const selectedAspect = String(document.getElementById("script-image-generator-aspect")?.value || "1:1").trim();
+    const selectedCount = Number.parseInt(document.getElementById("script-image-generator-count")?.value || "1", 10) || 1;
+
+    document.querySelectorAll(".script-image-model-card").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.model === meta.id);
+    });
+
+    document.querySelectorAll("#script-image-generator-aspect-options .script-image-generator-segment").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.aspect === selectedAspect);
+    });
+
+    document.querySelectorAll("#script-image-generator-count-options .script-image-generator-segment").forEach((button) => {
+        const count = Number.parseInt(button.dataset.count || "1", 10) || 1;
+        const disabled = count > meta.maxOutputs;
+        button.disabled = disabled;
+        button.classList.toggle("is-disabled", disabled);
+        button.classList.toggle("is-active", !disabled && count === selectedCount);
+    });
+}
+
+function resetScriptImageCreatorModalState() {
+    _clearScriptImageCreatorEstimateTimer();
+    _scriptImageCreatorState = {
+        referenceFiles: [],
+        generatedImages: [],
+        activeResultIndex: 0,
+        busy: false,
+        estimateTimer: null,
+        estimateSeq: _scriptImageCreatorState.estimateSeq || 0,
+    };
+
+    const promptInput = document.getElementById("script-image-generator-prompt");
+    if (promptInput) promptInput.value = "";
+    const modelSelect = document.getElementById("script-image-generator-model");
+    if (modelSelect) modelSelect.value = SCRIPT_IMAGE_CREATOR_MODELS[0].id;
+    const aspectSelect = document.getElementById("script-image-generator-aspect");
+    if (aspectSelect) aspectSelect.value = "1:1";
+    const sizeSelect = document.getElementById("script-image-generator-size");
+    if (sizeSelect) sizeSelect.value = "2K";
+    const countSelect = document.getElementById("script-image-generator-count");
+    if (countSelect) countSelect.value = "1";
+    const seedInput = document.getElementById("script-image-generator-seed");
+    if (seedInput) seedInput.value = "-1";
+    const thinkingToggle = document.getElementById("script-image-generator-thinking");
+    if (thinkingToggle) thinkingToggle.checked = false;
+    const refInput = document.getElementById("script-image-generator-reference-input");
+    if (refInput) refInput.value = "";
+
+    setScriptImageCreatorStatus("", "info");
+    syncScriptImageCreatorControls();
+    renderScriptImageCreatorReferencePreview();
+    renderScriptImageCreatorResults();
+    scheduleScriptImageCreatorEstimate(0);
+}
+
+function openScriptImageCreatorModal() {
+    const promptInput = document.getElementById("script-image-generator-prompt");
+    const scriptPrompt = String(document.getElementById("script-text")?.value || "").trim();
+    if (promptInput && !String(promptInput.value || "").trim() && scriptPrompt) {
+        promptInput.value = scriptPrompt;
+    }
+    syncScriptImageCreatorControls();
+    renderScriptImageCreatorReferencePreview();
+    renderScriptImageCreatorResults();
+    scheduleScriptImageCreatorEstimate(0);
+    openModal("modal-script-image-creator");
+}
+
+function closeScriptImageCreatorModal() {
+    closeModal("modal-script-image-creator");
+}
+
+function selectScriptImageCreatorModel(modelId) {
+    const modelSelect = document.getElementById("script-image-generator-model");
+    if (!modelSelect) return;
+    modelSelect.value = modelId;
+    handleScriptImageCreatorModelChange();
+}
+
+function setScriptImageCreatorAspect(aspectRatio) {
+    const aspectSelect = document.getElementById("script-image-generator-aspect");
+    if (!aspectSelect) return;
+    aspectSelect.value = aspectRatio;
+    _syncScriptImageCreatorPreviewAspect();
+    _syncScriptImageCreatorChoiceButtons();
+    renderScriptImageCreatorResults();
+    scheduleScriptImageCreatorEstimate(0);
+}
+
+function setScriptImageCreatorCount(count) {
+    const countSelect = document.getElementById("script-image-generator-count");
+    if (!countSelect) return;
+    countSelect.value = String(count);
+    _syncScriptImageCreatorChoiceButtons();
+    scheduleScriptImageCreatorEstimate(0);
+}
+
+function handleScriptImageCreatorMetaChange() {
+    syncScriptImageCreatorControls();
+    scheduleScriptImageCreatorEstimate(0);
+}
+
+function handleScriptImageCreatorModelChange() {
+    syncScriptImageCreatorControls();
+    renderScriptImageCreatorReferencePreview();
+    renderScriptImageCreatorResults();
+    scheduleScriptImageCreatorEstimate(0);
+}
+
+function syncScriptImageCreatorControls() {
+    const meta = _getScriptImageCreatorModelMeta();
+    const promptInput = document.getElementById("script-image-generator-prompt");
+    const sizeGroup = document.getElementById("script-image-generator-size-group");
+    const seedGroup = document.getElementById("script-image-generator-seed-group");
+    const thinkingGroup = document.getElementById("script-image-generator-thinking-group");
+    const sizeSelect = document.getElementById("script-image-generator-size");
+    const countSelect = document.getElementById("script-image-generator-count");
+    const seedInput = document.getElementById("script-image-generator-seed");
+    const thinkingToggle = document.getElementById("script-image-generator-thinking");
+    if (promptInput) {
+        promptInput.placeholder = meta.requiresReference
+            ? "Descreva como as referências devem ser transformadas, corrigidas ou estilizadas."
+            : "Descreva a imagem que você quer criar. Use referências se quiser guiar enquadramento, pose ou estilo.";
+    }
+    if (countSelect) {
+        const parsedCount = Number.parseInt(countSelect.value || "1", 10) || 1;
+        if (parsedCount > meta.maxOutputs) {
+            countSelect.value = String(meta.maxOutputs);
+        }
+    }
+    if (sizeGroup) sizeGroup.classList.toggle("is-disabled", !meta.supportsSize);
+    if (sizeSelect) sizeSelect.disabled = !meta.supportsSize;
+    if (seedGroup) seedGroup.classList.toggle("is-disabled", !meta.supportsThinkingMode);
+    if (seedInput) seedInput.disabled = !meta.supportsThinkingMode;
+    if (thinkingGroup) thinkingGroup.classList.toggle("is-disabled", !meta.supportsThinkingMode);
+    if (thinkingToggle) {
+        thinkingToggle.disabled = !meta.supportsThinkingMode;
+        if (!meta.supportsThinkingMode) thinkingToggle.checked = false;
+    }
+    _syncScriptImageCreatorPreviewAspect();
+    _syncScriptImageCreatorChoiceButtons();
+}
+
+function _scriptImageCreatorAspectToCssValue(aspectRatio) {
+    const [width, height] = String(aspectRatio || "1:1").split(":").map((value) => Number.parseFloat(value) || 1);
+    return `${width} / ${height}`;
+}
+
+function _syncScriptImageCreatorPreviewAspect() {
+    const resultPanel = document.getElementById("script-image-generator-results-panel");
+    if (!resultPanel) return;
+    const selectedAspect = String(document.getElementById("script-image-generator-aspect")?.value || "1:1").trim();
+    resultPanel.dataset.aspect = selectedAspect;
+    resultPanel.style.setProperty("--script-image-result-ratio", _scriptImageCreatorAspectToCssValue(selectedAspect));
+}
+
+function _shouldShowScriptImageCreatorResults() {
+    return !!(_scriptImageCreatorState.busy || _scriptImageCreatorState.generatedImages.length);
+}
+
+function setActiveScriptImageCreatorResult(index) {
+    const parsed = Number.parseInt(String(index), 10);
+    if (!Number.isFinite(parsed)) return;
+    if (parsed < 0 || parsed >= _scriptImageCreatorState.generatedImages.length) return;
+    _scriptImageCreatorState.activeResultIndex = parsed;
+    renderScriptImageCreatorResults();
+}
+
+function triggerScriptImageCreatorReferenceUpload() {
+    document.getElementById("script-image-generator-reference-input")?.click();
+}
+
+function handleScriptImageCreatorReferenceSelect(event) {
+    const files = Array.from(event?.target?.files || []);
+    addScriptImageCreatorReferences(files);
+    if (event?.target) event.target.value = "";
+}
+
+function addScriptImageCreatorReferences(files) {
+    const meta = _getScriptImageCreatorModelMeta();
+    const maxReferences = meta.maxReferences || 5;
+
+    for (const file of files) {
+        if (_scriptImageCreatorState.referenceFiles.length >= maxReferences) {
+            alert(`Máximo de ${maxReferences} referências atingido.`);
+            break;
+        }
+        if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+            alert(`Formato não suportado: ${file.name}. Use JPG, PNG ou WebP.`);
+            continue;
+        }
+        if (file.size > MAX_PHOTO_SIZE) {
+            alert(`${file.name} excede 10MB. Reduza o tamanho.`);
+            continue;
+        }
+        _scriptImageCreatorState.referenceFiles.push({
+            file,
+            upload_id: "",
+            preview_url: "",
+        });
+    }
+
+    renderScriptImageCreatorReferencePreview();
+    scheduleScriptImageCreatorEstimate(0);
+}
+
+function removeScriptImageCreatorReference(index) {
+    _scriptImageCreatorState.referenceFiles.splice(index, 1);
+    renderScriptImageCreatorReferencePreview();
+    scheduleScriptImageCreatorEstimate(0);
+}
+
+function renderScriptImageCreatorReferencePreview() {
+    const preview = document.getElementById("script-image-generator-reference-preview");
+    const count = document.getElementById("script-image-generator-reference-count");
+    if (!preview || !count) return;
+
+    const meta = _getScriptImageCreatorModelMeta();
+    const maxRefs = meta.maxReferences || 5;
+    count.textContent = `${_scriptImageCreatorState.referenceFiles.length}/${maxRefs}`;
+    preview.innerHTML = "";
+
+    _scriptImageCreatorState.referenceFiles.forEach((item, index) => {
+        const tile = document.createElement("div");
+        tile.className = "photo-preview-item";
+
+        const img = document.createElement("img");
+        const previewUrl = String(item?.preview_url || "").trim();
+        if (previewUrl) {
+            img.src = previewUrl;
+        } else if (item?.file) {
+            img.src = URL.createObjectURL(item.file);
+            img.onload = () => URL.revokeObjectURL(img.src);
+        }
+
+        const btn = document.createElement("button");
+        btn.className = "photo-remove-btn";
+        btn.type = "button";
+        btn.textContent = "\u00d7";
+        btn.onclick = () => removeScriptImageCreatorReference(index);
+
+        tile.appendChild(img);
+        tile.appendChild(btn);
+        preview.appendChild(tile);
+    });
+}
+
+function setScriptImageCreatorStatus(message, tone = "info") {
+    const status = document.getElementById("script-image-generator-status");
+    if (!status) return;
+    const text = String(message || "").trim();
+    status.hidden = !text;
+    status.textContent = text;
+    status.classList.remove("is-error", "is-success");
+    if (tone === "error") status.classList.add("is-error");
+    if (tone === "success") status.classList.add("is-success");
+}
+
+function scheduleScriptImageCreatorEstimate(delayMs = 140) {
+    _clearScriptImageCreatorEstimateTimer();
+    _scriptImageCreatorState.estimateTimer = setTimeout(() => {
+        updateScriptImageCreatorEstimate().catch(() => {
+            _setScriptImageCreatorEstimate("Não foi possível calcular o custo agora.", "error");
+        });
+    }, Math.max(0, delayMs));
+}
+
+async function updateScriptImageCreatorEstimate() {
+    const meta = _getScriptImageCreatorModelMeta();
+    const imageCount = Number.parseInt(document.getElementById("script-image-generator-count")?.value || "1", 10) || 1;
+    const size = String(document.getElementById("script-image-generator-size")?.value || "2K").trim();
+    const thinkingMode = !!document.getElementById("script-image-generator-thinking")?.checked;
+    const referenceCount = _scriptImageCreatorState.referenceFiles.length;
+    const seq = (_scriptImageCreatorState.estimateSeq || 0) + 1;
+    _scriptImageCreatorState.estimateSeq = seq;
+    _setScriptImageCreatorEstimate("Calculando o custo estimado...", "loading");
+
+    try {
+        const estimate = await api("/video/estimate-credits", {
+            method: "POST",
+            body: JSON.stringify({
+                mode: "image-generation",
+                image_model: meta.id,
+                image_count: imageCount,
+                image_size: size,
+                reference_image_count: referenceCount,
+                image_thinking_mode: thinkingMode,
+            }),
+        });
+        if (_scriptImageCreatorState.estimateSeq !== seq) {
+            return;
+        }
+
+        const creditsNeeded = _extractEstimateCredits(estimate);
+        const balanceCredits = Math.max(0, parseInt(_userCredits || "0", 10) || 0);
+        _setScriptImageCreatorEstimate(
+            `Custo ${_formatCreditsInt(creditsNeeded)} créditos, saldo ${_formatCreditsInt(balanceCredits)} créditos`,
+            "ready",
+        );
+    } catch (_error) {
+        if (_scriptImageCreatorState.estimateSeq === seq) {
+            _setScriptImageCreatorEstimate("Não foi possível calcular o custo agora.", "error");
+        }
+    }
+}
+
+function renderScriptImageCreatorResults() {
+    const host = document.getElementById("script-image-generator-results");
+    if (!host) return;
+
+    const items = _scriptImageCreatorState.generatedImages;
+    const panel = document.getElementById("script-image-generator-results-panel");
+    if (panel) {
+        panel.hidden = !_shouldShowScriptImageCreatorResults();
+    }
+
+    if (_scriptImageCreatorState.busy && !items.length) {
+        host.innerHTML = `
+            <div class="script-image-generator-stage is-loading">
+                <div class="script-image-generator-empty script-image-generator-empty--inline">
+                    Gerando imagem...
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    if (!items.length) {
+        host.innerHTML = "";
+        return;
+    }
+
+    const activeIndex = Math.min(_scriptImageCreatorState.activeResultIndex || 0, items.length - 1);
+    _scriptImageCreatorState.activeResultIndex = activeIndex;
+    const activeItem = items[activeIndex];
+    const thumbMarkup = items.length > 1
+        ? `
+            <div class="script-image-generator-result-thumbs">
+                ${items.map((item, index) => `
+                    <button
+                        type="button"
+                        class="script-image-generator-result-thumb${index === activeIndex ? " is-active" : ""}"
+                        onclick="setActiveScriptImageCreatorResult(${index})"
+                        aria-label="Selecionar resultado ${index + 1}"
+                    >
+                        <img src="${workflowEscapeHtml(item.image_url)}" alt="Resultado ${index + 1}">
+                    </button>
+                `).join("")}
+            </div>
+        `
+        : "";
+
+    host.innerHTML = `
+        <div class="script-image-generator-stage">
+            <img src="${workflowEscapeHtml(activeItem.image_url)}" alt="${workflowEscapeHtml(activeItem.label || "Imagem gerada")}">
+        </div>
+        <div class="script-image-generator-result-card">
+            <div class="script-image-generator-result-meta">
+                <strong>${workflowEscapeHtml(activeItem.label || "Imagem gerada")}</strong>
+                <span>${workflowEscapeHtml(activeItem.file_name || `imagem-${activeIndex + 1}.png`)}</span>
+            </div>
+            <div class="script-image-generator-result-actions">
+                <button class="btn-icon-sm" type="button" title="Baixar imagem" aria-label="Baixar imagem" onclick="downloadScriptImageCreatorResult(${activeIndex})">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                </button>
+                <button class="btn-icon-sm script-image-generator-use-btn" type="button" title="Usar no sistema" aria-label="Usar no sistema" onclick="useScriptImageCreatorResult(${activeIndex})">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                </button>
+            </div>
+        </div>
+        ${thumbMarkup}
+    `;
+}
+
+function downloadScriptImageCreatorResult(index) {
+    const item = _scriptImageCreatorState.generatedImages[index];
+    if (!item?.image_url) return;
+    const link = document.createElement("a");
+    link.href = item.image_url;
+    link.download = item.file_name || `imagem-gerada-${index + 1}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+}
+
+async function _dataUrlToImageFile(dataUrl, fileName) {
+    const response = await fetch(dataUrl);
+    const blob = await response.blob();
+    return new File([blob], fileName, { type: blob.type || "image/png" });
+}
+
+async function useScriptImageCreatorResult(index) {
+    const item = _scriptImageCreatorState.generatedImages[index];
+    if (!item?.image_url || !item?.upload_id) return;
+    if (scriptPhotos.length >= MAX_PHOTOS) {
+        alert(`Máximo de ${MAX_PHOTOS} fotos atingido.`);
+        return;
+    }
+
+    try {
+        const generatedFile = await _dataUrlToImageFile(
+            item.image_url,
+            item.file_name || `imagem-gerada-${Date.now()}.png`,
+        );
+        generatedFile.upload_id = item.upload_id;
+        generatedFile.preview_url = item.image_url;
+        generatedFile.generated = true;
+        generatedFile.source_label = item.label || "";
+        scriptPhotos.push(generatedFile);
+
+        const photoCb = document.getElementById("script-use-photos");
+        if (photoCb && !photoCb.checked) {
+            photoCb.checked = true;
+            togglePhotoUpload();
+        }
+
+        renderPhotoPreview();
+        showToast("Imagem adicionada ao sistema.", "success");
+    } catch (error) {
+        alert(`Não foi possível usar a imagem no sistema: ${error.message}`);
+    }
+}
+
+async function _prepareScriptImageCreatorReferenceUploadIds() {
+    const uploadIds = [];
+    for (let index = 0; index < _scriptImageCreatorState.referenceFiles.length; index += 1) {
+        const item = _scriptImageCreatorState.referenceFiles[index];
+        const existingUploadId = String(item?.upload_id || "").trim();
+        if (existingUploadId) {
+            uploadIds.push(existingUploadId);
+            continue;
+        }
+
+        const uploaded = await uploadTempFileWithRetry(item.file, "image", `referência ${index + 1}`, { showProgress: false });
+        const uploadId = String(uploaded?.upload_id || "").trim();
+        if (!uploadId) {
+            throw new Error(`Falha ao enviar a referência ${index + 1}.`);
+        }
+        item.upload_id = uploadId;
+        uploadIds.push(uploadId);
+    }
+    return uploadIds;
+}
+
+async function generateScriptImageFromModal() {
+    if (_scriptImageCreatorState.busy) {
+        return;
+    }
+
+    const meta = _getScriptImageCreatorModelMeta();
+    const prompt = String(document.getElementById("script-image-generator-prompt")?.value || "").trim();
+    if (!prompt) {
+        alert("Descreva a imagem antes de gerar.");
+        return;
+    }
+    if (meta.requiresReference && !_scriptImageCreatorState.referenceFiles.length) {
+        alert("Envie ao menos uma imagem de referência para esse modelo.");
+        return;
+    }
+
+    const submitBtn = document.getElementById("script-image-generator-submit");
+    const originalLabel = submitBtn?.textContent || "Gerar imagem";
+    _scriptImageCreatorState.busy = true;
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Gerando...";
+    }
+    setScriptImageCreatorStatus(`Gerando imagem com ${meta.label}...`, "info");
+    renderScriptImageCreatorResults();
+
+    try {
+        const referenceUploadIds = _scriptImageCreatorState.referenceFiles.length
+            ? await _prepareScriptImageCreatorReferenceUploadIds()
+            : [];
+        const response = await api("/video/script-image/generate", {
+            method: "POST",
+            body: JSON.stringify({
+                prompt,
+                model: meta.id,
+                aspect_ratio: document.getElementById("script-image-generator-aspect")?.value || "1:1",
+                size: document.getElementById("script-image-generator-size")?.value || "2K",
+                n: Number.parseInt(document.getElementById("script-image-generator-count")?.value || "1", 10) || 1,
+                seed: Number.parseInt(document.getElementById("script-image-generator-seed")?.value || "-1", 10) || -1,
+                thinking_mode: !!document.getElementById("script-image-generator-thinking")?.checked,
+                reference_upload_ids: referenceUploadIds,
+            }),
+        });
+
+        const images = Array.isArray(response?.images) ? response.images : [];
+        if (!images.length) {
+            throw new Error("A imagem foi gerada, mas o servidor não retornou arquivos válidos.");
+        }
+
+        _scriptImageCreatorState.generatedImages = images.map((item, index) => ({
+            upload_id: String(item?.upload_id || "").trim(),
+            image_url: String(item?.image_url || "").trim(),
+            mime_type: String(item?.mime_type || "image/png").trim(),
+            file_name: String(item?.file_name || `imagem-gerada-${index + 1}.png`).trim(),
+            label: String(item?.label || meta.label).trim(),
+            model: String(item?.model || meta.id).trim(),
+        })).filter((item) => item.upload_id && item.image_url);
+        _scriptImageCreatorState.activeResultIndex = 0;
+
+        if (!_scriptImageCreatorState.generatedImages.length) {
+            throw new Error("A imagem foi gerada, mas o retorno veio vazio.");
+        }
+
+        renderScriptImageCreatorResults();
+        setScriptImageCreatorStatus(
+            _scriptImageCreatorState.generatedImages.length === 1 ? "1 imagem pronta." : `${_scriptImageCreatorState.generatedImages.length} imagens prontas.`,
+            "success",
+        );
+        showToast("Imagem gerada com sucesso.", "success");
+    } catch (error) {
+        setScriptImageCreatorStatus(`Erro ao gerar imagem: ${error.message}`, "error");
+    } finally {
+        _scriptImageCreatorState.busy = false;
+        renderScriptImageCreatorResults();
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalLabel;
+        }
+        scheduleScriptImageCreatorEstimate(0);
+    }
+}
 
 function togglePhotoUpload() {
     const checked = document.getElementById("script-use-photos").checked;
