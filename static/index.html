@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260508-06">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260508-07">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 391;
+        var REQUIRED_VER = 392;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1957,14 +1957,7 @@
                         <div class="similar-panel-actions-right">
                             <div class="similar-analysis-actions">
                                 <div class="similar-analysis-action">
-                                    <button class="btn btn-primary" id="similar-start-analysis-general" type="button">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15v-3"/><path d="M12 15V9"/><path d="M17 15V6"/></svg>
-                                        Analisar geral
-                                    </button>
-                                    <div class="credit-estimate-pill similar-analysis-estimate" id="similar-general-analysis-estimate" hidden>Calculando custo...</div>
-                                </div>
-                                <div class="similar-analysis-action">
-                                    <button class="btn btn-secondary" id="similar-start-analysis-scenes" type="button">
+                                    <button class="btn btn-primary" id="similar-start-analysis-scenes" type="button">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
                                         Analisar por cena
                                     </button>
@@ -3820,8 +3813,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260508-06"></script>
-    <script src="/video/static/pwa.js?v=20260508-06"></script>
+    <script src="/video/static/app.js?v=20260508-07"></script>
+    <script src="/video/static/pwa.js?v=20260508-07"></script>
 </body>
 </html>
 

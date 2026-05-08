@@ -1656,6 +1656,30 @@ def _normalize_similar_unified_prompt_text(raw: object, *, limit: int = 0) -> st
     return text.strip()
 
 
+def _build_similar_unified_dialogue_clause(scenes: list[Any], tags_data: dict[str, Any], *, locale: str = "en") -> str:
+    spoken_lines = [
+        _normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=180)
+        for scene in (scenes or [])
+    ]
+    spoken_lines = [line for line in spoken_lines if line]
+    transcript_excerpt = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=260)
+    dialogue_excerpt = _normalize_similar_unified_prompt_text(" ".join(spoken_lines[:2]) or transcript_excerpt, limit=260)
+    if not dialogue_excerpt:
+        return ""
+
+    language_key = "similar_transcript_language_label_pt" if locale == "pt" else "similar_transcript_language_label_en"
+    language_label = _normalize_similar_unified_prompt_text(tags_data.get(language_key), limit=80)
+
+    if locale == "pt":
+        if language_label:
+            return f'Idioma falado detectado: {language_label}. Conteúdo principal da fala: "{dialogue_excerpt}".'
+        return f'Conteúdo principal da fala: "{dialogue_excerpt}".'
+
+    if language_label:
+        return f'The main subject speaks in {language_label}. Key spoken content includes: "{dialogue_excerpt}".'
+    return f'Key spoken content includes: "{dialogue_excerpt}".'
+
+
 def _scene_field(scene: Any, name: str, default: Any = "") -> Any:
     if isinstance(scene, dict):
         return scene.get(name, default)
@@ -1844,8 +1868,11 @@ def _build_similar_unified_prompt_context(project: VideoProject, scenes: list[An
 
     context_summary = _normalize_similar_unified_prompt_text(tags_data.get("similar_context_summary"), limit=1400)
     transcript_excerpt = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=900)
+    transcript_language = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_language_label_en"), limit=80)
     if context_summary:
         lines.extend(["", "Global visual context:", context_summary])
+    if transcript_language:
+        lines.extend(["", f"Detected spoken language: {transcript_language}"])
     if transcript_excerpt:
         lines.extend(["", "Transcript/audio context:", transcript_excerpt])
 
@@ -1859,7 +1886,7 @@ def _build_similar_unified_prompt_context(project: VideoProject, scenes: list[An
         if prompt_text:
             lines.append(f"Prompt: {prompt_text}")
         if spoken_text:
-            lines.append(f"Spoken context: {spoken_text}")
+            lines.append(f"Spoken context{f' ({transcript_language})' if transcript_language else ''}: {spoken_text}")
         lines.append("")
 
     return "\n".join(lines).strip()
@@ -1871,9 +1898,14 @@ def _build_similar_unified_prompt_fallback(project: VideoProject, scenes: list[A
         for scene in scenes
     ]
     scene_prompts = [prompt for prompt in scene_prompts if prompt]
+    spoken_lines = [
+        _normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=180)
+        for scene in scenes
+    ]
+    spoken_lines = [line for line in spoken_lines if line]
     transcript_excerpt = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=320)
     context_summary = _normalize_similar_unified_prompt_text(tags_data.get("similar_context_summary"), limit=500)
-    combined_text = " ".join(scene_prompts + [context_summary, transcript_excerpt]).strip()
+    combined_text = " ".join(scene_prompts + spoken_lines + [context_summary, transcript_excerpt]).strip()
     camera_mode = _infer_similar_unified_camera_mode(combined_text, tags_data)
 
     camera = _infer_similar_unified_camera_descriptor(combined_text, camera_mode)
@@ -1884,6 +1916,7 @@ def _build_similar_unified_prompt_fallback(project: VideoProject, scenes: list[A
     outfit = "the original wardrobe and styling visible in the reference"
     accessories = "all props, work tools, and handheld objects already visible in the reference"
     camera_behavior = _infer_similar_unified_camera_behavior(combined_text, camera_mode)
+    dialogue_clause = _build_similar_unified_dialogue_clause(scenes, tags_data, locale="en")
 
     intro_clause = _pick_similar_scene_clause(
         scene_prompts[0] if scene_prompts else context_summary,
@@ -1911,6 +1944,7 @@ def _build_similar_unified_prompt_fallback(project: VideoProject, scenes: list[A
         f"Accessories include {accessories}.\n\n"
         f"The scene unfolds in one continuous shot: {intro_clause}, then {middle_clause}, "
         f"followed by {climax_clause}, ending with {ending_clause}. "
+        f"{dialogue_clause + ' ' if dialogue_clause else ''}"
         f"Camera behavior includes {camera_behavior}, maintaining a natural and immersive perspective."
     )
     return _normalize_similar_unified_prompt_text(prompt, limit=2200)
@@ -1945,6 +1979,7 @@ async def _generate_similar_unified_prompt(
         "Return plain text only in English, never markdown, never JSON, never bullet lists, never surrounding quotes. "
         "Follow this structure strictly: first paragraph starts with 'Ultra-realistic cinematic' and fills camera, location, sound, lighting, subject, outfit, and accessories. "
         "Second paragraph starts with 'The scene unfolds in one continuous shot:' and describes beginning, middle, climax, ending, then camera behavior. "
+        "If spoken audio is present in the analysis, explicitly include who is speaking, the spoken language or locale, and the key dialogue or narration. "
         "If the reference analysis indicates a fixed or locked-off camera, state that clearly and do not invent pans, tilts, zooms, handheld shake, or camera travel. "
         "Never leave placeholders like [camera] or [location]. Infer missing details from the analysis."
     )
@@ -1952,7 +1987,7 @@ async def _generate_similar_unified_prompt(
         "Use the analyzed video breakdown below to generate one unified prompt for recreating the whole video as a single continuous shot.\n\n"
         "Output template to follow:\n"
         "Ultra-realistic cinematic [camera type] video set in [location]. Natural environmental audio including [sounds]. Lighting consists of [lighting], creating [visual effects]. Main character is [full description], maintaining consistent facial features. Outfit is [description] (strict lock). Accessories include [description].\n\n"
-        "The scene unfolds in one continuous shot: [beginning], then [middle], followed by [climax], ending with [ending]. Camera behavior includes [movement, imperfections, focus, zoom], maintaining a natural and immersive perspective.\n\n"
+        "The scene unfolds in one continuous shot: [beginning], then [middle], followed by [climax], ending with [ending]. If there is spoken audio, add one sentence stating who speaks, in which language or locale, and the key spoken line or topic. Camera behavior includes [movement, imperfections, focus, zoom], maintaining a natural and immersive perspective.\n\n"
         "Analyzed data:\n"
         f"{prompt_context}"
     )

@@ -24,7 +24,7 @@ def transcribe_audio(audio_path: str, language: str = "pt", prompt: str = "") ->
         language: Language code (default: "pt").
         prompt: Optional text to guide Whisper (e.g. known lyrics). Improves accuracy.
 
-    Returns: {"text": str, "words": [{"word": str, "start": float, "end": float}, ...]}
+    Returns: {"text": str, "words": [{"word": str, "start": float, "end": float}, ...], "language": str}
     """
     file_size = os.path.getsize(audio_path)
     if file_size > _MAX_FILE_SIZE:
@@ -36,14 +36,17 @@ def transcribe_audio(audio_path: str, language: str = "pt", prompt: str = "") ->
     # Truncate prompt to Whisper's 224-token limit (~800 chars is safe)
     whisper_prompt = prompt[:800].strip() if prompt else None
 
+    normalized_language = str(language or "").strip()
+
     with open(audio_path, "rb") as f:
         kwargs = dict(
             model="whisper-1",
             file=f,
-            language=language,
             response_format="verbose_json",
             timestamp_granularities=["word"],
         )
+        if normalized_language:
+            kwargs["language"] = normalized_language
         if whisper_prompt:
             kwargs["prompt"] = whisper_prompt
 
@@ -59,7 +62,10 @@ def transcribe_audio(audio_path: str, language: str = "pt", prompt: str = "") ->
             })
 
     text = response.text if hasattr(response, "text") else ""
+    detected_language = ""
+    if hasattr(response, "language"):
+        detected_language = str(response.language or "").strip().lower()
+    if not detected_language and normalized_language:
+        detected_language = normalized_language.lower()
     logger.info(f"Transcription complete: {len(words)} words, {len(text)} chars")
-    return {"text": text, "words": words}
-
-    return {"text": text, "words": words}
+    return {"text": text, "words": words, "language": detected_language}

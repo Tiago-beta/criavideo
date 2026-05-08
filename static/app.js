@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v391 loaded");
+console.log("[CriaVideo] app.js v392 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -2965,11 +2965,6 @@ async function updateSimilarAnalysisCreditEstimate(analysisMode, badgeId) {
 
 function scheduleSimilarAnalysisCreditEstimates() {
     _queueCreditEstimate(
-        "similar-analysis-general",
-        () => updateSimilarAnalysisCreditEstimate("general", "similar-general-analysis-estimate"),
-        120,
-    );
-    _queueCreditEstimate(
         "similar-analysis-scene",
         () => updateSimilarAnalysisCreditEstimate("scene", "similar-scene-analysis-estimate"),
         120,
@@ -3563,14 +3558,9 @@ function initCreateWizard() {
     document.getElementById("script-create-btn").addEventListener("click", handleScriptCreate);
 
     // Similar mode controls
-    const similarStartGeneralBtn = document.getElementById("similar-start-analysis-general");
-    if (similarStartGeneralBtn) {
-        similarStartGeneralBtn.addEventListener("click", () => similarStartAnalysis("general"));
-    }
-
     const similarStartScenesBtn = document.getElementById("similar-start-analysis-scenes");
     if (similarStartScenesBtn) {
-        similarStartScenesBtn.addEventListener("click", () => similarStartAnalysis("scene"));
+        similarStartScenesBtn.addEventListener("click", similarStartAnalysis);
     }
 
     const similarBuildUnifiedPromptBtn = document.getElementById("similar-build-unified-prompt");
@@ -5798,7 +5788,6 @@ function _renderSimilarScenes(project, options = {}) {
 
 function _refreshSimilarButtonsDisabled(disabled) {
     [
-        "similar-start-analysis-general",
         "similar-start-analysis-scenes",
         "similar-build-unified-prompt",
         "similar-unified-create-image-button",
@@ -9171,11 +9160,11 @@ function _resetSimilarModeState() {
     _refreshSimilarButtonsDisabled(false);
 }
 
-async function similarStartAnalysis(analysisMode = "scene") {
+async function similarStartAnalysis() {
     const sourceEl = document.getElementById("similar-source-url");
     const titleEl = document.getElementById("similar-title");
     const aspectEl = document.getElementById("similar-aspect");
-    const normalizedAnalysisMode = analysisMode === "general" ? "general" : "scene";
+    const normalizedAnalysisMode = "scene";
 
     const sourceUrl = String(sourceEl?.value || "").trim();
     const sourceFile = similarState.sourceVideoFile;
@@ -9205,12 +9194,7 @@ async function similarStartAnalysis(analysisMode = "scene") {
     try {
         if (sourceFile) {
             _clearSimilarSourcePreview();
-            _setSimilarStatus(
-                normalizedAnalysisMode === "general"
-                    ? "Enviando video para analise geral..."
-                    : "Enviando video de referencia para analise por cena...",
-                "running",
-            );
+            _setSimilarStatus("Enviando video de referencia para analise por cena...", "running");
             const uploaded = await uploadTempFileWithRetry(sourceFile, "video", "video de referencia");
             const uploadId = String(uploaded?.upload_id || "").trim();
             if (!uploadId) {
@@ -9218,21 +9202,11 @@ async function similarStartAnalysis(analysisMode = "scene") {
             }
             payload.source_upload_id = uploadId;
             payload.source_upload_name = String(similarState.sourceVideoName || sourceFile.name || "video").trim();
-            _setSimilarStatus(
-                normalizedAnalysisMode === "general"
-                    ? "Iniciando analise geral do video enviado..."
-                    : "Iniciando analise do video enviado por cenas...",
-                "running",
-            );
+            _setSimilarStatus("Iniciando analise do video enviado por cenas...", "running");
         } else {
             payload.source_url = sourceUrl;
             _clearSimilarSourcePreview();
-            _setSimilarStatus(
-                normalizedAnalysisMode === "general"
-                    ? "Iniciando analise geral do video de referencia..."
-                    : "Iniciando analise do video de referencia por cenas...",
-                "running",
-            );
+            _setSimilarStatus("Iniciando analise do video de referencia por cenas...", "running");
         }
 
         const response = await api("/video/similar/analyze", {
@@ -9255,12 +9229,7 @@ async function similarStartAnalysis(analysisMode = "scene") {
         _clearSimilarUnifiedPendingUploads();
         similarState.unifiedUseLastImageAsFinalFrame = false;
         similarState.unifiedLastFrameDirty = false;
-        _setSimilarStatus(
-            normalizedAnalysisMode === "general"
-                ? "Analise geral iniciada. Aguardando o prompt unico..."
-                : "Analise por cenas iniciada. Aguardando retorno da IA...",
-            "running",
-        );
+        _setSimilarStatus("Analise por cenas iniciada. Aguardando retorno da IA...", "running");
         _startSimilarPolling();
         await _refreshSimilarProject();
     } catch (error) {

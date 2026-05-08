@@ -180,6 +180,65 @@ def _normalize_similar_general_prompt_text(raw: object, limit: int = 3200) -> st
     return text.strip()[:limit].strip()
 
 
+def _normalize_similar_language_code(raw: object) -> str:
+    candidate = str(raw or "").strip().lower().replace("_", "-")
+    aliases = {
+        "pt": "pt-br",
+        "pt-br": "pt-br",
+        "pt-brasil": "pt-br",
+        "portuguese": "pt-br",
+        "português": "pt-br",
+        "portuguese (brazil)": "pt-br",
+        "brazilian portuguese": "pt-br",
+        "português brasileiro": "pt-br",
+        "pt-pt": "pt-pt",
+        "english": "en",
+        "en-us": "en-us",
+        "en-gb": "en-gb",
+        "spanish": "es",
+        "español": "es",
+    }
+    return aliases.get(candidate, candidate)
+
+
+def _format_similar_language_label_pt(raw: object) -> str:
+    normalized = _normalize_similar_language_code(raw)
+    labels = {
+        "pt-br": "português BR",
+        "pt-pt": "português europeu",
+        "en": "inglês",
+        "en-us": "inglês americano",
+        "en-gb": "inglês britânico",
+        "es": "espanhol",
+    }
+    if not normalized:
+        return ""
+    if normalized in labels:
+        return labels[normalized]
+    if re.fullmatch(r"[a-z]{2,3}(?:-[a-z]{2,3})?", normalized):
+        return normalized.upper()
+    return normalized
+
+
+def _format_similar_language_label_en(raw: object) -> str:
+    normalized = _normalize_similar_language_code(raw)
+    labels = {
+        "pt-br": "Brazilian Portuguese",
+        "pt-pt": "European Portuguese",
+        "en": "English",
+        "en-us": "American English",
+        "en-gb": "British English",
+        "es": "Spanish",
+    }
+    if not normalized:
+        return ""
+    if normalized in labels:
+        return labels[normalized]
+    if re.fullmatch(r"[a-z]{2,3}(?:-[a-z]{2,3})?", normalized):
+        return normalized.upper()
+    return normalized
+
+
 def _infer_similar_camera_profile(
     scene_payloads: list[dict] | None,
     context_summary: object = "",
@@ -966,9 +1025,11 @@ def _build_scene_analysis_instruction(
     *,
     global_context: str = "",
     spoken_context: str = "",
+    spoken_language: str = "",
 ) -> str:
     global_excerpt = _normalize_similar_context_text(global_context, limit=1200)
     spoken_excerpt = _normalize_similar_context_text(spoken_context, limit=_SIMILAR_SCENE_DIALOGUE_LIMIT)
+    spoken_language_label = _format_similar_language_label_pt(spoken_language)
 
     lines = [
         "Analise este frame e crie um prompt cinematográfico em português do Brasil.",
@@ -982,12 +1043,16 @@ def _build_scene_analysis_instruction(
     if global_excerpt:
         lines.append(f"Contexto geral do vídeo: {global_excerpt}")
     if spoken_excerpt:
+        if spoken_language_label:
+            lines.append(f"Idioma predominante da fala neste trecho: {spoken_language_label}")
         lines.append(f"Falas, narração ou áudio neste trecho: {spoken_excerpt}")
 
     lines.extend(
         [
             "Use o contexto geral e o áudio apenas como apoio narrativo, sem inventar elementos que contradigam o frame.",
             "Se houver conversa ou narração, reflita isso nas expressões, gestos, intenção dramática e situação da cena quando fizer sentido visualmente.",
+            "Se a fala estiver clara, mencione explicitamente no prompt quem parece estar falando no frame, qual é o idioma ou variante da fala e o conteúdo essencial do que é dito.",
+            "Quando houver transcrição inteligível, preserve a fala principal entre aspas dentro do próprio prompt.",
             "Retorne somente o prompt final em um único parágrafo, sem marcadores e sem JSON.",
         ]
     )
@@ -1070,22 +1135,23 @@ async def _extract_audio_track_for_similar_context(video_path: str, output_path:
     return output_path
 
 
-async def _transcribe_similar_video_context(video_path: str) -> tuple[str, list[dict]]:
+async def _transcribe_similar_video_context(video_path: str) -> tuple[str, list[dict], str]:
     audio_path = str(Path(video_path).with_name("reference_audio_context.mp3"))
     try:
         await _extract_audio_track_for_similar_context(video_path, audio_path)
         from app.services.transcriber import transcribe_audio
 
-        result = await asyncio.to_thread(transcribe_audio, audio_path, "pt", "")
+        result = await asyncio.to_thread(transcribe_audio, audio_path, "", "")
         if not isinstance(result, dict):
-            return "", []
+            return "", [], ""
 
         transcript_text = _normalize_similar_context_text(result.get("text", ""), limit=_SIMILAR_TRANSCRIPT_LIMIT)
         transcript_words = result.get("words", []) if isinstance(result.get("words", []), list) else []
-        return transcript_text, transcript_words
+        transcript_language = _normalize_similar_language_code(result.get("language", ""))
+        return transcript_text, transcript_words, transcript_language
     except Exception as exc:
         logger.warning("Similar audio context transcription failed: %s", exc)
-        return "", []
+        return "", [], ""
     finally:
         try:
             if os.path.exists(audio_path):
@@ -1098,6 +1164,7 @@ def _request_similar_video_context_from_google_sync(
     frame_paths: list[str],
     transcript_text: str,
     duration_seconds: float,
+    transcript_language: str = "",
 ) -> str:
     if _google_scene_analysis_client is None or genai_types is None:
         raise RuntimeError("Google video-context client indisponível")
@@ -1115,6 +1182,9 @@ def _request_similar_video_context_from_google_sync(
     ]
 
     transcript_excerpt = _normalize_similar_context_text(transcript_text, limit=_SIMILAR_TRANSCRIPT_LIMIT)
+    transcript_language_label = _format_similar_language_label_pt(transcript_language)
+    if transcript_language_label:
+        contents.append(f"Idioma predominante detectado no áudio: {transcript_language_label}.")
     if transcript_excerpt:
         contents.append(f"Transcrição do áudio do vídeo: {transcript_excerpt}")
 
@@ -1140,12 +1210,14 @@ async def _request_similar_video_context_from_google(
     frame_paths: list[str],
     transcript_text: str,
     duration_seconds: float,
+    transcript_language: str = "",
 ) -> str:
     return await asyncio.to_thread(
         _request_similar_video_context_from_google_sync,
         frame_paths,
         transcript_text,
         duration_seconds,
+        transcript_language,
     )
 
 
@@ -1153,8 +1225,8 @@ async def _build_similar_video_context(
     video_path: str,
     duration_seconds: float,
     frame_paths: list[str],
-) -> tuple[str, str, list[dict]]:
-    transcript_text, transcript_words = await _transcribe_similar_video_context(video_path)
+) -> tuple[str, str, list[dict], str]:
+    transcript_text, transcript_words, transcript_language = await _transcribe_similar_video_context(video_path)
 
     context_summary = ""
     try:
@@ -1163,6 +1235,7 @@ async def _build_similar_video_context(
                 frame_paths,
                 transcript_text,
                 duration_seconds,
+                transcript_language,
             )
     except Exception as exc:
         logger.warning("Similar global video-context summary failed: %s", exc)
@@ -1174,6 +1247,7 @@ async def _build_similar_video_context(
         _normalize_similar_context_text(context_summary, limit=_SIMILAR_CONTEXT_SUMMARY_LIMIT),
         transcript_text,
         transcript_words,
+        transcript_language,
     )
 
 
@@ -1256,6 +1330,7 @@ def _request_scene_prompt_from_google_sync(
     duration_seconds: float,
     global_context: str = "",
     spoken_context: str = "",
+    spoken_language: str = "",
 ) -> str:
     if _google_scene_analysis_client is None or genai_types is None:
         raise RuntimeError("Google scene-analysis client indisponível")
@@ -1271,6 +1346,7 @@ def _request_scene_prompt_from_google_sync(
         duration_seconds,
         global_context=global_context,
         spoken_context=spoken_context,
+        spoken_language=spoken_language,
     )
 
     response = _google_scene_analysis_client.models.generate_content(
@@ -1294,6 +1370,7 @@ async def _request_scene_prompt_from_google(
     duration_seconds: float,
     global_context: str = "",
     spoken_context: str = "",
+    spoken_language: str = "",
 ) -> str:
     return await asyncio.to_thread(
         _request_scene_prompt_from_google_sync,
@@ -1303,6 +1380,7 @@ async def _request_scene_prompt_from_google(
         duration_seconds,
         global_context,
         spoken_context,
+        spoken_language,
     )
 
 
@@ -1317,6 +1395,7 @@ async def _request_scene_prompt_from_model(
     structured: bool,
     global_context: str = "",
     spoken_context: str = "",
+    spoken_language: str = "",
 ) -> str:
     instruction_text = _build_scene_analysis_instruction(
         start_time,
@@ -1324,6 +1403,7 @@ async def _request_scene_prompt_from_model(
         duration_seconds,
         global_context=global_context,
         spoken_context=spoken_context,
+        spoken_language=spoken_language,
     )
     messages = [
         {
@@ -1332,6 +1412,7 @@ async def _request_scene_prompt_from_model(
                 "Você analisa frames de vídeo e escreve prompts cinematográficos em português do Brasil. "
                 "Use ortografia, acentuação e pontuação corretas do pt-BR. "
                 "Descreva a cena de forma concreta, citando sujeito, ação, ambiente, objetos, enquadramento, luz e movimento de câmera. "
+                "Se houver fala inteligível no trecho, mencione explicitamente quem está falando, o idioma ou variante percebida e a fala principal entre aspas. "
                 + ("Retorne JSON com chave 'scene_prompt'." if structured else "Retorne apenas o prompt final em um único parágrafo, sem JSON e sem marcadores.")
             ),
         },
@@ -1372,6 +1453,7 @@ async def _analyze_frame_prompt(
     duration_seconds: float,
     global_context: str = "",
     spoken_context: str = "",
+    spoken_language: str = "",
 ) -> str:
     image_data_url = _image_file_to_data_url(frame_path)
     preferred_model = (settings.similar_analysis_model or "gpt-4o").strip() or "gpt-4o"
@@ -1394,6 +1476,7 @@ async def _analyze_frame_prompt(
                 structured=structured,
                 global_context=global_context,
                 spoken_context=spoken_context,
+                spoken_language=spoken_language,
             )
             if prompt:
                 return prompt[:1600]
@@ -1419,6 +1502,7 @@ async def _analyze_frame_prompt(
             duration_seconds,
             global_context=global_context,
             spoken_context=spoken_context,
+            spoken_language=spoken_language,
         )
         if prompt:
             logger.info("Frame analysis fallback succeeded with Google model=%s", _SIMILAR_GOOGLE_ANALYSIS_MODEL)
@@ -2082,7 +2166,7 @@ async def run_similar_reference_analysis(
                 )
                 reference_frames_by_scene_index[str(idx)] = frame_path
 
-            context_summary, transcript_text, transcript_words = await _build_similar_video_context(
+            context_summary, transcript_text, transcript_words, transcript_language = await _build_similar_video_context(
                 resolved_video_path,
                 duration_seconds,
                 [payload.get("frame_path", "") for payload in scene_frame_payloads],
@@ -2101,6 +2185,7 @@ async def run_similar_reference_analysis(
                     duration_seconds=duration_seconds,
                     global_context=context_summary,
                     spoken_context=spoken_excerpt,
+                    spoken_language=transcript_language,
                 )
 
                 scene_payloads.append(
@@ -2111,6 +2196,7 @@ async def run_similar_reference_analysis(
                         "prompt": prompt,
                         "reference_frame_path": frame_path,
                         "spoken_context": spoken_excerpt,
+                        "spoken_language": transcript_language,
                     }
                 )
 
@@ -2170,6 +2256,9 @@ async def run_similar_reference_analysis(
                     "similar_total_duration": duration_seconds,
                     "similar_context_summary": context_summary,
                     "similar_transcript_excerpt": _normalize_similar_context_text(transcript_text, limit=900),
+                    "similar_transcript_language": transcript_language,
+                    "similar_transcript_language_label_pt": _format_similar_language_label_pt(transcript_language),
+                    "similar_transcript_language_label_en": _format_similar_language_label_en(transcript_language),
                     "similar_camera_mode": camera_profile.get("mode") or "unspecified",
                     "similar_camera_label": camera_profile.get("label_pt") or "camera estavel/nao confirmada",
                     "similar_camera_guidance": camera_profile.get("guidance_pt") or "Camera sem movimento confirmado: priorize enquadramento estavel e nao invente movimento.",
