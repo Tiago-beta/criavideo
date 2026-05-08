@@ -80,23 +80,37 @@ class DashboardStaticFiles(StaticFiles):
             _apply_html_no_cache_headers(response)
         return response
 
-# CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+def _build_cors_origins() -> list[str]:
+    base_origins = [
         "http://localhost:3000",
         "http://localhost:3001",
         f"http://{settings.host}:{settings.port}",
         settings.site_url,
         "https://criavideo.pro",
         "https://www.criavideo.pro",
+        "https://staging.criavideo.pro",
         "https://tevoxi.com",
         "https://www.tevoxi.com",
         "https://staging.tevoxi.com",
         "https://levita.pro",
         "https://www.levita.pro",
         "https://staging.levita.pro",
-    ],
+    ]
+    extra_origins = [origin.strip() for origin in str(settings.cors_origins or "").split(",") if origin.strip()]
+    seen: set[str] = set()
+    origins: list[str] = []
+    for origin in [*base_origins, *extra_origins]:
+        normalized = str(origin or "").strip().rstrip("/")
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            origins.append(normalized)
+    return origins
+
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_build_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

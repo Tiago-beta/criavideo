@@ -1,10 +1,14 @@
 param(
     [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
     [switch]$CompareProduction,
+    [switch]$CompareStaging,
     [string]$SshTarget = "root@criavideo.pro",
     [string]$RemoteRoot = "/opt/levita-video",
     [string]$ContainerName = "levita-video",
-    [string]$PublicUrl = "https://criavideo.pro/video"
+    [string]$PublicUrl = "https://criavideo.pro/video",
+    [string]$StagingRemoteRoot = "/opt/levita-video-staging",
+    [string]$StagingContainerName = "levita-video-staging",
+    [string]$StagingPublicUrl = "https://staging.criavideo.pro/video"
 )
 
 $ErrorActionPreference = "Stop"
@@ -146,7 +150,19 @@ Write-Output ("- Query do bundle {0}" -f $localMetadata.AssetQuery)
 Write-Output ("- Service worker {0} ({1})" -f $localMetadata.SwQuery, $localMetadata.CacheName)
 
 if (-not $CompareProduction) {
-    exit 0
+    if (-not $CompareStaging) {
+        exit 0
+    }
+}
+
+if ($CompareProduction -and $CompareStaging) {
+    Fail "Use apenas um modo por vez: -CompareProduction ou -CompareStaging."
+}
+
+if ($CompareStaging) {
+    $RemoteRoot = $StagingRemoteRoot
+    $ContainerName = $StagingContainerName
+    $PublicUrl = $StagingPublicUrl
 }
 
 $hostCommand = "cd $RemoteRoot && sha256sum static/app.js static/index.html static/style.css static/pwa.js static/sw.js"
@@ -164,7 +180,8 @@ Assert-True ($publicMetadata.StyleQuery -eq $localMetadata.AssetQuery) "A pagina
 Assert-True ($publicMetadata.AppQuery -eq $localMetadata.AssetQuery) "A pagina publica nao esta servindo a mesma query do app.js do workspace local."
 Assert-True ($publicMetadata.PwaQuery -eq $localMetadata.AssetQuery) "A pagina publica nao esta servindo a mesma query do pwa.js do workspace local."
 
-Write-Output "Producao alinhada com o workspace local:"
+$environmentLabel = if ($CompareStaging) { "Staging" } else { "Producao" }
+Write-Output ("{0} alinhado com o workspace local:" -f $environmentLabel)
 Write-Output "- Host do VPS com hashes identicos"
 Write-Output "- Container ativo com hashes identicos"
 Write-Output ("- HTML publico servindo REQUIRED_VER {0} e query {1}" -f $publicMetadata.RequiredVersion, $publicMetadata.StyleQuery)

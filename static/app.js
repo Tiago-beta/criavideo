@@ -1,6 +1,15 @@
-console.log("[CriaVideo] app.js v388 loaded");
+console.log("[CriaVideo] app.js v389 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
-const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
+const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
+const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
+function resolveCriaVideoApiBase() {
+    if (!IS_CAPACITOR_APP) return "/api";
+    const configuredApi = String(window.CRIAVIDEO_API_BASE || localStorage.getItem("criavideo_api_base") || "").trim();
+    if (configuredApi) return configuredApi.replace(/\/+$/, "");
+    const host = String(window.location?.hostname || "").toLowerCase();
+    return host === "staging.criavideo.pro" ? CRIAVIDEO_STAGING_API : CRIAVIDEO_DEFAULT_API;
+}
+const API = resolveCriaVideoApiBase();
 const APP_TOKEN_KEY = "criavideo_token";
 const LEVITA_TOKEN_KEY = "levita_token";
 const TEVOXI_DEFAULT_SIGNUP_URL = "https://tevoxi.com";

@@ -6,6 +6,7 @@
   "scripts": {
     "verify:frontend:local": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify_frontend_bundle_sync.ps1",
     "verify:frontend:production": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify_frontend_bundle_sync.ps1 -CompareProduction",
+    "verify:frontend:staging": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify_frontend_bundle_sync.ps1 -CompareStaging",
     "cap:add:android": "npx cap add android",
     "cap:sync": "npx cap sync",
     "cap:open:android": "npx cap open android",

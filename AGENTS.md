@@ -30,6 +30,20 @@ Se houver conflito entre este arquivo e um pedido direto do usuário, o pedido d
 
 ## Fluxo padrão de deploy
 
+## Staging / sandbox
+
+- Staging oficial planejado: `https://staging.criavideo.pro`.
+- O fluxo de staging deve espelhar o workspace Levita:
+   - repo bare no VPS: `/opt/levita-video-staging-repo.git`
+   - working tree no VPS: `/opt/levita-video-staging`
+   - remote local: `staging`
+   - deploy: `git push staging master`
+   - compose: `docker compose -f docker-compose.staging.yml -p levita-video-staging up -d --build`
+- O hook de staging nunca deve rodar `git clean`, `docker compose down`, prune de Docker ou remocao de volumes.
+- Antes de qualquer mudanca chegar em producao, publicar primeiro no staging e o usuario validar manualmente no navegador.
+- Producao continua protegida: nao publicar em `criavideo.pro` sem pedido explicito do usuario.
+- Validacao de bundle no staging: `powershell -ExecutionPolicy Bypass -File .\scripts\verify_frontend_bundle_sync.ps1 -CompareStaging`.
+
 Nao usar `./deploy.sh` como fluxo padrão no Windows para publicar pequenas mudanças. Ele pode deixar código antigo no servidor.
 
 Usar este fluxo por padrão:

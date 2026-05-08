@@ -1,0 +1,25 @@
+services:
+  levita-video-staging:
+    build: .
+    container_name: levita-video-staging
+    restart: unless-stopped
+    ports:
+      - "8003:8002"
+    env_file:
+      - .env.staging
+    environment:
+      - ENVIRONMENT=staging
+      - SITE_URL=https://staging.criavideo.pro
+      - CORS_ORIGINS=https://staging.criavideo.pro
+      - PUBLIC_API_URL=https://staging.criavideo.pro/api
+      - MEDIA_DIR=/opt/levita-video/media
+    volumes:
+      - /opt/levita-video-staging/media:/opt/levita-video/media
+      - /opt/olevita/backend/stems:/opt/olevita/backend/stems:ro
+      - /opt/olevita/backend/uploads:/opt/olevita/backend/uploads:ro
+    networks:
+      - olevita_default
+
+networks:
+  olevita_default:
+    external: true

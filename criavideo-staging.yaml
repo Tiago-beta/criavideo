@@ -1,0 +1,26 @@
+http:
+  routers:
+    criavideo-staging-http:
+      entryPoints:
+        - http
+      rule: "Host(`staging.criavideo.pro`)"
+      service: criavideo-staging-svc
+      middlewares:
+        - criavideo-staging-redirect-https
+    criavideo-staging-https:
+      entryPoints:
+        - https
+      rule: "Host(`staging.criavideo.pro`)"
+      service: criavideo-staging-svc
+      tls:
+        certresolver: letsencrypt
+  middlewares:
+    criavideo-staging-redirect-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+  services:
+    criavideo-staging-svc:
+      loadBalancer:
+        servers:
+          - url: http://host.docker.internal:8003

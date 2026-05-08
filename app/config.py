@@ -4,6 +4,7 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
+    environment: str = "production"
     database_url: str = "postgresql+asyncpg://levita:password@localhost:5432/levita"
     jwt_secret: str = "change_me"
     auth_token_expiration_hours: int = 24 * 30
@@ -37,6 +38,8 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     site_url: str = "https://criavideo.pro"
+    cors_origins: str = ""
+    public_api_url: str = ""
     levita_url: str = "https://levita.pro"
     levita_remove_vocals_url: str = ""
     levita_api_token: str = ""
