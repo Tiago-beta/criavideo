@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v384 loaded");
+console.log("[CriaVideo] app.js v385 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2288,6 +2288,10 @@ let similarState = {
     unifiedPendingImageUploads: [],
     unifiedUseLastImageAsFinalFrame: false,
     unifiedLastFrameDirty: false,
+    unifiedFrameEditorOpen: false,
+    unifiedFrameBusy: false,
+    unifiedFrameBusyLabel: "",
+    unifiedFrameInstruction: "",
 };
 let workflowState = {
     initialized: false,
@@ -3505,9 +3509,11 @@ function initCreateWizard() {
         similarUnifiedUploadTrigger.addEventListener("click", similarUploadUnifiedImages);
     }
 
-    const similarUnifiedUploadButton = document.getElementById("similar-unified-upload-button");
-    if (similarUnifiedUploadButton) {
-        similarUnifiedUploadButton.addEventListener("click", similarUploadUnifiedImages);
+    const similarUnifiedCreateImageButton = document.getElementById("similar-unified-create-image-button");
+    if (similarUnifiedCreateImageButton) {
+        similarUnifiedCreateImageButton.addEventListener("click", () => {
+            similarGenerateUnifiedReferenceImage();
+        });
     }
 
     const similarUnifiedClearButton = document.getElementById("similar-unified-clear-button");
@@ -4012,20 +4018,31 @@ function _clearSimilarUnifiedPrompt() {
     const metaEl = document.getElementById("similar-unified-prompt-meta");
     const enginePickerEl = document.getElementById("similar-unified-engine-picker");
     const durationEl = document.getElementById("similar-unified-duration-options");
+    const referenceWrapEl = document.getElementById("similar-unified-reference-frame-wrap");
     const previewWrapEl = document.getElementById("similar-unified-preview-wrap");
     const previewMetaEl = document.getElementById("similar-unified-preview-meta");
     const previewStageEl = document.getElementById("similar-unified-preview-stage");
     const generateBtn = document.getElementById("similar-generate-unified-scene");
+    const createImageBtn = document.getElementById("similar-unified-create-image-button");
     if (textEl) textEl.value = "";
     if (metaEl) metaEl.textContent = "Transforme as partes analisadas em um prompt continuo.";
     if (enginePickerEl) enginePickerEl.innerHTML = "";
     if (durationEl) durationEl.innerHTML = "";
+    if (referenceWrapEl) {
+        referenceWrapEl.innerHTML = "";
+        referenceWrapEl.hidden = true;
+    }
     if (previewMetaEl) previewMetaEl.textContent = "";
     if (previewStageEl) previewStageEl.innerHTML = "";
     if (previewWrapEl) previewWrapEl.hidden = true;
     if (generateBtn) generateBtn.textContent = "Gerar cena unica";
+    if (createImageBtn) createImageBtn.textContent = "Criar imagem";
     similarState.unifiedEngine = "";
     similarState.unifiedDuration = 10;
+    similarState.unifiedFrameEditorOpen = false;
+    similarState.unifiedFrameBusy = false;
+    similarState.unifiedFrameBusyLabel = "";
+    similarState.unifiedFrameInstruction = "";
     _setSimilarUnifiedUploadStatus("");
     _syncSimilarUnifiedUploadUi();
     if (wrapEl) wrapEl.hidden = true;
@@ -4058,6 +4075,13 @@ function _getSimilarUnifiedPendingUploads() {
 function _clearSimilarUnifiedPendingUploads() {
     _getSimilarUnifiedPendingUploads().forEach((item) => _revokeSimilarPreviewUrl(item?.preview_url));
     similarState.unifiedPendingImageUploads = [];
+}
+
+function _syncSimilarUnifiedFrameDraftFromDom() {
+    const instructionEl = document.getElementById("similar-unified-frame-instruction");
+    if (instructionEl) {
+        similarState.unifiedFrameInstruction = String(instructionEl.value || "");
+    }
 }
 
 function _syncSimilarUnifiedUploadUi(project = null) {
@@ -4109,11 +4133,110 @@ function _syncSimilarUnifiedUploadUi(project = null) {
     }
 }
 
+function _renderSimilarUnifiedReferencePanel(project) {
+    const wrapEl = document.getElementById("similar-unified-reference-frame-wrap");
+    if (!wrapEl) return;
+
+    const tags = _safeSimilarTags(project?.tags);
+    const unifiedReferenceImageUrl = String(tags.similar_unified_reference_image_url || "").trim();
+    if (!unifiedReferenceImageUrl) {
+        wrapEl.innerHTML = "";
+        wrapEl.hidden = true;
+        similarState.unifiedFrameEditorOpen = false;
+        similarState.unifiedFrameBusy = false;
+        similarState.unifiedFrameBusyLabel = "";
+        return;
+    }
+
+    const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
+    const pendingUploads = _getSimilarUnifiedPendingUploads();
+    const pendingCount = pendingUploads.length;
+    const frameEditorOpen = !!similarState.unifiedFrameEditorOpen;
+    const frameBusy = !!similarState.unifiedFrameBusy;
+    const frameBusyDisabledAttr = frameBusy ? "disabled" : "";
+    const frameInstructionValue = esc(String(similarState.unifiedFrameInstruction || ""));
+    const frameBusyLabel = esc(String(similarState.unifiedFrameBusyLabel || "Criando uma nova imagem base..."));
+    const summary = pendingCount
+        ? `${pendingCount} apoio(s) pronto(s) para refinar esta base.`
+        : "Contexto visual consolidado da cena unica.";
+    const uploadsMarkup = pendingCount
+        ? pendingUploads.map((item, uploadIdx) => {
+            const previewUrl = esc(item?.preview_url || "");
+            const fileName = esc(_formatSimilarUploadFileName(item?.file_name || `imagem-${uploadIdx + 1}`));
+            return `
+                <figure class="similar-upload-thumb">
+                    <img src="${previewUrl}" alt="Referencia da cena unica upload ${uploadIdx + 1}" loading="lazy">
+                    <figcaption>${fileName}</figcaption>
+                </figure>
+            `;
+        }).join("")
+        : "";
+    const frameUploadsMarkup = pendingCount
+        ? `
+            <div class="similar-reference-frame-upload-list">
+                <span class="similar-reference-frame-upload-title">Imagens extras enviadas para esta troca</span>
+                <div class="similar-reference-frame-upload-grid">${uploadsMarkup}</div>
+            </div>
+        `
+        : "";
+    const frameBusyMarkup = frameBusy
+        ? `
+            <div class="similar-reference-frame-progress" role="status" aria-live="polite">
+                <span class="similar-reference-frame-progress-label">${frameBusyLabel}</span>
+                <div class="similar-reference-frame-progress-bar"><span></span></div>
+            </div>
+        `
+        : "";
+
+    wrapEl.innerHTML = `
+        <section class="similar-reference-frame-panel">
+            <div class="similar-reference-frame-head">
+                <div>
+                    <strong>Frame base</strong>
+                    <span>${summary}</span>
+                </div>
+                <div class="similar-reference-frame-tools">
+                    <button class="similar-frame-tool-btn similar-frame-tool-btn-primary" type="button" onclick="similarGenerateUnifiedReferenceImage()" ${frameBusyDisabledAttr}>Gerar novamente</button>
+                    <button class="similar-frame-tool-btn${frameEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleUnifiedFrameEdit()" ${frameBusyDisabledAttr}>${frameEditorOpen ? "Fechar edicao IA" : "Editar com IA"}</button>
+                </div>
+            </div>
+            <div class="similar-reference-frame-body">
+                <div class="similar-reference-frame-gallery similar-reference-frame-gallery-single">
+                    <article class="similar-frame-gallery-item is-base">
+                        <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}">
+                            <img src="${esc(unifiedReferenceImageUrl)}" alt="Frame base da cena unica" loading="lazy">
+                            <span class="similar-frame-gallery-badge">Base</span>
+                        </div>
+                    </article>
+                </div>
+            </div>
+            <div class="similar-reference-frame-editor${frameEditorOpen ? " is-open" : ""}" ${frameEditorOpen ? "" : "hidden"}>
+                <label for="similar-unified-frame-instruction">O que a IA deve mudar nesta imagem?</label>
+                <textarea id="similar-unified-frame-instruction" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar a roupa, mudar o produto, manter o mesmo enquadramento e a mesma luz." ${frameBusyDisabledAttr}>${frameInstructionValue}</textarea>
+                <p class="field-hint">A nova imagem usa o frame base do prompt unico e respeita o texto atual para manter o contexto.</p>
+                <div class="similar-reference-frame-editor-tools">
+                    <button class="similar-frame-tool-btn" type="button" onclick="similarUploadUnifiedImages()" ${frameBusyDisabledAttr}>Enviar apoio</button>
+                    ${pendingCount ? `<button class="similar-frame-tool-btn" type="button" onclick="similarClearUnifiedUploads()" ${frameBusyDisabledAttr}>Limpar</button>` : ""}
+                    <span class="similar-reference-frame-upload-note">${pendingCount ? `${pendingCount} apoio(s) pronto(s) para a troca.` : "Use o botao + acima para enviar uma imagem extra e orientar a troca de pessoa, produto ou detalhe."}</span>
+                </div>
+                ${frameUploadsMarkup}
+                ${frameBusyMarkup}
+                <div class="similar-reference-frame-editor-actions">
+                    <button class="btn btn-primary similar-reference-frame-submit-btn" type="button" onclick="similarApplyUnifiedFrameEdit()" ${frameBusyDisabledAttr}>${frameBusy ? "Gerando..." : "Aplicar edicao"}</button>
+                    <button class="btn btn-secondary" type="button" onclick="similarCloseUnifiedFrameEdit()" ${frameBusyDisabledAttr}>Fechar</button>
+                </div>
+            </div>
+        </section>
+    `;
+    wrapEl.hidden = false;
+}
+
 function _renderSimilarUnifiedPrompt(project) {
     const wrapEl = document.getElementById("similar-unified-prompt-wrap");
     const textEl = document.getElementById("similar-unified-prompt-text");
     const metaEl = document.getElementById("similar-unified-prompt-meta");
     const enginePickerEl = document.getElementById("similar-unified-engine-picker");
+    const createImageBtn = document.getElementById("similar-unified-create-image-button");
     const previewWrapEl = document.getElementById("similar-unified-preview-wrap");
     const previewMetaEl = document.getElementById("similar-unified-preview-meta");
     const previewStageEl = document.getElementById("similar-unified-preview-stage");
@@ -4168,13 +4291,6 @@ function _renderSimilarUnifiedPrompt(project) {
     const generatedEngine = _normalizeSimilarEngine(tags.similar_unified_clip_engine || selectedEngine);
     const generatedDuration = parseInt(tags.similar_unified_clip_duration || selectedDuration || "10", 10) || 10;
     const previewItems = [];
-    if (unifiedReferenceImageUrl) {
-        previewItems.push(`
-            <div class="similar-preview-box ${previewAspectClass}">
-                <img src="${esc(unifiedReferenceImageUrl)}" alt="Referencia consolidada da cena unica" loading="lazy">
-            </div>
-        `);
-    }
     if (unifiedClipUrl) {
         previewItems.push(`
             <div class="similar-preview-box ${previewAspectClass}">
@@ -4201,9 +4317,13 @@ function _renderSimilarUnifiedPrompt(project) {
 
     textEl.value = promptText;
     metaEl.textContent = metaText;
+    if (createImageBtn) {
+        createImageBtn.textContent = unifiedReferenceImageUrl ? "Gerar novamente" : "Criar imagem";
+    }
     if (generateBtn) {
         generateBtn.textContent = unifiedClipUrl ? "Gerar novamente a cena unica" : "Gerar cena unica";
     }
+    _renderSimilarUnifiedReferencePanel(project);
     _syncSimilarUnifiedUploadUi(project);
     wrapEl.hidden = false;
 }
@@ -5509,6 +5629,7 @@ function _refreshSimilarButtonsDisabled(disabled) {
         "similar-start-analysis-general",
         "similar-start-analysis-scenes",
         "similar-build-unified-prompt",
+        "similar-unified-create-image-button",
         "similar-generate-unified-scene",
         "similar-generate-all",
         "similar-merge-selected",
@@ -9184,7 +9305,104 @@ function similarClearUnifiedUploads() {
     _clearSimilarUnifiedPendingUploads();
     _setSimilarUnifiedUploadStatus("");
     _syncSimilarUnifiedUploadUi(similarState.lastProjectSnapshot);
+    _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
     showToast("Imagens da cena unica removidas.", "success");
+}
+
+function similarToggleUnifiedFrameEdit() {
+    _syncSimilarUnifiedFrameDraftFromDom();
+    similarState.unifiedFrameEditorOpen = !similarState.unifiedFrameEditorOpen;
+    _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
+    if (similarState.unifiedFrameEditorOpen) {
+        setTimeout(() => {
+            document.getElementById("similar-unified-frame-instruction")?.focus();
+        }, 0);
+    }
+}
+
+function similarCloseUnifiedFrameEdit() {
+    _syncSimilarUnifiedFrameDraftFromDom();
+    similarState.unifiedFrameEditorOpen = false;
+    _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
+}
+
+async function similarGenerateUnifiedReferenceImage(options = {}) {
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Analise o video antes de criar a imagem base.");
+        return;
+    }
+
+    _syncSimilarUnifiedFrameDraftFromDom();
+    const requireInstruction = !!options.requireInstruction;
+    const instructionEl = document.getElementById("similar-unified-frame-instruction");
+    const project = similarState.lastProjectSnapshot;
+    const promptEl = document.getElementById("similar-unified-prompt-text");
+    const promptOverride = String(promptEl?.value || project?.tags?.similar_unified_prompt || "").trim();
+    const editInstruction = String(similarState.unifiedFrameInstruction || "").trim();
+
+    if (!promptOverride) {
+        showToast("Gere ou escreva o prompt unico antes de criar a imagem base.", "error");
+        return;
+    }
+    if (requireInstruction && !editInstruction) {
+        showToast("Descreva primeiro o que deve mudar na imagem base.", "error");
+        instructionEl?.focus();
+        return;
+    }
+
+    const uploadIds = [];
+    _getSimilarUnifiedPendingUploads().forEach((item) => {
+        const uploadId = String(item?.upload_id || "").trim();
+        if (uploadId && !uploadIds.includes(uploadId)) {
+            uploadIds.push(uploadId);
+        }
+    });
+
+    try {
+        similarState.unifiedFrameBusy = true;
+        similarState.unifiedFrameBusyLabel = requireInstruction
+            ? uploadIds.length
+                ? "Trocando a imagem base com as imagens enviadas..."
+                : "Criando uma nova variacao da imagem base..."
+            : uploadIds.length
+                ? "Criando a imagem base com as imagens enviadas..."
+                : "Criando imagem base da cena unica...";
+        if (requireInstruction) {
+            similarState.unifiedFrameEditorOpen = true;
+        }
+        _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
+        _setSimilarStatus(
+            requireInstruction ? "Editando a imagem base da cena unica..." : "Criando a imagem base da cena unica...",
+            "running",
+        );
+        _refreshSimilarButtonsDisabled(true);
+        await api(`/video/projects/${projectId}/similar/unified-image`, {
+            method: "POST",
+            body: JSON.stringify({
+                generate_from_prompt: true,
+                prompt_override: promptOverride,
+                edit_instruction: editInstruction,
+                image_upload_ids: uploadIds,
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+        similarState.unifiedFrameBusy = false;
+        similarState.unifiedFrameBusyLabel = "";
+        showToast(requireInstruction ? "Imagem base atualizada." : "Imagem base criada.", "success");
+        await _refreshSimilarProject();
+    } catch (error) {
+        similarState.unifiedFrameBusy = false;
+        similarState.unifiedFrameBusyLabel = "";
+        _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
+        showToast(`Erro ao criar a imagem base: ${error.message}`, "error");
+    } finally {
+        _refreshSimilarButtonsDisabled(false);
+    }
+}
+
+async function similarApplyUnifiedFrameEdit() {
+    await similarGenerateUnifiedReferenceImage({ requireInstruction: true });
 }
 
 async function similarSaveScene(sceneId) {
@@ -19349,12 +19567,18 @@ window.createSimilar = createSimilar;
 window.similarSaveScene = similarSaveScene;
 window.similarUploadSceneImage = similarUploadSceneImage;
 window.similarUploadFrameReference = similarUploadFrameReference;
+window.similarUploadUnifiedImages = similarUploadUnifiedImages;
 window.similarToggleNarrationEdit = similarToggleNarrationEdit;
 window.similarCloseNarrationEdit = similarCloseNarrationEdit;
 window.similarApplySceneNarration = similarApplySceneNarration;
 window.similarApplyUploadedSceneImages = similarApplyUploadedSceneImages;
 window.similarClearSceneUploads = similarClearSceneUploads;
+window.similarClearUnifiedUploads = similarClearUnifiedUploads;
 window.similarGenerateSceneImage = similarGenerateSceneImage;
+window.similarToggleUnifiedFrameEdit = similarToggleUnifiedFrameEdit;
+window.similarCloseUnifiedFrameEdit = similarCloseUnifiedFrameEdit;
+window.similarGenerateUnifiedReferenceImage = similarGenerateUnifiedReferenceImage;
+window.similarApplyUnifiedFrameEdit = similarApplyUnifiedFrameEdit;
 window.similarRegenerateScene = similarRegenerateScene;
 window.similarSelectSceneEngine = similarSelectSceneEngine;
 window.similarSelectUnifiedEngine = similarSelectUnifiedEngine;

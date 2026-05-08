@@ -2243,7 +2243,10 @@ async def run_similar_generate_unified_scene(
                 raise RuntimeError("Gere o prompt unico antes de criar a cena")
 
             reference_frames_by_scene_index = _extract_similar_reference_frames(tags)
-            if scenes:
+            custom_unified_reference_path = str(tags.get("similar_unified_reference_image_path") or "").strip()
+            if custom_unified_reference_path and os.path.exists(custom_unified_reference_path):
+                reference_image_paths = [custom_unified_reference_path]
+            elif scenes:
                 reference_image_paths = _collect_similar_reference_frame_paths(scenes, reference_frames_by_scene_index)
             else:
                 reference_image_paths = _collect_similar_reference_frame_paths_from_map(reference_frames_by_scene_index)
@@ -2252,7 +2255,13 @@ async def run_similar_generate_unified_scene(
                 for path in (tags.get("similar_unified_upload_image_paths", []) if isinstance(tags.get("similar_unified_upload_image_paths", []), list) else [])
                 if str(path).strip() and os.path.exists(str(path).strip())
             ][:6]
-            combined_reference_paths = _compose_similar_unified_reference_paths(reference_image_paths, uploaded_reference_paths)
+            if custom_unified_reference_path and os.path.exists(custom_unified_reference_path):
+                combined_reference_paths = [custom_unified_reference_path]
+                for candidate in uploaded_reference_paths:
+                    if candidate not in combined_reference_paths:
+                        combined_reference_paths.append(candidate)
+            else:
+                combined_reference_paths = _compose_similar_unified_reference_paths(reference_image_paths, uploaded_reference_paths)
             if not combined_reference_paths:
                 raise RuntimeError("Nenhum frame de referencia foi encontrado para a cena unica")
             use_last_image_as_final_frame = bool(tags.get("similar_unified_use_last_image_as_final_frame")) and normalized_engine == "seedance" and len(uploaded_reference_paths) > 1

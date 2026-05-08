@@ -1408,6 +1408,45 @@ def _extract_similar_reference_frame_map(raw_tags: object) -> dict[str, str]:
     return resolved
 
 
+def _collect_similar_unified_reference_paths(
+    scenes: list[VideoScene],
+    tags_data: dict[str, Any],
+) -> list[str]:
+    existing_unified_reference = str(tags_data.get("similar_unified_reference_image_path") or "").strip()
+    if existing_unified_reference and os.path.exists(existing_unified_reference):
+        return [existing_unified_reference]
+
+    reference_frame_map = _extract_similar_reference_frame_map(tags_data)
+    ordered_paths: list[str] = []
+
+    for scene in scenes or []:
+        scene_index = str(int(getattr(scene, "scene_index", 0) or 0))
+        candidate = str(reference_frame_map.get(scene_index) or "").strip()
+        if candidate and os.path.exists(candidate) and candidate not in ordered_paths:
+            ordered_paths.append(candidate)
+
+    if ordered_paths:
+        return ordered_paths
+
+    for scene in scenes or []:
+        candidate = str(getattr(scene, "image_path", "") or "").strip()
+        if candidate and os.path.exists(candidate) and candidate not in ordered_paths:
+            ordered_paths.append(candidate)
+
+    if ordered_paths:
+        return ordered_paths
+
+    for key, raw_path in sorted(
+        reference_frame_map.items(),
+        key=lambda item: int(item[0]) if str(item[0]).isdigit() else 999999,
+    ):
+        candidate = str(raw_path or "").strip()
+        if candidate and os.path.exists(candidate) and candidate not in ordered_paths:
+            ordered_paths.append(candidate)
+
+    return ordered_paths
+
+
 def _extract_similar_generated_frame_variant_map(raw_tags: object) -> dict[str, list[str]]:
     tags = _safe_tags_dict(raw_tags)
     raw_map = tags.get("similar_generated_frame_variants") if isinstance(tags.get("similar_generated_frame_variants"), dict) else {}
@@ -2310,6 +2349,154 @@ async def generate_similar_unified_scene(
         duration_seconds,
     )
     return {"status": "unified_scene_generation_started", "project_id": project_id}
+
+
+@router.post("/projects/{project_id}/similar/unified-image")
+async def upsert_similar_unified_image(
+    project_id: int,
+    req: SimilarSceneImageRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not _is_similar_project(project):
+        raise HTTPException(status_code=400, detail="Projeto nao esta no modo Semelhante")
+
+    tags_data = _safe_tags_dict(project.tags)
+    prompt_override = str(req.prompt_override or tags_data.get("similar_unified_prompt") or "").strip()
+    if not prompt_override:
+        raise HTTPException(status_code=400, detail="Gere o prompt unico antes de criar a imagem base")
+    if len(prompt_override) > 4000:
+        raise HTTPException(status_code=400, detail="Prompt unico muito longo (maximo 4000 caracteres)")
+
+    result = await db.execute(
+        select(VideoScene)
+        .where(VideoScene.project_id == project_id)
+        .order_by(VideoScene.scene_index.asc())
+    )
+    scenes = result.scalars().all()
+    reference_image_paths = _collect_similar_unified_reference_paths(scenes, tags_data)
+
+    upload_ids: list[str] = []
+    for raw_id in (req.image_upload_ids or []):
+        value = str(raw_id or "").strip()
+        if value and value not in upload_ids:
+            upload_ids.append(value)
+
+    single_upload_id = str(req.image_upload_id or "").strip()
+    if single_upload_id and single_upload_id not in upload_ids:
+        upload_ids.append(single_upload_id)
+
+    resolved_files: list[Path] = []
+    if upload_ids:
+        for upload_id in upload_ids:
+            source_file = _resolve_temp_file(user["id"], upload_id, IMAGE_EXTS)
+            if not source_file:
+                raise HTTPException(status_code=400, detail="Uma das imagens enviadas nao foi encontrada. Envie novamente")
+            resolved_files.append(source_file)
+
+    effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
+    image_dir = Path(settings.media_dir) / "images" / str(project.id)
+    image_dir.mkdir(parents=True, exist_ok=True)
+    target_file = image_dir / f"similar_unified_reference_{uuid.uuid4().hex[:8]}.png"
+
+    from app.services.scene_generator import (
+        edit_frame_with_replacement_references,
+        generate_scene_image,
+        merge_reference_images_with_nano_banana,
+    )
+
+    prompt_seed = _build_similar_scene_prompt_for_image_generation(prompt_override, req.edit_instruction)
+    source_reference_image = reference_image_paths[0] if reference_image_paths else ""
+    loop = asyncio.get_event_loop()
+
+    if req.generate_from_prompt:
+        if resolved_files and str(req.edit_instruction or "").strip():
+            if not source_reference_image:
+                raise HTTPException(status_code=400, detail="Frame base nao encontrado para editar a cena unica")
+
+            await loop.run_in_executor(
+                None,
+                edit_frame_with_replacement_references,
+                source_reference_image,
+                [str(item) for item in resolved_files],
+                str(req.edit_instruction or ""),
+                prompt_seed[:1200],
+                effective_aspect_ratio,
+                str(target_file),
+            )
+            reference_frame_count = max(1, len(resolved_files) + 1)
+        elif resolved_files:
+            reference_sources: list[str] = []
+            if source_reference_image:
+                reference_sources.append(source_reference_image)
+            for item in resolved_files:
+                candidate = str(item)
+                if candidate and candidate not in reference_sources:
+                    reference_sources.append(candidate)
+
+            await loop.run_in_executor(
+                None,
+                merge_reference_images_with_nano_banana,
+                reference_sources,
+                prompt_seed[:1200],
+                effective_aspect_ratio,
+                str(target_file),
+            )
+            reference_frame_count = max(1, len(reference_sources))
+        else:
+            await loop.run_in_executor(
+                None,
+                generate_scene_image,
+                prompt_seed[:1200],
+                effective_aspect_ratio,
+                str(target_file),
+                False,
+                source_reference_image,
+            )
+            reference_frame_count = 1 if source_reference_image else 0
+    elif resolved_files:
+        reference_sources = [str(item) for item in resolved_files]
+        await loop.run_in_executor(
+            None,
+            merge_reference_images_with_nano_banana,
+            reference_sources,
+            prompt_seed[:1200],
+            effective_aspect_ratio,
+            str(target_file),
+        )
+        reference_frame_count = len(reference_sources)
+    else:
+        raise HTTPException(status_code=400, detail="Informe image_upload_id/image_upload_ids ou generate_from_prompt=true")
+
+    if not target_file.exists() or target_file.stat().st_size <= 0:
+        raise HTTPException(status_code=500, detail="Falha ao gerar a imagem base da cena unica")
+
+    tags_data["similar_unified_prompt"] = prompt_override
+    tags_data["similar_unified_reference_image_path"] = str(target_file)
+    tags_data["similar_unified_reference_frame_count"] = max(1, int(reference_frame_count or 0))
+    tags_data.update({"type": "similar", "similar_stage": "unified_reference_image_ready"})
+    for stale_key in (
+        "similar_unified_clip_path",
+        "similar_unified_clip_engine",
+        "similar_unified_clip_duration",
+        "similar_unified_clip_generated_at",
+    ):
+        tags_data.pop(stale_key, None)
+
+    project.aspect_ratio = effective_aspect_ratio
+    project.tags = tags_data
+    project.status = VideoStatus.PENDING
+    project.progress = 0
+    project.error_message = None
+    await db.commit()
+
+    return {
+        "status": "unified_reference_image_ready",
+        "reference_image_url": _to_media_url(str(target_file)),
+    }
 
 
 @router.patch("/projects/{project_id}/similar/scenes/{scene_id}")

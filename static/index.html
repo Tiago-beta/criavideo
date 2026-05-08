@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260507-11">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260507-15">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 384;
+        var REQUIRED_VER = 385;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2009,9 +2009,9 @@
                                         </span>
                                     </button>
                                     <div class="similar-unified-upload-actions">
-                                        <button class="btn btn-secondary btn-sm" id="similar-unified-upload-button" type="button">Enviar imagens</button>
+                                        <button class="btn btn-secondary btn-sm" id="similar-unified-create-image-button" type="button">Criar imagem</button>
                                         <button class="btn btn-secondary btn-sm" id="similar-unified-clear-button" type="button" hidden>Limpar</button>
-                                        <small class="field-hint">Voce pode enviar varias imagens em sequencia. Elas entram na geracao da cena unica.</small>
+                                        <small class="field-hint">Use o + para enviar imagens extras. Elas ajudam a criar a imagem-base e entram na geracao da cena unica.</small>
                                     </div>
                                 </div>
                                 <div id="similar-unified-upload-status" class="similar-status similar-unified-upload-status" hidden></div>
@@ -2030,6 +2030,7 @@
                                     <small class="pause-hint">No Mega 2.0 Ultra, a ultima imagem enviada vira o quadro final quando houver 2+ imagens.</small>
                                 </div>
                             </div>
+                            <div id="similar-unified-reference-frame-wrap" class="similar-unified-reference-frame-wrap" hidden></div>
                             <div class="similar-unified-generation-actions">
                                 <button class="btn btn-primary" id="similar-generate-unified-scene" type="button">Gerar cena unica</button>
                             </div>
@@ -3812,8 +3813,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260507-11"></script>
-    <script src="/video/static/pwa.js?v=20260507-11"></script>
+    <script src="/video/static/app.js?v=20260507-15"></script>
+    <script src="/video/static/pwa.js?v=20260507-15"></script>
 </body>
 </html>
 
