@@ -1623,15 +1623,15 @@ def _build_similar_scene_prompt_for_image_generation(base_prompt: object, edit_i
     if not instruction:
         return prompt[:2000]
 
-    merged = (
-        f"{prompt}\n\n"
-        f"AJUSTE VISUAL SOLICITADO: {instruction}\n"
+    instruction_prompt = (
+        f"{instruction}\n\n"
+        "Aplique somente essa alteracao na imagem enviada. "
         "Mantenha o enquadramento, o ambiente, a luz, a perspectiva e a coerencia geral do frame original, "
         "alterando apenas os elementos pedidos."
     ).strip()
-    if len(merged) <= 2000:
-        return merged
-    return merged[:2000].rsplit(" ", 1)[0].strip() or merged[:2000]
+    if len(instruction_prompt) <= 2000:
+        return instruction_prompt
+    return instruction_prompt[:2000].rsplit(" ", 1)[0].strip() or instruction_prompt[:2000]
 
 
 def _project_type(project: VideoProject) -> str:
