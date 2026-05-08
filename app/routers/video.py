@@ -1447,6 +1447,63 @@ def _collect_similar_unified_reference_paths(
     return ordered_paths
 
 
+def _image_extension_from_mime_type(mime_type: object) -> str:
+    normalized = str(mime_type or "image/png").split(";", 1)[0].strip().lower()
+    if normalized == "image/jpeg":
+        return ".jpg"
+    if normalized == "image/webp":
+        return ".webp"
+    return ".png"
+
+
+async def _generate_similar_wan_image(
+    *,
+    prompt_text: str,
+    aspect_ratio: str,
+    output_stem: str,
+    base_reference_image: str = "",
+    reference_paths: list[str] | None = None,
+) -> tuple[str, int]:
+    from app.services.atlas_image import generate_atlas_images
+
+    prompt = str(prompt_text or "").strip()
+    if not prompt:
+        raise RuntimeError("Prompt vazio para gerar imagem")
+
+    atlas_references: list[str] = []
+    for candidate in [base_reference_image, *(reference_paths or [])]:
+        path = str(candidate or "").strip()
+        if path and os.path.exists(path) and path not in atlas_references:
+            atlas_references.append(path)
+
+    model = "alibaba/wan-2.7/image-edit" if atlas_references else "alibaba/wan-2.7/text-to-image"
+    results = await generate_atlas_images(
+        prompt=prompt,
+        model=model,
+        aspect_ratio=aspect_ratio,
+        size="2K",
+        count=1,
+        thinking_mode=True,
+        reference_paths=atlas_references,
+        timeout_seconds=240,
+    )
+    if not results:
+        raise RuntimeError("WAN 2.7 nao retornou imagem utilizavel")
+
+    first_result = results[0] if isinstance(results[0], dict) else {}
+    raw_bytes = first_result.get("bytes")
+    if not isinstance(raw_bytes, (bytes, bytearray)) or not raw_bytes:
+        raise RuntimeError("WAN 2.7 retornou imagem invalida")
+
+    output_path = f"{output_stem}{_image_extension_from_mime_type(first_result.get('mime_type'))}"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(output_path).write_bytes(bytes(raw_bytes))
+    if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
+        raise RuntimeError("WAN 2.7 falhou ao salvar a imagem gerada")
+
+    return output_path, len(atlas_references)
+
+
 def _extract_similar_generated_frame_variant_map(raw_tags: object) -> dict[str, list[str]]:
     tags = _safe_tags_dict(raw_tags)
     raw_map = tags.get("similar_generated_frame_variants") if isinstance(tags.get("similar_generated_frame_variants"), dict) else {}
@@ -2400,65 +2457,30 @@ async def upsert_similar_unified_image(
     effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     image_dir = Path(settings.media_dir) / "images" / str(project.id)
     image_dir.mkdir(parents=True, exist_ok=True)
-    target_file = image_dir / f"similar_unified_reference_{uuid.uuid4().hex[:8]}.png"
-
-    from app.services.scene_generator import (
-        edit_frame_with_replacement_references,
-        generate_scene_image,
-        merge_reference_images_with_nano_banana,
-    )
 
     prompt_seed = _build_similar_scene_prompt_for_image_generation(prompt_override, req.edit_instruction)
     source_reference_image = reference_image_paths[0] if reference_image_paths else ""
-    loop = asyncio.get_event_loop()
+    target_file: Path | None = None
 
     if req.generate_from_prompt:
-        if resolved_files and str(req.edit_instruction or "").strip():
-            if not source_reference_image:
-                raise HTTPException(status_code=400, detail="Frame base nao encontrado para editar a cena unica")
+        if str(req.edit_instruction or "").strip() and not source_reference_image:
+            raise HTTPException(status_code=400, detail="Frame base nao encontrado para editar a cena unica")
 
-            await loop.run_in_executor(
-                None,
-                edit_frame_with_replacement_references,
-                source_reference_image,
-                [str(item) for item in resolved_files],
-                str(req.edit_instruction or ""),
-                prompt_seed[:1200],
-                effective_aspect_ratio,
-                str(target_file),
-            )
-            reference_frame_count = max(1, len(resolved_files) + 1)
-        elif resolved_files:
-            reference_sources: list[str] = []
-            if source_reference_image:
-                reference_sources.append(source_reference_image)
-            for item in resolved_files:
-                candidate = str(item)
-                if candidate and candidate not in reference_sources:
-                    reference_sources.append(candidate)
-
-            await loop.run_in_executor(
-                None,
-                merge_reference_images_with_nano_banana,
-                reference_sources,
-                prompt_seed[:1200],
-                effective_aspect_ratio,
-                str(target_file),
-            )
-            reference_frame_count = max(1, len(reference_sources))
-        else:
-            await loop.run_in_executor(
-                None,
-                generate_scene_image,
-                prompt_seed[:1200],
-                effective_aspect_ratio,
-                str(target_file),
-                False,
-                source_reference_image,
-            )
-            reference_frame_count = 1 if source_reference_image else 0
+        target_path, reference_frame_count = await _generate_similar_wan_image(
+            prompt_text=prompt_seed[:1200],
+            aspect_ratio=effective_aspect_ratio,
+            output_stem=str(image_dir / f"similar_unified_reference_{uuid.uuid4().hex[:8]}"),
+            base_reference_image=source_reference_image,
+            reference_paths=[str(item) for item in resolved_files],
+        )
+        target_file = Path(target_path)
+        reference_frame_count = max(1, int(reference_frame_count or 0) or (1 if source_reference_image else 0))
     elif resolved_files:
+        from app.services.scene_generator import merge_reference_images_with_nano_banana
+
         reference_sources = [str(item) for item in resolved_files]
+        target_file = image_dir / f"similar_unified_reference_{uuid.uuid4().hex[:8]}.png"
+        loop = asyncio.get_event_loop()
         await loop.run_in_executor(
             None,
             merge_reference_images_with_nano_banana,
@@ -2471,7 +2493,7 @@ async def upsert_similar_unified_image(
     else:
         raise HTTPException(status_code=400, detail="Informe image_upload_id/image_upload_ids ou generate_from_prompt=true")
 
-    if not target_file.exists() or target_file.stat().st_size <= 0:
+    if not target_file or not target_file.exists() or target_file.stat().st_size <= 0:
         raise HTTPException(status_code=500, detail="Falha ao gerar a imagem base da cena unica")
 
     tags_data["similar_unified_prompt"] = prompt_override
@@ -2649,6 +2671,8 @@ async def upsert_similar_scene_image(
         candidate_anchor_path = str(anchor_scene.image_path or "").strip()
         if candidate_anchor_path and os.path.exists(candidate_anchor_path):
             source_reference_image = candidate_anchor_path
+    if not source_reference_image and scene.image_path and os.path.exists(str(scene.image_path)):
+        source_reference_image = str(scene.image_path)
 
     effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     image_dir = Path(settings.media_dir) / "images" / str(project.id)
@@ -2675,64 +2699,23 @@ async def upsert_similar_scene_image(
 
     track_generated_variant = False
     if req.generate_from_prompt:
-        from app.services.scene_generator import (
-            edit_frame_with_replacement_references,
-            generate_scene_image,
-            merge_reference_images_with_nano_banana,
-        )
-
         track_generated_variant = bool(str(req.edit_instruction or "").strip()) or bool(resolved_files)
         if track_generated_variant:
-            target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_{uuid.uuid4().hex[:8]}.png"
+            output_stem = str(image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_{uuid.uuid4().hex[:8]}")
         else:
-            target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.png"
-        loop = asyncio.get_event_loop()
-        if resolved_files and str(req.edit_instruction or "").strip():
-            base_edit_image = source_reference_image
-            if not base_edit_image and scene.image_path and os.path.exists(scene.image_path):
-                base_edit_image = str(scene.image_path)
-            if not base_edit_image:
-                raise HTTPException(status_code=400, detail="Frame base nao encontrado para editar esta cena")
+            output_stem = str(image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}")
 
-            await loop.run_in_executor(
-                None,
-                edit_frame_with_replacement_references,
-                base_edit_image,
-                [str(item) for item in resolved_files],
-                str(req.edit_instruction or ""),
-                continuity_prompt[:1200],
-                effective_aspect_ratio,
-                str(target_file),
-            )
-        elif resolved_files:
-            reference_sources: list[str] = []
-            if source_reference_image:
-                reference_sources.append(source_reference_image)
-            elif scene.image_path and os.path.exists(scene.image_path):
-                reference_sources.append(str(scene.image_path))
-            for item in resolved_files:
-                candidate = str(item)
-                if candidate and candidate not in reference_sources:
-                    reference_sources.append(candidate)
+        if str(req.edit_instruction or "").strip() and not source_reference_image:
+            raise HTTPException(status_code=400, detail="Frame base nao encontrado para editar esta cena")
 
-            await loop.run_in_executor(
-                None,
-                merge_reference_images_with_nano_banana,
-                reference_sources,
-                continuity_prompt[:1200],
-                effective_aspect_ratio,
-                str(target_file),
-            )
-        else:
-            await loop.run_in_executor(
-                None,
-                generate_scene_image,
-                continuity_prompt[:1200],
-                effective_aspect_ratio,
-                str(target_file),
-                False,
-                source_reference_image,
-            )
+        generated_path, _reference_count = await _generate_similar_wan_image(
+            prompt_text=continuity_prompt[:1200],
+            aspect_ratio=effective_aspect_ratio,
+            output_stem=output_stem,
+            base_reference_image=source_reference_image,
+            reference_paths=[str(item) for item in resolved_files],
+        )
+        target_file = Path(generated_path)
         if not target_file.exists() or target_file.stat().st_size <= 0:
             raise HTTPException(status_code=500, detail="Falha ao gerar imagem da cena")
         scene.image_path = str(target_file)

@@ -79,13 +79,33 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "max_outputs": 4,
         "max_references": 9,
     },
+    "alibaba/wan-2.7/text-to-image": {
+        "label": "WAN 2.7 Texto para Imagem",
+        "kind": "text",
+        "supports_aspect_ratio": False,
+        "supports_size": True,
+        "supports_thinking_mode": True,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 5,
+    },
+    "alibaba/wan-2.7/image-edit": {
+        "label": "WAN 2.7 Imagem para Imagem",
+        "kind": "edit",
+        "supports_aspect_ratio": False,
+        "supports_size": True,
+        "supports_thinking_mode": True,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 9,
+    },
 }
 _SCRIPT_IMAGE_MODEL_ALIASES: dict[str, dict[str, Any]] = {
     "ultra-high-3.0": {
         "label": "Ultra High 3.0",
         "description": "Cria qualquer imagem sem restricao.",
-        "text_model": "alibaba/wan-2.6/text-to-image",
-        "edit_model": "alibaba/wan-2.6/image-edit",
+        "text_model": "alibaba/wan-2.7/text-to-image",
+        "edit_model": "alibaba/wan-2.7/image-edit",
         "supports_size": True,
         "supports_thinking_mode": True,
         "max_outputs": 4,
@@ -95,7 +115,12 @@ _SCRIPT_IMAGE_MODEL_ALIASES: dict[str, dict[str, Any]] = {
 _ALLOWED_ASPECT_RATIOS = {"1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
 _ALLOWED_WAN_TEXT_SIZES = {"1K", "2K", "4K"}
 _ALLOWED_WAN_EDIT_SIZES = {"1K", "2K"}
-_WAN_26_MODELS = {"alibaba/wan-2.6/text-to-image", "alibaba/wan-2.6/image-edit"}
+_WAN_26_MODELS = {
+    "alibaba/wan-2.6/text-to-image",
+    "alibaba/wan-2.6/image-edit",
+    "alibaba/wan-2.7/text-to-image",
+    "alibaba/wan-2.7/image-edit",
+}
 _WAN_26_SIZE_PRESETS = {
     "1K": {
         "1:1": "1024*1024",

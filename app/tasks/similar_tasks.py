@@ -59,7 +59,8 @@ _SIMILAR_CONTEXT_FRAME_SAMPLE_COUNT = 6
 _SIMILAR_CONTEXT_SUMMARY_LIMIT = 1800
 _SIMILAR_TRANSCRIPT_LIMIT = 4200
 _SIMILAR_SCENE_DIALOGUE_LIMIT = 420
-_SIMILAR_GENERAL_PROMPT_DURATION_SECONDS = 15
+_SIMILAR_GENERAL_PROMPT_SECTION_COUNT = 5
+_SIMILAR_GENERAL_PROMPT_MARKER_RE = re.compile(r"^⏱️\s*(\d+(?:[.,]\d+)?)\s*[–-]\s*(\d+(?:[.,]\d+)?)s:", re.MULTILINE)
 
 
 def _safe_tags_dict(raw: object) -> dict:
@@ -158,6 +159,33 @@ def _collect_similar_reference_frame_paths_from_map(reference_frames_by_scene_in
     return collected
 
 
+def _format_similar_general_timeline_value(raw_value: float) -> str:
+    value = max(0.0, round(float(raw_value or 0.0), 1))
+    if abs(value - round(value)) < 0.05:
+        return str(int(round(value)))
+    return f"{value:.1f}".rstrip("0").rstrip(".")
+
+
+def _build_similar_general_timeline_sections(duration_seconds: float) -> list[tuple[str, float, float]]:
+    total_duration = max(1.0, float(duration_seconds or 0.0))
+    sections: list[tuple[str, float, float]] = []
+    previous_end = 0.0
+
+    for index in range(_SIMILAR_GENERAL_PROMPT_SECTION_COUNT):
+        if index == (_SIMILAR_GENERAL_PROMPT_SECTION_COUNT - 1):
+            section_end = total_duration
+        else:
+            section_end = total_duration * float(index + 1) / float(_SIMILAR_GENERAL_PROMPT_SECTION_COUNT)
+            section_end = min(total_duration, max(previous_end + 0.1, section_end))
+
+        start_label = _format_similar_general_timeline_value(previous_end)
+        end_label = _format_similar_general_timeline_value(section_end)
+        sections.append((f"⏱️ {start_label}–{end_label}s:", previous_end, section_end))
+        previous_end = section_end
+
+    return sections
+
+
 def _build_similar_general_prompt_context(
     *,
     scene_payloads: list[dict],
@@ -165,9 +193,10 @@ def _build_similar_general_prompt_context(
     transcript_text: str,
     duration_seconds: float,
 ) -> str:
+    effective_duration = max(1.0, float(duration_seconds or 0.0))
     lines = [
-        f"Duracao do video analisado: {max(1.0, float(duration_seconds or 0.0)):.1f}s",
-        f"Duracao alvo do prompt final: {_SIMILAR_GENERAL_PROMPT_DURATION_SECONDS}s",
+        f"Duracao do video analisado: {effective_duration:.1f}s",
+        f"Duracao alvo do prompt final: {effective_duration:.1f}s",
     ]
 
     normalized_context = _normalize_similar_general_prompt_text(context_summary, limit=1400)
@@ -198,6 +227,7 @@ def _build_similar_general_prompt_fallback(
     scene_payloads: list[dict],
     context_summary: str,
     transcript_text: str,
+    duration_seconds: float,
 ) -> str:
     prompts = [
         _normalize_similar_general_prompt_text(payload.get("prompt"), limit=260)
@@ -241,6 +271,18 @@ def _build_similar_general_prompt_fallback(
         "Finalizar a cena com saida natural de quadro, repouso do movimento ou detalhe final coerente com o video de referencia.",
     )
 
+    timeline_sections = _build_similar_general_timeline_sections(duration_seconds)
+    scene_clauses = [
+        scene_0_3,
+        scene_3_6,
+        scene_6_10,
+        scene_10_13,
+        scene_13_15,
+    ]
+    timeline_lines: list[str] = []
+    for (label, _start, _end), clause in zip(timeline_sections, scene_clauses):
+        timeline_lines.extend([label, clause, ""])
+
     return _normalize_similar_general_prompt_text(
         "\n".join(
             [
@@ -264,27 +306,14 @@ def _build_similar_general_prompt_fallback(
                 "",
                 "🎬 SCENE",
                 "",
-                "⏱️ 0–3s:",
-                scene_0_3,
-                "",
-                "⏱️ 3–6s:",
-                scene_3_6,
-                "",
-                "⏱️ 6–10s:",
-                scene_6_10,
-                "",
-                "⏱️ 10–13s:",
-                scene_10_13,
-                "",
-                "⏱️ 13–15s:",
-                scene_13_15,
+                *timeline_lines,
             ]
         ),
         limit=3200,
     )
 
 
-def _is_similar_general_prompt_valid(raw: object) -> bool:
+def _is_similar_general_prompt_valid(raw: object, duration_seconds: float) -> bool:
     text = _normalize_similar_general_prompt_text(raw, limit=3600)
     required_parts = (
         "Audio:",
@@ -294,17 +323,40 @@ def _is_similar_general_prompt_valid(raw: object) -> bool:
         "🕶️ Accessories:",
         "⚠️ Rules:",
         "🎬 SCENE",
-        "⏱️ 0–3s:",
-        "⏱️ 3–6s:",
-        "⏱️ 6–10s:",
-        "⏱️ 10–13s:",
-        "⏱️ 13–15s:",
     )
     if len(text) < 220:
         return False
     if any(part not in text for part in required_parts):
         return False
     if "[" in text or "]" in text:
+        return False
+
+    markers = list(_SIMILAR_GENERAL_PROMPT_MARKER_RE.finditer(text))
+    if len(markers) != _SIMILAR_GENERAL_PROMPT_SECTION_COUNT:
+        return False
+
+    previous_end = 0.0
+    total_duration = max(1.0, float(duration_seconds or 0.0))
+    for index, marker in enumerate(markers):
+        start_text = str(marker.group(1) or "0").replace(",", ".")
+        end_text = str(marker.group(2) or "0").replace(",", ".")
+        try:
+            start_value = float(start_text)
+            end_value = float(end_text)
+        except Exception:
+            return False
+
+        if index == 0 and start_value > 0.2:
+            return False
+        if start_value < (previous_end - 0.2):
+            return False
+        if end_value <= start_value:
+            return False
+        if end_value > (total_duration + 0.2):
+            return False
+        previous_end = end_value
+
+    if previous_end < max(total_duration * 0.92, total_duration - 0.6):
         return False
     return True
 
@@ -321,6 +373,7 @@ async def _generate_similar_general_prompt(
         scene_payloads=scene_payloads,
         context_summary=context_summary,
         transcript_text=transcript_text,
+        duration_seconds=duration_seconds,
     )
     prompt_context = _build_similar_general_prompt_context(
         scene_payloads=scene_payloads,
@@ -328,11 +381,24 @@ async def _generate_similar_general_prompt(
         transcript_text=transcript_text,
         duration_seconds=duration_seconds,
     )
+    timeline_sections = _build_similar_general_timeline_sections(duration_seconds)
+    timeline_descriptions = [
+        "[Acao inicial e movimento de camera]",
+        "[Desenvolvimento da cena e mudanca de foco]",
+        "[Climax da acao ou interacao principal]",
+        "[Acao de fechamento e zoom/detalhe]",
+        "[Finalizacao e saida natural de cena]",
+    ]
+    timeline_template = "\n\n".join(
+        f"{label}\n{timeline_descriptions[index]}"
+        for index, (label, _start, _end) in enumerate(timeline_sections)
+    )
+    effective_duration_label = _format_similar_general_timeline_value(duration_seconds)
     preferred_model = (settings.similar_analysis_model or "gpt-4o-mini").strip() or "gpt-4o-mini"
     system_prompt = (
         "Voce converte a analise completa de um video de referencia em um unico prompt estruturado em portugues do Brasil. "
         "Retorne texto puro, sem markdown, sem JSON, sem comentarios extras e sem placeholders. "
-        "Preencha exatamente as secoes pedidas e mantenha a timeline final em 15 segundos com os marcadores informados."
+        "Preencha exatamente as secoes pedidas e mantenha a timeline final alinhada com a duracao real do video usando os marcadores informados."
     )
     user_prompt = (
         "Use a analise abaixo para montar um prompt unico de recriacao do video. "
@@ -350,17 +416,9 @@ async def _generate_similar_general_prompt(
         "⚠️ Rules:\n"
         "[Regras de consistencia]\n\n"
         "🎬 SCENE\n\n"
-        "⏱️ 0–3s:\n"
-        "[Acao inicial e movimento de camera]\n\n"
-        "⏱️ 3–6s:\n"
-        "[Desenvolvimento da cena e mudanca de foco]\n\n"
-        "⏱️ 6–10s:\n"
-        "[Climax da acao ou interacao principal]\n\n"
-        "⏱️ 10–13s:\n"
-        "[Acao de fechamento e zoom/detalhe]\n\n"
-        "⏱️ 13–15s:\n"
-        "[Finalizacao e saida de cena/veiculos]\n\n"
+        f"{timeline_template}\n\n"
         "Regras adicionais: use portugues do Brasil, preserve o mesmo personagem, o mesmo figurino, a mesma ambientacao e a mesma continuidade visual do video de referencia. "
+        f"A timeline deve terminar em {effective_duration_label}s sem criar acoes alem do fim do video. "
         "Nao deixe campos vazios, nao use colchetes no resultado, nao invente secoes extras.\n\n"
         f"Analise do video:\n{prompt_context}"
     )
@@ -379,7 +437,7 @@ async def _generate_similar_general_prompt(
             response.choices[0].message.content if response and response.choices else "",
             limit=3400,
         )
-        if _is_similar_general_prompt_valid(candidate):
+        if _is_similar_general_prompt_valid(candidate, duration_seconds):
             return candidate, "ai"
         logger.warning("Similar general prompt AI output invalid for project analysis; using fallback")
     except Exception as exc:
