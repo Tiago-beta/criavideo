@@ -4,6 +4,7 @@
   "private": true,
   "description": "Empacotamento Android do CriaVideo via Capacitor",
   "scripts": {
+    "deploy:staging": "git push staging master",
     "verify:frontend:local": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify_frontend_bundle_sync.ps1",
     "verify:frontend:production": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify_frontend_bundle_sync.ps1 -CompareProduction",
     "verify:frontend:staging": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify_frontend_bundle_sync.ps1 -CompareStaging",

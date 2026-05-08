@@ -13,13 +13,18 @@ Se houver conflito entre este arquivo e um pedido direto do usuário, o pedido d
 
 ## Regras obrigatórias deste workspace
 
-1. Sempre concluir alterações com esta ordem:
-   - primeiro fazer deploy no VPS
-   - depois rodar `git add -A && git commit -m "..." && git push`
-2. Nunca encerrar uma tarefa com alterações funcionais sem deploy + push.
-3. Não usar Playwright para validar deploy. O usuário testa manualmente no navegador.
-4. Não reverter mudanças não relacionadas que já existirem no workspace.
-5. Não usar `git reset --hard`, `git checkout --`, `git push --force` ou comandos destrutivos sem pedido explícito.
+1. O fluxo padrao deste workspace agora e staging-first, no mesmo estilo de Levita e Tevoxi.
+2. Sempre concluir alteracoes normais com esta ordem:
+   - validar localmente
+   - rodar `git add -A && git commit -m "..."`
+   - publicar no staging com `git push staging master`
+   - validar staging
+   - rodar `git push`
+3. Nunca encerrar uma tarefa com alteracoes funcionais sem staging + push.
+4. Nao publicar em producao sem pedido explicito do usuario.
+5. Nao usar Playwright para validar deploy. O usuário testa manualmente no navegador.
+6. Não reverter mudanças não relacionadas que já existirem no workspace.
+7. Não usar `git reset --hard`, `git checkout --`, `git push --force` ou comandos destrutivos sem pedido explícito.
 
 ## Acesso / credenciais
 
@@ -29,6 +34,10 @@ Se houver conflito entre este arquivo e um pedido direto do usuário, o pedido d
 - Não inventar credenciais.
 
 ## Fluxo padrão de deploy
+
+- Deploy normal do dia a dia: `git push staging master`
+- Validacao normal depois do deploy: `powershell -ExecutionPolicy Bypass -File .\scripts\verify_frontend_bundle_sync.ps1 -CompareStaging`
+- Producao so entra quando o usuario pedir explicitamente para promover o commit validado em staging.
 
 ## Staging / sandbox
 
@@ -44,14 +53,21 @@ Se houver conflito entre este arquivo e um pedido direto do usuário, o pedido d
 - Producao continua protegida: nao publicar em `criavideo.pro` sem pedido explicito do usuario.
 - Validacao de bundle no staging: `powershell -ExecutionPolicy Bypass -File .\scripts\verify_frontend_bundle_sync.ps1 -CompareStaging`.
 
-Nao usar `./deploy.sh` como fluxo padrão no Windows para publicar pequenas mudanças. Ele pode deixar código antigo no servidor.
+Nao usar `./deploy.sh` como fluxo padrão no Windows para publicar mudanças normais. O deploy padrao agora e staging via git remote. `./deploy.sh` fica restrito a casos em que o usuario pedir producao explicitamente.
 
 Usar este fluxo por padrão:
 
-1. Copiar somente os arquivos alterados com `scp`
-2. No VPS, rebuildar com `docker compose up -d --build`
-3. Validar os tokens/linhas alteradas no servidor com `grep`
-4. Só depois commitar e dar push
+1. Validar localmente
+2. Rodar `git add -A && git commit -m "..."`
+3. Rodar `git push staging master`
+4. Validar staging
+5. Rodar `git push`
+
+## Fluxo de producao
+
+- Producao so deve ser publicada quando o usuario pedir explicitamente.
+- Ao promover para producao, usar o mesmo commit que ja foi validado em staging.
+- Para producao, continuar usando o fluxo seguro de `scp` + `docker compose up -d --build` + validacao remota.
 
 ### Exemplo de deploy de frontend
 
@@ -114,10 +130,11 @@ Se esses 4 pontos não forem sincronizados, o navegador pode continuar carregand
 - Na validacao remota de frontend, nao conferir so versao. Sempre fazer `grep` no VPS para pelo menos 1 token de HTML, 1 de JS e 1 de CSS do recurso alterado. Se qualquer camada estiver ausente, nao commitar.
 - Se o hotfix for de modal/componente interativo com `onclick`, `onchange` ou botoes segmentados, confirmar tambem que as funcoes referenciadas ainda existem no `static/app.js` publicado.
 - Depois de qualquer hotfix no editor, validar no mínimo:
-  - se houve deploy real no VPS
+   - se houve deploy real no staging
   - se o token novo de versão entrou no servidor
    - se HTML + JS + CSS do recurso alterado chegaram juntos no servidor
-   - rodar `powershell -ExecutionPolicy Bypass -File .\scripts\verify_frontend_bundle_sync.ps1 -CompareProduction` para confirmar local = host do VPS = container ativo = HTML publico
+   - rodar `powershell -ExecutionPolicy Bypass -File .\scripts\verify_frontend_bundle_sync.ps1 -CompareStaging` para confirmar local = host do VPS = container ativo = HTML publico do staging
+   - se o usuario pedir promocao, rodar tambem `powershell -ExecutionPolicy Bypass -File .\scripts\verify_frontend_bundle_sync.ps1 -CompareProduction`
   - se o `git status` ficou limpo após commit/push
 
 ## Problemas operacionais conhecidos
@@ -158,10 +175,11 @@ Depois disso, aplicar a migração SQL novamente.
 ## Checklist obrigatório ao terminar qualquer tarefa
 
 1. Validar arquivo(s) alterados localmente
-2. Fazer deploy no VPS
-3. Validar conteúdo real no servidor com `grep`
-4. Rodar `git add -A && git commit -m "..." && git push`
-5. Confirmar que `git status --short` está limpo
+2. Rodar `git add -A && git commit -m "..."`
+3. Fazer deploy no staging com `git push staging master`
+4. Validar staging
+5. Rodar `git push`
+6. Confirmar que `git status --short` está limpo
 
 ## O que não fazer
 
