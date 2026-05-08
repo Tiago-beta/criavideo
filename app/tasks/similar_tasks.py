@@ -61,6 +61,56 @@ _SIMILAR_TRANSCRIPT_LIMIT = 4200
 _SIMILAR_SCENE_DIALOGUE_LIMIT = 420
 _SIMILAR_GENERAL_PROMPT_SECTION_COUNT = 5
 _SIMILAR_GENERAL_PROMPT_MARKER_RE = re.compile(r"^⏱️\s*(\d+(?:[.,]\d+)?)\s*[–-]\s*(\d+(?:[.,]\d+)?)s:", re.MULTILINE)
+_SIMILAR_FIXED_CAMERA_TERMS = (
+    "camera fixa",
+    "câmera fixa",
+    "camera parada",
+    "câmera parada",
+    "camera travada",
+    "câmera travada",
+    "camera imovel",
+    "câmera imóvel",
+    "sem movimento de camera",
+    "sem movimento de câmera",
+    "tripod",
+    "tripé",
+    "locked-off",
+    "locked off",
+    "static camera",
+    "static shot",
+    "still camera",
+    "fixed camera",
+    "fixed shot",
+)
+_SIMILAR_MOVING_CAMERA_TERMS = (
+    "camera handheld",
+    "câmera handheld",
+    "handheld",
+    "tracking",
+    "tracking shot",
+    "follow",
+    "following",
+    "moving camera",
+    "camera movement",
+    "movimento de camera",
+    "movimento de câmera",
+    "push in",
+    "push-in",
+    "pull back",
+    "dolly",
+    "crane",
+    "orbit",
+    "orbita",
+    "órbita",
+    "pan",
+    "tilt",
+    "zoom",
+    "travelling",
+    "gimbal",
+    "micro-shake",
+    "micro shake",
+    "shaky",
+)
 
 
 def _safe_tags_dict(raw: object) -> dict:
@@ -130,6 +180,57 @@ def _normalize_similar_general_prompt_text(raw: object, limit: int = 3200) -> st
     return text.strip()[:limit].strip()
 
 
+def _infer_similar_camera_profile(
+    scene_payloads: list[dict] | None,
+    context_summary: object = "",
+) -> dict[str, str]:
+    fragments = [_normalize_similar_context_text(context_summary, limit=1800)]
+    for payload in scene_payloads or []:
+        if not isinstance(payload, dict):
+            continue
+        fragments.append(_normalize_similar_context_text(payload.get("prompt"), limit=420))
+        fragments.append(_normalize_similar_context_text(payload.get("spoken_context"), limit=180))
+
+    combined = " ".join(fragment for fragment in fragments if fragment).lower()
+    if not combined:
+        return {
+            "mode": "unspecified",
+            "label_pt": "camera estavel/nao confirmada",
+            "guidance_pt": "Camera sem movimento confirmado: priorize enquadramento estavel e nao invente pan, tilt, travelling, orbita ou zoom.",
+            "label_en": "stable or unconfirmed camera",
+            "guidance_en": "Prefer stable framing and do not invent camera travel, pan, tilt, orbit, or zoom that is not clearly present in the reference.",
+        }
+
+    fixed_score = sum(combined.count(term) for term in _SIMILAR_FIXED_CAMERA_TERMS)
+    moving_score = sum(combined.count(term) for term in _SIMILAR_MOVING_CAMERA_TERMS)
+
+    if fixed_score > 0 and fixed_score >= moving_score:
+        return {
+            "mode": "fixed",
+            "label_pt": "camera fixa/travada",
+            "guidance_pt": "Camera fixa/travada: manter o enquadramento principal parado, com a acao acontecendo dentro do quadro, sem pan, tilt, travelling, orbita ou zoom inventado.",
+            "label_en": "locked-off fixed camera",
+            "guidance_en": "Locked-off fixed camera: keep the framing static and let the action happen inside the frame, with no invented pan, tilt, camera travel, orbit, or zoom.",
+        }
+
+    if moving_score > 0:
+        return {
+            "mode": "moving",
+            "label_pt": "camera em movimento",
+            "guidance_pt": "Camera em movimento: preservar apenas os deslocamentos reais vistos no video de referencia, sem exagerar a intensidade nem trocar o eixo da captacao.",
+            "label_en": "moving camera",
+            "guidance_en": "Moving camera: preserve only the camera motion that is actually present in the reference clip, without exaggerating it or changing the capture axis.",
+        }
+
+    return {
+        "mode": "unspecified",
+        "label_pt": "camera estavel/nao confirmada",
+        "guidance_pt": "Camera sem movimento confirmado: priorize enquadramento estavel e nao invente pan, tilt, travelling, orbita ou zoom.",
+        "label_en": "stable or unconfirmed camera",
+        "guidance_en": "Prefer stable framing and do not invent camera travel, pan, tilt, orbit, or zoom that is not clearly present in the reference.",
+    }
+
+
 def _truncate_similar_general_clause(raw: object, fallback: str) -> str:
     text = _normalize_similar_general_prompt_text(raw, limit=260)
     if not text:
@@ -192,6 +293,8 @@ def _build_similar_general_prompt_context(
     context_summary: str,
     transcript_text: str,
     duration_seconds: float,
+    camera_label_pt: str,
+    camera_guidance_pt: str,
 ) -> str:
     effective_duration = max(1.0, float(duration_seconds or 0.0))
     lines = [
@@ -201,6 +304,10 @@ def _build_similar_general_prompt_context(
 
     normalized_context = _normalize_similar_general_prompt_text(context_summary, limit=1400)
     normalized_transcript = _normalize_similar_general_prompt_text(transcript_text, limit=1200)
+    if camera_label_pt:
+        lines.extend(["", f"Perfil de camera detectado: {camera_label_pt}"])
+    if camera_guidance_pt:
+        lines.extend(["Orientacao de camera:", camera_guidance_pt])
     if normalized_context:
         lines.extend(["", "Resumo visual global:", normalized_context])
     if normalized_transcript:
@@ -228,6 +335,8 @@ def _build_similar_general_prompt_fallback(
     context_summary: str,
     transcript_text: str,
     duration_seconds: float,
+    camera_mode: str,
+    camera_guidance_pt: str,
 ) -> str:
     prompts = [
         _normalize_similar_general_prompt_text(payload.get("prompt"), limit=260)
@@ -248,11 +357,22 @@ def _build_similar_general_prompt_fallback(
     main_character = "Mesmo personagem principal do video de referencia, mantendo identidade facial, idade aparente, postura corporal e expressao predominante."
     outfit = "Mesmas roupas, tecidos, modelagens e cores vistos no video de referencia, sem trocar nenhuma peca durante toda a cena."
     accessories = "Mesmos acessorios, objetos de mao e elementos de cena ja visiveis no video de referencia."
-    rules = "Manter identidade, figurino, cenario, escala, paleta, continuidade de movimento, camera e direcao do olhar; nao trocar rosto, roupa, idade, local ou iluminacao."
+    rules = (
+        f"{camera_guidance_pt} "
+        "Manter identidade, figurino, cenario, escala, paleta, continuidade de movimento, camera e direcao do olhar; "
+        "nao trocar rosto, roupa, idade, local ou iluminacao."
+    ).strip()
+
+    if camera_mode == "moving":
+        intro_fallback = "Apresentar o personagem principal no mesmo ambiente do video original com enquadramento inicial claro e movimento de camera apenas se ele ja estiver presente no video analisado."
+        closing_fallback = "Conduzir o fechamento preservando o mesmo comportamento de camera do video original, sem criar mudancas novas de eixo, pan ou zoom."
+    else:
+        intro_fallback = "Apresentar o personagem principal no mesmo ambiente do video original com enquadramento fixo/travado, deixando a acao acontecer dentro do quadro."
+        closing_fallback = "Conduzir o fechamento preservando a camera fixa/travada, valorizando gesto, expressao ou detalhe final sem deslocar a posicao da captacao."
 
     scene_0_3 = _truncate_similar_general_clause(
         first_prompt,
-        "Apresentar o personagem principal no mesmo ambiente do video original com enquadramento inicial claro e camera entrando suavemente na acao.",
+        intro_fallback,
     )
     scene_3_6 = _truncate_similar_general_clause(
         second_prompt,
@@ -264,11 +384,11 @@ def _build_similar_general_prompt_fallback(
     )
     scene_10_13 = _truncate_similar_general_clause(
         penultimate_prompt,
-        "Conduzir o fechamento com detalhe importante do personagem, objeto ou deslocamento de camera preservando a continuidade.",
+        closing_fallback,
     )
     scene_13_15 = _truncate_similar_general_clause(
         closing_prompt,
-        "Finalizar a cena com saida natural de quadro, repouso do movimento ou detalhe final coerente com o video de referencia.",
+        "Finalizar a cena com resolucao natural, mantendo o mesmo comportamento de camera do video de referencia e sem inventar movimento adicional.",
     )
 
     timeline_sections = _build_similar_general_timeline_sections(duration_seconds)
@@ -368,18 +488,25 @@ async def _generate_similar_general_prompt(
     context_summary: str,
     transcript_text: str,
     duration_seconds: float,
+    camera_mode: str,
+    camera_label_pt: str,
+    camera_guidance_pt: str,
 ) -> tuple[str, str]:
     fallback_prompt = _build_similar_general_prompt_fallback(
         scene_payloads=scene_payloads,
         context_summary=context_summary,
         transcript_text=transcript_text,
         duration_seconds=duration_seconds,
+        camera_mode=camera_mode,
+        camera_guidance_pt=camera_guidance_pt,
     )
     prompt_context = _build_similar_general_prompt_context(
         scene_payloads=scene_payloads,
         context_summary=context_summary,
         transcript_text=transcript_text,
         duration_seconds=duration_seconds,
+        camera_label_pt=camera_label_pt,
+        camera_guidance_pt=camera_guidance_pt,
     )
     timeline_sections = _build_similar_general_timeline_sections(duration_seconds)
     timeline_descriptions = [
@@ -398,7 +525,8 @@ async def _generate_similar_general_prompt(
     system_prompt = (
         "Voce converte a analise completa de um video de referencia em um unico prompt estruturado em portugues do Brasil. "
         "Retorne texto puro, sem markdown, sem JSON, sem comentarios extras e sem placeholders. "
-        "Preencha exatamente as secoes pedidas e mantenha a timeline final alinhada com a duracao real do video usando os marcadores informados."
+        "Preencha exatamente as secoes pedidas e mantenha a timeline final alinhada com a duracao real do video usando os marcadores informados. "
+        "Se a analise indicar camera fixa/travada, escreva isso claramente e nao invente pan, tilt, travelling, orbita, handheld ou zoom."
     )
     user_prompt = (
         "Use a analise abaixo para montar um prompt unico de recriacao do video. "
@@ -418,6 +546,7 @@ async def _generate_similar_general_prompt(
         "🎬 SCENE\n\n"
         f"{timeline_template}\n\n"
         "Regras adicionais: use portugues do Brasil, preserve o mesmo personagem, o mesmo figurino, a mesma ambientacao e a mesma continuidade visual do video de referencia. "
+        "No bloco de Rules, deixe explicito se a camera e fixa/travada ou se realmente se move no video analisado. "
         f"A timeline deve terminar em {effective_duration_label}s sem criar acoes alem do fim do video. "
         "Nao deixe campos vazios, nao use colchetes no resultado, nao invente secoes extras.\n\n"
         f"Analise do video:\n{prompt_context}"
@@ -844,7 +973,8 @@ def _build_scene_analysis_instruction(
     lines = [
         "Analise este frame e crie um prompt cinematográfico em português do Brasil.",
         "Escreva com ortografia, acentuação e pontuação corretas do pt-BR.",
-        "Descreva com riqueza de detalhes o sujeito principal, a ação visível, o enquadramento, o ambiente, a luz, as cores, a textura e o movimento de câmera.",
+        "Descreva com riqueza de detalhes o sujeito principal, a ação visível, o enquadramento, o ambiente, a luz, as cores, a textura e o comportamento da câmera.",
+        "Diga de forma objetiva se a câmera parece fixa/travada ou se há movimento real de câmera, sem inventar pan, tilt, zoom ou travelling quando isso não estiver evidente.",
         "Evite frases genéricas como 'cena cinematográfica' sem contexto visual real.",
         f"A cena representa o trecho de {start_time:.1f}s até {end_time:.1f}s de um vídeo de {duration_seconds:.1f}s.",
     ]
@@ -978,6 +1108,7 @@ def _request_similar_video_context_from_google_sync(
             "com ortografia, acentuação e pontuação corretas. "
             "Explique o contexto geral do que acontece no vídeo, quem são os personagens ou elementos principais, "
             "qual é a situação dramática, o ambiente, a progressão da ação e, se houver, o assunto das falas, da narração ou do áudio. "
+            "Diga também se a câmera permanece fixa/travada/parada ou se realmente se move ao longo do clipe. "
             f"O vídeo completo tem {duration_seconds:.1f}s. "
             "Não descreva frame por frame separadamente. Responda em um único parágrafo objetivo."
         )
@@ -1992,6 +2123,7 @@ async def run_similar_reference_analysis(
 
             detected_profile = await _detect_reference_mode(openai_client, scene_payloads)
             detected_mode = _normalize_detected_mode(detected_profile.get("mode"))
+            camera_profile = _infer_similar_camera_profile(scene_payloads, context_summary)
             detected_engine = _normalize_engine(
                 str(detected_profile.get("suggested_engine") or _suggest_engine_for_detected_mode(detected_mode))
             )
@@ -2038,6 +2170,9 @@ async def run_similar_reference_analysis(
                     "similar_total_duration": duration_seconds,
                     "similar_context_summary": context_summary,
                     "similar_transcript_excerpt": _normalize_similar_context_text(transcript_text, limit=900),
+                    "similar_camera_mode": camera_profile.get("mode") or "unspecified",
+                    "similar_camera_label": camera_profile.get("label_pt") or "camera estavel/nao confirmada",
+                    "similar_camera_guidance": camera_profile.get("guidance_pt") or "Camera sem movimento confirmado: priorize enquadramento estavel e nao invente movimento.",
                     "similar_detected_mode": detected_mode,
                     "similar_detected_confidence": detected_confidence,
                     "similar_detected_reason": detected_reason,
@@ -2053,6 +2188,9 @@ async def run_similar_reference_analysis(
                     context_summary=context_summary,
                     transcript_text=transcript_text,
                     duration_seconds=duration_seconds,
+                    camera_mode=str(camera_profile.get("mode") or "unspecified"),
+                    camera_label_pt=str(camera_profile.get("label_pt") or "camera estavel/nao confirmada"),
+                    camera_guidance_pt=str(camera_profile.get("guidance_pt") or "Camera sem movimento confirmado: priorize enquadramento estavel e nao invente movimento."),
                 )
                 tags.update(
                     {

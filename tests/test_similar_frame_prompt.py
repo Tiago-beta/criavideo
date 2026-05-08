@@ -8,9 +8,11 @@ from app.routers.video import _extract_explicit_scene_dialogue
 from app.tasks.similar_tasks import (
     _analyze_frame_prompt,
     _build_scene_analysis_instruction,
+    _build_similar_general_prompt_fallback,
     _build_similar_scene_speech_lock,
     _extract_scene_prompt_from_content,
     _extract_scene_transcript_excerpt,
+    _infer_similar_camera_profile,
 )
 
 
@@ -71,6 +73,39 @@ class TestSimilarFramePrompt(unittest.IsolatedAsyncioTestCase):
         self.assertIn("acentuação", instruction)
         self.assertIn("Contexto geral do vídeo", instruction)
         self.assertIn("Falas, narração ou áudio", instruction)
+        self.assertIn("câmera parece fixa/travada", instruction)
+
+    def test_infer_similar_camera_profile_detects_fixed_camera(self):
+        profile = _infer_similar_camera_profile(
+            [
+                {
+                    "prompt": "Bebê sentado de frente para um gato em sala interna, com câmera fixa em tripé e ação acontecendo dentro do quadro.",
+                    "spoken_context": "Sem fala.",
+                }
+            ],
+            "Casal observa ao fundo no sofá; a câmera permanece parada durante todo o clipe.",
+        )
+
+        self.assertEqual(profile["mode"], "fixed")
+        self.assertIn("Camera fixa/travada", profile["guidance_pt"])
+
+    def test_general_prompt_fallback_keeps_fixed_camera_rule(self):
+        prompt = _build_similar_general_prompt_fallback(
+            scene_payloads=[
+                {
+                    "prompt": "Bebê encara o gato sentado no mesmo ponto da sala, com câmera fixa e sem mudança de posição.",
+                    "spoken_context": "",
+                }
+            ],
+            context_summary="Vídeo interno curto com câmera fixa/travada observando a interação do bebê com o gato.",
+            transcript_text="",
+            duration_seconds=10.0,
+            camera_mode="fixed",
+            camera_guidance_pt="Camera fixa/travada: manter o enquadramento principal parado, com a acao acontecendo dentro do quadro, sem pan, tilt, travelling, orbita ou zoom inventado.",
+        )
+
+        self.assertIn("Camera fixa/travada", prompt)
+        self.assertNotIn("camera entrando suavemente na acao", prompt)
 
     def test_extract_scene_transcript_excerpt_uses_scene_window(self):
         excerpt = _extract_scene_transcript_excerpt(

@@ -1680,8 +1680,57 @@ def _pick_similar_scene_clause(raw: object, fallback: str) -> str:
     return text[0].lower() + text[1:] if len(text) > 1 else text.lower()
 
 
-def _infer_similar_unified_camera_descriptor(text_blob: str) -> str:
+def _infer_similar_unified_camera_mode(text_blob: str, tags_data: dict[str, Any] | None = None) -> str:
+    explicit_mode = str((tags_data or {}).get("similar_camera_mode") or "").strip().lower()
+    if explicit_mode in {"fixed", "moving", "unspecified"}:
+        return explicit_mode
+
     lowered = text_blob.lower()
+    fixed_terms = (
+        "camera fixa",
+        "câmera fixa",
+        "camera travada",
+        "câmera travada",
+        "camera parada",
+        "câmera parada",
+        "locked-off",
+        "locked off",
+        "static camera",
+        "tripod",
+        "tripé",
+        "fixed camera",
+    )
+    moving_terms = (
+        "handheld",
+        "tracking",
+        "follow",
+        "moving camera",
+        "camera movement",
+        "movimento de camera",
+        "movimento de câmera",
+        "push in",
+        "pull back",
+        "pan",
+        "tilt",
+        "orbit",
+        "dolly",
+        "crane",
+        "zoom",
+        "travelling",
+    )
+    fixed_score = sum(lowered.count(term) for term in fixed_terms)
+    moving_score = sum(lowered.count(term) for term in moving_terms)
+    if fixed_score > 0 and fixed_score >= moving_score:
+        return "fixed"
+    if moving_score > 0:
+        return "moving"
+    return "unspecified"
+
+
+def _infer_similar_unified_camera_descriptor(text_blob: str, camera_mode: str = "unspecified") -> str:
+    lowered = text_blob.lower()
+    if camera_mode == "fixed":
+        return "locked-off"
     keyword_map = (
         (("drone", "aerial", "bird's-eye", "birds-eye", "top-down"), "drone"),
         (("pov", "point of view", "first-person"), "POV"),
@@ -1694,7 +1743,7 @@ def _infer_similar_unified_camera_descriptor(text_blob: str) -> str:
     for keywords, label in keyword_map:
         if any(keyword in lowered for keyword in keywords):
             return label
-    return "handheld"
+    return "handheld" if camera_mode == "moving" else "locked-off"
 
 
 def _infer_similar_unified_soundscape(text_blob: str, transcript_text: str) -> str:
@@ -1747,8 +1796,11 @@ def _infer_similar_unified_subject(text_blob: str) -> str:
     return "the main subject from the reference video, preserving identity cues, body language, and proportions"
 
 
-def _infer_similar_unified_camera_behavior(text_blob: str) -> str:
+def _infer_similar_unified_camera_behavior(text_blob: str, camera_mode: str = "unspecified") -> str:
     lowered = text_blob.lower()
+    if camera_mode == "fixed":
+        return "locked-off static framing, tripod-stable perspective, no pan, tilt, orbit, camera travel, or invented zoom"
+
     behavior_parts: list[str] = []
     if any(token in lowered for token in ("handheld", "shake", "shaky", "micro-shake")):
         behavior_parts.append("handheld micro-shakes")
@@ -1761,12 +1813,18 @@ def _infer_similar_unified_camera_behavior(text_blob: str) -> str:
     if any(token in lowered for token in ("pan", "tilt", "low angle", "high angle", "orbit")):
         behavior_parts.append("small pan and tilt corrections")
     if not behavior_parts:
-        behavior_parts = [
-            "handheld micro-shakes",
-            "natural focus breathing",
-            "minor reframing",
-            "subtle zoom adjustments",
-        ]
+        if camera_mode == "moving":
+            behavior_parts = [
+                "natural camera movement matching the reference clip",
+                "minor reframing",
+                "natural focus breathing",
+            ]
+        else:
+            behavior_parts = [
+                "locked-off static framing",
+                "stable tripod perspective",
+                "no invented pan, tilt, orbit, or zoom",
+            ]
     return ", ".join(dict.fromkeys(behavior_parts))
 
 
@@ -1775,6 +1833,13 @@ def _build_similar_unified_prompt_context(project: VideoProject, scenes: list[An
         f"Project title: {str(project.title or '').strip() or 'Video Semelhante'}",
         f"Aspect ratio: {str(project.aspect_ratio or '').strip() or '16:9'}",
     ]
+
+    camera_label = _normalize_similar_unified_prompt_text(tags_data.get("similar_camera_label"), limit=120)
+    camera_guidance = _normalize_similar_unified_prompt_text(tags_data.get("similar_camera_guidance"), limit=320)
+    if camera_label:
+        lines.extend(["", f"Detected camera profile: {camera_label}"])
+    if camera_guidance:
+        lines.extend(["Camera guidance:", camera_guidance])
 
     context_summary = _normalize_similar_unified_prompt_text(tags_data.get("similar_context_summary"), limit=1400)
     transcript_excerpt = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=900)
@@ -1808,15 +1873,16 @@ def _build_similar_unified_prompt_fallback(project: VideoProject, scenes: list[A
     transcript_excerpt = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=320)
     context_summary = _normalize_similar_unified_prompt_text(tags_data.get("similar_context_summary"), limit=500)
     combined_text = " ".join(scene_prompts + [context_summary, transcript_excerpt]).strip()
+    camera_mode = _infer_similar_unified_camera_mode(combined_text, tags_data)
 
-    camera = _infer_similar_unified_camera_descriptor(combined_text)
+    camera = _infer_similar_unified_camera_descriptor(combined_text, camera_mode)
     soundscape = _infer_similar_unified_soundscape(combined_text, transcript_excerpt)
     lighting, visual_effects = _infer_similar_unified_lighting(combined_text)
     subject = _infer_similar_unified_subject(combined_text)
     location = "the same environment, spatial layout, and atmosphere seen in the reference video"
     outfit = "the original wardrobe and styling visible in the reference"
     accessories = "all props, work tools, and handheld objects already visible in the reference"
-    camera_behavior = _infer_similar_unified_camera_behavior(combined_text)
+    camera_behavior = _infer_similar_unified_camera_behavior(combined_text, camera_mode)
 
     intro_clause = _pick_similar_scene_clause(
         scene_prompts[0] if scene_prompts else context_summary,
@@ -1878,6 +1944,7 @@ async def _generate_similar_unified_prompt(
         "Return plain text only in English, never markdown, never JSON, never bullet lists, never surrounding quotes. "
         "Follow this structure strictly: first paragraph starts with 'Ultra-realistic cinematic' and fills camera, location, sound, lighting, subject, outfit, and accessories. "
         "Second paragraph starts with 'The scene unfolds in one continuous shot:' and describes beginning, middle, climax, ending, then camera behavior. "
+        "If the reference analysis indicates a fixed or locked-off camera, state that clearly and do not invent pans, tilts, zooms, handheld shake, or camera travel. "
         "Never leave placeholders like [camera] or [location]. Infer missing details from the analysis."
     )
     user_prompt = (
