@@ -19,6 +19,8 @@ content = f"""http:
       service: criavideo-staging-svc
       tls:
         certresolver: letsencrypt
+        domains:
+          - main: staging.criavideo.pro
   middlewares:
     criavideo-staging-redirect-https:
       redirectScheme:
