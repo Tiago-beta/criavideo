@@ -1,4 +1,4 @@
-    console.log("[CriaVideo] app.js v381 loaded");
+    console.log("[CriaVideo] app.js v382 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -12987,11 +12987,10 @@ async function generateAiScript() {
         const usePhotosToggle = document.getElementById("script-use-photos");
         const hasPersonaReference = !disablePersonaReference && selectedPersonaIds.length > 0;
         const engineLabel = engine === "grok"
-            const engineLabel = engine === "grok"
-                ? "Cria 2.5 Speed"
-                : engine === "wan2"
-                    ? "Ultra High 3.0"
-                    : "Mega 2.0 Ultra";
+            ? "Cria 2.5 Speed"
+            : engine === "wan2"
+                ? "Ultra High 3.0"
+                : "Mega 2.0 Ultra";
         try {
             let customImageIds = [];
             if (usePersonalizedReferences && aiSuggestCustomImages.length > 0) {
