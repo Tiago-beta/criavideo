@@ -96,12 +96,14 @@ Se esses 4 pontos não forem sincronizados, o navegador pode continuar carregand
    - JS: funcao que controla o recurso
    - CSS: seletor principal do visual restaurado
    - PWA: versao/query string sincronizada
+- Antes de qualquer deploy/frontend commit que toque `static/app.js`, `static/index.html`, `static/style.css`, `static/pwa.js` ou `static/sw.js`, rodar `powershell -ExecutionPolicy Bypass -File .\scripts\verify_frontend_bundle_sync.ps1` para validar sincronismo local do bundle.
 - Na validacao remota de frontend, nao conferir so versao. Sempre fazer `grep` no VPS para pelo menos 1 token de HTML, 1 de JS e 1 de CSS do recurso alterado. Se qualquer camada estiver ausente, nao commitar.
 - Se o hotfix for de modal/componente interativo com `onclick`, `onchange` ou botoes segmentados, confirmar tambem que as funcoes referenciadas ainda existem no `static/app.js` publicado.
 - Depois de qualquer hotfix no editor, validar no mínimo:
   - se houve deploy real no VPS
   - se o token novo de versão entrou no servidor
    - se HTML + JS + CSS do recurso alterado chegaram juntos no servidor
+   - rodar `powershell -ExecutionPolicy Bypass -File .\scripts\verify_frontend_bundle_sync.ps1 -CompareProduction` para confirmar local = host do VPS = container ativo = HTML publico
   - se o `git status` ficou limpo após commit/push
 
 ## Problemas operacionais conhecidos

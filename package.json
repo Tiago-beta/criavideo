@@ -4,6 +4,8 @@
   "private": true,
   "description": "Empacotamento Android do CriaVideo via Capacitor",
   "scripts": {
+    "verify:frontend:local": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify_frontend_bundle_sync.ps1",
+    "verify:frontend:production": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify_frontend_bundle_sync.ps1 -CompareProduction",
     "cap:add:android": "npx cap add android",
     "cap:sync": "npx cap sync",
     "cap:open:android": "npx cap open android",
