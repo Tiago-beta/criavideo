@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260508-04">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260508-05">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 389;
+        var REQUIRED_VER = 390;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -371,7 +371,10 @@
 
                     <section id="page-publish" class="page">
                         <div class="page-header">
-                            <h1>Publicar</h1>
+                            <div class="page-header-left">
+                                <h1>Publicar</h1>
+                                <button id="btn-open-publish-source" class="btn btn-primary btn-add-project" type="button" title="Selecionar video para publicar" aria-label="Selecionar video para publicar">+</button>
+                            </div>
                             <div class="page-header-right">
                                 <div class="sidebar-credits page-credits-badge" data-credits-trigger title="Clique para adicionar saldo">
                                     <span class="sidebar-credits-label">Saldo</span>
@@ -388,7 +391,7 @@
                         <div id="publish-tab-publish" class="publish-tab-content active">
                             <div class="panel">
                                 <div id="publish-form-area">
-                                    <div class="publish-select-row">
+                                    <div class="publish-select-row" hidden aria-hidden="true">
                                         <div class="form-group publish-form-group">
                                             <button
                                                 id="pub-render-picker-btn"
@@ -410,6 +413,7 @@
                                             </select>
                                         </div>
                                     </div>
+                                    <div id="publish-selected-render-info" class="publish-selected-render-info">Nenhum video selecionado.</div>
                                     <div id="pub-ai-loading" class="pub-ai-loading" hidden>
                                         <div class="spinner-small"></div>
                                         <span>IA gerando sugestões...</span>
@@ -536,7 +540,10 @@
 
                     <section id="page-analyze" class="page">
                         <div class="page-header">
-                            <h1>Analisar</h1>
+                            <div class="page-header-left">
+                                <h1>Analisar</h1>
+                                <button id="btn-add-analyze-account" class="btn btn-primary btn-add-project" type="button" title="Adicionar conta para analisar" aria-label="Adicionar conta para analisar">+</button>
+                            </div>
                             <div class="page-header-right">
                                 <div class="sidebar-credits page-credits-badge" data-credits-trigger title="Clique para adicionar saldo">
                                     <span class="sidebar-credits-label">Saldo</span>
@@ -647,8 +654,8 @@
                     <section id="page-automate" class="page">
                         <div class="page-header">
                             <div class="page-header-left automate-header-main">
-                                <button id="btn-new-automation" class="btn btn-primary btn-add-project" type="button" title="Nova automação" aria-label="Nova automação">+</button>
                                 <h1>Automatizar</h1>
+                                <button id="btn-new-automation" class="btn btn-primary btn-add-project" type="button" title="Nova automação" aria-label="Nova automação">+</button>
                             </div>
                             <div class="page-header-right">
                                 <div class="sidebar-credits page-credits-badge" data-credits-trigger title="Clique para adicionar saldo">
@@ -657,12 +664,12 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="page-subheader automate-subheader">
-                            <button id="btn-auto-pilot" class="btn btn-secondary btn-sm" type="button">Piloto automatico</button>
-                        </div>
                         <div class="automate-sections">
                             <div class="automate-section">
-                                <h3 class="section-title">Criação automática</h3>
+                                <div class="automate-section-head">
+                                    <h3 class="section-title">Criação automática</h3>
+                                    <button id="btn-auto-pilot" class="btn btn-secondary btn-sm" type="button">Piloto automatico</button>
+                                </div>
                                 <p class="section-subtitle">Crie e publique vídeos automaticamente com IA. Defina temas, frequência e deixe o sistema trabalhar.</p>
                                 <div id="auto-schedules-list" class="cards-grid">
                                     <div class="loading">Carregando automações...</div>
@@ -3813,8 +3820,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260508-04"></script>
-    <script src="/video/static/pwa.js?v=20260508-04"></script>
+    <script src="/video/static/app.js?v=20260508-05"></script>
+    <script src="/video/static/pwa.js?v=20260508-05"></script>
 </body>
 </html>
 

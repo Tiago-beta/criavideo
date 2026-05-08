@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v389 loaded");
+console.log("[CriaVideo] app.js v390 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -751,6 +751,12 @@ function bindDashboardEvents() {
             _publishOpenRenderSourceModal();
         });
     }
+    const publishHeaderBtn = document.getElementById("btn-open-publish-source");
+    if (publishHeaderBtn) {
+        publishHeaderBtn.addEventListener("click", () => {
+            _publishOpenRenderSourceModal();
+        });
+    }
     const renderSelect = document.getElementById("pub-render-select");
     if (renderSelect) {
         renderSelect.addEventListener("change", (e) => {
@@ -825,6 +831,12 @@ function bindDashboardEvents() {
     if (analyzeRunBtn) {
         analyzeRunBtn.addEventListener("click", () => {
             runAnalyzeChannel();
+        });
+    }
+    const analyzeAddAccountBtn = document.getElementById("btn-add-analyze-account");
+    if (analyzeAddAccountBtn) {
+        analyzeAddAccountBtn.addEventListener("click", () => {
+            connectPlatform("youtube");
         });
     }
     const analyzeHistoryBtn = document.getElementById("btn-analyze-history");
@@ -14381,7 +14393,8 @@ async function watchVideo(projectId) {
 function _publishSyncRenderPicker() {
     const select = document.getElementById("pub-render-select");
     const pickerBtn = document.getElementById("pub-render-picker-btn");
-    if (!select || !pickerBtn) {
+    const summary = document.getElementById("publish-selected-render-info");
+    if (!select) {
         return;
     }
 
@@ -14393,8 +14406,16 @@ function _publishSyncRenderPicker() {
     const rawLabel = selectedItem?.picker_label || fallbackLabel || "Selecione aqui...";
     const compactLabel = rawLabel.length > 84 ? `${rawLabel.slice(0, 84)}...` : rawLabel;
 
-    pickerBtn.textContent = compactLabel;
-    pickerBtn.classList.toggle("has-value", Boolean(selectedRenderId));
+    if (pickerBtn) {
+        pickerBtn.textContent = compactLabel;
+        pickerBtn.classList.toggle("has-value", Boolean(selectedRenderId));
+    }
+    if (summary) {
+        summary.textContent = selectedRenderId
+            ? `Video selecionado: ${rawLabel}`
+            : "Nenhum video selecionado. Use o botão + para escolher um video ou enviar um novo.";
+        summary.classList.toggle("has-value", Boolean(selectedRenderId));
+    }
 }
 
 function _publishOpenRenderSourceModal() {
