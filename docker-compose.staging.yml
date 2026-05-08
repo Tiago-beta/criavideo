@@ -14,7 +14,7 @@ services:
       - PUBLIC_API_URL=https://staging.criavideo.pro/api
       - MEDIA_DIR=/opt/levita-video/media
     volumes:
-      - /opt/levita-video-staging/media:/opt/levita-video/media
+      - /opt/levita-video/media:/opt/levita-video/media
       - /opt/olevita/backend/stems:/opt/olevita/backend/stems:ro
       - /opt/olevita/backend/uploads:/opt/olevita/backend/uploads:ro
     networks:
