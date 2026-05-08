@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v386 loaded");
+console.log("[CriaVideo] app.js v387 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -2266,6 +2266,8 @@ let similarState = {
     sourceVideoDurationSeconds: 0,
     sourceVideoDurationStatus: "idle",
     sourceDurationProbeToken: 0,
+    sourceAspectKey: "",
+    sourceAspectManuallySelected: false,
     pollingTimer: null,
     engineManuallySelected: false,
     selectedEngine: "wan2",
@@ -2808,9 +2810,72 @@ function _setSimilarSourceDurationState(status = "idle", durationSeconds = 0) {
     scheduleSimilarAnalysisCreditEstimates();
 }
 
-function _beginSimilarSourceDurationProbe(videoEl) {
+function _normalizeSimilarAspectRatio(value) {
+    const normalized = String(value || "").trim();
+    return ["16:9", "9:16", "1:1"].includes(normalized) ? normalized : "";
+}
+
+function _resolveSimilarAspectRatioFromDimensions(width, height) {
+    const safeWidth = Number(width || 0);
+    const safeHeight = Number(height || 0);
+    if (!(safeWidth > 0) || !(safeHeight > 0)) {
+        return "";
+    }
+
+    const ratio = safeWidth / safeHeight;
+    const candidates = [
+        { value: "16:9", ratio: 16 / 9 },
+        { value: "9:16", ratio: 9 / 16 },
+        { value: "1:1", ratio: 1 },
+    ];
+    let bestValue = "16:9";
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const candidate of candidates) {
+        const distance = Math.abs(ratio - candidate.ratio);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestValue = candidate.value;
+        }
+    }
+    return bestValue;
+}
+
+function _setSimilarDetectedAspectRatio(aspectRatio, options = {}) {
+    const normalizedAspect = _normalizeSimilarAspectRatio(aspectRatio);
+    if (!normalizedAspect) {
+        return;
+    }
+
+    const aspectEl = document.getElementById("similar-aspect");
+    if (!aspectEl) {
+        return;
+    }
+
+    const sourceKey = String(options.sourceKey || "").trim();
+    if (sourceKey && similarState.sourceAspectKey !== sourceKey) {
+        similarState.sourceAspectKey = sourceKey;
+        similarState.sourceAspectManuallySelected = false;
+    }
+
+    if (similarState.sourceAspectManuallySelected) {
+        return;
+    }
+
+    if (aspectEl.value !== normalizedAspect) {
+        aspectEl.value = normalizedAspect;
+    }
+}
+
+function _beginSimilarSourceDurationProbe(videoEl, options = {}) {
     similarState.sourceDurationProbeToken = Number(similarState.sourceDurationProbeToken || 0) + 1;
     const token = similarState.sourceDurationProbeToken;
+    const sourceKey = String(options.sourceKey || "").trim();
+
+    const syncDetectedAspect = () => {
+        const explicitAspect = _normalizeSimilarAspectRatio(options.aspectRatio);
+        const metadataAspect = _resolveSimilarAspectRatioFromDimensions(videoEl?.videoWidth, videoEl?.videoHeight);
+        _setSimilarDetectedAspectRatio(metadataAspect || explicitAspect, { sourceKey });
+    };
 
     if (!videoEl) {
         _setSimilarSourceDurationState("unavailable", 0);
@@ -2819,6 +2884,7 @@ function _beginSimilarSourceDurationProbe(videoEl) {
 
     const finish = (status, value = 0) => {
         if (similarState.sourceDurationProbeToken !== token) return;
+        syncDetectedAspect();
         _setSimilarSourceDurationState(status, value);
     };
 
@@ -3575,6 +3641,13 @@ function initCreateWizard() {
     if (similarSourceFileClear) {
         similarSourceFileClear.addEventListener("click", () => {
             _clearSimilarSourceFile();
+        });
+    }
+
+    const similarAspectSelect = document.getElementById("similar-aspect");
+    if (similarAspectSelect) {
+        similarAspectSelect.addEventListener("change", () => {
+            similarState.sourceAspectManuallySelected = true;
         });
     }
 
@@ -4438,6 +4511,8 @@ function _clearSimilarSourceFile(options = {}) {
     _revokeSimilarSourceVideoObjectUrl();
     similarState.sourceVideoFile = null;
     similarState.sourceVideoName = "";
+    similarState.sourceAspectKey = "";
+    similarState.sourceAspectManuallySelected = false;
     similarState.sourceDurationProbeToken = Number(similarState.sourceDurationProbeToken || 0) + 1;
     _setSimilarSourceDurationState("idle", 0);
     const inputEl = document.getElementById("similar-source-file-input");
@@ -4587,6 +4662,10 @@ function _clearSimilarSourcePreview() {
 
     const sourceEl = document.getElementById("similar-source-url");
     const hasAnySource = !!String(sourceEl?.value || "").trim() || !!similarState.sourceVideoFile;
+    if (!hasAnySource) {
+        similarState.sourceAspectKey = "";
+        similarState.sourceAspectManuallySelected = false;
+    }
     similarState.sourceDurationProbeToken = Number(similarState.sourceDurationProbeToken || 0) + 1;
     _setSimilarSourceDurationState(hasAnySource ? "unavailable" : "idle", 0);
 }
@@ -4599,8 +4678,10 @@ function _renderSimilarResolvedSourcePreview(previewUrl, options = {}) {
     const titleEl = document.getElementById("similar-source-preview-title");
     const resolvedPreviewUrl = String(previewUrl || "").trim();
     const sourceUrl = String(options.sourceUrl || "").trim();
+    const aspectRatio = String(options.aspectRatio || "").trim();
     const hint = String(options.hint || "").trim();
     const title = String(options.title || "").trim() || "Prévia do vídeo de referência";
+    const sourceKey = String(options.sourceKey || resolvedPreviewUrl || sourceUrl).trim();
 
     if (!wrapEl || !stageEl || !hintEl || !openLinkEl || !titleEl || !resolvedPreviewUrl) {
         _clearSimilarSourcePreview();
@@ -4617,9 +4698,9 @@ function _renderSimilarResolvedSourcePreview(previewUrl, options = {}) {
         videoEl.playsInline = true;
         videoEl.preload = "metadata";
         stageEl.appendChild(videoEl);
-        _beginSimilarSourceDurationProbe(videoEl);
+        _beginSimilarSourceDurationProbe(videoEl, { sourceKey, aspectRatio });
     } else {
-        _beginSimilarSourceDurationProbe(existingVideo);
+        _beginSimilarSourceDurationProbe(existingVideo, { sourceKey, aspectRatio });
     }
 
     titleEl.textContent = title;
@@ -4645,6 +4726,7 @@ function _syncSimilarSourcePreview(projectOrTags = null) {
 
     const sourceType = String(tags.similar_source_type || "").trim().toLowerCase();
     const sourceUrl = String(tags.similar_source_url || "").trim();
+    const projectAspect = _normalizeSimilarAspectRatio(projectOrTags?.aspect_ratio);
     const title = sourceType === "upload"
         ? "Prévia do vídeo enviado"
         : "Prévia do vídeo de referência";
@@ -4652,6 +4734,8 @@ function _syncSimilarSourcePreview(projectOrTags = null) {
     _renderSimilarResolvedSourcePreview(previewUrl, {
         title,
         sourceUrl,
+        aspectRatio: projectAspect,
+        sourceKey: `${sourceType}:${sourceUrl || previewUrl}`,
     });
 }
 
@@ -4662,6 +4746,7 @@ function _renderSimilarUploadedSourcePreview() {
     const openLinkEl = document.getElementById("similar-source-open-link");
     const titleEl = document.getElementById("similar-source-preview-title");
     const previewUrl = String(similarState.sourceVideoObjectUrl || "").trim();
+    const sourceKey = String(similarState.sourceAspectKey || `upload:${String(similarState.sourceVideoName || previewUrl).trim()}`);
 
     if (!wrapEl || !stageEl || !hintEl || !openLinkEl || !titleEl || !previewUrl) {
         _clearSimilarSourcePreview();
@@ -4678,9 +4763,9 @@ function _renderSimilarUploadedSourcePreview() {
         videoEl.playsInline = true;
         videoEl.preload = "metadata";
         stageEl.appendChild(videoEl);
-        _beginSimilarSourceDurationProbe(videoEl);
+        _beginSimilarSourceDurationProbe(videoEl, { sourceKey });
     } else {
-        _beginSimilarSourceDurationProbe(existingUploadVideo);
+        _beginSimilarSourceDurationProbe(existingUploadVideo, { sourceKey });
     }
 
     titleEl.textContent = "Prévia do vídeo enviado";
@@ -4721,7 +4806,9 @@ function _renderSimilarSourcePreview(rawValue = null) {
         videoEl.playsInline = true;
         videoEl.preload = "metadata";
         stageEl.appendChild(videoEl);
-        _beginSimilarSourceDurationProbe(videoEl);
+        _beginSimilarSourceDurationProbe(videoEl, {
+            sourceKey: `url:${payload.sourceUrl}`,
+        });
     } else {
         const iframeEl = document.createElement("iframe");
         iframeEl.src = payload.previewUrl;
@@ -4764,6 +4851,8 @@ function _handleSimilarSourceFileInput(event) {
     if (sourceEl) sourceEl.value = "";
 
     _clearSimilarSourceFile({ skipPreviewReset: true });
+    similarState.sourceAspectKey = `upload:${String(file.name || "video").trim()}:${Number(file.size || 0)}`;
+    similarState.sourceAspectManuallySelected = false;
     similarState.sourceVideoFile = file;
     similarState.sourceVideoName = String(file.name || "video").trim();
     try {
@@ -9024,6 +9113,8 @@ function _resetSimilarModeState() {
     _clearSimilarUnifiedPendingUploads();
     similarState.unifiedUseLastImageAsFinalFrame = false;
     similarState.unifiedLastFrameDirty = false;
+    similarState.sourceAspectKey = "";
+    similarState.sourceAspectManuallySelected = false;
     similarState.unifiedAutoImageKey = "";
     similarState.unifiedAutoImageStatus = "idle";
     similarState.sourceVideoDurationSeconds = 0;
