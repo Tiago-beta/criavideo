@@ -89,9 +89,19 @@ Se esses 4 pontos não forem sincronizados, o navegador pode continuar carregand
 - Ao mexer no editor (`static/app.js`, `static/index.html`, `static/style.css`), preservar recursos já restaurados anteriormente.
 - Em qualquer UI nova, priorizar visual moderno, pouco texto, mais ícones e menos blocos explicativos.
 - Evitar visual genérico/clean demais quando o pedido permitir algo mais marcante e direto.
+- Se a tarefa tocar qualquer arquivo do bundle frontend (`static/app.js`, `static/index.html`, `static/style.css`, `static/pwa.js`, `static/sw.js`), tratar esses arquivos como um conjunto. Nunca restaurar ou publicar só HTML/JS sem conferir o CSS correspondente e o versionamento do PWA.
+- Antes de editar hotfix de frontend, rodar `git status --short`. Se algum arquivo do bundle frontend já estiver modificado por outra janela, NAO editar por cima no workspace principal. Criar um `git worktree` limpo no commit atual e fazer o hotfix nele para evitar reverter partes recentes sem perceber.
+- Em qualquer restauracao de recurso visual, validar localmente pelo menos 1 token de cada camada antes do deploy:
+   - HTML: id/classe/texto do controle restaurado
+   - JS: funcao que controla o recurso
+   - CSS: seletor principal do visual restaurado
+   - PWA: versao/query string sincronizada
+- Na validacao remota de frontend, nao conferir so versao. Sempre fazer `grep` no VPS para pelo menos 1 token de HTML, 1 de JS e 1 de CSS do recurso alterado. Se qualquer camada estiver ausente, nao commitar.
+- Se o hotfix for de modal/componente interativo com `onclick`, `onchange` ou botoes segmentados, confirmar tambem que as funcoes referenciadas ainda existem no `static/app.js` publicado.
 - Depois de qualquer hotfix no editor, validar no mínimo:
   - se houve deploy real no VPS
   - se o token novo de versão entrou no servidor
+   - se HTML + JS + CSS do recurso alterado chegaram juntos no servidor
   - se o `git status` ficou limpo após commit/push
 
 ## Problemas operacionais conhecidos
