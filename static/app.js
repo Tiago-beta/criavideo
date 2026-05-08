@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v387 loaded");
+console.log("[CriaVideo] app.js v388 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -13575,7 +13575,7 @@ async function openPersonaManager(context = "script") {
     _personaManagerMulti = _isMultiPersonaEnabled(_personaManagerContext);
 
     const titleEl = document.getElementById("persona-manager-title");
-    if (titleEl) titleEl.textContent = "Gerenciar";
+    if (titleEl) titleEl.textContent = "Adicionar";
 
     const subtitleEl = document.getElementById("persona-manager-subtitle");
     if (subtitleEl) {
