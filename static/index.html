@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260508-02">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260508-03">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 382;
+        var REQUIRED_VER = 383;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1002,34 +1002,34 @@
                 <div id="create-mode-selection" class="create-mode-selection">
                     <h3 class="wizard-question">Como você quer criar seu vídeo?</h3>
                     <div class="mode-selection-grid mode-selection-grid-create">
-                        <div class="mode-selection-card" data-create-mode="wizard" tabindex="0">
+                        <button class="mode-selection-card create-mode-card" data-create-mode="wizard" type="button" onclick="_chooseCreateMode('wizard')">
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                             </div>
                             <strong>Assistente</strong>
                             <small>A IA cria o roteiro, imagens e narração automaticamente. Basta informar o tema.</small>
-                        </div>
-                        <div class="mode-selection-card" data-create-mode="script" tabindex="0">
+                        </button>
+                        <button class="mode-selection-card create-mode-card" data-create-mode="script" type="button" onclick="_chooseCreateMode('script')">
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                             </div>
                             <strong>Meu Roteiro</strong>
                             <small>Escreva ou cole seu próprio roteiro e envie fotos, áudios ou vídeos.</small>
-                        </div>
-                        <div class="mode-selection-card" data-create-mode="similar" tabindex="0">
+                        </button>
+                        <button class="mode-selection-card create-mode-card" data-create-mode="similar" type="button" onclick="_chooseCreateMode('similar')">
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                             </div>
                             <strong>Semelhante</strong>
                             <small>Cole o link de qualquer vídeo da internet e recrie cena por cena com IA.</small>
-                        </div>
-                        <div class="mode-selection-card" data-create-mode="workflow" tabindex="0">
+                        </button>
+                        <button class="mode-selection-card create-mode-card" data-create-mode="workflow" type="button" onclick="_chooseCreateMode('workflow')">
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.7 7.5 10.8 15"/><path d="M15.3 7.5 13.2 15"/><path d="M9 6h6"/></svg>
                             </div>
                             <strong>Workflow</strong>
                             <small>Monte um fluxo visual com prompt, referências, Imputs e motores de IA.</small>
-                        </div>
+                        </button>
                     </div>
                 </div>
 
@@ -3649,8 +3649,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260508-02"></script>
-    <script src="/video/static/pwa.js?v=20260508-02"></script>
+    <script src="/video/static/app.js?v=20260508-03"></script>
+    <script src="/video/static/pwa.js?v=20260508-03"></script>
 </body>
 </html>
 

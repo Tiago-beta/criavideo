@@ -3627,6 +3627,120 @@ th {
     backdrop-filter: blur(12px);
 }
 
+#modal-new-project .create-mode-selection,
+#modal-editor-start .create-mode-selection,
+#modal-publish-render-source .create-mode-selection {
+    position: relative;
+    z-index: 1;
+}
+
+#modal-new-project .mode-selection-grid,
+#modal-editor-start .mode-selection-grid,
+#modal-publish-render-source .mode-selection-grid {
+    display: grid;
+    gap: 16px;
+    margin-top: 16px;
+    width: 100%;
+    max-width: 520px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+#modal-new-project .mode-selection-grid-create {
+    max-width: 900px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+#modal-editor-start .editor-start-grid {
+    max-width: 900px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#modal-publish-render-source .mode-selection-grid {
+    max-width: 640px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#modal-new-project .mode-selection-card,
+#modal-editor-start .mode-selection-card,
+#modal-publish-render-source .mode-selection-card {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    padding: 28px 18px 22px;
+    background: var(--bg-card-strong);
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    color: var(--text);
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+#modal-new-project .mode-selection-card:hover,
+#modal-editor-start .mode-selection-card:hover,
+#modal-publish-render-source .mode-selection-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 16px rgba(255, 167, 38, 0.2);
+    transform: translateY(-3px);
+}
+
+#modal-new-project .mode-selection-card:active,
+#modal-editor-start .mode-selection-card:active,
+#modal-publish-render-source .mode-selection-card:active {
+    transform: translateY(0);
+}
+
+#modal-new-project .mode-selection-card:focus-visible,
+#modal-editor-start .mode-selection-card:focus-visible,
+#modal-publish-render-source .mode-selection-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+#modal-new-project .mode-selection-icon,
+#modal-editor-start .mode-selection-icon,
+#modal-publish-render-source .mode-selection-icon {
+    width: 56px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.05);
+    flex-shrink: 0;
+}
+
+#modal-new-project .mode-selection-icon svg,
+#modal-editor-start .mode-selection-icon svg,
+#modal-publish-render-source .mode-selection-icon svg {
+    color: var(--accent);
+}
+
+#modal-new-project .mode-selection-card strong,
+#modal-editor-start .mode-selection-card strong,
+#modal-publish-render-source .mode-selection-card strong {
+    font-size: 1.05rem;
+    color: var(--text);
+}
+
+#modal-new-project .mode-selection-card small,
+#modal-editor-start .mode-selection-card small,
+#modal-publish-render-source .mode-selection-card small {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
 .similar-busy-card {
     width: min(100%, 460px);
     padding: 24px 22px;
@@ -6519,11 +6633,16 @@ th,
     text-align: center;
     gap: 10px;
     padding: 28px 18px 22px;
-    background: var(--card);
+    width: 100%;
+    background: var(--bg-card-strong);
     border: 2px solid var(--border);
     border-radius: 16px;
+    color: inherit;
+    font: inherit;
     cursor: pointer;
     transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+    appearance: none;
+    -webkit-appearance: none;
 }
 .mode-selection-card:hover {
     border-color: var(--accent);
@@ -9154,7 +9273,7 @@ th,
     text-align: center;
     gap: 8px;
     padding: 18px 12px 14px;
-    background: var(--card);
+    background: var(--bg-card-strong);
     border: 2px solid var(--border);
     border-radius: 14px;
     cursor: pointer;

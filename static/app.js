@@ -1,4 +1,4 @@
-    console.log("[CriaVideo] app.js v382 loaded");
+    console.log("[CriaVideo] app.js v383 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const API = IS_CAPACITOR_APP ? "https://criavideo.pro/api" : "/api";
 const APP_TOKEN_KEY = "criavideo_token";
@@ -3440,14 +3440,29 @@ async function saveProjectEdit() {
     }
 }
 
+function _chooseCreateMode(mode) {
+    if (!mode) return;
+    const selector = document.getElementById("create-mode-selection");
+    if (selector) {
+        selector.hidden = true;
+    }
+    switchCreateMode(mode);
+}
+
 function initCreateWizard() {
-    // Mode selection cards
-    document.querySelectorAll("#create-mode-selection .mode-selection-card").forEach((card) => {
-        card.addEventListener("click", () => {
-            const mode = card.dataset.createMode;
-            if (!mode) return;
-            document.getElementById("create-mode-selection").hidden = true;
-            switchCreateMode(mode);
+    // Backward compatibility in case the create-mode cards stop being buttons.
+    document.querySelectorAll("#create-mode-selection [data-create-mode]").forEach((card) => {
+        if (card.tagName === "BUTTON") {
+            return;
+        }
+        const handleChooseMode = () => _chooseCreateMode(card.dataset.createMode);
+        card.addEventListener("click", handleChooseMode);
+        card.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" && event.key !== " ") {
+                return;
+            }
+            event.preventDefault();
+            handleChooseMode();
         });
     });
 
