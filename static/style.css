@@ -5001,10 +5001,41 @@ svg.spin {
 .script-image-generator-stage {
     width: min(100%, 860px);
     aspect-ratio: var(--script-image-result-ratio, 1 / 1);
+    position: relative;
     border-radius: 20px;
     overflow: hidden;
     border: 1px solid rgba(96, 129, 162, 0.22);
     background: rgba(4, 18, 33, 0.56);
+}
+
+.script-image-generator-stage-actions {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    display: flex;
+    gap: 8px;
+    z-index: 1;
+}
+
+.script-image-generator-stage-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding-inline: 14px;
+    background: rgba(4, 18, 33, 0.8);
+    border-color: rgba(148, 184, 214, 0.34);
+    color: #eff8ff;
+    backdrop-filter: blur(14px);
+}
+
+.script-image-generator-stage-btn:hover {
+    border-color: rgba(148, 184, 214, 0.52);
+    color: #ffffff;
+}
+
+.script-image-generator-stage-btn svg {
+    width: 15px;
+    height: 15px;
 }
 
 .script-image-generator-stage img {
@@ -5051,6 +5082,7 @@ svg.spin {
 .script-image-generator-result-actions {
     display: flex;
     gap: 8px;
+    justify-content: flex-end;
 }
 
 .script-image-generator-result-actions .btn-icon-sm {
@@ -5071,6 +5103,28 @@ svg.spin {
 .script-image-generator-result-actions .script-image-generator-use-btn:hover {
     border-color: rgba(122, 221, 171, 0.48);
     color: #c8ffde;
+}
+
+.script-image-generator-result-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.script-image-generator-edit-note {
+    flex: 1 1 240px;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.script-image-generator-create-btn {
+    margin-left: auto;
+}
+
+.script-image-generator-reference-item--locked {
+    box-shadow: inset 0 0 0 1px rgba(122, 221, 171, 0.45);
 }
 
 .script-image-generator-result-thumbs {

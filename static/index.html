@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260509-04">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260509-05">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 398;
+        var REQUIRED_VER = 399;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1396,7 +1396,7 @@
                                         <span class="script-media-chip-icon" aria-hidden="true">
                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                                         </span>
-                                        <span class="script-media-chip-label">Imagens</span>
+                                        <span class="script-media-chip-label">Enviar imagens</span>
                                     </span>
                                 </label>
                                 <label class="media-toggle-chip media-toggle-chip--full script-media-chip script-media-chip--audio">
@@ -3813,8 +3813,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260509-04"></script>
-    <script src="/video/static/pwa.js?v=20260509-04"></script>
+    <script src="/video/static/app.js?v=20260509-05"></script>
+    <script src="/video/static/pwa.js?v=20260509-05"></script>
 </body>
 </html>
 
