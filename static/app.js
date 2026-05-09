@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v406 loaded");
+console.log("[CriaVideo] app.js v407 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -5174,6 +5174,13 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
         similarState.busyProgressTarget = Math.max(similarState.busyProgressTarget, progress);
     }
 
+    if (busyStage === "generating_scene" || busyStage === "regenerating_scene") {
+        _ensureSimilarBusyProgressTimer();
+        overlayEl.hidden = true;
+        modalEl.classList.remove("similar-busy");
+        return;
+    }
+
     titleEl.textContent = title;
     detailEl.textContent = detail;
     _paintSimilarBusyProgress(similarState.busyProgressCurrent);
@@ -5704,7 +5711,8 @@ function _renderSimilarScenes(project, options = {}) {
     similarState.lastProjectSnapshot = project;
     const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
     const projectTags = _safeSimilarTags(project?.tags);
-    const activeBusyStage = _resolveSimilarBusyStage(String(projectTags.similar_stage || "").trim(), String(project?.status || "").trim().toLowerCase());
+    const activeBusyStage = _resolveSimilarBusyStage(String(projectTags.similar_stage || "").trim(), String(project?.status || "").trim().toLowerCase())
+        || String(similarState.pendingBusyStage || "").trim();
     const activeBusySceneId = Number(projectTags.similar_regenerating_scene_id || similarState.pendingBusySceneId || 0);
     const similarActionIcons = {
         save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
@@ -5765,7 +5773,6 @@ function _renderSimilarScenes(project, options = {}) {
         const generatedImageVariants = Array.isArray(scene.generated_image_variants)
             ? scene.generated_image_variants.filter((item) => String(item?.url || item?.path || "").trim())
             : [];
-        const hasTrackedActiveVariant = generatedImageVariants.some((item) => !!item?.is_active);
         const frameEditTitle = frameEditorOpen ? "Fechar edicao IA" : "Editar com IA";
         const narrationTitle = narrationEditorOpen ? "Fechar narracao" : "Editar narracao";
         const frameRerollTitle = frameInstruction
@@ -5777,22 +5784,36 @@ function _renderSimilarScenes(project, options = {}) {
         const framePanelSummary = generatedImageVariants.length
             ? `${generatedImageVariants.length + 1} imagens lado a lado.`
             : "Contexto visual da cena.";
-        const generateVideoLabel = hasClipPreview ? "Gerar vídeo novamente" : "Gerar vídeo";
-        const sceneVideoDetail = hasClipPreview
+        const sceneClipProgress = isGeneratingSceneClip
+            ? Math.max(4, Math.min(99, Math.round(Number(similarState.busyProgressCurrent || project?.progress || similarState.progress || 0) || 4)))
+            : 0;
+        const sceneClipBusyLabel = hasClipPreview ? "Gerando nova versão" : "Gerando vídeo";
+        const sceneClipBusyProgressLabel = sceneClipProgress > 0 ? `${sceneClipProgress}%` : "Processando";
+        const sceneClipBusyMarkup = isGeneratingSceneClip
+            ? `<div class="similar-scene-clip-busy-overlay" role="status" aria-live="polite"><span class="similar-scene-clip-spinner" aria-hidden="true"></span><div class="similar-scene-clip-busy-copy"><strong>${sceneClipBusyLabel}</strong><span>${sceneClipBusyProgressLabel}</span></div></div>`
+            : "";
+        const generateVideoLabel = isGeneratingSceneClip
+            ? "Gerando vídeo..."
+            : (hasClipPreview ? "Gerar vídeo novamente" : "Gerar vídeo");
+        const generateVideoDisabledAttr = isGeneratingSceneClip ? "disabled" : "";
+        const sceneVideoDetail = isGeneratingSceneClip && hasClipPreview
+            ? "Nova versão em geração. O vídeo atual continua visível ao lado."
+            : hasClipPreview
             ? "Resultado atual desta cena."
             : "Ele aparece aqui assim que terminar.";
 
-        const buildFrameGalleryItem = ({ url, alt, badge, downloadName, active = false, isBase = false }) => {
+        const buildFrameGalleryItem = ({ url, alt, badge, downloadName, active = false, isBase = false, clipBusy = false, clipBusyMarkup = "" }) => {
             const safeUrl = esc(String(url || ""));
             const safeAlt = esc(String(alt || ""));
             const safeBadge = esc(String(badge || ""));
             const safeDownloadName = esc(String(downloadName || "frame.png"));
             return `
-                <article class="similar-frame-gallery-item${active ? " is-active" : ""}${isBase ? " is-base" : ""}">
-                    <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}">
+                <article class="similar-frame-gallery-item${active ? " is-active" : ""}${isBase ? " is-base" : ""}${clipBusy ? " is-generating-clip" : ""}">
+                    <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}${clipBusy ? " is-generating-clip" : ""}">
                         <img src="${safeUrl}" alt="${safeAlt}" loading="lazy">
                         <span class="similar-frame-gallery-badge">${safeBadge}</span>
                         <a class="similar-frame-image-action" href="${safeUrl}" download="${safeDownloadName}" title="Baixar ${safeBadge}" aria-label="Baixar ${safeBadge}">${similarActionIcons.download}</a>
+                        ${clipBusyMarkup}
                     </div>
                 </article>
             `;
@@ -5806,6 +5827,8 @@ function _renderSimilarScenes(project, options = {}) {
                     badge: "Base",
                     downloadName: referenceDownloadName,
                     isBase: true,
+                    clipBusy: isGeneratingSceneClip,
+                    clipBusyMarkup: sceneClipBusyMarkup,
                 }),
             ]
             : [];
@@ -5852,7 +5875,7 @@ function _renderSimilarScenes(project, options = {}) {
                 </div>
             `
             : "";
-        const inlineClipMarkup = hasReferenceFrame && (hasClipPreview || isGeneratingSceneClip)
+        const inlineClipMarkup = hasReferenceFrame && hasClipPreview
             ? `
                 <aside class="similar-scene-clip-column">
                     <div class="similar-scene-clip-head">
@@ -5918,17 +5941,23 @@ function _renderSimilarScenes(project, options = {}) {
         const previewItems = [];
         if (hasImagePreview && !hasReferenceFrame) {
             previewItems.push(`
-                <div class="similar-preview-box ${previewAspectClass}">
+                <div class="similar-preview-box ${previewAspectClass}${isGeneratingSceneClip ? " is-generating-clip" : ""}">
                     <img src="${scene.image_url}" alt="Preview imagem cena ${idx + 1}" loading="lazy">
+                    ${sceneClipBusyMarkup}
                 </div>
             `);
         }
-        if (!hasReferenceFrame && (hasClipPreview || isGeneratingSceneClip)) {
+        if (!hasReferenceFrame && hasClipPreview) {
             previewItems.push(`
-                <div class="similar-scene-clip-card similar-preview-box ${previewAspectClass}${hasClipPreview ? "" : " is-generating"}">
-                    ${hasClipPreview
-                        ? `<video src="${clipUrlSafe}" controls preload="metadata" playsinline></video>`
-                        : `<div class="similar-scene-clip-placeholder" role="status" aria-live="polite"><span class="similar-scene-clip-spinner" aria-hidden="true"></span><strong>Gerando vídeo...</strong><small>Assim que a renderização terminar, o player vai aparecer aqui.</small></div>`}
+                <div class="similar-scene-clip-card similar-preview-box ${previewAspectClass}">
+                    <video src="${clipUrlSafe}" controls preload="metadata" playsinline></video>
+                </div>
+            `);
+        }
+        if (!hasReferenceFrame && !hasImagePreview && isGeneratingSceneClip) {
+            previewItems.push(`
+                <div class="similar-scene-clip-card similar-preview-box ${previewAspectClass} is-generating">
+                    <div class="similar-scene-clip-placeholder" role="status" aria-live="polite"><span class="similar-scene-clip-spinner" aria-hidden="true"></span><strong>${sceneClipBusyLabel}</strong><small>${sceneClipBusyProgressLabel}</small></div>
                 </div>
             `);
         }
@@ -5983,7 +6012,7 @@ function _renderSimilarScenes(project, options = {}) {
                     <button class="similar-scene-action-btn" type="button" onclick="similarUploadSceneImage(${sceneId})" title="Enviar imagens" aria-label="Enviar imagens">${similarActionIcons.upload}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" title="${applyUploadedLabel}" aria-label="${applyUploadedLabel}" ${applyDisabledAttr}>${similarActionIcons.apply}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Gerar imagem com IA" aria-label="Gerar imagem com IA">${similarActionIcons.image}</button>
-                    <button class="similar-scene-action-btn similar-scene-action-btn-primary similar-scene-action-btn-label" type="button" onclick="similarRegenerateScene(${sceneId})" title="${generateVideoLabel}" aria-label="${generateVideoLabel}">${similarActionIcons.preview}<span>${generateVideoLabel}</span></button>
+                    <button class="similar-scene-action-btn similar-scene-action-btn-primary similar-scene-action-btn-label" type="button" onclick="similarRegenerateScene(${sceneId})" title="${generateVideoLabel}" aria-label="${generateVideoLabel}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span>${generateVideoLabel}</span></button>
                 </div>
             </article>
         `;
@@ -9235,6 +9264,7 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         const isProcessing = ["generating_scenes", "generating_clips", "rendering"].includes(status);
         const rawStage = String(tags.similar_stage || "").trim();
         const stage = _resolveSimilarBusyStage(rawStage, status) || rawStage;
+        const lockGlobalUi = isProcessing && !["generating_scene", "regenerating_scene"].includes(stage);
         const stageLabel = SIMILAR_STAGE_LABELS[stage] || "Processando modo semelhante...";
         const detectedMode = _resolveSimilarDetectedMode(tags);
         const detectedModeLabel = SIMILAR_DETECTED_MODE_LABELS[detectedMode] || "";
@@ -9273,7 +9303,7 @@ async function _refreshSimilarProject({ silent = false } = {}) {
             progress,
             sceneId: Number(tags.similar_regenerating_scene_id || 0) || similarState.pendingBusySceneId,
         });
-        _refreshSimilarButtonsDisabled(isProcessing);
+        _refreshSimilarButtonsDisabled(lockGlobalUi);
 
         if (!isProcessing) {
             _stopSimilarPolling();
@@ -9789,10 +9819,71 @@ async function similarApplyUnifiedFrameEdit() {
     await similarGenerateUnifiedReferenceImage({ requireInstruction: true });
 }
 
+function _readSimilarScenePromptForRequest(sceneId, options = {}) {
+    const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+    const scene = _getSimilarProjectScene(sceneId);
+    const sceneKey = _similarSceneStateKey(sceneId);
+    const draft = sceneKey ? (similarState.sceneDraftsBySceneId[sceneKey] || {}) : {};
+
+    let promptValue = promptEl
+        ? String(promptEl.value || "")
+        : Object.prototype.hasOwnProperty.call(draft, "prompt")
+            ? String(draft.prompt || "")
+            : String(scene?.prompt || "");
+
+    if (options.applyNarration) {
+        const narrationEl = document.getElementById(`similar-scene-narration-${sceneId}`);
+        const narrationValue = String(narrationEl?.value || draft.narrationText || "").trim();
+        promptValue = _injectSimilarNarrationIntoPrompt(String(promptValue || "").trim(), narrationValue);
+        if (promptEl) {
+            promptEl.value = promptValue;
+        }
+        _setSimilarSceneFrameEditorDraft(sceneId, {
+            narrationText: narrationValue,
+        });
+    }
+
+    _syncSimilarDraftsFromDom();
+    return String(promptValue || "");
+}
+
+async function _persistSimilarScenePromptEdits(sceneIds, options = {}) {
+    const explicitIds = Array.isArray(sceneIds) ? sceneIds : [];
+    const targetIds = explicitIds.length
+        ? explicitIds
+        : (Array.isArray(similarState.lastProjectSnapshot?.scenes) ? similarState.lastProjectSnapshot.scenes.map((scene) => Number(scene?.id || 0)) : []);
+    const uniqueIds = Array.from(new Set(targetIds.filter((sceneId) => Number(sceneId || 0) > 0)));
+    if (!uniqueIds.length) {
+        return true;
+    }
+
+    for (const sceneId of uniqueIds) {
+        const promptValue = _readSimilarScenePromptForRequest(sceneId, {
+            applyNarration: options.applyNarration !== false,
+        });
+        if (!_similarScenePromptNeedsSave(sceneId)) {
+            continue;
+        }
+
+        const saved = await similarSaveScene(sceneId, {
+            silent: true,
+            applyNarration: false,
+            promptValue,
+            refresh: false,
+        });
+        if (!saved) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 async function similarSaveScene(sceneId, options = {}) {
     const projectId = Number(similarState.projectId || 0);
     const silent = !!options.silent;
     const applyNarration = options.applyNarration !== false;
+    const refresh = options.refresh !== false;
     if (!projectId) {
         if (!silent) {
             alert("Inicie a analise antes de editar cenas.");
@@ -9810,7 +9901,12 @@ async function similarSaveScene(sceneId, options = {}) {
     const scene = _getSimilarProjectScene(sceneId);
     const startEl = document.getElementById(`similar-scene-start-${sceneId}`);
     const durationEl = document.getElementById(`similar-scene-duration-${sceneId}`);
-    const prompt = String(promptEl?.value || "");
+    const prompt = typeof options.promptValue === "string"
+        ? String(options.promptValue)
+        : String(promptEl?.value || "");
+    if (promptEl && typeof options.promptValue === "string") {
+        promptEl.value = prompt;
+    }
     const fallbackStart = Number(scene?.start_time || 0);
     const fallbackDuration = scene ? _similarSceneDuration(scene) : 5;
     const startRaw = Number.parseFloat(startEl?.value || String(fallbackStart));
@@ -9832,7 +9928,9 @@ async function similarSaveScene(sceneId, options = {}) {
         if (!silent) {
             showToast("Cena atualizada.", "success");
         }
-        await _refreshSimilarProject();
+        if (refresh) {
+            await _refreshSimilarProject();
+        }
         return true;
     } catch (error) {
         if (!silent) {
@@ -10159,20 +10257,24 @@ async function similarRegenerateScene(sceneId) {
 
     try {
         const scene = _getSimilarProjectScene(sceneId);
-        _applySimilarNarrationToPrompt(sceneId);
-        await _flushSimilarSceneAutoSave(sceneId);
-        const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
-        const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
+        const promptOverride = _readSimilarScenePromptForRequest(sceneId, { applyNarration: true }).trim();
         const hasExistingClip = !!String(scene?.clip_url || scene?.clip_path || "").trim();
         const busyStage = hasExistingClip ? "regenerating_scene" : "generating_scene";
         _setSimilarBusyIntent(busyStage, sceneId);
-        _updateSimilarBusyOverlay(similarState.lastProjectSnapshot, {}, {
-            stage: busyStage,
-            status: "generating_clips",
-            progress: 4,
-            sceneId,
+        similarState.busyProgressStage = busyStage;
+        similarState.busyProgressCurrent = 4;
+        similarState.busyProgressTarget = 4;
+        _ensureSimilarBusyProgressTimer();
+        _hideSimilarBusyOverlay();
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+        await similarSaveScene(sceneId, {
+            silent: true,
+            applyNarration: false,
+            promptValue: promptOverride,
+            refresh: false,
         });
-        _refreshSimilarButtonsDisabled(true);
         await api(`/video/projects/${projectId}/similar/regenerate-scene`, {
             method: "POST",
             body: JSON.stringify({
@@ -10201,6 +10303,11 @@ async function similarGenerateAllPreviews() {
     }
 
     try {
+        const promptsSaved = await _persistSimilarScenePromptEdits([], { applyNarration: true });
+        if (!promptsSaved) {
+            showToast("Nao foi possivel salvar os prompts editados antes de gerar as cenas.", "error");
+            return;
+        }
         _setSimilarBusyIntent("generating_previews");
         _updateSimilarBusyOverlay(similarState.lastProjectSnapshot, {
             similar_total_scenes: Array.isArray(similarState.lastProjectSnapshot?.scenes) ? similarState.lastProjectSnapshot.scenes.length : 0,
