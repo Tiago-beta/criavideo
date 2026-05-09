@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v394 loaded");
+console.log("[CriaVideo] app.js v395 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4360,7 +4360,7 @@ function _renderSimilarUnifiedReferencePanel(project) {
                 <div class="similar-reference-frame-editor-tools">
                     <button class="similar-frame-tool-btn" type="button" onclick="similarUploadUnifiedImages()" ${frameBusyDisabledAttr}>Enviar nova foto</button>
                     ${pendingCount ? `<button class="similar-frame-tool-btn" type="button" onclick="similarClearUnifiedUploads()" ${frameBusyDisabledAttr}>Limpar</button>` : ""}
-                    <span class="similar-reference-frame-upload-note">${pendingCount ? `${pendingCount} nova(s) foto(s) pronta(s) para a troca.` : "Use o botao + acima para enviar uma nova foto e orientar a troca de pessoa, produto ou detalhe."}</span>
+                    <span class="similar-reference-frame-upload-note">${pendingCount ? `${pendingCount} nova(s) foto(s) pronta(s) para a troca.` : "Use o botao + acima quantas vezes quiser para enviar novas fotos e orientar a troca de pessoa, produto ou detalhe."}</span>
                 </div>
                 ${frameUploadsMarkup}
                 ${frameBusyMarkup}
@@ -4895,7 +4895,7 @@ function _similarSceneDuration(scene) {
 
 function _normalizeSimilarEngine(rawValue) {
     const value = String(rawValue || "").trim().toLowerCase();
-    if (value === "wan2" || value === "seedance") {
+    if (value === "grok" || value === "wan2" || value === "seedance") {
         return value;
     }
     return "wan2";
@@ -4903,16 +4903,16 @@ function _normalizeSimilarEngine(rawValue) {
 
 function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "wan2") return "U1";
-    if (normalized === "seedance") return "S2";
-    return "C3";
+    if (normalized === "wan2") return "Ultra 3.0";
+    if (normalized === "seedance") return "Mega 2.0";
+    return "Cria 2.5";
 }
 
 function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "wan2") return "Ultra High 1.0";
-    if (normalized === "seedance") return "Seedance 2.0";
-    return "Cria 3.0 speed";
+    if (normalized === "wan2") return "Ultra High 3.0";
+    if (normalized === "seedance") return "Mega 2.0 Ultra";
+    return "Cria Speed 2.5 (Grok)";
 }
 
 function _getSimilarSceneSelectedEngine(sceneId) {
@@ -5768,8 +5768,8 @@ function _renderSimilarScenes(project, options = {}) {
                             class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
                             type="button"
                             onclick="similarSelectSceneEngine(${sceneId}, '${engineValue}')"
-                            title="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : "Seedance 2.0"} nesta cena"
-                            aria-label="Usar ${engineValue === "grok" ? "Cria 3.0 speed" : engineValue === "wan2" ? "Ultra High 1.0" : "Seedance 2.0"} nesta cena"
+                            title="Usar ${_similarEngineDisplayLabel(engineValue)} nesta cena"
+                            aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} nesta cena"
                         >${_similarSceneEngineLabel(engineValue)}</button>
                     `).join("")}
                 </div>
@@ -9432,7 +9432,7 @@ async function _handleSimilarUnifiedImageInput(event) {
         }
 
         _setSimilarUnifiedUploadStatus(
-            "Imagem(ns) enviada(s). Envie mais se quiser; elas entram na geracao da cena unica.",
+            "Imagem(ns) enviada(s). Clique no + novamente se quiser; todas entram na geracao da cena unica.",
             "running",
         );
         _syncSimilarUnifiedUploadUi(similarState.lastProjectSnapshot);
