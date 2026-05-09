@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v395 loaded");
+console.log("[CriaVideo] app.js v396 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28641,16 +28641,18 @@ function _editorRenderTimeline() {
             return `<div class="editor-track-clip clip-audio${waveClass}${selectedClass}" data-kind="segment" data-track="audio" data-id="${seg.id}" style="${styleParts.join(";")}">Audio ${idx + 1}</div>`;
         }).join("");
 
-        const musicSelected = selectedKind === "music" || trackRowSelection.includes("audio") ? " selected" : "";
-        const waveformStyle = _editorGetMusicWaveformInlineStyle(dur);
-        const masterClasses = `${musicSelected}${_editorMusicWaveformState.loading ? " loading" : ""}`;
-        const audioExtent = Math.max(0.1, Number(_editorGetAudioTrackEndTime() || 0.1));
-        const masterWidthPct = Math.max(0.5, Math.min(100, (audioExtent / dur) * 100));
-        const masterStyleParts = ["left:0", `width:${masterWidthPct}%`];
-        if (waveformStyle) {
-            masterStyleParts.push(waveformStyle);
+        if (_editorShouldRenderAudioMasterClip()) {
+            const musicSelected = selectedKind === "music" || trackRowSelection.includes("audio") ? " selected" : "";
+            const waveformStyle = _editorGetMusicWaveformInlineStyle(dur);
+            const masterClasses = `${musicSelected}${_editorMusicWaveformState.loading ? " loading" : ""}`;
+            const audioExtent = Math.max(0.1, Number(_editorGetAudioTrackEndTime() || 0.1));
+            const masterWidthPct = Math.max(0.5, Math.min(100, (audioExtent / dur) * 100));
+            const masterStyleParts = ["left:0", `width:${masterWidthPct}%`];
+            if (waveformStyle) {
+                masterStyleParts.push(waveformStyle);
+            }
+            audioClips += `<div class="editor-track-clip clip-audio clip-audio-master${masterClasses}" data-kind="music" data-track="audio" data-id="music" style="${masterStyleParts.join(";")}"><span>Audio</span></div>`;
         }
-        audioClips += `<div class="editor-track-clip clip-audio clip-audio-master${masterClasses}" data-kind="music" data-track="audio" data-id="music" style="${masterStyleParts.join(";")}"><span>Audio</span></div>`;
 
         rows.push({
             track: "audio",
@@ -28803,6 +28805,31 @@ function _editorGetClipboardAudioMeta() {
         musicServerPath: String(_editor._musicServerPath || ""),
         musicSource: String(_editor._musicSource || "audio"),
     };
+}
+
+function _editorShouldRenderAudioMasterClip() {
+    if (!_editorShouldShowAudioTrack() || !_editor.musicUrl) return false;
+
+    const segments = Array.isArray(_editor.audioSegments) ? _editor.audioSegments : [];
+    if (segments.length !== 1) return false;
+
+    const segment = segments[0];
+    if (!segment) return false;
+    if (_editorSegmentIsReversed(segment)) return false;
+    if (Math.abs(_editorSegmentPlaybackSpeed(segment) - 1) > 0.001) return false;
+    if (Math.abs(Number(segment.start || 0)) > 0.05) return false;
+    if (Math.abs(_editorSegSourceStart(segment)) > 0.05) return false;
+
+    const knownSourceDuration = Math.max(
+        0,
+        Number(_editorMusicWaveformState.duration || 0),
+        Number(_editorGetMusicPreviewAudio()?.duration || 0),
+    );
+    if (knownSourceDuration > 0.05 && _editorSegSourceDuration(segment) < knownSourceDuration - 0.05) {
+        return false;
+    }
+
+    return true;
 }
 
 function _editorSplitSegmentAtTime(track = "video", timelineTime = 0, preferredId = "") {
@@ -29765,6 +29792,20 @@ function _editorHandleDeleteKey(event) {
 
     if ((event.ctrlKey || event.metaKey) && !event.altKey) {
         const lowerKey = key.toLowerCase();
+        if (lowerKey === "z") {
+            event.preventDefault();
+            if (event.shiftKey) {
+                _editorRedo();
+            } else {
+                _editorUndo();
+            }
+            return;
+        }
+        if (lowerKey === "y") {
+            event.preventDefault();
+            _editorRedo();
+            return;
+        }
         if (lowerKey === "c") {
             if (_editorSelectionCanCopy()) {
                 event.preventDefault();
