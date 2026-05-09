@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v393 loaded");
+console.log("[CriaVideo] app.js v394 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4300,7 +4300,7 @@ function _renderSimilarUnifiedReferencePanel(project) {
     const editActionIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
     const downloadActionIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
     const summary = pendingCount
-        ? `${pendingCount} apoio(s) pronto(s) para refinar esta base.`
+        ? `${pendingCount} nova(s) foto(s) pronta(s) para refinar esta base.`
         : "Contexto visual consolidado da cena unica.";
     const uploadsMarkup = pendingCount
         ? pendingUploads.map((item, uploadIdx) => {
@@ -4317,7 +4317,7 @@ function _renderSimilarUnifiedReferencePanel(project) {
     const frameUploadsMarkup = pendingCount
         ? `
             <div class="similar-reference-frame-upload-list">
-                <span class="similar-reference-frame-upload-title">Imagens extras enviadas para esta troca</span>
+                <span class="similar-reference-frame-upload-title">Novas fotos enviadas para esta troca</span>
                 <div class="similar-reference-frame-upload-grid">${uploadsMarkup}</div>
             </div>
         `
@@ -4358,9 +4358,9 @@ function _renderSimilarUnifiedReferencePanel(project) {
                 <textarea id="similar-unified-frame-instruction" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar a roupa, mudar o produto, manter o mesmo enquadramento e a mesma luz." ${frameBusyDisabledAttr}>${frameInstructionValue}</textarea>
                 <p class="field-hint">A nova imagem usa o frame base do prompt unico e respeita o texto atual para manter o contexto.</p>
                 <div class="similar-reference-frame-editor-tools">
-                    <button class="similar-frame-tool-btn" type="button" onclick="similarUploadUnifiedImages()" ${frameBusyDisabledAttr}>Enviar apoio</button>
+                    <button class="similar-frame-tool-btn" type="button" onclick="similarUploadUnifiedImages()" ${frameBusyDisabledAttr}>Enviar nova foto</button>
                     ${pendingCount ? `<button class="similar-frame-tool-btn" type="button" onclick="similarClearUnifiedUploads()" ${frameBusyDisabledAttr}>Limpar</button>` : ""}
-                    <span class="similar-reference-frame-upload-note">${pendingCount ? `${pendingCount} apoio(s) pronto(s) para a troca.` : "Use o botao + acima para enviar uma imagem extra e orientar a troca de pessoa, produto ou detalhe."}</span>
+                    <span class="similar-reference-frame-upload-note">${pendingCount ? `${pendingCount} nova(s) foto(s) pronta(s) para a troca.` : "Use o botao + acima para enviar uma nova foto e orientar a troca de pessoa, produto ou detalhe."}</span>
                 </div>
                 ${frameUploadsMarkup}
                 ${frameBusyMarkup}
@@ -5698,9 +5698,9 @@ function _renderSimilarScenes(project, options = {}) {
                         <textarea id="similar-frame-instruction-${sceneId}" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar o produto por uma embalagem premium, manter a mesma mesa, o mesmo enquadramento e a mesma luz." ${frameBusyDisabledAttr}>${frameInstructionValue}</textarea>
                         <p class="field-hint">A imagem nova sai do frame original e respeita o prompt atual da cena para manter o contexto.</p>
                         <div class="similar-reference-frame-editor-tools">
-                            <button class="similar-frame-tool-btn" type="button" onclick="similarUploadFrameReference(${sceneId})" ${frameBusyDisabledAttr}>${similarActionIcons.upload}<span>Enviar apoio</span></button>
+                            <button class="similar-frame-tool-btn" type="button" onclick="similarUploadFrameReference(${sceneId})" ${frameBusyDisabledAttr}>${similarActionIcons.upload}<span>Enviar nova foto</span></button>
                             ${pendingCount ? `<button class="similar-frame-tool-btn" type="button" onclick="similarClearSceneUploads(${sceneId})" ${frameBusyDisabledAttr}>${similarActionIcons.close}<span>Limpar</span></button>` : ""}
-                            <span class="similar-reference-frame-upload-note">${pendingCount ? `${pendingCount} apoio(s) pronto(s) para a troca.` : "Envie uma imagem extra para trocar pessoa, produto ou detalhe mantendo o contexto."}</span>
+                            <span class="similar-reference-frame-upload-note">${pendingCount ? `${pendingCount} nova(s) foto(s) pronta(s) para a troca.` : "Envie uma nova foto para trocar pessoa, produto ou detalhe mantendo o contexto."}</span>
                         </div>
                         ${frameUploadsMarkup}
                         ${frameBusyMarkup}

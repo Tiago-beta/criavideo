@@ -1408,14 +1408,10 @@ def _extract_similar_reference_frame_map(raw_tags: object) -> dict[str, str]:
     return resolved
 
 
-def _collect_similar_unified_reference_paths(
+def _collect_similar_unified_video_reference_paths(
     scenes: list[VideoScene],
     tags_data: dict[str, Any],
 ) -> list[str]:
-    existing_unified_reference = str(tags_data.get("similar_unified_reference_image_path") or "").strip()
-    if existing_unified_reference and os.path.exists(existing_unified_reference):
-        return [existing_unified_reference]
-
     reference_frame_map = _extract_similar_reference_frame_map(tags_data)
     ordered_paths: list[str] = []
 
@@ -1443,6 +1439,31 @@ def _collect_similar_unified_reference_paths(
         candidate = str(raw_path or "").strip()
         if candidate and os.path.exists(candidate) and candidate not in ordered_paths:
             ordered_paths.append(candidate)
+
+    return ordered_paths
+
+
+def _compose_similar_unified_generation_reference_paths(
+    video_reference_paths: list[str],
+    *,
+    uploaded_reference_paths: list[str] | None = None,
+    generated_reference_path: str = "",
+) -> list[str]:
+    ordered_paths: list[str] = []
+
+    for candidate in (uploaded_reference_paths or []):
+        path = str(candidate or "").strip()
+        if path and os.path.exists(path) and path not in ordered_paths:
+            ordered_paths.append(path)
+
+    for candidate in (video_reference_paths or []):
+        path = str(candidate or "").strip()
+        if path and os.path.exists(path) and path not in ordered_paths:
+            ordered_paths.append(path)
+
+    generated_path = str(generated_reference_path or "").strip()
+    if generated_path and os.path.exists(generated_path) and generated_path not in ordered_paths:
+        ordered_paths.append(generated_path)
 
     return ordered_paths
 
@@ -2537,7 +2558,7 @@ async def upsert_similar_unified_image(
         .order_by(VideoScene.scene_index.asc())
     )
     scenes = result.scalars().all()
-    reference_image_paths = _collect_similar_unified_reference_paths(scenes, tags_data)
+    video_reference_paths = _collect_similar_unified_video_reference_paths(scenes, tags_data)
 
     upload_ids: list[str] = []
     for raw_id in (req.image_upload_ids or []):
@@ -2561,8 +2582,15 @@ async def upsert_similar_unified_image(
     image_dir = Path(settings.media_dir) / "images" / str(project.id)
     image_dir.mkdir(parents=True, exist_ok=True)
 
+    uploaded_reference_paths = [str(item) for item in resolved_files]
+    generation_reference_paths = _compose_similar_unified_generation_reference_paths(
+        video_reference_paths,
+        uploaded_reference_paths=uploaded_reference_paths,
+        generated_reference_path=str(tags_data.get("similar_unified_reference_image_path") or ""),
+    )
+
     prompt_seed = _build_similar_scene_prompt_for_image_generation(prompt_override, req.edit_instruction)
-    source_reference_image = reference_image_paths[0] if reference_image_paths else ""
+    source_reference_image = generation_reference_paths[0] if generation_reference_paths else ""
     target_file: Path | None = None
 
     if req.generate_from_prompt:
@@ -2574,7 +2602,7 @@ async def upsert_similar_unified_image(
             aspect_ratio=effective_aspect_ratio,
             output_stem=str(image_dir / f"similar_unified_reference_{uuid.uuid4().hex[:8]}"),
             base_reference_image=source_reference_image,
-            reference_paths=[str(item) for item in resolved_files],
+            reference_paths=generation_reference_paths[1:],
         )
         target_file = Path(target_path)
         reference_frame_count = max(1, int(reference_frame_count or 0) or (1 if source_reference_image else 0))
