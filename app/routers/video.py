@@ -1677,7 +1677,23 @@ def _normalize_similar_unified_prompt_text(raw: object, *, limit: int = 0) -> st
     return text.strip()
 
 
+def _similar_transcript_speech_detected(tags_data: dict[str, Any]) -> bool | None:
+    raw_value = tags_data.get("similar_transcript_speech_detected")
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip().lower()
+        if normalized in {"true", "1", "yes", "sim"}:
+            return True
+        if normalized in {"false", "0", "no", "nao", "não"}:
+            return False
+    return None
+
+
 def _build_similar_unified_dialogue_clause(scenes: list[Any], tags_data: dict[str, Any], *, locale: str = "en") -> str:
+    if _similar_transcript_speech_detected(tags_data) is False:
+        return ""
+
     spoken_lines = [
         _normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=180)
         for scene in (scenes or [])
@@ -1879,6 +1895,7 @@ def _build_similar_unified_prompt_context(project: VideoProject, scenes: list[An
         f"Project title: {str(project.title or '').strip() or 'Video Semelhante'}",
         f"Aspect ratio: {str(project.aspect_ratio or '').strip() or '16:9'}",
     ]
+    speech_detected = _similar_transcript_speech_detected(tags_data)
 
     camera_label = _normalize_similar_unified_prompt_text(tags_data.get("similar_camera_label"), limit=120)
     camera_guidance = _normalize_similar_unified_prompt_text(tags_data.get("similar_camera_guidance"), limit=320)
@@ -1892,9 +1909,9 @@ def _build_similar_unified_prompt_context(project: VideoProject, scenes: list[An
     transcript_language = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_language_label_en"), limit=80)
     if context_summary:
         lines.extend(["", "Global visual context:", context_summary])
-    if transcript_language:
+    if speech_detected is not False and transcript_language:
         lines.extend(["", f"Detected spoken language: {transcript_language}"])
-    if transcript_excerpt:
+    if speech_detected is not False and transcript_excerpt:
         lines.extend(["", "Transcript/audio context:", transcript_excerpt])
 
     lines.extend(["", "Analyzed scene breakdown:"])
@@ -1902,7 +1919,9 @@ def _build_similar_unified_prompt_context(project: VideoProject, scenes: list[An
         start = float(_scene_field(scene, "start_time", 0.0) or 0.0)
         end = float(_scene_field(scene, "end_time", start) or start)
         prompt_text = _normalize_similar_unified_prompt_text(_scene_field(scene, "prompt", ""), limit=420)
-        spoken_text = _normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=180)
+        spoken_text = ""
+        if speech_detected is not False:
+            spoken_text = _normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=180)
         lines.append(f"Scene {idx} | {start:.1f}s - {end:.1f}s")
         if prompt_text:
             lines.append(f"Prompt: {prompt_text}")
@@ -1914,17 +1933,21 @@ def _build_similar_unified_prompt_context(project: VideoProject, scenes: list[An
 
 
 def _build_similar_unified_prompt_fallback(project: VideoProject, scenes: list[Any], tags_data: dict[str, Any]) -> str:
+    speech_detected = _similar_transcript_speech_detected(tags_data)
     scene_prompts = [
         _normalize_similar_unified_prompt_text(_scene_field(scene, "prompt", ""), limit=420)
         for scene in scenes
     ]
     scene_prompts = [prompt for prompt in scene_prompts if prompt]
-    spoken_lines = [
-        _normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=180)
-        for scene in scenes
-    ]
-    spoken_lines = [line for line in spoken_lines if line]
-    transcript_excerpt = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=320)
+    spoken_lines: list[str] = []
+    transcript_excerpt = ""
+    if speech_detected is not False:
+        spoken_lines = [
+            _normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=180)
+            for scene in scenes
+        ]
+        spoken_lines = [line for line in spoken_lines if line]
+        transcript_excerpt = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=320)
     context_summary = _normalize_similar_unified_prompt_text(tags_data.get("similar_context_summary"), limit=500)
     combined_text = " ".join(scene_prompts + spoken_lines + [context_summary, transcript_excerpt]).strip()
     camera_mode = _infer_similar_unified_camera_mode(combined_text, tags_data)
@@ -2409,6 +2432,47 @@ async def build_similar_unified_prompt(
         raise HTTPException(status_code=400, detail="Analise o video antes de criar o prompt unico")
 
     tags_data = _safe_tags_dict(project.tags)
+    speech_refresh_needed = _similar_transcript_speech_detected(tags_data) is None and (
+        bool(_normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=80))
+        or any(_normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=40) for scene in scenes)
+    )
+    local_video_path = str(tags_data.get("similar_local_video_path") or "").strip()
+    if speech_refresh_needed and local_video_path and os.path.exists(local_video_path):
+        from app.tasks.similar_tasks import (
+            _build_similar_video_context,
+            _extract_scene_transcript_excerpt,
+            _format_similar_language_label_en,
+            _format_similar_language_label_pt,
+        )
+
+        reference_frame_map = _extract_similar_reference_frame_map(tags_data)
+        reference_frame_paths = [
+            str(raw_path or "").strip()
+            for _, raw_path in sorted(
+                reference_frame_map.items(),
+                key=lambda item: int(item[0]) if str(item[0]).isdigit() else 999999,
+            )
+            if str(raw_path or "").strip() and os.path.exists(str(raw_path or "").strip())
+        ]
+        duration_seconds = float(tags_data.get("similar_total_duration") or project.track_duration or 0.0)
+        context_summary, transcript_text, transcript_words, transcript_language = await _build_similar_video_context(
+            local_video_path,
+            duration_seconds,
+            reference_frame_paths,
+        )
+        tags_data["similar_context_summary"] = context_summary
+        tags_data["similar_transcript_excerpt"] = transcript_text
+        tags_data["similar_transcript_language"] = transcript_language
+        tags_data["similar_transcript_language_label_pt"] = _format_similar_language_label_pt(transcript_language)
+        tags_data["similar_transcript_language_label_en"] = _format_similar_language_label_en(transcript_language)
+        tags_data["similar_transcript_speech_detected"] = bool(transcript_text)
+        for scene in scenes:
+            start = float(_scene_field(scene, "start_time", 0.0) or 0.0)
+            end = float(_scene_field(scene, "end_time", start) or start)
+            scene.lyrics_segment = _extract_scene_transcript_excerpt(transcript_words, start, end)
+        project.tags = tags_data
+        await db.commit()
+
     prompt_text, prompt_source = await _generate_similar_unified_prompt(project, scenes, tags_data)
     generated_at = datetime.utcnow().isoformat() + "Z"
 

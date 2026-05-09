@@ -1148,6 +1148,10 @@ async def _transcribe_similar_video_context(video_path: str) -> tuple[str, list[
         transcript_text = _normalize_similar_context_text(result.get("text", ""), limit=_SIMILAR_TRANSCRIPT_LIMIT)
         transcript_words = result.get("words", []) if isinstance(result.get("words", []), list) else []
         transcript_language = _normalize_similar_language_code(result.get("language", ""))
+        speech_detected = bool(result.get("speech_detected"))
+        if not speech_detected:
+            logger.info("Similar audio context ignored because no reliable speech was detected: %s", video_path)
+            return "", [], ""
         return transcript_text, transcript_words, transcript_language
     except Exception as exc:
         logger.warning("Similar audio context transcription failed: %s", exc)
@@ -2256,6 +2260,7 @@ async def run_similar_reference_analysis(
                     "similar_total_duration": duration_seconds,
                     "similar_context_summary": context_summary,
                     "similar_transcript_excerpt": _normalize_similar_context_text(transcript_text, limit=900),
+                    "similar_transcript_speech_detected": bool(transcript_text),
                     "similar_transcript_language": transcript_language,
                     "similar_transcript_language_label_pt": _format_similar_language_label_pt(transcript_language),
                     "similar_transcript_language_label_en": _format_similar_language_label_en(transcript_language),
