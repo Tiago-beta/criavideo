@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v403 loaded");
+console.log("[CriaVideo] app.js v404 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -3537,6 +3537,10 @@ function initCreateWizard() {
         card.addEventListener("click", () => {
             const mode = card.dataset.createMode;
             if (!mode) return;
+            if (mode === "images") {
+                openScriptImageCreatorFromCreateMode();
+                return;
+            }
             document.getElementById("create-mode-selection").hidden = true;
             switchCreateMode(mode);
         });
@@ -11300,6 +11304,7 @@ let _scriptImageCreatorState = {
     selectedEstimateModelId: "",
     selectedEstimateCredits: null,
 };
+let _scriptImageCreatorLaunchSource = "script";
 
 function _clearScriptImageCreatorEstimateTimer() {
     if (_scriptImageCreatorState.estimateTimer) {
@@ -11409,6 +11414,7 @@ function _syncScriptImageCreatorChoiceButtons() {
 
 function resetScriptImageCreatorModalState() {
     _clearScriptImageCreatorEstimateTimer();
+    _scriptImageCreatorLaunchSource = "script";
     _scriptImageCreatorState = {
         referenceFiles: [],
         generatedImages: [],
@@ -11448,11 +11454,21 @@ function resetScriptImageCreatorModalState() {
 }
 
 function openScriptImageCreatorModal() {
+    _scriptImageCreatorLaunchSource = "script";
     const promptInput = document.getElementById("script-image-generator-prompt");
     const scriptPrompt = String(document.getElementById("script-text")?.value || "").trim();
     if (promptInput && !String(promptInput.value || "").trim() && scriptPrompt) {
         promptInput.value = scriptPrompt;
     }
+    syncScriptImageCreatorControls();
+    renderScriptImageCreatorReferencePreview();
+    renderScriptImageCreatorResults();
+    scheduleScriptImageCreatorEstimate(0);
+    openModal("modal-script-image-creator");
+}
+
+function openScriptImageCreatorFromCreateMode() {
+    _scriptImageCreatorLaunchSource = "create-mode";
     syncScriptImageCreatorControls();
     renderScriptImageCreatorReferencePreview();
     renderScriptImageCreatorResults();
@@ -11858,8 +11874,34 @@ async function useScriptImageCreatorResult(index) {
 
 async function createVideoFromScriptImageCreatorResult(index) {
     try {
+        const launchSource = _scriptImageCreatorLaunchSource;
         await _addScriptImageCreatorResultToProject(index);
         closeScriptImageCreatorModal();
+
+        if (launchSource === "create-mode") {
+            scriptData.videoType = "imagens_proprias";
+            adaptScriptStepForVideoType("imagens_proprias");
+
+            const scriptTypeGrid = document.getElementById("script-video-type-grid");
+            if (scriptTypeGrid) {
+                scriptTypeGrid.querySelectorAll(".video-type-card").forEach((card) => {
+                    card.classList.toggle("selected", card.dataset.type === "imagens_proprias");
+                });
+            }
+
+            scriptStep = 1;
+            switchCreateMode("script");
+            updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+
+            window.requestAnimationFrame(() => {
+                const promptField = document.getElementById("script-text");
+                promptField?.focus();
+                promptField?.scrollIntoView({ behavior: "smooth", block: "center" });
+            });
+            showToast("Imagem adicionada. Agora descreva como você quer o vídeo.", "success");
+            return;
+        }
+
         window.requestAnimationFrame(() => {
             document.getElementById("script-photo-area")?.scrollIntoView({ behavior: "smooth", block: "center" });
         });

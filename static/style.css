@@ -7178,8 +7178,8 @@ th,
 }
 
 .mode-selection-grid-create {
-    max-width: 900px;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    max-width: 1080px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 .mode-selection-card {
     display: flex;
@@ -9861,6 +9861,13 @@ th,
 
     .similar-scene-preview {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 1180px) {
+    .mode-selection-grid-create {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        max-width: 760px;
     }
 }
 
