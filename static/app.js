@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v397 loaded");
+console.log("[CriaVideo] app.js v398 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -20681,6 +20681,7 @@ let _editorRecorderModal = {
     recording: false,
     stopping: false,
     uploading: false,
+    countdownSeconds: 0,
     seconds: 0,
     status: "",
     error: "",
@@ -20700,6 +20701,7 @@ function _editorCreateRecorderRuntime() {
         chunks: [],
         drawRaf: 0,
         drawWindow: null,
+        countdownTimer: 0,
         timer: 0,
         screenVideoEl: null,
         webcamVideoEl: null,
@@ -23400,6 +23402,33 @@ function _editorFormatRecordingClock(totalSeconds = 0) {
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+const _EDITOR_RECORDER_START_COUNTDOWN_SECONDS = 5;
+
+function _editorRecorderNeedsStartCountdown(mode) {
+    return _editorRecorderUsesScreen(mode);
+}
+
+function _editorRecorderTimerText() {
+    const countdownSeconds = Math.max(0, Math.floor(Number(_editorRecorderModal.countdownSeconds || 0)));
+    if (_editorRecorderModal.starting && countdownSeconds > 0) {
+        return _editorFormatRecordingClock(countdownSeconds);
+    }
+    return _editorFormatRecordingClock(_editorRecorderModal.seconds);
+}
+
+function _editorRecorderCountdownStatus(mode, secondsLeft = 0) {
+    const safeSeconds = Math.max(1, Math.floor(Number(secondsLeft || 0)));
+    const suffix = safeSeconds === 1 ? "segundo" : "segundos";
+
+    if (_editorRecorderUsesWindow(mode)) {
+        return `A gravação da janela começa em ${safeSeconds} ${suffix}.`;
+    }
+    if (_editorRecorderUsesScreen(mode)) {
+        return `A gravação da tela começa em ${safeSeconds} ${suffix}.`;
+    }
+    return `A gravação começa em ${safeSeconds} ${suffix}.`;
+}
+
 function _editorPickRecorderMimeType() {
     const candidates = [
         "video/webm;codecs=vp9,opus",
@@ -23465,13 +23494,17 @@ function _editorRecorderRenderMonitorWindow() {
     const mode = _editorRecorderModal.mode;
     const modeLabel = _editorRecorderModeLabel(mode);
     title.textContent = modeLabel;
-    timer.textContent = _editorFormatRecordingClock(_editorRecorderModal.seconds);
+    timer.textContent = _editorRecorderTimerText();
     note.textContent = _editorRecorderNeedsMonitorWindow(mode)
         ? "Pode minimizar o CriaVideo. Mantenha esta mini janela aberta enquanto grava Tela + Webcam."
         : _editorRecorderModeDescription(mode);
 
     let actionLabel = "Voltar ao CriaVideo";
-    if (_editorRecorderModal.starting) actionLabel = "Preparando...";
+    if (_editorRecorderModal.starting) {
+        actionLabel = _editorRecorderModal.countdownSeconds > 0
+            ? `Começa em ${_editorRecorderModal.countdownSeconds}s`
+            : "Preparando...";
+    }
     else if (_editorRecorderModal.recording) actionLabel = "Parar e abrir no editor";
     else if (_editorRecorderModal.stopping) actionLabel = "Finalizando...";
     else if (_editorRecorderModal.uploading) actionLabel = "Enviando...";
@@ -23708,7 +23741,7 @@ function _editorStopMediaStream(stream) {
 
 function _editorUpdateRecorderTimerUI() {
     const timer = document.getElementById("editor-recorder-timer-label");
-    if (timer) timer.textContent = _editorFormatRecordingClock(_editorRecorderModal.seconds);
+    if (timer) timer.textContent = _editorRecorderTimerText();
     _editorRecorderRenderMonitorWindow();
 }
 
@@ -23719,6 +23752,7 @@ function _editorCleanupRecorderRuntime(options = {}) {
         ? _editorRecorderRuntime.drawWindow.cancelAnimationFrame.bind(_editorRecorderRuntime.drawWindow)
         : cancelAnimationFrame;
     if (_editorRecorderRuntime.drawRaf) cancelDraw(_editorRecorderRuntime.drawRaf);
+    if (_editorRecorderRuntime.countdownTimer) clearTimeout(_editorRecorderRuntime.countdownTimer);
     if (_editorRecorderRuntime.timer) clearInterval(_editorRecorderRuntime.timer);
 
     _editorStopMediaStream(_editorRecorderRuntime.displayStream);
@@ -23758,6 +23792,7 @@ function _editorResetRecorderModalState() {
     _editorRecorderModal.recording = false;
     _editorRecorderModal.stopping = false;
     _editorRecorderModal.uploading = false;
+    _editorRecorderModal.countdownSeconds = 0;
     _editorRecorderModal.seconds = 0;
     _editorRecorderModal.status = _editorRecorderIdleStatus("screen");
     _editorRecorderModal.error = "";
@@ -23797,7 +23832,11 @@ function _editorRenderRecorderModal() {
     `;
 
     let submitLabel = "Iniciar gravação";
-    if (_editorRecorderModal.starting) submitLabel = "Preparando...";
+    if (_editorRecorderModal.starting) {
+        submitLabel = _editorRecorderModal.countdownSeconds > 0
+            ? `Começa em ${_editorRecorderModal.countdownSeconds}s`
+            : "Preparando...";
+    }
     else if (_editorRecorderModal.recording) submitLabel = "Parar e abrir no editor";
     else if (_editorRecorderModal.stopping) submitLabel = "Finalizando...";
     else if (_editorRecorderModal.uploading) submitLabel = "Enviando...";
@@ -24040,6 +24079,32 @@ async function _editorPrepareRecorderSession(mode) {
     };
 }
 
+async function _editorRecorderRunStartCountdown(mode) {
+    if (!_editorRecorderNeedsStartCountdown(mode)) {
+        _editorRecorderModal.countdownSeconds = 0;
+        _editorUpdateRecorderTimerUI();
+        return;
+    }
+
+    for (let remaining = _EDITOR_RECORDER_START_COUNTDOWN_SECONDS; remaining > 0; remaining -= 1) {
+        if (!_editorRecorderModal.starting) {
+            throw new Error("A gravação foi cancelada.");
+        }
+
+        _editorRecorderModal.countdownSeconds = remaining;
+        _editorRecorderModal.status = _editorRecorderCountdownStatus(mode, remaining);
+        _editorRenderRecorderModal();
+
+        await new Promise((resolve) => {
+            _editorRecorderRuntime.countdownTimer = window.setTimeout(resolve, 1000);
+        });
+        _editorRecorderRuntime.countdownTimer = 0;
+    }
+
+    _editorRecorderModal.countdownSeconds = 0;
+    _editorUpdateRecorderTimerUI();
+}
+
 async function _editorHandleRecorderFinished(blob, mimeType = "") {
     if (!blob || blob.size <= 0) {
         throw new Error("A gravação terminou vazia.");
@@ -24157,7 +24222,14 @@ async function _editorStartRecorderCapture() {
             }
         }
 
+        await _editorRecorderRunStartCountdown(mode);
+        const outputVideoTrack = _editorRecorderRuntime.outputStream?.getVideoTracks?.()[0] || null;
+        if (!outputVideoTrack || outputVideoTrack.readyState === "ended") {
+            throw new Error("A captura foi encerrada antes do início da gravação.");
+        }
+
         recorder.start(1000);
+        _editorRecorderModal.countdownSeconds = 0;
         _editorRecorderModal.starting = false;
         _editorRecorderModal.recording = true;
         _editorRecorderModal.status = _editorRecorderRecordingStatus(mode, Boolean(_editorRecorderGetMonitorWindow()));
