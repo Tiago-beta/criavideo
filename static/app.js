@@ -2300,6 +2300,9 @@ let similarState = {
     busyProgressTarget: 0,
     busyProgressTimer: null,
     sceneDraftsBySceneId: {},
+    sceneAutoSaveTimersBySceneId: {},
+    sceneAutoSaveInFlightBySceneId: {},
+    sceneAutoSaveQueuedBySceneId: {},
     sceneMergeSelectionBySceneId: {},
     pendingImageUploadsBySceneId: {},
     lastProjectSnapshot: null,
@@ -3640,6 +3643,37 @@ function initCreateWizard() {
         similarUploadInput.addEventListener("change", _handleSimilarSceneImageInput);
     }
 
+    const similarScenesList = document.getElementById("similar-scenes-list");
+    if (similarScenesList) {
+        similarScenesList.addEventListener("input", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLTextAreaElement)) return;
+
+            const match = /^similar-scene-prompt-(\d+)$/.exec(String(target.id || ""));
+            if (!match) return;
+
+            const sceneId = Number(match[1] || 0);
+            if (!sceneId) return;
+
+            _syncSimilarDraftsFromDom();
+            _scheduleSimilarSceneAutoSave(sceneId);
+        });
+
+        similarScenesList.addEventListener("blur", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLTextAreaElement)) return;
+
+            const match = /^similar-scene-prompt-(\d+)$/.exec(String(target.id || ""));
+            if (!match) return;
+
+            const sceneId = Number(match[1] || 0);
+            if (!sceneId) return;
+
+            _syncSimilarDraftsFromDom();
+            void _flushSimilarSceneAutoSave(sceneId);
+        }, true);
+    }
+
     const similarSourceFileInput = document.getElementById("similar-source-file-input");
     if (similarSourceFileInput) {
         similarSourceFileInput.addEventListener("change", _handleSimilarSourceFileInput);
@@ -4978,6 +5012,22 @@ function _getSimilarProjectScene(sceneId) {
     return scenes.find((scene) => Number(scene?.id || 0) === targetId) || null;
 }
 
+function _setSimilarSceneServerPromptValue(sceneId, promptValue) {
+    const targetId = Number(sceneId || 0);
+    if (!targetId) return;
+
+    const nextPrompt = String(promptValue || "");
+    const promptEl = document.getElementById(`similar-scene-prompt-${targetId}`);
+    if (promptEl) {
+        promptEl.dataset.serverValue = encodeURIComponent(nextPrompt);
+    }
+
+    const scene = _getSimilarProjectScene(targetId);
+    if (scene) {
+        scene.prompt = nextPrompt;
+    }
+}
+
 function _similarPreviewAspectClass(aspectRatio) {
     const normalized = String(aspectRatio || "").trim();
     if (normalized === "9:16") return "similar-preview-box-vertical";
@@ -5319,6 +5369,110 @@ function _forgetSimilarSceneDraft(sceneId) {
     delete similarState.sceneDraftsBySceneId[key];
 }
 
+function _clearSimilarSceneSavedDraftFields(sceneId) {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return;
+
+    const currentDraft = similarState.sceneDraftsBySceneId[key];
+    if (!currentDraft || typeof currentDraft !== "object") return;
+
+    const nextDraft = {
+        ...currentDraft,
+    };
+    delete nextDraft.prompt;
+    delete nextDraft.start;
+    delete nextDraft.duration;
+
+    if (Object.keys(nextDraft).length) {
+        similarState.sceneDraftsBySceneId[key] = nextDraft;
+    } else {
+        delete similarState.sceneDraftsBySceneId[key];
+    }
+}
+
+function _clearSimilarSceneAutoSaveTimer(sceneId) {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return;
+
+    const timerId = similarState.sceneAutoSaveTimersBySceneId[key];
+    if (timerId) {
+        clearTimeout(timerId);
+        delete similarState.sceneAutoSaveTimersBySceneId[key];
+    }
+}
+
+function _clearAllSimilarSceneAutoSaveState() {
+    Object.keys(similarState.sceneAutoSaveTimersBySceneId || {}).forEach((sceneKey) => {
+        _clearSimilarSceneAutoSaveTimer(sceneKey);
+    });
+    similarState.sceneAutoSaveTimersBySceneId = {};
+    similarState.sceneAutoSaveInFlightBySceneId = {};
+    similarState.sceneAutoSaveQueuedBySceneId = {};
+}
+
+function _similarScenePromptNeedsSave(sceneId) {
+    const targetId = Number(sceneId || 0);
+    if (!targetId) return false;
+
+    const promptEl = document.getElementById(`similar-scene-prompt-${targetId}`);
+    if (!promptEl) return false;
+
+    const promptValue = String(promptEl.value || "");
+    const serverPromptRaw = String(promptEl.dataset.serverValue || "");
+    let serverPrompt = serverPromptRaw;
+    try {
+        serverPrompt = decodeURIComponent(serverPromptRaw);
+    } catch (_) {
+        serverPrompt = serverPromptRaw;
+    }
+
+    return promptValue !== serverPrompt;
+}
+
+function _scheduleSimilarSceneAutoSave(sceneId, options = {}) {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return;
+
+    const delay = Number(options.delay || 700);
+    _clearSimilarSceneAutoSaveTimer(sceneId);
+    similarState.sceneAutoSaveTimersBySceneId[key] = window.setTimeout(() => {
+        void _flushSimilarSceneAutoSave(sceneId);
+    }, delay);
+}
+
+async function _flushSimilarSceneAutoSave(sceneId) {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return false;
+
+    _clearSimilarSceneAutoSaveTimer(sceneId);
+    if (!_similarScenePromptNeedsSave(sceneId)) {
+        return false;
+    }
+
+    if (similarState.sceneAutoSaveInFlightBySceneId[key]) {
+        similarState.sceneAutoSaveQueuedBySceneId[key] = true;
+        return false;
+    }
+
+    similarState.sceneAutoSaveInFlightBySceneId[key] = true;
+    delete similarState.sceneAutoSaveQueuedBySceneId[key];
+
+    try {
+        return await similarSaveScene(sceneId, {
+            silent: true,
+            applyNarration: false,
+        });
+    } finally {
+        delete similarState.sceneAutoSaveInFlightBySceneId[key];
+        if (similarState.sceneAutoSaveQueuedBySceneId[key]) {
+            delete similarState.sceneAutoSaveQueuedBySceneId[key];
+            if (_similarScenePromptNeedsSave(sceneId)) {
+                _scheduleSimilarSceneAutoSave(sceneId, { delay: 280 });
+            }
+        }
+    }
+}
+
 function _setSimilarSceneFrameEditorDraft(sceneId, { open, instruction, narrationOpen, narrationText, frameBusy, frameBusyLabel } = {}) {
     const key = _similarSceneStateKey(sceneId);
     if (!key) return;
@@ -5483,6 +5637,24 @@ function _cleanupSimilarSceneTransientState(sceneIds) {
         }
     });
 
+    Object.keys(similarState.sceneAutoSaveTimersBySceneId || {}).forEach((sceneKey) => {
+        if (!keep.has(sceneKey)) {
+            _clearSimilarSceneAutoSaveTimer(sceneKey);
+        }
+    });
+
+    Object.keys(similarState.sceneAutoSaveInFlightBySceneId || {}).forEach((sceneKey) => {
+        if (!keep.has(sceneKey)) {
+            delete similarState.sceneAutoSaveInFlightBySceneId[sceneKey];
+        }
+    });
+
+    Object.keys(similarState.sceneAutoSaveQueuedBySceneId || {}).forEach((sceneKey) => {
+        if (!keep.has(sceneKey)) {
+            delete similarState.sceneAutoSaveQueuedBySceneId[sceneKey];
+        }
+    });
+
     Object.keys(similarState.sceneMergeSelectionBySceneId || {}).forEach((sceneKey) => {
         if (!keep.has(sceneKey)) {
             delete similarState.sceneMergeSelectionBySceneId[sceneKey];
@@ -5531,6 +5703,9 @@ function _renderSimilarScenes(project, options = {}) {
     containerEl.hidden = false;
     similarState.lastProjectSnapshot = project;
     const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
+    const projectTags = _safeSimilarTags(project?.tags);
+    const activeBusyStage = _resolveSimilarBusyStage(String(projectTags.similar_stage || "").trim(), String(project?.status || "").trim().toLowerCase());
+    const activeBusySceneId = Number(projectTags.similar_regenerating_scene_id || similarState.pendingBusySceneId || 0);
     const similarActionIcons = {
         save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
         upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
@@ -5566,8 +5741,11 @@ function _renderSimilarScenes(project, options = {}) {
             : "Aplicar imagem enviada";
         const selectedSceneEngine = _getSimilarSceneSelectedEngine(sceneId);
         const hasImagePreview = !!String(scene.image_url || "").trim();
-        const hasClipPreview = !!String(scene.clip_url || "").trim();
+        const clipUrlRaw = String(scene.clip_url || scene.clip_path || "");
+        const clipUrlSafe = esc(clipUrlRaw);
+        const hasClipPreview = !!clipUrlRaw.trim();
         const hasReferenceFrame = !!String(scene.reference_frame_url || "").trim();
+        const isGeneratingSceneClip = activeBusySceneId === sceneId && ["generating_scene", "regenerating_scene"].includes(activeBusyStage);
         const frameEditorOpen = !!draft.frameEditorOpen;
         const narrationEditorOpen = !!draft.narrationEditorOpen;
         const frameBusy = !!draft.frameBusy;
@@ -5599,6 +5777,10 @@ function _renderSimilarScenes(project, options = {}) {
         const framePanelSummary = generatedImageVariants.length
             ? `${generatedImageVariants.length + 1} imagens lado a lado.`
             : "Contexto visual da cena.";
+        const generateVideoLabel = hasClipPreview ? "Gerar vídeo novamente" : "Gerar vídeo";
+        const sceneVideoDetail = hasClipPreview
+            ? "Resultado atual desta cena."
+            : "Ele aparece aqui assim que terminar.";
 
         const buildFrameGalleryItem = ({ url, alt, badge, downloadName, active = false, isBase = false }) => {
             const safeUrl = esc(String(url || ""));
@@ -5670,6 +5852,21 @@ function _renderSimilarScenes(project, options = {}) {
                 </div>
             `
             : "";
+        const inlineClipMarkup = hasReferenceFrame && (hasClipPreview || isGeneratingSceneClip)
+            ? `
+                <aside class="similar-scene-clip-column">
+                    <div class="similar-scene-clip-head">
+                        <strong>Vídeo da cena</strong>
+                        <span>${sceneVideoDetail}</span>
+                    </div>
+                    <div class="similar-scene-clip-card similar-preview-box ${previewAspectClass}${hasClipPreview ? "" : " is-generating"}">
+                        ${hasClipPreview
+                            ? `<video src="${clipUrlSafe}" controls preload="metadata" playsinline></video>`
+                            : `<div class="similar-scene-clip-placeholder" role="status" aria-live="polite"><span class="similar-scene-clip-spinner" aria-hidden="true"></span><strong>Gerando vídeo...</strong><small>Assim que a renderização terminar, o player vai aparecer aqui.</small></div>`}
+                    </div>
+                </aside>
+            `
+            : "";
 
         const referenceFrameMarkup = hasReferenceFrame
             ? `
@@ -5685,8 +5882,9 @@ function _renderSimilarScenes(project, options = {}) {
                             <button class="similar-frame-tool-btn similar-frame-tool-btn-icon${narrationEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleNarrationEdit(${sceneId})" title="${narrationTitle}" aria-label="${narrationTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.narration}</button>
                         </div>
                     </div>
-                    <div class="similar-reference-frame-body">
+                    <div class="similar-reference-frame-body${inlineClipMarkup ? " similar-reference-frame-body-has-clip" : ""}">
                         ${frameGalleryMarkup}
+                        ${inlineClipMarkup}
                     </div>
                     <div class="similar-reference-frame-narration-editor${narrationEditorOpen ? " is-open" : ""}" ${narrationEditorOpen ? "" : "hidden"}>
                         <label for="similar-scene-narration-${sceneId}">O que deve ser falado nesta cena?</label>
@@ -5718,17 +5916,19 @@ function _renderSimilarScenes(project, options = {}) {
             : "";
 
         const previewItems = [];
-        if (hasImagePreview && !(hasReferenceFrame && hasTrackedActiveVariant)) {
+        if (hasImagePreview && !hasReferenceFrame) {
             previewItems.push(`
                 <div class="similar-preview-box ${previewAspectClass}">
                     <img src="${scene.image_url}" alt="Preview imagem cena ${idx + 1}" loading="lazy">
                 </div>
             `);
         }
-        if (hasClipPreview) {
+        if (!hasReferenceFrame && (hasClipPreview || isGeneratingSceneClip)) {
             previewItems.push(`
-                <div class="similar-preview-box ${previewAspectClass}">
-                    <video src="${scene.clip_url}" controls preload="metadata"></video>
+                <div class="similar-scene-clip-card similar-preview-box ${previewAspectClass}${hasClipPreview ? "" : " is-generating"}">
+                    ${hasClipPreview
+                        ? `<video src="${clipUrlSafe}" controls preload="metadata" playsinline></video>`
+                        : `<div class="similar-scene-clip-placeholder" role="status" aria-live="polite"><span class="similar-scene-clip-spinner" aria-hidden="true"></span><strong>Gerando vídeo...</strong><small>Assim que a renderização terminar, o player vai aparecer aqui.</small></div>`}
                 </div>
             `);
         }
@@ -5783,7 +5983,7 @@ function _renderSimilarScenes(project, options = {}) {
                     <button class="similar-scene-action-btn" type="button" onclick="similarUploadSceneImage(${sceneId})" title="Enviar imagens" aria-label="Enviar imagens">${similarActionIcons.upload}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" title="${applyUploadedLabel}" aria-label="${applyUploadedLabel}" ${applyDisabledAttr}>${similarActionIcons.apply}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Gerar imagem com IA" aria-label="Gerar imagem com IA">${similarActionIcons.image}</button>
-                    <button class="similar-scene-action-btn similar-scene-action-btn-primary" type="button" onclick="similarRegenerateScene(${sceneId})" title="Gerar cena" aria-label="Gerar cena">${similarActionIcons.preview}</button>
+                    <button class="similar-scene-action-btn similar-scene-action-btn-primary similar-scene-action-btn-label" type="button" onclick="similarRegenerateScene(${sceneId})" title="${generateVideoLabel}" aria-label="${generateVideoLabel}">${similarActionIcons.preview}<span>${generateVideoLabel}</span></button>
                 </div>
             </article>
         `;
@@ -9123,6 +9323,7 @@ function _resetSimilarModeState() {
     similarState.detectedReason = "";
     similarState.detectedConfidence = 0;
     similarState.sceneDraftsBySceneId = {};
+    _clearAllSimilarSceneAutoSaveState();
     similarState.sceneMergeSelectionBySceneId = {};
     _clearAllSimilarScenePendingUploads();
     similarState.pendingImageUploadsBySceneId = {};
@@ -9588,19 +9789,28 @@ async function similarApplyUnifiedFrameEdit() {
     await similarGenerateUnifiedReferenceImage({ requireInstruction: true });
 }
 
-async function similarSaveScene(sceneId) {
+async function similarSaveScene(sceneId, options = {}) {
     const projectId = Number(similarState.projectId || 0);
+    const silent = !!options.silent;
+    const applyNarration = options.applyNarration !== false;
     if (!projectId) {
-        alert("Inicie a analise antes de editar cenas.");
-        return;
+        if (!silent) {
+            alert("Inicie a analise antes de editar cenas.");
+        }
+        return false;
+    }
+
+    _clearSimilarSceneAutoSaveTimer(sceneId);
+
+    if (applyNarration) {
+        _applySimilarNarrationToPrompt(sceneId);
     }
 
     const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
     const scene = _getSimilarProjectScene(sceneId);
-    _applySimilarNarrationToPrompt(sceneId);
     const startEl = document.getElementById(`similar-scene-start-${sceneId}`);
     const durationEl = document.getElementById(`similar-scene-duration-${sceneId}`);
-    const prompt = String(promptEl?.value || "").trim();
+    const prompt = String(promptEl?.value || "");
     const fallbackStart = Number(scene?.start_time || 0);
     const fallbackDuration = scene ? _similarSceneDuration(scene) : 5;
     const startRaw = Number.parseFloat(startEl?.value || String(fallbackStart));
@@ -9617,11 +9827,20 @@ async function similarSaveScene(sceneId) {
                 duration_seconds: duration,
             }),
         });
-        _forgetSimilarSceneDraft(sceneId);
-        showToast("Cena atualizada.", "success");
+        _setSimilarSceneServerPromptValue(sceneId, prompt);
+        _clearSimilarSceneSavedDraftFields(sceneId);
+        if (!silent) {
+            showToast("Cena atualizada.", "success");
+        }
         await _refreshSimilarProject();
+        return true;
     } catch (error) {
-        showToast(`Erro ao salvar cena: ${error.message}`, "error");
+        if (!silent) {
+            showToast(`Erro ao salvar cena: ${error.message}`, "error");
+        } else {
+            console.warn("[similarSaveScene] Falha no autosave da cena:", error?.message || error);
+        }
+        return false;
     }
 }
 
@@ -9941,6 +10160,7 @@ async function similarRegenerateScene(sceneId) {
     try {
         const scene = _getSimilarProjectScene(sceneId);
         _applySimilarNarrationToPrompt(sceneId);
+        await _flushSimilarSceneAutoSave(sceneId);
         const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
         const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
         const hasExistingClip = !!String(scene?.clip_url || scene?.clip_path || "").trim();

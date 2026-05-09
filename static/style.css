@@ -9165,6 +9165,14 @@ th,
     display: flex;
     justify-content: stretch;
     width: 100%;
+    gap: 14px;
+    align-items: stretch;
+}
+
+.similar-reference-frame-body-has-clip {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+    align-items: start;
 }
 
 .similar-reference-frame-gallery {
@@ -9177,6 +9185,75 @@ th,
 .similar-reference-frame-gallery-single {
     grid-template-columns: minmax(0, 1fr);
     max-width: 360px;
+}
+
+.similar-scene-clip-column {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+
+.similar-scene-clip-head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.similar-scene-clip-head strong {
+    color: var(--text);
+    font-size: 0.9rem;
+    letter-spacing: 0.02em;
+}
+
+.similar-scene-clip-head span {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.similar-scene-clip-card {
+    position: relative;
+}
+
+.similar-scene-clip-card.is-generating {
+    border-style: dashed;
+    border-color: rgba(255, 193, 79, 0.28);
+    background: linear-gradient(180deg, rgba(10, 19, 36, 0.96), rgba(5, 12, 24, 0.92));
+}
+
+.similar-scene-clip-placeholder {
+    height: 100%;
+    min-height: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 18px;
+    text-align: center;
+    color: var(--text);
+}
+
+.similar-scene-clip-placeholder strong {
+    font-size: 0.92rem;
+}
+
+.similar-scene-clip-placeholder small {
+    color: var(--text-muted);
+    line-height: 1.45;
+    max-width: 240px;
+}
+
+.similar-scene-clip-spinner {
+    width: 42px;
+    height: 42px;
+    border-radius: 999px;
+    border: 3px solid rgba(255, 255, 255, 0.14);
+    border-top-color: rgba(255, 193, 79, 0.92);
+    border-right-color: rgba(17, 201, 255, 0.76);
+    box-shadow: 0 0 0 6px rgba(255, 193, 79, 0.08);
+    animation: similar-scene-clip-spin 0.92s linear infinite;
 }
 
 .similar-frame-gallery-item {
@@ -9523,6 +9600,12 @@ th,
     }
 }
 
+@keyframes similar-scene-clip-spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
 .similar-scene-preview {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9590,6 +9673,15 @@ th,
     .similar-reference-frame-gallery,
     .similar-scene-preview {
         grid-template-columns: 1fr;
+    }
+
+    .similar-reference-frame-body-has-clip {
+        grid-template-columns: 1fr;
+    }
+
+    .similar-scene-action-btn-label {
+        width: 100%;
+        justify-content: center;
     }
 
     .similar-frame-image-action {
@@ -9701,6 +9793,17 @@ th,
     border-color: #ffc14f;
     color: #ffe4a8;
     background: rgba(255, 193, 79, 0.22);
+}
+
+.similar-scene-action-btn-label {
+    width: auto;
+    min-width: 154px;
+    padding: 0 16px;
+    gap: 8px;
+}
+
+.similar-scene-action-btn-label span {
+    white-space: nowrap;
 }
 
 .similar-scene-upload-panel {
