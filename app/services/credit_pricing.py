@@ -57,7 +57,9 @@ IMAGE_GENERATION_MODEL_USD = {
     "baidu/ERNIE-Image-Turbo/text-to-image": 0.0,
     "z-image/turbo": 0.010,
     "bytedance/seedream-v5.0-lite/sequential": 0.032,
+    "bytedance/seedream-v5.0-lite/edit-sequential": 0.032,
     "bytedance/seedream-v4.5": 0.036,
+    "bytedance/seedream-v4.5/edit": 0.036,
     "alibaba/wan-2.6/text-to-image": 0.040,
     "alibaba/wan-2.6/image-edit": 0.044,
 }
@@ -76,7 +78,9 @@ IMAGE_GENERATION_BASE_FLOOR = {
     "baidu/ERNIE-Image-Turbo/text-to-image": 0,
     "z-image/turbo": 2,
     "bytedance/seedream-v5.0-lite/sequential": 6,
+    "bytedance/seedream-v5.0-lite/edit-sequential": 6,
     "bytedance/seedream-v4.5": 7,
+    "bytedance/seedream-v4.5/edit": 7,
     "alibaba/wan-2.6/text-to-image": 13,
     "alibaba/wan-2.6/image-edit": 15,
 }
@@ -299,8 +303,15 @@ def estimate_image_generation_credits(
     thinking_mode: bool = False,
 ) -> dict[str, Any]:
     normalized_model = str(model or "google/nano-banana-pro/text-to-image").strip()
+    has_references = int(reference_image_count or 0) > 0
     if normalized_model == "ultra-high-3.0":
-        normalized_model = "z-image/turbo"
+        normalized_model = "alibaba/wan-2.6/image-edit" if has_references else "z-image/turbo"
+    elif normalized_model == "z-image/turbo":
+        normalized_model = "alibaba/wan-2.6/image-edit" if has_references else "z-image/turbo"
+    elif normalized_model == "bytedance/seedream-v5.0-lite/sequential":
+        normalized_model = "bytedance/seedream-v5.0-lite/edit-sequential" if has_references else normalized_model
+    elif normalized_model == "bytedance/seedream-v4.5":
+        normalized_model = "bytedance/seedream-v4.5/edit" if has_references else normalized_model
     if normalized_model == "baidu/ERNIE-Image-Turbo/text-to-image":
         estimate = CreditEstimate(
             credits_needed=0,

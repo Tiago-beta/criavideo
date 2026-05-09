@@ -4627,11 +4627,11 @@ svg.spin {
     grid-template-rows: auto auto;
     align-items: start;
     align-content: start;
-    gap: 6px 12px;
+    gap: 4px 10px;
     width: 100%;
     min-width: 0;
-    min-height: 112px;
-    padding: 12px 14px;
+    min-height: 98px;
+    padding: 10px 12px;
     border: 1px solid rgba(110, 143, 175, 0.24);
     border-radius: 18px;
     background: rgba(7, 24, 41, 0.74);
@@ -4705,7 +4705,7 @@ svg.spin {
     grid-column: 2;
     grid-row: 1 / span 2;
     display: grid;
-    gap: 4px;
+    gap: 3px;
     min-width: 0;
     width: 100%;
     align-self: start;
@@ -4714,7 +4714,7 @@ svg.spin {
 .script-image-model-card-copy strong {
     color: var(--text);
     font-size: 0.88rem;
-    line-height: 1.2;
+    line-height: 1.14;
     display: block;
     overflow: visible;
     white-space: normal;
@@ -4724,7 +4724,7 @@ svg.spin {
 .script-image-model-card-copy small {
     color: var(--text-muted);
     font-size: 0.72rem;
-    line-height: 1.28;
+    line-height: 1.2;
     display: block;
     overflow: visible;
     white-space: normal;
@@ -4736,7 +4736,7 @@ svg.spin {
     align-self: start;
     justify-self: center;
     color: #ffd68a;
-    font-size: 0.56rem;
+    font-size: 0.52rem;
     line-height: 1.1;
     letter-spacing: 0.01em;
     text-align: center;

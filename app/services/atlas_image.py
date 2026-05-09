@@ -90,6 +90,16 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "max_outputs": 4,
         "max_references": 0,
     },
+    "bytedance/seedream-v5.0-lite/edit-sequential": {
+        "label": "Seedream v5.0 Lite Edit Sequential",
+        "kind": "edit",
+        "supports_aspect_ratio": False,
+        "supports_size": False,
+        "supports_thinking_mode": False,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 5,
+    },
     "bytedance/seedream-v4.5": {
         "label": "Seedream v4.5",
         "kind": "text",
@@ -99,6 +109,16 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "supports_batch_request": False,
         "max_outputs": 4,
         "max_references": 0,
+    },
+    "bytedance/seedream-v4.5/edit": {
+        "label": "Seedream v4.5 Edit",
+        "kind": "edit",
+        "supports_aspect_ratio": False,
+        "supports_size": False,
+        "supports_thinking_mode": False,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 5,
     },
     "alibaba/wan-2.6/text-to-image": {
         "label": "WAN 2.6 Texto para Imagem",
@@ -143,21 +163,53 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
 }
 _SCRIPT_IMAGE_MODEL_ALIASES: dict[str, dict[str, Any]] = {
     "ultra-high-3.0": {
-        "label": "Z-Image Turbo",
-        "description": "Criador de imagens Geral sem restricao.",
+        "label": "Ultra High 3.0",
+        "description": "Criador de imagens geral sem restricao.",
         "text_model": "z-image/turbo",
-        "edit_model": "z-image/turbo",
+        "edit_model": "alibaba/wan-2.6/image-edit",
+        "supports_size": True,
+        "supports_thinking_mode": True,
+        "max_outputs": 4,
+        "max_references": 5,
+    },
+    "z-image/turbo": {
+        "label": "Ultra High 3.0",
+        "description": "Criador de imagens geral sem restricao.",
+        "text_model": "z-image/turbo",
+        "edit_model": "alibaba/wan-2.6/image-edit",
+        "supports_size": True,
+        "supports_thinking_mode": True,
+        "max_outputs": 4,
+        "max_references": 5,
+    },
+    "bytedance/seedream-v5.0-lite/sequential": {
+        "label": "Mega 5.0 Anime",
+        "description": "Ideal para gerar imagens estilo anime sem restricao.",
+        "text_model": "bytedance/seedream-v5.0-lite/sequential",
+        "edit_model": "bytedance/seedream-v5.0-lite/edit-sequential",
         "supports_size": False,
         "supports_thinking_mode": False,
         "max_outputs": 4,
-        "max_references": 0,
+        "max_references": 5,
+    },
+    "bytedance/seedream-v4.5": {
+        "label": "Mega 5.0 Real",
+        "description": "Cria imagens em 4K com fidelidade e sem restricao.",
+        "text_model": "bytedance/seedream-v4.5",
+        "edit_model": "bytedance/seedream-v4.5/edit",
+        "supports_size": False,
+        "supports_thinking_mode": False,
+        "max_outputs": 4,
+        "max_references": 5,
     },
 }
 _OPENAI_DIRECT_MODEL = "openai/gpt-image-1/text-to-image"
 _BAIDU_TURBO_MODEL = "baidu/ERNIE-Image-Turbo/text-to-image"
 _Z_IMAGE_TURBO_MODEL = "z-image/turbo"
 _SEEDREAM_V5_LITE_SEQUENTIAL_MODEL = "bytedance/seedream-v5.0-lite/sequential"
+_SEEDREAM_V5_LITE_EDIT_SEQUENTIAL_MODEL = "bytedance/seedream-v5.0-lite/edit-sequential"
 _SEEDREAM_V45_MODEL = "bytedance/seedream-v4.5"
+_SEEDREAM_V45_EDIT_MODEL = "bytedance/seedream-v4.5/edit"
 _ALLOWED_ASPECT_RATIOS = {"1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
 _ALLOWED_WAN_TEXT_SIZES = {"1K", "2K", "4K"}
 _ALLOWED_WAN_EDIT_SIZES = {"1K", "2K"}
@@ -360,8 +412,16 @@ def _is_seedream_v5_lite_sequential_model(model: str) -> bool:
     return normalize_supported_model(model) == _SEEDREAM_V5_LITE_SEQUENTIAL_MODEL
 
 
+def _is_seedream_v5_lite_edit_sequential_model(model: str) -> bool:
+    return normalize_supported_model(model) == _SEEDREAM_V5_LITE_EDIT_SEQUENTIAL_MODEL
+
+
 def _is_seedream_v45_model(model: str) -> bool:
     return normalize_supported_model(model) == _SEEDREAM_V45_MODEL
+
+
+def _is_seedream_v45_edit_model(model: str) -> bool:
+    return normalize_supported_model(model) == _SEEDREAM_V45_EDIT_MODEL
 
 
 def _baidu_image_size_for_aspect_ratio(aspect_ratio: str) -> str:
@@ -535,8 +595,8 @@ def _build_atlas_generation_payload(
             "enable_sync_mode": False,
         }
 
-    if _is_seedream_v5_lite_sequential_model(normalized_model):
-        return {
+    if _is_seedream_v5_lite_sequential_model(normalized_model) or _is_seedream_v5_lite_edit_sequential_model(normalized_model):
+        payload = {
             "model": normalized_model,
             "prompt": prompt_text,
             "size": _seedream_v5_size_for_aspect_ratio(resolved_aspect_ratio),
@@ -545,15 +605,21 @@ def _build_atlas_generation_payload(
             "enable_base64_output": False,
             "enable_sync_mode": False,
         }
+        if uploaded_refs and model_max_references(normalized_model) > 0:
+            payload["images"] = uploaded_refs[:model_max_references(normalized_model)]
+        return payload
 
-    if _is_seedream_v45_model(normalized_model):
-        return {
+    if _is_seedream_v45_model(normalized_model) or _is_seedream_v45_edit_model(normalized_model):
+        payload = {
             "model": normalized_model,
             "prompt": prompt_text,
             "size": _seedream_v45_size_for_aspect_ratio(resolved_aspect_ratio),
             "enable_base64_output": False,
             "enable_sync_mode": False,
         }
+        if uploaded_refs and model_max_references(normalized_model) > 0:
+            payload["images"] = uploaded_refs[:model_max_references(normalized_model)]
+        return payload
 
     prompt_payload = prompt_text
     if not model_supports_aspect_ratio(normalized_model) and not model_uses_wan_26_payload(normalized_model):

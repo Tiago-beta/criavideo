@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v402 loaded");
+console.log("[CriaVideo] app.js v403 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -11229,7 +11229,11 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
         supportsSize: false,
         supportsThinkingMode: false,
         maxOutputs: 4,
-        maxReferences: 0,
+        maxReferences: 5,
+        editOverrides: {
+            supportsSize: true,
+            supportsThinkingMode: true,
+        },
     },
     {
         id: "google/nano-banana/text-to-image",
@@ -11259,7 +11263,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
         supportsSize: false,
         supportsThinkingMode: false,
         maxOutputs: 4,
-        maxReferences: 0,
+        maxReferences: 5,
     },
     {
         id: "bytedance/seedream-v4.5",
@@ -11269,7 +11273,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
         supportsSize: false,
         supportsThinkingMode: false,
         maxOutputs: 4,
-        maxReferences: 0,
+        maxReferences: 5,
     },
     {
         id: "openai/gpt-image-1/text-to-image",
@@ -11368,7 +11372,14 @@ function _syncScriptImageCreatorModelCardCosts() {
 function _getScriptImageCreatorModelMeta() {
     const modelSelect = document.getElementById("script-image-generator-model");
     const selectedId = String(modelSelect?.value || SCRIPT_IMAGE_CREATOR_MODELS[0].id).trim();
-    return SCRIPT_IMAGE_CREATOR_MODELS.find((item) => item.id === selectedId) || SCRIPT_IMAGE_CREATOR_MODELS[0];
+    const baseMeta = SCRIPT_IMAGE_CREATOR_MODELS.find((item) => item.id === selectedId) || SCRIPT_IMAGE_CREATOR_MODELS[0];
+    if (_scriptImageCreatorState.referenceFiles.length > 0 && baseMeta?.editOverrides) {
+        return {
+            ...baseMeta,
+            ...baseMeta.editOverrides,
+        };
+    }
+    return baseMeta;
 }
 
 function _syncScriptImageCreatorChoiceButtons() {
@@ -11863,7 +11874,7 @@ function startScriptImageCreatorEdit(index) {
     if (!Number.isFinite(parsed)) return;
     const meta = _getScriptImageCreatorModelMeta();
     if ((meta.maxReferences || 0) <= 0) {
-        showToast("Esse modelo não suporta editar a partir da imagem atual. Selecione Nano Banana Pro, Nano Banana ou GPT Image.", "info");
+        showToast("Esse modelo ainda não tem um modo de imagem para imagem publicado no Atlas.", "info");
         return;
     }
 
