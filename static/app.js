@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v392 loaded");
+console.log("[CriaVideo] app.js v393 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -5558,7 +5558,7 @@ function _renderSimilarScenes(project, options = {}) {
         const applyDisabledAttr = pendingCount ? "" : "disabled";
         const clearDisabledAttr = pendingCount ? "" : "disabled";
         const applyUploadedLabel = pendingCount > 1
-            ? "Aplicar imagens (Nano Banana)"
+            ? "Aplicar imagens (WAN 2.6)"
             : "Aplicar imagem enviada";
         const selectedSceneEngine = _getSimilarSceneSelectedEngine(sceneId);
         const hasImagePreview = !!String(scene.image_url || "").trim();
@@ -9733,7 +9733,7 @@ async function similarApplyUploadedSceneImages(sceneId) {
 
     try {
         if (uploadIds.length > 1) {
-            _setSimilarStatus("Unindo imagens enviadas com Nano Banana...", "running");
+            _setSimilarStatus("Unindo imagens enviadas com WAN 2.6...", "running");
         } else {
             _setSimilarStatus("Aplicando imagem enviada na cena...", "running");
         }

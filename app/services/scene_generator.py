@@ -275,7 +275,7 @@ def merge_reference_images_with_nano_banana(
     aspect_ratio: str = "16:9",
     output_path: str = "",
 ) -> str:
-    """Merge multiple uploaded references into one coherent image using Nano Banana.
+    """Merge multiple uploaded references into one coherent image using WAN 2.6.
 
     This is used by Similar mode so a scene can consume several user images while still
     generating from a single consolidated reference frame.
@@ -303,81 +303,51 @@ def merge_reference_images_with_nano_banana(
         raise RuntimeError("Caminho de saida invalido para fusao de imagens")
 
     try:
+        from app.services.atlas_image import generate_atlas_images
+
         scene_goal = re.sub(r"\s+", " ", str(scene_prompt or "")).strip()
         if not scene_goal:
             scene_goal = "Cena cinematografica coerente, realista e com continuidade visual."
 
-        contents_payload: list = []
-        for path in valid_paths[:6]:
-            mime_type = mimetypes.guess_type(path)[0] or "image/png"
-            with open(path, "rb") as ref_file:
-                ref_bytes = ref_file.read()
-            if not ref_bytes:
-                continue
-            contents_payload.append(types.Part.from_bytes(data=ref_bytes, mime_type=mime_type))
+        merge_prompt = (
+            "Combine TODAS as imagens de referencia enviadas em UMA unica composicao cinematografica coerente. "
+            "Nao crie collage, split-screen, grid, storyboard, triptych, diptych ou paineis separados. "
+            "Mantenha os elementos principais de cada referencia em um mesmo ambiente visual plausivel, "
+            "com enquadramento natural e continuidade de luz, cor, estilo e identidade visual. "
+            "Sem textos, logos, marcas d'agua ou sobreposicoes. "
+            f"Objetivo da cena: {scene_goal}"
+        )
 
-        if len(contents_payload) < 2:
-            os.makedirs(os.path.dirname(target_path), exist_ok=True)
-            shutil.copy2(valid_paths[0], target_path)
-            return target_path
-
-        contents_payload.append(
-            (
-                "Combine TODAS as imagens de referencia enviadas em UMA unica composicao cinematografica coerente. "
-                "Nao crie collage, split-screen, grid, storyboard, triptych, diptych ou paineis separados. "
-                "Mantenha os elementos principais de cada referencia em um mesmo ambiente visual plausivel, "
-                "com enquadramento natural e continuidade de luz/cor. "
-                "Sem textos, logos, marcas d'agua ou sobreposicoes. "
-                f"Objetivo da cena: {scene_goal}"
+        results = asyncio.run(
+            generate_atlas_images(
+                prompt=merge_prompt,
+                model="alibaba/wan-2.6/image-edit",
+                aspect_ratio=aspect_ratio,
+                size="2K",
+                count=1,
+                thinking_mode=False,
+                reference_paths=valid_paths,
+                timeout_seconds=240,
             )
         )
 
-        response = google_client.models.generate_content(
-            model="gemini-2.5-flash-image",
-            contents=contents_payload,
-            config=types.GenerateContentConfig(
-                response_modalities=["IMAGE"],
-                image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
-            ),
-        )
+        first_result = results[0] if results and isinstance(results[0], dict) else {}
+        raw_bytes = first_result.get("bytes")
+        if not isinstance(raw_bytes, (bytes, bytearray)) or not raw_bytes:
+            raise RuntimeError("WAN 2.6 retornou imagem invalida ao unir referencias")
 
-        parts = []
-        direct_parts = getattr(response, "parts", None)
-        if isinstance(direct_parts, list):
-            parts.extend(direct_parts)
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, "wb") as out:
+            out.write(bytes(raw_bytes))
 
-        candidates = getattr(response, "candidates", None) or []
-        for cand in candidates:
-            content = getattr(cand, "content", None)
-            cand_parts = getattr(content, "parts", None) if content is not None else None
-            if isinstance(cand_parts, list):
-                parts.extend(cand_parts)
-
-        for part in parts:
-            inline_data = getattr(part, "inline_data", None)
-            if inline_data is None:
-                continue
-
-            os.makedirs(os.path.dirname(target_path), exist_ok=True)
-            try:
-                image = part.as_image()
-                image.save(target_path)
-            except Exception:
-                data = getattr(inline_data, "data", None)
-                if not data:
-                    continue
-                raw = bytes(data) if not isinstance(data, str) else base64.b64decode(data)
-                with open(target_path, "wb") as out:
-                    out.write(raw)
-
-            if os.path.exists(target_path) and os.path.getsize(target_path) > 0:
-                return target_path
+        if os.path.exists(target_path) and os.path.getsize(target_path) > 0:
+            return target_path
 
     except Exception as e:
-        logger.warning("Nano Banana merge failed: %s", e)
-        raise RuntimeError("Falha ao unir as imagens com Nano Banana") from e
+        logger.warning("WAN 2.6 merge failed: %s", e)
+        raise RuntimeError("Falha ao unir as imagens com WAN 2.6") from e
 
-    raise RuntimeError("Nano Banana nao retornou imagem ao unir referencias")
+    raise RuntimeError("WAN 2.6 nao retornou imagem ao unir referencias")
 
 
 def _openai_image_size_for_aspect_ratio(aspect_ratio: str) -> str:
