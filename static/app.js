@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v405 loaded");
+console.log("[CriaVideo] app.js v406 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
