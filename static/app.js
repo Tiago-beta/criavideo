@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v396 loaded");
+console.log("[CriaVideo] app.js v397 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28715,7 +28715,7 @@ function _editorRenderTimeline() {
         return `
             <div class="editor-track" data-track="${row.track}">
                 <div class="editor-track-label">
-                    <span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}<span class="editor-track-label-text">${row.label}</span></span>
+                    <span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>
                 </div>
                 <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px">${row.clipsHtml || ""}</div>
             </div>

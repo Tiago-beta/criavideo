@@ -11971,9 +11971,9 @@ th,
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 4px;
-    padding: 0 6px 0 8px;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
     font-size: 10px;
     color: var(--text-muted);
     background: rgba(0,0,0,0.15);
@@ -11990,13 +11990,8 @@ th,
 .editor-track-label-main {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    min-width: 0;
-}
-
-.editor-track-label-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
+    justify-content: center;
+    min-width: 100%;
 }
 
 .editor-track-props-volume-group {
