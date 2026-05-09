@@ -4623,12 +4623,14 @@ svg.spin {
 
 .script-image-model-card {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: 42px minmax(0, 1fr);
+    grid-template-rows: auto auto;
     align-items: start;
-    gap: 10px;
+    align-content: start;
+    gap: 6px 12px;
     width: 100%;
     min-width: 0;
-    aspect-ratio: 2 / 1;
+    min-height: 112px;
     padding: 12px 14px;
     border: 1px solid rgba(110, 143, 175, 0.24);
     border-radius: 18px;
@@ -4655,6 +4657,8 @@ svg.spin {
 }
 
 .script-image-model-card-icon {
+    grid-column: 1;
+    grid-row: 1;
     width: 38px;
     height: 38px;
     border-radius: 10px;
@@ -4698,8 +4702,10 @@ svg.spin {
 }
 
 .script-image-model-card-copy {
+    grid-column: 2;
+    grid-row: 1 / span 2;
     display: grid;
-    gap: 2px;
+    gap: 4px;
     min-width: 0;
     width: 100%;
     align-self: start;
@@ -4707,32 +4713,35 @@ svg.spin {
 
 .script-image-model-card-copy strong {
     color: var(--text);
-    font-size: 0.84rem;
-    line-height: 1.16;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    font-size: 0.88rem;
+    line-height: 1.2;
+    display: block;
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .script-image-model-card-copy small {
     color: var(--text-muted);
-    font-size: 0.7rem;
-    line-height: 1.2;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    font-size: 0.72rem;
+    line-height: 1.28;
+    display: block;
+    overflow: visible;
+    white-space: normal;
 }
 
 .script-image-model-card-price {
-    margin-top: 0;
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+    justify-self: center;
     color: #ffd68a;
-    font-size: 0.7rem;
+    font-size: 0.56rem;
     line-height: 1.1;
     letter-spacing: 0.01em;
-    text-align: right;
-    white-space: nowrap;
+    text-align: center;
+    white-space: normal;
+    max-width: 42px;
 }
 
 .script-image-model-card-price.is-free {

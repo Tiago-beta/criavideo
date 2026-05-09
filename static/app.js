@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v401 loaded");
+console.log("[CriaVideo] app.js v402 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -11212,14 +11212,24 @@ let aiSuggestCustomImages = []; // Personalized visual references for AI prompt.
 
 const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
-        id: "google/nano-banana-pro/text-to-image",
-        label: "Nano Banana Pro",
-        defaultCostLabel: "8 créditos",
+        id: "baidu/ERNIE-Image-Turbo/text-to-image",
+        label: "Baidu ERNIE Turbo",
+        defaultCostLabel: "Grátis",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
         maxOutputs: 4,
-        maxReferences: 5,
+        maxReferences: 0,
+    },
+    {
+        id: "z-image/turbo",
+        label: "Ultra High 3.0",
+        defaultCostLabel: "3 créditos",
+        requiresReference: false,
+        supportsSize: false,
+        supportsThinkingMode: false,
+        maxOutputs: 4,
+        maxReferences: 0,
     },
     {
         id: "google/nano-banana/text-to-image",
@@ -11232,9 +11242,9 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
         maxReferences: 5,
     },
     {
-        id: "openai/gpt-image-1/text-to-image",
-        label: "GPT Image",
-        defaultCostLabel: "11 créditos",
+        id: "google/nano-banana-pro/text-to-image",
+        label: "Nano Banana Pro",
+        defaultCostLabel: "8 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -11242,28 +11252,8 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
         maxReferences: 5,
     },
     {
-        id: "baidu/ERNIE-Image-Turbo/text-to-image",
-        label: "Baidu ERNIE Turbo",
-        defaultCostLabel: "Grátis",
-        requiresReference: false,
-        supportsSize: false,
-        supportsThinkingMode: false,
-        maxOutputs: 4,
-        maxReferences: 0,
-    },
-    {
-        id: "z-image/turbo",
-        label: "Z-Image Turbo",
-        defaultCostLabel: "3 créditos",
-        requiresReference: false,
-        supportsSize: false,
-        supportsThinkingMode: false,
-        maxOutputs: 4,
-        maxReferences: 0,
-    },
-    {
         id: "bytedance/seedream-v5.0-lite/sequential",
-        label: "Seedream v5.0 Lite",
+        label: "Mega 5.0 Anime",
         defaultCostLabel: "8 créditos",
         requiresReference: false,
         supportsSize: false,
@@ -11273,13 +11263,23 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     },
     {
         id: "bytedance/seedream-v4.5",
-        label: "Seedream v4.5",
+        label: "Mega 5.0 Real",
         defaultCostLabel: "9 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
         maxOutputs: 4,
         maxReferences: 0,
+    },
+    {
+        id: "openai/gpt-image-1/text-to-image",
+        label: "GPT Image",
+        defaultCostLabel: "11 créditos",
+        requiresReference: false,
+        supportsSize: false,
+        supportsThinkingMode: false,
+        maxOutputs: 4,
+        maxReferences: 5,
     },
 ];
 
