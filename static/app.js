@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v404 loaded");
+console.log("[CriaVideo] app.js v405 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -11213,6 +11213,7 @@ const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_AUDIO_SIZE = 80 * 1024 * 1024; // 80MB
 const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB
 let aiSuggestCustomImages = []; // Personalized visual references for AI prompt.
+const DEFAULT_SCRIPT_IMAGE_CREATOR_MODEL_ID = "bytedance/seedream-v4.5";
 
 const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
@@ -11329,7 +11330,9 @@ function _cloneScriptImageCreatorReferenceFiles(items) {
 function _syncScriptImageCreatorSubmitButton() {
     const submitBtn = document.getElementById("script-image-generator-submit");
     if (!submitBtn || _scriptImageCreatorState.busy) return;
-    submitBtn.textContent = _isScriptImageCreatorEditMode() ? "Aplicar edição" : "Gerar imagem";
+    submitBtn.textContent = _isScriptImageCreatorEditMode()
+        ? "Aplicar edição"
+        : (_scriptImageCreatorState.generatedImages.length ? "Gerar nova imagem" : "Gerar imagem");
 }
 
 function _formatScriptImageCreatorCostLabel(credits) {
@@ -11352,7 +11355,7 @@ function _setScriptImageCreatorEstimate(modelId, credits = null) {
 }
 
 function _syncScriptImageCreatorModelCardCosts() {
-    const selectedId = String(document.getElementById("script-image-generator-model")?.value || SCRIPT_IMAGE_CREATOR_MODELS[0].id).trim();
+    const selectedId = String(document.getElementById("script-image-generator-model")?.value || DEFAULT_SCRIPT_IMAGE_CREATOR_MODEL_ID).trim();
 
     document.querySelectorAll(".script-image-model-card").forEach((button) => {
         const costEl = button.querySelector(".script-image-model-card-price");
@@ -11376,8 +11379,10 @@ function _syncScriptImageCreatorModelCardCosts() {
 
 function _getScriptImageCreatorModelMeta() {
     const modelSelect = document.getElementById("script-image-generator-model");
-    const selectedId = String(modelSelect?.value || SCRIPT_IMAGE_CREATOR_MODELS[0].id).trim();
-    const baseMeta = SCRIPT_IMAGE_CREATOR_MODELS.find((item) => item.id === selectedId) || SCRIPT_IMAGE_CREATOR_MODELS[0];
+    const selectedId = String(modelSelect?.value || DEFAULT_SCRIPT_IMAGE_CREATOR_MODEL_ID).trim();
+    const baseMeta = SCRIPT_IMAGE_CREATOR_MODELS.find((item) => item.id === selectedId)
+        || SCRIPT_IMAGE_CREATOR_MODELS.find((item) => item.id === DEFAULT_SCRIPT_IMAGE_CREATOR_MODEL_ID)
+        || SCRIPT_IMAGE_CREATOR_MODELS[0];
     if (_scriptImageCreatorState.referenceFiles.length > 0 && baseMeta?.editOverrides) {
         return {
             ...baseMeta,
@@ -11432,7 +11437,7 @@ function resetScriptImageCreatorModalState() {
     const promptInput = document.getElementById("script-image-generator-prompt");
     if (promptInput) promptInput.value = "";
     const modelSelect = document.getElementById("script-image-generator-model");
-    if (modelSelect) modelSelect.value = SCRIPT_IMAGE_CREATOR_MODELS[0].id;
+    if (modelSelect) modelSelect.value = DEFAULT_SCRIPT_IMAGE_CREATOR_MODEL_ID;
     const aspectSelect = document.getElementById("script-image-generator-aspect");
     if (aspectSelect) aspectSelect.value = "1:1";
     const sizeSelect = document.getElementById("script-image-generator-size");
@@ -11771,6 +11776,8 @@ function renderScriptImageCreatorResults() {
     const activeItem = items[activeIndex];
     const busyAttr = _scriptImageCreatorState.busy ? " disabled" : "";
     const isEditingActive = _scriptImageCreatorState.editingIndex === activeIndex;
+    const editButtonTitle = isEditingActive ? "Cancelar edição" : "Editar imagem";
+    const editButtonAction = isEditingActive ? "cancelScriptImageCreatorEdit()" : `startScriptImageCreatorEdit(${activeIndex})`;
     const thumbMarkup = items.length > 1
         ? `
             <div class="script-image-generator-result-thumbs">
@@ -11792,27 +11799,16 @@ function renderScriptImageCreatorResults() {
         <div class="script-image-generator-stage">
             <img src="${workflowEscapeHtml(activeItem.image_url)}" alt="${workflowEscapeHtml(activeItem.label || "Imagem gerada")}">
             <div class="script-image-generator-stage-actions">
-                <button class="btn btn-secondary btn-sm script-image-generator-stage-btn" type="button"${busyAttr} onclick="startScriptImageCreatorEdit(${activeIndex})">
+                <button class="btn-icon-sm script-image-generator-stage-icon${isEditingActive ? " is-active" : ""}" type="button" title="${editButtonTitle}" aria-label="${editButtonTitle}"${busyAttr} onclick="${editButtonAction}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 20 9-9-3-3-9 9-1 4Z"/><path d="M16 7 19 10"/></svg>
-                    <span>${isEditingActive ? "Editando" : "Editar imagem"}</span>
                 </button>
-            </div>
-        </div>
-        <div class="script-image-generator-result-card">
-            <div class="script-image-generator-result-meta">
-                <strong>${workflowEscapeHtml(activeItem.label || "Imagem gerada")}</strong>
-                <span>${workflowEscapeHtml(activeItem.file_name || `imagem-${activeIndex + 1}.png`)}</span>
-            </div>
-            <div class="script-image-generator-result-actions">
-                <button class="btn-icon-sm" type="button" title="Baixar imagem" aria-label="Baixar imagem"${busyAttr} onclick="downloadScriptImageCreatorResult(${activeIndex})">
+                <button class="btn-icon-sm script-image-generator-stage-icon" type="button" title="Baixar imagem" aria-label="Baixar imagem"${busyAttr} onclick="downloadScriptImageCreatorResult(${activeIndex})">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
                 </button>
             </div>
-            <div class="script-image-generator-result-footer">
-                ${isEditingActive ? '<div class="script-image-generator-edit-note">Edite o prompt acima e clique em Aplicar edição.</div>' : ""}
-                ${isEditingActive ? `<button class="btn btn-secondary" type="button"${busyAttr} onclick="cancelScriptImageCreatorEdit()">Cancelar edição</button>` : ""}
-                <button class="btn btn-primary script-image-generator-create-btn" type="button"${busyAttr} onclick="createVideoFromScriptImageCreatorResult(${activeIndex})">Criar vídeo</button>
-            </div>
+        </div>
+        <div class="script-image-generator-result-footer script-image-generator-result-footer--single">
+            <button class="btn btn-primary script-image-generator-create-btn" type="button"${busyAttr} onclick="createVideoFromScriptImageCreatorResult(${activeIndex})">Criar vídeo</button>
         </div>
         ${thumbMarkup}
     `;

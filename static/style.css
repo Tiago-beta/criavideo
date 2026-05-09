@@ -5049,23 +5049,26 @@ svg.spin {
     z-index: 1;
 }
 
-.script-image-generator-stage-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding-inline: 14px;
+.script-image-generator-stage-icon {
+    width: 40px;
+    height: 40px;
     background: rgba(4, 18, 33, 0.8);
     border-color: rgba(148, 184, 214, 0.34);
     color: #eff8ff;
     backdrop-filter: blur(14px);
 }
 
-.script-image-generator-stage-btn:hover {
+.script-image-generator-stage-icon:hover {
     border-color: rgba(148, 184, 214, 0.52);
     color: #ffffff;
 }
 
-.script-image-generator-stage-btn svg {
+.script-image-generator-stage-icon.is-active {
+    border-color: rgba(255, 193, 92, 0.56);
+    color: #ffd68a;
+}
+
+.script-image-generator-stage-icon svg {
     width: 15px;
     height: 15px;
 }
@@ -5144,6 +5147,11 @@ svg.spin {
     gap: 10px;
 }
 
+.script-image-generator-result-footer--single {
+    width: min(100%, 860px);
+    justify-content: center;
+}
+
 .script-image-generator-edit-note {
     flex: 1 1 240px;
     color: var(--text-muted);
@@ -5153,6 +5161,11 @@ svg.spin {
 
 .script-image-generator-create-btn {
     margin-left: auto;
+    min-width: 220px;
+}
+
+.script-image-generator-result-footer--single .script-image-generator-create-btn {
+    margin-left: 0;
 }
 
 .script-image-generator-reference-item--locked {

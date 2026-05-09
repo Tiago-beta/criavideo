@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260509-10">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260509-11">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 404;
+        var REQUIRED_VER = 405;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -3670,7 +3670,7 @@
                                 <option value="google/nano-banana/text-to-image">Nano Banana</option>
                                 <option value="google/nano-banana-pro/text-to-image">Nano Banana Pro</option>
                                 <option value="bytedance/seedream-v5.0-lite/sequential">Mega 5.0 Anime</option>
-                                <option value="bytedance/seedream-v4.5">Mega 5.0 Real</option>
+                                <option value="bytedance/seedream-v4.5" selected>Mega 5.0 Real</option>
                                 <option value="openai/gpt-image-1/text-to-image">GPT Image</option>
                             </select>
                             <div class="script-image-generator-model-options" role="listbox" aria-label="Modelos de IA">
@@ -3720,7 +3720,7 @@
                                     </span>
                                     <span class="script-image-model-card-copy">
                                         <strong>Mega 5.0 Anime</strong>
-                                        <small>Ideal para gerar imagens estilo anime sem restrição.</small>
+                                        <small>Ideal para gerar imagens estilo anime.</small>
                                     </span>
                                     <span class="script-image-model-card-price" hidden></span>
                                 </button>
@@ -3730,7 +3730,7 @@
                                     </span>
                                     <span class="script-image-model-card-copy">
                                         <strong>Mega 5.0 Real</strong>
-                                        <small>Cria imagens em 4K com fidelidade e sem restrição.</small>
+                                        <small>Cria imagens em 4K com fidelidade.</small>
                                     </span>
                                     <span class="script-image-model-card-price" hidden></span>
                                 </button>
@@ -3838,8 +3838,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260509-10"></script>
-    <script src="/video/static/pwa.js?v=20260509-10"></script>
+    <script src="/video/static/app.js?v=20260509-11"></script>
+    <script src="/video/static/pwa.js?v=20260509-11"></script>
 </body>
 </html>
 
