@@ -2432,11 +2432,13 @@ async def build_similar_unified_prompt(
         raise HTTPException(status_code=400, detail="Analise o video antes de criar o prompt unico")
 
     tags_data = _safe_tags_dict(project.tags)
-    speech_refresh_needed = _similar_transcript_speech_detected(tags_data) is None and (
-        bool(_normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=80))
-        or any(_normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=40) for scene in scenes)
+    has_saved_speech_context = bool(_normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=80)) or any(
+        _normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=40)
+        for scene in scenes
     )
-    local_video_path = str(tags_data.get("similar_local_video_path") or "").strip()
+    speech_refresh_needed = bool(local_video_path := str(tags_data.get("similar_local_video_path") or "").strip()) and (
+        _similar_transcript_speech_detected(tags_data) is None or has_saved_speech_context
+    )
     if speech_refresh_needed and local_video_path and os.path.exists(local_video_path):
         from app.tasks.similar_tasks import (
             _build_similar_video_context,

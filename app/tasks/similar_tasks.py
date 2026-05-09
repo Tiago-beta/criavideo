@@ -720,6 +720,79 @@ async def _ffprobe_duration(video_path: str) -> float:
     return value
 
 
+async def _similar_video_has_meaningful_audio(video_path: str) -> bool:
+    probe_proc = await asyncio.create_subprocess_exec(
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "stream=codec_type",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        video_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    probe_stdout, _ = await probe_proc.communicate()
+    if probe_proc.returncode != 0:
+        logger.warning("ffprobe failed while checking similar audio stream: %s", video_path)
+        return False
+
+    if not str((probe_stdout or b"").decode(errors="ignore") or "").strip():
+        logger.info("Similar reference video has no audio stream: %s", video_path)
+        return False
+
+    detect_proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-v",
+        "info",
+        "-i",
+        video_path,
+        "-map",
+        "0:a:0",
+        "-t",
+        "20",
+        "-af",
+        "volumedetect",
+        "-vn",
+        "-sn",
+        "-dn",
+        "-f",
+        "null",
+        os.devnull,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, detect_stderr = await detect_proc.communicate()
+    if detect_proc.returncode != 0:
+        logger.warning("ffmpeg volumedetect failed while checking similar audio stream: %s", video_path)
+        return False
+
+    stats_text = (detect_stderr or b"").decode(errors="ignore")
+    mean_match = re.search(r"mean_volume:\s*(-?[0-9]+(?:\.[0-9]+)?)\s*dB", stats_text)
+    max_match = re.search(r"max_volume:\s*(-?[0-9]+(?:\.[0-9]+)?)\s*dB", stats_text)
+
+    mean_volume = float(mean_match.group(1)) if mean_match else None
+    max_volume = float(max_match.group(1)) if max_match else None
+
+    if max_volume is None and mean_volume is None:
+        logger.info("Similar audio stream has no readable volume stats; treating as no meaningful audio: %s", video_path)
+        return False
+
+    if max_volume is not None and max_volume <= -50.0 and (mean_volume is None or mean_volume <= -58.0):
+        logger.info(
+            "Similar audio stream is effectively silent (max=%s dB, mean=%s dB): %s",
+            max_volume,
+            mean_volume,
+            video_path,
+        )
+        return False
+
+    return True
+
+
 async def _extract_frame(video_path: str, timestamp_seconds: float, output_path: str) -> None:
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -1138,6 +1211,8 @@ async def _extract_audio_track_for_similar_context(video_path: str, output_path:
 async def _transcribe_similar_video_context(video_path: str) -> tuple[str, list[dict], str]:
     audio_path = str(Path(video_path).with_name("reference_audio_context.mp3"))
     try:
+        if not await _similar_video_has_meaningful_audio(video_path):
+            return "", [], ""
         await _extract_audio_track_for_similar_context(video_path, audio_path)
         from app.services.transcriber import transcribe_audio
 
