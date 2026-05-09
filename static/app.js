@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v400 loaded");
+console.log("[CriaVideo] app.js v401 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -11252,14 +11252,34 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
         maxReferences: 0,
     },
     {
-        id: "ultra-high-3.0",
-        label: "Ultra High 3.0",
-        defaultCostLabel: "13 créditos",
+        id: "z-image/turbo",
+        label: "Z-Image Turbo",
+        defaultCostLabel: "3 créditos",
         requiresReference: false,
-        supportsSize: true,
-        supportsThinkingMode: true,
+        supportsSize: false,
+        supportsThinkingMode: false,
         maxOutputs: 4,
-        maxReferences: 9,
+        maxReferences: 0,
+    },
+    {
+        id: "bytedance/seedream-v5.0-lite/sequential",
+        label: "Seedream v5.0 Lite",
+        defaultCostLabel: "8 créditos",
+        requiresReference: false,
+        supportsSize: false,
+        supportsThinkingMode: false,
+        maxOutputs: 4,
+        maxReferences: 0,
+    },
+    {
+        id: "bytedance/seedream-v4.5",
+        label: "Seedream v4.5",
+        defaultCostLabel: "9 créditos",
+        requiresReference: false,
+        supportsSize: false,
+        supportsThinkingMode: false,
+        maxOutputs: 4,
+        maxReferences: 0,
     },
 ];
 
@@ -11841,6 +11861,11 @@ async function createVideoFromScriptImageCreatorResult(index) {
 function startScriptImageCreatorEdit(index) {
     const parsed = Number.parseInt(String(index), 10);
     if (!Number.isFinite(parsed)) return;
+    const meta = _getScriptImageCreatorModelMeta();
+    if ((meta.maxReferences || 0) <= 0) {
+        showToast("Esse modelo não suporta editar a partir da imagem atual. Selecione Nano Banana Pro, Nano Banana ou GPT Image.", "info");
+        return;
+    }
 
     const item = _scriptImageCreatorState.generatedImages[parsed];
     if (!item?.upload_id || !item?.image_url) {

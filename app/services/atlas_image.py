@@ -70,6 +70,36 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "max_outputs": 4,
         "max_references": 0,
     },
+    "z-image/turbo": {
+        "label": "Z-Image Turbo",
+        "kind": "text",
+        "supports_aspect_ratio": False,
+        "supports_size": False,
+        "supports_thinking_mode": False,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 0,
+    },
+    "bytedance/seedream-v5.0-lite/sequential": {
+        "label": "Seedream v5.0 Lite Sequential",
+        "kind": "text",
+        "supports_aspect_ratio": False,
+        "supports_size": False,
+        "supports_thinking_mode": False,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 0,
+    },
+    "bytedance/seedream-v4.5": {
+        "label": "Seedream v4.5",
+        "kind": "text",
+        "supports_aspect_ratio": False,
+        "supports_size": False,
+        "supports_thinking_mode": False,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 0,
+    },
     "alibaba/wan-2.6/text-to-image": {
         "label": "WAN 2.6 Texto para Imagem",
         "kind": "text",
@@ -113,18 +143,21 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
 }
 _SCRIPT_IMAGE_MODEL_ALIASES: dict[str, dict[str, Any]] = {
     "ultra-high-3.0": {
-        "label": "Ultra High 3.0",
-        "description": "Cria qualquer imagem sem restricao.",
-        "text_model": "alibaba/wan-2.6/text-to-image",
-        "edit_model": "alibaba/wan-2.6/image-edit",
-        "supports_size": True,
-        "supports_thinking_mode": True,
+        "label": "Z-Image Turbo",
+        "description": "Criador de imagens Geral sem restricao.",
+        "text_model": "z-image/turbo",
+        "edit_model": "z-image/turbo",
+        "supports_size": False,
+        "supports_thinking_mode": False,
         "max_outputs": 4,
-        "max_references": 9,
+        "max_references": 0,
     },
 }
 _OPENAI_DIRECT_MODEL = "openai/gpt-image-1/text-to-image"
 _BAIDU_TURBO_MODEL = "baidu/ERNIE-Image-Turbo/text-to-image"
+_Z_IMAGE_TURBO_MODEL = "z-image/turbo"
+_SEEDREAM_V5_LITE_SEQUENTIAL_MODEL = "bytedance/seedream-v5.0-lite/sequential"
+_SEEDREAM_V45_MODEL = "bytedance/seedream-v4.5"
 _ALLOWED_ASPECT_RATIOS = {"1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
 _ALLOWED_WAN_TEXT_SIZES = {"1K", "2K", "4K"}
 _ALLOWED_WAN_EDIT_SIZES = {"1K", "2K"}
@@ -162,6 +195,42 @@ _BAIDU_IMAGE_SIZE_PRESETS = {
     "9:16": "768x1376",
     "16:9": "1376x768",
     "21:9": "1472x640",
+}
+_Z_IMAGE_SIZE_PRESETS = {
+    "1:1": "1024*1024",
+    "3:2": "1216*832",
+    "2:3": "832*1216",
+    "3:4": "864*1152",
+    "4:3": "1152*864",
+    "4:5": "1024*1280",
+    "5:4": "1280*1024",
+    "9:16": "720*1280",
+    "16:9": "1280*720",
+    "21:9": "1536*672",
+}
+_SEEDREAM_V5_SIZE_PRESETS = {
+    "1:1": "2048*2048",
+    "3:2": "3456*2304",
+    "2:3": "2304*3456",
+    "3:4": "2304*3072",
+    "4:3": "3072*2304",
+    "4:5": "2304*2880",
+    "5:4": "2880*2304",
+    "9:16": "2304*4096",
+    "16:9": "4096*2304",
+    "21:9": "4096*1760",
+}
+_SEEDREAM_V45_SIZE_PRESETS = {
+    "1:1": "4096*4096",
+    "3:2": "4608*3072",
+    "2:3": "3072*4608",
+    "3:4": "3072*4096",
+    "4:3": "4096*3072",
+    "4:5": "3040*3800",
+    "5:4": "3800*3040",
+    "9:16": "3040*5504",
+    "16:9": "5504*3040",
+    "21:9": "5504*2352",
 }
 _HTTP_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 _BASE64_RE = re.compile(r"^[A-Za-z0-9+/=\r\n]+$")
@@ -283,9 +352,36 @@ def _is_baidu_turbo_model(model: str) -> bool:
     return normalize_supported_model(model) == _BAIDU_TURBO_MODEL
 
 
+def _is_z_image_turbo_model(model: str) -> bool:
+    return normalize_supported_model(model) == _Z_IMAGE_TURBO_MODEL
+
+
+def _is_seedream_v5_lite_sequential_model(model: str) -> bool:
+    return normalize_supported_model(model) == _SEEDREAM_V5_LITE_SEQUENTIAL_MODEL
+
+
+def _is_seedream_v45_model(model: str) -> bool:
+    return normalize_supported_model(model) == _SEEDREAM_V45_MODEL
+
+
 def _baidu_image_size_for_aspect_ratio(aspect_ratio: str) -> str:
     resolved = resolve_aspect_ratio(aspect_ratio)
     return str(_BAIDU_IMAGE_SIZE_PRESETS.get(resolved) or _BAIDU_IMAGE_SIZE_PRESETS["1:1"])
+
+
+def _z_image_size_for_aspect_ratio(aspect_ratio: str) -> str:
+    resolved = resolve_aspect_ratio(aspect_ratio)
+    return str(_Z_IMAGE_SIZE_PRESETS.get(resolved) or _Z_IMAGE_SIZE_PRESETS["1:1"])
+
+
+def _seedream_v5_size_for_aspect_ratio(aspect_ratio: str) -> str:
+    resolved = resolve_aspect_ratio(aspect_ratio)
+    return str(_SEEDREAM_V5_SIZE_PRESETS.get(resolved) or _SEEDREAM_V5_SIZE_PRESETS["1:1"])
+
+
+def _seedream_v45_size_for_aspect_ratio(aspect_ratio: str) -> str:
+    resolved = resolve_aspect_ratio(aspect_ratio)
+    return str(_SEEDREAM_V45_SIZE_PRESETS.get(resolved) or _SEEDREAM_V45_SIZE_PRESETS["1:1"])
 
 
 def _atlas_api_key() -> str:
@@ -428,6 +524,37 @@ def _build_atlas_generation_payload(
             "enable_base64_output": False,
         }
 
+    if _is_z_image_turbo_model(normalized_model):
+        return {
+            "model": normalized_model,
+            "prompt": prompt_text,
+            "prompt_extend": False,
+            "seed": int(seed if seed is not None else -1),
+            "size": _z_image_size_for_aspect_ratio(resolved_aspect_ratio),
+            "enable_base64_output": False,
+            "enable_sync_mode": False,
+        }
+
+    if _is_seedream_v5_lite_sequential_model(normalized_model):
+        return {
+            "model": normalized_model,
+            "prompt": prompt_text,
+            "size": _seedream_v5_size_for_aspect_ratio(resolved_aspect_ratio),
+            "max_images": 1,
+            "output_format": "jpeg",
+            "enable_base64_output": False,
+            "enable_sync_mode": False,
+        }
+
+    if _is_seedream_v45_model(normalized_model):
+        return {
+            "model": normalized_model,
+            "prompt": prompt_text,
+            "size": _seedream_v45_size_for_aspect_ratio(resolved_aspect_ratio),
+            "enable_base64_output": False,
+            "enable_sync_mode": False,
+        }
+
     prompt_payload = prompt_text
     if not model_supports_aspect_ratio(normalized_model) and not model_uses_wan_26_payload(normalized_model):
         prompt_payload = f"{prompt_text}\n\nDesired aspect ratio: {resolved_aspect_ratio}."
@@ -447,7 +574,7 @@ def _build_atlas_generation_payload(
         payload["seed"] = int(seed if seed is not None else -1)
     if model_supports_batch_request(normalized_model) and remaining > 1:
         payload["n"] = remaining
-    if uploaded_refs:
+    if uploaded_refs and model_max_references(normalized_model) > 0:
         payload["images"] = uploaded_refs
     return payload
 

@@ -55,6 +55,9 @@ IMAGE_GENERATION_MODEL_USD = {
     "google/nano-banana/text-to-image": 0.014,
     "openai/gpt-image-1/text-to-image": 0.032,
     "baidu/ERNIE-Image-Turbo/text-to-image": 0.0,
+    "z-image/turbo": 0.010,
+    "bytedance/seedream-v5.0-lite/sequential": 0.032,
+    "bytedance/seedream-v4.5": 0.036,
     "alibaba/wan-2.6/text-to-image": 0.040,
     "alibaba/wan-2.6/image-edit": 0.044,
 }
@@ -71,6 +74,9 @@ IMAGE_GENERATION_BASE_FLOOR = {
     "google/nano-banana/text-to-image": 6,
     "openai/gpt-image-1/text-to-image": 11,
     "baidu/ERNIE-Image-Turbo/text-to-image": 0,
+    "z-image/turbo": 2,
+    "bytedance/seedream-v5.0-lite/sequential": 6,
+    "bytedance/seedream-v4.5": 7,
     "alibaba/wan-2.6/text-to-image": 13,
     "alibaba/wan-2.6/image-edit": 15,
 }
@@ -294,7 +300,7 @@ def estimate_image_generation_credits(
 ) -> dict[str, Any]:
     normalized_model = str(model or "google/nano-banana-pro/text-to-image").strip()
     if normalized_model == "ultra-high-3.0":
-        normalized_model = "alibaba/wan-2.6/image-edit" if int(reference_image_count or 0) > 0 else "alibaba/wan-2.6/text-to-image"
+        normalized_model = "z-image/turbo"
     if normalized_model == "baidu/ERNIE-Image-Turbo/text-to-image":
         estimate = CreditEstimate(
             credits_needed=0,
