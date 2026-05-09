@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v399 loaded");
+console.log("[CriaVideo] app.js v400 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -11214,15 +11214,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "google/nano-banana-pro/text-to-image",
         label: "Nano Banana Pro",
-        requiresReference: false,
-        supportsSize: false,
-        supportsThinkingMode: false,
-        maxOutputs: 4,
-        maxReferences: 5,
-    },
-    {
-        id: "google/nano-banana-2/text-to-image",
-        label: "Nano Banana 2",
+        defaultCostLabel: "8 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -11232,6 +11224,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "google/nano-banana/text-to-image",
         label: "Nano Banana",
+        defaultCostLabel: "6 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -11241,6 +11234,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "openai/gpt-image-1/text-to-image",
         label: "GPT Image",
+        defaultCostLabel: "11 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -11248,8 +11242,19 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
         maxReferences: 5,
     },
     {
+        id: "baidu/ERNIE-Image-Turbo/text-to-image",
+        label: "Baidu ERNIE Turbo",
+        defaultCostLabel: "Grátis",
+        requiresReference: false,
+        supportsSize: false,
+        supportsThinkingMode: false,
+        maxOutputs: 4,
+        maxReferences: 0,
+    },
+    {
         id: "ultra-high-3.0",
         label: "Ultra High 3.0",
+        defaultCostLabel: "13 créditos",
         requiresReference: false,
         supportsSize: true,
         supportsThinkingMode: true,
@@ -11268,6 +11273,8 @@ let _scriptImageCreatorState = {
     editingIndex: -1,
     referenceFilesBackup: [],
     countBackup: "1",
+    selectedEstimateModelId: "",
+    selectedEstimateCredits: null,
 };
 
 function _clearScriptImageCreatorEstimateTimer() {
@@ -11296,19 +11303,52 @@ function _syncScriptImageCreatorSubmitButton() {
     submitBtn.textContent = _isScriptImageCreatorEditMode() ? "Aplicar edição" : "Gerar imagem";
 }
 
+function _formatScriptImageCreatorCostLabel(credits) {
+    const parsed = Number.parseInt(String(credits), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return "Grátis";
+    }
+    return `${_formatCreditsInt(parsed)} ${parsed === 1 ? "crédito" : "créditos"}`;
+}
+
+function _setScriptImageCreatorEstimate(modelId, credits = null) {
+    _scriptImageCreatorState.selectedEstimateModelId = String(modelId || "").trim();
+    if (credits === null || credits === undefined || credits === "") {
+        _scriptImageCreatorState.selectedEstimateCredits = null;
+    } else {
+        const parsed = Number.parseInt(String(credits), 10);
+        _scriptImageCreatorState.selectedEstimateCredits = Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+    }
+    _syncScriptImageCreatorModelCardCosts();
+}
+
+function _syncScriptImageCreatorModelCardCosts() {
+    const selectedId = String(document.getElementById("script-image-generator-model")?.value || SCRIPT_IMAGE_CREATOR_MODELS[0].id).trim();
+
+    document.querySelectorAll(".script-image-model-card").forEach((button) => {
+        const costEl = button.querySelector(".script-image-model-card-price");
+        if (!costEl) return;
+
+        const modelId = String(button.dataset.model || "").trim();
+        const meta = SCRIPT_IMAGE_CREATOR_MODELS.find((item) => item.id === modelId);
+        let label = String(meta?.defaultCostLabel || "").trim();
+
+        if (modelId === selectedId && _scriptImageCreatorState.selectedEstimateModelId === modelId) {
+            label = _scriptImageCreatorState.selectedEstimateCredits === null
+                ? label
+                : _formatScriptImageCreatorCostLabel(_scriptImageCreatorState.selectedEstimateCredits);
+        }
+
+        costEl.hidden = !label;
+        costEl.textContent = label;
+        costEl.classList.toggle("is-free", /^gr[aá]tis$/i.test(label));
+    });
+}
+
 function _getScriptImageCreatorModelMeta() {
     const modelSelect = document.getElementById("script-image-generator-model");
     const selectedId = String(modelSelect?.value || SCRIPT_IMAGE_CREATOR_MODELS[0].id).trim();
     return SCRIPT_IMAGE_CREATOR_MODELS.find((item) => item.id === selectedId) || SCRIPT_IMAGE_CREATOR_MODELS[0];
-}
-
-function _setScriptImageCreatorEstimate(message, tone = "ready") {
-    const estimateEl = document.getElementById("script-image-generator-estimate");
-    if (!estimateEl) return;
-    estimateEl.textContent = String(message || "").trim();
-    estimateEl.className = "script-image-generator-estimate";
-    if (tone === "loading") estimateEl.classList.add("is-loading");
-    if (tone === "error") estimateEl.classList.add("is-error");
 }
 
 function _syncScriptImageCreatorChoiceButtons() {
@@ -11332,6 +11372,8 @@ function _syncScriptImageCreatorChoiceButtons() {
         button.classList.toggle("is-disabled", disabled);
         button.classList.toggle("is-active", !disabled && count === selectedCount);
     });
+
+    _syncScriptImageCreatorModelCardCosts();
 }
 
 function resetScriptImageCreatorModalState() {
@@ -11346,6 +11388,8 @@ function resetScriptImageCreatorModalState() {
         editingIndex: -1,
         referenceFilesBackup: [],
         countBackup: "1",
+        selectedEstimateModelId: "",
+        selectedEstimateCredits: null,
     };
 
     const promptInput = document.getElementById("script-image-generator-prompt");
@@ -11420,6 +11464,14 @@ function handleScriptImageCreatorMetaChange() {
 }
 
 function handleScriptImageCreatorModelChange() {
+    const meta = _getScriptImageCreatorModelMeta();
+    const maxReferences = Math.max(0, meta.maxReferences || 0);
+    if (_isScriptImageCreatorEditMode() && maxReferences <= 0) {
+        cancelScriptImageCreatorEdit(true);
+    }
+    if (!_isScriptImageCreatorEditMode() && _scriptImageCreatorState.referenceFiles.length > maxReferences) {
+        _scriptImageCreatorState.referenceFiles = _scriptImageCreatorState.referenceFiles.slice(0, maxReferences);
+    }
     syncScriptImageCreatorControls();
     renderScriptImageCreatorReferencePreview();
     renderScriptImageCreatorResults();
@@ -11433,6 +11485,7 @@ function syncScriptImageCreatorControls() {
     const sizeGroup = document.getElementById("script-image-generator-size-group");
     const seedGroup = document.getElementById("script-image-generator-seed-group");
     const thinkingGroup = document.getElementById("script-image-generator-thinking-group");
+    const referenceGroup = document.getElementById("script-image-generator-reference-group");
     const sizeSelect = document.getElementById("script-image-generator-size");
     const countSelect = document.getElementById("script-image-generator-count");
     const seedInput = document.getElementById("script-image-generator-seed");
@@ -11456,6 +11509,7 @@ function syncScriptImageCreatorControls() {
         countSelect.disabled = isEditing;
     }
     if (countGroup) countGroup.classList.toggle("is-disabled", isEditing);
+    if (referenceGroup) referenceGroup.hidden = (meta.maxReferences || 0) <= 0;
     if (sizeGroup) sizeGroup.classList.toggle("is-disabled", !meta.supportsSize);
     if (sizeSelect) sizeSelect.disabled = !meta.supportsSize;
     if (seedGroup) seedGroup.classList.toggle("is-disabled", !meta.supportsThinkingMode);
@@ -11600,7 +11654,7 @@ function scheduleScriptImageCreatorEstimate(delayMs = 140) {
     _clearScriptImageCreatorEstimateTimer();
     _scriptImageCreatorState.estimateTimer = setTimeout(() => {
         updateScriptImageCreatorEstimate().catch(() => {
-            _setScriptImageCreatorEstimate("Não foi possível calcular o custo agora.", "error");
+            _setScriptImageCreatorEstimate(_getScriptImageCreatorModelMeta().id, null);
         });
     }, Math.max(0, delayMs));
 }
@@ -11613,7 +11667,6 @@ async function updateScriptImageCreatorEstimate() {
     const referenceCount = _scriptImageCreatorState.referenceFiles.length;
     const seq = (_scriptImageCreatorState.estimateSeq || 0) + 1;
     _scriptImageCreatorState.estimateSeq = seq;
-    _setScriptImageCreatorEstimate("Calculando o custo estimado...", "loading");
 
     try {
         const estimate = await api("/video/estimate-credits", {
@@ -11632,14 +11685,10 @@ async function updateScriptImageCreatorEstimate() {
         }
 
         const creditsNeeded = _extractEstimateCredits(estimate);
-        const balanceCredits = Math.max(0, parseInt(_userCredits || "0", 10) || 0);
-        _setScriptImageCreatorEstimate(
-            `Custo ${_formatCreditsInt(creditsNeeded)} créditos, saldo ${_formatCreditsInt(balanceCredits)} créditos`,
-            "ready",
-        );
+        _setScriptImageCreatorEstimate(meta.id, creditsNeeded);
     } catch (_error) {
         if (_scriptImageCreatorState.estimateSeq === seq) {
-            _setScriptImageCreatorEstimate("Não foi possível calcular o custo agora.", "error");
+            _setScriptImageCreatorEstimate(meta.id, null);
         }
     }
 }

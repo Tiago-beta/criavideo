@@ -11,6 +11,7 @@ import re
 from typing import Any
 
 import httpx
+import openai
 
 from app.config import get_settings
 
@@ -59,6 +60,16 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "max_outputs": 4,
         "max_references": 5,
     },
+    "baidu/ERNIE-Image-Turbo/text-to-image": {
+        "label": "Baidu ERNIE Turbo",
+        "kind": "text",
+        "supports_aspect_ratio": False,
+        "supports_size": False,
+        "supports_thinking_mode": False,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 0,
+    },
     "alibaba/wan-2.6/text-to-image": {
         "label": "WAN 2.6 Texto para Imagem",
         "kind": "text",
@@ -104,14 +115,16 @@ _SCRIPT_IMAGE_MODEL_ALIASES: dict[str, dict[str, Any]] = {
     "ultra-high-3.0": {
         "label": "Ultra High 3.0",
         "description": "Cria qualquer imagem sem restricao.",
-        "text_model": "alibaba/wan-2.7/text-to-image",
-        "edit_model": "alibaba/wan-2.7/image-edit",
+        "text_model": "alibaba/wan-2.6/text-to-image",
+        "edit_model": "alibaba/wan-2.6/image-edit",
         "supports_size": True,
         "supports_thinking_mode": True,
         "max_outputs": 4,
         "max_references": 9,
     },
 }
+_OPENAI_DIRECT_MODEL = "openai/gpt-image-1/text-to-image"
+_BAIDU_TURBO_MODEL = "baidu/ERNIE-Image-Turbo/text-to-image"
 _ALLOWED_ASPECT_RATIOS = {"1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"}
 _ALLOWED_WAN_TEXT_SIZES = {"1K", "2K", "4K"}
 _ALLOWED_WAN_EDIT_SIZES = {"1K", "2K"}
@@ -137,6 +150,18 @@ _WAN_26_SIZE_PRESETS = {
         "16:9": "2048*1152",
         "9:16": "1152*2048",
     },
+}
+_BAIDU_IMAGE_SIZE_PRESETS = {
+    "1:1": "1024x1024",
+    "3:2": "1216x832",
+    "2:3": "832x1216",
+    "3:4": "864x1152",
+    "4:3": "1152x864",
+    "4:5": "896x1120",
+    "5:4": "1120x896",
+    "9:16": "768x1376",
+    "16:9": "1376x768",
+    "21:9": "1472x640",
 }
 _HTTP_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 _BASE64_RE = re.compile(r"^[A-Za-z0-9+/=\r\n]+$")
@@ -250,11 +275,181 @@ def resolve_size(model: str, size: str, aspect_ratio: str = "1:1") -> str:
     return resolved_size
 
 
+def _is_openai_direct_model(model: str) -> bool:
+    return normalize_supported_model(model) == _OPENAI_DIRECT_MODEL
+
+
+def _is_baidu_turbo_model(model: str) -> bool:
+    return normalize_supported_model(model) == _BAIDU_TURBO_MODEL
+
+
+def _baidu_image_size_for_aspect_ratio(aspect_ratio: str) -> str:
+    resolved = resolve_aspect_ratio(aspect_ratio)
+    return str(_BAIDU_IMAGE_SIZE_PRESETS.get(resolved) or _BAIDU_IMAGE_SIZE_PRESETS["1:1"])
+
+
 def _atlas_api_key() -> str:
     key = (settings.atlascloud_api_key or "").strip()
     if key:
         return key
     return (os.getenv("ATLASCLOUD_API_KEY") or "").strip()
+
+
+def _openai_api_key() -> str:
+    key = (settings.openai_api_key or "").strip()
+    if key:
+        return key
+    return (os.getenv("OPENAI_API_KEY") or "").strip()
+
+
+def _openai_image_model_name() -> str:
+    return (settings.persona_image_openai_model or "gpt-image-1").strip() or "gpt-image-1"
+
+
+def _openai_image_size_for_aspect_ratio(aspect_ratio: str) -> str:
+    resolved = resolve_aspect_ratio(aspect_ratio)
+    if resolved in {"9:16", "4:5", "3:4", "2:3"}:
+        return "1024x1536"
+    if resolved in {"16:9", "21:9", "4:3", "5:4", "3:2"}:
+        return "1536x1024"
+    return "1024x1024"
+
+
+def _extract_openai_image_bytes_from_response(response: object) -> bytes:
+    data_items = getattr(response, "data", None) or []
+    if not data_items:
+        return b""
+
+    item = data_items[0]
+    b64_data = getattr(item, "b64_json", None)
+    if not b64_data and isinstance(item, dict):
+        b64_data = item.get("b64_json")
+    if b64_data:
+        return base64.b64decode(b64_data)
+
+    img_url = getattr(item, "url", None)
+    if not img_url and isinstance(item, dict):
+        img_url = item.get("url")
+    if not img_url:
+        return b""
+
+    with httpx.Client(timeout=120, follow_redirects=True) as client_http:
+        resp = client_http.get(img_url)
+        resp.raise_for_status()
+        return resp.content or b""
+
+
+def _generate_single_openai_image(prompt: str, aspect_ratio: str, reference_paths: list[str]) -> dict[str, Any]:
+    api_key = _openai_api_key()
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY not configured")
+
+    client = openai.OpenAI(api_key=api_key)
+    model_name = _openai_image_model_name()
+    prompt_text = str(prompt or "").strip()[:3800]
+    image_size = _openai_image_size_for_aspect_ratio(aspect_ratio)
+
+    if reference_paths:
+        file_handles = []
+        try:
+            for path in reference_paths[:5]:
+                file_handles.append(open(path, "rb"))
+            response = client.images.edit(
+                model=model_name,
+                image=file_handles,
+                prompt=prompt_text,
+                size=image_size,
+            )
+        finally:
+            for handle in file_handles:
+                try:
+                    handle.close()
+                except Exception:
+                    pass
+    else:
+        response = client.images.generate(
+            model=model_name,
+            prompt=prompt_text,
+            size=image_size,
+        )
+
+    image_bytes = _extract_openai_image_bytes_from_response(response)
+    if not image_bytes:
+        raise RuntimeError("OpenAI nao retornou imagem utilizavel")
+
+    return {
+        "bytes": image_bytes,
+        "mime_type": "image/png",
+        "source": model_name,
+    }
+
+
+async def _generate_openai_images(
+    *,
+    prompt: str,
+    aspect_ratio: str,
+    count: int,
+    reference_paths: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    requested_count = max(1, int(count or 1))
+    refs = [str(path or "").strip() for path in (reference_paths or []) if str(path or "").strip()]
+    outputs: list[dict[str, Any]] = []
+    for _ in range(requested_count):
+        outputs.append(await asyncio.to_thread(_generate_single_openai_image, prompt, aspect_ratio, refs))
+    return outputs
+
+
+def _build_atlas_generation_payload(
+    *,
+    model: str,
+    prompt: str,
+    aspect_ratio: str,
+    size: str,
+    remaining: int,
+    seed: int,
+    thinking_mode: bool,
+    uploaded_refs: list[str],
+) -> dict[str, Any]:
+    normalized_model = normalize_supported_model(model)
+    resolved_aspect_ratio = resolve_aspect_ratio(aspect_ratio)
+    prompt_text = str(prompt or "").strip()
+
+    if _is_baidu_turbo_model(normalized_model):
+        return {
+            "model": normalized_model,
+            "prompt": prompt_text,
+            "size": _baidu_image_size_for_aspect_ratio(resolved_aspect_ratio),
+            "n": 1,
+            "seed": int(seed if seed is not None else -1),
+            "use_pe": True,
+            "num_inference_steps": 8,
+            "guidance_scale": 1,
+            "enable_sync_mode": False,
+            "enable_base64_output": False,
+        }
+
+    prompt_payload = prompt_text
+    if not model_supports_aspect_ratio(normalized_model) and not model_uses_wan_26_payload(normalized_model):
+        prompt_payload = f"{prompt_text}\n\nDesired aspect ratio: {resolved_aspect_ratio}."
+
+    payload: dict[str, Any] = {
+        "model": normalized_model,
+        "prompt": prompt_payload,
+        "enable_sync_mode": False,
+        "enable_base64_output": False,
+    }
+    if model_supports_aspect_ratio(normalized_model):
+        payload["aspect_ratio"] = resolved_aspect_ratio
+    if model_supports_size(normalized_model):
+        payload["size"] = resolve_size(normalized_model, size, resolved_aspect_ratio)
+    if model_supports_thinking_mode(normalized_model):
+        payload["enable_prompt_expansion"] = bool(thinking_mode)
+        payload["seed"] = int(seed if seed is not None else -1)
+    if model_supports_batch_request(normalized_model) and remaining > 1:
+        payload["n"] = remaining
+    if uploaded_refs:
+        payload["images"] = uploaded_refs
+    return payload
 
 
 def _extract_atlas_error_message(resp: httpx.Response) -> str:
@@ -525,18 +720,27 @@ async def generate_atlas_images(
     if not normalized_model:
         raise RuntimeError("Modelo de imagem nao suportado")
 
-    api_key = _atlas_api_key()
-    if not api_key:
-        raise RuntimeError("ATLASCLOUD_API_KEY not configured")
-
     prompt_text = str(prompt or "").strip()
     if not prompt_text:
         raise RuntimeError("Descreva a imagem antes de gerar")
     resolved_aspect_ratio = resolve_aspect_ratio(aspect_ratio)
 
     requested_count = max(1, min(int(count or 1), model_max_outputs(normalized_model)))
-    uploaded_refs: list[str] = []
     source_refs = [str(path or "").strip() for path in (reference_paths or []) if str(path or "").strip()]
+
+    if _is_openai_direct_model(normalized_model):
+        return await _generate_openai_images(
+            prompt=prompt_text,
+            aspect_ratio=resolved_aspect_ratio,
+            count=requested_count,
+            reference_paths=source_refs,
+        )
+
+    api_key = _atlas_api_key()
+    if not api_key:
+        raise RuntimeError("ATLASCLOUD_API_KEY not configured")
+
+    uploaded_refs: list[str] = []
     supports_batch_request = model_supports_batch_request(normalized_model)
 
     timeout = httpx.Timeout(60.0, connect=20.0, read=60.0, write=60.0)
@@ -550,26 +754,16 @@ async def generate_atlas_images(
         results: list[dict[str, Any]] = []
         while len(results) < requested_count:
             remaining = requested_count - len(results)
-            prompt_payload = prompt_text
-            if not model_supports_aspect_ratio(normalized_model) and not model_uses_wan_26_payload(normalized_model):
-                prompt_payload = f"{prompt_text}\n\nDesired aspect ratio: {resolved_aspect_ratio}."
-            payload: dict[str, Any] = {
-                "model": normalized_model,
-                "prompt": prompt_payload,
-                "enable_sync_mode": False,
-                "enable_base64_output": False,
-            }
-            if model_supports_aspect_ratio(normalized_model):
-                payload["aspect_ratio"] = resolved_aspect_ratio
-            if model_supports_size(normalized_model):
-                payload["size"] = resolve_size(normalized_model, size, resolved_aspect_ratio)
-            if model_supports_thinking_mode(normalized_model):
-                payload["enable_prompt_expansion"] = bool(thinking_mode)
-                payload["seed"] = int(seed if seed is not None else -1)
-            if supports_batch_request and remaining > 1:
-                payload["n"] = remaining
-            if uploaded_refs:
-                payload["images"] = uploaded_refs
+            payload = _build_atlas_generation_payload(
+                model=normalized_model,
+                prompt=prompt_text,
+                aspect_ratio=resolved_aspect_ratio,
+                size=size,
+                remaining=remaining,
+                seed=seed,
+                thinking_mode=bool(thinking_mode),
+                uploaded_refs=uploaded_refs,
+            )
 
             prediction_id = await _submit_generation(client, payload, api_key)
             output_refs = await _wait_for_outputs(client, prediction_id, api_key, timeout_seconds)

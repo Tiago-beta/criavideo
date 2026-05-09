@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260509-05">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260509-06">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 399;
+        var REQUIRED_VER = 400;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -3667,9 +3667,9 @@
                             </div>
                             <select id="script-image-generator-model" class="input script-image-generator-native-select" hidden onchange="handleScriptImageCreatorModelChange()">
                                 <option value="google/nano-banana-pro/text-to-image">Nano Banana Pro</option>
-                                <option value="google/nano-banana-2/text-to-image">Nano Banana 2</option>
                                 <option value="google/nano-banana/text-to-image">Nano Banana</option>
                                 <option value="openai/gpt-image-1/text-to-image">GPT Image</option>
+                                <option value="baidu/ERNIE-Image-Turbo/text-to-image">Baidu ERNIE Turbo</option>
                                 <option value="ultra-high-3.0">Ultra High 3.0</option>
                             </select>
                             <div class="script-image-generator-model-options" role="listbox" aria-label="Modelos de IA">
@@ -3681,15 +3681,7 @@
                                         <strong>Nano Banana Pro</strong>
                                         <small>Rápido, polido e versátil.</small>
                                     </span>
-                                </button>
-                                <button type="button" class="script-image-model-card" data-model="google/nano-banana-2/text-to-image" onclick="selectScriptImageCreatorModel('google/nano-banana-2/text-to-image')">
-                                    <span class="script-image-model-card-icon script-image-model-card-icon--banana">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 13c4.2 0 7.7-3.1 8.4-7.1 1.7.4 2.8 1.8 2.8 3.7 0 5.2-4.2 9.4-9.4 9.4-1.7 0-3-.7-4-2 0 0 1-.9 2.2-4Z"/><path d="M6.5 12.8c-.6 1.4-.7 2.7-.2 4"/></svg>
-                                    </span>
-                                    <span class="script-image-model-card-copy">
-                                        <strong>Nano Banana 2</strong>
-                                        <small>Equilíbrio entre rapidez e detalhe.</small>
-                                    </span>
+                                    <span class="script-image-model-card-price" hidden></span>
                                 </button>
                                 <button type="button" class="script-image-model-card" data-model="google/nano-banana/text-to-image" onclick="selectScriptImageCreatorModel('google/nano-banana/text-to-image')">
                                     <span class="script-image-model-card-icon script-image-model-card-icon--banana">
@@ -3699,6 +3691,7 @@
                                         <strong>Nano Banana</strong>
                                         <small>Econômico para ideias rápidas.</small>
                                     </span>
+                                    <span class="script-image-model-card-price" hidden></span>
                                 </button>
                                 <button type="button" class="script-image-model-card" data-model="openai/gpt-image-1/text-to-image" onclick="selectScriptImageCreatorModel('openai/gpt-image-1/text-to-image')">
                                     <span class="script-image-model-card-icon script-image-model-card-icon--gpt">
@@ -3708,6 +3701,17 @@
                                         <strong>GPT Image</strong>
                                         <small>Excelente para direção artística.</small>
                                     </span>
+                                    <span class="script-image-model-card-price" hidden></span>
+                                </button>
+                                <button type="button" class="script-image-model-card" data-model="baidu/ERNIE-Image-Turbo/text-to-image" onclick="selectScriptImageCreatorModel('baidu/ERNIE-Image-Turbo/text-to-image')">
+                                    <span class="script-image-model-card-icon script-image-model-card-icon--baidu">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v16"/><path d="M8 8h6a3 3 0 1 1 0 6H8"/><path d="M8 14h6.5a3 3 0 1 1 0 6H12" transform="translate(0 -4)"/></svg>
+                                    </span>
+                                    <span class="script-image-model-card-copy">
+                                        <strong>Baidu ERNIE Turbo</strong>
+                                        <small>Texto para imagem grátis.</small>
+                                    </span>
+                                    <span class="script-image-model-card-price" hidden></span>
                                 </button>
                                 <button type="button" class="script-image-model-card" data-model="ultra-high-3.0" onclick="selectScriptImageCreatorModel('ultra-high-3.0')">
                                     <span class="script-image-model-card-icon script-image-model-card-icon--wan">
@@ -3715,8 +3719,9 @@
                                     </span>
                                     <span class="script-image-model-card-copy">
                                         <strong>Ultra High 3.0</strong>
-                                        <small>Cria qualquer imagem sem restrição.</small>
+                                        <small>Usa WAN 2.6 para imagem premium.</small>
                                     </span>
+                                    <span class="script-image-model-card-price" hidden></span>
                                 </button>
                             </div>
                         </div>
@@ -3803,7 +3808,6 @@
                         <div class="modal-footer modal-footer-space script-image-generator-footer">
                             <button class="btn btn-secondary" type="button" onclick="closeScriptImageCreatorModal()">Fechar</button>
                             <div class="script-image-generator-footer-actions">
-                                <div id="script-image-generator-estimate" class="script-image-generator-estimate" aria-live="polite">Defina o modelo para calcular o custo estimado.</div>
                                 <button id="script-image-generator-submit" class="btn btn-primary" type="button" onclick="generateScriptImageFromModal()">Gerar imagem</button>
                             </div>
                         </div>
@@ -3813,8 +3817,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260509-05"></script>
-    <script src="/video/static/pwa.js?v=20260509-05"></script>
+    <script src="/video/static/app.js?v=20260509-06"></script>
+    <script src="/video/static/pwa.js?v=20260509-06"></script>
 </body>
 </html>
 

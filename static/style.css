@@ -4615,7 +4615,7 @@ svg.spin {
 
 .script-image-generator-model-options {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 138px));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     justify-content: space-between;
     gap: 8px;
     align-items: stretch;
@@ -4680,6 +4680,10 @@ svg.spin {
     background: linear-gradient(135deg, #6dd5ed, #2193b0);
 }
 
+.script-image-model-card-icon--baidu {
+    background: linear-gradient(135deg, #8ee36e, #2f8f36);
+}
+
 .script-image-model-card-icon--wan {
     background: linear-gradient(135deg, #ff9966, #ff5e62);
 }
@@ -4714,6 +4718,18 @@ svg.spin {
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+}
+
+.script-image-model-card-price {
+    margin-top: auto;
+    color: #ffd68a;
+    font-size: 0.68rem;
+    line-height: 1.1;
+    letter-spacing: 0.01em;
+}
+
+.script-image-model-card-price.is-free {
+    color: #9df0bd;
 }
 
 .script-image-generator-section-head,

@@ -54,6 +54,7 @@ IMAGE_GENERATION_MODEL_USD = {
     "google/nano-banana-2/text-to-image": 0.017,
     "google/nano-banana/text-to-image": 0.014,
     "openai/gpt-image-1/text-to-image": 0.032,
+    "baidu/ERNIE-Image-Turbo/text-to-image": 0.0,
     "alibaba/wan-2.6/text-to-image": 0.040,
     "alibaba/wan-2.6/image-edit": 0.044,
 }
@@ -69,6 +70,7 @@ IMAGE_GENERATION_BASE_FLOOR = {
     "google/nano-banana-2/text-to-image": 7,
     "google/nano-banana/text-to-image": 6,
     "openai/gpt-image-1/text-to-image": 11,
+    "baidu/ERNIE-Image-Turbo/text-to-image": 0,
     "alibaba/wan-2.6/text-to-image": 13,
     "alibaba/wan-2.6/image-edit": 15,
 }
@@ -293,6 +295,29 @@ def estimate_image_generation_credits(
     normalized_model = str(model or "google/nano-banana-pro/text-to-image").strip()
     if normalized_model == "ultra-high-3.0":
         normalized_model = "alibaba/wan-2.6/image-edit" if int(reference_image_count or 0) > 0 else "alibaba/wan-2.6/text-to-image"
+    if normalized_model == "baidu/ERNIE-Image-Turbo/text-to-image":
+        estimate = CreditEstimate(
+            credits_needed=0,
+            credits_exact=0.0,
+            provider_cost_usd=0.0,
+            provider_cost_brl=0.0,
+            billed_cost_brl=0.0,
+            brl_per_credit=get_credit_value_brl(CREDIT_PACKAGES),
+            breakdown={
+                "mode": "image_generation",
+                "model": normalized_model,
+                "image_count": max(1, min(int(image_count or 1), 4)),
+                "size": "FREE",
+                "reference_image_count": 0,
+                "thinking_mode": False,
+                "floor_credits": 0,
+                "components_usd": {
+                    "images": 0.0,
+                    "references": 0.0,
+                },
+            },
+        )
+        return estimate.to_dict()
     if normalized_model not in IMAGE_GENERATION_MODEL_USD:
         normalized_model = "google/nano-banana-pro/text-to-image"
 

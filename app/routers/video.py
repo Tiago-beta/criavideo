@@ -1118,6 +1118,8 @@ async def generate_script_image(
     except RuntimeError as exc:
         message = str(exc or "Falha ao gerar imagem").strip() or "Falha ao gerar imagem"
         lowered = message.lower()
+        if requested_model.startswith("openai/") and ("not configured" in lowered or "openai_api_key" in lowered or "openai api key" in lowered):
+            raise HTTPException(status_code=503, detail="OpenAI nao esta configurado no servidor.") from exc
         if "not configured" in lowered or "nao configurado" in lowered:
             raise HTTPException(status_code=503, detail="Atlas Cloud nao esta configurado no servidor.") from exc
         raise HTTPException(status_code=502, detail=message) from exc
@@ -1498,7 +1500,7 @@ async def _generate_similar_wan_image(
             atlas_references.append(path)
 
     use_reference_edit = bool(atlas_references)
-    model = "alibaba/wan-2.6/image-edit" if use_reference_edit else "alibaba/wan-2.7/text-to-image"
+    model = "alibaba/wan-2.6/image-edit" if use_reference_edit else "alibaba/wan-2.6/text-to-image"
     results = await generate_atlas_images(
         prompt=prompt,
         model=model,
