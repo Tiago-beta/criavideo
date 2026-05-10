@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v414 loaded");
+console.log("[CriaVideo] app.js v415 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -30020,7 +30020,7 @@ function _editorRenderTimeline() {
     const trackRowSelection = selectedKind === "track" ? _editorGetSelectedSegmentTracks() : [];
     const rows = [];
     const trackW = _editorGetTimelineTrackWidth(dur);
-    const timelineInnerWidth = Math.max(120, Math.round(80 + trackW + 16));
+    const timelineInnerWidth = Math.max(120, Math.round(40 + trackW + 16));
     const transitionMarkersByTrack = new Map();
 
     if (dur > 0.05) {

@@ -2502,63 +2502,42 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             if end_time <= start_time + 0.02:
                 continue
 
-            mapped_ranges = _map_source_interval_to_output_detailed(start_time, end_time, video_segment_entries)
-            candidate_ranges: list[tuple[float, float, float]] = []
-            mapped_duration = 0.0
-            for mapped_start, mapped_end, overlap_start, _overlap_end in mapped_ranges:
-                clip_duration = max(0.0, mapped_end - mapped_start)
-                if clip_duration <= 0.02:
+            clip_duration = max(0.0, end_time - start_time)
+            if clip_duration <= 0.02:
+                continue
+
+            mapped_source_offset = source_offset
+            if kind in {"video", "audio"} and layer_duration > 0:
+                mapped_source_offset = min(mapped_source_offset, max(0.0, layer_duration - 0.05))
+                max_clip_duration = max(0.0, layer_duration - mapped_source_offset)
+                if max_clip_duration <= 0.02:
                     continue
-                mapped_source_offset = source_offset + max(0.0, overlap_start - start_time)
-                candidate_ranges.append((mapped_start, mapped_end, mapped_source_offset))
-                mapped_duration += clip_duration
+                clip_duration = min(clip_duration, max_clip_duration)
 
-            # Layers can live in the extended timeline even when there is no base-video overlap.
-            if not candidate_ranges:
-                if start_time >= max(0.0, output_video_duration - 0.02):
-                    candidate_ranges.append((start_time, end_time, source_offset))
-                else:
-                    continue
-            elif end_time > output_video_duration + 0.02:
-                tail_start = max(start_time, output_video_duration)
-                if end_time > tail_start + 0.02:
-                    candidate_ranges.append((tail_start, end_time, source_offset + mapped_duration))
+            mapped_start = start_time
+            mapped_end = mapped_start + clip_duration
+            if mapped_end <= mapped_start + 0.02:
+                continue
 
-            for range_idx, (mapped_start, mapped_end, mapped_source_offset) in enumerate(candidate_ranges):
-                clip_duration = max(0.0, mapped_end - mapped_start)
-                if clip_duration <= 0.02:
-                    continue
-
-                if kind in {"video", "audio"} and layer_duration > 0:
-                    mapped_source_offset = min(mapped_source_offset, max(0.0, layer_duration - 0.05))
-                    max_clip_duration = max(0.0, layer_duration - mapped_source_offset)
-                    if max_clip_duration <= 0.02:
-                        continue
-                    clip_duration = min(clip_duration, max_clip_duration)
-
-                mapped_end = mapped_start + clip_duration
-                if mapped_end <= mapped_start + 0.02:
-                    continue
-
-                valid_media_layers.append(
-                    {
-                        "kind": kind,
-                        "path": resolved_path,
-                        "width_pct": width_pct,
-                        "x_pct": x_pct,
-                        "y_pct": y_pct,
-                        "volume_pct": volume_pct,
-                        "audio_only": audio_only,
-                        "start_time": mapped_start,
-                        "end_time": mapped_end,
-                        "duration": max(0.0, layer_duration),
-                        "source_offset": mapped_source_offset,
-                        "reversed": reversed_flag,
-                        "source_width": source_width,
-                        "source_height": source_height,
-                        "layer_ref": f"{layer_idx}:{range_idx}",
-                    }
-                )
+            valid_media_layers.append(
+                {
+                    "kind": kind,
+                    "path": resolved_path,
+                    "width_pct": width_pct,
+                    "x_pct": x_pct,
+                    "y_pct": y_pct,
+                    "volume_pct": volume_pct,
+                    "audio_only": audio_only,
+                    "start_time": mapped_start,
+                    "end_time": mapped_end,
+                    "duration": max(0.0, layer_duration),
+                    "source_offset": mapped_source_offset,
+                    "reversed": reversed_flag,
+                    "source_width": source_width,
+                    "source_height": source_height,
+                    "layer_ref": f"{layer_idx}:0",
+                }
+            )
 
         layer_timeline_end = max(
             (float(layer.get("end_time", 0.0) or 0.0) for layer in valid_media_layers),
