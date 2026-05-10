@@ -1262,15 +1262,6 @@ def _normalize_smart_subtitle_text(raw_text: str) -> str:
         matcher = re.compile(rf"\b{re.escape(name.lower())}\b", re.IGNORECASE)
         text = matcher.sub(name, text)
 
-
-
-    def _build_editor_layer_cover_filter(width: int, height: int) -> str:
-        target_w = max(2, _round_up_even(width))
-        target_h = max(2, _round_up_even(height))
-        return (
-            f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,"
-            f"crop={target_w}:{target_h},setsar=1"
-        )
     text = re.sub(
         r'^(?:["\'\(\[{«“]*)?([a-zà-ÿ])',
         lambda match: match.group(0)[:-1] + match.group(1).upper(),
@@ -2996,12 +2987,17 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
             for audio_idx, layer in enumerate(audio_layers):
                 layer_path = layer["path"]
-                if not _probe_has_audio_stream(layer_path):
+                layer_kind = str(layer.get("kind") or "").strip().lower()
+                layer_duration = max(0.0, float(layer.get("duration", 0.0) or 0.0))
+                has_layer_audio = layer_kind == "audio" and layer_duration > 0.02
+                if not has_layer_audio:
+                    has_layer_audio = _probe_has_audio_stream(layer_path)
+                if not has_layer_audio:
+                    logger.warning("[editor] Skipping media layer without detectable audio stream: %s", layer_path)
                     continue
 
                 start_time = max(0.0, float(layer.get("start_time", 0.0) or 0.0))
                 configured_end = max(start_time, float(layer.get("end_time", 0.0) or 0.0))
-                layer_duration = max(0.0, float(layer.get("duration", 0.0) or 0.0))
                 source_offset = max(0.0, float(layer.get("source_offset", 0.0) or 0.0))
 
                 clip_duration = max(0.0, configured_end - start_time)
