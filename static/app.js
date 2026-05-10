@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v418 loaded");
+console.log("[CriaVideo] app.js v419 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -12622,6 +12622,36 @@ async function _addScriptImageCreatorResultToProject(index) {
     renderPhotoPreview();
 }
 
+function _prepareScriptImageCreatorVideoDraftState() {
+    scriptData.videoType = "imagens_proprias";
+    scriptData.useCustomImages = scriptPhotos.length > 0;
+    scriptData.createNarration = true;
+
+    const photoCb = document.getElementById("script-use-photos");
+    if (photoCb) {
+        photoCb.checked = scriptPhotos.length > 0;
+    }
+
+    const photoArea = document.getElementById("script-photo-area");
+    if (photoArea) {
+        photoArea.hidden = scriptPhotos.length === 0;
+    }
+
+    const narChoice = document.getElementById("script-narration-choice");
+    if (narChoice) {
+        narChoice.hidden = scriptPhotos.length === 0;
+    }
+
+    const narCb = document.getElementById("script-create-narration");
+    if (narCb) {
+        narCb.checked = true;
+    }
+
+    toggleScriptNarration();
+    _updateScriptRealisticPersonaVisibility();
+    scheduleScriptCreditEstimate();
+}
+
 async function useScriptImageCreatorResult(index) {
     try {
         await _addScriptImageCreatorResultToProject(index);
@@ -12638,7 +12668,7 @@ async function createVideoFromScriptImageCreatorResult(index) {
         closeScriptImageCreatorModal();
 
         if (launchSource === "create-mode") {
-            scriptData.videoType = "imagens_proprias";
+            _prepareScriptImageCreatorVideoDraftState();
             adaptScriptStepForVideoType("imagens_proprias");
 
             const scriptTypeGrid = document.getElementById("script-video-type-grid");
@@ -12648,12 +12678,16 @@ async function createVideoFromScriptImageCreatorResult(index) {
                 });
             }
 
-            scriptStep = 1;
+            scriptStep = 2;
             switchCreateMode("script");
             updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+            _prepareScriptImageCreatorVideoDraftState();
 
             window.requestAnimationFrame(() => {
                 const promptField = document.getElementById("script-text");
+                if (promptField) {
+                    promptField.disabled = false;
+                }
                 promptField?.focus();
                 promptField?.scrollIntoView({ behavior: "smooth", block: "center" });
             });
