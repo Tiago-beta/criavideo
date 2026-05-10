@@ -777,14 +777,18 @@ def _normalize_trim_segment_entries(
             et = float(seg.get("end") or 0)
             reversed_flag = bool(seg.get("reversed", False))
             speed = float(seg.get("speed") or 1)
+            timeline_start = float(seg.get("timeline_start") or st)
         else:
             st = float(getattr(seg, "start", 0) or 0)
             et = float(getattr(seg, "end", 0) or 0)
             reversed_flag = bool(getattr(seg, "reversed", False))
             speed = float(getattr(seg, "speed", 1) or 1)
+            timeline_start = float(getattr(seg, "timeline_start", st) or st)
 
         if not math.isfinite(speed) or speed <= 0:
             speed = 1.0
+        if not math.isfinite(timeline_start):
+            timeline_start = st
 
         st = max(0.0, st)
         et = max(st, et)
@@ -792,7 +796,13 @@ def _normalize_trim_segment_entries(
             st = min(st, max_duration)
             et = min(et, max_duration)
         if et - st >= 0.05:
-            segments.append({"start": st, "end": et, "reversed": reversed_flag, "speed": speed})
+            segments.append({
+                "start": st,
+                "end": et,
+                "reversed": reversed_flag,
+                "speed": speed,
+                "timeline_start": timeline_start,
+            })
 
     if not segments and trim_end > trim_start:
         st = max(0.0, float(trim_start or 0))
@@ -801,18 +811,18 @@ def _normalize_trim_segment_entries(
             st = min(st, max_duration)
             et = min(et, max_duration)
         if et - st >= 0.05:
-            segments.append({"start": st, "end": et, "reversed": False, "speed": 1.0})
+            segments.append({"start": st, "end": et, "reversed": False, "speed": 1.0, "timeline_start": st})
 
     if not segments and trim_start > 0 and max_duration > trim_start:
-        segments.append({"start": float(trim_start), "end": max_duration, "reversed": False, "speed": 1.0})
+        segments.append({"start": float(trim_start), "end": max_duration, "reversed": False, "speed": 1.0, "timeline_start": float(trim_start)})
 
     if not segments:
         if max_duration > 0:
-            segments.append({"start": 0.0, "end": max_duration, "reversed": False, "speed": 1.0})
+            segments.append({"start": 0.0, "end": max_duration, "reversed": False, "speed": 1.0, "timeline_start": 0.0})
         else:
-            segments.append({"start": 0.0, "end": 1e9, "reversed": False, "speed": 1.0})
+            segments.append({"start": 0.0, "end": 1e9, "reversed": False, "speed": 1.0, "timeline_start": 0.0})
 
-    segments.sort(key=lambda item: float(item["start"]))
+    segments.sort(key=lambda item: (float(item.get("timeline_start", item["start"])), float(item["start"])))
 
     # Merge overlapping or adjacent ranges to avoid duplicated frames.
     merged: list[dict] = []
@@ -822,7 +832,13 @@ def _normalize_trim_segment_entries(
         reversed_flag = bool(item.get("reversed", False))
         speed = float(item.get("speed", 1.0) or 1.0)
         if not merged:
-            merged.append({"start": st, "end": et, "reversed": reversed_flag, "speed": speed})
+            merged.append({
+                "start": st,
+                "end": et,
+                "reversed": reversed_flag,
+                "speed": speed,
+                "timeline_start": float(item.get("timeline_start", st)),
+            })
             continue
         prev = merged[-1]
         if (
@@ -832,7 +848,13 @@ def _normalize_trim_segment_entries(
         ):
             prev["end"] = max(float(prev["end"]), et)
         else:
-            merged.append({"start": st, "end": et, "reversed": reversed_flag, "speed": speed})
+            merged.append({
+                "start": st,
+                "end": et,
+                "reversed": reversed_flag,
+                "speed": speed,
+                "timeline_start": float(item.get("timeline_start", st)),
+            })
 
     return [item for item in merged if float(item["end"]) - float(item["start"]) >= 0.05]
 
@@ -1047,6 +1069,7 @@ class TrimSegment(BaseModel):
     end: float
     reversed: bool = False
     speed: float = 1.0
+    timeline_start: float = 0.0
 
 
 class SmartCutEntry(BaseModel):
@@ -1079,7 +1102,6 @@ class SmartCutSubtitleStyle(BaseModel):
 
 class SmartCutsRequest(BaseModel):
     project_id: int
-
 
 class ExportRequest(BaseModel):
     project_id: int
@@ -1941,7 +1963,6 @@ async def transcribe_video(
 
     tmp_audio = _extract_editor_audio(project.id, src_video, "transcribe")
     try:
-
         # Transcribe (sync function, run in thread pool)
         from app.services.transcriber import transcribe_audio
         import asyncio

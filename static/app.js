@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v408 loaded");
+console.log("[CriaVideo] app.js v409 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -22231,24 +22231,92 @@ function _editorSetOutputAspectRatio(value) {
 }
 window._editorSetOutputAspectRatio = _editorSetOutputAspectRatio;
 
+function _editorIsAudioTrack(track = "") {
+    return String(track || "").trim().toLowerCase() === "audio";
+}
+
+function _editorIsVideoTrack(track = "") {
+    const rawTrack = String(track || "").trim().toLowerCase();
+    return !rawTrack || rawTrack === "video" || /^video-\d+$/.test(rawTrack);
+}
+
+function _editorGetSegmentTrackIndex(seg) {
+    const raw = Number(seg?.trackIndex ?? 0);
+    if (!Number.isFinite(raw) || raw < 0) return 0;
+    return Math.max(0, Math.floor(raw));
+}
+
+function _editorParseSegmentTrackId(track, fallback = 0) {
+    const rawTrack = String(track || "").trim();
+    if (!rawTrack || rawTrack === "video" || rawTrack === "video-0") {
+        return Math.max(0, Number(fallback || 0));
+    }
+    const match = /^video-(\d+)$/i.exec(rawTrack);
+    if (!match) return Math.max(0, Number(fallback || 0));
+    return Math.max(0, parseInt(match[1], 10) || 0);
+}
+
+function _editorTrackIdForSegmentIndex(trackIndex = 0) {
+    const safeTrackIndex = Math.max(0, Number(trackIndex || 0));
+    return safeTrackIndex <= 0 ? "video" : `video-${safeTrackIndex}`;
+}
+
+function _editorGetMaxVideoSegmentTrackIndex(ignoreSegmentId = "") {
+    return _editor.videoSegments.reduce((maxTrack, segment) => {
+        if (ignoreSegmentId && String(segment?.id) === String(ignoreSegmentId)) {
+            return maxTrack;
+        }
+        return Math.max(maxTrack, _editorGetSegmentTrackIndex(segment));
+    }, 0);
+}
+
 function _editorGetSegments(track = "video") {
-    return track === "audio" ? _editor.audioSegments : _editor.videoSegments;
+    if (_editorIsAudioTrack(track)) {
+        return _editor.audioSegments;
+    }
+    if (_editorIsVideoTrack(track)) {
+        const trackIndex = _editorParseSegmentTrackId(track, 0);
+        return _editor.videoSegments.filter((segment) => _editorGetSegmentTrackIndex(segment) === trackIndex);
+    }
+    return _editor.videoSegments;
 }
 
 function _editorSetSegments(track, segments) {
-    if (track === "audio") {
-        _editor.audioSegments = segments;
+    if (_editorIsAudioTrack(track)) {
+        _editor.audioSegments = Array.isArray(segments) ? segments : [];
+        return;
+    }
+
+    if (_editorIsVideoTrack(track)) {
+        const trackIndex = _editorParseSegmentTrackId(track, 0);
+        const normalizedSegments = Array.isArray(segments) ? segments : [];
+        normalizedSegments.forEach((segment) => {
+            if (segment) segment.trackIndex = trackIndex;
+        });
+        const preservedSegments = _editor.videoSegments.filter((segment) => _editorGetSegmentTrackIndex(segment) !== trackIndex);
+        _editor.videoSegments = preservedSegments.concat(normalizedSegments);
     } else {
-        _editor.videoSegments = segments;
+        _editor.videoSegments = Array.isArray(segments) ? segments : [];
     }
 }
 
 function _editorSortSegments(track = "video") {
-    _editorGetSegments(track).sort((a, b) => (a.start - b.start) || (a.end - b.end));
+    if (_editorIsAudioTrack(track)) {
+        _editor.audioSegments.sort((a, b) => (a.start - b.start) || (a.end - b.end));
+        return;
+    }
+
+    _editor.videoSegments.sort((a, b) => {
+        return (a.start - b.start)
+            || (a.end - b.end)
+            || (_editorGetSegmentTrackIndex(a) - _editorGetSegmentTrackIndex(b));
+    });
 }
 
 function _editorFindSegment(track = "video", id) {
-    return _editorGetSegments(track).find(seg => String(seg.id) === String(id));
+    return _editorIsAudioTrack(track)
+        ? _editor.audioSegments.find(seg => String(seg.id) === String(id))
+        : _editor.videoSegments.find(seg => String(seg.id) === String(id));
 }
 
 function _editorSortVideoSegments() {
@@ -22330,7 +22398,9 @@ function _editorSegSourceTimeAtTimelineTime(seg, timelineTime) {
 }
 
 function _editorGetTrackSegmentAtTimelineTime(track = "video", timelineTime = 0) {
-    const sorted = [..._editorGetSegments(track)].sort((a, b) => a.start - b.start);
+    const sorted = [...
+        (_editorIsAudioTrack(track) ? _editorGetSegments(track) : _editor.videoSegments)
+    ].sort((a, b) => a.start - b.start);
     return sorted.find((seg) => timelineTime >= Number(seg.start || 0) - 0.01 && timelineTime <= Number(seg.end || 0) + 0.01) || null;
 }
 
@@ -23408,8 +23478,8 @@ function _editorSyncAudioSegmentsWithVideoIfNoExternalAudio() {
 }
 
 function _editorIsTrackSelectable(track) {
-    if (track === "video") return true;
-    if (track === "audio") return _editorShouldShowAudioTrack();
+    if (_editorIsVideoTrack(track)) return true;
+    if (_editorIsAudioTrack(track)) return _editorShouldShowAudioTrack();
     return false;
 }
 
@@ -23583,7 +23653,9 @@ function _editorInitVideoSegments() {
 }
 
 function _editorClampSegmentRange(track, segmentId, nextStart, span) {
-    const dur = Math.max(_editor.duration || 0, 0.1);
+    const dur = _editorIsAudioTrack(track)
+        ? Math.max(_editor.duration || 0, 0.1)
+        : Math.max(_editorGetTimelineDuration(), _editor.duration || 0, span) + span + 30;
     const sorted = [..._editorGetSegments(track)].sort((a, b) => a.start - b.start);
     const idx = sorted.findIndex(seg => String(seg.id) === String(segmentId));
     if (idx < 0) {
@@ -23605,6 +23677,77 @@ function _editorClampSegmentRange(track, segmentId, nextStart, span) {
     }
     clampedStart = Math.max(minStart, Math.min(maxStart, clampedStart));
     return [clampedStart, clampedStart + span];
+}
+
+function _editorClampSegmentResizeBounds(track, segmentId, nextStart, nextEnd, mode = "resize-end") {
+    const segment = _editorFindSegment(track, segmentId);
+    if (!segment) {
+        const safeStart = Math.max(0, Number(nextStart || 0));
+        const safeEnd = Math.max(safeStart + 0.1, Number(nextEnd || 0));
+        return [safeStart, safeEnd];
+    }
+
+    const sorted = [..._editorGetSegments(track)].sort((a, b) => a.start - b.start);
+    const idx = sorted.findIndex((item) => String(item.id) === String(segmentId));
+    const prev = idx > 0 ? sorted[idx - 1] : null;
+    const next = idx >= 0 ? sorted[idx + 1] || null : null;
+    const sourceDuration = _editorEnsureSegmentSourceDuration(segment);
+    const minDuration = Math.max(0.1, sourceDuration / _EDITOR_SEGMENT_SPEED_MAX);
+    const maxDuration = Math.max(minDuration, sourceDuration / _EDITOR_SEGMENT_SPEED_MIN);
+    const timelineCeiling = Math.max(
+        _editorGetTimelineDuration(),
+        _editor.duration || 0,
+        Number(segment.end || 0),
+        Number(nextEnd || 0),
+        Number(nextStart || 0) + minDuration,
+    ) + maxDuration + 30;
+
+    if (mode === "resize-start") {
+        const anchorEnd = Math.max(0.1, Number(nextEnd || segment.end || 0.1));
+        const lowerBound = Math.max(
+            0,
+            prev ? Number(prev.end || 0) : 0,
+            anchorEnd - maxDuration,
+        );
+        const upperBound = Math.max(lowerBound, anchorEnd - minDuration);
+        const safeStart = Math.max(lowerBound, Math.min(upperBound, Number(nextStart || segment.start || 0)));
+        return [safeStart, anchorEnd];
+    }
+
+    const anchorStart = Math.max(0, Number(nextStart || segment.start || 0));
+    const lowerBound = anchorStart + minDuration;
+    const upperBound = Math.max(
+        lowerBound,
+        Math.min(
+            next ? Number(next.start || lowerBound) : timelineCeiling,
+            anchorStart + maxDuration,
+        ),
+    );
+    const safeEnd = Math.max(lowerBound, Math.min(upperBound, Number(nextEnd || segment.end || lowerBound)));
+    return [anchorStart, safeEnd];
+}
+
+function _editorApplySegmentSpeedResize(seg, nextStart, nextEnd, mode = "resize-end") {
+    if (!seg) return;
+
+    const sourceStart = _editorEnsureSegmentSourceStart(seg);
+    const sourceDuration = _editorEnsureSegmentSourceDuration(seg);
+    const desiredDuration = Math.max(0.1, Number(nextEnd || 0) - Number(nextStart || 0));
+    const nextSpeed = _editorClampSegmentSpeed(sourceDuration / desiredDuration);
+    const actualDuration = sourceDuration / nextSpeed;
+
+    seg.sourceStart = sourceStart;
+    seg.sourceDuration = sourceDuration;
+    seg.speed = nextSpeed;
+
+    if (mode === "resize-start") {
+        seg.end = Number(nextEnd || 0);
+        seg.start = Number(seg.end || 0) - actualDuration;
+        return;
+    }
+
+    seg.start = Number(nextStart || 0);
+    seg.end = Number(seg.start || 0) + actualDuration;
 }
 
 // ---------- Load completed videos for selection ----------
@@ -25385,10 +25528,14 @@ function _editorGetMaxMediaLayerTrackIndex(ignoreLayerId = "") {
 
 function _editorResolveInsertTrackForUi(track) {
     const rawTrack = String(track || "").trim();
-    if (!rawTrack || rawTrack === "layer-video") return "video";
+    if (!rawTrack || rawTrack === "layer-video" || rawTrack === "video-0") return "video";
+    const segmentMatch = /^video-(\d+)$/i.exec(rawTrack);
+    if (segmentMatch) {
+        return Number(segmentMatch[1] || 0) <= 0 ? "video" : rawTrack;
+    }
     const match = /^layer-video-(\d+)$/i.exec(rawTrack);
     if (!match) return rawTrack;
-    return Number(match[1] || 0) <= 0 ? "video" : rawTrack;
+    return Number(match[1] || 0) <= 0 ? "video" : `video-${match[1]}`;
 }
 
 function _editorResetLayerLibraryState() {
@@ -27332,7 +27479,9 @@ function _editorGetConfiguredTransitionSlots() {
 
 function _editorResolveTransitionTrack(track) {
     const resolvedTrack = _editorResolveInsertTrackForUi(track || _editor.selectedInsertTrack || "");
-    return resolvedTrack === "video" ? "layer-video-0" : resolvedTrack;
+    if (resolvedTrack === "video") return "layer-video-0";
+    const match = /^video-(\d+)$/i.exec(resolvedTrack);
+    return match ? `layer-video-${match[1]}` : resolvedTrack;
 }
 
 function _editorFindPreferredTransitionSlot() {
@@ -28596,7 +28745,9 @@ function _editorSplitAtCurrentTime() {
     };
 
     const splitSegmentInTrack = (track, preferredId = "") => {
-        const targetTrack = track === "audio" ? "audio" : "video";
+        const targetTrack = _editorIsAudioTrack(track)
+            ? "audio"
+            : (_editorIsVideoTrack(track) ? String(track || "video") : "video");
         const segments = _editorGetSegments(targetTrack);
         let seg = preferredId
             ? segments.find(item => String(item.id) === String(preferredId))
@@ -28723,7 +28874,7 @@ function _editorSplitAtCurrentTime() {
         };
     };
 
-    const finalizeSplit = (selection, message) => {
+    const finalizeSplit = (selection) => {
         if (!changed) return false;
         if (segmentChanged) {
             _editorRecomputeTrimBounds();
@@ -28742,7 +28893,6 @@ function _editorSplitAtCurrentTime() {
             const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
             _editorDrawOverlays(currentTime);
         }
-        showToast(message, "success");
         return true;
     };
 
@@ -28752,7 +28902,7 @@ function _editorSplitAtCurrentTime() {
 
     if (selectedKind === "segment") {
         const splitSelection = splitSegmentInTrack(selectedTrack || "video", selectedId);
-        if (splitSelection && finalizeSplit(splitSelection, "Trecho dividido com sucesso.")) {
+        if (splitSelection && finalizeSplit(splitSelection)) {
             return;
         }
     }
@@ -28760,35 +28910,35 @@ function _editorSplitAtCurrentTime() {
     if (selectedKind === "media-layer") {
         const selectedLayer = _editorGetMediaLayerById(selectedId);
         const splitSelection = splitMediaLayer(selectedLayer);
-        if (splitSelection && finalizeSplit(splitSelection, "Camada de vídeo dividida com sucesso.")) {
+        if (splitSelection && finalizeSplit(splitSelection)) {
             return;
         }
     }
 
     if (selectedKind === "text") {
         const splitSelection = splitTimedOverlayById("text", _editor.texts, selectedId, (item) => `text-${item.id}`);
-        if (splitSelection && finalizeSplit(splitSelection, "Texto dividido com sucesso.")) {
+        if (splitSelection && finalizeSplit(splitSelection)) {
             return;
         }
     }
 
     if (selectedKind === "subtitle") {
         const splitSelection = splitTimedOverlayById("subtitle", _editor.subtitles, selectedId, () => "subtitle");
-        if (splitSelection && finalizeSplit(splitSelection, "Legenda dividida com sucesso.")) {
+        if (splitSelection && finalizeSplit(splitSelection)) {
             return;
         }
     }
 
     if (selectedKind === "sticker") {
         const splitSelection = splitTimedOverlayById("sticker", _editor.stickers, selectedId, (item) => `sticker-${item.id}`);
-        if (splitSelection && finalizeSplit(splitSelection, "Sticker dividido com sucesso.")) {
+        if (splitSelection && finalizeSplit(splitSelection)) {
             return;
         }
     }
 
     if (selectedKind === "music") {
         const splitSelection = splitSegmentInTrack("audio", "");
-        if (splitSelection && finalizeSplit(splitSelection, "Trecho de áudio dividido com sucesso.")) {
+        if (splitSelection && finalizeSplit(splitSelection)) {
             return;
         }
     }
@@ -28804,7 +28954,7 @@ function _editorSplitAtCurrentTime() {
             });
 
         const splitSelection = splitMediaLayer(layerOnTrack);
-        if (splitSelection && finalizeSplit(splitSelection, "Camada de vídeo dividida com sucesso.")) {
+        if (splitSelection && finalizeSplit(splitSelection)) {
             return;
         }
 
@@ -28815,7 +28965,7 @@ function _editorSplitAtCurrentTime() {
     if (insertTrack.startsWith("text-")) {
         const itemId = insertTrack.slice("text-".length);
         const splitSelection = splitTimedOverlayById("text", _editor.texts, itemId, (item) => `text-${item.id}`);
-        if (splitSelection && finalizeSplit(splitSelection, "Texto dividido com sucesso.")) {
+        if (splitSelection && finalizeSplit(splitSelection)) {
             return;
         }
         showToast("Posicione o playhead dentro de um trecho para cortar.", "error");
@@ -28824,7 +28974,7 @@ function _editorSplitAtCurrentTime() {
 
     if (insertTrack === "subtitle") {
         const splitSelection = splitTimedOverlayAtTime("subtitle", _editor.subtitles, () => "subtitle");
-        if (splitSelection && finalizeSplit(splitSelection, "Legenda dividida com sucesso.")) {
+        if (splitSelection && finalizeSplit(splitSelection)) {
             return;
         }
         showToast("Posicione o playhead dentro de um trecho para cortar.", "error");
@@ -28834,16 +28984,16 @@ function _editorSplitAtCurrentTime() {
     if (insertTrack.startsWith("sticker-")) {
         const itemId = insertTrack.slice("sticker-".length);
         const splitSelection = splitTimedOverlayById("sticker", _editor.stickers, itemId, (item) => `sticker-${item.id}`);
-        if (splitSelection && finalizeSplit(splitSelection, "Sticker dividido com sucesso.")) {
+        if (splitSelection && finalizeSplit(splitSelection)) {
             return;
         }
         showToast("Posicione o playhead dentro de um trecho para cortar.", "error");
         return;
     }
 
-    if (insertTrack === "audio" || insertTrack === "video") {
+    if (_editorIsAudioTrack(insertTrack) || _editorIsVideoTrack(insertTrack)) {
         const splitSelection = splitSegmentInTrack(insertTrack, "");
-        if (splitSelection && finalizeSplit(splitSelection, "Trecho dividido com sucesso.")) {
+        if (splitSelection && finalizeSplit(splitSelection)) {
             return;
         }
     }
@@ -28867,7 +29017,7 @@ function _editorSplitAtCurrentTime() {
         }
     });
 
-    if (!finalizeSplit(selectedSplit, `Trecho dividido em ${splitTargets.length} faixa(s).`)) {
+    if (!finalizeSplit(selectedSplit)) {
         showToast("Posicione o playhead dentro de um trecho para cortar.", "error");
     }
 }
@@ -29314,7 +29464,7 @@ function _editorApplyTrackSpeedChange(track = "video", nextSpeed = 1) {
     _editorRippleTrackFromSnapshot(track, snapshot, snapshot[0]?.id || "");
     _editorSortSegments(track);
 
-    if (track === "video") {
+    if (_editorIsVideoTrack(track)) {
         _editorRecomputeTrimBounds();
         _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     }
@@ -29374,7 +29524,7 @@ function _editorSetSelectedSegmentSpeed(value) {
     _editorRippleTrackFromSnapshot(track, snapshot, segment.id);
     _editorSortSegments(track);
 
-    if (track === "video") {
+    if (_editorIsVideoTrack(track)) {
         _editorRecomputeTrimBounds();
         _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
     }
@@ -29520,24 +29670,37 @@ function _editorRenderTimeline() {
     const sourceWaveLoadingClass = _editorSourceWaveformState.loading ? " loading" : "";
 
     _editorSortSegments("video");
-    const baseVideoClips = _editor.hideBaseVideoTrack ? "" : _editor.videoSegments.map((seg, idx) => {
-        const segStart = Math.max(0, Math.min(Number(seg.start || 0), dur));
-        const segEnd = Math.max(segStart + 0.05, Math.min(Number(seg.end || 0), dur));
-        const startPct = (segStart / dur) * 100;
-        const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
-        const selectedClass = (selectedKind === "segment" && selectedTrack === "video" && selectedId === String(seg.id))
-            || trackRowSelection.includes("video")
-            ? " selected"
-            : "";
-        const reversedClass = _editorSegmentIsReversed(seg) ? " clip-reversed" : "";
-        const hasWaveOverlay = Boolean(sourceVideoWaveStyle || _editorSourceWaveformState.loading);
-        const waveClass = hasWaveOverlay ? ` with-waveform${sourceWaveLoadingClass}` : "";
-        const styleParts = [`left:${startPct}%`, `width:${widthPct}%`];
-        if (sourceVideoWaveStyle) {
-            styleParts.push(sourceVideoWaveStyle);
-        }
-        return `<div class="editor-track-clip clip-video${waveClass}${selectedClass}${reversedClass}" data-kind="segment" data-track="video" data-id="${seg.id}" style="${styleParts.join(";")}">Video ${idx + 1}</div>`;
-    }).join("");
+    const baseVideoClipsByTrack = new Map();
+    if (!_editor.hideBaseVideoTrack) {
+        _editor.videoSegments.forEach((seg, idx) => {
+            const segStart = Math.max(0, Math.min(Number(seg.start || 0), dur));
+            const segEnd = Math.max(segStart + 0.05, Math.min(Number(seg.end || 0), dur));
+            const startPct = (segStart / dur) * 100;
+            const widthPct = Math.max(0.5, ((segEnd - segStart) / dur) * 100);
+            const trackIndex = _editorGetSegmentTrackIndex(seg);
+            const clipTrack = _editorTrackIdForSegmentIndex(trackIndex);
+            const trackSelected = trackRowSelection.includes(clipTrack);
+            const selectedClass = (selectedKind === "segment" && selectedTrack === clipTrack && selectedId === String(seg.id))
+                || trackSelected
+                ? " selected"
+                : "";
+            const reversedClass = _editorSegmentIsReversed(seg) ? " clip-reversed" : "";
+            const hasWaveOverlay = Boolean(sourceVideoWaveStyle || _editorSourceWaveformState.loading);
+            const waveClass = hasWaveOverlay ? ` with-waveform${sourceWaveLoadingClass}` : "";
+            const styleParts = [`left:${startPct}%`, `width:${widthPct}%`];
+            if (sourceVideoWaveStyle) {
+                styleParts.push(sourceVideoWaveStyle);
+            }
+
+            if (!baseVideoClipsByTrack.has(trackIndex)) {
+                baseVideoClipsByTrack.set(trackIndex, []);
+            }
+
+            baseVideoClipsByTrack.get(trackIndex).push(
+                `<div class="editor-track-clip clip-video${waveClass}${selectedClass}${reversedClass}" data-kind="segment" data-track="${clipTrack}" data-id="${seg.id}" style="${styleParts.join(";")}">Video ${idx + 1}</div>`
+            );
+        });
+    }
 
     const layerClipsByTrack = new Map();
     _editor.mediaLayers.forEach((layer, idx) => {
@@ -29552,8 +29715,9 @@ function _editorRenderTimeline() {
         const left = (start / dur) * 100;
         const width = Math.max(0.5, ((end - start) / dur) * 100);
         const trackIndex = _editorGetLayerTrackIndex(normalizedLayer);
+        const rowTrack = _editorTrackIdForSegmentIndex(trackIndex);
         const selectedClass = (selectedKind === "media-layer" && selectedId === String(normalizedLayer.id))
-            || (trackRowSelection.includes("video") && trackIndex === 0)
+            || trackRowSelection.includes(rowTrack)
             ? " selected"
             : "";
         const reversedClass = normalizedLayer.kind === "video" && normalizedLayer.reversed ? " clip-reversed" : "";
@@ -29568,26 +29732,30 @@ function _editorRenderTimeline() {
         layerClipsByTrack.get(trackIndex).push(clipHtml);
     });
 
-    const baseLayerClips = (layerClipsByTrack.get(0) || []).join("");
-    const baseLayerMarkers = (transitionMarkersByTrack.get("layer-video-0") || []).join("");
-    const videoClips = `${baseVideoClips}${baseLayerClips}${baseLayerMarkers}`;
-    rows.push({
-        track: "video",
-        kind: "video",
-        label: "Video",
-        contentId: "editor-track-video",
-        clipsHtml: videoClips,
+    const videoTrackIndexes = new Set([0]);
+    baseVideoClipsByTrack.forEach((_, trackIndex) => {
+        videoTrackIndexes.add(Number(trackIndex) || 0);
+    });
+    layerClipsByTrack.forEach((_, trackIndex) => {
+        videoTrackIndexes.add(Number(trackIndex) || 0);
     });
 
-    const extraLayerTrackIndexes = [...layerClipsByTrack.keys()]
-        .filter((trackIndex) => Number(trackIndex) > 0)
-        .sort((a, b) => a - b);
-    extraLayerTrackIndexes.forEach((trackIndex) => {
+    const maxVideoTrackIndex = _editorGetMaxVideoSegmentTrackIndex();
+    if (_editor.videoSegments.length > 1 || maxVideoTrackIndex > 0) {
+        videoTrackIndexes.add(maxVideoTrackIndex + 1);
+    }
+
+    [...videoTrackIndexes]
+        .sort((a, b) => a - b)
+        .forEach((trackIndex) => {
+        const rowTrack = _editorTrackIdForSegmentIndex(trackIndex);
+        const clipsHtml = `${(baseVideoClipsByTrack.get(trackIndex) || []).join("")}${(layerClipsByTrack.get(trackIndex) || []).join("")}${(transitionMarkersByTrack.get(`layer-video-${trackIndex}`) || []).join("")}`;
         rows.push({
-            track: `layer-video-${trackIndex}`,
-            kind: "media-layer",
-            label: `Camada ${Number(trackIndex) + 1}`,
-            clipsHtml: `${(layerClipsByTrack.get(trackIndex) || []).join("")}${(transitionMarkersByTrack.get(`layer-video-${trackIndex}`) || []).join("")}`,
+            track: rowTrack,
+            kind: "video",
+            label: trackIndex === 0 ? "Video" : `Video ${Number(trackIndex) + 1}`,
+            contentId: trackIndex === 0 ? "editor-track-video" : undefined,
+            clipsHtml,
         });
     });
 
@@ -29804,7 +29972,9 @@ function _editorShouldRenderAudioMasterClip() {
 }
 
 function _editorSplitSegmentAtTime(track = "video", timelineTime = 0, preferredId = "") {
-    const targetTrack = track === "audio" ? "audio" : "video";
+    const targetTrack = _editorIsAudioTrack(track)
+        ? "audio"
+        : (_editorIsVideoTrack(track) ? String(track || "video") : "video");
     const segments = _editorGetSegments(targetTrack);
     const safeTime = Math.max(0, Number(timelineTime || 0));
     const canSplitRange = (start, end) => safeTime > Number(start || 0) + 0.08 && safeTime < Number(end || 0) - 0.08;
@@ -29856,8 +30026,11 @@ function _editorShiftTrackSegmentsFrom(track = "video", threshold = 0, delta = 0
 function _editorResolveClipboardPasteTrack() {
     const selectedTrack = String(_editor.selectedClip.track || "");
     const sourceTrack = String(_editorClipboard.sourceTrack || "video");
-    if ((selectedTrack === "audio" || selectedTrack === "video") && selectedTrack === sourceTrack) {
-        return selectedTrack;
+    if (_editorIsAudioTrack(selectedTrack) && _editorIsAudioTrack(sourceTrack)) {
+        return "audio";
+    }
+    if (_editorIsVideoTrack(selectedTrack) && _editorIsVideoTrack(sourceTrack)) {
+        return selectedTrack || sourceTrack || "video";
     }
     return sourceTrack;
 }
@@ -29946,7 +30119,7 @@ function _editorBuildClipboardItemsFromSelection() {
 
 function _editorGetReversibleSelection() {
     const selected = _editor.selectedClip || {};
-    if (selected.kind === "segment" && selected.track === "video") {
+    if (selected.kind === "segment" && _editorIsVideoTrack(selected.track || "video")) {
         return { type: "segment", target: _editorFindVideoSegment(selected.id) };
     }
     if (selected.kind === "media-layer") {
@@ -30088,6 +30261,7 @@ function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
         _editor.selectedInsertTrack = "audio";
     } else if (kind === "segment") {
         _editor.selectedTracks = [normalizedTrack || "video"];
+        _editor.selectedInsertTrack = _editorResolveInsertTrackForUi(normalizedTrack || "video");
     } else if (normalizedTrack) {
         _editor.selectedInsertTrack = normalizedTrack;
     }
@@ -30152,8 +30326,9 @@ function _editorDeleteSelectedClip() {
     const selTrack = _editor.selectedClip.track || "video";
     if (selKind === "segment") {
         const trackSegments = _editorGetSegments(selTrack);
-        if (trackSegments.length <= 1) {
-            if (selTrack === "audio" && _editorShouldShowAudioTrack()) {
+        const segmentCount = _editorIsAudioTrack(selTrack) ? trackSegments.length : _editor.videoSegments.length;
+        if (segmentCount <= 1) {
+            if (_editorIsAudioTrack(selTrack) && _editorShouldShowAudioTrack()) {
                 _editorSaveState();
                 _editorClearExternalAudioTrack();
                 if (_editor.hideBaseVideoTrack) {
@@ -30181,7 +30356,7 @@ function _editorDeleteSelectedClip() {
         _editorSetSegments(selTrack, next);
         _editorSortSegments(selTrack);
         _editorRippleCloseGaps(selTrack);
-        if (selTrack === "video") {
+        if (_editorIsVideoTrack(selTrack)) {
             _editorRippleCloseGaps("audio");
             _editorRecomputeTrimBounds();
             _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
@@ -30260,7 +30435,7 @@ function _editorPasteClipboard() {
 
     if (items.every((item) => item.kind === "segment")) {
         const track = _editorResolveClipboardPasteTrack();
-        if (track === "audio") {
+        if (_editorIsAudioTrack(track)) {
             _editorRestoreClipboardAudioSource();
         }
 
@@ -30290,7 +30465,7 @@ function _editorPasteClipboard() {
 
         _editorSetSegments(track, _editorGetSegments(track).concat(insertedSegments));
         _editorSortSegments(track);
-        if (track === "video") {
+        if (_editorIsVideoTrack(track)) {
             _editorRecomputeTrimBounds();
             _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
         }
@@ -30440,7 +30615,10 @@ function _editorTimelineCanDrag(kind) {
     return ["segment", "text", "subtitle", "sticker", "media-layer"].includes(kind);
 }
 
-function _editorTimelineCanResize(kind) {
+function _editorTimelineCanResize(kind, track = "") {
+    if (kind === "segment") {
+        return _editorIsVideoTrack(track);
+    }
     return ["text", "subtitle", "media-layer"].includes(kind);
 }
 
@@ -30468,17 +30646,31 @@ function _editorGetTimelineRange(kind, id, track = "") {
     return null;
 }
 
-function _editorApplyDraggedRange(kind, id, start, end, track = "") {
+function _editorApplyDraggedRange(kind, id, start, end, track = "", options = {}) {
     if (kind === "segment") {
-        const targetTrack = track || "video";
+        const targetTrack = _editorIsAudioTrack(track)
+            ? "audio"
+            : (_editorIsVideoTrack(track) ? String(track || "video") : "video");
         const item = _editorFindSegment(targetTrack, id);
         if (!item) return;
         _editorEnsureSegmentSourceStart(item);
         _editorEnsureSegmentSourceDuration(item);
-        const span = Math.max(0.1, end - start);
-        const [clampedStart, clampedEnd] = _editorClampSegmentRange(targetTrack, id, start, span);
-        _editorApplySegmentTimelineBounds(item, clampedStart, clampedEnd);
-        if (targetTrack === "video") {
+
+        if (_editorIsVideoTrack(targetTrack)) {
+            item.trackIndex = _editorParseSegmentTrackId(targetTrack, _editorGetSegmentTrackIndex(item));
+        }
+
+        const dragMode = String(options.mode || "move");
+        if (_editorIsVideoTrack(targetTrack) && (dragMode === "resize-start" || dragMode === "resize-end")) {
+            const [clampedStart, clampedEnd] = _editorClampSegmentResizeBounds(targetTrack, id, start, end, dragMode);
+            _editorApplySegmentSpeedResize(item, clampedStart, clampedEnd, dragMode);
+        } else {
+            const span = Math.max(0.1, end - start);
+            const [clampedStart, clampedEnd] = _editorClampSegmentRange(targetTrack, id, start, span);
+            _editorApplySegmentTimelineBounds(item, clampedStart, clampedEnd);
+        }
+
+        if (_editorIsVideoTrack(targetTrack)) {
             _editorRecomputeTrimBounds();
             _editorSyncAudioSegmentsWithVideoIfNoExternalAudio();
         }
@@ -30546,14 +30738,14 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
 
     const baseSpan = Math.max(0.1, range.end - range.start);
     const timelineDuration = _editorGetTimelineDuration();
-    const extendedLayerDuration = Math.max(
+    const extendedTrackDuration = Math.max(
         timelineDuration,
         range.end,
         timelineDuration + baseSpan + 30
     );
 
     let mode = "move";
-    if (_editorTimelineCanResize(kind) && frozenClipRect) {
+    if (_editorTimelineCanResize(kind, track) && frozenClipRect) {
         const localX = event.clientX - frozenClipRect.left;
         const edgeSize = Math.max(6, Math.min(14, frozenClipRect.width * 0.2));
         if (localX <= edgeSize) {
@@ -30565,18 +30757,26 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
 
     const baseTrackIndex = kind === "media-layer"
         ? _editorParseLayerTrackId(track, _editorGetLayerTrackIndex(_editorGetMediaLayerById(id)))
+        : kind === "segment"
+            ? _editorParseSegmentTrackId(track, _editorGetSegmentTrackIndex(_editorFindSegment(track, id)))
         : 0;
 
     _editorTimelineDrag = {
         kind,
         id,
-        track: kind === "media-layer" ? `layer-video-${baseTrackIndex}` : track,
+        track: kind === "media-layer"
+            ? `layer-video-${baseTrackIndex}`
+            : kind === "segment" && _editorIsVideoTrack(track)
+                ? _editorTrackIdForSegmentIndex(baseTrackIndex)
+                : track,
         mode,
         startX: event.clientX,
         startY: event.clientY,
         baseTrackIndex,
         trackWidth: stableTrackWidth,
-        duration: kind === "media-layer" ? extendedLayerDuration : Math.max(_editor.duration, 0.1),
+        duration: (kind === "media-layer" || (kind === "segment" && _editorIsVideoTrack(track)))
+            ? extendedTrackDuration
+            : Math.max(_editor.duration, 0.1),
         baseStart: range.start,
         baseEnd: range.end,
         minDuration: kind === "sticker" ? 0.5 : 0.2,
@@ -30651,15 +30851,9 @@ function _editorOnTimelineDragMove(event) {
     if (drag.mode === "resize-start") {
         const maxStart = drag.baseEnd - drag.minDuration;
         nextStart = Math.max(0, Math.min(maxStart, drag.baseStart + deltaSec));
-        if (drag.kind === "segment") {
-            nextStart = Math.max(drag.baseStart, nextStart);
-        }
     } else if (drag.mode === "resize-end") {
         const minEnd = drag.baseStart + drag.minDuration;
         nextEnd = Math.max(minEnd, Math.min(drag.duration, drag.baseEnd + deltaSec));
-        if (drag.kind === "segment") {
-            nextEnd = Math.min(drag.baseEnd, nextEnd);
-        }
     } else {
         const maxStart = Math.max(0, drag.duration - baseSpan);
         nextStart = Math.max(0, Math.min(maxStart, drag.baseStart + deltaSec));
@@ -30687,6 +30881,24 @@ function _editorOnTimelineDragMove(event) {
                     }
                 }
             }
+        } else if (drag.kind === "segment" && _editorIsVideoTrack(drag.track)) {
+            const segment = _editorFindSegment(drag.track, drag.id);
+            if (segment) {
+                const rowStepPx = 44;
+                const rowDelta = Math.round(dy / rowStepPx);
+                const maxTrackIndex = _editorGetMaxVideoSegmentTrackIndex(drag.id) + 1;
+                const nextTrackIndex = Math.max(0, Math.min(maxTrackIndex, drag.baseTrackIndex + rowDelta));
+                const nextTrack = _editorTrackIdForSegmentIndex(nextTrackIndex);
+                if (_editorGetSegmentTrackIndex(segment) !== nextTrackIndex) {
+                    segment.trackIndex = nextTrackIndex;
+                    drag.track = nextTrack;
+                    if (_editor.selectedClip.kind === "segment" && String(_editor.selectedClip.id) === String(drag.id)) {
+                        _editor.selectedClip.track = nextTrack;
+                        _editor.selectedTracks = [nextTrack];
+                        _editor.selectedInsertTrack = _editorResolveInsertTrackForUi(nextTrack);
+                    }
+                }
+            }
         }
     }
 
@@ -30698,7 +30910,7 @@ function _editorOnTimelineDragMove(event) {
         drag.saved = true;
     }
 
-    _editorApplyDraggedRange(drag.kind, drag.id, nextStart, nextEnd, drag.track);
+    _editorApplyDraggedRange(drag.kind, drag.id, nextStart, nextEnd, drag.track, { mode: drag.mode });
     _editorRenderTimeline();
     const video = document.getElementById("editor-video");
     const previewTime = Number(_editor.timelineTime || video?.currentTime || 0);
@@ -30835,16 +31047,34 @@ async function _editorExport() {
         trim_start: _editor.trimStart,
         trim_end: _editor.trimEnd,
         trim_video_segments: _editor.videoSegments
-            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg), reversed: _editorSegmentIsReversed(seg), speed: _editorSegmentPlaybackSpeed(seg) }))
-            .sort((a, b) => a.start - b.start)
+            .map(seg => ({
+                start: _editorSegSourceStart(seg),
+                end: _editorSegSourceEnd(seg),
+                reversed: _editorSegmentIsReversed(seg),
+                speed: _editorSegmentPlaybackSpeed(seg),
+                timeline_start: Number(seg.start || 0),
+            }))
+            .sort((a, b) => (a.timeline_start - b.timeline_start) || (a.start - b.start))
             .filter(seg => seg.end > seg.start + 0.05),
         trim_audio_segments: _editor.audioSegments
-            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg), reversed: _editorSegmentIsReversed(seg), speed: _editorSegmentPlaybackSpeed(seg) }))
-            .sort((a, b) => a.start - b.start)
+            .map(seg => ({
+                start: _editorSegSourceStart(seg),
+                end: _editorSegSourceEnd(seg),
+                reversed: _editorSegmentIsReversed(seg),
+                speed: _editorSegmentPlaybackSpeed(seg),
+                timeline_start: Number(seg.start || 0),
+            }))
+            .sort((a, b) => (a.timeline_start - b.timeline_start) || (a.start - b.start))
             .filter(seg => seg.end > seg.start + 0.05),
         trim_segments: _editor.videoSegments
-            .map(seg => ({ start: _editorSegSourceStart(seg), end: _editorSegSourceEnd(seg), reversed: _editorSegmentIsReversed(seg), speed: _editorSegmentPlaybackSpeed(seg) }))
-            .sort((a, b) => a.start - b.start)
+            .map(seg => ({
+                start: _editorSegSourceStart(seg),
+                end: _editorSegSourceEnd(seg),
+                reversed: _editorSegmentIsReversed(seg),
+                speed: _editorSegmentPlaybackSpeed(seg),
+                timeline_start: Number(seg.start || 0),
+            }))
+            .sort((a, b) => (a.timeline_start - b.timeline_start) || (a.start - b.start))
             .filter(seg => seg.end > seg.start + 0.05),
         filter: _editor.filter,
         quality: _editor.quality,
@@ -30996,7 +31226,6 @@ async function _editorExport() {
                         document.body.removeChild(link);
                     }
 
-                    closeEditor();
                     loadEditorVideosList();
                     loadProjects();
                 } else if (poll.status === "failed") {
