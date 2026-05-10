@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v415 loaded");
+console.log("[CriaVideo] app.js v416 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -21583,6 +21583,8 @@ const _EDITOR_TIMELINE_MIN_ZOOM = 0.5;
 const _EDITOR_TIMELINE_MAX_ZOOM = 12;
 const _EDITOR_TIMELINE_ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12];
 const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
+const _EDITOR_TIMELINE_LABEL_WIDTH = 40;
+const _EDITOR_TIMELINE_RIGHT_GUTTER = 16;
 const _EDITOR_SEGMENT_SPEED_MIN = 0.25;
 const _EDITOR_SEGMENT_SPEED_MAX = 4;
 const _EDITOR_SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -22003,8 +22005,8 @@ function _editorRenderDraftBulkBar() {
             </label>
         </div>
         ${selectedCount ? `
-            <button class="btn btn-secondary btn-sm editor-draft-delete-selected" type="button" onclick="_editorDeleteSelectedDraftProjects()" ${_editorDraftCardDeleting ? "disabled" : ""}>
-                Excluir selecionados
+            <button class="btn btn-secondary btn-sm editor-draft-delete-selected" type="button" onclick="_editorDeleteSelectedDraftProjects()" ${_editorDraftCardDeleting ? "disabled" : ""} aria-label="Excluir selecionados" title="Excluir selecionados">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
             </button>
         ` : ""}
     `;
@@ -24007,18 +24009,19 @@ async function loadEditorVideosList() {
             _editorGetSavedDraftProjects().map((draft) => [Number(draft.projectId || 0), draft])
         );
         const editProjects = data.filter(_projectVisibleInEditorList);
-        _editorDraftCardProjectIds = editProjects
+        const draftProjects = editProjects.filter((project) => draftsByProjectId.has(Number(project?.id || 0)));
+        _editorDraftCardProjectIds = draftProjects
             .map((project) => Number(project?.id || 0))
             .filter((projectId) => draftsByProjectId.has(projectId));
         _editorNormalizeDraftCardSelection(_editorDraftCardProjectIds);
-        if (!editProjects.length) {
+        if (!draftProjects.length) {
             _editorDraftCardProjectIds = [];
             _editorDraftCardSelection = [];
-            container.innerHTML = "<p class='loading'>Nenhuma edição em andamento ainda. Use o botão + para começar uma nova edição.</p>";
+            container.innerHTML = "<p class='loading'>Nenhum rascunho salvo ainda. Use o botão + para começar uma nova edição.</p>";
             _editorRenderDraftBulkBar();
             return;
         }
-        container.innerHTML = editProjects.map((project) => {
+        container.innerHTML = draftProjects.map((project) => {
             const projectId = Number(project.id || 0);
             const draft = draftsByProjectId.get(projectId) || null;
             const rawTitle = String(project.title || project.track_title || `Projeto ${projectId}`);
@@ -27235,7 +27238,7 @@ function _editorGetTimelineTrackWidth(durationSec = 0) {
     const timelineEl = document.getElementById("editor-timeline");
     const parentWidth = Number(timelineEl?.parentElement?.clientWidth || 0);
     const viewportWidth = parentWidth > 0 ? parentWidth : Number(timelineEl?.clientWidth || 0);
-    const viewportTrackWidth = Math.max(560, viewportWidth - 96);
+    const viewportTrackWidth = Math.max(560, viewportWidth - (_EDITOR_TIMELINE_LABEL_WIDTH + _EDITOR_TIMELINE_RIGHT_GUTTER));
     const zoom = _editorClampTimelineZoom(_editor.timelineZoom || 1);
     const baseWidth = Math.max(420, viewportTrackWidth);
     return Math.round(baseWidth * zoom);
@@ -27255,7 +27258,7 @@ function _editorCenterTimelineOnTime(timeSec) {
         if (!timelineDuration) return;
         const trackWidth = Math.max(document.getElementById("editor-track-video")?.offsetWidth || 0, _editorGetTimelineTrackWidth(timelineDuration));
         const safeTime = Math.max(0, Math.min(timelineDuration, Number(timeSec || 0)));
-        const x = 80 + (safeTime / timelineDuration) * trackWidth;
+        const x = _EDITOR_TIMELINE_LABEL_WIDTH + (safeTime / timelineDuration) * trackWidth;
         const targetScroll = Math.max(0, Math.min(timelineEl.scrollWidth - timelineEl.clientWidth, x - (timelineEl.clientWidth / 2)));
         timelineEl.scrollLeft = targetScroll;
     });
@@ -27268,12 +27271,12 @@ function _editorPreserveTimelineFocusViewport(focusTime, previousTrackWidth = 0)
 
     const safeFocus = Math.max(0, Math.min(timelineDuration, Number(focusTime || 0)));
     const oldTrackWidth = Math.max(1, Number(previousTrackWidth || _editorGetTimelineTrackWidth(timelineDuration)));
-    const oldFocusX = 80 + ((safeFocus / timelineDuration) * oldTrackWidth);
+    const oldFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + ((safeFocus / timelineDuration) * oldTrackWidth);
     const viewportOffset = oldFocusX - Number(timelineEl.scrollLeft || 0);
 
     requestAnimationFrame(() => {
         const nextTrackWidth = Math.max(1, _editorGetTimelineTrackWidth(timelineDuration));
-        const nextFocusX = 80 + ((safeFocus / timelineDuration) * nextTrackWidth);
+        const nextFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + ((safeFocus / timelineDuration) * nextTrackWidth);
         const maxScroll = Math.max(0, timelineEl.scrollWidth - timelineEl.clientWidth);
         const targetScroll = Math.max(0, Math.min(maxScroll, nextFocusX - viewportOffset));
         timelineEl.scrollLeft = targetScroll;
@@ -27533,7 +27536,7 @@ function _editorMovePlayhead(t) {
     const safeTime = Math.max(0, Math.min(timelineDuration, t || 0));
     const pct = timelineDuration > 0 ? (safeTime / timelineDuration) : 0;
     const x = Math.max(0, Math.min(trackWidth - 2, pct * trackWidth));
-    playhead.style.left = (80 + x) + "px";
+    playhead.style.left = (_EDITOR_TIMELINE_LABEL_WIDTH + x) + "px";
 }
 
 function _editorClampToVideoSegments(timeSec) {
@@ -30020,7 +30023,7 @@ function _editorRenderTimeline() {
     const trackRowSelection = selectedKind === "track" ? _editorGetSelectedSegmentTracks() : [];
     const rows = [];
     const trackW = _editorGetTimelineTrackWidth(dur);
-    const timelineInnerWidth = Math.max(120, Math.round(40 + trackW + 16));
+    const timelineInnerWidth = Math.max(120, Math.round(_EDITOR_TIMELINE_LABEL_WIDTH + trackW + _EDITOR_TIMELINE_RIGHT_GUTTER));
     const transitionMarkersByTrack = new Map();
 
     if (dur > 0.05) {
@@ -30309,9 +30312,9 @@ function _editorRenderTimeline() {
         const tickClass = showLabel ? " major" : "";
         if (showLabel) {
             const minuteClass = dur >= 600 && step >= 60 ? " minute" : "";
-            rulerHtml += `<span class="editor-ruler-mark${minuteClass}" style="left:${80 + pct}px">${_editorFormatRulerTime(t, dur, step)}</span>`;
+            rulerHtml += `<span class="editor-ruler-mark${minuteClass}" style="left:${_EDITOR_TIMELINE_LABEL_WIDTH + pct}px">${_editorFormatRulerTime(t, dur, step)}</span>`;
         }
-        rulerHtml += `<span class="editor-ruler-tick${tickClass}" style="left:${80 + pct}px"></span>`;
+        rulerHtml += `<span class="editor-ruler-tick${tickClass}" style="left:${_EDITOR_TIMELINE_LABEL_WIDTH + pct}px"></span>`;
     });
     ruler.innerHTML = rulerHtml;
 

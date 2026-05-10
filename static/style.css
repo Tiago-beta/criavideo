@@ -12282,7 +12282,7 @@ th,
     background: rgba(0,0,0,0.2);
     display: flex;
     align-items: flex-end;
-    padding: 0 76px 0 80px;
+    padding: 0 76px 0 40px;
     position: relative;
     border-bottom: 1px solid var(--border);
 }
@@ -12739,31 +12739,33 @@ th,
 
 /* ── Editor video selection cards ── */
 .editor-draft-bulk-bar {
-    margin: 0.25rem 0 1rem;
-    padding: 0.8rem 0.95rem;
+    margin: 0.25rem 0 1rem auto;
+    padding: 0.42rem 0.55rem;
     border: 1px solid rgba(246, 210, 124, 0.22);
-    border-radius: 14px;
+    border-radius: 999px;
     background: rgba(15, 37, 59, 0.72);
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.9rem;
-    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.45rem;
+    flex-wrap: nowrap;
+    width: fit-content;
+    max-width: calc(100% - 8px);
 }
 
 .editor-draft-bulk-left {
     display: flex;
     align-items: center;
-    gap: 0.9rem;
-    flex-wrap: wrap;
+    gap: 0.45rem;
+    flex-wrap: nowrap;
 }
 
 .editor-draft-bulk-check {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
     color: var(--text);
-    font-size: 0.86rem;
+    font-size: 0.8rem;
     cursor: pointer;
 }
 
@@ -12781,6 +12783,14 @@ th,
 .editor-draft-delete-selected {
     border-color: rgba(255, 122, 108, 0.28);
     color: #ffb4aa;
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    padding: 0;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .editor-draft-delete-selected:hover {
@@ -12973,15 +12983,15 @@ th,
 /* ── Responsive: mobile editor ── */
 @media (max-width: 768px) {
     .editor-draft-bulk-bar {
-        align-items: stretch;
+        margin-left: auto;
     }
 
     .editor-draft-bulk-left {
-        width: 100%;
+        width: auto;
     }
 
     .editor-draft-delete-selected {
-        width: 100%;
+        width: 34px;
     }
 
     #page-editor:has(.editor-workspace:not([hidden])),
