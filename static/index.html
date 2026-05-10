@@ -1918,18 +1918,33 @@
                             <small class="field-hint">Aceita URL pública de vídeo. Clique em Verificar para baixar, medir a duração e liberar o custo antes da análise.</small>
                         </div>
 
-                        <div class="form-group similar-source-upload-group">
-                            <button id="similar-source-upload-trigger" class="similar-upload-card" type="button" aria-label="Enviar vídeo do aparelho">
-                                <span class="similar-upload-card-icon" aria-hidden="true">
-                                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="16"/></svg>
-                                </span>
-                            </button>
-                            <div id="similar-source-file-row" class="similar-upload-meta-row" hidden>
-                                <div class="similar-upload-loaded-copy">
-                                    <span id="similar-source-file-name"></span>
+                        <div class="similar-source-meta-row">
+                            <div class="form-group similar-source-upload-group">
+                                <button id="similar-source-upload-trigger" class="similar-upload-card" type="button" aria-label="Enviar vídeo do aparelho">
+                                    <span class="similar-upload-card-icon" aria-hidden="true">
+                                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="16"/></svg>
+                                    </span>
+                                </button>
+                                <div id="similar-source-file-row" class="similar-upload-meta-row" hidden>
+                                    <div class="similar-upload-loaded-copy">
+                                        <span id="similar-source-file-name"></span>
+                                    </div>
+                                </div>
+                                <small class="field-hint">Formatos aceitos: MP4, MOV, AVI, WEBM e MKV.</small>
+                            </div>
+
+                            <div class="wizard-details-grid similar-details-grid">
+                                <div class="form-group">
+                                    <input id="similar-title" type="text" class="input" placeholder="Título do projeto">
+                                </div>
+                                <div class="form-group">
+                                    <select id="similar-aspect" class="input">
+                                        <option value="16:9">16:9 (YouTube)</option>
+                                        <option value="9:16">9:16 (TikTok/Reels)</option>
+                                        <option value="1:1">1:1 (Instagram)</option>
+                                    </select>
                                 </div>
                             </div>
-                            <small class="field-hint">Formatos aceitos: MP4, MOV, AVI, WEBM e MKV.</small>
                         </div>
                     </div>
 
@@ -1944,43 +1959,37 @@
                         <small id="similar-source-preview-hint" class="field-hint" hidden></small>
                     </div>
 
-                    <div class="wizard-details-grid similar-details-grid">
-                        <div class="form-group">
-                            <input id="similar-title" type="text" class="input" placeholder="Título do projeto">
-                        </div>
-                        <div class="form-group">
-                            <select id="similar-aspect" class="input">
-                                <option value="16:9">16:9 (YouTube)</option>
-                                <option value="9:16">9:16 (TikTok/Reels)</option>
-                                <option value="1:1">1:1 (Instagram)</option>
-                            </select>
-                        </div>
-                    </div>
-
                     <div class="similar-panel-actions">
                         <button class="btn btn-secondary" id="similar-back" type="button">Voltar</button>
-                        <div class="similar-panel-actions-right">
-                            <div class="similar-analysis-preflight">
-                                <button class="btn btn-secondary" id="similar-verify-source" type="button">
+                        <div class="similar-panel-actions-right" id="similar-analysis-toolbar">
+                            <button class="btn btn-secondary" id="similar-verify-source" type="button">
+                                <span class="similar-analysis-btn-main">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
                                     <span id="similar-verify-source-label">Verificar vídeo</span>
-                                </button>
-                                <p class="similar-analysis-verify-note" id="similar-source-verify-note">Verifique o vídeo para liberar os custos antes de analisar.</p>
-                            </div>
+                                </span>
+                            </button>
                             <div class="similar-analysis-actions" id="similar-analysis-actions" hidden>
                                 <div class="similar-analysis-action">
                                     <button class="btn btn-secondary" id="similar-start-analysis-general" type="button">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M3 12h18"/></svg>
-                                        Analisar geral
+                                        <span class="similar-analysis-btn-main">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M3 12h18"/></svg>
+                                            <span>Analisar geral</span>
+                                        </span>
+                                        <span class="similar-analysis-btn-foot">
+                                            <span class="similar-analysis-credit" id="similar-general-analysis-estimate" hidden></span>
+                                        </span>
                                     </button>
-                                    <div class="credit-estimate-pill similar-analysis-estimate" id="similar-general-analysis-estimate" hidden>Calculando custo...</div>
                                 </div>
                                 <div class="similar-analysis-action">
                                     <button class="btn btn-primary" id="similar-start-analysis-scenes" type="button">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
-                                        Analisar por cena
+                                        <span class="similar-analysis-btn-main">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+                                            <span>Analisar por cena</span>
+                                        </span>
+                                        <span class="similar-analysis-btn-foot">
+                                            <span class="similar-analysis-credit" id="similar-scene-analysis-estimate" hidden></span>
+                                        </span>
                                     </button>
-                                    <div class="credit-estimate-pill similar-analysis-estimate" id="similar-scene-analysis-estimate" hidden>Calculando custo...</div>
                                 </div>
                             </div>
                             <button class="btn btn-secondary similar-unified-trigger" id="similar-build-unified-prompt" type="button" title="Transformar a analise em um prompt unico" hidden>

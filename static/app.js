@@ -2845,8 +2845,15 @@ function _getSimilarCurrentSourceKey() {
 }
 
 function _hideSimilarAnalysisEstimateBadges() {
-    _setCreditEstimateBadge("similar-general-analysis-estimate", "", "ready", true);
-    _setCreditEstimateBadge("similar-scene-analysis-estimate", "", "ready", true);
+    _setSimilarAnalysisCreditLabel("similar-general-analysis-estimate", "", true);
+    _setSimilarAnalysisCreditLabel("similar-scene-analysis-estimate", "", true);
+}
+
+function _setSimilarAnalysisCreditLabel(targetId, message = "", hidden = false) {
+    const el = document.getElementById(targetId);
+    if (!el) return;
+    el.hidden = !!hidden || !String(message || "").trim();
+    el.textContent = hidden ? "" : String(message || "").trim();
 }
 
 function _formatSimilarSourceDurationLabel(seconds) {
@@ -2873,7 +2880,6 @@ function _syncSimilarAnalysisGateUi() {
     const verificationStatus = String(similarState.sourceVerificationStatus || "idle").trim() || "idle";
     const verifyBtn = document.getElementById("similar-verify-source");
     const verifyLabelEl = document.getElementById("similar-verify-source-label");
-    const verifyNoteEl = document.getElementById("similar-source-verify-note");
     const analysisActionsEl = document.getElementById("similar-analysis-actions");
     const sourceInputEl = document.getElementById("similar-source-url");
     const sourceUploadTriggerEl = document.getElementById("similar-source-upload-trigger");
@@ -2881,17 +2887,15 @@ function _syncSimilarAnalysisGateUi() {
     const generalBtn = document.getElementById("similar-start-analysis-general");
     const sceneBtn = document.getElementById("similar-start-analysis-scenes");
     const isVerified = _isSimilarSourceVerified();
-    const durationLabel = _formatSimilarSourceDurationLabel(similarState.sourceVideoDurationSeconds);
     const isLocked = !!similarState.controlsLocked;
 
     if (verifyLabelEl) {
         verifyLabelEl.textContent = verificationStatus === "pending"
             ? "Verificando..."
-            : isVerified
-                ? "Verificar novamente"
-                : "Verificar video";
+            : "Verificar vídeo";
     }
     if (verifyBtn) {
+        verifyBtn.hidden = isVerified;
         verifyBtn.disabled = isLocked || !hasSource || verificationStatus === "pending";
     }
     if (sourceInputEl) {
@@ -2911,24 +2915,6 @@ function _syncSimilarAnalysisGateUi() {
     }
     if (analysisActionsEl) {
         analysisActionsEl.hidden = !isVerified;
-    }
-
-    if (verifyNoteEl) {
-        let noteText = "";
-        if (!hasSource) {
-            noteText = "Cole um link ou envie um video antes de verificar.";
-        } else if (verificationStatus === "pending") {
-            noteText = similarState.sourceVerificationMessage || "Baixando o video e lendo a duracao para calcular o custo...";
-        } else if (isVerified) {
-            noteText = durationLabel
-                ? `Video verificado. Duracao detectada: ${durationLabel}. Escolha o tipo de analise.`
-                : "Video verificado. Escolha o tipo de analise.";
-        } else if (verificationStatus === "error") {
-            noteText = similarState.sourceVerificationMessage || "Nao foi possivel verificar o video.";
-        } else {
-            noteText = "Verifique o video para liberar os custos antes de analisar.";
-        }
-        verifyNoteEl.textContent = noteText;
     }
 
     if (!isVerified) {
@@ -3070,30 +3056,32 @@ function _resolveSimilarAnalysisDurationSeconds() {
 
 async function updateSimilarAnalysisCreditEstimate(analysisMode, badgeId) {
     if (!_hasSimilarAnalysisSource() || !_isSimilarSourceVerified()) {
-        _setCreditEstimateBadge(badgeId, "", "ready", true);
+        _setSimilarAnalysisCreditLabel(badgeId, "", true);
         return;
     }
 
     const durationSeconds = _resolveSimilarAnalysisDurationSeconds();
     if (!(durationSeconds > 0.05)) {
-        const durationStatus = String(similarState.sourceVideoDurationStatus || "idle").trim();
-        const message = durationStatus === "pending"
-            ? "Lendo duracao do video..."
-            : "Custo exibido quando a duracao estiver disponivel";
-        _setCreditEstimateBadge(badgeId, message, durationStatus === "pending" ? "loading" : "ready");
+        _setSimilarAnalysisCreditLabel(badgeId, "", true);
         return;
     }
 
-    await _refreshCreditEstimate(
-        `similar-analysis-${analysisMode}`,
-        badgeId,
-        {
+    try {
+        const estimate = await _fetchCreditEstimate({
             mode: "similar-analysis",
             duration_seconds: durationSeconds,
             analysis_mode: analysisMode,
-        },
-        (creditsNeeded) => `${analysisMode === "general" ? "Custo geral" : "Custo por cena"}: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
-    );
+        });
+        const creditsNeeded = _extractEstimateCredits(estimate);
+        _latestCreditEstimate[`similar-analysis-${analysisMode}`] = estimate;
+        _setSimilarAnalysisCreditLabel(
+            badgeId,
+            creditsNeeded > 0 ? `${_formatCreditsInt(creditsNeeded)} créditos` : "",
+            !(creditsNeeded > 0),
+        );
+    } catch {
+        _setSimilarAnalysisCreditLabel(badgeId, "", true);
+    }
 }
 
 function scheduleSimilarAnalysisCreditEstimates() {
@@ -9425,7 +9413,9 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         const rawStage = String(tags.similar_stage || "").trim();
         const stage = _resolveSimilarBusyStage(rawStage, status) || rawStage;
         const lockGlobalUi = isProcessing && !["generating_scene", "regenerating_scene"].includes(stage);
-        const stageLabel = SIMILAR_STAGE_LABELS[stage] || "Processando modo semelhante...";
+        const stageLabel = stage === "downloading_reference" && String(tags.similar_source_type || "").trim().toLowerCase() === "upload"
+            ? "Preparando video de referencia..."
+            : SIMILAR_STAGE_LABELS[stage] || "Processando modo semelhante...";
         const detectedMode = _resolveSimilarDetectedMode(tags);
         const detectedModeLabel = SIMILAR_DETECTED_MODE_LABELS[detectedMode] || "";
 
@@ -9647,10 +9637,7 @@ async function similarVerifySource() {
         similarState.verifiedSourceKey = currentSourceKey;
         similarState.sourceVerificationStatus = "ready";
         similarState.sourceVerificationMessage = "";
-        _setSimilarStatus(
-            `Video verificado. Duracao detectada: ${_formatSimilarSourceDurationLabel(durationSeconds)}. Escolha o tipo de analise.`,
-            "success",
-        );
+        _setSimilarStatus("", "running");
     } catch (error) {
         if (similarState.sourceVerificationToken !== verificationToken) return;
         similarState.sourceVerificationStatus = "error";
@@ -9712,9 +9699,7 @@ async function similarStartAnalysis(analysisMode = "scene") {
         if (verifiedUploadId) {
             payload.source_upload_id = verifiedUploadId;
             payload.source_upload_name = String(similarState.verifiedSourceName || "video").trim() || "video";
-            if (!payload.source_url) {
-                payload.source_url = String(similarState.verifiedSourceUrl || "").trim();
-            }
+            payload.source_url = "";
             _setSimilarStatus(`Iniciando ${analysisLabel} do video verificado...`, "running");
         } else if (sourceFile) {
             _setSimilarStatus(`Enviando video verificado para ${analysisLabel}...`, "running");
