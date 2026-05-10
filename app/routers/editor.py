@@ -2911,6 +2911,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             # First uploaded layer stays on top, so overlays are applied from last to first.
             for step, layer in enumerate(reversed(visual_layers)):
                 src_label = f"l{step}_src"
+                lay_label = f"l{step}"
+                ref_label = f"vref{step}"
                 out_label = f"vout{step}"
                 render_width, render_height, left_px, top_px = _resolve_editor_layer_canvas_box(
                     output_width,
@@ -2932,20 +2934,19 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     )
                     if layer.get("reversed"):
                         layer_video_chain += ",reverse,setpts=PTS-STARTPTS"
-                    layer_video_chain += (
-                        f",scale={render_width}:{render_height}:flags=lanczos"
-                        f",setpts=PTS-STARTPTS+{layer['start_time']:.6f}/TB[{src_label}]"
-                    )
+                    layer_video_chain += f",setpts=PTS-STARTPTS+{layer['start_time']:.6f}/TB[{src_label}]"
                     overlay_parts.append(layer_video_chain)
                 else:
-                    overlay_parts.append(
-                        f"[{layer['input_idx']}:v]"
-                        f"scale={render_width}:{render_height}:flags=lanczos,"
-                        f"setpts=PTS-STARTPTS[{src_label}]"
-                    )
+                    overlay_parts.append(f"[{layer['input_idx']}:v]setpts=PTS-STARTPTS[{src_label}]")
+
+                overlay_parts.append(
+                    f"[{src_label}]{current_video_label}"
+                    f"scale2ref=w={render_width}:h={render_height}:flags=lanczos"
+                    f"[{lay_label}][{ref_label}]"
+                )
 
                 overlay_expr = (
-                    f"{current_video_label}[{src_label}]overlay="
+                    f"[{ref_label}][{lay_label}]overlay="
                     f"x={left_px}:"
                     f"y={top_px}:"
                     f"enable='between(t,{layer['start_time']:.6f},{layer['end_time']:.6f})':"

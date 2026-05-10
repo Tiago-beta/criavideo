@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v412 loaded");
+console.log("[CriaVideo] app.js v413 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -23751,35 +23751,55 @@ async function _editorResolveAudioDurationSeconds(url = "", fallbackDuration = 0
 }
 
 async function _editorApplyImportedAudioTrack({ musicUrl = "", musicFile = null, serverPath = "", source = "audio" } = {}) {
-    const resolvedUrl = String(musicUrl || "").trim();
-    if (!resolvedUrl) return;
+    if (!_editor.projectId) {
+        throw new Error("Abra um projeto no editor antes de adicionar audio.");
+    }
+
+    const fallbackDuration = Math.max(0.1, Number(_editorGetTimelineDuration() || _editor.duration || 0.1));
+    let payload = null;
+
+    if (musicFile) {
+        payload = await _editorUploadSingleLayerAudio(musicFile);
+    } else {
+        const resolvedUrl = String(musicUrl || "").trim();
+        const resolvedPath = String(serverPath || "").trim();
+        if (!resolvedUrl || !resolvedPath) {
+            throw new Error("Falha ao preparar audio para a faixa.");
+        }
+
+        const importedDuration = await _editorResolveAudioDurationSeconds(resolvedUrl, fallbackDuration);
+        payload = {
+            media_url: resolvedUrl,
+            path: resolvedPath,
+            duration: Math.max(0.1, Number(importedDuration || fallbackDuration)),
+            width: 1,
+            height: 1,
+            name: source === "video" ? "Audio do video" : "Audio externo",
+        };
+    }
 
     _editorSaveState();
-    _editor.musicUrl = resolvedUrl;
-    _editor._musicFile = musicFile;
-    _editor._musicServerPath = String(serverPath || "");
-    _editor._musicSource = source;
-    _editorSetMusicPreviewSource(_editor.musicUrl);
+    _editorClearExternalAudioTrack();
 
-    const importedDuration = await _editorResolveAudioDurationSeconds(
-        _editor.musicUrl,
-        Math.max(0.1, Number(_editorGetTimelineDuration() || _editor.duration || 0.1)),
-    );
-    const segmentDuration = Math.max(0.1, Number(importedDuration || 0.1));
-    const importedSegment = {
-        id: _editorGenId(),
-        start: 0,
-        end: segmentDuration,
-        sourceStart: 0,
-        sourceDuration: segmentDuration,
-        speed: 1,
+    const startTime = Math.max(0, Number(_editor.timelineTime || document.getElementById("editor-video")?.currentTime || 0));
+    const layerDuration = Math.max(0.1, Number(payload?.duration || fallbackDuration));
+    const layer = _editorPushMediaLayer("audio", {
+        ...payload,
+        name: String(payload?.name || musicFile?.name || (source === "video" ? "Audio do video" : "Audio externo")),
+    }, {
+        startTime,
+        endTime: startTime + layerDuration,
+        select: true,
+    });
+
+    layer.volume = Math.max(0, Math.min(200, Number(_editor.musicVolume || 100)));
+    _editor.selectedClip = {
+        kind: "media-layer",
+        id: String(layer.id),
+        track: _editorBuildMediaLayerTrackId("audio", _editorGetLayerTrackIndex(layer)),
     };
-
-    _editor.audioSegments = [importedSegment];
-    _editor.selectedTracks = ["audio"];
-    _editor.selectedInsertTrack = "audio";
-    _editor.selectedClip = { kind: "segment", id: String(importedSegment.id), track: "audio" };
     _editorRefreshQuickActions();
+    _editorRenderMediaLayers();
     _editorRenderProps();
     _editorRenderTimeline();
 }
@@ -30037,12 +30057,6 @@ function _editorRenderTimeline() {
         videoTrackIndexes.add(Number(trackIndex) || 0);
     });
 
-    const maxVideoTrackIndex = _editorGetMaxVideoSegmentTrackIndex();
-    const maxVideoLayerTrackIndex = _editorGetMaxMediaLayerTrackIndex("video");
-    if (_editor.videoSegments.length > 1 || maxVideoTrackIndex > 0 || videoLayerClipsByTrack.size) {
-        videoTrackIndexes.add(Math.max(maxVideoTrackIndex, maxVideoLayerTrackIndex) + 1);
-    }
-
     [...videoTrackIndexes]
         .sort((a, b) => a - b)
         .forEach((trackIndex) => {
@@ -30107,10 +30121,6 @@ function _editorRenderTimeline() {
         audioLayerClipsByTrack.forEach((_, trackIndex) => {
             audioLayerTrackIndexes.add(Number(trackIndex) || 0);
         });
-        if (audioLayerClipsByTrack.size) {
-            const maxAudioLayerTrackIndex = _editorGetMaxMediaLayerTrackIndex("audio");
-            audioLayerTrackIndexes.add(maxAudioLayerTrackIndex + 1);
-        }
 
         [...audioLayerTrackIndexes]
             .sort((a, b) => a - b)
