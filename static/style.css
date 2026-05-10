@@ -4613,6 +4613,13 @@ svg.spin {
     min-height: 180px;
 }
 
+.script-image-generator-paste-hint {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
 .script-image-generator-model-options {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));

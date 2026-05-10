@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v417 loaded");
+console.log("[CriaVideo] app.js v418 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -12229,6 +12229,7 @@ function handleScriptImageCreatorModelChange() {
 function syncScriptImageCreatorControls() {
     const meta = _getScriptImageCreatorModelMeta();
     const promptInput = document.getElementById("script-image-generator-prompt");
+    const pasteHint = document.getElementById("script-image-generator-paste-hint");
     const countGroup = document.getElementById("script-image-generator-count-group");
     const sizeGroup = document.getElementById("script-image-generator-size-group");
     const seedGroup = document.getElementById("script-image-generator-seed-group");
@@ -12245,6 +12246,12 @@ function syncScriptImageCreatorControls() {
             : meta.requiresReference
             ? "Descreva como as referências devem ser transformadas, corrigidas ou estilizadas."
             : "Descreva a imagem que você quer criar. Use referências se quiser guiar enquadramento, pose ou estilo.";
+    }
+    if (pasteHint) {
+        pasteHint.hidden = (meta.maxReferences || 0) <= 0;
+        pasteHint.textContent = isEditing
+            ? "Cole uma captura de tela com Ctrl+V para adicionar direto nas referências desta edição."
+            : "Cole uma captura de tela com Ctrl+V para enviar direto para as imagens de referência.";
     }
     if (countSelect) {
         if (isEditing) {
@@ -12308,6 +12315,66 @@ function handleScriptImageCreatorReferenceSelect(event) {
     const files = Array.from(event?.target?.files || []);
     addScriptImageCreatorReferences(files);
     if (event?.target) event.target.value = "";
+}
+
+function _normalizeScriptImageCreatorClipboardImage(file, index = 0) {
+    if (!(file instanceof File)) {
+        return null;
+    }
+
+    const normalizedType = String(file.type || "image/png").toLowerCase();
+    const extension = normalizedType.includes("jpeg")
+        ? "jpg"
+        : normalizedType.includes("webp")
+        ? "webp"
+        : "png";
+    const originalName = String(file.name || "").trim();
+    if (originalName && /\.[a-z0-9]+$/i.test(originalName)) {
+        return file;
+    }
+
+    return new File([file], `captura-colada-${Date.now()}-${index + 1}.${extension}`, {
+        type: normalizedType,
+        lastModified: Date.now(),
+    });
+}
+
+function _getScriptImageCreatorClipboardImages(event) {
+    const items = Array.from(event?.clipboardData?.items || []);
+    return items
+        .filter((item) => item.kind === "file" && String(item.type || "").toLowerCase().startsWith("image/"))
+        .map((item, index) => _normalizeScriptImageCreatorClipboardImage(item.getAsFile(), index))
+        .filter(Boolean);
+}
+
+function handleScriptImageCreatorPromptPaste(event) {
+    const files = _getScriptImageCreatorClipboardImages(event);
+    if (!files.length) {
+        return;
+    }
+
+    event.preventDefault();
+
+    const meta = _getScriptImageCreatorModelMeta();
+    if ((meta.maxReferences || 0) <= 0) {
+        showToast("O modelo atual não aceita imagens de referência.", "info");
+        return;
+    }
+
+    const beforeCount = _scriptImageCreatorState.referenceFiles.length;
+    addScriptImageCreatorReferences(files);
+    const addedCount = _scriptImageCreatorState.referenceFiles.length - beforeCount;
+    if (addedCount <= 0) {
+        return;
+    }
+
+    document.getElementById("script-image-generator-prompt")?.focus();
+    showToast(
+        addedCount === 1
+            ? "Captura colada nas referências."
+            : `${addedCount} capturas coladas nas referências.`,
+        "success",
+    );
 }
 
 function addScriptImageCreatorReferences(files) {
