@@ -2211,6 +2211,7 @@ async def start_similar_analysis(
         source_upload_path = _resolve_temp_file(int(user["id"]), source_upload_id, VIDEO_EXTS)
         if not source_upload_path:
             raise HTTPException(status_code=400, detail="Video enviado nao encontrado. Envie novamente.")
+        source_url = ""
 
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
         raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1")

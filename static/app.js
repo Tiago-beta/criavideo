@@ -2292,6 +2292,7 @@ let similarState = {
     sourceVerificationToken: 0,
     verifiedSourceKey: "",
     verifiedSourceUploadId: "",
+    verifiedSourcePreviewUrl: "",
     verifiedSourceUrl: "",
     verifiedSourceName: "",
     sourceAspectKey: "",
@@ -2830,7 +2831,7 @@ async function updateWorkflowCreditEstimate() {
 function _hasSimilarAnalysisSource() {
     const sourceEl = document.getElementById("similar-source-url");
     const sourceUrl = String(sourceEl?.value || "").trim();
-    return !!sourceUrl || !!similarState.sourceVideoFile;
+    return !!sourceUrl || !!similarState.sourceVideoFile || !!String(similarState.verifiedSourceUploadId || "").trim();
 }
 
 function _getSimilarCurrentSourceKey() {
@@ -2870,9 +2871,28 @@ function _formatSimilarSourceDurationLabel(seconds) {
 
 function _isSimilarSourceVerified() {
     const currentSourceKey = _getSimilarCurrentSourceKey();
-    return !!currentSourceKey
-        && String(similarState.sourceVerificationStatus || "idle").trim() === "ready"
-        && String(similarState.verifiedSourceKey || "").trim() === currentSourceKey;
+    if (String(similarState.sourceVerificationStatus || "idle").trim() !== "ready") {
+        return false;
+    }
+
+    const verifiedSourceKey = String(similarState.verifiedSourceKey || "").trim();
+    if (currentSourceKey && verifiedSourceKey && verifiedSourceKey === currentSourceKey) {
+        return true;
+    }
+
+    if (similarState.sourceVideoFile) {
+        return false;
+    }
+
+    const verifiedUploadId = String(similarState.verifiedSourceUploadId || "").trim();
+    if (!verifiedUploadId) {
+        return false;
+    }
+
+    const sourceEl = document.getElementById("similar-source-url");
+    const currentUrl = _normalizeSimilarSourceUrl(sourceEl?.value || "");
+    const verifiedUrl = _normalizeSimilarSourceUrl(similarState.verifiedSourceUrl || "");
+    return !currentUrl || (!!verifiedUrl && currentUrl === verifiedUrl);
 }
 
 function _syncSimilarAnalysisGateUi() {
@@ -2931,6 +2951,7 @@ function _resetSimilarSourceVerification(options = {}) {
     similarState.sourceVerificationToken = Number(similarState.sourceVerificationToken || 0) + 1;
     similarState.verifiedSourceKey = "";
     similarState.verifiedSourceUploadId = "";
+    similarState.verifiedSourcePreviewUrl = "";
     similarState.verifiedSourceUrl = "";
     similarState.verifiedSourceName = "";
 
@@ -4634,12 +4655,50 @@ function _renderSimilarUnifiedPrompt(project) {
 
 function _normalizeSimilarSourceUrl(rawValue) {
     const raw = String(rawValue || "").trim();
-    if (!raw) return "";
-    if (/^https?:\/\//i.test(raw)) return raw;
-    if (/^[\w.-]+\.[a-z]{2,}([/:?#]|$)/i.test(raw)) {
-        return `https://${raw}`;
+    if (!raw) {
+        return "";
     }
-    return "";
+
+    let candidate = raw;
+    if (!/^https?:\/\//i.test(candidate)) {
+        if (!/^[\w.-]+\.[a-z]{2,}([/:?#]|$)/i.test(candidate)) {
+            return "";
+        }
+        candidate = `https://${candidate}`;
+    }
+
+    try {
+        const parsedUrl = new URL(candidate);
+        parsedUrl.hash = "";
+        const host = String(parsedUrl.hostname || "").toLowerCase().replace(/^www\./, "");
+        const pathParts = String(parsedUrl.pathname || "").split("/").filter(Boolean);
+
+        if (host === "youtu.be") {
+            const videoId = String(pathParts[0] || "").trim();
+            return videoId ? `https://youtu.be/${videoId}` : parsedUrl.toString();
+        }
+
+        if (["youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com"].includes(host)) {
+            if (parsedUrl.pathname === "/watch") {
+                const videoId = String(parsedUrl.searchParams.get("v") || "").trim();
+                return videoId ? `https://youtube.com/watch?v=${videoId}` : "https://youtube.com/watch";
+            }
+            if (["shorts", "embed", "live"].includes(pathParts[0] || "") && pathParts[1]) {
+                return `https://youtube.com/${pathParts[0]}/${pathParts[1]}`;
+            }
+        }
+
+        if (host.includes("tiktok.com")) {
+            const match = String(parsedUrl.pathname || "").match(/(.+\/video\/\d+)/i);
+            if (match) {
+                return `https://${host}${match[1]}`;
+            }
+        }
+
+        return parsedUrl.toString();
+    } catch (_) {
+        return "";
+    }
 }
 
 function _isSupportedSimilarSourceVideoFile(file) {
@@ -4893,6 +4952,15 @@ function _syncSimilarSourcePreview(projectOrTags = null) {
     const tags = _safeSimilarTags(projectOrTags?.tags || projectOrTags);
     const previewUrl = String(tags.similar_reference_video_url || "").trim();
     if (!previewUrl) {
+        const verifiedPreviewUrl = String(similarState.verifiedSourcePreviewUrl || "").trim();
+        if (verifiedPreviewUrl && _isSimilarSourceVerified()) {
+            _renderSimilarResolvedSourcePreview(verifiedPreviewUrl, {
+                title: similarState.sourceVideoFile ? "Prévia do vídeo enviado" : "Vídeo verificado",
+                sourceUrl: String(similarState.verifiedSourceUrl || "").trim(),
+                sourceKey: String(similarState.verifiedSourceKey || verifiedPreviewUrl).trim(),
+            });
+            return;
+        }
         _clearSimilarSourcePreview();
         return;
     }
@@ -9499,6 +9567,7 @@ function _resetSimilarModeState() {
     similarState.sourceVerificationToken = 0;
     similarState.verifiedSourceKey = "";
     similarState.verifiedSourceUploadId = "";
+    similarState.verifiedSourcePreviewUrl = "";
     similarState.verifiedSourceUrl = "";
     similarState.verifiedSourceName = "";
     similarState.controlsLocked = false;
@@ -9577,6 +9646,7 @@ async function similarVerifySource() {
         : "Baixando o video e lendo a duracao para calcular o custo...";
     similarState.verifiedSourceKey = "";
     similarState.verifiedSourceUploadId = "";
+    similarState.verifiedSourcePreviewUrl = "";
     similarState.verifiedSourceUrl = "";
     similarState.verifiedSourceName = "";
     _hideSimilarAnalysisEstimateBadges();
@@ -9601,6 +9671,7 @@ async function similarVerifySource() {
             durationSeconds = await _awaitSimilarSourceDuration();
             if (similarState.sourceVerificationToken !== verificationToken) return;
 
+            similarState.verifiedSourcePreviewUrl = String(similarState.sourceVideoObjectUrl || "").trim();
             similarState.verifiedSourceName = String(similarState.sourceVideoName || sourceFile.name || "video").trim();
         } else {
             _clearSimilarSourcePreview();
@@ -9630,6 +9701,7 @@ async function similarVerifySource() {
             if (similarState.sourceVerificationToken !== verificationToken) return;
 
             similarState.verifiedSourceUploadId = uploadId;
+            similarState.verifiedSourcePreviewUrl = previewUrl;
             similarState.verifiedSourceUrl = String(response?.source_url || sourceUrl).trim() || sourceUrl;
             similarState.verifiedSourceName = String(response?.file_name || "video").trim() || "video";
         }
@@ -9644,6 +9716,7 @@ async function similarVerifySource() {
         similarState.sourceVerificationMessage = error.message || "Nao foi possivel verificar o video.";
         similarState.verifiedSourceKey = "";
         similarState.verifiedSourceUploadId = "";
+        similarState.verifiedSourcePreviewUrl = "";
         similarState.verifiedSourceUrl = "";
         similarState.verifiedSourceName = "";
         _hideSimilarAnalysisEstimateBadges();
@@ -9665,7 +9738,8 @@ async function similarStartAnalysis(analysisMode = "scene") {
 
     const sourceUrl = _normalizeSimilarSourceUrl(sourceEl?.value || "");
     const sourceFile = similarState.sourceVideoFile;
-    if (!sourceUrl && !sourceFile) {
+    const verifiedUploadId = String(similarState.verifiedSourceUploadId || "").trim();
+    if (!sourceUrl && !sourceFile && !verifiedUploadId) {
         alert("Cole o link do video de referencia ou envie um video para analisar.");
         return;
     }
@@ -9694,12 +9768,19 @@ async function similarStartAnalysis(analysisMode = "scene") {
 
     try {
         const analysisLabel = normalizedAnalysisMode === "general" ? "analise geral" : "analise por cena";
-        const verifiedUploadId = String(similarState.verifiedSourceUploadId || "").trim();
+        const verifiedPreviewUrl = String(similarState.verifiedSourcePreviewUrl || "").trim();
 
         if (verifiedUploadId) {
             payload.source_upload_id = verifiedUploadId;
             payload.source_upload_name = String(similarState.verifiedSourceName || "video").trim() || "video";
             payload.source_url = "";
+            if (verifiedPreviewUrl) {
+                _renderSimilarResolvedSourcePreview(verifiedPreviewUrl, {
+                    title: sourceFile ? "Prévia do vídeo enviado" : "Vídeo verificado",
+                    sourceUrl: String(similarState.verifiedSourceUrl || "").trim(),
+                    sourceKey: String(similarState.verifiedSourceKey || verifiedPreviewUrl).trim(),
+                });
+            }
             _setSimilarStatus(`Iniciando ${analysisLabel} do video verificado...`, "running");
         } else if (sourceFile) {
             _setSimilarStatus(`Enviando video verificado para ${analysisLabel}...`, "running");
