@@ -2945,13 +2945,22 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     f"[{lay_label}][{ref_label}]"
                 )
 
-                overlay_expr = (
-                    f"[{ref_label}][{lay_label}]overlay="
-                    f"x={left_px}:"
-                    f"y={top_px}:"
-                    f"enable='between(t,{layer['start_time']:.6f},{layer['end_time']:.6f})':"
-                    "eof_action=pass"
-                )
+                if layer["kind"] == "video":
+                    overlay_expr = (
+                        f"[{ref_label}][{lay_label}]overlay="
+                        f"x={left_px}:"
+                        f"y={top_px}:"
+                        "repeatlast=0:"
+                        "eof_action=pass"
+                    )
+                else:
+                    overlay_expr = (
+                        f"[{ref_label}][{lay_label}]overlay="
+                        f"x={left_px}:"
+                        f"y={top_px}:"
+                        f"enable='between(t,{layer['start_time']:.6f},{layer['end_time']:.6f})':"
+                        "eof_action=pass"
+                    )
                 overlay_expr += f"[{out_label}]"
                 overlay_parts.append(overlay_expr)
                 current_video_label = f"[{out_label}]"

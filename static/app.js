@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v413 loaded");
+console.log("[CriaVideo] app.js v414 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -21993,20 +21993,14 @@ function _editorRenderDraftBulkBar() {
     }
 
     const allSelected = draftCount > 0 && selectedCount === draftCount;
-    const draftPlural = draftCount === 1 ? "" : "s";
-    const selectedPlural = selectedCount === 1 ? "" : "s";
-    const summary = selectedCount
-        ? `${selectedCount} rascunho${selectedPlural} selecionado${selectedPlural}`
-        : `${draftCount} rascunho${draftPlural} salvo${draftPlural} nesta aba`;
 
     bar.hidden = false;
     bar.innerHTML = `
         <div class="editor-draft-bulk-left">
             <label class="editor-draft-bulk-check">
                 <input id="editor-draft-select-all" type="checkbox" ${allSelected ? "checked" : ""} onchange="_editorToggleAllDraftCards(this.checked)">
-                <span>Selecionar todas</span>
+                <span>Tudo</span>
             </label>
-            <span class="editor-draft-bulk-summary">${esc(summary)}</span>
         </div>
         ${selectedCount ? `
             <button class="btn btn-secondary btn-sm editor-draft-delete-selected" type="button" onclick="_editorDeleteSelectedDraftProjects()" ${_editorDraftCardDeleting ? "disabled" : ""}>
