@@ -8947,30 +8947,83 @@ th,
 .similar-status {
     margin-top: 14px;
     margin-bottom: 12px;
-    padding: 12px 14px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.03);
+    display: grid;
+    gap: 10px;
+    padding: 14px 16px;
+    border: 1px solid rgba(var(--accent-rgb), 0.22);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(9, 24, 44, 0.94), rgba(6, 18, 34, 0.92));
+    box-shadow: 0 16px 30px rgba(4, 13, 25, 0.2);
     color: var(--text-muted);
     text-align: left;
+    overflow: hidden;
+}
+
+.similar-status-copy {
+    position: relative;
+    z-index: 1;
+    line-height: 1.45;
+    font-weight: 600;
+}
+
+.similar-status-progress {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+
+.similar-status-progress-bar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 42%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(17, 201, 255, 0.18), rgba(255, 193, 79, 0.92), rgba(17, 201, 255, 0.28));
+    box-shadow: 0 0 16px rgba(255, 193, 79, 0.34);
+    animation: similar-status-progress-slide 2.8s ease-in-out infinite;
+}
+
+@keyframes similar-status-progress-slide {
+    0% {
+        transform: translateX(-72%) scaleX(0.82);
+    }
+    50% {
+        transform: translateX(112%) scaleX(1);
+    }
+    100% {
+        transform: translateX(238%) scaleX(0.88);
+    }
 }
 
 .similar-status.status-running {
-    border-color: rgba(255, 167, 38, 0.55);
-    background: rgba(255, 167, 38, 0.12);
-    color: var(--text);
+    border-color: rgba(255, 193, 79, 0.5);
+    background:
+        radial-gradient(circle at top left, rgba(255, 193, 79, 0.12), transparent 42%),
+        linear-gradient(180deg, rgba(12, 29, 53, 0.96), rgba(7, 19, 36, 0.94));
+    color: #f8fbff;
 }
 
 .similar-status.status-error {
     border-color: rgba(239, 68, 68, 0.5);
-    background: rgba(239, 68, 68, 0.1);
+    background: linear-gradient(180deg, rgba(63, 20, 28, 0.92), rgba(39, 15, 21, 0.9));
     color: #fca5a5;
 }
 
 .similar-status.status-success {
     border-color: rgba(34, 197, 94, 0.55);
-    background: rgba(34, 197, 94, 0.14);
+    background: linear-gradient(180deg, rgba(14, 49, 31, 0.92), rgba(10, 33, 22, 0.9));
     color: #86efac;
+}
+
+.similar-status.status-error .similar-status-progress,
+.similar-status.status-success .similar-status-progress {
+    display: none;
 }
 
 .similar-unified-prompt {

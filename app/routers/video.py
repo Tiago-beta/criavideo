@@ -2202,26 +2202,26 @@ async def start_similar_analysis(
     source_upload_path = None
 
     if not source_url and not source_upload_id:
-        raise HTTPException(status_code=400, detail="Informe um link ou envie um video para analisar")
-
-    if source_url and not source_url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="Informe uma URL valida para analisar")
+        raise HTTPException(status_code=400, detail="Informe um link ou envie um vídeo para analisar.")
 
     if source_upload_id:
         source_upload_path = _resolve_temp_file(int(user["id"]), source_upload_id, VIDEO_EXTS)
         if not source_upload_path:
-            raise HTTPException(status_code=400, detail="Video enviado nao encontrado. Envie novamente.")
+            raise HTTPException(status_code=400, detail="Vídeo enviado não encontrado. Envie novamente.")
         source_url = ""
 
+    if source_url and not source_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Informe uma URL válida para analisar.")
+
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
-        raise HTTPException(status_code=400, detail="Formato invalido. Use 16:9, 9:16 ou 1:1")
+        raise HTTPException(status_code=400, detail="Formato inválido. Use 16:9, 9:16 ou 1:1.")
 
     analysis_mode = str(req.analysis_mode or "scene").strip().lower() or "scene"
     if analysis_mode not in {"scene", "general"}:
-        raise HTTPException(status_code=400, detail="Modo de analise invalido")
+        raise HTTPException(status_code=400, detail="Modo de análise inválido.")
 
     if source_url and not (settings.baixatudo_api_url and settings.baixatudo_api_key):
-        raise HTTPException(status_code=503, detail="Integracao Baixa Tudo nao configurada no servidor")
+        raise HTTPException(status_code=503, detail="Integração Baixa Tudo não configurada no servidor.")
 
     title = (req.title or "").strip() or "Video Semelhante"
     source_type = "upload" if source_upload_path else "url"

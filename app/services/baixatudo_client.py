@@ -105,7 +105,7 @@ class BaixaTudoClient:
             "thumbnail": False,
         }
         if not payload["url"].startswith(("http://", "https://")):
-            raise BaixaTudoError("URL de video invalida")
+            raise BaixaTudoError("URL de vídeo inválida.")
         return await self._request_json("POST", "/api/integracao/download", json_body=payload)
 
     async def get_download_status(self, task_id: str) -> dict:

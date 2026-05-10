@@ -2380,11 +2380,11 @@ let workflowState = {
     baseHeight: 3200,
 };
 const SIMILAR_STAGE_LABELS = {
-    queued_analysis: "Video recebido. Preparando analise...",
-    downloading_reference: "Baixando video de referencia...",
+    queued_analysis: "Vídeo recebido. Preparando análise...",
+    downloading_reference: "Baixando vídeo de referência...",
     analyzing_reference: "Analisando frames e criando prompts por cena...",
-    analysis_ready: "Analise concluida. Revise as cenas abaixo.",
-    analysis_general_ready: "Analise geral concluida. O prompt unico ja esta pronto.",
+    analysis_ready: "Análise concluída. Revise as cenas abaixo.",
+    analysis_general_ready: "Análise geral concluída. O prompt único já está pronto.",
     scene_edited: "Cena atualizada. Gere a previa para validar.",
     scene_image_ready: "Imagem da cena atualizada. Gere a previa desta cena.",
     generating_scene: "Gerando a cena selecionada...",
@@ -4252,20 +4252,32 @@ function _setSimilarStatus(message, kind = "running") {
     const text = String(message || "").trim();
     if (!text) {
         statusEl.hidden = true;
-        statusEl.textContent = "";
+        statusEl.replaceChildren();
         statusEl.className = "similar-status";
         return;
     }
 
     statusEl.hidden = false;
-    statusEl.textContent = text;
     statusEl.className = "similar-status";
+    statusEl.replaceChildren();
+
+    const copyEl = document.createElement("span");
+    copyEl.className = "similar-status-copy";
+    copyEl.textContent = text;
+    statusEl.appendChild(copyEl);
+
     if (kind === "error") {
         statusEl.classList.add("status-error");
     } else if (kind === "success") {
         statusEl.classList.add("status-success");
     } else {
         statusEl.classList.add("status-running");
+        const progressEl = document.createElement("span");
+        progressEl.className = "similar-status-progress";
+        const progressBarEl = document.createElement("span");
+        progressBarEl.className = "similar-status-progress-bar";
+        progressEl.appendChild(progressBarEl);
+        statusEl.appendChild(progressEl);
     }
 }
 
@@ -9482,7 +9494,7 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         const stage = _resolveSimilarBusyStage(rawStage, status) || rawStage;
         const lockGlobalUi = isProcessing && !["generating_scene", "regenerating_scene"].includes(stage);
         const stageLabel = stage === "downloading_reference" && String(tags.similar_source_type || "").trim().toLowerCase() === "upload"
-            ? "Preparando video de referencia..."
+            ? "Preparando vídeo de referência..."
             : SIMILAR_STAGE_LABELS[stage] || "Processando modo semelhante...";
         const detectedMode = _resolveSimilarDetectedMode(tags);
         const detectedModeLabel = SIMILAR_DETECTED_MODE_LABELS[detectedMode] || "";
@@ -9501,7 +9513,7 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         if (status === "failed" && project.error_message) {
             message = project.error_message;
         } else if (status === "completed") {
-            message = "Video final pronto. Voce pode assistir na lista de projetos.";
+            message = "Vídeo final pronto. Você pode assistir na lista de projetos.";
         } else if ((stage === "analysis_ready" || stage === "analysis_general_ready") && detectedModeLabel) {
             message = `${stageLabel} ${detectedModeLabel}`;
         } else if (progress > 0) {
@@ -9630,11 +9642,11 @@ async function similarVerifySource() {
     const currentSourceKey = _getSimilarCurrentSourceKey();
 
     if (!sourceUrl && !sourceFile) {
-        alert("Cole o link do video de referencia ou envie um video antes de verificar.");
+        alert("Cole o link do vídeo de referência ou envie um vídeo antes de verificar.");
         return;
     }
     if (!currentSourceKey) {
-        alert("Nao foi possivel identificar a origem do video para verificar.");
+        alert("Não foi possível identificar a origem do vídeo para verificar.");
         return;
     }
 
@@ -9642,8 +9654,8 @@ async function similarVerifySource() {
     const verificationToken = similarState.sourceVerificationToken;
     similarState.sourceVerificationStatus = "pending";
     similarState.sourceVerificationMessage = sourceFile
-        ? "Lendo a duracao do video enviado..."
-        : "Baixando o video e lendo a duracao para calcular o custo...";
+        ? "Lendo a duração do vídeo enviado..."
+        : "Baixando o vídeo de referência e medindo a duração para calcular o custo...";
     similarState.verifiedSourceKey = "";
     similarState.verifiedSourceUploadId = "";
     similarState.verifiedSourcePreviewUrl = "";
@@ -9664,7 +9676,7 @@ async function similarVerifySource() {
                 }
             }
             if (!similarState.sourceVideoObjectUrl) {
-                throw new Error("Nao foi possivel preparar a previa do video enviado.");
+                throw new Error("Não foi possível preparar a prévia do vídeo enviado.");
             }
 
             _renderSimilarUploadedSourcePreview();
@@ -9675,7 +9687,7 @@ async function similarVerifySource() {
             similarState.verifiedSourceName = String(similarState.sourceVideoName || sourceFile.name || "video").trim();
         } else {
             _clearSimilarSourcePreview();
-            _setSimilarStatus("Baixando o video de referencia para verificar a duracao...", "running");
+            _setSimilarStatus("Baixando o vídeo de referência para verificar a duração...", "running");
 
             const response = await api("/video/workflow/import-video-url", {
                 method: "POST",
@@ -9688,11 +9700,11 @@ async function similarVerifySource() {
             const uploadId = String(response?.upload_id || "").trim();
             const previewUrl = String(response?.preview_url || "").trim();
             if (!uploadId || !previewUrl) {
-                throw new Error("Nao foi possivel preparar o video para verificacao.");
+                throw new Error("Não foi possível preparar o vídeo para verificação.");
             }
 
             _renderSimilarResolvedSourcePreview(previewUrl, {
-                title: "Video verificado",
+                title: "Vídeo verificado",
                 sourceUrl: String(response?.source_url || sourceUrl).trim() || sourceUrl,
                 sourceKey: currentSourceKey,
             });
@@ -9713,14 +9725,14 @@ async function similarVerifySource() {
     } catch (error) {
         if (similarState.sourceVerificationToken !== verificationToken) return;
         similarState.sourceVerificationStatus = "error";
-        similarState.sourceVerificationMessage = error.message || "Nao foi possivel verificar o video.";
+        similarState.sourceVerificationMessage = error.message || "Não foi possível verificar o vídeo.";
         similarState.verifiedSourceKey = "";
         similarState.verifiedSourceUploadId = "";
         similarState.verifiedSourcePreviewUrl = "";
         similarState.verifiedSourceUrl = "";
         similarState.verifiedSourceName = "";
         _hideSimilarAnalysisEstimateBadges();
-        _setSimilarStatus(`Erro ao verificar o video: ${similarState.sourceVerificationMessage}`, "error");
+        _setSimilarStatus(`Erro ao verificar o vídeo: ${similarState.sourceVerificationMessage}`, "error");
     } finally {
         if (similarState.sourceVerificationToken === verificationToken) {
             _refreshSimilarButtonsDisabled(false);
@@ -9740,16 +9752,16 @@ async function similarStartAnalysis(analysisMode = "scene") {
     const sourceFile = similarState.sourceVideoFile;
     const verifiedUploadId = String(similarState.verifiedSourceUploadId || "").trim();
     if (!sourceUrl && !sourceFile && !verifiedUploadId) {
-        alert("Cole o link do video de referencia ou envie um video para analisar.");
+        alert("Cole o link do vídeo de referência ou envie um vídeo para analisar.");
         return;
     }
     if (!_isSimilarSourceVerified()) {
-        alert("Clique em Verificar video antes de iniciar a analise.");
+        alert("Clique em Verificar vídeo antes de iniciar a análise.");
         return;
     }
 
     const payload = {
-        source_url: sourceUrl,
+        source_url: verifiedUploadId ? "" : sourceUrl,
         source_upload_id: "",
         source_upload_name: "",
         title: String(titleEl?.value || "").trim(),
@@ -9767,7 +9779,7 @@ async function similarStartAnalysis(analysisMode = "scene") {
     _refreshSimilarButtonsDisabled(true);
 
     try {
-        const analysisLabel = normalizedAnalysisMode === "general" ? "analise geral" : "analise por cena";
+        const analysisLabel = normalizedAnalysisMode === "general" ? "análise geral" : "análise por cena";
         const verifiedPreviewUrl = String(similarState.verifiedSourcePreviewUrl || "").trim();
 
         if (verifiedUploadId) {
@@ -9781,19 +9793,19 @@ async function similarStartAnalysis(analysisMode = "scene") {
                     sourceKey: String(similarState.verifiedSourceKey || verifiedPreviewUrl).trim(),
                 });
             }
-            _setSimilarStatus(`Iniciando ${analysisLabel} do video verificado...`, "running");
+            _setSimilarStatus(`Iniciando ${analysisLabel} do vídeo verificado...`, "running");
         } else if (sourceFile) {
-            _setSimilarStatus(`Enviando video verificado para ${analysisLabel}...`, "running");
+            _setSimilarStatus(`Enviando vídeo verificado para ${analysisLabel}...`, "running");
             const uploaded = await uploadTempFileWithRetry(sourceFile, "video", "video de referencia");
             const uploadId = String(uploaded?.upload_id || "").trim();
             if (!uploadId) {
-                throw new Error("Falha ao enviar o video de referencia");
+                throw new Error("Falha ao enviar o vídeo de referência.");
             }
             payload.source_upload_id = uploadId;
             payload.source_upload_name = String(similarState.sourceVideoName || sourceFile.name || "video").trim();
-            _setSimilarStatus(`Iniciando ${analysisLabel} do video enviado...`, "running");
+            _setSimilarStatus(`Iniciando ${analysisLabel} do vídeo enviado...`, "running");
         } else {
-            _setSimilarStatus(`Iniciando ${analysisLabel} do video de referencia...`, "running");
+            _setSimilarStatus(`Iniciando ${analysisLabel} do vídeo de referência...`, "running");
         }
 
         const response = await api("/video/similar/analyze", {
@@ -9803,7 +9815,7 @@ async function similarStartAnalysis(analysisMode = "scene") {
 
         const projectId = Number(response?.project_id || 0);
         if (!projectId) {
-            throw new Error("Resposta invalida ao iniciar analise");
+            throw new Error("Resposta inválida ao iniciar a análise.");
         }
 
         similarState.projectId = projectId;
@@ -9818,14 +9830,14 @@ async function similarStartAnalysis(analysisMode = "scene") {
         similarState.unifiedLastFrameDirty = false;
         _setSimilarStatus(
             normalizedAnalysisMode === "general"
-                ? "Analise geral iniciada. Aguardando retorno da IA..."
-                : "Analise por cenas iniciada. Aguardando retorno da IA...",
+                ? "Análise geral iniciada. Aguardando o retorno da IA..."
+                : "Análise por cena iniciada. Aguardando o retorno da IA...",
             "running",
         );
         _startSimilarPolling();
         await _refreshSimilarProject();
     } catch (error) {
-        _setSimilarStatus(`Erro ao iniciar analise: ${error.message}`, "error");
+        _setSimilarStatus(`Erro ao iniciar a análise: ${error.message}`, "error");
     } finally {
         _refreshSimilarButtonsDisabled(false);
     }
