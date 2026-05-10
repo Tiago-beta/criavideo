@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v409 loaded");
+console.log("[CriaVideo] app.js v410 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -29946,6 +29946,12 @@ function _editorGetClipboardAudioMeta() {
     };
 }
 
+function _editorGetPrimaryAudioSegment() {
+    if (!Array.isArray(_editor.audioSegments) || !_editor.audioSegments.length) return null;
+    return [..._editor.audioSegments]
+        .sort((left, right) => Number(left?.start || 0) - Number(right?.start || 0))[0] || null;
+}
+
 function _editorShouldRenderAudioMasterClip() {
     if (!_editorShouldShowAudioTrack() || !_editor.musicUrl) return false;
 
@@ -30612,12 +30618,15 @@ function _editorDuplicateSelectedClip() {
 window._editorDuplicateSelectedClip = _editorDuplicateSelectedClip;
 
 function _editorTimelineCanDrag(kind) {
-    return ["segment", "text", "subtitle", "sticker", "media-layer"].includes(kind);
+    return ["segment", "music", "text", "subtitle", "sticker", "media-layer"].includes(kind);
 }
 
 function _editorTimelineCanResize(kind, track = "") {
+    if (kind === "music") {
+        return true;
+    }
     if (kind === "segment") {
-        return _editorIsVideoTrack(track);
+        return _editorIsVideoTrack(track) || _editorIsAudioTrack(track);
     }
     return ["text", "subtitle", "media-layer"].includes(kind);
 }
@@ -30625,6 +30634,10 @@ function _editorTimelineCanResize(kind, track = "") {
 function _editorGetTimelineRange(kind, id, track = "") {
     if (kind === "segment") {
         const item = _editorFindSegment(track || "video", id);
+        return item ? { start: item.start, end: item.end } : null;
+    }
+    if (kind === "music") {
+        const item = _editorGetPrimaryAudioSegment();
         return item ? { start: item.start, end: item.end } : null;
     }
     if (kind === "text") {
@@ -30647,11 +30660,15 @@ function _editorGetTimelineRange(kind, id, track = "") {
 }
 
 function _editorApplyDraggedRange(kind, id, start, end, track = "", options = {}) {
-    if (kind === "segment") {
-        const targetTrack = _editorIsAudioTrack(track)
+    if (kind === "segment" || kind === "music") {
+        const targetTrack = kind === "music"
             ? "audio"
-            : (_editorIsVideoTrack(track) ? String(track || "video") : "video");
-        const item = _editorFindSegment(targetTrack, id);
+            : (_editorIsAudioTrack(track)
+                ? "audio"
+                : (_editorIsVideoTrack(track) ? String(track || "video") : "video"));
+        const item = kind === "music"
+            ? _editorGetPrimaryAudioSegment()
+            : _editorFindSegment(targetTrack, id);
         if (!item) return;
         _editorEnsureSegmentSourceStart(item);
         _editorEnsureSegmentSourceDuration(item);
@@ -30666,8 +30683,14 @@ function _editorApplyDraggedRange(kind, id, start, end, track = "", options = {}
             _editorApplySegmentSpeedResize(item, clampedStart, clampedEnd, dragMode);
         } else {
             const span = Math.max(0.1, end - start);
-            const [clampedStart, clampedEnd] = _editorClampSegmentRange(targetTrack, id, start, span);
+            const [clampedStart, clampedEnd] = _editorClampSegmentRange(targetTrack, item.id, start, span);
             _editorApplySegmentTimelineBounds(item, clampedStart, clampedEnd);
+        }
+
+        if (kind === "music") {
+            _editor.selectedClip = { kind: "segment", id: String(item.id), track: "audio" };
+            _editor.selectedTracks = ["audio"];
+            _editor.selectedInsertTrack = "audio";
         }
 
         if (_editorIsVideoTrack(targetTrack)) {
