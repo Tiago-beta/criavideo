@@ -12676,6 +12676,136 @@ th,
 }
 
 /* ── Editor video selection cards ── */
+.editor-draft-bulk-bar {
+    margin: 0.25rem 0 1rem;
+    padding: 0.8rem 0.95rem;
+    border: 1px solid rgba(246, 210, 124, 0.22);
+    border-radius: 14px;
+    background: rgba(15, 37, 59, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+}
+
+.editor-draft-bulk-left {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+}
+
+.editor-draft-bulk-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text);
+    font-size: 0.86rem;
+    cursor: pointer;
+}
+
+.editor-draft-bulk-check input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+}
+
+.editor-draft-bulk-summary {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+}
+
+.editor-draft-delete-selected {
+    border-color: rgba(255, 122, 108, 0.28);
+    color: #ffb4aa;
+}
+
+.editor-draft-delete-selected:hover {
+    color: #fff0ed;
+}
+
+.editor-card-thumb-shell {
+    position: relative;
+}
+
+.editor-draft-thumb-toggle {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+}
+
+.editor-draft-thumb-toggle:hover .editor-video-card-overlay,
+.editor-draft-thumb-toggle:focus-visible .editor-video-card-overlay,
+.editor-card-selected .editor-video-card-overlay {
+    opacity: 1;
+}
+
+.editor-draft-thumb-toggle:focus-visible {
+    outline: 2px solid rgba(246, 210, 124, 0.72);
+    outline-offset: -2px;
+    border-radius: 8px 8px 0 0;
+}
+
+.editor-draft-thumb-media {
+    background: rgba(5, 16, 29, 0.72);
+}
+
+.editor-draft-thumb-badge,
+.editor-draft-thumb-check {
+    position: absolute;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.editor-draft-thumb-badge {
+    top: 10px;
+    left: 10px;
+    padding: 0.22rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(8, 25, 44, 0.82);
+    border: 1px solid rgba(246, 210, 124, 0.28);
+    color: #f6d27c;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.editor-draft-thumb-check {
+    top: 10px;
+    right: 10px;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.32);
+    background: rgba(5, 16, 29, 0.84);
+    color: transparent;
+    transition: all 0.18s ease;
+}
+
+.editor-draft-thumb-toggle.active .editor-draft-thumb-check,
+.editor-card-selected .editor-draft-thumb-check {
+    background: rgba(246, 210, 124, 0.94);
+    border-color: rgba(246, 210, 124, 0.94);
+    color: #09233d;
+}
+
+.editor-card-has-draft {
+    position: relative;
+}
+
+.editor-card-selected {
+    border-color: rgba(246, 210, 124, 0.55);
+    box-shadow: 0 0 0 1px rgba(246, 210, 124, 0.16), 0 10px 28px rgba(0,0,0,0.28);
+}
+
 .editor-video-card-overlay {
     position: absolute;
     inset: 0;
@@ -12780,6 +12910,18 @@ th,
 
 /* ── Responsive: mobile editor ── */
 @media (max-width: 768px) {
+    .editor-draft-bulk-bar {
+        align-items: stretch;
+    }
+
+    .editor-draft-bulk-left {
+        width: 100%;
+    }
+
+    .editor-draft-delete-selected {
+        width: 100%;
+    }
+
     #page-editor:has(.editor-workspace:not([hidden])),
     #page-editor.editor-fullscreen {
         margin: -16px -16px -76px;

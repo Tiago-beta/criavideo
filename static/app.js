@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v411 loaded");
+console.log("[CriaVideo] app.js v412 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -21560,6 +21560,10 @@ let _editorAIMusicModal = {
     characteristics: "",
 };
 
+let _editorDraftCardSelection = [];
+let _editorDraftCardProjectIds = [];
+let _editorDraftCardDeleting = false;
+
 const EDITOR_DRAFT_STORAGE_PREFIX = "editor_draft_v1_";
 let _editorDraftPersistTimer = 0;
 let _editorSubtitleModalTargetId = "";
@@ -21885,6 +21889,169 @@ function _editorDeleteDraftFromModal(projectId) {
         closeModal("modal-editor-drafts");
     }
     loadEditorVideosList();
+}
+
+function _editorNormalizeDraftCardSelection(projectIds = []) {
+    const validIds = new Set((projectIds || []).map((projectId) => Number(projectId || 0)).filter((projectId) => projectId > 0));
+    _editorDraftCardSelection = (_editorDraftCardSelection || [])
+        .map((projectId) => Number(projectId || 0))
+        .filter((projectId, index, items) => projectId > 0 && validIds.has(projectId) && items.indexOf(projectId) === index);
+    return _editorDraftCardSelection;
+}
+
+function _editorRenderDraftBulkBar() {
+    const bar = document.getElementById("editor-draft-bulk-bar");
+    if (!bar) return;
+
+    _editorNormalizeDraftCardSelection(_editorDraftCardProjectIds);
+    const draftCount = _editorDraftCardProjectIds.length;
+    const selectedCount = _editorDraftCardSelection.length;
+    const selectedSet = new Set(_editorDraftCardSelection);
+
+    document.querySelectorAll("[data-editor-draft-project-id]").forEach((card) => {
+        const projectId = Number(card?.dataset?.editorDraftProjectId || 0);
+        const isSelected = selectedSet.has(projectId);
+        card.classList.toggle("editor-card-selected", isSelected);
+        const toggleBtn = card.querySelector(".editor-draft-thumb-toggle");
+        if (toggleBtn) {
+            toggleBtn.classList.toggle("active", isSelected);
+            toggleBtn.setAttribute("aria-pressed", isSelected ? "true" : "false");
+            toggleBtn.setAttribute("title", isSelected ? "Desmarcar rascunho" : "Selecionar rascunho");
+        }
+    });
+
+    if (!draftCount) {
+        bar.hidden = true;
+        bar.innerHTML = "";
+        return;
+    }
+
+    const allSelected = draftCount > 0 && selectedCount === draftCount;
+    const draftPlural = draftCount === 1 ? "" : "s";
+    const selectedPlural = selectedCount === 1 ? "" : "s";
+    const summary = selectedCount
+        ? `${selectedCount} rascunho${selectedPlural} selecionado${selectedPlural}`
+        : `${draftCount} rascunho${draftPlural} salvo${draftPlural} nesta aba`;
+
+    bar.hidden = false;
+    bar.innerHTML = `
+        <div class="editor-draft-bulk-left">
+            <label class="editor-draft-bulk-check">
+                <input id="editor-draft-select-all" type="checkbox" ${allSelected ? "checked" : ""} onchange="_editorToggleAllDraftCards(this.checked)">
+                <span>Selecionar todas</span>
+            </label>
+            <span class="editor-draft-bulk-summary">${esc(summary)}</span>
+        </div>
+        ${selectedCount ? `
+            <button class="btn btn-secondary btn-sm editor-draft-delete-selected" type="button" onclick="_editorDeleteSelectedDraftProjects()" ${_editorDraftCardDeleting ? "disabled" : ""}>
+                Excluir selecionados
+            </button>
+        ` : ""}
+    `;
+
+    const selectAllInput = document.getElementById("editor-draft-select-all");
+    if (selectAllInput) {
+        selectAllInput.indeterminate = selectedCount > 0 && selectedCount < draftCount;
+    }
+}
+
+function _editorToggleDraftCardSelection(event, projectId) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    const parsedProjectId = Number(projectId || 0);
+    if (!parsedProjectId) return;
+
+    _editorNormalizeDraftCardSelection(_editorDraftCardProjectIds);
+    if (_editorDraftCardSelection.includes(parsedProjectId)) {
+        _editorDraftCardSelection = _editorDraftCardSelection.filter((item) => item !== parsedProjectId);
+    } else {
+        _editorDraftCardSelection = [..._editorDraftCardSelection, parsedProjectId];
+    }
+    _editorRenderDraftBulkBar();
+}
+window._editorToggleDraftCardSelection = _editorToggleDraftCardSelection;
+
+function _editorToggleAllDraftCards(checked) {
+    _editorNormalizeDraftCardSelection(_editorDraftCardProjectIds);
+    _editorDraftCardSelection = checked
+        ? [..._editorDraftCardProjectIds]
+        : [];
+    _editorRenderDraftBulkBar();
+}
+window._editorToggleAllDraftCards = _editorToggleAllDraftCards;
+
+async function _editorDeleteSelectedDraftProjects() {
+    if (_editorDraftCardDeleting) return;
+    _editorNormalizeDraftCardSelection(_editorDraftCardProjectIds);
+    const projectIds = [..._editorDraftCardSelection];
+    if (!projectIds.length) return;
+
+    const plural = projectIds.length === 1 ? "" : "s";
+    if (!window.confirm(`Excluir ${projectIds.length} rascunho${plural} selecionado${plural}?`)) {
+        return;
+    }
+
+    _editorDraftCardDeleting = true;
+    _editorRenderDraftBulkBar();
+
+    let deletedCount = 0;
+    try {
+        for (const projectId of projectIds) {
+            await api(`/video/projects/${projectId}`, { method: "DELETE" });
+            _editorClearDraft(projectId);
+            deletedCount += 1;
+            if (Number(_editor.projectId || 0) === Number(projectId || 0)) {
+                closeEditor();
+            }
+        }
+        _editorDraftCardSelection = [];
+        await loadProjects();
+        await loadEditorVideosList();
+        if (deletedCount > 0) {
+            showToast(`${deletedCount} rascunho${deletedCount === 1 ? "" : "s"} excluido${deletedCount === 1 ? "" : "s"}.`, "success");
+        }
+    } catch (err) {
+        await loadProjects();
+        await loadEditorVideosList();
+        showToast("Erro ao excluir rascunhos: " + (err?.message || "erro desconhecido"), "error");
+    } finally {
+        _editorDraftCardDeleting = false;
+        _editorRenderDraftBulkBar();
+    }
+}
+window._editorDeleteSelectedDraftProjects = _editorDeleteSelectedDraftProjects;
+
+function _editorBuildProjectCardThumb(project, draft, rawTitle, isSelected = false) {
+    const title = esc(String(rawTitle || "Projeto"));
+    const projectId = Number(project?.id || 0);
+    const draftVideoUrl = String(draft?.videoUrl || "").trim();
+    const thumbnailUrl = String(project?.thumbnail_url || "").trim();
+    const overlayIcon = `
+        <div class="editor-video-card-overlay">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+        </div>
+    `;
+
+    if (draftVideoUrl) {
+        return `
+            <div class="editor-card-thumb-shell">
+                <button class="editor-draft-thumb-toggle${isSelected ? " active" : ""}" type="button" onclick="_editorToggleDraftCardSelection(event, ${projectId})" aria-pressed="${isSelected ? "true" : "false"}" title="${isSelected ? "Desmarcar rascunho" : "Selecionar rascunho"}">
+                    <span class="editor-draft-thumb-badge">Rascunho</span>
+                    <span class="editor-draft-thumb-check" aria-hidden="true">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                    </span>
+                    <video class="card-thumb editor-draft-thumb-media" src="${esc(draftVideoUrl)}" muted playsinline preload="metadata"></video>
+                    ${overlayIcon}
+                </button>
+            </div>
+        `;
+    }
+
+    if (thumbnailUrl) {
+        return `<div style="position:relative"><img class="card-thumb" src="${esc(thumbnailUrl)}" alt="${title}" loading="lazy">${overlayIcon}</div>`;
+    }
+
+    return `<div class="card-thumb card-thumb-placeholder" style="position:relative"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>${overlayIcon}</div>`;
 }
 
 window._editorHandleEditorPageEntry = _editorHandleEditorPageEntry;
@@ -23760,23 +23927,30 @@ async function loadEditorVideosList() {
             _editorGetSavedDraftProjects().map((draft) => [Number(draft.projectId || 0), draft])
         );
         const editProjects = data.filter(_projectVisibleInEditorList);
+        _editorDraftCardProjectIds = editProjects
+            .map((project) => Number(project?.id || 0))
+            .filter((projectId) => draftsByProjectId.has(projectId));
+        _editorNormalizeDraftCardSelection(_editorDraftCardProjectIds);
         if (!editProjects.length) {
+            _editorDraftCardProjectIds = [];
+            _editorDraftCardSelection = [];
             container.innerHTML = "<p class='loading'>Nenhuma edição em andamento ainda. Use o botão + para começar uma nova edição.</p>";
+            _editorRenderDraftBulkBar();
             return;
         }
         container.innerHTML = editProjects.map((project) => {
             const projectId = Number(project.id || 0);
             const draft = draftsByProjectId.get(projectId) || null;
-            const title = esc(String(project.title || project.track_title || `Projeto ${projectId}`));
+            const rawTitle = String(project.title || project.track_title || `Projeto ${projectId}`);
+            const title = esc(rawTitle);
+            const isDraftSelected = draft ? _editorDraftCardSelection.includes(projectId) : false;
             const activityText = draft?.savedAt
                 ? `Rascunho salvo em ${_editorFormatDraftDateTime(draft.savedAt)}`
                 : (project.render_created_at
                     ? `Última exportação em ${_editorFormatDraftDateTime(project.render_created_at)}`
                     : `Criado em ${_editorFormatDraftDateTime(project.created_at)}`);
-            const thumb = project.thumbnail_url
-                ? `<div style="position:relative"><img class="card-thumb" src="${project.thumbnail_url}" alt="${title}" loading="lazy"><div class="editor-video-card-overlay"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></div></div>`
-                : `<div class="card-thumb card-thumb-placeholder" style="position:relative"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg><div class="editor-video-card-overlay"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></div></div>`;
-            return `<div class="card" style="cursor:pointer" onclick="openEditor(${projectId})">
+            const thumb = _editorBuildProjectCardThumb(project, draft, rawTitle, isDraftSelected);
+            return `<div class="card${draft ? " editor-card-has-draft" : ""}${isDraftSelected ? " editor-card-selected" : ""}"${draft ? ` data-editor-draft-project-id="${projectId}"` : ""} style="cursor:pointer" onclick="openEditor(${projectId})">
                 ${thumb}
                 <div class="card-body">
                     <h4 class="card-title">${title}</h4>
@@ -23790,8 +23964,12 @@ async function loadEditorVideosList() {
                 </div>
             </div>`;
         }).join("");
+        _editorRenderDraftBulkBar();
     } catch (err) {
+        _editorDraftCardProjectIds = [];
+        _editorDraftCardSelection = [];
         container.innerHTML = `<p class='loading'>Erro: ${esc(err.message)}</p>`;
+        _editorRenderDraftBulkBar();
     }
 }
 

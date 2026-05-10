@@ -241,6 +241,47 @@ def _estimate_cover_canvas_size(width: int, height: int, aspect_ratio: str | Non
     return _round_up_even(w), _round_up_even(w / target_ratio)
 
 
+def _resolve_editor_layer_canvas_box(
+    canvas_width: int,
+    canvas_height: int,
+    source_width: int,
+    source_height: int,
+    width_pct: float,
+    x_pct: float,
+    y_pct: float,
+) -> tuple[int, int, int, int]:
+    """Match the preview layout used by _editorGetMediaLayerLayout in static/app.js."""
+    safe_canvas_width = max(2, _round_up_even(canvas_width))
+    safe_canvas_height = max(2, _round_up_even(canvas_height))
+    safe_source_width = max(1, int(source_width or 0))
+    safe_source_height = max(1, int(source_height or 0))
+    safe_width_pct = max(8.0, min(100.0, float(width_pct or 100.0)))
+    safe_x_pct = max(0.0, min(100.0, float(x_pct or 0.0)))
+    safe_y_pct = max(0.0, min(100.0, float(y_pct or 0.0)))
+
+    aspect_ratio = float(safe_source_width) / float(safe_source_height)
+    width_px = (float(safe_canvas_width) * safe_width_pct) / 100.0
+    height_px = width_px / aspect_ratio if aspect_ratio > 0 else float(safe_canvas_height)
+    if height_px > safe_canvas_height:
+        height_px = float(safe_canvas_height)
+        width_px = height_px * aspect_ratio if aspect_ratio > 0 else float(safe_canvas_width)
+
+    width_px = max(2.0, min(float(safe_canvas_width), width_px))
+    height_px = max(2.0, min(float(safe_canvas_height), height_px))
+
+    render_width = max(2, min(safe_canvas_width, _round_up_even(width_px)))
+    render_height = max(2, min(safe_canvas_height, _round_up_even(height_px)))
+
+    max_left = max(0.0, float(safe_canvas_width - render_width))
+    max_top = max(0.0, float(safe_canvas_height - render_height))
+    left_px = int(round((safe_x_pct / 100.0) * max_left))
+    top_px = int(round((safe_y_pct / 100.0) * max_top))
+
+    left_px = max(0, min(int(round(max_left)), left_px))
+    top_px = max(0, min(int(round(max_top)), top_px))
+    return render_width, render_height, left_px, top_px
+
+
 def _detect_embedded_border_crop(video_path: str) -> tuple[int, int, int, int] | None:
     width, height = _probe_media_dimensions(video_path)
     if width <= 0 or height <= 0:
@@ -2432,6 +2473,10 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             end_time = max(start_time, float(getattr(layer, "end_time", 0) or 0))
             source_offset = max(0.0, float(getattr(layer, "source_offset", 0) or 0))
             reversed_flag = bool(getattr(layer, "reversed", False))
+            source_width = 0
+            source_height = 0
+            if kind != "audio":
+                source_width, source_height = _probe_media_dimensions(resolved_path)
 
             layer_duration = 0.0
             available_source_duration = 0.0
@@ -2509,6 +2554,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                         "duration": max(0.0, layer_duration),
                         "source_offset": mapped_source_offset,
                         "reversed": reversed_flag,
+                        "source_width": source_width,
+                        "source_height": source_height,
                         "layer_ref": f"{layer_idx}:{range_idx}",
                     }
                 )
@@ -2840,6 +2887,9 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             job["message"] = "Compondo camadas adicionais..."
 
             layered_out_file = os.path.join(out_dir, f"edited_layers_{uuid.uuid4().hex[:8]}.mp4")
+            output_width, output_height = _probe_media_dimensions(out_file)
+            if output_width <= 0 or output_height <= 0:
+                output_width, output_height = _estimate_cover_canvas_size(src_width, src_height, selected_aspect)
             layer_cmd = ["ffmpeg", "-y", "-i", out_file]
             for idx, layer in enumerate(valid_media_layers, start=1):
                 layer["input_idx"] = idx
@@ -2861,9 +2911,16 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             # First uploaded layer stays on top, so overlays are applied from last to first.
             for step, layer in enumerate(reversed(visual_layers)):
                 src_label = f"l{step}_src"
-                lay_label = f"l{step}"
-                ref_label = f"vref{step}"
                 out_label = f"vout{step}"
+                render_width, render_height, left_px, top_px = _resolve_editor_layer_canvas_box(
+                    output_width,
+                    output_height,
+                    int(layer.get("source_width") or 0),
+                    int(layer.get("source_height") or 0),
+                    float(layer["width_pct"]),
+                    float(layer["x_pct"]),
+                    float(layer["y_pct"]),
+                )
 
                 if layer["kind"] == "video":
                     clip_duration = max(0.02, float(layer["end_time"]) - float(layer["start_time"]))
@@ -2875,20 +2932,22 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     )
                     if layer.get("reversed"):
                         layer_video_chain += ",reverse,setpts=PTS-STARTPTS"
-                    layer_video_chain += f",setpts=PTS-STARTPTS+{layer['start_time']:.6f}/TB[{src_label}]"
+                    layer_video_chain += (
+                        f",scale={render_width}:{render_height}:flags=lanczos"
+                        f",setpts=PTS-STARTPTS+{layer['start_time']:.6f}/TB[{src_label}]"
+                    )
                     overlay_parts.append(layer_video_chain)
                 else:
-                    overlay_parts.append(f"[{layer['input_idx']}:v]setpts=PTS-STARTPTS[{src_label}]")
-                overlay_parts.append(
-                    f"[{src_label}]{current_video_label}"
-                    f"scale2ref=w='trunc(main_w*{layer['width_pct']/100.0:.6f}/2)*2':h='-2'"
-                    f"[{lay_label}][{ref_label}]"
-                )
+                    overlay_parts.append(
+                        f"[{layer['input_idx']}:v]"
+                        f"scale={render_width}:{render_height}:flags=lanczos,"
+                        f"setpts=PTS-STARTPTS[{src_label}]"
+                    )
 
                 overlay_expr = (
-                    f"[{ref_label}][{lay_label}]overlay="
-                    f"x='(W-w)*{layer['x_pct']/100.0:.6f}':"
-                    f"y='(H-h)*{layer['y_pct']/100.0:.6f}':"
+                    f"{current_video_label}[{src_label}]overlay="
+                    f"x={left_px}:"
+                    f"y={top_px}:"
                     f"enable='between(t,{layer['start_time']:.6f},{layer['end_time']:.6f})':"
                     "eof_action=pass"
                 )
