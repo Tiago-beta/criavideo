@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v416 loaded");
+console.log("[CriaVideo] app.js v417 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -24227,6 +24227,7 @@ async function _editorAppendOrderedMediaEntries(entries = [], options = {}) {
         const clipDuration = Math.max(0.1, Number(payload?.duration || 5));
         _editorPushMediaLayer("video", payload, {
             appendToTrack: false,
+            sequenceInTrack: true,
             startTime: cursor,
             endTime: cursor + clipDuration,
             select: isLast,
@@ -26174,7 +26175,7 @@ async function _editorAddSelectedLayerVideosFromLibrary() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ project_id: pid }),
             });
-            _editorPushMediaLayer("video", payload, { appendToTrack: true });
+            _editorPushMediaLayer("video", payload, { appendToTrack: true, sequenceInTrack: true });
             addedCount += 1;
             _editorLayerLibrary.sendProgress = addedCount;
             _editorRenderLayerVideoLibraryModal();
@@ -26183,8 +26184,6 @@ async function _editorAddSelectedLayerVideosFromLibrary() {
         _editorRenderTimeline();
         _editorRenderMediaLayers();
         _editorCloseLayerVideoLibrary();
-        const plural = addedCount === 1 ? "" : "s";
-        showToast(`${addedCount} vídeo${plural} adicionado${plural} na faixa.`, "success");
     } catch (err) {
         _editorLayerLibrary.sending = false;
         _editorLayerLibrary.sendTotal = 0;
@@ -26366,6 +26365,14 @@ function _editorResolveMediaLayerPlacement(layer) {
     const rawX = Math.max(0, Math.min(100, Number(layer?.x || 0)));
     const rawY = Math.max(0, Math.min(100, Number(layer?.y || 0)));
     const layoutMode = String(layer?.layoutMode || "").trim();
+    if (layoutMode === "track-sequence") {
+        return {
+            width: 100,
+            x: 0,
+            y: 0,
+            layoutMode: "track-sequence",
+        };
+    }
     const legacyAutoCenter = !layoutMode && width >= 99.5 && rawX <= 0.01 && rawY <= 0.01;
     const autoCenter = layoutMode === "auto-center" || legacyAutoCenter;
     return {
@@ -26405,6 +26412,16 @@ function _editorNormalizeMediaLayer(layer) {
 
 function _editorGetMediaLayerLayout(layer, hostWidth, hostHeight) {
     const safeLayer = _editorNormalizeMediaLayer(layer);
+    if (safeLayer.layoutMode === "track-sequence") {
+        return {
+            widthPx: hostWidth,
+            heightPx: hostHeight,
+            leftPx: 0,
+            topPx: 0,
+            maxLeft: 0,
+            maxTop: 0,
+        };
+    }
     let widthPx = (hostWidth * safeLayer.width) / 100;
     let heightPx = widthPx / safeLayer.aspectRatio;
     if (heightPx > hostHeight) {
@@ -26704,6 +26721,7 @@ function _editorPushMediaLayer(kind, payload, options = {}) {
     const baseDuration = Math.max(0.1, Number(_editor.duration || 0.1));
     const layerDuration = safeKind === "image" ? baseDuration : Math.max(0, Number(payload?.duration || 0));
     const appendToTrack = safeKind === "video" && options?.appendToTrack !== false;
+    const sequenceInTrack = safeKind === "video" && options?.sequenceInTrack === true;
     const hasCustomStart = Number.isFinite(Number(options?.startTime));
     const hasCustomEnd = Number.isFinite(Number(options?.endTime));
     const startTime = hasCustomStart
@@ -26727,8 +26745,8 @@ function _editorPushMediaLayer(kind, payload, options = {}) {
         url: previewUrl,
         path: serverPath,
         width: 100,
-        x: 50,
-        y: 50,
+        x: sequenceInTrack ? 0 : 50,
+        y: sequenceInTrack ? 0 : 50,
         startTime,
         endTime: Math.max(0.1, initialEnd),
         duration: layerDuration,
@@ -26737,7 +26755,7 @@ function _editorPushMediaLayer(kind, payload, options = {}) {
         volume: 100,
         audioOnly: false,
         trackIndex: resolvedTrackIndex,
-        layoutMode: "auto-center",
+        layoutMode: sequenceInTrack ? "track-sequence" : "auto-center",
     };
     _editor.mediaLayers.push(layer);
     if (options?.select === false) {
@@ -26768,11 +26786,10 @@ async function _editorUploadLayerVideo(input) {
         _editorSaveState();
         showToast(`Enviando ${orderedEntries.length} mídia(s) para a faixa...`);
         const startTime = Math.max(0, Number(_editorGetTimelineDuration() || 0));
-        const result = await _editorAppendOrderedMediaEntries(orderedEntries, { startTime });
+        await _editorAppendOrderedMediaEntries(orderedEntries, { startTime });
         _editorRenderTimeline();
         _editorRenderMediaLayers();
         _editorRenderProps();
-        showToast(`${result.addedCount} mídia(s) adicionada(s) na sequência da faixa.`, "success");
     } catch (err) {
         showToast("Erro ao enviar mídia da faixa: " + (err?.message || "erro desconhecido"), "error");
     }
@@ -31560,6 +31577,8 @@ async function _editorExport() {
                 path: normalizedLayer.path,
                 kind: normalizedLayer.kind,
                 media_type: normalizedLayer.kind,
+                track_index: Number(normalizedLayer.trackIndex || 0),
+                layout_mode: String(normalizedLayer.layoutMode || ""),
                 x: Number(normalizedLayer.x || 0),
                 y: Number(normalizedLayer.y || 0),
                 width: Number(normalizedLayer.width || 100),

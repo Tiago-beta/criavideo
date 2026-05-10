@@ -187,6 +187,15 @@ def _build_smart_short_vertical_filter(width: int, height: int) -> str:
     )
 
 
+def _build_editor_layer_cover_filter(width: int, height: int) -> str:
+    target_w = max(2, _round_up_even(width))
+    target_h = max(2, _round_up_even(height))
+    return (
+        f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,"
+        f"crop={target_w}:{target_h},setsar=1"
+    )
+
+
 def _round_up_even(value: float) -> int:
     iv = int(math.ceil(float(value or 0)))
     if iv <= 0:
@@ -1164,6 +1173,8 @@ class MediaLayerEntry(BaseModel):
     kind: str = "image"  # image | video
     media_type: Optional[str] = None
     path: str
+    track_index: int = 0
+    layout_mode: str = ""
     x: float = 0
     y: float = 0
     width: float = 100
@@ -1251,6 +1262,15 @@ def _normalize_smart_subtitle_text(raw_text: str) -> str:
         matcher = re.compile(rf"\b{re.escape(name.lower())}\b", re.IGNORECASE)
         text = matcher.sub(name, text)
 
+
+
+    def _build_editor_layer_cover_filter(width: int, height: int) -> str:
+        target_w = max(2, _round_up_even(width))
+        target_h = max(2, _round_up_even(height))
+        return (
+            f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,"
+            f"crop={target_w}:{target_h},setsar=1"
+        )
     text = re.sub(
         r'^(?:["\'\(\[{«“]*)?([a-zà-ÿ])',
         lambda match: match.group(0)[:-1] + match.group(1).upper(),
@@ -2467,6 +2487,12 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             width_pct = max(8.0, min(100.0, float(getattr(layer, "width", 100) or 100)))
             x_pct = max(0.0, min(100.0, float(getattr(layer, "x", 0) or 0)))
             y_pct = max(0.0, min(100.0, float(getattr(layer, "y", 0) or 0)))
+            track_index = max(0, int(getattr(layer, "track_index", 0) or 0))
+            layout_mode = str(
+                getattr(layer, "layout_mode", "")
+                or getattr(layer, "layoutMode", "")
+                or ""
+            ).strip().lower()
             volume_pct = max(0.0, min(200.0, float(getattr(layer, "volume", 100) or 100)))
             audio_only = bool(getattr(layer, "audio_only", False))
             start_time = max(0.0, float(getattr(layer, "start_time", 0) or 0))
@@ -2523,6 +2549,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 {
                     "kind": kind,
                     "path": resolved_path,
+                    "track_index": track_index,
+                    "layout_mode": layout_mode,
                     "width_pct": width_pct,
                     "x_pct": x_pct,
                     "y_pct": y_pct,
@@ -2893,15 +2921,19 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 lay_label = f"l{step}"
                 ref_label = f"vref{step}"
                 out_label = f"vout{step}"
-                render_width, render_height, left_px, top_px = _resolve_editor_layer_canvas_box(
-                    output_width,
-                    output_height,
-                    int(layer.get("source_width") or 0),
-                    int(layer.get("source_height") or 0),
-                    float(layer["width_pct"]),
-                    float(layer["x_pct"]),
-                    float(layer["y_pct"]),
-                )
+                layout_mode = str(layer.get("layout_mode") or "").strip().lower()
+                use_track_sequence_layout = layout_mode == "track-sequence" and layer["kind"] == "video"
+
+                if not use_track_sequence_layout:
+                    render_width, render_height, left_px, top_px = _resolve_editor_layer_canvas_box(
+                        output_width,
+                        output_height,
+                        int(layer.get("source_width") or 0),
+                        int(layer.get("source_height") or 0),
+                        float(layer["width_pct"]),
+                        float(layer["x_pct"]),
+                        float(layer["y_pct"]),
+                    )
 
                 if layer["kind"] == "video":
                     clip_duration = max(0.02, float(layer["end_time"]) - float(layer["start_time"]))
@@ -2918,28 +2950,42 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 else:
                     overlay_parts.append(f"[{layer['input_idx']}:v]setpts=PTS-STARTPTS[{src_label}]")
 
-                overlay_parts.append(
-                    f"[{src_label}]{current_video_label}"
-                    f"scale2ref=w={render_width}:h={render_height}:flags=lanczos"
-                    f"[{lay_label}][{ref_label}]"
-                )
-
-                if layer["kind"] == "video":
+                if use_track_sequence_layout:
+                    overlay_parts.append(
+                        f"[{src_label}]"
+                        f"{_build_editor_layer_cover_filter(output_width, output_height)}"
+                        f"[{lay_label}]"
+                    )
                     overlay_expr = (
-                        f"[{ref_label}][{lay_label}]overlay="
-                        f"x={left_px}:"
-                        f"y={top_px}:"
+                        f"{current_video_label}[{lay_label}]overlay="
+                        "x=0:"
+                        "y=0:"
                         "repeatlast=0:"
                         "eof_action=pass"
                     )
                 else:
-                    overlay_expr = (
-                        f"[{ref_label}][{lay_label}]overlay="
-                        f"x={left_px}:"
-                        f"y={top_px}:"
-                        f"enable='between(t,{layer['start_time']:.6f},{layer['end_time']:.6f})':"
-                        "eof_action=pass"
+                    overlay_parts.append(
+                        f"[{src_label}]{current_video_label}"
+                        f"scale2ref=w={render_width}:h={render_height}:flags=lanczos"
+                        f"[{lay_label}][{ref_label}]"
                     )
+
+                    if layer["kind"] == "video":
+                        overlay_expr = (
+                            f"[{ref_label}][{lay_label}]overlay="
+                            f"x={left_px}:"
+                            f"y={top_px}:"
+                            "repeatlast=0:"
+                            "eof_action=pass"
+                        )
+                    else:
+                        overlay_expr = (
+                            f"[{ref_label}][{lay_label}]overlay="
+                            f"x={left_px}:"
+                            f"y={top_px}:"
+                            f"enable='between(t,{layer['start_time']:.6f},{layer['end_time']:.6f})':"
+                            "eof_action=pass"
+                        )
                 overlay_expr += f"[{out_label}]"
                 overlay_parts.append(overlay_expr)
                 current_video_label = f"[{out_label}]"
