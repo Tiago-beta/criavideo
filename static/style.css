@@ -8693,6 +8693,13 @@ th,
     gap: 10px;
 }
 
+.similar-analysis-preflight {
+    display: grid;
+    gap: 6px;
+    min-width: 250px;
+    align-content: start;
+}
+
 .similar-analysis-actions {
     display: flex;
     flex-wrap: wrap;
@@ -8715,6 +8722,26 @@ th,
     justify-content: center;
     text-align: center;
     padding-inline: 12px;
+}
+
+.similar-analysis-verify-note {
+    margin: 0;
+    max-width: 360px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.45;
+    text-align: right;
+}
+
+@media (max-width: 720px) {
+    .similar-analysis-preflight,
+    .similar-analysis-action {
+        min-width: min(100%, 260px);
+    }
+
+    .similar-analysis-verify-note {
+        text-align: left;
+    }
 }
 
 .similar-unified-trigger {

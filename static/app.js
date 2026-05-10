@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v407 loaded");
+console.log("[CriaVideo] app.js v408 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -2287,9 +2287,17 @@ let similarState = {
     sourceVideoDurationSeconds: 0,
     sourceVideoDurationStatus: "idle",
     sourceDurationProbeToken: 0,
+    sourceVerificationStatus: "idle",
+    sourceVerificationMessage: "",
+    sourceVerificationToken: 0,
+    verifiedSourceKey: "",
+    verifiedSourceUploadId: "",
+    verifiedSourceUrl: "",
+    verifiedSourceName: "",
     sourceAspectKey: "",
     sourceAspectManuallySelected: false,
     pollingTimer: null,
+    controlsLocked: false,
     engineManuallySelected: false,
     selectedEngine: "wan2",
     sceneEngineSelectionBySceneId: {},
@@ -2825,6 +2833,128 @@ function _hasSimilarAnalysisSource() {
     return !!sourceUrl || !!similarState.sourceVideoFile;
 }
 
+function _getSimilarCurrentSourceKey() {
+    if (similarState.sourceVideoFile) {
+        const file = similarState.sourceVideoFile;
+        return `file:${String(file.name || "video").trim()}:${Number(file.size || 0)}:${Number(file.lastModified || 0)}`;
+    }
+
+    const sourceEl = document.getElementById("similar-source-url");
+    const normalizedUrl = _normalizeSimilarSourceUrl(sourceEl?.value || "");
+    return normalizedUrl ? `url:${normalizedUrl}` : "";
+}
+
+function _hideSimilarAnalysisEstimateBadges() {
+    _setCreditEstimateBadge("similar-general-analysis-estimate", "", "ready", true);
+    _setCreditEstimateBadge("similar-scene-analysis-estimate", "", "ready", true);
+}
+
+function _formatSimilarSourceDurationLabel(seconds) {
+    const numericSeconds = Number(seconds || 0);
+    if (!(numericSeconds > 0.05)) {
+        return "";
+    }
+
+    return `${new Intl.NumberFormat("pt-BR", {
+        minimumFractionDigits: numericSeconds < 10 ? 1 : 0,
+        maximumFractionDigits: 1,
+    }).format(numericSeconds)}s`;
+}
+
+function _isSimilarSourceVerified() {
+    const currentSourceKey = _getSimilarCurrentSourceKey();
+    return !!currentSourceKey
+        && String(similarState.sourceVerificationStatus || "idle").trim() === "ready"
+        && String(similarState.verifiedSourceKey || "").trim() === currentSourceKey;
+}
+
+function _syncSimilarAnalysisGateUi() {
+    const hasSource = _hasSimilarAnalysisSource();
+    const verificationStatus = String(similarState.sourceVerificationStatus || "idle").trim() || "idle";
+    const verifyBtn = document.getElementById("similar-verify-source");
+    const verifyLabelEl = document.getElementById("similar-verify-source-label");
+    const verifyNoteEl = document.getElementById("similar-source-verify-note");
+    const analysisActionsEl = document.getElementById("similar-analysis-actions");
+    const sourceInputEl = document.getElementById("similar-source-url");
+    const sourceUploadTriggerEl = document.getElementById("similar-source-upload-trigger");
+    const sourceFileInputEl = document.getElementById("similar-source-file-input");
+    const generalBtn = document.getElementById("similar-start-analysis-general");
+    const sceneBtn = document.getElementById("similar-start-analysis-scenes");
+    const isVerified = _isSimilarSourceVerified();
+    const durationLabel = _formatSimilarSourceDurationLabel(similarState.sourceVideoDurationSeconds);
+    const isLocked = !!similarState.controlsLocked;
+
+    if (verifyLabelEl) {
+        verifyLabelEl.textContent = verificationStatus === "pending"
+            ? "Verificando..."
+            : isVerified
+                ? "Verificar novamente"
+                : "Verificar video";
+    }
+    if (verifyBtn) {
+        verifyBtn.disabled = isLocked || !hasSource || verificationStatus === "pending";
+    }
+    if (sourceInputEl) {
+        sourceInputEl.disabled = isLocked;
+    }
+    if (sourceUploadTriggerEl) {
+        sourceUploadTriggerEl.disabled = isLocked;
+    }
+    if (sourceFileInputEl) {
+        sourceFileInputEl.disabled = isLocked;
+    }
+    if (generalBtn) {
+        generalBtn.disabled = isLocked || !isVerified;
+    }
+    if (sceneBtn) {
+        sceneBtn.disabled = isLocked || !isVerified;
+    }
+    if (analysisActionsEl) {
+        analysisActionsEl.hidden = !isVerified;
+    }
+
+    if (verifyNoteEl) {
+        let noteText = "";
+        if (!hasSource) {
+            noteText = "Cole um link ou envie um video antes de verificar.";
+        } else if (verificationStatus === "pending") {
+            noteText = similarState.sourceVerificationMessage || "Baixando o video e lendo a duracao para calcular o custo...";
+        } else if (isVerified) {
+            noteText = durationLabel
+                ? `Video verificado. Duracao detectada: ${durationLabel}. Escolha o tipo de analise.`
+                : "Video verificado. Escolha o tipo de analise.";
+        } else if (verificationStatus === "error") {
+            noteText = similarState.sourceVerificationMessage || "Nao foi possivel verificar o video.";
+        } else {
+            noteText = "Verifique o video para liberar os custos antes de analisar.";
+        }
+        verifyNoteEl.textContent = noteText;
+    }
+
+    if (!isVerified) {
+        _hideSimilarAnalysisEstimateBadges();
+        return;
+    }
+
+    scheduleSimilarAnalysisCreditEstimates();
+}
+
+function _resetSimilarSourceVerification(options = {}) {
+    similarState.sourceVerificationStatus = String(options.status || "idle").trim() || "idle";
+    similarState.sourceVerificationMessage = String(options.message || "").trim();
+    similarState.sourceVerificationToken = Number(similarState.sourceVerificationToken || 0) + 1;
+    similarState.verifiedSourceKey = "";
+    similarState.verifiedSourceUploadId = "";
+    similarState.verifiedSourceUrl = "";
+    similarState.verifiedSourceName = "";
+
+    if (options.clearPreview !== false) {
+        _clearSimilarSourcePreview();
+    }
+    _setSimilarSourceDurationState("idle", 0);
+    _syncSimilarAnalysisGateUi();
+}
+
 function _setSimilarSourceDurationState(status = "idle", durationSeconds = 0) {
     similarState.sourceVideoDurationStatus = String(status || "idle").trim() || "idle";
     const parsedDuration = Number(durationSeconds || 0);
@@ -2939,7 +3069,7 @@ function _resolveSimilarAnalysisDurationSeconds() {
 }
 
 async function updateSimilarAnalysisCreditEstimate(analysisMode, badgeId) {
-    if (!_hasSimilarAnalysisSource()) {
+    if (!_hasSimilarAnalysisSource() || !_isSimilarSourceVerified()) {
         _setCreditEstimateBadge(badgeId, "", "ready", true);
         return;
     }
@@ -2967,6 +3097,11 @@ async function updateSimilarAnalysisCreditEstimate(analysisMode, badgeId) {
 }
 
 function scheduleSimilarAnalysisCreditEstimates() {
+    _queueCreditEstimate(
+        "similar-analysis-general",
+        () => updateSimilarAnalysisCreditEstimate("general", "similar-general-analysis-estimate"),
+        120,
+    );
     _queueCreditEstimate(
         "similar-analysis-scene",
         () => updateSimilarAnalysisCreditEstimate("scene", "similar-scene-analysis-estimate"),
@@ -3565,9 +3700,23 @@ function initCreateWizard() {
     document.getElementById("script-create-btn").addEventListener("click", handleScriptCreate);
 
     // Similar mode controls
+    const similarVerifySourceBtn = document.getElementById("similar-verify-source");
+    if (similarVerifySourceBtn) {
+        similarVerifySourceBtn.addEventListener("click", similarVerifySource);
+    }
+
+    const similarStartGeneralBtn = document.getElementById("similar-start-analysis-general");
+    if (similarStartGeneralBtn) {
+        similarStartGeneralBtn.addEventListener("click", () => {
+            similarStartAnalysis("general");
+        });
+    }
+
     const similarStartScenesBtn = document.getElementById("similar-start-analysis-scenes");
     if (similarStartScenesBtn) {
-        similarStartScenesBtn.addEventListener("click", similarStartAnalysis);
+        similarStartScenesBtn.addEventListener("click", () => {
+            similarStartAnalysis("scene");
+        });
     }
 
     const similarBuildUnifiedPromptBtn = document.getElementById("similar-build-unified-prompt");
@@ -3690,6 +3839,7 @@ function initCreateWizard() {
     if (similarSourceFileClear) {
         similarSourceFileClear.addEventListener("click", () => {
             _clearSimilarSourceFile();
+            _resetSimilarSourceVerification();
         });
     }
 
@@ -3707,36 +3857,18 @@ function initCreateWizard() {
         similarSourceInput.addEventListener("keydown", (event) => {
             if (event.key === "Enter") {
                 event.preventDefault();
-                similarStartAnalysis("scene");
+                similarVerifySource();
             }
         });
         similarSourceInput.addEventListener("input", () => {
             if (similarState.sourceVideoFile && String(similarSourceInput.value || "").trim()) {
-                _clearSimilarSourceFile();
-            } else {
-                _clearSimilarSourcePreview();
+                _clearSimilarSourceFile({ skipPreviewReset: true });
             }
-        });
-        similarSourceInput.addEventListener("blur", () => {
-            if (similarState.sourceVideoFile && String(similarSourceInput.value || "").trim()) {
-                _clearSimilarSourceFile();
-                _renderSimilarSourcePreview(similarSourceInput.value);
-            } else {
-                _renderSimilarSourcePreview(similarSourceInput.value);
-            }
-        });
-        similarSourceInput.addEventListener("paste", () => {
-            window.setTimeout(() => {
-                if (similarState.sourceVideoFile && String(similarSourceInput.value || "").trim()) {
-                    _clearSimilarSourceFile();
-                    _renderSimilarSourcePreview(similarSourceInput.value);
-                } else {
-                    _renderSimilarSourcePreview(similarSourceInput.value);
-                }
-            }, 0);
+            _resetSimilarSourceVerification();
         });
     }
     _syncSimilarSourceFileUi();
+    _syncSimilarAnalysisGateUi();
     scheduleSimilarAnalysisCreditEstimates();
 
     // Script char count
@@ -4883,6 +5015,34 @@ function _renderSimilarSourcePreview(rawValue = null) {
     wrapEl.hidden = false;
 }
 
+function _awaitSimilarSourceDuration(timeoutMs = 12000) {
+    return new Promise((resolve, reject) => {
+        const startedAt = Date.now();
+
+        const checkDuration = () => {
+            const status = String(similarState.sourceVideoDurationStatus || "idle").trim();
+            const duration = Number(similarState.sourceVideoDurationSeconds || 0);
+
+            if (status === "ready" && duration > 0.05) {
+                resolve(duration);
+                return;
+            }
+            if (status === "unavailable") {
+                reject(new Error("Nao foi possivel ler a duracao do video."));
+                return;
+            }
+            if ((Date.now() - startedAt) >= timeoutMs) {
+                reject(new Error("O tempo para verificar a duracao do video expirou."));
+                return;
+            }
+
+            window.setTimeout(checkDuration, 150);
+        };
+
+        checkDuration();
+    });
+}
+
 function _handleSimilarSourceFileInput(event) {
     const inputEl = event?.target;
     const file = inputEl?.files?.[0] || null;
@@ -4914,11 +5074,7 @@ function _handleSimilarSourceFileInput(event) {
         similarState.sourceVideoObjectUrl = "";
     }
     _syncSimilarSourceFileUi();
-    if (similarState.sourceVideoObjectUrl) {
-        _renderSimilarUploadedSourcePreview();
-    } else {
-        _clearSimilarSourcePreview();
-    }
+    _resetSimilarSourceVerification();
 }
 
 function _similarSceneDuration(scene) {
@@ -6020,7 +6176,10 @@ function _renderSimilarScenes(project, options = {}) {
 }
 
 function _refreshSimilarButtonsDisabled(disabled) {
+    similarState.controlsLocked = !!disabled;
     [
+        "similar-verify-source",
+        "similar-start-analysis-general",
         "similar-start-analysis-scenes",
         "similar-build-unified-prompt",
         "similar-unified-create-image-button",
@@ -6031,6 +6190,7 @@ function _refreshSimilarButtonsDisabled(disabled) {
         const el = document.getElementById(id);
         if (el) el.disabled = !!disabled;
     });
+    _syncSimilarAnalysisGateUi();
 }
 
 function _setNewProjectModalWorkflowLayout(enabled) {
@@ -9344,6 +9504,14 @@ function _resetSimilarModeState() {
     similarState.progress = 0;
     similarState.activeUploadSceneId = 0;
     _clearSimilarSourceFile();
+    similarState.sourceVerificationStatus = "idle";
+    similarState.sourceVerificationMessage = "";
+    similarState.sourceVerificationToken = 0;
+    similarState.verifiedSourceKey = "";
+    similarState.verifiedSourceUploadId = "";
+    similarState.verifiedSourceUrl = "";
+    similarState.verifiedSourceName = "";
+    similarState.controlsLocked = false;
     similarState.engineManuallySelected = false;
     similarState.selectedEngine = "grok";
     similarState.sceneEngineSelectionBySceneId = {};
@@ -9393,23 +9561,134 @@ function _resetSimilarModeState() {
     _hideSimilarBusyOverlay();
     _setSimilarStatus("", "running");
     _refreshSimilarButtonsDisabled(false);
+    _syncSimilarAnalysisGateUi();
 }
 
-async function similarStartAnalysis() {
+async function similarVerifySource() {
+    const sourceEl = document.getElementById("similar-source-url");
+    const sourceFile = similarState.sourceVideoFile;
+    const sourceUrl = _normalizeSimilarSourceUrl(sourceEl?.value || "");
+    const currentSourceKey = _getSimilarCurrentSourceKey();
+
+    if (!sourceUrl && !sourceFile) {
+        alert("Cole o link do video de referencia ou envie um video antes de verificar.");
+        return;
+    }
+    if (!currentSourceKey) {
+        alert("Nao foi possivel identificar a origem do video para verificar.");
+        return;
+    }
+
+    similarState.sourceVerificationToken = Number(similarState.sourceVerificationToken || 0) + 1;
+    const verificationToken = similarState.sourceVerificationToken;
+    similarState.sourceVerificationStatus = "pending";
+    similarState.sourceVerificationMessage = sourceFile
+        ? "Lendo a duracao do video enviado..."
+        : "Baixando o video e lendo a duracao para calcular o custo...";
+    similarState.verifiedSourceKey = "";
+    similarState.verifiedSourceUploadId = "";
+    similarState.verifiedSourceUrl = "";
+    similarState.verifiedSourceName = "";
+    _hideSimilarAnalysisEstimateBadges();
+    _refreshSimilarButtonsDisabled(true);
+
+    try {
+        let durationSeconds = 0;
+
+        if (sourceFile) {
+            if (!similarState.sourceVideoObjectUrl) {
+                try {
+                    similarState.sourceVideoObjectUrl = URL.createObjectURL(sourceFile);
+                } catch (_) {
+                    similarState.sourceVideoObjectUrl = "";
+                }
+            }
+            if (!similarState.sourceVideoObjectUrl) {
+                throw new Error("Nao foi possivel preparar a previa do video enviado.");
+            }
+
+            _renderSimilarUploadedSourcePreview();
+            durationSeconds = await _awaitSimilarSourceDuration();
+            if (similarState.sourceVerificationToken !== verificationToken) return;
+
+            similarState.verifiedSourceName = String(similarState.sourceVideoName || sourceFile.name || "video").trim();
+        } else {
+            _clearSimilarSourcePreview();
+            _setSimilarStatus("Baixando o video de referencia para verificar a duracao...", "running");
+
+            const response = await api("/video/workflow/import-video-url", {
+                method: "POST",
+                body: JSON.stringify({
+                    source_url: sourceUrl,
+                    formato: "video_melhor",
+                }),
+            });
+
+            const uploadId = String(response?.upload_id || "").trim();
+            const previewUrl = String(response?.preview_url || "").trim();
+            if (!uploadId || !previewUrl) {
+                throw new Error("Nao foi possivel preparar o video para verificacao.");
+            }
+
+            _renderSimilarResolvedSourcePreview(previewUrl, {
+                title: "Video verificado",
+                sourceUrl: String(response?.source_url || sourceUrl).trim() || sourceUrl,
+                sourceKey: currentSourceKey,
+            });
+
+            durationSeconds = await _awaitSimilarSourceDuration();
+            if (similarState.sourceVerificationToken !== verificationToken) return;
+
+            similarState.verifiedSourceUploadId = uploadId;
+            similarState.verifiedSourceUrl = String(response?.source_url || sourceUrl).trim() || sourceUrl;
+            similarState.verifiedSourceName = String(response?.file_name || "video").trim() || "video";
+        }
+
+        similarState.verifiedSourceKey = currentSourceKey;
+        similarState.sourceVerificationStatus = "ready";
+        similarState.sourceVerificationMessage = "";
+        _setSimilarStatus(
+            `Video verificado. Duracao detectada: ${_formatSimilarSourceDurationLabel(durationSeconds)}. Escolha o tipo de analise.`,
+            "success",
+        );
+    } catch (error) {
+        if (similarState.sourceVerificationToken !== verificationToken) return;
+        similarState.sourceVerificationStatus = "error";
+        similarState.sourceVerificationMessage = error.message || "Nao foi possivel verificar o video.";
+        similarState.verifiedSourceKey = "";
+        similarState.verifiedSourceUploadId = "";
+        similarState.verifiedSourceUrl = "";
+        similarState.verifiedSourceName = "";
+        _hideSimilarAnalysisEstimateBadges();
+        _setSimilarStatus(`Erro ao verificar o video: ${similarState.sourceVerificationMessage}`, "error");
+    } finally {
+        if (similarState.sourceVerificationToken === verificationToken) {
+            _refreshSimilarButtonsDisabled(false);
+        }
+    }
+}
+
+async function similarStartAnalysis(analysisMode = "scene") {
     const sourceEl = document.getElementById("similar-source-url");
     const titleEl = document.getElementById("similar-title");
     const aspectEl = document.getElementById("similar-aspect");
-    const normalizedAnalysisMode = "scene";
+    const normalizedAnalysisMode = String(analysisMode || "scene").trim().toLowerCase() === "general"
+        ? "general"
+        : "scene";
 
-    const sourceUrl = String(sourceEl?.value || "").trim();
+    const sourceUrl = _normalizeSimilarSourceUrl(sourceEl?.value || "");
     const sourceFile = similarState.sourceVideoFile;
     if (!sourceUrl && !sourceFile) {
         alert("Cole o link do video de referencia ou envie um video para analisar.");
         return;
     }
+    if (!_isSimilarSourceVerified()) {
+        alert("Clique em Verificar video antes de iniciar a analise.");
+        return;
+    }
 
     const payload = {
-        source_url: "",
+        source_url: sourceUrl,
         source_upload_id: "",
         source_upload_name: "",
         title: String(titleEl?.value || "").trim(),
@@ -9427,9 +9706,18 @@ async function similarStartAnalysis() {
     _refreshSimilarButtonsDisabled(true);
 
     try {
-        if (sourceFile) {
-            _clearSimilarSourcePreview();
-            _setSimilarStatus("Enviando video de referencia para analise por cena...", "running");
+        const analysisLabel = normalizedAnalysisMode === "general" ? "analise geral" : "analise por cena";
+        const verifiedUploadId = String(similarState.verifiedSourceUploadId || "").trim();
+
+        if (verifiedUploadId) {
+            payload.source_upload_id = verifiedUploadId;
+            payload.source_upload_name = String(similarState.verifiedSourceName || "video").trim() || "video";
+            if (!payload.source_url) {
+                payload.source_url = String(similarState.verifiedSourceUrl || "").trim();
+            }
+            _setSimilarStatus(`Iniciando ${analysisLabel} do video verificado...`, "running");
+        } else if (sourceFile) {
+            _setSimilarStatus(`Enviando video verificado para ${analysisLabel}...`, "running");
             const uploaded = await uploadTempFileWithRetry(sourceFile, "video", "video de referencia");
             const uploadId = String(uploaded?.upload_id || "").trim();
             if (!uploadId) {
@@ -9437,11 +9725,9 @@ async function similarStartAnalysis() {
             }
             payload.source_upload_id = uploadId;
             payload.source_upload_name = String(similarState.sourceVideoName || sourceFile.name || "video").trim();
-            _setSimilarStatus("Iniciando analise do video enviado por cenas...", "running");
+            _setSimilarStatus(`Iniciando ${analysisLabel} do video enviado...`, "running");
         } else {
-            payload.source_url = sourceUrl;
-            _clearSimilarSourcePreview();
-            _setSimilarStatus("Iniciando analise do video de referencia por cenas...", "running");
+            _setSimilarStatus(`Iniciando ${analysisLabel} do video de referencia...`, "running");
         }
 
         const response = await api("/video/similar/analyze", {
@@ -9464,7 +9750,12 @@ async function similarStartAnalysis() {
         _clearSimilarUnifiedPendingUploads();
         similarState.unifiedUseLastImageAsFinalFrame = false;
         similarState.unifiedLastFrameDirty = false;
-        _setSimilarStatus("Analise por cenas iniciada. Aguardando retorno da IA...", "running");
+        _setSimilarStatus(
+            normalizedAnalysisMode === "general"
+                ? "Analise geral iniciada. Aguardando retorno da IA..."
+                : "Analise por cenas iniciada. Aguardando retorno da IA...",
+            "running",
+        );
         _startSimilarPolling();
         await _refreshSimilarProject();
     } catch (error) {

@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260509-13">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260509-14">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 407;
+        var REQUIRED_VER = 408;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1909,7 +1909,7 @@
                     <div class="similar-source-grid">
                         <div class="form-group similar-source-link-group">
                             <input id="similar-source-url" type="url" class="input" placeholder="Link do vídeo de referência">
-                            <small class="field-hint">Aceita URL pública de vídeo. O sistema baixa e analisa automaticamente em blocos.</small>
+                            <small class="field-hint">Aceita URL pública de vídeo. Clique em Verificar para baixar, medir a duração e liberar o custo antes da análise.</small>
                         </div>
 
                         <div class="form-group similar-source-upload-group">
@@ -1954,7 +1954,21 @@
                     <div class="similar-panel-actions">
                         <button class="btn btn-secondary" id="similar-back" type="button">Voltar</button>
                         <div class="similar-panel-actions-right">
-                            <div class="similar-analysis-actions">
+                            <div class="similar-analysis-preflight">
+                                <button class="btn btn-secondary" id="similar-verify-source" type="button">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+                                    <span id="similar-verify-source-label">Verificar vídeo</span>
+                                </button>
+                                <p class="similar-analysis-verify-note" id="similar-source-verify-note">Verifique o vídeo para liberar os custos antes de analisar.</p>
+                            </div>
+                            <div class="similar-analysis-actions" id="similar-analysis-actions" hidden>
+                                <div class="similar-analysis-action">
+                                    <button class="btn btn-secondary" id="similar-start-analysis-general" type="button">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M3 12h18"/></svg>
+                                        Analisar geral
+                                    </button>
+                                    <div class="credit-estimate-pill similar-analysis-estimate" id="similar-general-analysis-estimate" hidden>Calculando custo...</div>
+                                </div>
                                 <div class="similar-analysis-action">
                                     <button class="btn btn-primary" id="similar-start-analysis-scenes" type="button">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
@@ -3838,8 +3852,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260509-13"></script>
-    <script src="/video/static/pwa.js?v=20260509-13"></script>
+    <script src="/video/static/app.js?v=20260509-14"></script>
+    <script src="/video/static/pwa.js?v=20260509-14"></script>
 </body>
 </html>
 
