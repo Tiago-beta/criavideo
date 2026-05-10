@@ -733,6 +733,77 @@ async def _save_editor_layer_video_upload(file: UploadFile, user_id: int) -> dic
     }
 
 
+def _probe_audio_duration(audio_path: str) -> float:
+    duration = 0.0
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "json",
+                audio_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if proc.returncode != 0:
+            return duration
+        payload = json.loads(proc.stdout or "{}")
+        duration = float((payload.get("format") or {}).get("duration") or 0)
+    except Exception as exc:
+        logger.warning("[editor] Failed to probe audio metadata for %s: %s", audio_path, exc)
+    return duration
+
+
+async def _save_editor_layer_audio_upload(file: UploadFile, user_id: int) -> dict:
+    content_type = str(file.content_type or "").strip().lower()
+    ext = Path(file.filename or "layer_audio.mp3").suffix.lower()
+    allowed_exts = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus", ".weba", ".mp4"}
+    if not (content_type.startswith("audio") or ext in allowed_exts):
+        raise HTTPException(400, "Formato inválido. Envie MP3, WAV, M4A, AAC, OGG, FLAC ou OPUS.")
+
+    upload_dir = Path(settings.media_dir) / "editor_uploads" / str(user_id) / "layers" / "audios"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_ext = ext or ".mp3"
+    filename = f"layer_audio_{uuid.uuid4().hex[:10]}{safe_ext}"
+    dest = upload_dir / filename
+
+    max_size = 250 * 1024 * 1024
+    written = 0
+    with open(dest, "wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > max_size:
+                out.close()
+                dest.unlink(missing_ok=True)
+                raise HTTPException(400, "Arquivo de áudio muito grande (max 250MB)")
+            out.write(chunk)
+
+    if written <= 0:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, "Arquivo vazio")
+
+    duration = _probe_audio_duration(str(dest))
+    if duration <= 0.02:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, "Não foi possível ler a duração do áudio enviado")
+
+    return {
+        "kind": "audio",
+        "path": str(dest),
+        "media_url": _to_media_url(str(dest)),
+        "duration": duration,
+        "width": 0,
+        "height": 0,
+        "name": Path(file.filename or "Camada áudio").stem,
+    }
+
+
 def _probe_has_audio_stream(video_path: str) -> bool:
     try:
         proc = subprocess.run(
@@ -1796,6 +1867,14 @@ async def upload_layer_video(
     return await _save_editor_layer_video_upload(file, int(user["id"]))
 
 
+@router.post("/upload-layer-audio")
+async def upload_layer_audio(
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    return await _save_editor_layer_audio_upload(file, int(user["id"]))
+
+
 @router.post("/upload-media-sequence")
 async def upload_media_sequence(
     files: list[UploadFile] = File(...),
@@ -2322,7 +2401,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         )
         for layer_idx, layer in enumerate(req.media_layers or []):
             kind = str(getattr(layer, "kind", "") or getattr(layer, "media_type", "") or "").strip().lower()
-            if kind not in {"image", "video"}:
+            if kind not in {"image", "video", "audio"}:
                 continue
 
             raw_path = str(getattr(layer, "path", "") or "").strip()
@@ -2355,21 +2434,26 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             reversed_flag = bool(getattr(layer, "reversed", False))
 
             layer_duration = 0.0
-            available_video_duration = 0.0
+            available_source_duration = 0.0
             if kind == "video":
                 layer_duration, _ = _probe_video_metadata(resolved_path)
                 if layer_duration > 0:
                     source_offset = min(source_offset, max(0.0, layer_duration - 0.05))
-                    available_video_duration = max(0.0, layer_duration - source_offset)
+                    available_source_duration = max(0.0, layer_duration - source_offset)
+            elif kind == "audio":
+                layer_duration = _probe_audio_duration(resolved_path)
+                if layer_duration > 0:
+                    source_offset = min(source_offset, max(0.0, layer_duration - 0.05))
+                    available_source_duration = max(0.0, layer_duration - source_offset)
 
             if end_time <= start_time + 0.02:
-                if kind == "video" and available_video_duration > 0:
-                    end_time = start_time + available_video_duration
+                if kind in {"video", "audio"} and available_source_duration > 0:
+                    end_time = start_time + available_source_duration
                 else:
                     end_time = start_time + 0.1
 
-            if kind == "video" and available_video_duration > 0:
-                end_time = min(end_time, start_time + available_video_duration)
+            if kind in {"video", "audio"} and available_source_duration > 0:
+                end_time = min(end_time, start_time + available_source_duration)
             if end_time <= start_time + 0.02:
                 continue
 
@@ -2400,7 +2484,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 if clip_duration <= 0.02:
                     continue
 
-                if kind == "video" and layer_duration > 0:
+                if kind in {"video", "audio"} and layer_duration > 0:
                     mapped_source_offset = min(mapped_source_offset, max(0.0, layer_duration - 0.05))
                     max_clip_duration = max(0.0, layer_duration - mapped_source_offset)
                     if max_clip_duration <= 0.02:
@@ -2769,7 +2853,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 for layer in valid_media_layers
                 if layer["kind"] == "image" or (layer["kind"] == "video" and not layer.get("audio_only"))
             ]
-            audio_layers = [layer for layer in valid_media_layers if layer["kind"] == "video"]
+            audio_layers = [layer for layer in valid_media_layers if layer["kind"] in {"video", "audio"}]
 
             overlay_parts: list[str] = []
             current_video_label = "[0:v]"
