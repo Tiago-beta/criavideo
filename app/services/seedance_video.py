@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 ATLAS_VIDEO_API_BASE_URL = (settings.atlascloud_api_base_url or "https://api.atlascloud.ai/api/v1").rstrip("/")
+ATLAS_CONSOLE_API_BASE_URL = (settings.atlascloud_console_api_base_url or "https://console.atlascloud.ai/api/v1").rstrip("/")
 SEEDANCE_T2V_MODEL = (settings.atlascloud_seedance_t2v_model or "bytedance/seedance-2.0/text-to-video").strip()
 _SEEDANCE_I2V_DEFAULT_MODEL = "bytedance/seedance-2.0/image-to-video"
 _SEEDANCE_I2V_TARGET_RESOLUTION = "480p"
@@ -178,6 +179,53 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
 def _is_http_url(value: str) -> bool:
     lowered = str(value or "").strip().lower()
     return lowered.startswith("http://") or lowered.startswith("https://")
+
+
+def _extract_console_asset_node(payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data")
+    if isinstance(data, dict):
+        return data
+    return payload
+
+
+def _extract_console_asset_record_id(payload: dict) -> str:
+    node = _extract_console_asset_node(payload)
+    for key in ("id", "asset_id", "assetId"):
+        value = node.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _extract_console_asset_uri(payload: dict) -> str:
+    node = _extract_console_asset_node(payload)
+    for key in ("atlas_asset_id", "atlasAssetId", "atlas_id", "atlasId", "asset", "asset_ref"):
+        value = node.get(key)
+        if value is None:
+            continue
+        raw = str(value).strip()
+        if not raw:
+            continue
+        if raw.startswith("asset://"):
+            return raw
+        return f"asset://{raw}"
+    return ""
+
+
+def _extract_console_asset_status(payload: dict) -> str:
+    node = _extract_console_asset_node(payload)
+    return str(node.get("status") or "").strip()
+
+
+def _extract_console_asset_error(payload: dict) -> str:
+    node = _extract_console_asset_node(payload)
+    for key in ("error_message", "errorMessage", "error", "message", "detail"):
+        value = node.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
 
 
 def _looks_like_video_url(value: str) -> bool:
@@ -498,6 +546,85 @@ async def _upload_media_to_atlas(file_path: str, api_key: str) -> str:
     raise RuntimeError("Nao foi possivel enviar a imagem de referencia para o Atlas Cloud")
 
 
+async def _create_console_asset_from_reference(reference_url: str, api_key: str, *, asset_name: str = "") -> str:
+    source_url = str(reference_url or "").strip()
+    if not _is_http_url(source_url):
+        raise RuntimeError("A Biblioteca de Ativos do Atlas exige uma URL publica ou temporaria")
+
+    create_url = f"{ATLAS_CONSOLE_API_BASE_URL}/sd/assets"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    request_payload = {
+        "url": source_url,
+        "name": str(asset_name or "Seedance Reference").strip() or "Seedance Reference",
+    }
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(create_url, headers=headers, json=request_payload)
+        if resp.status_code == 429:
+            raise RuntimeError(SEEDANCE_RATE_LIMIT_MSG)
+        if resp.is_error:
+            message = _extract_atlas_error_message(resp)
+            raise RuntimeError(f"Falha ao criar ativo no Atlas (HTTP {resp.status_code}): {message}")
+
+        payload = resp.json() if resp.content else {}
+        asset_uri = _extract_console_asset_uri(payload) if isinstance(payload, dict) else ""
+        status = _extract_console_asset_status(payload).lower()
+        if asset_uri and status == "active":
+            return asset_uri
+
+        record_id = _extract_console_asset_record_id(payload) if isinstance(payload, dict) else ""
+        if not record_id:
+            raise RuntimeError("Atlas console nao retornou id do ativo criado")
+
+        detail_url = f"{create_url}/{record_id}"
+        start_time = time.time()
+        while (time.time() - start_time) < 180:
+            detail_resp = await client.get(detail_url, headers={"Authorization": f"Bearer {api_key}"})
+            if detail_resp.status_code == 429:
+                await asyncio.sleep(_retry_delay_from_header(detail_resp.headers.get("Retry-After"), default_seconds=3))
+                continue
+            if detail_resp.is_error:
+                message = _extract_atlas_error_message(detail_resp)
+                raise RuntimeError(f"Falha ao consultar ativo do Atlas (HTTP {detail_resp.status_code}): {message}")
+
+            detail_payload = detail_resp.json() if detail_resp.content else {}
+            detail_status = _extract_console_asset_status(detail_payload).lower()
+            detail_asset_uri = _extract_console_asset_uri(detail_payload) if isinstance(detail_payload, dict) else ""
+            if detail_status == "active" and detail_asset_uri:
+                return detail_asset_uri
+            if detail_status == "failed":
+                error_message = _extract_console_asset_error(detail_payload) if isinstance(detail_payload, dict) else ""
+                raise RuntimeError(error_message or "Atlas marcou o ativo como Failed")
+
+            await asyncio.sleep(2)
+
+    raise TimeoutError("Tempo limite excedido ao aguardar ativo do Atlas ficar Active")
+
+
+async def _prepare_seedance_reference(file_path: str, api_key: str) -> str:
+    uploaded_reference = await _upload_media_to_atlas(file_path, api_key)
+    if uploaded_reference.startswith("asset://"):
+        return uploaded_reference
+    if not _is_http_url(uploaded_reference):
+        return uploaded_reference
+
+    asset_name = os.path.basename(file_path) or "Seedance Reference"
+    try:
+        asset_reference = await _create_console_asset_from_reference(uploaded_reference, api_key, asset_name=asset_name)
+        logger.info("Seedance reference promoted to Atlas asset library: %s", asset_reference)
+        return asset_reference
+    except Exception as exc:
+        logger.warning(
+            "Seedance asset-library promotion failed for %s: %s. Falling back to uploadMedia reference.",
+            file_path,
+            exc,
+        )
+        return uploaded_reference
+
+
 def _resolve_seedance_reference_inputs(
     image_path: str | None = None,
     image_paths: list[str] | None = None,
@@ -569,7 +696,7 @@ async def generate_realistic_video(
     if use_i2v:
         uploaded_refs: list[str] = []
         for ref_path in reference_inputs:
-            uploaded_refs.append(await _upload_media_to_atlas(ref_path, api_key))
+            uploaded_refs.append(await _prepare_seedance_reference(ref_path, api_key))
 
         if not uploaded_refs:
             raise RuntimeError("Falha ao preparar as imagens de referencia para o Seedance")

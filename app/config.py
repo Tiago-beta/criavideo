@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     runpod_api_key: str = ""
     atlascloud_api_key: str = ""
     atlascloud_api_base_url: str = "https://api.atlascloud.ai/api/v1"
+    atlascloud_console_api_base_url: str = "https://console.atlascloud.ai/api/v1"
     atlascloud_seedance_t2v_model: str = "bytedance/seedance-2.0/text-to-video"
     atlascloud_seedance_i2v_model: str = "bytedance/seedance-2.0/image-to-video"
     atlascloud_wan_t2v_model: str = "alibaba/wan-2.7/text-to-video"
