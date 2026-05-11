@@ -2144,6 +2144,7 @@ async def run_similar_reference_analysis(
             resolved_normalized_url = source_url
             reused_project_id = 0
             upload_source_path = Path(str(source_upload_path or "").strip()) if str(source_upload_path or "").strip() else None
+            used_uploaded_source = False
 
             reused_video = None
             if upload_source_path:
@@ -2152,6 +2153,7 @@ async def run_similar_reference_analysis(
                 shutil.copy2(upload_source_path, resolved_video_path)
                 resolved_source_url = ""
                 resolved_normalized_url = ""
+                used_uploaded_source = True
             else:
                 reused_video = await _try_reuse_cached_reference_video(
                     db,
@@ -2171,6 +2173,11 @@ async def run_similar_reference_analysis(
                     "Similar project %s reused cached reference video from project %s",
                     project_id,
                     reused_project_id,
+                )
+            elif used_uploaded_source:
+                logger.info(
+                    "Similar project %s reused the verified uploaded source without redownloading",
+                    project_id,
                 )
             else:
                 client = BaixaTudoClient(
