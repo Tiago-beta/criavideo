@@ -9925,6 +9925,13 @@ th,
     margin-top: 10px;
 }
 
+.similar-scene-video-actions {
+    display: flex;
+    flex: 1 1 360px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .similar-scene-engine-picker {
     display: flex;
     flex-wrap: wrap;
@@ -10010,6 +10017,44 @@ th,
 
 .similar-scene-action-btn-label span {
     white-space: nowrap;
+}
+
+.similar-scene-action-btn-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.05;
+}
+
+.similar-scene-action-btn-copy strong {
+    font-size: 0.95rem;
+    font-weight: 800;
+}
+
+.similar-scene-action-btn-copy small {
+    font-size: 0.67rem;
+    letter-spacing: 0.02em;
+    color: rgba(229, 238, 248, 0.72);
+    white-space: nowrap;
+}
+
+.similar-scene-action-btn-video-image,
+.similar-scene-action-btn-video-text {
+    flex: 1 1 176px;
+    min-height: 52px;
+    justify-content: flex-start;
+}
+
+.similar-scene-action-btn-video-text {
+    border-color: rgba(0, 212, 255, 0.36);
+    color: #9fefff;
+    background: rgba(0, 212, 255, 0.1);
+}
+
+.similar-scene-action-btn-video-text:hover:not(:disabled) {
+    border-color: rgba(0, 212, 255, 0.62);
+    color: #d9fbff;
+    background: rgba(0, 212, 255, 0.18);
 }
 
 .similar-scene-upload-panel {

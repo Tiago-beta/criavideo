@@ -2148,6 +2148,7 @@ class SimilarRegenerateSceneRequest(BaseModel):
     engine: str = "grok"
     aspect_ratio: str = "16:9"
     prompt_override: str = ""
+    generation_mode: str = "image"
 
 
 class SimilarGenerateUnifiedSceneRequest(BaseModel):
@@ -3012,6 +3013,9 @@ async def generate_similar_previews(
     engine = str(req.engine or "grok").strip().lower() or "grok"
     if engine not in {"grok", "wan2", "minimax", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
+    generation_mode = str(req.generation_mode or "image").strip().lower() or "image"
+    if generation_mode not in {"image", "text"}:
+        raise HTTPException(status_code=400, detail="Modo de geracao invalido")
 
     from app.routers.credits import deduct_credits
 
@@ -3083,7 +3087,7 @@ async def regenerate_similar_scene(
 
     from app.tasks.similar_tasks import run_similar_regenerate_scene
 
-    background_tasks.add_task(run_similar_regenerate_scene, project_id, scene.id, engine, aspect_ratio)
+    background_tasks.add_task(run_similar_regenerate_scene, project_id, scene.id, engine, aspect_ratio, generation_mode)
     return {"status": "scene_regeneration_started", "project_id": project_id, "scene_id": scene.id}
 
 

@@ -29,7 +29,7 @@ from app.config import get_settings
 from app.database import async_session
 from app.models import VideoProject, VideoRender, VideoScene, VideoStatus
 from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
-from app.services.grok_video import generate_video_clip
+from app.services.grok_video import generate_video_clip, generate_video_from_prompt
 from app.services.multi_clip import concatenate_clips
 from app.services.runpod_video import generate_wan_video
 from app.services.scene_generator import (
@@ -1995,10 +1995,12 @@ async def _generate_clip_for_scene(
     aspect_ratio: str,
     clip_dir: Path,
     image_dir: Path,
+    generation_mode: str = "image",
     anchor_scene: VideoScene | None = None,
     reference_frames_by_scene_index: dict[str, str] | None = None,
 ) -> str:
     normalized_engine = _normalize_engine(engine)
+    normalized_generation_mode = "text" if str(generation_mode or "image").strip().lower() == "text" else "image"
     scene_duration_seconds = _scene_duration_seconds(scene)
     clip_duration = _engine_duration(normalized_engine, _scene_duration(scene))
     prompt, reference_image_path = _build_similar_scene_generation_context(
@@ -2013,7 +2015,7 @@ async def _generate_clip_for_scene(
         manual_image_path = ""
     output_path = str(clip_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.mp4")
 
-    base_reference_image = manual_image_path or reference_image_path
+    base_reference_image = (manual_image_path or reference_image_path) if normalized_generation_mode == "image" else ""
     if normalized_engine == "seedance" and base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
         seedance_target_duration = min(
             float(_engine_min_duration(normalized_engine)),
@@ -2047,7 +2049,7 @@ async def _generate_clip_for_scene(
         clip_duration = max(0.6, scene_duration_seconds)
     else:
         image_path = manual_image_path or reference_image_path
-        if not image_path:
+        if normalized_generation_mode == "image" and not image_path:
             image_path = await _ensure_scene_image(
                 scene,
                 aspect_ratio,
@@ -2057,22 +2059,31 @@ async def _generate_clip_for_scene(
             )
 
         if normalized_engine == "grok":
-            await generate_video_clip(
-                image_path=image_path,
-                prompt=prompt,
-                output_path=output_path,
-                duration=clip_duration,
-                aspect_ratio=aspect_ratio,
-                on_progress=None,
-                reference_mode="",
-            )
+            if normalized_generation_mode == "text":
+                await generate_video_from_prompt(
+                    prompt=prompt,
+                    output_path=output_path,
+                    duration=clip_duration,
+                    aspect_ratio=aspect_ratio,
+                    on_progress=None,
+                )
+            else:
+                await generate_video_clip(
+                    image_path=image_path,
+                    prompt=prompt,
+                    output_path=output_path,
+                    duration=clip_duration,
+                    aspect_ratio=aspect_ratio,
+                    on_progress=None,
+                    reference_mode="",
+                )
         elif normalized_engine == "wan2":
             await generate_wan_video(
                 prompt=prompt,
                 duration=clip_duration,
                 aspect_ratio=aspect_ratio,
                 output_path=output_path,
-                image_path=image_path,
+                image_path=image_path if normalized_generation_mode == "image" else None,
                 generate_audio=True,
                 on_progress=None,
             )
@@ -2084,7 +2095,7 @@ async def _generate_clip_for_scene(
                 output_path=output_path,
                 resolution="480p",
                 generate_audio=True,
-                image_path=image_path,
+                image_path=image_path if normalized_generation_mode == "image" else None,
                 on_progress=None,
             )
 
@@ -2492,7 +2503,7 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
             await db.commit()
 
 
-async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: str, aspect_ratio: str) -> None:
+async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: str, aspect_ratio: str, generation_mode: str = "image") -> None:
     async with async_session() as db:
         project = await db.get(VideoProject, project_id)
         if not project:
@@ -2521,6 +2532,7 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
                     "similar_current_scene_id": int(scene.id or 0),
                     "similar_current_scene_index": int(scene.scene_index or 0) + 1,
                     "similar_engine": _normalize_engine(engine),
+                    "similar_generation_mode": "text" if str(generation_mode or "image").strip().lower() == "text" else "image",
                     "similar_aspect_ratio": aspect_ratio,
                 }
             )
@@ -2550,6 +2562,7 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
                 aspect_ratio=aspect_ratio,
                 clip_dir=clip_dir,
                 image_dir=image_dir,
+                generation_mode=generation_mode,
                 anchor_scene=anchor_scene,
                 reference_frames_by_scene_index=reference_frames_by_scene_index,
             )
@@ -2558,6 +2571,7 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
             tags.update({"type": "similar", "similar_stage": "preview_ready"})
             tags.pop("similar_current_scene_id", None)
             tags.pop("similar_current_scene_index", None)
+            tags.pop("similar_generation_mode", None)
             project.tags = tags
             project.status = VideoStatus.PENDING
             project.progress = 0

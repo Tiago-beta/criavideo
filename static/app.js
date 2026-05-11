@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v420 loaded");
+console.log("[CriaVideo] app.js v421 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -6035,10 +6035,13 @@ function _renderSimilarScenes(project, options = {}) {
         const sceneClipBusyMarkup = isGeneratingSceneClip
             ? `<div class="similar-scene-clip-busy-overlay" role="status" aria-live="polite"><span class="similar-scene-clip-spinner" aria-hidden="true"></span><div class="similar-scene-clip-busy-copy"><strong>${sceneClipBusyLabel}</strong><span class="similar-scene-clip-busy-progress">${sceneClipBusyProgressLabel}</span></div></div>`
             : "";
-        const generateVideoLabel = isGeneratingSceneClip
-            ? "Gerando vídeo..."
-            : (hasClipPreview ? "Gerar vídeo novamente" : "Gerar vídeo");
         const generateVideoDisabledAttr = isGeneratingSceneClip ? "disabled" : "";
+        const generateVideoImageTitle = hasClipPreview
+            ? "Gerar vídeo novamente usando a imagem"
+            : "Gerar vídeo usando a imagem";
+        const generateVideoTextTitle = hasClipPreview
+            ? "Gerar vídeo novamente só com o texto"
+            : "Gerar vídeo só com o texto";
 
         const buildFrameGalleryItem = ({ url, alt, badge, downloadName, active = false, isBase = false, clipBusy = false, clipBusyMarkup = "" }) => {
             const safeUrl = esc(String(url || ""));
@@ -6246,7 +6249,10 @@ function _renderSimilarScenes(project, options = {}) {
                     <button class="similar-scene-action-btn" type="button" onclick="similarUploadSceneImage(${sceneId})" title="Enviar imagens" aria-label="Enviar imagens">${similarActionIcons.upload}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" title="${applyUploadedLabel}" aria-label="${applyUploadedLabel}" ${applyDisabledAttr}>${similarActionIcons.apply}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Gerar imagem com IA" aria-label="Gerar imagem com IA">${similarActionIcons.image}</button>
-                    <button class="similar-scene-action-btn similar-scene-action-btn-primary similar-scene-action-btn-label" type="button" onclick="similarRegenerateScene(${sceneId})" title="${generateVideoLabel}" aria-label="${generateVideoLabel}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span>${generateVideoLabel}</span></button>
+                    <div class="similar-scene-video-actions">
+                        <button class="similar-scene-action-btn similar-scene-action-btn-label similar-scene-action-btn-primary similar-scene-action-btn-video-image" type="button" onclick="similarRegenerateScene(${sceneId}, 'image')" title="${generateVideoImageTitle}" aria-label="${generateVideoImageTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span class="similar-scene-action-btn-copy"><strong>Gerar vídeo</strong><small>Usando a imagem</small></span></button>
+                        <button class="similar-scene-action-btn similar-scene-action-btn-label similar-scene-action-btn-video-text" type="button" onclick="similarRegenerateScene(${sceneId}, 'text')" title="${generateVideoTextTitle}" aria-label="${generateVideoTextTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span class="similar-scene-action-btn-copy"><strong>Gerar vídeo</strong><small>Só com o texto</small></span></button>
+                    </div>
                 </div>
             </article>
         `;
@@ -10632,7 +10638,7 @@ async function similarGenerateFrameVariant(sceneId) {
     }
 }
 
-async function similarRegenerateScene(sceneId) {
+async function similarRegenerateScene(sceneId, generationMode = "image") {
     const projectId = Number(similarState.projectId || 0);
     if (!projectId) {
         alert("Inicie a analise antes de regenerar uma cena.");
@@ -10640,6 +10646,7 @@ async function similarRegenerateScene(sceneId) {
     }
 
     try {
+        const selectedGenerationMode = String(generationMode || "image").trim().toLowerCase() === "text" ? "text" : "image";
         const scene = _getSimilarProjectScene(sceneId);
         const promptOverride = _readSimilarScenePromptForRequest(sceneId, { applyNarration: true }).trim();
         const hasExistingClip = !!String(scene?.clip_url || scene?.clip_path || "").trim();
@@ -10665,6 +10672,7 @@ async function similarRegenerateScene(sceneId) {
                 scene_id: Number(sceneId || 0),
                 prompt_override: promptOverride,
                 engine: _getSimilarSceneSelectedEngine(sceneId),
+                generation_mode: selectedGenerationMode,
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });
