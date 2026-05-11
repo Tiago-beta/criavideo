@@ -1499,6 +1499,10 @@ async def _generate_similar_wan_image(
         if path and os.path.exists(path) and path not in atlas_references:
             atlas_references.append(path)
 
+    # Atlas image-edit rejects payloads with more than 4 reference images.
+    if len(atlas_references) > 4:
+        atlas_references = atlas_references[:4]
+
     use_reference_edit = bool(atlas_references)
     model = "alibaba/wan-2.6/image-edit" if use_reference_edit else "alibaba/wan-2.6/text-to-image"
     results = await generate_atlas_images(
@@ -2652,14 +2656,18 @@ async def upsert_similar_unified_image(
     image_dir.mkdir(parents=True, exist_ok=True)
 
     uploaded_reference_paths = [str(item) for item in resolved_files]
+    generated_reference_path = str(tags_data.get("similar_unified_reference_image_path") or "")
     generation_reference_paths = _compose_similar_unified_generation_reference_paths(
         video_reference_paths,
         uploaded_reference_paths=uploaded_reference_paths,
-        generated_reference_path=str(tags_data.get("similar_unified_reference_image_path") or ""),
+        generated_reference_path=generated_reference_path,
     )
 
     prompt_seed = _build_similar_scene_prompt_for_image_generation(prompt_override, req.edit_instruction)
     source_reference_image = generation_reference_paths[0] if generation_reference_paths else ""
+    if str(req.edit_instruction or "").strip() and generated_reference_path and os.path.exists(generated_reference_path):
+        source_reference_image = generated_reference_path
+    secondary_reference_paths = [path for path in generation_reference_paths if path != source_reference_image]
     target_file: Path | None = None
 
     if req.generate_from_prompt:
@@ -2671,7 +2679,7 @@ async def upsert_similar_unified_image(
             aspect_ratio=effective_aspect_ratio,
             output_stem=str(image_dir / f"similar_unified_reference_{uuid.uuid4().hex[:8]}"),
             base_reference_image=source_reference_image,
-            reference_paths=generation_reference_paths[1:],
+            reference_paths=secondary_reference_paths,
         )
         target_file = Path(target_path)
         reference_frame_count = max(1, int(reference_frame_count or 0) or (1 if source_reference_image else 0))
