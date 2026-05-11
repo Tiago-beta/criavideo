@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v419 loaded");
+console.log("[CriaVideo] app.js v420 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -5269,6 +5269,11 @@ function _clearSimilarBusyIntent() {
     similarState.pendingBusySceneId = 0;
 }
 
+function _isSimilarBusyProcessingStatus(status) {
+    const normalizedStatus = String(status || "").trim().toLowerCase();
+    return ["generating_scenes", "generating_clips", "rendering"].includes(normalizedStatus);
+}
+
 function _hideSimilarBusyOverlay() {
     const overlayEl = document.getElementById("similar-busy-overlay");
     const modalEl = document.getElementById("modal-new-project");
@@ -5289,11 +5294,16 @@ function _hideSimilarBusyOverlay() {
 
 function _resolveSimilarBusyStage(stage, status) {
     const normalizedStage = String(stage || "").trim();
+    const normalizedStatus = String(status || "").trim().toLowerCase();
+    const stageMatchesPending = normalizedStage && normalizedStage === String(similarState.pendingBusyStage || "").trim();
+
     if (["generating_scene", "regenerating_scene", "generating_previews", "generating_unified_scene"].includes(normalizedStage)) {
-        return normalizedStage;
+        if (_isSimilarBusyProcessingStatus(normalizedStatus) || stageMatchesPending) {
+            return normalizedStage;
+        }
+        return "";
     }
 
-    const normalizedStatus = String(status || "").trim().toLowerCase();
     if (["generating_clips", "rendering"].includes(normalizedStatus) && similarState.pendingBusyStage) {
         return similarState.pendingBusyStage;
     }
@@ -5319,6 +5329,13 @@ function _paintSimilarBusyProgress(progress) {
     percentEl.textContent = `${rounded}%`;
 }
 
+function _paintSimilarSceneBusyProgress(progress) {
+    const rounded = Math.round(Math.max(0, Math.min(100, Number(progress || 0) || 0)));
+    document.querySelectorAll(".similar-scene-clip-busy-progress").forEach((el) => {
+        el.textContent = `${rounded}%`;
+    });
+}
+
 function _ensureSimilarBusyProgressTimer() {
     if (similarState.busyProgressTimer) {
         return;
@@ -5336,11 +5353,13 @@ function _ensureSimilarBusyProgressTimer() {
             const step = Math.max(0.45, gap * 0.14);
             similarState.busyProgressCurrent = Math.min(similarState.busyProgressTarget, similarState.busyProgressCurrent + step);
             _paintSimilarBusyProgress(similarState.busyProgressCurrent);
+            _paintSimilarSceneBusyProgress(similarState.busyProgressCurrent);
             return;
         }
 
         if (similarState.busyProgressTarget < ceiling) {
             similarState.busyProgressTarget = Math.min(ceiling, similarState.busyProgressTarget + 0.9);
+            _paintSimilarSceneBusyProgress(similarState.busyProgressCurrent);
         }
     }, 220);
 }
@@ -6014,17 +6033,12 @@ function _renderSimilarScenes(project, options = {}) {
         const sceneClipBusyLabel = hasClipPreview ? "Gerando nova versão" : "Gerando vídeo";
         const sceneClipBusyProgressLabel = sceneClipProgress > 0 ? `${sceneClipProgress}%` : "Processando";
         const sceneClipBusyMarkup = isGeneratingSceneClip
-            ? `<div class="similar-scene-clip-busy-overlay" role="status" aria-live="polite"><span class="similar-scene-clip-spinner" aria-hidden="true"></span><div class="similar-scene-clip-busy-copy"><strong>${sceneClipBusyLabel}</strong><span>${sceneClipBusyProgressLabel}</span></div></div>`
+            ? `<div class="similar-scene-clip-busy-overlay" role="status" aria-live="polite"><span class="similar-scene-clip-spinner" aria-hidden="true"></span><div class="similar-scene-clip-busy-copy"><strong>${sceneClipBusyLabel}</strong><span class="similar-scene-clip-busy-progress">${sceneClipBusyProgressLabel}</span></div></div>`
             : "";
         const generateVideoLabel = isGeneratingSceneClip
             ? "Gerando vídeo..."
             : (hasClipPreview ? "Gerar vídeo novamente" : "Gerar vídeo");
         const generateVideoDisabledAttr = isGeneratingSceneClip ? "disabled" : "";
-        const sceneVideoDetail = isGeneratingSceneClip && hasClipPreview
-            ? "Nova versão em geração. O vídeo atual continua visível ao lado."
-            : hasClipPreview
-            ? "Resultado atual desta cena."
-            : "Ele aparece aqui assim que terminar.";
 
         const buildFrameGalleryItem = ({ url, alt, badge, downloadName, active = false, isBase = false, clipBusy = false, clipBusyMarkup = "" }) => {
             const safeUrl = esc(String(url || ""));
@@ -6102,14 +6116,10 @@ function _renderSimilarScenes(project, options = {}) {
         const inlineClipMarkup = hasReferenceFrame && hasClipPreview
             ? `
                 <aside class="similar-scene-clip-column">
-                    <div class="similar-scene-clip-head">
-                        <strong>Vídeo da cena</strong>
-                        <span>${sceneVideoDetail}</span>
-                    </div>
                     <div class="similar-scene-clip-card similar-preview-box ${previewAspectClass}${hasClipPreview ? "" : " is-generating"}">
                         ${hasClipPreview
                             ? `<video src="${clipUrlSafe}" controls preload="metadata" playsinline></video>`
-                            : `<div class="similar-scene-clip-placeholder" role="status" aria-live="polite"><span class="similar-scene-clip-spinner" aria-hidden="true"></span><strong>Gerando vídeo...</strong><small>Assim que a renderização terminar, o player vai aparecer aqui.</small></div>`}
+                            : `<div class="similar-scene-clip-placeholder" role="status" aria-live="polite"><span class="similar-scene-clip-spinner" aria-hidden="true"></span><strong>Gerando vídeo...</strong><small class="similar-scene-clip-busy-progress">${sceneClipBusyProgressLabel}</small></div>`}
                     </div>
                 </aside>
             `
@@ -9493,6 +9503,10 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         const rawStage = String(tags.similar_stage || "").trim();
         const stage = _resolveSimilarBusyStage(rawStage, status) || rawStage;
         const lockGlobalUi = isProcessing && !["generating_scene", "regenerating_scene"].includes(stage);
+        const suppressGlobalStatus = status !== "failed" && (
+            (isProcessing && ["generating_scene", "regenerating_scene"].includes(stage))
+            || (!isProcessing && ["generating_scene", "regenerating_scene"].includes(rawStage))
+        );
         const stageLabel = stage === "downloading_reference" && String(tags.similar_source_type || "").trim().toLowerCase() === "upload"
             ? "Preparando vídeo de referência..."
             : SIMILAR_STAGE_LABELS[stage] || "Processando modo semelhante...";
@@ -9520,7 +9534,12 @@ async function _refreshSimilarProject({ silent = false } = {}) {
             message = `${stageLabel} (${progress}%)`;
         }
 
-        _setSimilarStatus(message, kind);
+        if (!isProcessing) {
+            _clearSimilarBusyIntent();
+            _hideSimilarBusyOverlay();
+        }
+
+        _setSimilarStatus(suppressGlobalStatus ? "" : message, kind);
         similarState.lastProjectSnapshot = project;
         _syncSimilarSourcePreview(project);
         scheduleSimilarAnalysisCreditEstimates();
@@ -9538,16 +9557,12 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         if (!isProcessing) {
             _stopSimilarPolling();
             _refreshSimilarButtonsDisabled(false);
-            _clearSimilarBusyIntent();
-            _hideSimilarBusyOverlay();
         }
 
         if (status === "completed" || status === "failed") {
             _stopSimilarPolling();
             loadProjects();
             _refreshSimilarButtonsDisabled(false);
-            _clearSimilarBusyIntent();
-            _hideSimilarBusyOverlay();
         }
     } catch (error) {
         if (!silent) {
@@ -10653,7 +10668,7 @@ async function similarRegenerateScene(sceneId) {
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });
-        _setSimilarStatus(hasExistingClip ? "Regeneracao da cena iniciada..." : "Geracao da cena iniciada...", "running");
+        _setSimilarStatus("", "running");
         _startSimilarPolling();
         await _refreshSimilarProject();
     } catch (error) {
