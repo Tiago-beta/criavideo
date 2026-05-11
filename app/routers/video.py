@@ -2861,8 +2861,9 @@ async def upsert_similar_scene_image(
         if anchor_candidate and int(anchor_candidate.id or 0) != int(scene.id or 0):
             anchor_scene = anchor_candidate
 
+    scene_prompt_source = str(req.prompt_override or "").strip() or str(scene.prompt or "")
     effective_scene_prompt = _build_similar_scene_prompt_for_image_generation(
-        str(req.prompt_override or "").strip() or (scene.prompt or ""),
+        scene_prompt_source,
         req.edit_instruction,
     )
     continuity_prompt = build_similar_scene_continuity_prompt(
@@ -2929,8 +2930,8 @@ async def upsert_similar_scene_image(
             raise HTTPException(status_code=500, detail="Falha ao gerar imagem da cena")
         scene.image_path = str(target_file)
         scene.is_user_uploaded = False
-        scene.prompt = effective_scene_prompt
-        scene.lyrics_segment = _extract_explicit_scene_dialogue(effective_scene_prompt, scene.lyrics_segment)
+        scene.prompt = scene_prompt_source
+        scene.lyrics_segment = _extract_explicit_scene_dialogue(scene_prompt_source, scene.lyrics_segment)
     elif resolved_files:
         if len(resolved_files) == 1:
             source_file = resolved_files[0]

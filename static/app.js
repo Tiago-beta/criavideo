@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v421 loaded");
+console.log("[CriaVideo] app.js v422 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -5964,6 +5964,7 @@ function _renderSimilarScenes(project, options = {}) {
         image: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
         preview: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
         download: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+        edit: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"/></svg>',
         wand: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 4 1.5 3L20 8.5l-3.5 1.5L15 13l-1.5-3L10 8.5 13.5 7 15 4Z"/><path d="m6 15 1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z"/><path d="m3 21 9-9"/></svg>',
         narration: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z"/><path d="M19 10a7 7 0 0 1-14 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>',
         reroll: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/></svg>',
@@ -6016,14 +6017,15 @@ function _renderSimilarScenes(project, options = {}) {
         const generatedImageVariants = Array.isArray(scene.generated_image_variants)
             ? scene.generated_image_variants.filter((item) => String(item?.url || item?.path || "").trim())
             : [];
-        const frameEditTitle = frameEditorOpen ? "Fechar edicao IA" : "Editar com IA";
+        const frameEditTitle = frameEditorOpen ? "Fechar edicao da imagem" : "Editar imagem";
         const narrationTitle = narrationEditorOpen ? "Fechar narracao" : "Editar narracao";
+        const frameGenerateTitle = generatedImageVariants.length
+            ? "Gerar novamente a partir deste frame"
+            : "Criar imagem a partir deste frame";
         const frameRerollTitle = frameInstruction
-            ? "Gerar novamente com o ultimo ajuste"
-            : "Abra a edicao IA e descreva o ajuste";
+            ? frameGenerateTitle
+            : "Descreva o ajuste antes de criar a imagem";
         const frameRerollDisabledAttr = frameBusy || !frameInstruction ? "disabled" : "";
-        const framePrimaryActionLabel = generatedImageVariants.length ? "Gerar novamente" : "Criar imagem";
-        const framePrimaryActionIcon = generatedImageVariants.length ? similarActionIcons.reroll : similarActionIcons.wand;
         const framePanelSummary = generatedImageVariants.length
             ? `${generatedImageVariants.length + 1} imagens lado a lado.`
             : "Contexto visual da cena.";
@@ -6043,17 +6045,19 @@ function _renderSimilarScenes(project, options = {}) {
             ? "Gerar vídeo novamente só com o texto"
             : "Gerar vídeo só com o texto";
 
-        const buildFrameGalleryItem = ({ url, alt, badge, downloadName, active = false, isBase = false, clipBusy = false, clipBusyMarkup = "" }) => {
+        const buildFrameGalleryItem = ({ url, alt, badge, downloadName, active = false, isBase = false, clipBusy = false, clipBusyMarkup = "", overlayActionsMarkup = "" }) => {
             const safeUrl = esc(String(url || ""));
             const safeAlt = esc(String(alt || ""));
             const safeBadge = esc(String(badge || ""));
             const safeDownloadName = esc(String(downloadName || "frame.png"));
+            const resolvedOverlayActionsMarkup = overlayActionsMarkup
+                || `<a class="similar-frame-image-action" href="${safeUrl}" download="${safeDownloadName}" title="Baixar ${safeBadge}" aria-label="Baixar ${safeBadge}">${similarActionIcons.download}</a>`;
             return `
                 <article class="similar-frame-gallery-item${active ? " is-active" : ""}${isBase ? " is-base" : ""}${clipBusy ? " is-generating-clip" : ""}">
                     <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}${clipBusy ? " is-generating-clip" : ""}">
                         <img src="${safeUrl}" alt="${safeAlt}" loading="lazy">
                         <span class="similar-frame-gallery-badge">${safeBadge}</span>
-                        <a class="similar-frame-image-action" href="${safeUrl}" download="${safeDownloadName}" title="Baixar ${safeBadge}" aria-label="Baixar ${safeBadge}">${similarActionIcons.download}</a>
+                        ${resolvedOverlayActionsMarkup}
                         ${clipBusyMarkup}
                     </div>
                 </article>
@@ -6070,6 +6074,12 @@ function _renderSimilarScenes(project, options = {}) {
                     isBase: true,
                     clipBusy: isGeneratingSceneClip,
                     clipBusyMarkup: sceneClipBusyMarkup,
+                    overlayActionsMarkup: `
+                        <div class="similar-frame-image-actions">
+                            <a class="similar-frame-image-action" href="${esc(referenceFrameUrlRaw)}" download="${referenceDownloadName}" title="Baixar Base" aria-label="Baixar Base">${similarActionIcons.download}</a>
+                            <button class="similar-frame-image-action${frameEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleFrameEdit(${sceneId})" title="${frameEditTitle}" aria-label="${frameEditTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
+                        </div>
+                    `,
                 }),
             ]
             : [];
@@ -6116,6 +6126,12 @@ function _renderSimilarScenes(project, options = {}) {
                 </div>
             `
             : "";
+        const frameQuickActionsMarkup = `
+            <div class="similar-reference-frame-quick-actions">
+                <button class="similar-frame-tool-btn similar-frame-tool-btn-icon${narrationEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleNarrationEdit(${sceneId})" title="${narrationTitle}" aria-label="${narrationTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.narration}</button>
+                ${generatedImageVariants.length ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.reroll}</button>` : ""}
+            </div>
+        `;
         const inlineClipMarkup = hasReferenceFrame && hasClipPreview
             ? `
                 <aside class="similar-scene-clip-column">
@@ -6136,14 +6152,12 @@ function _renderSimilarScenes(project, options = {}) {
                             <strong>Frame base</strong>
                             <span>${framePanelSummary}</span>
                         </div>
-                        <div class="similar-reference-frame-tools">
-                            ${generatedImageVariants.length ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.reroll}</button>` : ""}
-                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon${frameEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleFrameEdit(${sceneId})" title="${frameEditTitle}" aria-label="${frameEditTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.wand}</button>
-                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon${narrationEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleNarrationEdit(${sceneId})" title="${narrationTitle}" aria-label="${narrationTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.narration}</button>
-                        </div>
                     </div>
                     <div class="similar-reference-frame-body${inlineClipMarkup ? " similar-reference-frame-body-has-clip" : ""}">
-                        ${frameGalleryMarkup}
+                        <div class="similar-reference-frame-primary-column">
+                            ${frameGalleryMarkup}
+                            ${frameQuickActionsMarkup}
+                        </div>
                         ${inlineClipMarkup}
                     </div>
                     <div class="similar-reference-frame-narration-editor${narrationEditorOpen ? " is-open" : ""}" ${narrationEditorOpen ? "" : "hidden"}>
@@ -6160,16 +6174,12 @@ function _renderSimilarScenes(project, options = {}) {
                         <textarea id="similar-frame-instruction-${sceneId}" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar o produto por uma embalagem premium, manter a mesma mesa, o mesmo enquadramento e a mesma luz." ${frameBusyDisabledAttr}>${frameInstructionValue}</textarea>
                         <p class="field-hint">A imagem nova sai do frame original e respeita o prompt atual da cena para manter o contexto.</p>
                         <div class="similar-reference-frame-editor-tools">
-                            <button class="similar-frame-tool-btn" type="button" onclick="similarUploadFrameReference(${sceneId})" ${frameBusyDisabledAttr}>${similarActionIcons.upload}<span>Enviar nova foto</span></button>
-                            ${pendingCount ? `<button class="similar-frame-tool-btn" type="button" onclick="similarClearSceneUploads(${sceneId})" ${frameBusyDisabledAttr}>${similarActionIcons.close}<span>Limpar</span></button>` : ""}
-                            <span class="similar-reference-frame-upload-note">${pendingCount ? `${pendingCount} nova(s) foto(s) pronta(s) para a troca.` : "Envie uma nova foto para trocar pessoa, produto ou detalhe mantendo o contexto."}</span>
+                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarUploadFrameReference(${sceneId})" title="Enviar nova foto" aria-label="Enviar nova foto" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
+                            ${pendingCount ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarClearSceneUploads(${sceneId})" title="Limpar fotos enviadas" aria-label="Limpar fotos enviadas" ${frameBusyDisabledAttr}>${similarActionIcons.close}</button>` : ""}
+                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameGenerateTitle}" aria-label="${frameGenerateTitle}" ${frameRerollDisabledAttr}>${generatedImageVariants.length ? similarActionIcons.reroll : similarActionIcons.wand}</button>
                         </div>
                         ${frameUploadsMarkup}
                         ${frameBusyMarkup}
-                        <div class="similar-reference-frame-editor-actions">
-                            <button class="btn btn-primary similar-reference-frame-submit-btn" type="button" onclick="similarGenerateFrameVariant(${sceneId})" ${frameBusyDisabledAttr}>${framePrimaryActionIcon}<span>${frameBusy ? "Gerando..." : framePrimaryActionLabel}</span></button>
-                            <button class="btn btn-secondary" type="button" onclick="similarCloseFrameEdit(${sceneId})" ${frameBusyDisabledAttr}>Fechar</button>
-                        </div>
                     </div>
                 </section>
             `
