@@ -2448,8 +2448,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         output_video_duration = sum(_segment_output_duration(item) for item in video_segment_entries)
 
         valid_media_layers: list[dict] = []
-        allowed_layer_root = os.path.normpath(
-            str(Path(settings.media_dir) / "editor_uploads" / str(user_id) / "layers")
+        allowed_editor_upload_root = os.path.normpath(
+            str(Path(settings.media_dir) / "editor_uploads" / str(user_id))
         )
         for layer_idx, layer in enumerate(req.media_layers or []):
             kind = str(getattr(layer, "kind", "") or getattr(layer, "media_type", "") or "").strip().lower()
@@ -2471,7 +2471,11 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
             if not os.path.exists(resolved_path):
                 continue
-            if not resolved_path.startswith(allowed_layer_root):
+            try:
+                is_user_scoped_layer = os.path.commonpath([resolved_path, allowed_editor_upload_root]) == allowed_editor_upload_root
+            except ValueError:
+                is_user_scoped_layer = False
+            if not is_user_scoped_layer:
                 logger.warning("[editor] Ignoring layer outside user scope: %s", resolved_path)
                 continue
 
