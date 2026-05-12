@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v431 loaded");
+console.log("[CriaVideo] app.js v432 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -11360,6 +11360,8 @@ function resetCreateWizard() {
         imageDisplaySeconds: 0,
         promptOptimized: false,
     };
+    _pendingScriptImageCreatorVideoDraft = false;
+    _keepScriptNarrationEnabledOnNextPhotoSync = false;
 
     // Reset tabs
     document.querySelectorAll(".create-tab").forEach((t) => {
@@ -11875,6 +11877,9 @@ function scriptNext() {
 
     scriptStep = Math.min(scriptStep + 1, flow.length);
     updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+    if (currentDataStep === 2) {
+        _applyPendingScriptImageCreatorVideoDraft();
+    }
 }
 
 function scriptBack() {
@@ -12171,8 +12176,12 @@ let scriptPhotos = []; // array of File objects
 let scriptUserAudioFile = null;
 let scriptUserVideoFile = null; // single File object for custom video
 const MAX_PHOTOS = 20;
+let _pendingScriptImageCreatorVideoDraft = false;
+let _keepScriptNarrationEnabledOnNextPhotoSync = false;
 const MAX_AI_SCRIPT_PHOTO_ANALYSIS = 8;
 const MAX_AI_SUGGEST_CUSTOM_IMAGES = 8;
+    _pendingScriptImageCreatorVideoDraft = false;
+    _keepScriptNarrationEnabledOnNextPhotoSync = false;
 const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_AUDIO_SIZE = 80 * 1024 * 1024; // 80MB
 const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB
@@ -12862,7 +12871,9 @@ async function _dataUrlToImageFile(dataUrl, fileName) {
     return new File([blob], fileName, { type: blob.type || "image/png" });
 }
 
-async function _addScriptImageCreatorResultToProject(index) {
+async function _addScriptImageCreatorResultToProject(index, options = {}) {
+    const activatePhotoUpload = options.activatePhotoUpload !== false;
+    const renderPreview = options.renderPreview !== false;
     const item = _scriptImageCreatorState.generatedImages[index];
     if (!item?.image_url || !item?.upload_id) {
         throw new Error("Imagem gerada inválida.");
@@ -12881,33 +12892,31 @@ async function _addScriptImageCreatorResultToProject(index) {
     generatedFile.source_label = item.label || "";
     scriptPhotos.push(generatedFile);
 
-    const photoCb = document.getElementById("script-use-photos");
-    if (photoCb && !photoCb.checked) {
-        photoCb.checked = true;
-        togglePhotoUpload();
+    if (activatePhotoUpload) {
+        const photoCb = document.getElementById("script-use-photos");
+        if (photoCb && !photoCb.checked) {
+            photoCb.checked = true;
+            togglePhotoUpload();
+        }
     }
 
-    renderPhotoPreview();
+    if (renderPreview) {
+        renderPhotoPreview();
+    }
+
+    return generatedFile;
 }
 
-function _prepareScriptImageCreatorVideoDraftState() {
-    scriptData.videoType = "imagens_proprias";
-    scriptData.useCustomImages = scriptPhotos.length > 0;
-    scriptData.createNarration = true;
+function _applyPendingScriptImageCreatorVideoDraft() {
+    if (!_pendingScriptImageCreatorVideoDraft || !scriptPhotos.length) {
+        return;
+    }
+
+    _pendingScriptImageCreatorVideoDraft = false;
 
     const photoCb = document.getElementById("script-use-photos");
     if (photoCb) {
-        photoCb.checked = scriptPhotos.length > 0;
-    }
-
-    const photoArea = document.getElementById("script-photo-area");
-    if (photoArea) {
-        photoArea.hidden = scriptPhotos.length === 0;
-    }
-
-    const narChoice = document.getElementById("script-narration-choice");
-    if (narChoice) {
-        narChoice.hidden = scriptPhotos.length === 0;
+        photoCb.checked = true;
     }
 
     const narCb = document.getElementById("script-create-narration");
@@ -12915,9 +12924,19 @@ function _prepareScriptImageCreatorVideoDraftState() {
         narCb.checked = true;
     }
 
-    toggleScriptNarration();
-    _updateScriptRealisticPersonaVisibility();
-    scheduleScriptCreditEstimate();
+    _keepScriptNarrationEnabledOnNextPhotoSync = true;
+    togglePhotoUpload();
+    renderPhotoPreview();
+
+    window.requestAnimationFrame(() => {
+        const promptField = document.getElementById("script-text");
+        if (!promptField) {
+            return;
+        }
+        promptField.disabled = false;
+        promptField.focus();
+        promptField.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
 }
 
 async function useScriptImageCreatorResult(index) {
@@ -12932,11 +12951,15 @@ async function useScriptImageCreatorResult(index) {
 async function createVideoFromScriptImageCreatorResult(index) {
     try {
         const launchSource = _scriptImageCreatorLaunchSource;
-        await _addScriptImageCreatorResultToProject(index);
+        await _addScriptImageCreatorResultToProject(
+            index,
+            launchSource === "create-mode" ? { activatePhotoUpload: false, renderPreview: false } : {},
+        );
         closeScriptImageCreatorModal();
 
         if (launchSource === "create-mode") {
-            _prepareScriptImageCreatorVideoDraftState();
+            _pendingScriptImageCreatorVideoDraft = true;
+            scriptData.videoType = "imagens_proprias";
             adaptScriptStepForVideoType("imagens_proprias");
 
             const scriptTypeGrid = document.getElementById("script-video-type-grid");
@@ -12946,20 +12969,14 @@ async function createVideoFromScriptImageCreatorResult(index) {
                 });
             }
 
-            scriptStep = 2;
+            scriptStep = 1;
             switchCreateMode("script");
             updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
-            _prepareScriptImageCreatorVideoDraftState();
 
             window.requestAnimationFrame(() => {
-                const promptField = document.getElementById("script-text");
-                if (promptField) {
-                    promptField.disabled = false;
-                }
-                promptField?.focus();
-                promptField?.scrollIntoView({ behavior: "smooth", block: "center" });
+                document.querySelector("#script-video-type-grid .video-type-card.selected")?.scrollIntoView({ behavior: "smooth", block: "center" });
             });
-            showToast("Imagem adicionada. Agora descreva como você quer o vídeo.", "success");
+            showToast("Imagem pronta. Escolha o tipo de vídeo para continuar.", "success");
             return;
         }
 
@@ -13391,8 +13408,9 @@ function updateNarrationChoiceVisibility() {
     if (narChoice) narChoice.hidden = !shouldShow;
     // When photos are first added, default narration to OFF
     if (shouldShow && wasHidden && narCb) {
-        narCb.checked = false;
+        narCb.checked = _keepScriptNarrationEnabledOnNextPhotoSync ? true : false;
     }
+    _keepScriptNarrationEnabledOnNextPhotoSync = false;
     toggleScriptNarration();
 }
 
