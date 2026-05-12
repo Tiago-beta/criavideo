@@ -22416,6 +22416,7 @@ let _editorSourceWaveformState = {
     error: "",
     requestId: 0,
 };
+let _editorLayerWaveformState = new Map();
 const _EDITOR_RULER_STEPS_SEC = [0.25, 0.5, 1, 2, 5, 10, 15, 20, 30, 60, 120, 180, 300, 600, 900, 1200];
 const _EDITOR_TIMELINE_MIN_ZOOM = 0.5;
 const _EDITOR_TIMELINE_MAX_ZOOM = 12;
@@ -23410,14 +23411,14 @@ function _editorMediaLayerPlaybackSpeed(layer) {
 
 function _editorGetMediaLayerSourceOffset(layer) {
     const duration = Math.max(0, Number(layer?.duration || 0));
-    let sourceOffset = Math.max(0, Number(layer?.sourceOffset || 0));
+    let sourceOffset = Math.max(0, Number(layer?.sourceOffset ?? layer?.source_offset ?? 0));
     if (duration > 0) {
         sourceOffset = Math.min(sourceOffset, Math.max(0, duration - 0.05));
     }
     return sourceOffset;
 }
 
-function _editorGetMediaLayerSourceSpan(layer) {
+function _editorGetMediaLayerSourceDuration(layer) {
     const kind = String(layer?.kind || "").trim().toLowerCase();
     if (kind !== "video" && kind !== "audio") {
         return 0;
@@ -23428,7 +23429,38 @@ function _editorGetMediaLayerSourceSpan(layer) {
         return 0;
     }
 
-    return Math.max(0, duration - _editorGetMediaLayerSourceOffset(layer));
+    const sourceOffset = _editorGetMediaLayerSourceOffset(layer);
+    const availableDuration = Math.max(0, duration - sourceOffset);
+    const explicit = Number(layer?.sourceDuration ?? layer?.source_duration ?? Number.NaN);
+    if (Number.isFinite(explicit) && explicit > 0) {
+        return Math.min(explicit, availableDuration);
+    }
+    return availableDuration;
+}
+
+function _editorGetMediaLayerSourceSpan(layer) {
+    return _editorGetMediaLayerSourceDuration(layer);
+}
+
+function _editorGetMediaLayerSourceEnd(layer) {
+    return _editorGetMediaLayerSourceOffset(layer) + _editorGetMediaLayerSourceDuration(layer);
+}
+
+function _editorMediaLayerHasAudio(layer) {
+    const kind = String(layer?.kind || "").trim().toLowerCase();
+    if (kind === "audio") {
+        return true;
+    }
+    if (kind !== "video") {
+        return false;
+    }
+    if (layer?.hasAudio != null) {
+        return Boolean(layer.hasAudio);
+    }
+    if (layer?.has_audio != null) {
+        return Boolean(layer.has_audio);
+    }
+    return true;
 }
 
 function _editorGetMediaLayerMaxTimelineSpan(layer) {
@@ -24016,6 +24048,14 @@ function _editorBuildSourceAudioWaveformSvg(peaks = []) {
     return _editorBuildWaveformSvg(peaks, "rgba(220,160,255,0.92)");
 }
 
+function _editorBuildMediaLayerVideoWaveformSvg(peaks = []) {
+    return _editorBuildWaveformSvg(peaks, "rgba(255,219,184,0.95)");
+}
+
+function _editorBuildMediaLayerAudioWaveformSvg(peaks = []) {
+    return _editorBuildWaveformSvg(peaks, "rgba(245,201,255,0.96)");
+}
+
 function _editorBuildFallbackWaveformPeaks(bucketCount = 320) {
     const count = Math.max(64, Math.min(2600, Math.floor(Number(bucketCount || 0) || 320)));
     const peaks = [];
@@ -24107,6 +24147,13 @@ async function _editorExtractMusicWaveformPeaks(url, options = {}) {
             duration: Math.max(0, Number(decoded.duration || 0)),
         };
     } catch (_err) {
+        if (options?.allowFallback === false) {
+            return {
+                peaks: [],
+                duration: durationHint,
+                fallback: false,
+            };
+        }
         const fallbackPeaks = _editorBuildFallbackWaveformPeaks(fallbackBucketCount);
         return {
             peaks: fallbackPeaks,
@@ -24360,6 +24407,117 @@ async function _editorLoadMusicPreviewSource(url) {
     })
         .then(async (resp) => {
             if (resp.status === 401) {
+
+    function _editorGetMediaLayerWaveformKey(layer) {
+        const kind = String(layer?.kind || "").trim().toLowerCase();
+        if (kind !== "video" && kind !== "audio") {
+            return "";
+        }
+        const normalizedUrl = _editorNormalizeMediaUrl(layer?.url || "");
+        if (!normalizedUrl) {
+            return "";
+        }
+        return `${kind}:${normalizedUrl}`;
+    }
+
+    function _editorGetMediaLayerWaveformState(layer) {
+        const key = _editorGetMediaLayerWaveformKey(layer);
+        if (!key) {
+            return null;
+        }
+        return _editorLayerWaveformState.get(key) || null;
+    }
+
+    function _editorEnsureMediaLayerWaveform(layer) {
+        const normalizedLayer = _editorNormalizeMediaLayer(layer);
+        if (!_editorMediaLayerHasAudio(normalizedLayer)) {
+            return null;
+        }
+
+        const key = _editorGetMediaLayerWaveformKey(normalizedLayer);
+        if (!key) {
+            return null;
+        }
+
+        const existing = _editorLayerWaveformState.get(key);
+        if (existing && (existing.loading || existing.svgDataUrl || existing.error)) {
+            return existing;
+        }
+
+        const requestId = Number(existing?.requestId || 0) + 1;
+        const durationHint = Math.max(
+            0.1,
+            Number(normalizedLayer.sourceDuration || 0),
+            Number(normalizedLayer.duration || 0),
+            Number(normalizedLayer.endTime || 0) - Number(normalizedLayer.startTime || 0),
+        );
+        const loadingState = {
+            key,
+            loading: true,
+            peaks: [],
+            duration: durationHint,
+            svgDataUrl: "",
+            error: "",
+            requestId,
+        };
+        _editorLayerWaveformState.set(key, loadingState);
+
+        const sourceUrl = _editorNormalizeMediaUrl(normalizedLayer.url);
+        _editorExtractMusicWaveformPeaks(sourceUrl, {
+            durationHint,
+            allowFallback: false,
+        })
+            .then(({ peaks, duration }) => {
+                const latest = _editorLayerWaveformState.get(key);
+                if (!latest || latest.requestId !== requestId) return;
+
+                const safePeaks = Array.isArray(peaks)
+                    ? peaks
+                        .map((value) => Math.max(0, Math.min(1, Number(value || 0))))
+                        .filter((value) => Number.isFinite(value))
+                    : [];
+                const svgDataUrl = normalizedLayer.kind === "audio"
+                    ? _editorBuildMediaLayerAudioWaveformSvg(safePeaks)
+                    : _editorBuildMediaLayerVideoWaveformSvg(safePeaks);
+
+                _editorLayerWaveformState.set(key, {
+                    key,
+                    loading: false,
+                    peaks: safePeaks,
+                    duration: Math.max(0, Number(duration || 0), durationHint),
+                    svgDataUrl,
+                    error: "",
+                    requestId,
+                });
+                _editorRenderTimeline();
+            })
+            .catch((err) => {
+                const latest = _editorLayerWaveformState.get(key);
+                if (!latest || latest.requestId !== requestId) return;
+
+                _editorLayerWaveformState.set(key, {
+                    key,
+                    loading: false,
+                    peaks: [],
+                    duration: durationHint,
+                    svgDataUrl: "",
+                    error: String(err?.message || "waveform-error"),
+                    requestId,
+                });
+                _editorRenderTimeline();
+            });
+
+        return loadingState;
+    }
+
+    function _editorGetMediaLayerWaveformInlineStyle(layer) {
+        const waveState = _editorGetMediaLayerWaveformState(layer);
+        const waveUrl = String(waveState?.svgDataUrl || "");
+        if (!waveUrl) {
+            return "";
+        }
+        return `--editor-track-wave-image:url('${waveUrl}');--editor-track-wave-size:100% 100%;--editor-track-wave-repeat:no-repeat;`;
+    }
                 clearSession();
                 showAuth("Sua sessao expirou. Entre novamente.");
                 throw new Error("Unauthorized");
@@ -27318,6 +27476,12 @@ function _editorNormalizeMediaLayer(layer) {
         kind,
         duration,
     });
+    const sourceDuration = _editorGetMediaLayerSourceDuration({
+        ...layer,
+        kind,
+        duration,
+        sourceOffset,
+    });
     const speed = _editorMediaLayerPlaybackSpeed(layer);
     const startTime = Math.max(0, Number(layer.startTime || 0));
     let endTime = Math.max(startTime, Number(layer.endTime || 0));
@@ -27326,6 +27490,7 @@ function _editorNormalizeMediaLayer(layer) {
         kind,
         duration,
         sourceOffset,
+        sourceDuration,
         speed,
     });
     if (endTime <= startTime + 0.02) {
@@ -27346,9 +27511,11 @@ function _editorNormalizeMediaLayer(layer) {
         endTime,
         duration,
         sourceOffset,
+        sourceDuration,
         speed,
         volume: Math.max(0, Math.min(200, Number(layer.volume ?? 100))),
         audioOnly: Boolean(layer.audioOnly),
+        hasAudio: _editorMediaLayerHasAudio(layer),
         reversed: Boolean(layer.reversed),
         aspectRatio: aspect,
         trackIndex,
@@ -27398,17 +27565,18 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         const transitionState = _editorGetLayerPreviewTransitionState(normalizedLayer, currentTime);
         const localTime = Math.max(0, currentTime - normalizedLayer.startTime);
         const sourceOffset = Math.max(0, Number(normalizedLayer.sourceOffset || 0));
+        const sourceEnd = _editorGetMediaLayerSourceEnd(normalizedLayer);
         const layerSpeed = _editorMediaLayerPlaybackSpeed(normalizedLayer);
         const clipDuration = Math.max(0, Number(normalizedLayer.endTime || 0) - Number(normalizedLayer.startTime || 0));
         let playbackTime = Math.max(0, sourceOffset + (localTime * layerSpeed));
-        if (normalizedLayer.kind === "video" && normalizedLayer.reversed && Number(normalizedLayer.duration || 0) > 0) {
-            const layerSourceEnd = Math.min(Number(normalizedLayer.duration || 0), sourceOffset + (clipDuration * layerSpeed));
+        if (normalizedLayer.kind === "video" && normalizedLayer.reversed && sourceEnd > 0) {
+            const layerSourceEnd = Math.min(sourceEnd, sourceOffset + (clipDuration * layerSpeed));
             playbackTime = Math.max(sourceOffset, layerSourceEnd - (localTime * layerSpeed) - 0.03);
         }
         const reachedVideoEnd = normalizedLayer.kind === "video"
-            && Number(normalizedLayer.duration || 0) > 0
+            && sourceEnd > 0
             && !normalizedLayer.reversed
-            && playbackTime > Number(normalizedLayer.duration || 0);
+            && playbackTime > sourceEnd;
         const inRange = (
             currentTime >= normalizedLayer.startTime
             && currentTime <= normalizedLayer.endTime
@@ -27447,7 +27615,7 @@ function _editorSyncMediaLayersWithTime(timeSec) {
             : item.querySelector("video");
         if (!mediaEl) return;
 
-        const maxTime = normalizedLayer.duration > 0 ? Math.max(0, normalizedLayer.duration - 0.05) : playbackTime;
+        const maxTime = sourceEnd > 0 ? Math.max(0, sourceEnd - 0.05) : playbackTime;
         const targetTime = Math.max(0, Math.min(playbackTime, maxTime));
         const useSmoothReverseSeek = Boolean(shouldPlay && normalizedLayer.reversed && normalizedLayer.kind === "video");
         if (useSmoothReverseSeek) {
@@ -27693,10 +27861,14 @@ function _editorPushMediaLayer(kind, payload, options = {}) {
         endTime: Math.max(0.1, initialEnd),
         duration: layerDuration,
         sourceOffset: 0,
+        sourceDuration: safeKind === "video" || safeKind === "audio" ? layerDuration : 0,
         speed: 1,
         aspectRatio,
         volume: 100,
         audioOnly: false,
+        hasAudio: safeKind === "audio"
+            ? true
+            : Boolean(payload?.hasAudio ?? payload?.has_audio ?? (safeKind === "video")),
         trackIndex: resolvedTrackIndex,
         layoutMode: sequenceInTrack ? "track-sequence" : "auto-center",
     };
@@ -30146,21 +30318,21 @@ function _editorSplitAtCurrentTime() {
         ensureSaved();
         const firstEnd = t;
         const secondStart = t;
-        const layerClipDuration = Math.max(0.1, Number(normalizedLayer.endTime || 0) - Number(normalizedLayer.startTime || 0));
         const firstClipDuration = Math.max(0.1, firstEnd - normalizedLayer.startTime);
-        const secondClipDuration = Math.max(0.1, normalizedLayer.endTime - secondStart);
         const originalSourceOffset = Math.max(0, Number(normalizedLayer.sourceOffset || 0));
+        const originalSourceDuration = Math.max(0.1, Number(normalizedLayer.sourceDuration || 0));
         const playbackSpeed = _editorMediaLayerPlaybackSpeed(normalizedLayer);
-        const firstConsumedDuration = firstClipDuration * playbackSpeed;
-        const secondConsumedDuration = secondClipDuration * playbackSpeed;
+        const firstConsumedDuration = Math.max(
+            0.05,
+            Math.min(originalSourceDuration - 0.05, firstClipDuration * playbackSpeed),
+        );
+        const secondConsumedDuration = Math.max(0.05, originalSourceDuration - firstConsumedDuration);
         const secondSourceOffset = Boolean(normalizedLayer.reversed)
             ? originalSourceOffset
             : Math.max(0, originalSourceOffset + firstConsumedDuration);
         const firstSourceOffset = Boolean(normalizedLayer.reversed)
             ? Math.max(0, originalSourceOffset + secondConsumedDuration)
             : originalSourceOffset;
-        layer.sourceOffset = firstSourceOffset;
-        layer.endTime = firstEnd;
 
         const secondLayer = {
             ...layer,
@@ -30168,8 +30340,13 @@ function _editorSplitAtCurrentTime() {
             startTime: secondStart,
             endTime: normalizedLayer.endTime,
             sourceOffset: secondSourceOffset,
+            sourceDuration: secondConsumedDuration,
             reversed: Boolean(normalizedLayer.reversed),
         };
+
+        layer.sourceOffset = firstSourceOffset;
+        layer.sourceDuration = firstConsumedDuration;
+        layer.endTime = firstEnd;
 
         if (Number(secondLayer.duration || 0) > 0 && Number.isFinite(_editorGetMediaLayerMaxTimelineSpan(secondLayer))) {
             const remainingDuration = _editorGetMediaLayerMaxTimelineSpan(secondLayer);
@@ -31087,7 +31264,19 @@ function _editorRenderTimeline() {
         const layerTrack = _editorBuildMediaLayerTrackId(layerTrackType, trackIndex);
         const clipToneClass = normalizedLayer.kind === "audio" ? " clip-audio" : " clip-media";
         const showResizeHandle = normalizedLayer.kind === "video";
-        const clipHtml = `<div class="editor-track-clip${clipToneClass}${showResizeHandle ? " clip-resizable" : ""}${selectedClass}${reversedClass}" data-kind="media-layer" data-track="${layerTrack}" data-id="${normalizedLayer.id}" style="left:${left}%;width:${width}%">${_editorBuildTimelineClipContent(label, { resizable: showResizeHandle })}</div>`;
+        let waveformClass = "";
+        const styleParts = [`left:${left}%`, `width:${width}%`];
+        if (_editorMediaLayerHasAudio(normalizedLayer)) {
+            const waveformState = _editorEnsureMediaLayerWaveform(normalizedLayer) || _editorGetMediaLayerWaveformState(normalizedLayer);
+            const waveformStyle = _editorGetMediaLayerWaveformInlineStyle(normalizedLayer);
+            if (waveformStyle) {
+                styleParts.push(waveformStyle);
+            }
+            if (waveformStyle || waveformState?.loading) {
+                waveformClass = ` with-waveform${waveformState?.loading ? " loading" : ""}`;
+            }
+        }
+        const clipHtml = `<div class="editor-track-clip${clipToneClass}${showResizeHandle ? " clip-resizable" : ""}${waveformClass}${selectedClass}${reversedClass}" data-kind="media-layer" data-track="${layerTrack}" data-id="${normalizedLayer.id}" style="${styleParts.join(";")}">${_editorBuildTimelineClipContent(label, { resizable: showResizeHandle })}</div>`;
 
         const clipsByTrack = layerTrackType === "audio" ? audioLayerClipsByTrack : videoLayerClipsByTrack;
         if (!clipsByTrack.has(trackIndex)) {
@@ -32550,6 +32739,7 @@ async function _editorExport() {
                 end_time: Number(normalizedLayer.endTime || 0),
                 duration: Number(normalizedLayer.duration || 0),
                 source_offset: Number(normalizedLayer.sourceOffset || 0),
+                source_duration: Number(normalizedLayer.sourceDuration || 0),
                 speed: Number(normalizedLayer.speed || 1),
                 volume: Number(normalizedLayer.volume ?? 100),
                 audio_only: Boolean(normalizedLayer.audioOnly),
