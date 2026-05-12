@@ -2500,6 +2500,124 @@ a {
     box-shadow: inset 0 0 0 1px rgba(0, 212, 255, 0.08);
 }
 
+.publish-render-preview-card {
+    margin: 0 0 1rem;
+    padding: 0.85rem;
+    border-radius: 18px;
+    border: 1px solid rgba(0, 212, 255, 0.18);
+    background: rgba(7, 24, 41, 0.78);
+    box-shadow: inset 0 0 0 1px rgba(0, 212, 255, 0.05);
+}
+
+.publish-render-preview {
+    width: 100%;
+    display: block;
+    border-radius: 14px;
+    background: #081521;
+    border: 1px solid rgba(0, 212, 255, 0.12);
+    max-height: 460px;
+}
+
+.publish-analysis-card {
+    margin: 0 0 1rem;
+    padding: 1rem;
+    border-radius: 18px;
+    border: 1px solid rgba(0, 212, 255, 0.18);
+    background: linear-gradient(180deg, rgba(12, 38, 62, 0.92), rgba(8, 27, 45, 0.96));
+    box-shadow: inset 0 0 0 1px rgba(0, 212, 255, 0.05);
+}
+
+.publish-analysis-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+}
+
+.publish-analysis-actions .btn {
+    min-height: 50px;
+}
+
+.publish-analysis-status {
+    margin-bottom: 0.85rem;
+    padding: 0.9rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(120, 151, 181, 0.22);
+    background: rgba(12, 27, 42, 0.66);
+    color: #c2d5e5;
+    line-height: 1.5;
+}
+
+.publish-analysis-status.is-idle,
+.publish-analysis-status.is-running {
+    border-color: rgba(0, 212, 255, 0.22);
+    color: #d4ecfb;
+}
+
+.publish-analysis-status.is-success {
+    border-color: rgba(34, 197, 94, 0.28);
+    background: rgba(18, 60, 43, 0.54);
+    color: #d8ffe8;
+}
+
+.publish-analysis-status.is-error {
+    border-color: rgba(248, 113, 113, 0.28);
+    background: rgba(85, 24, 24, 0.52);
+    color: #ffd5d5;
+}
+
+.publish-analysis-summary {
+    margin-bottom: 0.9rem;
+    padding: 0.95rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(0, 212, 255, 0.14);
+    background: rgba(9, 23, 37, 0.72);
+    color: #d7e6f2;
+}
+
+.publish-analysis-summary p {
+    margin: 0 0 0.85rem;
+    color: #c5d8e7;
+    line-height: 1.55;
+}
+
+.publish-analysis-summary-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-bottom: 0.8rem;
+}
+
+.publish-analysis-summary-meta span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid rgba(0, 212, 255, 0.18);
+    background: rgba(8, 32, 52, 0.72);
+    color: #f7fbff;
+    font-size: 0.82rem;
+}
+
+.publish-analysis-scene-list {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: #bcd0e1;
+    display: grid;
+    gap: 0.5rem;
+}
+
+.publish-analysis-scene-list strong {
+    color: #f3f9ff;
+}
+
+.publish-generate-ai-btn {
+    width: 100%;
+    justify-content: center;
+}
+
 .pub-render-picker-btn {
     display: flex;
     align-items: center;
@@ -5887,6 +6005,20 @@ svg.spin {
     .publish-select-row {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.5rem;
+    }
+
+    .publish-analysis-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .publish-analysis-actions .btn,
+    .publish-analysis-actions .credit-estimate-pill {
+        width: 100%;
+    }
+
+    .publish-render-preview {
+        max-height: 320px;
     }
 
     .publish-select-row .input {

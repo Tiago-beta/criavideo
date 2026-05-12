@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v428 loaded");
+console.log("[CriaVideo] app.js v429 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -36,6 +36,16 @@ let _publishRenderLibrary = {
 let _publishThumbReferenceUploadId = "";
 let _publishThumbReferenceObjectUrl = "";
 let _publishLastThumbnailPrompt = "";
+let _publishAnalysisState = {
+    renderId: 0,
+    projectId: 0,
+    status: "",
+    progress: 0,
+    pollingTimer: null,
+    lastProjectSnapshot: null,
+    running: false,
+    generatingMetadata: false,
+};
 let _pendingConnectPlatform = "";
 let _editingSocialAccountId = 0;
 let _tevoxiPendingToggleContext = "";
@@ -772,7 +782,14 @@ function bindDashboardEvents() {
             _publishSyncRenderPicker();
             if (renderId) {
                 onRenderSelected(renderId);
+                return;
             }
+
+            _clearPublishMetadataFields();
+            _publishLastThumbnailPrompt = "";
+            clearPublishThumbnail();
+            clearPublishThumbReference();
+            _resetPublishAnalysisState({ keepRenderId: false });
         });
     }
     const draftSelect = document.getElementById("pub-draft-select");
@@ -783,6 +800,24 @@ function bindDashboardEvents() {
                 return;
             }
             await openPublishDraftFromList(renderId);
+        });
+    }
+    const publishAnalyzeBtn = document.getElementById("btn-publish-analyze");
+    if (publishAnalyzeBtn) {
+        publishAnalyzeBtn.addEventListener("click", () => {
+            publishStartAnalysis();
+        });
+    }
+    const publishGenerateBtn = document.getElementById("btn-generate-publish-ai");
+    if (publishGenerateBtn) {
+        publishGenerateBtn.addEventListener("click", () => {
+            generatePublishTitleDescription();
+        });
+    }
+    const publishPreviewVideo = document.getElementById("pub-render-preview");
+    if (publishPreviewVideo) {
+        publishPreviewVideo.addEventListener("loadedmetadata", () => {
+            schedulePublishAnalysisCreditEstimate();
         });
     }
     document.getElementById("btn-regenerate-thumb").addEventListener("click", () => {
@@ -2420,8 +2455,8 @@ const SIMILAR_MODE_ENGINE_DEFAULT = {
     unknown: "wan2",
 };
 const _creditEstimateTimers = {};
-const _creditEstimateSeq = { wizard: 0, script: 0, auto: 0, workflow: 0 };
-let _latestCreditEstimate = { wizard: null, script: null, auto: null, workflow: null };
+const _creditEstimateSeq = { wizard: 0, script: 0, auto: 0, workflow: 0, "publish-analysis-scene": 0 };
+let _latestCreditEstimate = { wizard: null, script: null, auto: null, workflow: null, "publish-analysis-scene": null };
 const _creditEstimateAddButtonByBadge = {
     "wizard-credit-estimate": "wizard-credit-add-btn",
     "script-credit-estimate": "script-credit-add-btn",
@@ -15759,6 +15794,416 @@ function _publishSyncRenderPicker() {
             : "Nenhum video selecionado. Use o botão + para escolher um video ou enviar um novo.";
         summary.classList.toggle("has-value", Boolean(selectedRenderId));
     }
+
+    _renderPublishRenderPreview(selectedRenderId);
+}
+
+function _getPublishSelectedRenderMeta(renderId = 0) {
+    const targetRenderId = String(renderId || document.getElementById("pub-render-select")?.value || "").trim();
+    if (!targetRenderId) {
+        return null;
+    }
+
+    return (_publishRenderLibrary.items || []).find(
+        (item) => String(item.render_id) === targetRenderId
+    ) || null;
+}
+
+function _clearPublishMetadataFields() {
+    const titleInput = document.getElementById("pub-title");
+    const descInput = document.getElementById("pub-description");
+    const hashtagsInput = document.getElementById("pub-hashtags");
+    if (titleInput) titleInput.value = "";
+    if (descInput) descInput.value = "";
+    if (hashtagsInput) hashtagsInput.value = "";
+}
+
+function _stopPublishAnalysisPolling() {
+    if (_publishAnalysisState.pollingTimer) {
+        clearInterval(_publishAnalysisState.pollingTimer);
+        _publishAnalysisState.pollingTimer = null;
+    }
+}
+
+function _setPublishAnalysisStatus(message = "", kind = "idle") {
+    const statusEl = document.getElementById("publish-analysis-status");
+    if (!statusEl) {
+        return;
+    }
+
+    const text = String(message || "").trim();
+    if (!text) {
+        statusEl.hidden = true;
+        statusEl.textContent = "";
+        statusEl.className = "publish-analysis-status";
+        return;
+    }
+
+    statusEl.hidden = false;
+    statusEl.textContent = text;
+    statusEl.className = `publish-analysis-status is-${kind}`;
+}
+
+function _renderPublishAnalysisSummary(project = null) {
+    const summaryEl = document.getElementById("publish-analysis-summary");
+    if (!summaryEl) {
+        return;
+    }
+
+    if (!project) {
+        summaryEl.hidden = true;
+        summaryEl.innerHTML = "";
+        return;
+    }
+
+    const tags = _safeSimilarTags(project.tags);
+    const scenes = Array.isArray(project.scenes) ? project.scenes : [];
+    const sceneCount = Number(tags.similar_scene_count || scenes.length || 0);
+    const contextSummary = String(tags.similar_context_summary || "").trim();
+    const cameraLabel = String(tags.similar_camera_label || "").trim();
+    const detectedReason = String(tags.similar_detected_reason || "").trim();
+    const summaryPreview = contextSummary
+        ? (contextSummary.length > 360 ? `${contextSummary.slice(0, 360).trim()}...` : contextSummary)
+        : "";
+    const sceneItems = scenes.slice(0, 3).map((scene, index) => {
+        const prompt = String(scene?.prompt || "").trim();
+        if (!prompt) {
+            return "";
+        }
+
+        const start = Number(scene?.start_time || 0);
+        const end = Number(scene?.end_time || start);
+        const excerpt = prompt.length > 150 ? `${prompt.slice(0, 150).trim()}...` : prompt;
+        const label = `Cena ${Number(scene?.scene_index ?? index) + 1} (${start.toFixed(1)}s - ${end.toFixed(1)}s)`;
+        return `<li><strong>${esc(label)}</strong> ${esc(excerpt)}</li>`;
+    }).filter(Boolean);
+
+    if (!sceneCount && !summaryPreview && !sceneItems.length && !cameraLabel && !detectedReason) {
+        summaryEl.hidden = true;
+        summaryEl.innerHTML = "";
+        return;
+    }
+
+    const metaBits = [
+        sceneCount > 0 ? `${sceneCount} cenas mapeadas` : "",
+        cameraLabel,
+        detectedReason,
+    ].filter(Boolean);
+
+    summaryEl.hidden = false;
+    summaryEl.innerHTML = `
+        <div class="publish-analysis-summary-meta">
+            ${metaBits.map((item) => `<span>${esc(item)}</span>`).join("")}
+        </div>
+        ${summaryPreview ? `<p>${esc(summaryPreview)}</p>` : ""}
+        ${sceneItems.length ? `<ul class="publish-analysis-scene-list">${sceneItems.join("")}</ul>` : ""}
+    `;
+}
+
+function _isPublishAnalysisReady(project = null) {
+    const currentProject = project || _publishAnalysisState.lastProjectSnapshot;
+    const tags = _safeSimilarTags(currentProject?.tags);
+    const stage = String(tags.similar_stage || "").trim().toLowerCase();
+    const scenes = Array.isArray(currentProject?.scenes) ? currentProject.scenes : [];
+    return Boolean(_publishAnalysisState.projectId && (stage === "analysis_ready" || scenes.length));
+}
+
+function _refreshPublishAnalysisActions() {
+    const renderId = Number(document.getElementById("pub-render-select")?.value || 0);
+    const hasRender = renderId > 0;
+    const analysisCard = document.getElementById("pub-analysis-card");
+    const analyzeBtn = document.getElementById("btn-publish-analyze");
+    const analyzeLabel = document.getElementById("btn-publish-analyze-label");
+    const generateBtn = document.getElementById("btn-generate-publish-ai");
+    const isAnalyzing = !!_publishAnalysisState.running;
+    const isGenerating = !!_publishAnalysisState.generatingMetadata;
+    const analysisReady = _isPublishAnalysisReady();
+
+    if (analysisCard) {
+        analysisCard.hidden = !hasRender;
+    }
+    if (analyzeBtn) {
+        analyzeBtn.disabled = !hasRender || isAnalyzing || isGenerating;
+    }
+    if (analyzeLabel) {
+        analyzeLabel.textContent = isAnalyzing ? "Analisando..." : "Analisar por cena";
+    }
+    if (generateBtn) {
+        generateBtn.disabled = !hasRender || !analysisReady || isAnalyzing || isGenerating;
+        generateBtn.textContent = isGenerating ? "Gerando..." : "Gerar título e descrição";
+    }
+}
+
+function _renderPublishRenderPreview(renderId = 0) {
+    const previewCard = document.getElementById("pub-render-preview-card");
+    const previewVideo = document.getElementById("pub-render-preview");
+    const selectedMeta = _getPublishSelectedRenderMeta(renderId);
+    const videoUrl = String(selectedMeta?.video_url || "").trim();
+    const hasVideo = Boolean(videoUrl);
+
+    if (previewCard) {
+        previewCard.hidden = !hasVideo;
+    }
+    if (!previewVideo) {
+        _refreshPublishAnalysisActions();
+        schedulePublishAnalysisCreditEstimate();
+        return;
+    }
+
+    if (!hasVideo) {
+        previewVideo.pause();
+        previewVideo.hidden = true;
+        previewVideo.removeAttribute("src");
+        previewVideo.removeAttribute("data-current-src");
+        previewVideo.load();
+        _refreshPublishAnalysisActions();
+        schedulePublishAnalysisCreditEstimate();
+        return;
+    }
+
+    if (previewVideo.dataset.currentSrc !== videoUrl) {
+        previewVideo.pause();
+        previewVideo.src = videoUrl;
+        previewVideo.dataset.currentSrc = videoUrl;
+        previewVideo.load();
+    }
+    previewVideo.hidden = false;
+    _refreshPublishAnalysisActions();
+    schedulePublishAnalysisCreditEstimate();
+}
+
+function _resetPublishAnalysisState({ keepRenderId = true } = {}) {
+    _stopPublishAnalysisPolling();
+    _publishAnalysisState.renderId = keepRenderId
+        ? Number(document.getElementById("pub-render-select")?.value || 0)
+        : 0;
+    _publishAnalysisState.projectId = 0;
+    _publishAnalysisState.status = "";
+    _publishAnalysisState.progress = 0;
+    _publishAnalysisState.lastProjectSnapshot = null;
+    _publishAnalysisState.running = false;
+    _publishAnalysisState.generatingMetadata = false;
+
+    if (_publishAnalysisState.renderId > 0) {
+        _setPublishAnalysisStatus(
+            "Clique em Analisar por cena para mapear o contexto do vídeo antes de gerar o título e a descrição.",
+            "idle",
+        );
+    } else {
+        _setPublishAnalysisStatus("", "idle");
+    }
+    _renderPublishAnalysisSummary(null);
+    _refreshPublishAnalysisActions();
+    schedulePublishAnalysisCreditEstimate();
+}
+
+function _resolvePublishAnalysisDurationSeconds() {
+    const selectedMeta = _getPublishSelectedRenderMeta();
+    const renderDuration = Number(selectedMeta?.duration_seconds || 0);
+    if (Number.isFinite(renderDuration) && renderDuration > 0.05) {
+        return renderDuration;
+    }
+
+    const previewVideo = document.getElementById("pub-render-preview");
+    const previewDuration = Number(previewVideo?.duration || 0);
+    if (Number.isFinite(previewDuration) && previewDuration > 0.05) {
+        return previewDuration;
+    }
+
+    return 0;
+}
+
+async function updatePublishAnalysisCreditEstimate() {
+    const renderId = Number(document.getElementById("pub-render-select")?.value || 0);
+    if (!renderId) {
+        _setCreditEstimateBadge("publish-scene-analysis-estimate", "", "ready", true);
+        return;
+    }
+
+    const durationSeconds = _resolvePublishAnalysisDurationSeconds();
+    if (!(durationSeconds > 0.05)) {
+        const previewVideo = document.getElementById("pub-render-preview");
+        const hasPreview = !!String(previewVideo?.getAttribute("src") || "").trim();
+        _setCreditEstimateBadge(
+            "publish-scene-analysis-estimate",
+            hasPreview ? "Lendo duracao do video..." : "Custo exibido quando a duracao estiver disponivel",
+            hasPreview ? "loading" : "ready",
+        );
+        return;
+    }
+
+    await _refreshCreditEstimate(
+        "publish-analysis-scene",
+        "publish-scene-analysis-estimate",
+        {
+            mode: "similar-analysis",
+            duration_seconds: durationSeconds,
+            analysis_mode: "scene",
+        },
+        (creditsNeeded) => `Custo por cena: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
+    );
+}
+
+function schedulePublishAnalysisCreditEstimate() {
+    _queueCreditEstimate(
+        "publish-analysis-scene",
+        () => updatePublishAnalysisCreditEstimate(),
+        120,
+    );
+}
+
+async function _refreshPublishAnalysisProject() {
+    const projectId = Number(_publishAnalysisState.projectId || 0);
+    if (!projectId) {
+        return;
+    }
+
+    try {
+        const project = await api(`/video/projects/${projectId}`);
+        const tags = _safeSimilarTags(project.tags);
+        const status = String(project.status || "").toLowerCase();
+        const progress = Number(project.progress || 0);
+        const isProcessing = ["generating_scenes", "generating_clips", "rendering"].includes(status);
+        const stage = String(tags.similar_stage || "").trim().toLowerCase();
+        const stageLabel = SIMILAR_STAGE_LABELS[stage] || "Processando analise do video...";
+        const sceneCount = Number(tags.similar_scene_count || (Array.isArray(project.scenes) ? project.scenes.length : 0) || 0);
+
+        _publishAnalysisState.status = status;
+        _publishAnalysisState.progress = progress;
+        _publishAnalysisState.lastProjectSnapshot = project;
+        _publishAnalysisState.running = isProcessing;
+
+        let kind = "running";
+        let message = stageLabel;
+
+        if (status === "failed") {
+            kind = "error";
+            message = project.error_message || stageLabel;
+        } else if (_isPublishAnalysisReady(project)) {
+            kind = "success";
+            message = sceneCount > 0
+                ? `Analise concluida. ${sceneCount} cenas prontas para gerar o título e a descrição.`
+                : "Analise concluida. Gere o título e a descrição usando o contexto do video.";
+        } else if (progress > 0) {
+            message = `${stageLabel} (${progress}%)`;
+        }
+
+        _setPublishAnalysisStatus(message, kind);
+        _renderPublishAnalysisSummary(project);
+        _refreshPublishAnalysisActions();
+
+        if (!isProcessing) {
+            _stopPublishAnalysisPolling();
+        }
+    } catch (error) {
+        _publishAnalysisState.running = false;
+        _stopPublishAnalysisPolling();
+        _setPublishAnalysisStatus(`Erro ao atualizar analise: ${error.message}`, "error");
+        _refreshPublishAnalysisActions();
+    }
+}
+
+function _startPublishAnalysisPolling() {
+    _stopPublishAnalysisPolling();
+    _publishAnalysisState.pollingTimer = setInterval(() => {
+        _refreshPublishAnalysisProject().catch(() => {});
+    }, 3000);
+}
+
+async function publishStartAnalysis() {
+    const renderId = Number(document.getElementById("pub-render-select")?.value || 0);
+    if (!renderId) {
+        alert("Selecione um vídeo antes de analisar.");
+        return;
+    }
+
+    const selectedMeta = _getPublishSelectedRenderMeta(renderId);
+    const aspectRatio = String(selectedMeta?.aspect_ratio || "16:9").trim() || "16:9";
+    const titleSeed = String(selectedMeta?.title || selectedMeta?.picker_label || `Render #${renderId}`).trim();
+
+    _stopPublishAnalysisPolling();
+    _publishAnalysisState.renderId = renderId;
+    _publishAnalysisState.projectId = 0;
+    _publishAnalysisState.lastProjectSnapshot = null;
+    _publishAnalysisState.running = true;
+    _publishAnalysisState.generatingMetadata = false;
+    _setPublishAnalysisStatus("Iniciando analise do video enviado por cenas...", "running");
+    _renderPublishAnalysisSummary(null);
+    _refreshPublishAnalysisActions();
+
+    try {
+        const response = await api("/video/similar/analyze", {
+            method: "POST",
+            body: JSON.stringify({
+                source_render_id: renderId,
+                source_upload_name: titleSeed,
+                title: titleSeed || "Video para publicar",
+                aspect_ratio: aspectRatio,
+                analysis_mode: "scene",
+            }),
+        });
+
+        const projectId = Number(response?.project_id || 0);
+        if (!projectId) {
+            throw new Error("Resposta invalida ao iniciar a analise");
+        }
+
+        _publishAnalysisState.projectId = projectId;
+        _setPublishAnalysisStatus("Analise por cenas iniciada. Aguardando retorno da IA...", "running");
+        _startPublishAnalysisPolling();
+        await _refreshPublishAnalysisProject();
+    } catch (error) {
+        _publishAnalysisState.running = false;
+        _setPublishAnalysisStatus(`Erro ao iniciar analise: ${error.message}`, "error");
+        _refreshPublishAnalysisActions();
+    }
+}
+
+async function generatePublishTitleDescription() {
+    const renderId = Number(document.getElementById("pub-render-select")?.value || 0);
+    const aiLoading = document.getElementById("pub-ai-loading");
+    const titleInput = document.getElementById("pub-title");
+    const descInput = document.getElementById("pub-description");
+    const hashtagsInput = document.getElementById("pub-hashtags");
+    const analysisProject = _publishAnalysisState.lastProjectSnapshot;
+
+    if (!renderId || !_isPublishAnalysisReady(analysisProject)) {
+        alert("Analise o vídeo por cena antes de gerar o título e a descrição.");
+        return;
+    }
+
+    _publishAnalysisState.generatingMetadata = true;
+    _refreshPublishAnalysisActions();
+    if (aiLoading) {
+        aiLoading.hidden = false;
+    }
+
+    try {
+        const data = await api("/publish/ai-suggest", {
+            method: "POST",
+            body: JSON.stringify({
+                render_id: renderId,
+                analysis_project_id: Number(_publishAnalysisState.projectId || 0),
+            }),
+        });
+
+        if (titleInput) titleInput.value = data.title || "";
+        if (descInput) descInput.value = data.description || "";
+        if (hashtagsInput) hashtagsInput.value = data.hashtags || "";
+        _publishLastThumbnailPrompt = String(data.thumbnail_prompt || "").trim();
+        setPublishThumbnailManualState(false);
+        showToast("Título e descrição gerados com base na análise do vídeo.", "success");
+    } catch (error) {
+        console.warn("Publish AI suggest failed:", error);
+        showToast(`Erro ao gerar título e descrição: ${error.message}`, "error");
+    } finally {
+        _publishAnalysisState.generatingMetadata = false;
+        if (aiLoading) {
+            aiLoading.hidden = true;
+        }
+        _refreshPublishAnalysisActions();
+        renderPublishDraftPicker();
+    }
 }
 
 function _publishOpenRenderSourceModal() {
@@ -16049,6 +16494,9 @@ async function loadRenders(preselectProjectId = 0) {
                         subtitle: projectId ? `Projeto #${projectId}` : "Projeto",
                         picker_label: projectTitle,
                         option_label: optionLabel,
+                        aspect_ratio: formatRaw,
+                        video_url: String(render.video_url || "").trim(),
+                        duration_seconds: durationSeconds,
                         format_label: formatLabel,
                         duration_label: durationLabel,
                         thumbnail_url: thumbnailUrl,
@@ -16877,40 +17325,25 @@ async function confirmSchedulePublish() {
 
 async function onRenderSelected(renderId) {
     const aiLoading = document.getElementById("pub-ai-loading");
-    const titleInput = document.getElementById("pub-title");
-    const descInput = document.getElementById("pub-description");
-    const hashtagsInput = document.getElementById("pub-hashtags");
 
-    // Show AI loading
-    aiLoading.hidden = false;
+    if (aiLoading) {
+        aiLoading.hidden = true;
+    }
     _publishLastThumbnailPrompt = "";
     clearPublishThumbnail();
     clearPublishThumbReference();
+    _resetPublishAnalysisState({ keepRenderId: true });
 
     const draftApplied = await applyPublishDraft(renderId);
     if (draftApplied) {
-        aiLoading.hidden = true;
         renderPublishDraftPicker();
+        _refreshPublishAnalysisActions();
         return;
     }
 
-    // First: get AI suggestions for title/description
-    try {
-        const data = await api("/publish/ai-suggest", {
-            method: "POST",
-            body: JSON.stringify({ render_id: renderId }),
-        });
-        titleInput.value = data.title || "";
-        descInput.value = data.description || "";
-        hashtagsInput.value = data.hashtags || "";
-        _publishLastThumbnailPrompt = String(data.thumbnail_prompt || "").trim();
-    } catch (err) {
-        console.warn("AI suggest failed:", err);
-    }
-
-    setPublishThumbnailManualState(false);
-    aiLoading.hidden = true;
+    _clearPublishMetadataFields();
     renderPublishDraftPicker();
+    _refreshPublishAnalysisActions();
 }
 
 async function generatePublishThumbnail(renderId, customTitle, customDescription = "", thumbnailPrompt = "") {

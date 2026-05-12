@@ -2119,20 +2119,26 @@ async def run_similar_reference_analysis(
     source_upload_path: str = "",
     source_upload_name: str = "",
     analysis_mode: str = "scene",
+    source_type: str = "",
+    source_render_id: int = 0,
 ) -> None:
     async with async_session() as db:
         project = await db.get(VideoProject, project_id)
         if not project:
             return
 
-        source_type = "upload" if str(source_upload_path or "").strip() else "url"
+        normalized_source_type = str(source_type or "").strip().lower()
+        if normalized_source_type not in {"url", "upload", "render"}:
+            normalized_source_type = "upload" if str(source_upload_path or "").strip() else "url"
+
         tags = _safe_tags_dict(project.tags)
         tags.update(
             {
                 "type": "similar",
                 "similar_stage": "downloading_reference",
                 "similar_source_url": source_url,
-                "similar_source_type": source_type,
+                "similar_source_type": normalized_source_type,
+                "similar_source_render_id": int(source_render_id or 0),
                 "similar_source_upload_name": source_upload_name,
                 "similar_analysis_mode": "general" if str(analysis_mode or "scene").strip().lower() == "general" else "scene",
             }
@@ -2219,7 +2225,8 @@ async def run_similar_reference_analysis(
                     "similar_normalized_url": resolved_normalized_url,
                     "similar_local_video_path": resolved_video_path,
                     "similar_reused_cache": bool(reused_video),
-                    "similar_source_type": source_type,
+                    "similar_source_type": normalized_source_type,
+                    "similar_source_render_id": int(source_render_id or 0),
                     "similar_source_upload_name": source_upload_name,
                     "similar_analysis_mode": "general" if str(analysis_mode or "scene").strip().lower() == "general" else "scene",
                 }

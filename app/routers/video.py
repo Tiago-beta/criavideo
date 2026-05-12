@@ -2138,6 +2138,7 @@ class ProjectResponse(BaseModel):
 class StartSimilarAnalysisRequest(BaseModel):
     source_url: str = ""
     source_upload_id: str = ""
+    source_render_id: int = 0
     source_upload_name: str = ""
     title: str = ""
     aspect_ratio: str = "16:9"
@@ -2225,20 +2226,49 @@ async def start_similar_analysis(
 ):
     source_url = str(req.source_url or "").strip()
     source_upload_id = str(req.source_upload_id or "").strip()
+    source_render_id = max(0, int(req.source_render_id or 0))
     source_upload_name = str(req.source_upload_name or "").strip()
     source_upload_path = None
+    source_type = "url"
 
-    if not source_url and not source_upload_id:
-        raise HTTPException(status_code=400, detail="Informe um link ou envie um vídeo para analisar.")
+    if not source_url and not source_upload_id and not source_render_id:
+        raise HTTPException(status_code=400, detail="Informe um link, envie um vídeo ou escolha um render para analisar.")
 
-    if source_upload_id:
+    if source_render_id:
+        render = await db.get(VideoRender, source_render_id)
+        if not render:
+            raise HTTPException(status_code=404, detail="Render não encontrado para análise.")
+
+        render_project = await db.get(VideoProject, render.project_id)
+        if not render_project or render_project.user_id != user["id"]:
+            raise HTTPException(status_code=404, detail="Projeto do render não encontrado.")
+
+        render_path = Path(str(render.file_path or "").strip())
+        if not str(render_path):
+            raise HTTPException(status_code=400, detail="O render selecionado não possui arquivo para análise.")
+        if not render_path.is_absolute():
+            render_path = Path(settings.media_dir) / str(render_path).lstrip("\\/")
+        if not render_path.exists() or render_path.stat().st_size <= 0:
+            raise HTTPException(status_code=400, detail="Arquivo do render não encontrado. Gere o vídeo novamente.")
+
+        source_upload_path = render_path
+        source_type = "render"
+        source_url = ""
+        if not source_upload_name:
+            source_upload_name = (
+                str(render_project.title or render_project.track_title or f"Render #{render.id}").strip()
+                or f"Render #{render.id}"
+            )
+
+    if source_url and not source_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Informe uma URL válida para analisar.")
+
+    if source_upload_id and not source_upload_path:
         source_upload_path = _resolve_temp_file(int(user["id"]), source_upload_id, VIDEO_EXTS)
         if not source_upload_path:
             raise HTTPException(status_code=400, detail="Vídeo enviado não encontrado. Envie novamente.")
         source_url = ""
-
-    if source_url and not source_url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="Informe uma URL válida para analisar.")
+        source_type = "upload"
 
     if req.aspect_ratio not in {"16:9", "9:16", "1:1"}:
         raise HTTPException(status_code=400, detail="Formato inválido. Use 16:9, 9:16 ou 1:1.")
@@ -2251,7 +2281,6 @@ async def start_similar_analysis(
         raise HTTPException(status_code=503, detail="Integração Baixa Tudo não configurada no servidor.")
 
     title = (req.title or "").strip() or "Video Semelhante"
-    source_type = "upload" if source_upload_path else "url"
     source_label = source_upload_name or source_url or "video enviado"
     tags_data = {
         "type": "similar",
@@ -2259,6 +2288,7 @@ async def start_similar_analysis(
         "similar_source_url": source_url,
         "similar_source_type": source_type,
         "similar_source_upload_id": source_upload_id,
+        "similar_source_render_id": source_render_id,
         "similar_source_upload_name": source_upload_name,
         "similar_analysis_mode": analysis_mode,
         "similar_scene_seconds": max(int(settings.similar_scene_default_seconds or 5), 1),
@@ -2295,6 +2325,8 @@ async def start_similar_analysis(
         str(source_upload_path or ""),
         source_upload_name,
         analysis_mode,
+        source_type,
+        source_render_id,
     )
     return {
         "project_id": project.id,

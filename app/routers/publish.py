@@ -15,7 +15,7 @@ from typing import Optional
 import openai
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import PublishJob, PublishStatus, VideoProject, VideoRender, SocialAccount, Platform
+from app.models import PublishJob, PublishStatus, VideoProject, VideoRender, VideoScene, SocialAccount, Platform
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -189,6 +189,7 @@ async def get_publish_job(
 
 class AISuggestRequest(BaseModel):
     render_id: int
+    analysis_project_id: int = 0
 
 
 def _resolve_temp_image_upload(user_id: int, upload_id: str) -> Path | None:
@@ -218,6 +219,73 @@ async def ai_suggest(
     project = await db.get(VideoProject, render.project_id)
     if not project or project.user_id != user["id"]:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    def _safe_tags_dict(raw_tags) -> dict:
+        if isinstance(raw_tags, dict):
+            return dict(raw_tags)
+        if isinstance(raw_tags, str):
+            try:
+                parsed = json.loads(raw_tags)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                return {}
+        return {}
+
+    def _format_scene_time_label(start_time: object, end_time: object) -> str:
+        try:
+            start = max(0.0, float(start_time or 0.0))
+        except Exception:
+            start = 0.0
+        try:
+            end = max(start, float(end_time or start))
+        except Exception:
+            end = start
+        return f"{start:.1f}s - {end:.1f}s"
+
+    def _build_scene_analysis_context(scene_rows: list[VideoScene]) -> str:
+        lines = []
+        for scene in scene_rows[:18]:
+            prompt_text = re.sub(r"\s+", " ", str(scene.prompt or "")).strip()
+            spoken_text = re.sub(r"\s+", " ", str(scene.lyrics_segment or "")).strip()
+            fragments = []
+            if prompt_text:
+                fragments.append(prompt_text)
+            if spoken_text:
+                fragments.append(f"Fala/trecho: {spoken_text}")
+            if not fragments:
+                continue
+
+            scene_index = int(scene.scene_index or 0) + 1
+            label = _format_scene_time_label(scene.start_time, scene.end_time)
+            line = f"- Cena {scene_index} ({label}): {' '.join(fragments)}"
+            lines.append(line[:460].strip())
+
+        return "\n".join(lines).strip()
+
+    analysis_project_id = max(0, int(req.analysis_project_id or 0))
+    analysis_tags: dict = {}
+    analysis_scenes: list[VideoScene] = []
+    if analysis_project_id:
+        analysis_project = await db.get(VideoProject, analysis_project_id)
+        if not analysis_project or analysis_project.user_id != user["id"]:
+            raise HTTPException(status_code=404, detail="Projeto de analise nao encontrado")
+
+        analysis_tags = _safe_tags_dict(analysis_project.tags)
+        if str(analysis_tags.get("type") or "").strip().lower() != "similar":
+            raise HTTPException(status_code=400, detail="Projeto de analise invalido para gerar metadados")
+
+        result_scenes = await db.execute(
+            select(VideoScene)
+            .where(VideoScene.project_id == analysis_project_id)
+            .order_by(VideoScene.scene_index.asc(), VideoScene.id.asc())
+        )
+        analysis_scenes = result_scenes.scalars().all()
+
+        has_analysis_context = bool(analysis_scenes) or bool(str(analysis_tags.get("similar_context_summary") or "").strip())
+        analysis_stage = str(analysis_tags.get("similar_stage") or "").strip().lower()
+        if analysis_stage == "analysis_failed" or not has_analysis_context:
+            raise HTTPException(status_code=400, detail="A analise por cena ainda nao esta pronta para gerar titulo e descricao")
 
     def _parse_json_response(raw_text: str) -> dict:
         cleaned = (raw_text or "").strip()
@@ -768,17 +836,28 @@ async def ai_suggest(
 
         return _normalize_ptbr_copy("\n".join(lines).strip())
 
-    render_transcription, has_spoken_transcription = await _load_render_transcription()
-    render_visual_context = ""
-    if (not has_spoken_transcription) or (not _context_has_enough_signal(render_transcription)):
+    analysis_context_summary = str(analysis_tags.get("similar_context_summary") or "").strip()
+    analysis_transcript_excerpt = str(analysis_tags.get("similar_transcript_excerpt") or "").strip()
+    analysis_scene_context = _build_scene_analysis_context(analysis_scenes)
+
+    render_transcription = _strip_lyrics_blocks(analysis_transcript_excerpt)
+    has_spoken_transcription = bool(render_transcription)
+    if not has_spoken_transcription and not analysis_context_summary and not analysis_scene_context:
+        render_transcription, has_spoken_transcription = await _load_render_transcription()
+
+    render_visual_context = _normalize_ptbr_copy(analysis_context_summary or analysis_scene_context)
+    if not render_visual_context and ((not has_spoken_transcription) or (not _context_has_enough_signal(render_transcription))):
         render_visual_context = await _load_render_visual_context()
 
-    primary_context_seed = render_transcription if _context_has_enough_signal(render_transcription) else render_visual_context
+    primary_context_seed = analysis_context_summary or analysis_scene_context
+    if not primary_context_seed:
+        primary_context_seed = render_transcription if _context_has_enough_signal(render_transcription) else render_visual_context
     if not primary_context_seed:
         primary_context_seed = project.description or project.track_title or project.title or ""
 
     transcription_preview = render_transcription[:1800]
     visual_context_preview = render_visual_context[:1200]
+    analysis_scene_context_preview = analysis_scene_context[:2400]
     project_tags = _normalize_project_tags(project.tags)
 
     context_parts = []
@@ -790,6 +869,19 @@ async def ai_suggest(
         context_parts.append(f"Artista: {project.track_artist}")
     if project.style_prompt:
         context_parts.append(f"Estilo visual: {project.style_prompt}")
+    if analysis_context_summary:
+        context_parts.append(f"Resumo da analise cena a cena:\n{analysis_context_summary[:1800]}")
+    if analysis_scene_context_preview:
+        context_parts.append(f"Mapa de cenas analisadas frame a frame:\n{analysis_scene_context_preview}")
+    analysis_scene_count = int(analysis_tags.get("similar_scene_count") or len(analysis_scenes) or 0)
+    if analysis_scene_count > 0:
+        context_parts.append(f"Total de cenas detectadas: {analysis_scene_count}")
+    detected_reason = str(analysis_tags.get("similar_detected_reason") or "").strip()
+    if detected_reason:
+        context_parts.append(f"Leitura do formato do video: {detected_reason[:220]}")
+    camera_label = str(analysis_tags.get("similar_camera_label") or "").strip()
+    if camera_label:
+        context_parts.append(f"Perfil de camera detectado: {camera_label}")
     if transcription_preview:
         context_parts.append(f"Transcricao/contexto real do video:\n{transcription_preview}")
     elif project.lyrics_text:
@@ -802,7 +894,7 @@ async def ai_suggest(
     if project_tags:
         context_parts.append(f"Tags base: {', '.join(project_tags[:12])}")
 
-    context = "\n".join(context_parts) or "Vídeo musical sem detalhes adicionais."
+    context = ("\n".join(context_parts) or "Vídeo musical sem detalhes adicionais.")[:5200]
 
     tema = _derive_theme_seed(
         primary_context_seed,
