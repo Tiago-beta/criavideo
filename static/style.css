@@ -3853,6 +3853,10 @@ th {
     min-height: 260px;
 }
 
+#create-panel-similar {
+    min-height: 0;
+}
+
 .wizard-step {
     /* animation applied via .wizard-step-enter class only */
 }
@@ -9968,6 +9972,17 @@ th,
         transform: translateY(0);
     }
 
+    .similar-reference-frame-upload-note {
+        width: 100%;
+        min-height: 0;
+        padding: 10px 14px;
+        border-radius: 16px;
+    }
+
+    #similar-scenes-list .duration-options ~ .similar-scene-engine-picker,
+    .similar-scene-action-btn-primary {
+        margin-left: 0;
+    }
 }
 
 .similar-preview-empty {
@@ -10037,6 +10052,10 @@ th,
     gap: 6px;
 }
 
+#similar-scenes-list .duration-options ~ .similar-scene-engine-picker {
+    margin-left: 14px;
+}
+
 .similar-scene-engine-btn {
     min-width: 42px;
     height: 30px;
@@ -10095,6 +10114,7 @@ th,
 }
 
 .similar-scene-action-btn-primary {
+    margin-left: 14px;
     border-color: rgba(255, 193, 79, 0.45);
     color: #ffd480;
     background: rgba(255, 193, 79, 0.12);
