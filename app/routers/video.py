@@ -1445,6 +1445,23 @@ def _collect_similar_unified_video_reference_paths(
     return ordered_paths
 
 
+def _extract_similar_detected_scene_duration_map(raw_tags: object) -> dict[str, float]:
+    tags = _safe_tags_dict(raw_tags)
+    raw_map = tags.get("similar_detected_scene_durations") if isinstance(tags.get("similar_detected_scene_durations"), dict) else {}
+    if not isinstance(raw_map, dict):
+        return {}
+
+    resolved: dict[str, float] = {}
+    for key, raw_value in raw_map.items():
+        try:
+            value = float(raw_value or 0)
+        except Exception:
+            continue
+        if value > 0.05:
+            resolved[str(key)] = value
+    return resolved
+
+
 def _compose_similar_unified_generation_reference_paths(
     video_reference_paths: list[str],
     *,
@@ -1600,6 +1617,7 @@ def _serialize_project_scene(
     scene: VideoScene,
     reference_frame_map: dict[str, str] | None = None,
     generated_frame_variant_map: dict[str, list[str]] | None = None,
+    detected_scene_duration_map: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     reference_frame_path = ""
     scene_key = str(int(scene.scene_index or 0))
@@ -1611,6 +1629,9 @@ def _serialize_project_scene(
     generated_frame_variants: list[dict[str, Any]] = []
     variant_scene_key = str(int(scene.id or 0))
     active_image_path = str(scene.image_path or "").strip()
+    detected_duration_seconds = float(
+        (detected_scene_duration_map or {}).get(scene_key) or _similar_scene_duration_seconds(scene)
+    )
     if isinstance(generated_frame_variant_map, dict):
         for index, variant_path in enumerate(generated_frame_variant_map.get(variant_scene_key, [])):
             path = str(variant_path or "").strip()
@@ -1638,6 +1659,7 @@ def _serialize_project_scene(
         "reference_frame_url": _to_media_url(reference_frame_path),
         "start_time": scene.start_time,
         "end_time": scene.end_time,
+        "detected_duration_seconds": detected_duration_seconds,
         "lyrics_segment": scene.lyrics_segment,
         "is_user_uploaded": bool(scene.is_user_uploaded),
         "generated_image_variants": generated_frame_variants,
@@ -2372,6 +2394,7 @@ async def get_project(
     response_tags = project.tags
     reference_frame_map: dict[str, str] = {}
     generated_frame_variant_map: dict[str, list[str]] = {}
+    detected_scene_duration_map: dict[str, float] = {}
     if _is_similar_project(project):
         response_tags = _safe_tags_dict(project.tags)
         reference_video_url = _to_media_url(str(response_tags.get("similar_local_video_path") or "").strip())
@@ -2385,6 +2408,7 @@ async def get_project(
             response_tags["similar_unified_reference_image_url"] = _to_media_url(unified_reference_image_path)
         reference_frame_map = _extract_similar_reference_frame_map(response_tags)
         generated_frame_variant_map = _extract_similar_generated_frame_variant_map(response_tags)
+        detected_scene_duration_map = _extract_similar_detected_scene_duration_map(response_tags)
 
     return {
         "id": project.id,
@@ -2400,7 +2424,7 @@ async def get_project(
         "error_message": project.error_message,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "scenes": [
-            _serialize_project_scene(s, reference_frame_map, generated_frame_variant_map)
+            _serialize_project_scene(s, reference_frame_map, generated_frame_variant_map, detected_scene_duration_map)
             for s in scenes
         ],
         "renders": [
@@ -2825,7 +2849,8 @@ async def update_similar_scene(
         await db.commit()
 
     reference_frame_map = _extract_similar_reference_frame_map(project.tags)
-    return {"scene": _serialize_project_scene(scene, reference_frame_map)}
+    detected_scene_duration_map = _extract_similar_detected_scene_duration_map(project.tags)
+    return {"scene": _serialize_project_scene(scene, reference_frame_map, None, detected_scene_duration_map)}
 
 
 @router.post("/projects/{project_id}/similar/scenes/{scene_id}/image")
@@ -2982,7 +3007,8 @@ async def upsert_similar_scene_image(
 
     reference_frame_map = _extract_similar_reference_frame_map(project.tags)
     generated_frame_variant_map = _extract_similar_generated_frame_variant_map(project.tags)
-    return {"scene": _serialize_project_scene(scene, reference_frame_map, generated_frame_variant_map)}
+    detected_scene_duration_map = _extract_similar_detected_scene_duration_map(project.tags)
+    return {"scene": _serialize_project_scene(scene, reference_frame_map, generated_frame_variant_map, detected_scene_duration_map)}
 
 
 @router.post("/projects/{project_id}/similar/generate-previews")

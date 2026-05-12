@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v424 loaded");
+console.log("[CriaVideo] app.js v425 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -177,6 +177,14 @@ function _renderDurationButtons(containerId, options, preferredValue = null) {
         const selected = value === selectedValue ? " selected" : "";
         return `<button class="duration-option${selected}" data-value="${value}" type="button">${value}s</button>`;
     }).join("");
+}
+
+function _formatDurationOptionLabel(value) {
+    const parsed = parseInt(value || 0, 10);
+    if (parsed > 0) {
+        return `${parsed} seg`;
+    }
+    return "Auto";
 }
 
 function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
@@ -3994,6 +4002,11 @@ function initCreateWizard() {
                 scheduleAutoCreditEstimate();
             } else if (durationGroupId === "similar-unified-duration-options") {
                 similarState.unifiedDuration = parseInt(dur.dataset.value || "10", 10) || 10;
+            } else if (durationGroupId.startsWith("similar-scene-duration-options-")) {
+                const sceneId = Number(durationGroupId.replace("similar-scene-duration-options-", ""));
+                if (sceneId > 0) {
+                    similarSelectSceneDuration(sceneId, dur.dataset.value || "auto");
+                }
             } else if (durationGroupId.includes("wizard") || durationGroupId === "wizard-duration-options") {
                 scheduleWizardCreditEstimate();
             } else {
@@ -5218,6 +5231,35 @@ function _similarSceneDuration(scene) {
     return 5;
 }
 
+function similarSelectSceneDuration(sceneId, rawValue) {
+    const targetId = Number(sceneId || 0);
+    if (!targetId) return;
+
+    const scene = _getSimilarProjectScene(targetId);
+    if (!scene) return;
+
+    const durationEl = document.getElementById(`similar-scene-duration-${targetId}`);
+    const durationModeEl = document.getElementById(`similar-scene-duration-mode-${targetId}`);
+    const durationWrapEl = document.getElementById(`similar-scene-duration-options-${targetId}`);
+    if (!durationEl || !durationModeEl || !durationWrapEl) return;
+
+    const detectedDurationSeconds = _similarSceneDetectedDurationSeconds(scene);
+    const normalizedMode = _normalizeSimilarSceneDurationMode(rawValue) || "auto";
+    const selectedDuration = normalizedMode === "auto"
+        ? detectedDurationSeconds
+        : _pickClosestDurationOption([5, 10, 15], rawValue);
+
+    durationEl.value = String(selectedDuration);
+    durationModeEl.value = normalizedMode;
+    durationWrapEl.querySelectorAll(".duration-option").forEach((buttonEl) => {
+        const buttonValue = _normalizeSimilarSceneDurationMode(buttonEl.dataset.value || "");
+        buttonEl.classList.toggle("selected", buttonValue === normalizedMode);
+    });
+
+    _syncSimilarDraftsFromDom();
+    _scheduleSimilarSceneAutoSave(targetId, { delay: 260 });
+}
+
 function _normalizeSimilarEngine(rawValue) {
     const value = String(rawValue || "").trim().toLowerCase();
     if (value === "grok" || value === "wan2" || value === "seedance") {
@@ -5381,19 +5423,27 @@ function _similarBusyProgressCeiling(stage) {
     return 90;
 }
 
+function _formatSimilarBusyPercent(progress) {
+    const normalized = Math.max(0, Math.min(100, Number(progress || 0) || 0));
+    if (normalized >= 100) {
+        return 100;
+    }
+    return Math.max(0, Math.floor(normalized));
+}
+
 function _paintSimilarBusyProgress(progress) {
     const progressEl = document.getElementById("similar-busy-progress-fill");
     const percentEl = document.getElementById("similar-busy-progress-label");
     if (!progressEl || !percentEl) return;
 
     const normalized = Math.max(0, Math.min(100, Number(progress || 0) || 0));
-    const rounded = Math.round(normalized);
-    progressEl.style.width = `${rounded}%`;
-    percentEl.textContent = `${rounded}%`;
+    const displayPercent = _formatSimilarBusyPercent(normalized);
+    progressEl.style.width = `${normalized}%`;
+    percentEl.textContent = `${displayPercent}%`;
 }
 
 function _paintSimilarSceneBusyProgress(progress) {
-    const rounded = Math.round(Math.max(0, Math.min(100, Number(progress || 0) || 0)));
+    const rounded = _formatSimilarBusyPercent(progress);
     document.querySelectorAll(".similar-scene-clip-busy-progress").forEach((el) => {
         el.textContent = `${rounded}%`;
     });
@@ -5413,7 +5463,7 @@ function _ensureSimilarBusyProgressTimer() {
         const ceiling = _similarBusyProgressCeiling(stage);
         if (similarState.busyProgressCurrent < similarState.busyProgressTarget) {
             const gap = similarState.busyProgressTarget - similarState.busyProgressCurrent;
-            const step = Math.max(0.45, gap * 0.14);
+            const step = Math.max(0.08, Math.min(0.55, gap * 0.08));
             similarState.busyProgressCurrent = Math.min(similarState.busyProgressTarget, similarState.busyProgressCurrent + step);
             _paintSimilarBusyProgress(similarState.busyProgressCurrent);
             _paintSimilarSceneBusyProgress(similarState.busyProgressCurrent);
@@ -5421,10 +5471,10 @@ function _ensureSimilarBusyProgressTimer() {
         }
 
         if (similarState.busyProgressTarget < ceiling) {
-            similarState.busyProgressTarget = Math.min(ceiling, similarState.busyProgressTarget + 0.9);
+            similarState.busyProgressTarget = Math.min(ceiling, similarState.busyProgressTarget + 0.22);
             _paintSimilarSceneBusyProgress(similarState.busyProgressCurrent);
         }
-    }, 220);
+    }, 320);
 }
 
 function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
@@ -5472,7 +5522,8 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
             : "Criando as cenas uma por uma. Aguarde a conclusao para editar novamente.";
     }
 
-    if (similarState.busyProgressStage !== busyStage || overlayEl.hidden) {
+    const usesInlineSceneProgress = busyStage === "generating_scene" || busyStage === "regenerating_scene";
+    if (similarState.busyProgressStage !== busyStage || (!usesInlineSceneProgress && overlayEl.hidden)) {
         similarState.busyProgressStage = busyStage;
         similarState.busyProgressCurrent = Math.max(4, Math.min(100, progress));
         similarState.busyProgressTarget = Math.max(similarState.busyProgressCurrent, progress);
@@ -5480,7 +5531,7 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
         similarState.busyProgressTarget = Math.max(similarState.busyProgressTarget, progress);
     }
 
-    if (busyStage === "generating_scene" || busyStage === "regenerating_scene") {
+    if (usesInlineSceneProgress) {
         _ensureSimilarBusyProgressTimer();
         overlayEl.hidden = true;
         modalEl.classList.remove("similar-busy");
@@ -5695,6 +5746,7 @@ function _clearSimilarSceneSavedDraftFields(sceneId) {
     delete nextDraft.prompt;
     delete nextDraft.start;
     delete nextDraft.duration;
+    delete nextDraft.durationMode;
 
     if (Object.keys(nextDraft).length) {
         similarState.sceneDraftsBySceneId[key] = nextDraft;
@@ -5723,6 +5775,69 @@ function _clearAllSimilarSceneAutoSaveState() {
     similarState.sceneAutoSaveQueuedBySceneId = {};
 }
 
+function _similarSceneDurationSeconds(scene) {
+    const start = Number(scene?.start_time || 0);
+    const end = Number(scene?.end_time || start);
+    const raw = end - start;
+    if (Number.isFinite(raw) && raw > 0.05) {
+        return raw;
+    }
+
+    const fallback = Number(scene?.detected_duration_seconds || 0);
+    if (Number.isFinite(fallback) && fallback > 0.05) {
+        return fallback;
+    }
+
+    return 5;
+}
+
+function _similarSceneDetectedDurationSeconds(scene) {
+    const raw = Number(scene?.detected_duration_seconds || 0);
+    if (Number.isFinite(raw) && raw > 0.05) {
+        return raw;
+    }
+    return _similarSceneDurationSeconds(scene);
+}
+
+function _normalizeSimilarSceneDurationMode(rawValue) {
+    const value = String(rawValue || "").trim().toLowerCase();
+    if (value === "auto") {
+        return "auto";
+    }
+    if (["5", "10", "15"].includes(value)) {
+        return value;
+    }
+    return "";
+}
+
+function _resolveSimilarSceneDurationSelection(scene, draft = {}) {
+    const detectedDurationSeconds = _similarSceneDetectedDurationSeconds(scene);
+    const currentDurationSeconds = _similarSceneDurationSeconds(scene);
+    const manualOptions = [5, 10, 15];
+    const closestManualDuration = _pickClosestDurationOption(manualOptions, currentDurationSeconds);
+    const serverMode = Math.abs(currentDurationSeconds - detectedDurationSeconds) <= 0.05
+        ? "auto"
+        : String(closestManualDuration);
+
+    const draftMode = _normalizeSimilarSceneDurationMode(draft?.durationMode);
+    const selectedMode = draftMode || serverMode;
+    const draftDurationValue = Number(draft?.duration || 0);
+    const selectedDurationSeconds = selectedMode === "auto"
+        ? detectedDurationSeconds
+        : _pickClosestDurationOption(
+            manualOptions,
+            draftDurationValue > 0 ? draftDurationValue : currentDurationSeconds,
+        );
+
+    return {
+        currentDurationSeconds,
+        detectedDurationSeconds,
+        selectedDurationSeconds,
+        selectedMode,
+        serverMode,
+    };
+}
+
 function _similarScenePromptNeedsSave(sceneId) {
     const targetId = Number(sceneId || 0);
     if (!targetId) return false;
@@ -5742,6 +5857,33 @@ function _similarScenePromptNeedsSave(sceneId) {
     return promptValue !== serverPrompt;
 }
 
+function _similarSceneTimingNeedsSave(sceneId) {
+    const targetId = Number(sceneId || 0);
+    if (!targetId) return false;
+
+    const scene = _getSimilarProjectScene(targetId);
+    if (!scene) return false;
+
+    const durationEl = document.getElementById(`similar-scene-duration-${targetId}`);
+    const durationModeEl = document.getElementById(`similar-scene-duration-mode-${targetId}`);
+    if (!durationEl || !durationModeEl) return false;
+
+    const durationSelection = _resolveSimilarSceneDurationSelection(scene);
+    const currentMode = _normalizeSimilarSceneDurationMode(durationModeEl.value || "") || durationSelection.serverMode;
+    const currentDuration = currentMode === "auto"
+        ? durationSelection.detectedDurationSeconds
+        : _pickClosestDurationOption([5, 10, 15], Number(durationEl.value || 0) || durationSelection.selectedDurationSeconds);
+    const serverDuration = durationSelection.serverMode === "auto"
+        ? durationSelection.detectedDurationSeconds
+        : _pickClosestDurationOption([5, 10, 15], durationSelection.currentDurationSeconds);
+
+    return currentMode !== durationSelection.serverMode || Math.abs(currentDuration - serverDuration) > 0.05;
+}
+
+function _similarSceneNeedsSave(sceneId) {
+    return _similarScenePromptNeedsSave(sceneId) || _similarSceneTimingNeedsSave(sceneId);
+}
+
 function _scheduleSimilarSceneAutoSave(sceneId, options = {}) {
     const key = _similarSceneStateKey(sceneId);
     if (!key) return;
@@ -5758,7 +5900,7 @@ async function _flushSimilarSceneAutoSave(sceneId) {
     if (!key) return false;
 
     _clearSimilarSceneAutoSaveTimer(sceneId);
-    if (!_similarScenePromptNeedsSave(sceneId)) {
+    if (!_similarSceneNeedsSave(sceneId)) {
         return false;
     }
 
@@ -5779,7 +5921,7 @@ async function _flushSimilarSceneAutoSave(sceneId) {
         delete similarState.sceneAutoSaveInFlightBySceneId[key];
         if (similarState.sceneAutoSaveQueuedBySceneId[key]) {
             delete similarState.sceneAutoSaveQueuedBySceneId[key];
-            if (_similarScenePromptNeedsSave(sceneId)) {
+            if (_similarSceneNeedsSave(sceneId)) {
                 _scheduleSimilarSceneAutoSave(sceneId, { delay: 280 });
             }
         }
@@ -5862,6 +6004,7 @@ function _syncSimilarDraftsFromDom() {
 
         const startEl = document.getElementById(`similar-scene-start-${sceneId}`);
         const durationEl = document.getElementById(`similar-scene-duration-${sceneId}`);
+        const durationModeEl = document.getElementById(`similar-scene-duration-mode-${sceneId}`);
         const mergeEl = document.getElementById(`similar-scene-merge-${sceneId}`);
         const frameInstructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
         const narrationEl = document.getElementById(`similar-scene-narration-${sceneId}`);
@@ -5877,13 +6020,20 @@ function _syncSimilarDraftsFromDom() {
         }
 
         const serverStart = scene ? Number(scene.start_time || 0).toFixed(1) : String(startEl?.dataset.serverValue || "");
-        const serverDuration = scene ? String(_similarSceneDuration(scene)) : String(durationEl?.dataset.serverValue || "");
+        const durationSelection = _resolveSimilarSceneDurationSelection(scene, existingDraft);
+        const serverDuration = durationSelection.serverMode === "auto"
+            ? String(durationSelection.detectedDurationSeconds)
+            : String(_pickClosestDurationOption([5, 10, 15], durationSelection.currentDurationSeconds));
+        const serverDurationMode = durationSelection.serverMode;
         const startValue = startEl ? String(startEl.value || "") : serverStart;
         const durationValue = durationEl ? String(durationEl.value || "") : serverDuration;
+        const durationModeValue = durationModeEl
+            ? _normalizeSimilarSceneDurationMode(durationModeEl.value || "") || serverDurationMode
+            : serverDurationMode;
 
         const hasPromptDraft = promptValue !== serverPrompt;
         const hasStartDraft = startValue !== serverStart;
-        const hasDurationDraft = durationValue !== serverDuration;
+        const hasDurationDraft = durationModeValue !== serverDurationMode || Math.abs(Number(durationValue || 0) - Number(serverDuration || 0)) > 0.05;
 
         const nextDraft = { ...existingDraft };
         if (hasPromptDraft) {
@@ -5898,8 +6048,10 @@ function _syncSimilarDraftsFromDom() {
         }
         if (hasDurationDraft) {
             nextDraft.duration = durationValue;
+            nextDraft.durationMode = durationModeValue;
         } else {
             delete nextDraft.duration;
+            delete nextDraft.durationMode;
         }
 
         if (frameInstructionEl) {
@@ -6108,6 +6260,26 @@ function _renderSimilarScenes(project, options = {}) {
         const generateVideoTextTitle = hasClipPreview
             ? "Gerar vídeo novamente só com o texto"
             : "Gerar vídeo só com o texto";
+        const durationSelection = _resolveSimilarSceneDurationSelection(scene, draft);
+        const durationValue = durationSelection.selectedMode === "auto"
+            ? durationSelection.detectedDurationSeconds
+            : durationSelection.selectedDurationSeconds;
+        const durationButtonsMarkup = ["auto", "5", "10", "15"].map((value) => {
+            const normalizedValue = _normalizeSimilarSceneDurationMode(value) || "auto";
+            const isSelected = durationSelection.selectedMode === normalizedValue;
+            const title = normalizedValue === "auto"
+                ? `Usar o tempo detectado desta cena (${durationSelection.detectedDurationSeconds.toFixed(1)}s)`
+                : `Gerar esta cena com ${normalizedValue} segundos`;
+            return `
+                <button
+                    class="duration-option${isSelected ? " selected" : ""}"
+                    data-value="${normalizedValue}"
+                    type="button"
+                    title="${title}"
+                    aria-label="${title}"
+                >${_formatDurationOptionLabel(normalizedValue)}</button>
+            `;
+        }).join("");
 
         const buildFrameGalleryItem = ({ url, alt, badge, downloadName, active = false, isBase = false, clipBusy = false, clipBusyMarkup = "", overlayActionsMarkup = "" }) => {
             const safeUrl = esc(String(url || ""));
@@ -6300,16 +6472,24 @@ function _renderSimilarScenes(project, options = {}) {
 
                 ${uploadsSectionMarkup}
 
-                <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
-                    ${["grok", "wan2", "seedance"].map((engineValue) => `
-                        <button
-                            class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
-                            type="button"
-                            onclick="similarSelectSceneEngine(${sceneId}, '${engineValue}')"
-                            title="Usar ${_similarEngineDisplayLabel(engineValue)} nesta cena"
-                            aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} nesta cena"
-                        >${_similarSceneEngineLabel(engineValue)}</button>
-                    `).join("")}
+                <div class="similar-scene-pickers">
+                    <div class="similar-scene-duration-picker" aria-label="Duracao da cena ${idx + 1}">
+                        <span class="similar-scene-picker-label">Tempo</span>
+                        <div id="similar-scene-duration-options-${sceneId}" class="duration-options similar-scene-duration-options">${durationButtonsMarkup}</div>
+                        <input id="similar-scene-duration-${sceneId}" type="hidden" value="${esc(String(durationValue))}" data-server-value="${esc(String(durationSelection.currentDurationSeconds))}" data-detected-value="${esc(String(durationSelection.detectedDurationSeconds))}">
+                        <input id="similar-scene-duration-mode-${sceneId}" type="hidden" value="${durationSelection.selectedMode}" data-server-value="${durationSelection.serverMode}">
+                    </div>
+                    <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
+                        ${["grok", "wan2", "seedance"].map((engineValue) => `
+                            <button
+                                class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
+                                type="button"
+                                onclick="similarSelectSceneEngine(${sceneId}, '${engineValue}')"
+                                title="Usar ${_similarEngineDisplayLabel(engineValue)} nesta cena"
+                                aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} nesta cena"
+                            >${_similarSceneEngineLabel(engineValue)}</button>
+                        `).join("")}
+                    </div>
                 </div>
 
                 <div class="similar-scene-actions">
@@ -10326,7 +10506,7 @@ async function _persistSimilarScenePromptEdits(sceneIds, options = {}) {
         const promptValue = _readSimilarScenePromptForRequest(sceneId, {
             applyNarration: options.applyNarration !== false,
         });
-        if (!_similarScenePromptNeedsSave(sceneId)) {
+        if (!_similarSceneNeedsSave(sceneId)) {
             continue;
         }
 
@@ -10366,6 +10546,7 @@ async function similarSaveScene(sceneId, options = {}) {
     const scene = _getSimilarProjectScene(sceneId);
     const startEl = document.getElementById(`similar-scene-start-${sceneId}`);
     const durationEl = document.getElementById(`similar-scene-duration-${sceneId}`);
+    const durationModeEl = document.getElementById(`similar-scene-duration-mode-${sceneId}`);
     const prompt = typeof options.promptValue === "string"
         ? String(options.promptValue)
         : String(promptEl?.value || "");
@@ -10374,19 +10555,29 @@ async function similarSaveScene(sceneId, options = {}) {
     }
     const fallbackStart = Number(scene?.start_time || 0);
     const fallbackDuration = scene ? _similarSceneDuration(scene) : 5;
+    const fallbackDurationSeconds = scene ? _similarSceneDurationSeconds(scene) : fallbackDuration;
+    const detectedDurationSeconds = scene ? _similarSceneDetectedDurationSeconds(scene) : fallbackDurationSeconds;
     const startRaw = Number.parseFloat(startEl?.value || String(fallbackStart));
     const startTime = Number.isFinite(startRaw) ? Math.max(0, startRaw) : Math.max(0, fallbackStart);
+    const selectedDurationMode = _normalizeSimilarSceneDurationMode(durationModeEl?.value || "")
+        || (Math.abs(fallbackDurationSeconds - detectedDurationSeconds) <= 0.05 ? "auto" : String(_pickClosestDurationOption([5, 10, 15], fallbackDurationSeconds)));
     const durationRaw = parseInt(durationEl?.value || String(fallbackDuration), 10);
     const duration = Number.isFinite(durationRaw) ? Math.max(5, Math.min(15, durationRaw)) : fallbackDuration;
+    const payload = {
+        prompt,
+        start_time: startTime,
+    };
+
+    if (selectedDurationMode === "auto") {
+        payload.end_time = Number((startTime + detectedDurationSeconds).toFixed(3));
+    } else {
+        payload.duration_seconds = duration;
+    }
 
     try {
         await api(`/video/projects/${projectId}/similar/scenes/${sceneId}`, {
             method: "PATCH",
-            body: JSON.stringify({
-                prompt,
-                start_time: startTime,
-                duration_seconds: duration,
-            }),
+            body: JSON.stringify(payload),
         });
         _setSimilarSceneServerPromptValue(sceneId, prompt);
         _clearSimilarSceneSavedDraftFields(sceneId);

@@ -2339,6 +2339,14 @@ async def run_similar_reference_analysis(
                         )
                     )
 
+            detected_scene_durations = {
+                str(int(payload.get("scene_index", idx) or idx)): max(
+                    0.1,
+                    float(payload.get("end_time", 0.0) or 0.0) - float(payload.get("start_time", 0.0) or 0.0),
+                )
+                for idx, payload in enumerate(scene_payloads)
+            }
+
             tags = _safe_tags_dict(project.tags)
             tags.update(
                 {
@@ -2349,6 +2357,7 @@ async def run_similar_reference_analysis(
                     "similar_scene_count": len(scene_payloads),
                     "similar_scene_strategy": "shot_detect",
                     "similar_scene_detect_threshold": _SIMILAR_SCENE_DETECT_THRESHOLD,
+                    "similar_detected_scene_durations": detected_scene_durations,
                     "similar_reference_frames": reference_frames_by_scene_index,
                     "similar_total_duration": duration_seconds,
                     "similar_context_summary": context_summary,
