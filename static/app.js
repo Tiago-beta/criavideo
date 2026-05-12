@@ -11209,6 +11209,9 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         let imageUploadIds = [];
         let audioUploadId = "";
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
+        const referencePhotosToUpload = engine === "avatar31"
+            ? scriptPhotos.slice(-1)
+            : scriptPhotos.slice(0, 6);
         if (disablePersonaReference && engine !== "grok" && !shouldUploadReferenceImage) {
             throw new Error("O modo Nenhum sem foto funciona no Cria 3.0 speed. Para outros motores, envie uma imagem de referência.");
         }
@@ -11217,8 +11220,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         }
         if (shouldUploadReferenceImage) {
             setCreateProgress(5, "Gerando vídeo realista...", "Enviando imagem de referência...");
-            const photosToUpload = scriptPhotos.slice(0, 6);
-            for (const photo of photosToUpload) {
+            for (const photo of referencePhotosToUpload) {
                 const uploaded = await uploadTempFileWithRetry(photo, "image", "imagem de referência");
                 imageUploadIds.push(uploaded.upload_id);
             }
