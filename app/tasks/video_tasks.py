@@ -1537,15 +1537,16 @@ async def run_realistic_video_pipeline(project_id: int):
             project.progress = 5
             await db.commit()
 
-            user_prompt = (project.lyrics_text or "").strip()
-            if not user_prompt:
-                raise ValueError("Nenhuma descricao fornecida para o video realista.")
-
             transcribed_text_for_subtitles = ""
             transcribed_words_for_subtitles = []
 
             # ── Step 0.5: Transcribe audio clip for context-aware prompt ──
             tags_data_early = project.tags if isinstance(project.tags, dict) else {}
+            avatar_promptless_mode = engine == "avatar31" and bool(tags_data_early.get("avatar_promptless_mode"))
+            user_prompt = (project.lyrics_text or "").strip()
+            if not user_prompt and not avatar_promptless_mode:
+                raise ValueError("Nenhuma descricao fornecida para o video realista.")
+
             external_audio_source_early = str(
                 tags_data_early.get("audio_upload_path")
                 or tags_data_early.get("audio_url")
@@ -1588,7 +1589,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         break
                 except Exception:
                     continue
-            if external_audio_source_early:
+            if external_audio_source_early and not avatar_promptless_mode:
                 try:
                     audio_dir_early = Path(settings.media_dir) / "audio" / str(project_id)
                     audio_dir_early.mkdir(parents=True, exist_ok=True)
@@ -1649,11 +1650,12 @@ async def run_realistic_video_pipeline(project_id: int):
                     else:
                         user_prompt = _build_transcribed_realistic_prompt("", persona_instruction_input)
                     logger.warning(f"Realistic video: clip transcription failed: {e}, using lyric-based fallback prompt")
-            elif segment_transcription_hint:
+            elif segment_transcription_hint and not avatar_promptless_mode:
                 user_prompt = _build_transcribed_realistic_prompt(segment_transcription_hint, persona_instruction_input)
                 logger.info("Realistic video: no external audio URL, using stored segment transcription")
 
-            user_prompt = _inject_interaction_persona_instruction(user_prompt, persona_instruction_input)
+            if not avatar_promptless_mode:
+                user_prompt = _inject_interaction_persona_instruction(user_prompt, persona_instruction_input)
 
             # Check for reference image (stored in style_prompt as file path)
             image_path = None
@@ -1714,13 +1716,14 @@ async def run_realistic_video_pipeline(project_id: int):
                 ),
             )
 
-            if has_reference_image:
+            if has_reference_image and not avatar_promptless_mode:
                 user_prompt = _ensure_reference_image_instruction(user_prompt, reference_mode=reference_mode)
                 if engine == "grok":
                     user_prompt = _ensure_grok_identity_lock(user_prompt, reference_mode=reference_mode)
                 logger.info("Realistic video: reference-image rule injected into prompt")
 
-            user_prompt = apply_cover_guidance(user_prompt, cover_decision)
+            if not avatar_promptless_mode:
+                user_prompt = apply_cover_guidance(user_prompt, cover_decision)
 
             duration = int(project.track_duration or 7)
             if engine == "grok":
@@ -1790,6 +1793,7 @@ async def run_realistic_video_pipeline(project_id: int):
 
             should_analyze_upload_reference_context = (
                 upload_reference_lock_mode
+                and not avatar_promptless_mode
                 and not upload_reference_context
                 and len(upload_reference_paths_for_prompt) <= 1
                 and not use_last_image_as_final_frame
@@ -1817,7 +1821,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 except Exception as e:
                     logger.warning("Failed to analyze upload reference images for project %s: %s", project_id, e)
 
-            if upload_reference_lock_mode:
+            if upload_reference_lock_mode and not avatar_promptless_mode:
                 user_prompt = _ensure_upload_reference_scene_lock(user_prompt, upload_reference_context)
                 user_prompt = _ensure_upload_reference_temporal_order(
                     user_prompt,

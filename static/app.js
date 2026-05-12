@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v432 loaded");
+console.log("[CriaVideo] app.js v433 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -11079,8 +11079,11 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         return;
     }
 
+    const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
+    let engine = engineBtn ? engineBtn.dataset.value : "grok";
+
     let finalPrompt = String(prompt || "").trim();
-    if (useTevoxi && selectedTevoxiSong && selectedTevoxiClip) {
+    if (engine !== "avatar31" && useTevoxi && selectedTevoxiSong && selectedTevoxiClip) {
         const tevoxiContext = _buildTevoxiPromptContext(selectedTevoxiSong, selectedTevoxiClip);
         if (prefix === "wizard") {
             finalPrompt = finalPrompt ? `${finalPrompt}\n\n${tevoxiContext}` : tevoxiContext;
@@ -11089,13 +11092,14 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         }
     }
 
-    if (!finalPrompt) {
+    if (!finalPrompt && engine !== "avatar31") {
         alert("Descreva a cena que você quer ver no vídeo.");
         return;
     }
+    const avatarPromptlessMode = engine === "avatar31" && !finalPrompt;
 
     let finalTitle = String(title || "").trim();
-    if (!finalTitle && selectedTevoxiSong) {
+    if (!finalTitle && selectedTevoxiSong && engine !== "avatar31") {
         finalTitle = String(selectedTevoxiSong.title || "").trim();
     }
 
@@ -11118,8 +11122,6 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const musicEl = document.getElementById(musicCheckboxId);
     const addMusic = musicEl ? musicEl.checked : true;
     const addMusicRequested = useTevoxi ? false : addMusic;
-    const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
-    let engine = engineBtn ? engineBtn.dataset.value : "grok";
     if (engine === "wan2") {
         const normalizedDuration = _normalizeWanDurationMultiple(duration);
         if (normalizedDuration !== duration) {
@@ -11253,11 +11255,13 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             }
         }
 
-        const speechStatusLabel = speechMode === "dialogue_auto"
-            ? "Otimizando prompt e preparando falas automaticas por personagem..."
-            : speechMode === "narration_manual"
-                ? "Otimizando prompt e preparando narracao do texto informado..."
-                : "Otimizando prompt com IA...";
+        const speechStatusLabel = avatarPromptlessMode
+            ? "Preparando avatar com foto e áudio..."
+            : speechMode === "dialogue_auto"
+                ? "Otimizando prompt e preparando falas automaticas por personagem..."
+                : speechMode === "narration_manual"
+                    ? "Otimizando prompt e preparando narracao do texto informado..."
+                    : "Otimizando prompt com IA...";
         setCreateProgress(10, "Gerando vídeo realista...", speechStatusLabel);
         _smoothProgressTarget = 15;
 
@@ -11265,7 +11269,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             method: "POST",
             body: JSON.stringify({
                 prompt: finalPrompt,
-                preserve_prompt_exactly: prefix === "script",
+                preserve_prompt_exactly: prefix === "script" || avatarPromptlessMode,
                 duration,
                 aspect_ratio: aspect,
                 generate_audio: addMusicRequested || addNarration || !!selectedTevoxiSong || !!audioUploadId || engine === "avatar31",

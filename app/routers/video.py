@@ -5087,7 +5087,7 @@ async def generate_realistic_prompt_endpoint(
 
 
 class GenerateRealisticRequest(BaseModel):
-    prompt: str
+    prompt: str = ""
     preserve_prompt_exactly: bool = False
     duration: int = 5
     aspect_ratio: str = "16:9"
@@ -5133,15 +5133,15 @@ async def generate_realistic_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     """Generate a realistic AI video using the available realistic engines."""
+    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok", "avatar31") else "wan2"
     prompt = (req.prompt or "").strip()
-    if not prompt:
+    avatar_promptless_mode = engine == "avatar31" and not prompt
+    if not prompt and engine != "avatar31":
         raise HTTPException(status_code=400, detail="Descreva a cena que você quer ver no vídeo.")
     if len(prompt) > 5000:
         raise HTTPException(status_code=400, detail="Descrição muito longa (máximo 5000 caracteres).")
 
-    preserve_prompt_exactly = bool(req.preserve_prompt_exactly)
-
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok", "avatar31") else "wan2"
+    preserve_prompt_exactly = bool(req.preserve_prompt_exactly) or avatar_promptless_mode
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
@@ -5413,13 +5413,13 @@ async def generate_realistic_endpoint(
     else:
         await deduct_credits(db, user["id"], credits_needed)
 
-    # Use custom title if provided
-    project_title = (req.title or "").strip()
-    if not project_title:
-        project_title = prompt[:100]
-
     engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
     engine_label = engine_labels.get(engine, "Wan 2.6")
+
+    # Use custom title if provided. Avatar can be promptless, so keep a deterministic fallback.
+    project_title = (req.title or "").strip()
+    if not project_title:
+        project_title = prompt[:100] or engine_label
 
     # Narration config stored in tags JSON
     narration_voice = req.narration_voice or "onyx"
@@ -5444,6 +5444,7 @@ async def generate_realistic_endpoint(
         "add_narration": effective_add_narration,
         "provider_generate_audio": provider_generate_audio,
         "seedance_native_audio_only": seedance_native_audio_only,
+        "avatar_promptless_mode": avatar_promptless_mode,
         "speech_mode": speech_mode,
         "speech_auto_requested": auto_dialogue_requested,
         "narration_voice": narration_voice,
