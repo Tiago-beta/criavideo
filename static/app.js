@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v430 loaded");
+console.log("[CriaVideo] app.js v431 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4329,67 +4329,8 @@ function _setSimilarStatus(message, kind = "running") {
     }
 }
 
-function _queueSimilarScroll(options = {}) {
-    const sceneId = Number(options.sceneId || 0);
-    const preferUnified = !!options.preferUnified;
-    const preferScenes = !!options.preferScenes;
-    const preferSource = !!options.preferSource;
-    const preferStatus = options.preferStatus !== false;
-    const delay = Math.max(0, Number(options.delay || 120));
-
-    window.setTimeout(() => {
-        let target = null;
-
-        if (sceneId > 0) {
-            target = document.getElementById(`similar-frame-instruction-${sceneId}`)?.closest(".similar-scene-card")
-                || document.getElementById(`similar-scene-prompt-${sceneId}`)?.closest(".similar-scene-card");
-        }
-
-        if (!target && preferUnified) {
-            const unifiedPreviewEl = document.getElementById("similar-unified-preview-wrap");
-            const unifiedPromptEl = document.getElementById("similar-unified-prompt-wrap");
-            target = (unifiedPreviewEl && !unifiedPreviewEl.hidden ? unifiedPreviewEl : null)
-                || (unifiedPromptEl && !unifiedPromptEl.hidden ? unifiedPromptEl : null);
-        }
-
-        if (!target && preferStatus) {
-            const statusEl = document.getElementById("similar-status");
-            if (statusEl && !statusEl.hidden) {
-                target = statusEl;
-            }
-        }
-
-        if (!target && preferScenes) {
-            const scenesContainerEl = document.getElementById("similar-scenes-container");
-            if (scenesContainerEl && !scenesContainerEl.hidden) {
-                target = scenesContainerEl;
-            }
-        }
-
-        if (!target && preferSource) {
-            const sourcePreviewEl = document.getElementById("similar-source-preview-wrap");
-            if (sourcePreviewEl && !sourcePreviewEl.hidden) {
-                target = sourcePreviewEl;
-            }
-        }
-
-        if (!target) {
-            const fallbackSourceEl = document.getElementById("similar-source-preview-wrap");
-            const fallbackScenesEl = document.getElementById("similar-scenes-container");
-            const fallbackStatusEl = document.getElementById("similar-status");
-            target = (fallbackSourceEl && !fallbackSourceEl.hidden ? fallbackSourceEl : null)
-                || (fallbackScenesEl && !fallbackScenesEl.hidden ? fallbackScenesEl : null)
-                || (fallbackStatusEl && !fallbackStatusEl.hidden ? fallbackStatusEl : null);
-        }
-
-        if (target && typeof target.scrollIntoView === "function") {
-            target.scrollIntoView({
-                behavior: "smooth",
-                block: sceneId > 0 ? "start" : "center",
-                inline: "nearest",
-            });
-        }
-    }, delay);
+function _queueSimilarScroll() {
+    // Keep the Similar flow on the user's manual scroll position.
 }
 
 function _formatSimilarUnifiedPromptGeneratedAt(rawValue) {
