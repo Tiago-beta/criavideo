@@ -2472,6 +2472,11 @@ a {
     margin-bottom: 1.05rem;
 }
 
+.publish-description-input {
+    min-height: 14rem;
+    line-height: 1.58;
+}
+
 .publish-select-row {
     display: grid;
     grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);

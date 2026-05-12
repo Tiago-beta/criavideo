@@ -434,6 +434,114 @@ async def ai_suggest(
             fallback = (fallback[:48].rsplit(" ", 1)[0] or fallback[:48]).strip()
         return fallback.lower()
 
+    def _ensure_leading_uppercase(text: str) -> str:
+        content = str(text or "").strip()
+        if not content:
+            return ""
+
+        match = re.search(r"[A-Za-zÀ-ÿ]", content, flags=re.UNICODE)
+        if not match:
+            return content
+
+        idx = match.start()
+        return content[:idx] + content[idx].upper() + content[idx + 1 :]
+
+    def _stylize_publish_title(raw_title: str, primary_keyword: str, max_triggers: int = 3) -> str:
+        title = re.sub(r"\s+", " ", str(raw_title or "")).strip(" -|:")
+        if not title:
+            return ""
+
+        stopwords = {
+            "a", "as", "o", "os", "de", "da", "do", "das", "dos", "e", "em", "na", "no",
+            "nas", "nos", "com", "sem", "para", "por", "um", "uma", "ao", "aos", "à", "às",
+            "que", "se", "sua", "seu", "suas", "seus", "mais", "como", "sobre", "entre", "até",
+        }
+        trigger_priority = {
+            "abrigo", "alerta", "amor", "cura", "deus", "devoção", "devocao", "emoção", "emocao",
+            "esperança", "esperanca", "fé", "fe", "força", "forca", "guia", "impacto", "interior",
+            "mensagem", "milagre", "oração", "oracao", "paz", "profundo", "profunda", "propósito",
+            "proposito", "proteção", "protecao", "revelado", "revelação", "revelacao", "segredo",
+            "segredos", "transformação", "transformacao", "verdade",
+        }
+        preserve_words = {
+            "brasil": "Brasil",
+            "chatgpt": "ChatGPT",
+            "cristo": "Cristo",
+            "deus": "Deus",
+            "gpt": "GPT",
+            "ia": "IA",
+            "instagram": "Instagram",
+            "jesus": "Jesus",
+            "maria": "Maria",
+            "openai": "OpenAI",
+            "seo": "SEO",
+            "tiktok": "TikTok",
+            "youtube": "YouTube",
+        }
+        primary_tokens = {
+            token.lower()
+            for token in re.findall(r"[A-Za-zÀ-ÿ0-9]+", str(primary_keyword or ""), flags=re.UNICODE)
+            if len(token) >= 3
+        }
+
+        candidates: list[tuple[int, int, str]] = []
+        segment_index = 0
+        seen_segment_starts: set[int] = set()
+        for match in re.finditer(r"[A-Za-zÀ-ÿ0-9]+|[:|/-]", title, flags=re.UNICODE):
+            token = match.group(0)
+            if token in {":", "|", "/", "-"}:
+                segment_index += 1
+                continue
+
+            lower = token.lower()
+            if lower in stopwords:
+                continue
+            if len(lower) < 4 and lower not in trigger_priority and lower not in primary_tokens:
+                continue
+
+            score = len(lower)
+            if lower in primary_tokens:
+                score += 16
+            if lower in trigger_priority:
+                score += 18
+            if segment_index not in seen_segment_starts:
+                score += 7
+                seen_segment_starts.add(segment_index)
+            if match.start() < 18:
+                score += 4
+            candidates.append((score, match.start(), lower))
+
+        selected: list[str] = []
+        seen_selected = set()
+        for _, _, lower in sorted(candidates, key=lambda item: (-item[0], item[1])):
+            if lower in seen_selected:
+                continue
+            seen_selected.add(lower)
+            selected.append(lower)
+            if len(selected) >= max_triggers:
+                break
+
+        formatted_parts: list[str] = []
+        for token in re.split(r"([^A-Za-zÀ-ÿ0-9]+)", title, flags=re.UNICODE):
+            if not token:
+                continue
+
+            if re.fullmatch(r"[A-Za-zÀ-ÿ0-9]+", token, flags=re.UNICODE):
+                lower = token.lower()
+                if lower in selected:
+                    formatted_parts.append(token.upper())
+                elif token.isupper() and len(token) <= 4:
+                    formatted_parts.append(token)
+                elif lower in preserve_words:
+                    formatted_parts.append(preserve_words[lower])
+                else:
+                    formatted_parts.append(lower)
+            else:
+                formatted_parts.append(token)
+
+        styled = re.sub(r"\s+", " ", "".join(formatted_parts)).strip()
+        return _ensure_leading_uppercase(styled)
+
     def _enforce_title_formula(raw_title: str, primary_keyword: str) -> str:
         title = re.sub(r"\s+", " ", str(raw_title or "")).strip(" -|:")
         keyword = re.sub(r"\s+", " ", str(primary_keyword or "")).strip(" -|:")
@@ -458,11 +566,11 @@ async def ai_suggest(
             title = (title[:80].rsplit(" ", 1)[0] or title[:80]).strip()
 
         if len(title) < 45:
-            extension = " | Mensagem, Emoção e Contexto"
+            extension = " | mensagem, emoção e contexto"
             if len(title) + len(extension) <= 80:
                 title = title + extension
 
-        return title
+        return _stylize_publish_title(title, keyword)
 
     def _description_looks_strong(text: str, primary_keyword: str) -> bool:
         body = str(text or "").strip()
@@ -933,8 +1041,11 @@ GUIDE OBRIGATORIO DE THUMBNAIL (seguir estritamente):
 
 GUIDE OBRIGATORIO DE TITULO E DESCRICAO:
 - titulo com palavra-chave principal no comeco
+- titulo deve começar com letra maiúscula
+- usar caixa mista: maioria das palavras em minúsculas e 1 a 3 palavras de gatilho em MAIÚSCULAS
 - formula do titulo: [palavra-chave principal] + [beneficio forte] + [curiosidade ou promessa]
 - evitar exageros falsos
+- descrição deve começar com letra maiúscula
 - descricao com 2 a 3 primeiras linhas fortes para vender o clique antes do "mostrar mais"
 - linha 1 deve repetir a palavra-chave principal
 - incluir CTA e hashtags relevantes sem excesso
@@ -957,7 +1068,9 @@ Regras de saida:
 - português brasileiro com acentuação e pontuação corretas
 - título final até 80 caracteres
 - gerar 5 opções de título
+- selected_title deve seguir caixa mista: começo com letra maiúscula, palavras normais em minúsculas e 1 a 3 palavras de gatilho em MAIÚSCULAS
 - descrição pronta para colar no YouTube
+- descrição deve começar com letra maiúscula
 - thumbnail_hook com 2 a 5 palavras
 - thumbnail_prompt pronto para gerar arte
 - nunca remover acentos (ex.: vídeo, você, sessão, descrição)
@@ -1074,7 +1187,10 @@ CRITERIOS DE NOTA (0-10):
 REGRAS FINAIS OBRIGATORIAS:
 - titulo entre 45 e 80 caracteres
 - titulo no formato: [palavra-chave] + [beneficio] + [promessa]
+- titulo deve começar com letra maiúscula
+- usar caixa mista: maioria das palavras em minúsculas e 1 a 3 palavras de gatilho em MAIÚSCULAS
 - descricao com primeiras 2 linhas muito fortes para clique
+- descrição deve começar com letra maiúscula
 - descricao sem letra completa
 - thumbnail_hook com 2 a 5 palavras em portugues
 - thumbnail_prompt com foco em 1 ideia principal, contraste forte e texto grande legivel
@@ -1152,6 +1268,7 @@ Retorne SOMENTE JSON:
                 theme_text=tema,
             )
             final_description = _normalize_ptbr_copy(final_description)
+        final_description = _ensure_leading_uppercase(final_description)
 
         tags = _normalize_tags(stage2_data.get("tags", []))
         if not tags:

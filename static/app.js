@@ -16159,6 +16159,21 @@ async function publishStartAnalysis() {
     }
 }
 
+function _normalizePublishLeadingUppercase(text) {
+    const value = String(text || "").trim();
+    if (!value) {
+        return "";
+    }
+
+    const match = value.match(/[A-Za-zÀ-ÿ]/);
+    if (!match || typeof match.index !== "number") {
+        return value;
+    }
+
+    const idx = match.index;
+    return `${value.slice(0, idx)}${value.charAt(idx).toUpperCase()}${value.slice(idx + 1)}`;
+}
+
 async function generatePublishTitleDescription() {
     const renderId = Number(document.getElementById("pub-render-select")?.value || 0);
     const aiLoading = document.getElementById("pub-ai-loading");
@@ -16187,8 +16202,8 @@ async function generatePublishTitleDescription() {
             }),
         });
 
-        if (titleInput) titleInput.value = data.title || "";
-        if (descInput) descInput.value = data.description || "";
+        if (titleInput) titleInput.value = _normalizePublishLeadingUppercase(data.title || "");
+        if (descInput) descInput.value = _normalizePublishLeadingUppercase(data.description || "");
         if (hashtagsInput) hashtagsInput.value = data.hashtags || "";
         _publishLastThumbnailPrompt = String(data.thumbnail_prompt || "").trim();
         setPublishThumbnailManualState(false);
