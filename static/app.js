@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v422 loaded");
+console.log("[CriaVideo] app.js v423 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4279,6 +4279,69 @@ function _setSimilarStatus(message, kind = "running") {
         progressEl.appendChild(progressBarEl);
         statusEl.appendChild(progressEl);
     }
+}
+
+function _queueSimilarScroll(options = {}) {
+    const sceneId = Number(options.sceneId || 0);
+    const preferUnified = !!options.preferUnified;
+    const preferScenes = !!options.preferScenes;
+    const preferSource = !!options.preferSource;
+    const preferStatus = options.preferStatus !== false;
+    const delay = Math.max(0, Number(options.delay || 120));
+
+    window.setTimeout(() => {
+        let target = null;
+
+        if (sceneId > 0) {
+            target = document.getElementById(`similar-frame-instruction-${sceneId}`)?.closest(".similar-scene-card")
+                || document.getElementById(`similar-scene-prompt-${sceneId}`)?.closest(".similar-scene-card");
+        }
+
+        if (!target && preferUnified) {
+            const unifiedPreviewEl = document.getElementById("similar-unified-preview-wrap");
+            const unifiedPromptEl = document.getElementById("similar-unified-prompt-wrap");
+            target = (unifiedPreviewEl && !unifiedPreviewEl.hidden ? unifiedPreviewEl : null)
+                || (unifiedPromptEl && !unifiedPromptEl.hidden ? unifiedPromptEl : null);
+        }
+
+        if (!target && preferStatus) {
+            const statusEl = document.getElementById("similar-status");
+            if (statusEl && !statusEl.hidden) {
+                target = statusEl;
+            }
+        }
+
+        if (!target && preferScenes) {
+            const scenesContainerEl = document.getElementById("similar-scenes-container");
+            if (scenesContainerEl && !scenesContainerEl.hidden) {
+                target = scenesContainerEl;
+            }
+        }
+
+        if (!target && preferSource) {
+            const sourcePreviewEl = document.getElementById("similar-source-preview-wrap");
+            if (sourcePreviewEl && !sourcePreviewEl.hidden) {
+                target = sourcePreviewEl;
+            }
+        }
+
+        if (!target) {
+            const fallbackSourceEl = document.getElementById("similar-source-preview-wrap");
+            const fallbackScenesEl = document.getElementById("similar-scenes-container");
+            const fallbackStatusEl = document.getElementById("similar-status");
+            target = (fallbackSourceEl && !fallbackSourceEl.hidden ? fallbackSourceEl : null)
+                || (fallbackScenesEl && !fallbackScenesEl.hidden ? fallbackScenesEl : null)
+                || (fallbackStatusEl && !fallbackStatusEl.hidden ? fallbackStatusEl : null);
+        }
+
+        if (target && typeof target.scrollIntoView === "function") {
+            target.scrollIntoView({
+                behavior: "smooth",
+                block: sceneId > 0 ? "start" : "center",
+                inline: "nearest",
+            });
+        }
+    }, delay);
 }
 
 function _formatSimilarUnifiedPromptGeneratedAt(rawValue) {
@@ -9694,6 +9757,7 @@ async function similarVerifySource() {
     similarState.verifiedSourceName = "";
     _hideSimilarAnalysisEstimateBadges();
     _refreshSimilarButtonsDisabled(true);
+    _queueSimilarScroll({ preferStatus: true, preferSource: true });
 
     try {
         let durationSeconds = 0;
@@ -9839,6 +9903,8 @@ async function similarStartAnalysis(analysisMode = "scene") {
             _setSimilarStatus(`Iniciando ${analysisLabel} do vídeo de referência...`, "running");
         }
 
+        _queueSimilarScroll({ preferStatus: true, preferSource: true, preferScenes: true });
+
         const response = await api("/video/similar/analyze", {
             method: "POST",
             body: JSON.stringify(payload),
@@ -9886,6 +9952,7 @@ async function similarBuildUnifiedPrompt() {
 
     _refreshSimilarButtonsDisabled(true);
     _setSimilarStatus("Transformando a analise em um prompt unico...", "running");
+    _queueSimilarScroll({ preferUnified: true, preferStatus: true });
 
     try {
         const response = await api(`/video/projects/${projectId}/similar/unified-prompt`, {
@@ -9995,6 +10062,7 @@ async function similarGenerateUnifiedScene() {
             status: "generating_clips",
             progress: 4,
         });
+        _queueSimilarScroll({ preferUnified: true, preferStatus: true });
         _refreshSimilarButtonsDisabled(true);
         await api(`/video/projects/${projectId}/similar/generate-unified-scene`, {
             method: "POST",
@@ -10179,6 +10247,7 @@ async function similarGenerateUnifiedReferenceImage(options = {}) {
                     : "Criando a imagem base da cena unica...",
             "running",
         );
+        _queueSimilarScroll({ preferUnified: true, preferStatus: true });
         _refreshSimilarButtonsDisabled(true);
         await api(`/video/projects/${projectId}/similar/unified-image`, {
             method: "POST",
@@ -10626,6 +10695,7 @@ async function similarGenerateFrameVariant(sceneId) {
             _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
         }
         _setSimilarStatus("Criando uma nova imagem com base no frame extraido...", "running");
+        _queueSimilarScroll({ sceneId, preferStatus: true });
         await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/image`, {
             method: "POST",
             body: JSON.stringify({
@@ -10670,6 +10740,7 @@ async function similarRegenerateScene(sceneId, generationMode = "image") {
         if (similarState.lastProjectSnapshot) {
             _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
         }
+        _queueSimilarScroll({ sceneId, preferStatus: true });
         await similarSaveScene(sceneId, {
             silent: true,
             applyNarration: false,
@@ -10718,6 +10789,7 @@ async function similarGenerateAllPreviews() {
             status: "generating_clips",
             progress: 4,
         });
+        _queueSimilarScroll({ preferScenes: true, preferStatus: true });
         _refreshSimilarButtonsDisabled(true);
         await api(`/video/projects/${projectId}/similar/generate-previews`, {
             method: "POST",
@@ -10770,6 +10842,7 @@ async function similarMergeSelectedScenes() {
 
     try {
         _refreshSimilarButtonsDisabled(true);
+        _queueSimilarScroll({ preferScenes: true, preferStatus: true });
         await api(`/video/projects/${projectId}/similar/merge`, {
             method: "POST",
             body: JSON.stringify({

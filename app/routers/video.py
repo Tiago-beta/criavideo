@@ -3014,9 +3014,6 @@ async def generate_similar_previews(
     engine = str(req.engine or "grok").strip().lower() or "grok"
     if engine not in {"grok", "wan2", "minimax", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
-    generation_mode = str(req.generation_mode or "image").strip().lower() or "image"
-    if generation_mode not in {"image", "text"}:
-        raise HTTPException(status_code=400, detail="Modo de geracao invalido")
 
     from app.routers.credits import deduct_credits
 
@@ -3061,6 +3058,9 @@ async def regenerate_similar_scene(
     engine = str(req.engine or "grok").strip().lower() or "grok"
     if engine not in {"grok", "wan2", "minimax", "seedance"}:
         raise HTTPException(status_code=400, detail="Engine invalida")
+    generation_mode = str(req.generation_mode or "image").strip().lower() or "image"
+    if generation_mode not in {"image", "text"}:
+        raise HTTPException(status_code=400, detail="Modo de geracao invalido")
 
     from app.routers.credits import deduct_credits
 
