@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v432 loaded");
+console.log("[CriaVideo] app.js v433 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -15883,23 +15883,47 @@ function _renderPublishAnalysisSummary(project = null) {
     const contextSummary = String(tags.similar_context_summary || "").trim();
     const cameraLabel = String(tags.similar_camera_label || "").trim();
     const detectedReason = String(tags.similar_detected_reason || "").trim();
+    const transcriptText = String(tags.similar_transcript_full || tags.similar_transcript_excerpt || "").trim();
+    const transcriptLanguage = String(tags.similar_transcript_language_label_pt || "").trim();
+    let speechDetected = null;
+    if (typeof tags.similar_transcript_speech_detected === "boolean") {
+        speechDetected = tags.similar_transcript_speech_detected;
+    } else if (String(tags.similar_transcript_speech_detected || "").trim().toLowerCase() === "true") {
+        speechDetected = true;
+    } else if (String(tags.similar_transcript_speech_detected || "").trim().toLowerCase() === "false") {
+        speechDetected = false;
+    }
     const summaryPreview = contextSummary
         ? (contextSummary.length > 360 ? `${contextSummary.slice(0, 360).trim()}...` : contextSummary)
         : "";
+    const transcriptPreview = transcriptText
+        ? (transcriptText.length > 320 ? `${transcriptText.slice(0, 320).trim()}...` : transcriptText)
+        : "";
+    const audioMeta = speechDetected === false
+        ? "audio sem fala detectada"
+        : (transcriptText ? (transcriptLanguage ? `audio transcrito (${transcriptLanguage})` : "audio transcrito") : "");
     const sceneItems = scenes.slice(0, 3).map((scene, index) => {
         const prompt = String(scene?.prompt || "").trim();
-        if (!prompt) {
+        const dialogue = String(scene?.lyrics_segment || "").trim();
+        if (!prompt && !dialogue) {
             return "";
         }
 
         const start = Number(scene?.start_time || 0);
         const end = Number(scene?.end_time || start);
         const excerpt = prompt.length > 150 ? `${prompt.slice(0, 150).trim()}...` : prompt;
+        const dialogueExcerpt = dialogue.length > 140 ? `${dialogue.slice(0, 140).trim()}...` : dialogue;
         const label = `Cena ${Number(scene?.scene_index ?? index) + 1} (${start.toFixed(1)}s - ${end.toFixed(1)}s)`;
-        return `<li><strong>${esc(label)}</strong> ${esc(excerpt)}</li>`;
+        return `
+            <li>
+                <strong>${esc(label)}</strong>
+                ${excerpt ? ` ${esc(excerpt)}` : ""}
+                ${dialogueExcerpt ? `<div class="publish-analysis-scene-audio">Audio: ${esc(dialogueExcerpt)}</div>` : ""}
+            </li>
+        `;
     }).filter(Boolean);
 
-    if (!sceneCount && !summaryPreview && !sceneItems.length && !cameraLabel && !detectedReason) {
+    if (!sceneCount && !summaryPreview && !sceneItems.length && !cameraLabel && !detectedReason && !audioMeta && !transcriptPreview) {
         summaryEl.hidden = true;
         summaryEl.innerHTML = "";
         return;
@@ -15907,6 +15931,7 @@ function _renderPublishAnalysisSummary(project = null) {
 
     const metaBits = [
         sceneCount > 0 ? `${sceneCount} cenas mapeadas` : "",
+        audioMeta,
         cameraLabel,
         detectedReason,
     ].filter(Boolean);
@@ -15917,6 +15942,7 @@ function _renderPublishAnalysisSummary(project = null) {
             ${metaBits.map((item) => `<span>${esc(item)}</span>`).join("")}
         </div>
         ${summaryPreview ? `<p>${esc(summaryPreview)}</p>` : ""}
+        ${transcriptPreview ? `<div class="publish-analysis-transcript"><strong>Transcricao do audio</strong><p>${esc(transcriptPreview)}</p></div>` : ""}
         ${sceneItems.length ? `<ul class="publish-analysis-scene-list">${sceneItems.join("")}</ul>` : ""}
     `;
 }
@@ -15947,7 +15973,7 @@ function _refreshPublishAnalysisActions() {
         analyzeBtn.disabled = !hasRender || isAnalyzing || isGenerating;
     }
     if (analyzeLabel) {
-        analyzeLabel.textContent = isAnalyzing ? "Analisando..." : "Analisar por cena";
+        analyzeLabel.textContent = isAnalyzing ? "Analisando..." : "Analisar audio + cena";
     }
     if (generateBtn) {
         generateBtn.disabled = !hasRender || !analysisReady || isAnalyzing || isGenerating;
@@ -16007,7 +16033,7 @@ function _resetPublishAnalysisState({ keepRenderId = true } = {}) {
 
     if (_publishAnalysisState.renderId > 0) {
         _setPublishAnalysisStatus(
-            "Clique em Analisar por cena para mapear o contexto do vídeo antes de gerar o título e a descrição.",
+            "Clique em Analisar audio + cena para mapear o contexto visual e transcrever o audio do video antes de gerar o titulo e a descricao.",
             "idle",
         );
     } else {
@@ -16101,9 +16127,12 @@ async function _refreshPublishAnalysisProject() {
             kind = "error";
             message = project.error_message || stageLabel;
         } else if (_isPublishAnalysisReady(project)) {
+            const speechDetected = String(tags.similar_transcript_speech_detected || "").trim().toLowerCase();
             kind = "success";
             message = sceneCount > 0
-                ? `Analise concluida. ${sceneCount} cenas prontas para gerar o título e a descrição.`
+                ? (speechDetected === "false"
+                    ? `Analise concluida. ${sceneCount} cenas prontas e o audio foi analisado sem fala relevante.`
+                    : `Analise concluida. ${sceneCount} cenas e a transcricao do audio estao prontas para gerar o titulo e a descricao.`)
                 : "Analise concluida. Gere o título e a descrição usando o contexto do video.";
         } else if (progress > 0) {
             message = `${stageLabel} (${progress}%)`;
@@ -16148,7 +16177,7 @@ async function publishStartAnalysis() {
     _publishAnalysisState.lastProjectSnapshot = null;
     _publishAnalysisState.running = true;
     _publishAnalysisState.generatingMetadata = false;
-    _setPublishAnalysisStatus("Iniciando analise do video enviado por cenas...", "running");
+    _setPublishAnalysisStatus("Iniciando analise visual por cenas e transcricao do audio do video...", "running");
     _renderPublishAnalysisSummary(null);
     _refreshPublishAnalysisActions();
 
@@ -16170,7 +16199,7 @@ async function publishStartAnalysis() {
         }
 
         _publishAnalysisState.projectId = projectId;
-        _setPublishAnalysisStatus("Analise por cenas iniciada. Aguardando retorno da IA...", "running");
+    _setPublishAnalysisStatus("Analise por cenas e audio iniciada. Aguardando retorno da IA...", "running");
         _startPublishAnalysisPolling();
         await _refreshPublishAnalysisProject();
     } catch (error) {
