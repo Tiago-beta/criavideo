@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v433 loaded");
+console.log("[CriaVideo] app.js v434 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -11785,13 +11785,18 @@ function scriptNext() {
 
         // Realistic mode: only need prompt text, optionally photos/audio
         if (scriptData.videoType === "realista") {
-            if (!title && !text) { alert("Escreva um título ou um prompt para o vídeo."); return; }
+            const useUserAudioToggle = !!document.getElementById("script-use-user-audio")?.checked;
+            const hasUserAudio = useUserAudioToggle && !!scriptUserAudioFile;
+            const hasTevoxiClip = !!(_scriptSelectedSong && _scriptSelectedClip);
+            const hasAvatarPromptlessInputs = scriptPhotos.length > 0 && (hasUserAudio || hasTevoxiClip);
+            if (!title && !text && !hasAvatarPromptlessInputs) {
+                alert("Escreva um título ou um prompt para o vídeo.");
+                return;
+            }
             scriptData.title = title || text.substring(0, 100);
             scriptData.text = text;
             const usePhotos = document.getElementById("script-use-photos").checked;
             scriptData.useCustomImages = usePhotos && scriptPhotos.length > 0;
-            const useUserAudioToggle = document.getElementById("script-use-user-audio")?.checked;
-            const hasUserAudio = useUserAudioToggle && !!scriptUserAudioFile;
             scriptData.useCustomAudio = hasUserAudio;
             // Realistic flow: advance normally to step 7 (realistic settings)
         } else {
@@ -11952,7 +11957,10 @@ async function handleScriptCreate() {
     // Check if this is a realistic video
     if (scriptData.videoType === "realista") {
         const scriptText = document.getElementById("script-text").value.trim();
-        const prompt = scriptText || scriptData.title || "";
+        const selectedRealisticEngine = document.querySelector("#script-realistic-engine .engine-option.selected")?.dataset.value || "grok";
+        const prompt = selectedRealisticEngine === "avatar31"
+            ? scriptText
+            : (scriptText || scriptData.title || "");
         const realisticTitle = (document.getElementById("script-title").value || "").trim() || scriptData.title || "";
         await handleRealisticVideoCreate(
             prompt,
