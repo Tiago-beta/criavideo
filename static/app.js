@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v423 loaded");
+console.log("[CriaVideo] app.js v424 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -6080,15 +6080,16 @@ function _renderSimilarScenes(project, options = {}) {
         const generatedImageVariants = Array.isArray(scene.generated_image_variants)
             ? scene.generated_image_variants.filter((item) => String(item?.url || item?.path || "").trim())
             : [];
-        const frameEditTitle = frameEditorOpen ? "Fechar edicao da imagem" : "Editar imagem";
+        const frameEditTitle = "Editar imagem";
         const narrationTitle = narrationEditorOpen ? "Fechar narracao" : "Editar narracao";
         const frameGenerateTitle = generatedImageVariants.length
             ? "Gerar novamente a partir deste frame"
             : "Criar imagem a partir deste frame";
-        const frameRerollTitle = frameInstruction
+        const canGenerateFrameVariant = !!frameInstruction || pendingCount > 0;
+        const frameRerollTitle = canGenerateFrameVariant
             ? frameGenerateTitle
-            : "Descreva o ajuste antes de criar a imagem";
-        const frameRerollDisabledAttr = frameBusy || !frameInstruction ? "disabled" : "";
+            : "Escreva um ajuste ou envie uma nova foto";
+        const frameRerollDisabledAttr = frameBusy || !canGenerateFrameVariant ? "disabled" : "";
         const framePanelSummary = generatedImageVariants.length
             ? `${generatedImageVariants.length + 1} imagens lado a lado.`
             : "Contexto visual da cena.";
@@ -6140,7 +6141,7 @@ function _renderSimilarScenes(project, options = {}) {
                     overlayActionsMarkup: `
                         <div class="similar-frame-image-actions">
                             <a class="similar-frame-image-action" href="${esc(referenceFrameUrlRaw)}" download="${referenceDownloadName}" title="Baixar Base" aria-label="Baixar Base">${similarActionIcons.download}</a>
-                            <button class="similar-frame-image-action${frameEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleFrameEdit(${sceneId})" title="${frameEditTitle}" aria-label="${frameEditTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
+                            <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId})" title="${frameEditTitle}" aria-label="${frameEditTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
                         </div>
                     `,
                 }),
@@ -6189,12 +6190,6 @@ function _renderSimilarScenes(project, options = {}) {
                 </div>
             `
             : "";
-        const frameQuickActionsMarkup = `
-            <div class="similar-reference-frame-quick-actions">
-                <button class="similar-frame-tool-btn similar-frame-tool-btn-icon${narrationEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleNarrationEdit(${sceneId})" title="${narrationTitle}" aria-label="${narrationTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.narration}</button>
-                ${generatedImageVariants.length ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.reroll}</button>` : ""}
-            </div>
-        `;
         const inlineClipMarkup = hasReferenceFrame && hasClipPreview
             ? `
                 <aside class="similar-scene-clip-column">
@@ -6219,7 +6214,6 @@ function _renderSimilarScenes(project, options = {}) {
                     <div class="similar-reference-frame-body${inlineClipMarkup ? " similar-reference-frame-body-has-clip" : ""}">
                         <div class="similar-reference-frame-primary-column">
                             ${frameGalleryMarkup}
-                            ${frameQuickActionsMarkup}
                         </div>
                         ${inlineClipMarkup}
                     </div>
@@ -6232,14 +6226,15 @@ function _renderSimilarScenes(project, options = {}) {
                             <button class="btn btn-secondary" type="button" onclick="similarCloseNarrationEdit(${sceneId})">Cancelar</button>
                         </div>
                     </div>
-                    <div class="similar-reference-frame-editor${frameEditorOpen ? " is-open" : ""}" ${frameEditorOpen ? "" : "hidden"}>
-                        <label for="similar-frame-instruction-${sceneId}">O que a IA deve mudar neste frame?</label>
+                    <div class="similar-reference-frame-editor is-open">
+                        <label for="similar-frame-instruction-${sceneId}">O que a IA deve mudar neste frame? (opcional)</label>
                         <textarea id="similar-frame-instruction-${sceneId}" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar o produto por uma embalagem premium, manter a mesma mesa, o mesmo enquadramento e a mesma luz." ${frameBusyDisabledAttr}>${frameInstructionValue}</textarea>
                         <p class="field-hint">A imagem nova sai do frame original e respeita o prompt atual da cena para manter o contexto.</p>
                         <div class="similar-reference-frame-editor-tools">
                             <button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarUploadFrameReference(${sceneId})" title="Enviar nova foto" aria-label="Enviar nova foto" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
                             ${pendingCount ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarClearSceneUploads(${sceneId})" title="Limpar fotos enviadas" aria-label="Limpar fotos enviadas" ${frameBusyDisabledAttr}>${similarActionIcons.close}</button>` : ""}
-                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameGenerateTitle}" aria-label="${frameGenerateTitle}" ${frameRerollDisabledAttr}>${generatedImageVariants.length ? similarActionIcons.reroll : similarActionIcons.wand}</button>
+                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon${narrationEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleNarrationEdit(${sceneId})" title="${narrationTitle}" aria-label="${narrationTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.narration}</button>
+                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${generatedImageVariants.length ? similarActionIcons.reroll : similarActionIcons.wand}</button>
                         </div>
                         ${frameUploadsMarkup}
                         ${frameBusyMarkup}
@@ -6275,7 +6270,7 @@ function _renderSimilarScenes(project, options = {}) {
         const previewMarkup = previewItems.length
             ? `<div class="similar-scene-preview${previewItems.length === 1 ? " similar-scene-preview-single" : ""}">${previewItems.join("")}</div>`
             : "";
-        const uploadsSectionMarkup = pendingCount && !frameEditorOpen
+        const uploadsSectionMarkup = pendingCount && !hasReferenceFrame
             ? `
                 <div class="similar-scene-upload-panel">
                     <div class="similar-scene-upload-head">
@@ -9585,6 +9580,7 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         const suppressGlobalStatus = status !== "failed" && (
             (isProcessing && ["generating_scene", "regenerating_scene"].includes(stage))
             || (!isProcessing && ["generating_scene", "regenerating_scene"].includes(rawStage))
+            || (!isProcessing && ["scene_edited", "scene_image_ready", "preview_ready"].includes(rawStage))
         );
         const stageLabel = stage === "downloading_reference" && String(tags.similar_source_type || "").trim().toLowerCase() === "upload"
             ? "Preparando vídeo de referência..."
@@ -10588,16 +10584,15 @@ function similarToggleFrameEdit(sceneId) {
     _syncSimilarDraftsFromDom();
     const key = _similarSceneStateKey(sceneId);
     if (!key) return;
-    const isOpen = !!similarState.sceneDraftsBySceneId[key]?.frameEditorOpen;
-    _setSimilarSceneFrameEditorDraft(sceneId, { open: !isOpen });
+    _setSimilarSceneFrameEditorDraft(sceneId, { open: true });
     if (similarState.lastProjectSnapshot) {
         _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
     }
-    if (!isOpen) {
-        setTimeout(() => {
-            document.getElementById(`similar-frame-instruction-${sceneId}`)?.focus();
-        }, 0);
-    }
+    setTimeout(() => {
+        const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
+        instructionEl?.focus();
+        instructionEl?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }, 0);
 }
 
 function similarToggleNarrationEdit(sceneId) {
@@ -10678,8 +10673,8 @@ async function similarGenerateFrameVariant(sceneId) {
         }
     });
 
-    if (!editInstruction) {
-        showToast("Descreva primeiro o que deve mudar no frame.", "error");
+    if (!editInstruction && !uploadIds.length) {
+        showToast("Escreva um ajuste ou envie uma nova foto antes de criar a imagem.", "error");
         instructionEl?.focus();
         return;
     }

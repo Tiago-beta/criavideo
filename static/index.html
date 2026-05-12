@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260511-04">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260511-05">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 423;
+        var REQUIRED_VER = 424;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2081,28 +2081,34 @@
 
                     <div id="similar-generation-step" class="similar-generation-step" hidden>
                         <div class="similar-generation-head">
-                            <h4>Etapa 2: escolha o motor de criação</h4>
-                            <p id="similar-detected-profile" class="similar-detected-profile">Perfil do vídeo sendo analisado...</p>
+                            <h4>Gerar todas de uma vez</h4>
+                            <p id="similar-detected-profile" class="similar-detected-profile" hidden>Perfil do vídeo sendo analisado...</p>
                         </div>
 
                         <div id="similar-engine-options" class="engine-options">
-                            <button class="engine-option selected" data-value="wan2" type="button">
-                                <strong>Ultra High 3.0</strong>
-                                <span class="engine-option-desc">720p, sem áudio nativo e velocidade normal.</span>
+                            <button class="engine-option selected" data-value="wan2" type="button" title="Ultra High 3.0" aria-label="Ultra High 3.0">
+                                <span class="similar-engine-option-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15c2.2-4 5.1-6 8-6s5.8 2 8 6"/><path d="M6 19c1.8-2.7 3.8-4 6-4s4.2 1.3 6 4"/><circle cx="12" cy="7" r="2.5"/></svg>
+                                </span>
+                                <span class="similar-engine-option-sr">Ultra High 3.0</span>
                             </button>
-                            <button class="engine-option" data-value="grok" type="button">
-                                <strong>Cria Speed 2.5 (Grok)</strong>
-                                <span class="engine-option-desc">720p, áudio nativo e velocidade rápida.</span>
+                            <button class="engine-option" data-value="grok" type="button" title="Cria Speed 2.5 (Grok)" aria-label="Cria Speed 2.5 (Grok)">
+                                <span class="similar-engine-option-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 6 13h5l-1 9 8-12h-5l1-8Z"/></svg>
+                                </span>
+                                <span class="similar-engine-option-sr">Cria Speed 2.5 (Grok)</span>
                             </button>
-                            <button class="engine-option" data-value="seedance" type="button">
-                                <strong>Mega 2.0 Ultra</strong>
-                                <span class="engine-option-desc">1080p, áudio nativo e velocidade normal.</span>
+                            <button class="engine-option" data-value="seedance" type="button" title="Mega 2.0 Ultra" aria-label="Mega 2.0 Ultra">
+                                <span class="similar-engine-option-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 1.8 4.2L18 8l-4.2 1.8L12 14l-1.8-4.2L6 8l4.2-1.8L12 2Z"/><circle cx="12" cy="15.5" r="3.5"/><path d="m19 14 .8 1.9L22 17l-2.2 1.1L19 20l-.8-1.9L16 17l2.2-1.1L19 14Z"/></svg>
+                                </span>
+                                <span class="similar-engine-option-sr">Mega 2.0 Ultra</span>
                             </button>
                         </div>
 
                         <div class="similar-generation-actions">
                             <button class="btn btn-secondary btn-sm" id="similar-generate-all" type="button">Gerar prévias</button>
-                            <button class="btn btn-secondary btn-sm" id="similar-merge-selected" type="button">Unir cenas selecionadas</button>
+                            <button class="btn btn-secondary btn-sm" id="similar-merge-selected" type="button">Unir cenas</button>
                         </div>
                     </div>
                 </div>
@@ -3868,8 +3874,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260511-04"></script>
-    <script src="/video/static/pwa.js?v=20260511-04"></script>
+    <script src="/video/static/app.js?v=20260511-05"></script>
+    <script src="/video/static/pwa.js?v=20260511-05"></script>
 </body>
 </html>
 
