@@ -292,7 +292,11 @@ async def generate_avatar_video(
         "Content-Type": "application/json",
     }
 
-    uploaded_image_ref = await _upload_media_to_atlas(image_path, api_key)
+    image_reference = _file_to_data_uri(image_path)
+    logger.info(
+        "Avatar 3.1 Plus using inline image reference (%s bytes)",
+        os.path.getsize(image_path),
+    )
     if _is_http_url(audio_source):
         uploaded_audio_ref = audio_source.strip()
     elif os.path.exists(audio_source):
@@ -303,7 +307,7 @@ async def generate_avatar_video(
     payload = {
         "model": AVATAR_MODEL,
         "audio": uploaded_audio_ref,
-        "image": uploaded_image_ref,
+        "image": image_reference,
     }
     cleaned_prompt = str(prompt or "").strip()
     if cleaned_prompt:
