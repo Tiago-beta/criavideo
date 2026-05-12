@@ -292,11 +292,7 @@ async def generate_avatar_video(
         "Content-Type": "application/json",
     }
 
-    image_reference = _file_to_data_uri(image_path)
-    logger.info(
-        "Avatar 3.1 Plus using inline image reference (%s bytes)",
-        os.path.getsize(image_path),
-    )
+    uploaded_image_ref = await _upload_media_to_atlas(image_path, api_key)
     if _is_http_url(audio_source):
         uploaded_audio_ref = audio_source.strip()
     elif os.path.exists(audio_source):
@@ -307,82 +303,57 @@ async def generate_avatar_video(
     payload = {
         "model": AVATAR_MODEL,
         "audio": uploaded_audio_ref,
-        "image": image_reference,
+        "image": uploaded_image_ref,
     }
     cleaned_prompt = str(prompt or "").strip()
     if cleaned_prompt:
         payload["prompt"] = cleaned_prompt
 
-    payload_variants: list[tuple[str, dict]] = []
-    ratio = str(aspect_ratio or "").strip()
-    if ratio in _ALLOWED_ASPECT_RATIOS:
-        ratio_payload = dict(payload)
-        ratio_payload["ratio"] = ratio
-        payload_variants.append(("ratio", ratio_payload))
-    payload_variants.append(("default", dict(payload)))
-
     prediction_id = ""
-    selected_variant = ""
+    selected_variant = "default"
     async with httpx.AsyncClient(timeout=120) as client:
         last_error_message = ""
-        for variant_index, (variant_name, variant_payload) in enumerate(payload_variants):
-            should_try_next_variant = False
-            for attempt in range(5):
-                try:
-                    resp = await client.post(submit_url, headers=headers, json=variant_payload)
-                except httpx.RequestError as e:
-                    if attempt >= 4:
-                        raise RuntimeError(f"Falha de conexao ao iniciar Avatar 3.1 Plus: {e}")
-                    wait_s = min(20, 2 ** attempt)
-                    logger.warning(
-                        "Avatar create request error (%s, attempt %d/5): %s. Retrying in %ds",
-                        variant_name,
-                        attempt + 1,
-                        e,
-                        wait_s,
-                    )
-                    await asyncio.sleep(wait_s)
-                    continue
-
-                if resp.status_code == 429:
-                    if attempt >= 4:
-                        raise RuntimeError("Avatar 3.1 Plus esta com alta demanda no momento (429).")
-                    wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(30, 2 ** (attempt + 2)))
-                    logger.warning(
-                        "Avatar rate-limited on create (%s, attempt %d/5). Retrying in %ds",
-                        variant_name,
-                        attempt + 1,
-                        wait_s,
-                    )
-                    await asyncio.sleep(wait_s)
-                    continue
-
-                if resp.is_error:
-                    details = _extract_atlas_error_message(resp)
-                    last_error_message = f"Erro ao iniciar Avatar 3.1 Plus (HTTP {resp.status_code}): {details}"
-                    if variant_index < len(payload_variants) - 1 and 400 <= resp.status_code < 500:
-                        logger.warning(
-                            "Avatar rejected %s payload (HTTP %s): %s. Tentando fallback.",
-                            variant_name,
-                            resp.status_code,
-                            details,
-                        )
-                        should_try_next_variant = True
-                        break
-                    raise RuntimeError(last_error_message)
-
-                response_payload = resp.json() if resp.content else {}
-                data_node = response_payload.get("data") if isinstance(response_payload, dict) else None
-                prediction_id = str((data_node or {}).get("id") or response_payload.get("id") or "").strip()
-                if not prediction_id:
-                    raise RuntimeError("Atlas Cloud nao retornou prediction id para o Avatar 3.1 Plus")
-                selected_variant = variant_name
-                break
-
-            if prediction_id:
-                break
-            if should_try_next_variant:
+        for attempt in range(5):
+            try:
+                resp = await client.post(submit_url, headers=headers, json=payload)
+            except httpx.RequestError as e:
+                if attempt >= 4:
+                    raise RuntimeError(f"Falha de conexao ao iniciar Avatar 3.1 Plus: {e}")
+                wait_s = min(20, 2 ** attempt)
+                logger.warning(
+                    "Avatar create request error (%s, attempt %d/5): %s. Retrying in %ds",
+                    selected_variant,
+                    attempt + 1,
+                    e,
+                    wait_s,
+                )
+                await asyncio.sleep(wait_s)
                 continue
+
+            if resp.status_code == 429:
+                if attempt >= 4:
+                    raise RuntimeError("Avatar 3.1 Plus esta com alta demanda no momento (429).")
+                wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(30, 2 ** (attempt + 2)))
+                logger.warning(
+                    "Avatar rate-limited on create (%s, attempt %d/5). Retrying in %ds",
+                    selected_variant,
+                    attempt + 1,
+                    wait_s,
+                )
+                await asyncio.sleep(wait_s)
+                continue
+
+            if resp.is_error:
+                details = _extract_atlas_error_message(resp)
+                last_error_message = f"Erro ao iniciar Avatar 3.1 Plus (HTTP {resp.status_code}): {details}"
+                raise RuntimeError(last_error_message)
+
+            response_payload = resp.json() if resp.content else {}
+            data_node = response_payload.get("data") if isinstance(response_payload, dict) else None
+            prediction_id = str((data_node or {}).get("id") or response_payload.get("id") or "").strip()
+            if not prediction_id:
+                raise RuntimeError("Atlas Cloud nao retornou prediction id para o Avatar 3.1 Plus")
+            break
 
         if not prediction_id and last_error_message:
             raise RuntimeError(last_error_message)
