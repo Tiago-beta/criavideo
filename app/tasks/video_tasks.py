@@ -685,6 +685,38 @@ async def download_audio_if_url(audio_path: str, project_id: int) -> str:
     return local_path
 
 
+async def materialize_audio_source(
+    audio_source: str,
+    project_id: int,
+    clip_start: float = 0,
+    clip_duration: float = 0,
+    output_filename: str = "external_clip.mp3",
+) -> str:
+    """Resolve remote/local audio and optionally trim a clip for downstream consumers."""
+    source_path = await download_audio_if_url(audio_source, project_id) if audio_source else ""
+    if not source_path or not os.path.exists(source_path):
+        return ""
+    if clip_start <= 0 and clip_duration <= 0:
+        return source_path
+
+    audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    trimmed_path = str(audio_dir / output_filename)
+    trim_args = ["ffmpeg", "-y", "-i", source_path]
+    if clip_start > 0:
+        trim_args += ["-ss", str(clip_start)]
+    if clip_duration > 0:
+        trim_args += ["-t", str(clip_duration)]
+    trim_args += ["-c:a", "libmp3lame", "-q:a", "2", trimmed_path]
+    proc = await asyncio.create_subprocess_exec(
+        *trim_args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+    )
+    await proc.wait()
+    if os.path.exists(trimmed_path) and os.path.getsize(trimmed_path) > 0:
+        return trimmed_path
+    raise RuntimeError("Falha ao preparar clip de audio")
+
+
 async def run_video_pipeline(project_id: int, pipeline_options: dict | None = None):
     """Full pipeline: scenes → subtitles → render → thumbnail.
     Runs as a background task.
@@ -1494,9 +1526,9 @@ async def run_realistic_video_pipeline(project_id: int):
 
             # Determine engine from audio_path field (used to store engine choice)
             engine = (project.audio_path or "").strip()
-            if engine not in ("seedance", "wan2", "grok"):
+            if engine not in ("seedance", "wan2", "grok", "avatar31"):
                 engine = "wan2"
-            engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
+            engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
             engine_label = engine_labels.get(engine, "Wan 2.6")
             logger.info(f"Realistic video pipeline for project {project_id} using engine: {engine}")
 
@@ -1514,7 +1546,11 @@ async def run_realistic_video_pipeline(project_id: int):
 
             # ── Step 0.5: Transcribe audio clip for context-aware prompt ──
             tags_data_early = project.tags if isinstance(project.tags, dict) else {}
-            external_audio_url_early = (tags_data_early.get("audio_url") or "").strip()
+            external_audio_source_early = str(
+                tags_data_early.get("audio_upload_path")
+                or tags_data_early.get("audio_url")
+                or ""
+            ).strip()
             segment_transcription_hint = str(tags_data_early.get("segment_transcription", "") or "").strip()
             interaction_personas = normalize_interaction_personas(
                 tags_data_early.get("interaction_personas") if isinstance(tags_data_early.get("interaction_personas"), list) else [
@@ -1552,24 +1588,19 @@ async def run_realistic_video_pipeline(project_id: int):
                         break
                 except Exception:
                     continue
-            if external_audio_url_early:
+            if external_audio_source_early:
                 try:
                     audio_dir_early = Path(settings.media_dir) / "audio" / str(project_id)
                     audio_dir_early.mkdir(parents=True, exist_ok=True)
-                    ext_audio = await download_audio_if_url(external_audio_url_early, project_id)
+                    ext_audio = await materialize_audio_source(
+                        external_audio_source_early,
+                        project_id,
+                        clip_start=clip_start_early,
+                        clip_duration=clip_dur_early,
+                        output_filename="clip_for_transcription.mp3",
+                    )
                     if ext_audio and os.path.exists(ext_audio):
-                        # Extract the clip segment for transcription
                         clip_path = str(audio_dir_early / "clip_for_transcription.mp3")
-                        trim_args = ["ffmpeg", "-y", "-i", ext_audio]
-                        if clip_start_early > 0:
-                            trim_args += ["-ss", str(clip_start_early)]
-                        if clip_dur_early > 0:
-                            trim_args += ["-t", str(clip_dur_early)]
-                        trim_args += ["-c:a", "libmp3lame", "-q:a", "2", clip_path]
-                        proc = await asyncio.create_subprocess_exec(
-                            *trim_args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
-                        )
-                        await proc.wait()
                         if os.path.exists(clip_path) and os.path.getsize(clip_path) > 0:
                             from app.services.transcriber import transcribe_audio
                             lyrics_hint = tags_data_early.get("lyrics", "")
@@ -1676,7 +1707,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 has_reference_image=has_reference_image,
                 image_is_cover_anchor=reference_source_early == "upload",
                 music_driven=bool(
-                    external_audio_url_early
+                    external_audio_source_early
                     or segment_transcription_hint
                     or tags_data_early.get("lyrics")
                     or cover_source_early
@@ -1698,6 +1729,8 @@ async def run_realistic_video_pipeline(project_id: int):
                 duration = _resolve_wan_effective_duration(duration)
             elif engine == "seedance":
                 duration = max(1, min(duration, 15))
+            elif engine == "avatar31":
+                duration = max(1, min(duration, 180))
             else:
                 duration = max(1, min(duration, 10))
 
@@ -1712,7 +1745,11 @@ async def run_realistic_video_pipeline(project_id: int):
             use_last_image_as_final_frame = bool(
                 tags_data.get("use_last_image_as_final_frame", use_last_image_as_final_frame)
             ) and engine == "seedance"
-            external_audio_url_for_prompt = str(tags_data.get("audio_url", "") or "").strip()
+            external_audio_url_for_prompt = str(
+                tags_data.get("audio_upload_path")
+                or tags_data.get("audio_url", "")
+                or ""
+            ).strip()
             grok_text_only = engine == "grok" and bool(
                 tags_data.get("grok_text_only") or tags_data.get("disable_persona_reference")
             )
@@ -1973,7 +2010,7 @@ async def run_realistic_video_pipeline(project_id: int):
 
             aspect_ratio = project.aspect_ratio or "16:9"
             generate_audio = bool(tags_data.get("provider_generate_audio", not getattr(project, "no_background_music", False)))
-            if engine == "seedance" and not generate_audio:
+            if engine in {"seedance", "avatar31"} and not generate_audio:
                 generate_audio = True
             scene_reference_path = image_path
             grok_direct_reference_path = image_path if (image_path and os.path.exists(image_path)) else ""
@@ -2232,6 +2269,36 @@ async def run_realistic_video_pipeline(project_id: int):
                     tags_data["grok_persona_anchor_fallback"] = bool(grok_persona_anchor_fallback or not grok_persona_anchor_path)
                     project.tags = tags_data
                     await db.commit()
+
+            elif engine == "avatar31":
+                from app.services.avatar_video import generate_avatar_video
+
+                avatar_audio_source = str(
+                    tags_data.get("audio_upload_path")
+                    or tags_data.get("audio_url")
+                    or ""
+                ).strip()
+                if not avatar_audio_source:
+                    raise RuntimeError("Avatar 3.1 Plus exige um áudio enviado pelo usuário ou um trecho do Tevoxi.")
+                if not scene_reference_path or not os.path.exists(scene_reference_path):
+                    raise RuntimeError("Avatar 3.1 Plus exige uma imagem de referência válida.")
+
+                avatar_audio_path = await materialize_audio_source(
+                    avatar_audio_source,
+                    project_id,
+                    clip_start=float(tags_data.get("clip_start", 0) or 0),
+                    clip_duration=float(tags_data.get("clip_duration", 0) or 0),
+                    output_filename="avatar_source.mp3",
+                )
+                await _on_progress(18, "Iniciando geracao de video Avatar 3.1 Plus...")
+                await generate_avatar_video(
+                    prompt=optimized_prompt,
+                    image_path=scene_reference_path,
+                    audio_source=avatar_audio_path,
+                    output_path=output_path,
+                    aspect_ratio=aspect_ratio,
+                    on_progress=_on_progress,
+                )
 
             elif engine == "wan2":
                 # ── Wan via Atlas Cloud ──
@@ -2519,10 +2586,11 @@ async def run_realistic_video_pipeline(project_id: int):
             has_audio = False
             provider_has_audio = await _video_has_audio_stream(output_path)
             provider_generate_audio = bool(tags.get("provider_generate_audio", False))
-            seedance_missing_audio = engine == "seedance" and provider_generate_audio and not provider_has_audio
-            if seedance_missing_audio:
+            provider_missing_audio = engine in {"seedance", "avatar31"} and provider_generate_audio and not provider_has_audio
+            if provider_missing_audio:
                 logger.warning(
-                    "Seedance returned video without native audio for project %s.",
+                    "%s returned video without native audio for project %s.",
+                    engine_label,
                     project_id,
                 )
 
@@ -2656,32 +2724,20 @@ async def run_realistic_video_pipeline(project_id: int):
                         narration_path = ""
 
                 # Use external audio URL (from Tevoxi) or generate background music
-                external_audio_url = tags.get("audio_url", "")
+                external_audio_url = str(tags.get("audio_upload_path") or tags.get("audio_url") or "")
                 if add_music and external_audio_url and not dialogue_enabled:
                     project.progress = 85
                     await db.commit()
                     logger.info(f"Downloading external audio for realistic video {project_id}: {external_audio_url[:100]}")
                     try:
-                        ext_audio_path = await download_audio_if_url(external_audio_url, project_id)
+                        ext_audio_path = await materialize_audio_source(
+                            external_audio_url,
+                            project_id,
+                            clip_start=float(tags.get("clip_start", 0) or 0),
+                            clip_duration=float(tags.get("clip_duration", 0) or 0),
+                            output_filename="external_clip.mp3",
+                        )
                         if ext_audio_path and os.path.exists(ext_audio_path):
-                            # Trim to clip section if specified
-                            clip_start = float(tags.get("clip_start", 0))
-                            clip_dur = float(tags.get("clip_duration", 0))
-                            if clip_start > 0 or clip_dur > 0:
-                                trimmed_path = str(audio_dir / "external_clip.mp3")
-                                trim_args = ["ffmpeg", "-y", "-i", ext_audio_path]
-                                if clip_start > 0:
-                                    trim_args += ["-ss", str(clip_start)]
-                                if clip_dur > 0:
-                                    trim_args += ["-t", str(clip_dur)]
-                                trim_args += ["-c:a", "libmp3lame", "-q:a", "2", trimmed_path]
-                                proc = await asyncio.create_subprocess_exec(
-                                    *trim_args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
-                                )
-                                await proc.wait()
-                                if os.path.exists(trimmed_path) and os.path.getsize(trimmed_path) > 0:
-                                    ext_audio_path = trimmed_path
-                                    logger.info(f"Audio trimmed: start={clip_start}s, dur={clip_dur}s")
                             music_path = ext_audio_path
                             logger.info(f"External audio downloaded: {music_path}")
                         else:

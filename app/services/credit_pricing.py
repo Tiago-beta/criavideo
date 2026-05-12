@@ -27,6 +27,7 @@ REALISTIC_BASE_CREDITS_8S = {
     "wan2": 100,
     "grok": 90,
     "seedance": 170,
+    "avatar31": 85,
 }
 
 # Approximate provider costs in USD per second
@@ -34,6 +35,7 @@ REALISTIC_ENGINE_USD_PER_SEC = {
     "wan2": 0.060,
     "grok": 0.050,
     "seedance": 0.085,
+    "avatar31": 0.048,
 }
 
 # Additional operation costs

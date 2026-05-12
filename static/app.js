@@ -148,6 +148,13 @@ const WAN_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const DEFAULT_REALISTIC_DURATION_OPTIONS = [5, 10, 15, 20, 45, 60];
 const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
+const REALISTIC_ENGINE_LABELS = {
+    wan2: "Ultra High 1.0",
+    grok: "Cria 3.0 speed",
+    seedance: "Mega 2.0 Ultra",
+    avatar31: "Avatar 3.1 Plus",
+};
+const REALISTIC_NATIVE_AUDIO_ENGINES = new Set(["wan2", "grok", "seedance", "avatar31"]);
 const WORKFLOW_PROMPT_AI_STYLE_OPTIONS = [
     { value: "commercial", label: "Comercial" },
     { value: "meme", label: "Meme Viral" },
@@ -174,6 +181,11 @@ function _pickClosestDurationOption(options, targetValue) {
         const curGap = Math.abs(current - target);
         return curGap < bestGap ? current : best;
     }, options[0]);
+}
+
+function getRealisticEngineLabel(engine) {
+    const normalized = String(engine || "").trim().toLowerCase();
+    return REALISTIC_ENGINE_LABELS[normalized] || REALISTIC_ENGINE_LABELS.grok;
 }
 
 function _renderDurationButtons(containerId, options, preferredValue = null) {
@@ -2556,7 +2568,7 @@ function _getSelectedDurationSeconds(containerId, fallbackSeconds = 8) {
 function _buildRealisticEstimatePayload(prefix) {
     const useTevoxi = !!document.getElementById(`${prefix}-realistic-tevoxi`)?.checked;
     const selectedEngine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
-    const engine = (prefix === "auto" && useTevoxi) ? "wan2" : selectedEngine;
+    const engine = selectedEngine;
 
     let durationSeconds = _getSelectedDurationSeconds(`${prefix}-realistic-duration`, 5);
     if (engine === "wan2") {
@@ -2588,6 +2600,9 @@ function _buildRealisticEstimatePayload(prefix) {
         : prefix === "script"
             ? !!_scriptSelectedSong
             : !!_autoSelectedSong;
+    const hasUploadedScriptAudio = prefix === "script"
+        && !!document.getElementById("script-use-user-audio")?.checked
+        && !!scriptUserAudioFile;
 
     return {
         mode: "realistic",
@@ -2597,7 +2612,7 @@ function _buildRealisticEstimatePayload(prefix) {
         add_music: addMusic,
         add_narration: addNarration,
         enable_subtitles: enableSubtitles,
-        use_external_audio: useTevoxi && (prefix === "auto" ? true : hasSelectedSong),
+        use_external_audio: (useTevoxi && hasSelectedSong) || hasUploadedScriptAudio,
     };
 }
 
@@ -2738,6 +2753,9 @@ function _buildAutoEstimatePayload() {
 function _buildWorkflowEstimatePayload() {
     const engine = document.getElementById("workflow-engine")?.value || "grok";
     let durationSeconds = parseInt(document.getElementById("workflow-duration")?.value || "15", 10) || 15;
+    const workflowAudioUrl = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-audio-url-input"))
+        .map((el) => String(el.value || "").trim())
+        .find(Boolean) || "";
     if (engine === "wan2") {
         durationSeconds = _normalizeWanDurationMultiple(durationSeconds);
     }
@@ -2750,7 +2768,7 @@ function _buildWorkflowEstimatePayload() {
         add_music: false,
         add_narration: false,
         enable_subtitles: false,
-        use_external_audio: false,
+        use_external_audio: !!workflowState.audio || !!workflowAudioUrl,
     };
 }
 
@@ -3267,6 +3285,7 @@ async function createSimilar(projectId) {
         "Ultra High 1.0",
         "Ultra High 2.2",
         "Mega 2.0 Ultra",
+        "Avatar 3.1 Plus",
         "Seedance 2.0",
         "Grok",
         "Cria 3.0 speed",
@@ -3287,9 +3306,10 @@ async function createSimilar(projectId) {
 
     const normalizeEngine = (value) => {
         const raw = String(value || "").trim().toLowerCase();
-        if (["wan2", "grok", "seedance"].includes(raw)) {
+        if (["wan2", "grok", "seedance", "avatar31"].includes(raw)) {
             return raw;
         }
+        if (raw.includes("avatar 3.1") || raw.includes("kling v2.6 std avatar") || raw.includes("avatar31")) return "avatar31";
         if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
         if (raw.includes("cria 3.0") || raw.includes("grok")) return "grok";
@@ -8605,8 +8625,7 @@ function workflowControlSelector(el) {
 }
 
 function workflowGetEngineLabel(engine) {
-    const labels = { grok: "Cria 3.0 speed", wan2: "Ultra High 1.0", seedance: "Mega 2.0 Ultra" };
-    return labels[engine] || labels.grok;
+    return getRealisticEngineLabel(engine);
 }
 
 function workflowRuntimeTemplateKey(templateKey = "") {
@@ -8880,6 +8899,8 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
                 <option value="wan2">Ultra High 1.0</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
+                <option value="avatar31">Avatar 3.1 Plus</option>
+                <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
@@ -9088,7 +9109,7 @@ async function workflowHandleImageInput(event) {
     }
     const remaining = Math.max(0, 9 - workflowState.images.length);
     if (!remaining) {
-        showToast("Limite de 9 imagens atingido.", "error");
+                const hasNativeAudio = REALISTIC_NATIVE_AUDIO_ENGINES.has(engineVal);
         return;
     }
     const acceptedFiles = files.slice(0, remaining);
@@ -9578,7 +9599,7 @@ async function workflowRunSeedance() {
         const imageUploadIds = await workflowConnectedImageUploadIds(runTemplateKey);
         if (!imageUploadIds.length) throw new Error("Conecte pelo menos uma imagem à entrada do Gerador de vídeo.");
         await workflowEnsureUploadedVideos(runTemplateKey);
-        await workflowEnsureUploadedAudio(runTemplateKey);
+        const workflowAudioUploadId = await workflowEnsureUploadedAudio(runTemplateKey);
         workflowSetOutputProgress(16, "Enviando referências para o gerador...", runTemplateKey);
 
         workflowSyncEngineDurationOptions();
@@ -9587,9 +9608,16 @@ async function workflowRunSeedance() {
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
         const resolution = document.getElementById("workflow-resolution")?.value || "720p";
         const workflowEngine = document.getElementById("workflow-engine")?.value || "wan2";
+        const workflowAudioUrl = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-audio-url-input"))
+            .map((el) => String(el.value || "").trim())
+            .find(Boolean) || "";
         const useLastImageAsFinalFrame = workflowEngine === "seedance"
             && !!document.getElementById("workflow-seedance-last-frame")?.checked;
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
+
+        if (workflowEngine === "avatar31" && !workflowAudioUploadId && !workflowAudioUrl) {
+            throw new Error("Avatar 3.1 Plus exige uma imagem e um áudio no workflow.");
+        }
 
         const resp = await api("/video/generate-realistic", {
             method: "POST",
@@ -9597,12 +9625,14 @@ async function workflowRunSeedance() {
                 prompt,
                 duration,
                 aspect_ratio: aspect,
-                generate_audio: generateAudio,
+                generate_audio: generateAudio || workflowEngine === "avatar31",
                 add_music: false,
                 add_narration: false,
                 title: "Workflow de vídeo",
                 image_upload_id: imageUploadIds[0] || "",
                 image_upload_ids: imageUploadIds,
+                audio_upload_id: workflowAudioUploadId,
+                audio_url: workflowAudioUrl,
                 engine: workflowEngine,
                 use_last_image_as_final_frame: useLastImageAsFinalFrame,
                 prompt_optimized: false,
@@ -11036,6 +11066,9 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const selectedTevoxiClip = !useTevoxi
         ? null
         : (prefix === "wizard" ? _wizardSelectedClip : _scriptSelectedClip);
+    const wantsUploadedAudio = prefix === "script"
+        && !!document.getElementById("script-use-user-audio")?.checked;
+    const hasUploadedAudio = wantsUploadedAudio && !!scriptUserAudioFile;
 
     if (useTevoxi && !selectedTevoxiSong) {
         alert("Selecione uma música do Tevoxi.");
@@ -11096,11 +11129,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
         }
     }
-    const engineLabel = engine === "wan2"
-            ? "Ultra High 1.0"
-            : engine === "grok"
-                ? "Cria 3.0 speed"
-                : "Mega 2.0 Ultra";
+    const engineLabel = getRealisticEngineLabel(engine);
     const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
     const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
     let personaProfileId = 0;
@@ -11176,9 +11205,13 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         // Upload reference image if available
         let imageUploadId = "";
         let imageUploadIds = [];
+        let audioUploadId = "";
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
         if (disablePersonaReference && engine !== "grok" && !shouldUploadReferenceImage) {
             throw new Error("O modo Nenhum sem foto funciona no Cria 3.0 speed. Para outros motores, envie uma imagem de referência.");
+        }
+        if (engine === "avatar31" && !selectedTevoxiSong && !hasUploadedAudio) {
+            throw new Error("Avatar 3.1 Plus exige um áudio enviado ou um trecho do Tevoxi.");
         }
         if (shouldUploadReferenceImage) {
             setCreateProgress(5, "Gerando vídeo realista...", "Enviando imagem de referência...");
@@ -11211,6 +11244,15 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             _smoothProgressTarget = 15;
         }
 
+        if (hasUploadedAudio) {
+            setCreateProgress(9, "Gerando vídeo realista...", "Enviando áudio de referência...");
+            const uploadedAudio = await uploadTempFileWithRetry(scriptUserAudioFile, "audio", "áudio de referência");
+            audioUploadId = uploadedAudio?.upload_id || "";
+            if (!audioUploadId) {
+                throw new Error("Falha ao enviar o áudio de referência.");
+            }
+        }
+
         const speechStatusLabel = speechMode === "dialogue_auto"
             ? "Otimizando prompt e preparando falas automaticas por personagem..."
             : speechMode === "narration_manual"
@@ -11226,7 +11268,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 preserve_prompt_exactly: prefix === "script",
                 duration,
                 aspect_ratio: aspect,
-                generate_audio: addMusicRequested || addNarration || !!selectedTevoxiSong,
+                generate_audio: addMusicRequested || addNarration || !!selectedTevoxiSong || !!audioUploadId || engine === "avatar31",
                 add_music: addMusicRequested,
                 add_narration: addNarration,
                 narration_text: narrationText,
@@ -11239,6 +11281,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 title: finalTitle || "",
                 image_upload_id: imageUploadId,
                 image_upload_ids: imageUploadIds,
+                audio_upload_id: audioUploadId,
                 engine: engine,
                 use_last_image_as_final_frame: engine === "seedance"
                     && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
@@ -15358,11 +15401,7 @@ async function generateAiScript() {
         const selectedPersonaId = selectedPersonaIds[0] || 0;
         const usePhotosToggle = document.getElementById("script-use-photos");
         const hasPersonaReference = !disablePersonaReference && selectedPersonaIds.length > 0;
-        const engineLabel = engine === "grok"
-            ? "Cria 3.0 speed"
-            : engine === "wan2"
-                    ? "Ultra High 1.0"
-                    : "Mega 2.0 Ultra";
+        const engineLabel = getRealisticEngineLabel(engine);
         try {
             let customImageIds = [];
             if (usePersonalizedReferences && aiSuggestCustomImages.length > 0) {
@@ -18937,13 +18976,7 @@ function _setAutoRealisticEngine(engineValue) {
 
 function _applyAutoRealisticEngineRules() {
     const engineGroup = document.getElementById("auto-realistic-engine-group");
-    const forceWan2 = _isAutoTevoxiShortMode();
-    if (engineGroup) engineGroup.hidden = forceWan2;
-
-    if (forceWan2) {
-        _setAutoRealisticEngine("wan2");
-        return;
-    }
+    if (engineGroup) engineGroup.hidden = false;
 
     const selected = document.querySelector("#auto-realistic-engine .engine-option.selected");
     if (!selected) _setAutoRealisticEngine("wan2");
@@ -21092,7 +21125,7 @@ async function createAutoSchedule() {
             persona_profile_id: personaProfileId,
             persona_profile_ids: personaProfileIds,
             persona_composition: personaCandidates,
-            engine: useTevoxi ? "wan2" : (selectedEngine ? selectedEngine.dataset.value : "wan2"),
+            engine: selectedEngine ? selectedEngine.dataset.value : "wan2",
             duration: selectedDur ? parseInt(selectedDur.dataset.value) : 8,
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",
             add_music: useMusic && !useTevoxi,

@@ -4921,13 +4921,15 @@ async def generate_realistic_prompt_endpoint(
     else:
         topic_for_optimizer = topic
 
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
+    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok", "avatar31") else "wan2"
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
     elif engine == "seedance":
         duration = max(1, min(int(req.duration or 10), 15))
+    elif engine == "avatar31":
+        duration = max(1, min(int(req.duration or 10), 180))
     else:
         duration = max(1, min(int(req.duration or 10), 10))
 
@@ -5097,6 +5099,7 @@ class GenerateRealisticRequest(BaseModel):
     title: str = ""
     image_upload_id: str = ""
     image_upload_ids: list[str] = Field(default_factory=list)
+    audio_upload_id: str = ""
     use_last_image_as_final_frame: bool = False
     cover_context: str = ""
     cover_visual_mode: str = ""
@@ -5104,7 +5107,7 @@ class GenerateRealisticRequest(BaseModel):
     cover_custom_prompt: str = ""
     cover_source: str = ""
     tevoxi_has_official_cover_reference: bool = False
-    engine: str = "wan2"  # "seedance", "minimax", "wan2" or "grok"
+    engine: str = "wan2"  # "seedance", "minimax", "wan2", "grok" or "avatar31"
     audio_url: str = ""       # External audio URL (e.g. from Tevoxi)
     lyrics: str = ""          # Lyrics/transcription for the audio clip
     clip_start: float = 0     # Start time in seconds for audio clip
@@ -5138,13 +5141,15 @@ async def generate_realistic_endpoint(
 
     preserve_prompt_exactly = bool(req.preserve_prompt_exactly)
 
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok") else "wan2"
+    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok", "avatar31") else "wan2"
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
     elif engine == "seedance":
         duration = max(1, min(int(req.duration or 10), 15))
+    elif engine == "avatar31":
+        duration = max(1, min(int(req.duration or 10), 180))
     else:
         duration = max(1, min(int(req.duration or 10), 10))
 
@@ -5195,6 +5200,31 @@ async def generate_realistic_endpoint(
     if req.image_upload_id and req.image_upload_id not in upload_ids:
         upload_ids.insert(0, req.image_upload_id)
     upload_ids = upload_ids[:6]
+
+    resolved_audio_upload_path = ""
+    if req.audio_upload_id:
+        resolved_audio = _resolve_temp_file(user["id"], req.audio_upload_id, AUDIO_EXTS)
+        if not resolved_audio:
+            raise HTTPException(status_code=400, detail="O áudio enviado não foi encontrado. Envie novamente.")
+        resolved_audio_upload_path = str(resolved_audio)
+
+    resolved_audio_source = resolved_audio_upload_path or (req.audio_url or "").strip()
+    if engine == "avatar31":
+        if not resolved_audio_source:
+            raise HTTPException(status_code=400, detail="Avatar 3.1 Plus exige um áudio enviado ou um trecho do Tevoxi.")
+        avatar_duration = 0
+        if req.clip_duration and req.clip_duration > 0:
+            avatar_duration = int(round(float(req.clip_duration or 0)))
+        elif resolved_audio_upload_path and os.path.exists(resolved_audio_upload_path):
+            try:
+                from app.services.video_composer import _get_duration as get_audio_duration
+
+                avatar_duration = int(round(float(get_audio_duration(resolved_audio_upload_path) or 0)))
+            except Exception:
+                avatar_duration = 0
+        if avatar_duration > 0:
+            duration = max(1, min(avatar_duration, 180))
+
     use_last_image_as_final_frame = bool(req.use_last_image_as_final_frame) and engine == "seedance"
 
     disable_persona_reference = bool(req.disable_persona_reference) and engine == "grok" and not bool(upload_ids)
@@ -5316,6 +5346,12 @@ async def generate_realistic_endpoint(
                 "When references are personas, do not copy clothing, background, pose or props."
             )
 
+    if engine == "avatar31":
+        dialogue_enabled = False
+        dialogue_characters = []
+        dialogue_voice_profile_ids = []
+        dialogue_duration = 0
+
     external_audio_url = (req.audio_url or "").strip()
     external_lyrics = (req.lyrics or "").strip()
     cover_has_saved_persona = bool(selected_persona_profile_ids)
@@ -5331,14 +5367,14 @@ async def generate_realistic_endpoint(
         has_saved_persona=cover_has_saved_persona,
         has_reference_image=has_reference_image,
         image_is_cover_anchor=bool(upload_ids),
-        music_driven=bool(external_audio_url or external_lyrics or str(req.cover_source or "").strip()),
+        music_driven=bool(resolved_audio_source or external_lyrics or str(req.cover_source or "").strip()),
     )
     optimizer_style_hint = build_cover_optimizer_tone(req.realistic_style, cover_decision.visual_mode)
     if not preserve_prompt_exactly:
         prompt = apply_cover_guidance(prompt, cover_decision)
     narration_text = (req.narration_text or "").strip() if req.add_narration and not dialogue_enabled else ""
     effective_add_narration = bool(req.add_narration and narration_text and not dialogue_enabled)
-    effective_add_music = bool(req.add_music or external_audio_url)
+    effective_add_music = bool(req.add_music or resolved_audio_source)
     provider_generate_audio = bool(req.generate_audio)
     seedance_native_audio_only = False
     if engine == "seedance":
@@ -5351,6 +5387,9 @@ async def generate_realistic_endpoint(
     elif engine == "wan2":
         # Wan I2V should request native audio by default for better first-playback UX.
         provider_generate_audio = True
+    elif engine == "avatar31":
+        provider_generate_audio = True
+        effective_add_narration = False
 
     # Credit check — centralized realistic estimator.
     from app.routers.credits import deduct_credits, is_levita_credit_bypass_user
@@ -5362,7 +5401,7 @@ async def generate_realistic_endpoint(
         add_music=effective_add_music,
         add_narration=effective_add_narration,
         enable_subtitles=False,
-        use_external_audio=bool(external_audio_url),
+        use_external_audio=bool(resolved_audio_source),
     )
     credits_needed = int(estimate.get("credits_needed", 0) or 0)
     if await is_levita_credit_bypass_user(db, user=user):
@@ -5379,7 +5418,7 @@ async def generate_realistic_endpoint(
     if not project_title:
         project_title = prompt[:100]
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed"}
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
     engine_label = engine_labels.get(engine, "Wan 2.6")
 
     # Narration config stored in tags JSON
@@ -5435,6 +5474,8 @@ async def generate_realistic_endpoint(
         tags_data["audio_url"] = external_audio_url
         tags_data["clip_start"] = req.clip_start
         tags_data["clip_duration"] = req.clip_duration
+    if resolved_audio_upload_path:
+        tags_data["audio_upload_path"] = resolved_audio_upload_path
     if external_lyrics:
         tags_data["lyrics"] = external_lyrics
 

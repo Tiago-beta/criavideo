@@ -4211,7 +4211,7 @@ th {
 #script-realistic-engine,
 #auto-realistic-engine {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 #wizard-realistic-engine .engine-option,
@@ -4241,6 +4241,14 @@ th {
 
 .engine-option.selected .engine-option-desc {
     color: rgba(var(--accent-rgb), 0.95);
+}
+
+@media (max-width: 980px) {
+    #wizard-realistic-engine,
+    #script-realistic-engine,
+    #auto-realistic-engine {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 /* Realistic narration options */
