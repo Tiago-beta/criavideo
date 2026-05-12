@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v435 loaded");
+console.log("[CriaVideo] app.js v432 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -45,6 +45,21 @@ let _publishAnalysisState = {
     lastProjectSnapshot: null,
     running: false,
     generatingMetadata: false,
+};
+let _publishProgressState = {
+    visible: false,
+    running: false,
+    completed: false,
+    failed: false,
+    progress: 0,
+    kicker: "",
+    title: "",
+    message: "",
+    jobs: [],
+    startedAt: 0,
+    primaryUrl: "",
+    dismissible: false,
+    pollingTimer: null,
 };
 let _pendingConnectPlatform = "";
 let _editingSocialAccountId = 0;
@@ -148,13 +163,6 @@ const WAN_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const DEFAULT_REALISTIC_DURATION_OPTIONS = [5, 10, 15, 20, 45, 60];
 const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
-const REALISTIC_ENGINE_LABELS = {
-    wan2: "Ultra High 1.0",
-    grok: "Cria 3.0 speed",
-    seedance: "Mega 2.0 Ultra",
-    avatar31: "Avatar 3.1 Plus",
-};
-const REALISTIC_NATIVE_AUDIO_ENGINES = new Set(["wan2", "grok", "seedance", "avatar31"]);
 const WORKFLOW_PROMPT_AI_STYLE_OPTIONS = [
     { value: "commercial", label: "Comercial" },
     { value: "meme", label: "Meme Viral" },
@@ -181,11 +189,6 @@ function _pickClosestDurationOption(options, targetValue) {
         const curGap = Math.abs(current - target);
         return curGap < bestGap ? current : best;
     }, options[0]);
-}
-
-function getRealisticEngineLabel(engine) {
-    const normalized = String(engine || "").trim().toLowerCase();
-    return REALISTIC_ENGINE_LABELS[normalized] || REALISTIC_ENGINE_LABELS.grok;
 }
 
 function _renderDurationButtons(containerId, options, preferredValue = null) {
@@ -773,6 +776,10 @@ function bindDashboardEvents() {
     document.getElementById("btn-publish").addEventListener("click", submitPublishNow);
     document.getElementById("btn-save-draft").addEventListener("click", savePublishDraft);
     document.getElementById("btn-schedule-publish").addEventListener("click", openPublishScheduleModal);
+    const publishProgressDismissBtn = document.getElementById("btn-publish-progress-dismiss");
+    if (publishProgressDismissBtn) {
+        publishProgressDismissBtn.addEventListener("click", dismissPublishProgressPanel);
+    }
     document.getElementById("pub-links-toggle").addEventListener("click", togglePublishLinks);
     document.getElementById("btn-save-links").addEventListener("click", savePublishLinksForAccount);
     const renderPickerBtn = document.getElementById("pub-render-picker-btn");
@@ -2568,7 +2575,7 @@ function _getSelectedDurationSeconds(containerId, fallbackSeconds = 8) {
 function _buildRealisticEstimatePayload(prefix) {
     const useTevoxi = !!document.getElementById(`${prefix}-realistic-tevoxi`)?.checked;
     const selectedEngine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
-    const engine = selectedEngine;
+    const engine = (prefix === "auto" && useTevoxi) ? "wan2" : selectedEngine;
 
     let durationSeconds = _getSelectedDurationSeconds(`${prefix}-realistic-duration`, 5);
     if (engine === "wan2") {
@@ -2600,9 +2607,6 @@ function _buildRealisticEstimatePayload(prefix) {
         : prefix === "script"
             ? !!_scriptSelectedSong
             : !!_autoSelectedSong;
-    const hasUploadedScriptAudio = prefix === "script"
-        && !!document.getElementById("script-use-user-audio")?.checked
-        && !!scriptUserAudioFile;
 
     return {
         mode: "realistic",
@@ -2612,7 +2616,7 @@ function _buildRealisticEstimatePayload(prefix) {
         add_music: addMusic,
         add_narration: addNarration,
         enable_subtitles: enableSubtitles,
-        use_external_audio: (useTevoxi && hasSelectedSong) || hasUploadedScriptAudio,
+        use_external_audio: useTevoxi && (prefix === "auto" ? true : hasSelectedSong),
     };
 }
 
@@ -2753,9 +2757,6 @@ function _buildAutoEstimatePayload() {
 function _buildWorkflowEstimatePayload() {
     const engine = document.getElementById("workflow-engine")?.value || "grok";
     let durationSeconds = parseInt(document.getElementById("workflow-duration")?.value || "15", 10) || 15;
-    const workflowAudioUrl = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-audio-url-input"))
-        .map((el) => String(el.value || "").trim())
-        .find(Boolean) || "";
     if (engine === "wan2") {
         durationSeconds = _normalizeWanDurationMultiple(durationSeconds);
     }
@@ -2768,7 +2769,7 @@ function _buildWorkflowEstimatePayload() {
         add_music: false,
         add_narration: false,
         enable_subtitles: false,
-        use_external_audio: !!workflowState.audio || !!workflowAudioUrl,
+        use_external_audio: false,
     };
 }
 
@@ -3285,7 +3286,6 @@ async function createSimilar(projectId) {
         "Ultra High 1.0",
         "Ultra High 2.2",
         "Mega 2.0 Ultra",
-        "Avatar 3.1 Plus",
         "Seedance 2.0",
         "Grok",
         "Cria 3.0 speed",
@@ -3306,10 +3306,9 @@ async function createSimilar(projectId) {
 
     const normalizeEngine = (value) => {
         const raw = String(value || "").trim().toLowerCase();
-        if (["wan2", "grok", "seedance", "avatar31"].includes(raw)) {
+        if (["wan2", "grok", "seedance"].includes(raw)) {
             return raw;
         }
-        if (raw.includes("avatar 3.1") || raw.includes("kling v2.6 std avatar") || raw.includes("avatar31")) return "avatar31";
         if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
         if (raw.includes("cria 3.0") || raw.includes("grok")) return "grok";
@@ -4349,8 +4348,67 @@ function _setSimilarStatus(message, kind = "running") {
     }
 }
 
-function _queueSimilarScroll() {
-    // Keep the Similar flow on the user's manual scroll position.
+function _queueSimilarScroll(options = {}) {
+    const sceneId = Number(options.sceneId || 0);
+    const preferUnified = !!options.preferUnified;
+    const preferScenes = !!options.preferScenes;
+    const preferSource = !!options.preferSource;
+    const preferStatus = options.preferStatus !== false;
+    const delay = Math.max(0, Number(options.delay || 120));
+
+    window.setTimeout(() => {
+        let target = null;
+
+        if (sceneId > 0) {
+            target = document.getElementById(`similar-frame-instruction-${sceneId}`)?.closest(".similar-scene-card")
+                || document.getElementById(`similar-scene-prompt-${sceneId}`)?.closest(".similar-scene-card");
+        }
+
+        if (!target && preferUnified) {
+            const unifiedPreviewEl = document.getElementById("similar-unified-preview-wrap");
+            const unifiedPromptEl = document.getElementById("similar-unified-prompt-wrap");
+            target = (unifiedPreviewEl && !unifiedPreviewEl.hidden ? unifiedPreviewEl : null)
+                || (unifiedPromptEl && !unifiedPromptEl.hidden ? unifiedPromptEl : null);
+        }
+
+        if (!target && preferStatus) {
+            const statusEl = document.getElementById("similar-status");
+            if (statusEl && !statusEl.hidden) {
+                target = statusEl;
+            }
+        }
+
+        if (!target && preferScenes) {
+            const scenesContainerEl = document.getElementById("similar-scenes-container");
+            if (scenesContainerEl && !scenesContainerEl.hidden) {
+                target = scenesContainerEl;
+            }
+        }
+
+        if (!target && preferSource) {
+            const sourcePreviewEl = document.getElementById("similar-source-preview-wrap");
+            if (sourcePreviewEl && !sourcePreviewEl.hidden) {
+                target = sourcePreviewEl;
+            }
+        }
+
+        if (!target) {
+            const fallbackSourceEl = document.getElementById("similar-source-preview-wrap");
+            const fallbackScenesEl = document.getElementById("similar-scenes-container");
+            const fallbackStatusEl = document.getElementById("similar-status");
+            target = (fallbackSourceEl && !fallbackSourceEl.hidden ? fallbackSourceEl : null)
+                || (fallbackScenesEl && !fallbackScenesEl.hidden ? fallbackScenesEl : null)
+                || (fallbackStatusEl && !fallbackStatusEl.hidden ? fallbackStatusEl : null);
+        }
+
+        if (target && typeof target.scrollIntoView === "function") {
+            target.scrollIntoView({
+                behavior: "smooth",
+                block: sceneId > 0 ? "start" : "center",
+                inline: "nearest",
+            });
+        }
+    }, delay);
 }
 
 function _formatSimilarUnifiedPromptGeneratedAt(rawValue) {
@@ -8625,7 +8683,8 @@ function workflowControlSelector(el) {
 }
 
 function workflowGetEngineLabel(engine) {
-    return getRealisticEngineLabel(engine);
+    const labels = { grok: "Cria 3.0 speed", wan2: "Ultra High 1.0", seedance: "Mega 2.0 Ultra" };
+    return labels[engine] || labels.grok;
 }
 
 function workflowRuntimeTemplateKey(templateKey = "") {
@@ -8899,8 +8958,6 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
                 <option value="wan2">Ultra High 1.0</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
-                <option value="avatar31">Avatar 3.1 Plus</option>
-                <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
@@ -9109,7 +9166,7 @@ async function workflowHandleImageInput(event) {
     }
     const remaining = Math.max(0, 9 - workflowState.images.length);
     if (!remaining) {
-                const hasNativeAudio = REALISTIC_NATIVE_AUDIO_ENGINES.has(engineVal);
+        showToast("Limite de 9 imagens atingido.", "error");
         return;
     }
     const acceptedFiles = files.slice(0, remaining);
@@ -9599,7 +9656,7 @@ async function workflowRunSeedance() {
         const imageUploadIds = await workflowConnectedImageUploadIds(runTemplateKey);
         if (!imageUploadIds.length) throw new Error("Conecte pelo menos uma imagem à entrada do Gerador de vídeo.");
         await workflowEnsureUploadedVideos(runTemplateKey);
-        const workflowAudioUploadId = await workflowEnsureUploadedAudio(runTemplateKey);
+        await workflowEnsureUploadedAudio(runTemplateKey);
         workflowSetOutputProgress(16, "Enviando referências para o gerador...", runTemplateKey);
 
         workflowSyncEngineDurationOptions();
@@ -9608,16 +9665,9 @@ async function workflowRunSeedance() {
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
         const resolution = document.getElementById("workflow-resolution")?.value || "720p";
         const workflowEngine = document.getElementById("workflow-engine")?.value || "wan2";
-        const workflowAudioUrl = Array.from(document.querySelectorAll("#create-panel-workflow .workflow-audio-url-input"))
-            .map((el) => String(el.value || "").trim())
-            .find(Boolean) || "";
         const useLastImageAsFinalFrame = workflowEngine === "seedance"
             && !!document.getElementById("workflow-seedance-last-frame")?.checked;
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
-
-        if (workflowEngine === "avatar31" && !workflowAudioUploadId && !workflowAudioUrl) {
-            throw new Error("Avatar 3.1 Plus exige uma imagem e um áudio no workflow.");
-        }
 
         const resp = await api("/video/generate-realistic", {
             method: "POST",
@@ -9625,14 +9675,12 @@ async function workflowRunSeedance() {
                 prompt,
                 duration,
                 aspect_ratio: aspect,
-                generate_audio: generateAudio || workflowEngine === "avatar31",
+                generate_audio: generateAudio,
                 add_music: false,
                 add_narration: false,
                 title: "Workflow de vídeo",
                 image_upload_id: imageUploadIds[0] || "",
                 image_upload_ids: imageUploadIds,
-                audio_upload_id: workflowAudioUploadId,
-                audio_url: workflowAudioUrl,
                 engine: workflowEngine,
                 use_last_image_as_final_frame: useLastImageAsFinalFrame,
                 prompt_optimized: false,
@@ -11066,9 +11114,6 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const selectedTevoxiClip = !useTevoxi
         ? null
         : (prefix === "wizard" ? _wizardSelectedClip : _scriptSelectedClip);
-    const wantsUploadedAudio = prefix === "script"
-        && !!document.getElementById("script-use-user-audio")?.checked;
-    const hasUploadedAudio = wantsUploadedAudio && !!scriptUserAudioFile;
 
     if (useTevoxi && !selectedTevoxiSong) {
         alert("Selecione uma música do Tevoxi.");
@@ -11079,11 +11124,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         return;
     }
 
-    const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
-    let engine = engineBtn ? engineBtn.dataset.value : "grok";
-
     let finalPrompt = String(prompt || "").trim();
-    if (engine !== "avatar31" && useTevoxi && selectedTevoxiSong && selectedTevoxiClip) {
+    if (useTevoxi && selectedTevoxiSong && selectedTevoxiClip) {
         const tevoxiContext = _buildTevoxiPromptContext(selectedTevoxiSong, selectedTevoxiClip);
         if (prefix === "wizard") {
             finalPrompt = finalPrompt ? `${finalPrompt}\n\n${tevoxiContext}` : tevoxiContext;
@@ -11092,14 +11134,13 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         }
     }
 
-    if (!finalPrompt && engine !== "avatar31") {
+    if (!finalPrompt) {
         alert("Descreva a cena que você quer ver no vídeo.");
         return;
     }
-    const avatarPromptlessMode = engine === "avatar31" && !finalPrompt;
 
     let finalTitle = String(title || "").trim();
-    if (!finalTitle && selectedTevoxiSong && engine !== "avatar31") {
+    if (!finalTitle && selectedTevoxiSong) {
         finalTitle = String(selectedTevoxiSong.title || "").trim();
     }
 
@@ -11122,6 +11163,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const musicEl = document.getElementById(musicCheckboxId);
     const addMusic = musicEl ? musicEl.checked : true;
     const addMusicRequested = useTevoxi ? false : addMusic;
+    const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
+    let engine = engineBtn ? engineBtn.dataset.value : "grok";
     if (engine === "wan2") {
         const normalizedDuration = _normalizeWanDurationMultiple(duration);
         if (normalizedDuration !== duration) {
@@ -11131,7 +11174,11 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
         }
     }
-    const engineLabel = getRealisticEngineLabel(engine);
+    const engineLabel = engine === "wan2"
+            ? "Ultra High 1.0"
+            : engine === "grok"
+                ? "Cria 3.0 speed"
+                : "Mega 2.0 Ultra";
     const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
     const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
     let personaProfileId = 0;
@@ -11207,16 +11254,12 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         // Upload reference image if available
         let imageUploadId = "";
         let imageUploadIds = [];
-        let audioUploadId = "";
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
         const referencePhotosToUpload = engine === "avatar31"
             ? scriptPhotos.slice(-1)
             : scriptPhotos.slice(0, 6);
         if (disablePersonaReference && engine !== "grok" && !shouldUploadReferenceImage) {
             throw new Error("O modo Nenhum sem foto funciona no Cria 3.0 speed. Para outros motores, envie uma imagem de referência.");
-        }
-        if (engine === "avatar31" && !selectedTevoxiSong && !hasUploadedAudio) {
-            throw new Error("Avatar 3.1 Plus exige um áudio enviado ou um trecho do Tevoxi.");
         }
         if (shouldUploadReferenceImage) {
             setCreateProgress(5, "Gerando vídeo realista...", "Enviando imagem de referência...");
@@ -11248,22 +11291,11 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             _smoothProgressTarget = 15;
         }
 
-        if (hasUploadedAudio) {
-            setCreateProgress(9, "Gerando vídeo realista...", "Enviando áudio de referência...");
-            const uploadedAudio = await uploadTempFileWithRetry(scriptUserAudioFile, "audio", "áudio de referência");
-            audioUploadId = uploadedAudio?.upload_id || "";
-            if (!audioUploadId) {
-                throw new Error("Falha ao enviar o áudio de referência.");
-            }
-        }
-
-        const speechStatusLabel = avatarPromptlessMode
-            ? "Preparando avatar com foto e áudio..."
-            : speechMode === "dialogue_auto"
-                ? "Otimizando prompt e preparando falas automaticas por personagem..."
-                : speechMode === "narration_manual"
-                    ? "Otimizando prompt e preparando narracao do texto informado..."
-                    : "Otimizando prompt com IA...";
+        const speechStatusLabel = speechMode === "dialogue_auto"
+            ? "Otimizando prompt e preparando falas automaticas por personagem..."
+            : speechMode === "narration_manual"
+                ? "Otimizando prompt e preparando narracao do texto informado..."
+                : "Otimizando prompt com IA...";
         setCreateProgress(10, "Gerando vídeo realista...", speechStatusLabel);
         _smoothProgressTarget = 15;
 
@@ -11271,10 +11303,10 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             method: "POST",
             body: JSON.stringify({
                 prompt: finalPrompt,
-                preserve_prompt_exactly: prefix === "script" || avatarPromptlessMode,
+                preserve_prompt_exactly: prefix === "script",
                 duration,
                 aspect_ratio: aspect,
-                generate_audio: addMusicRequested || addNarration || !!selectedTevoxiSong || !!audioUploadId || engine === "avatar31",
+                generate_audio: addMusicRequested || addNarration || !!selectedTevoxiSong,
                 add_music: addMusicRequested,
                 add_narration: addNarration,
                 narration_text: narrationText,
@@ -11287,7 +11319,6 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 title: finalTitle || "",
                 image_upload_id: imageUploadId,
                 image_upload_ids: imageUploadIds,
-                audio_upload_id: audioUploadId,
                 engine: engine,
                 use_last_image_as_final_frame: engine === "seedance"
                     && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
@@ -11409,8 +11440,6 @@ function resetCreateWizard() {
         imageDisplaySeconds: 0,
         promptOptimized: false,
     };
-    _pendingScriptImageCreatorVideoDraft = false;
-    _keepScriptNarrationEnabledOnNextPhotoSync = false;
 
     // Reset tabs
     document.querySelectorAll(".create-tab").forEach((t) => {
@@ -11787,18 +11816,13 @@ function scriptNext() {
 
         // Realistic mode: only need prompt text, optionally photos/audio
         if (scriptData.videoType === "realista") {
-            const useUserAudioToggle = !!document.getElementById("script-use-user-audio")?.checked;
-            const hasUserAudio = useUserAudioToggle && !!scriptUserAudioFile;
-            const hasTevoxiClip = !!(_scriptSelectedSong && _scriptSelectedClip);
-            const hasAvatarPromptlessInputs = scriptPhotos.length > 0 && (hasUserAudio || hasTevoxiClip);
-            if (!title && !text && !hasAvatarPromptlessInputs) {
-                alert("Escreva um título ou um prompt para o vídeo.");
-                return;
-            }
+            if (!title && !text) { alert("Escreva um título ou um prompt para o vídeo."); return; }
             scriptData.title = title || text.substring(0, 100);
             scriptData.text = text;
             const usePhotos = document.getElementById("script-use-photos").checked;
             scriptData.useCustomImages = usePhotos && scriptPhotos.length > 0;
+            const useUserAudioToggle = document.getElementById("script-use-user-audio")?.checked;
+            const hasUserAudio = useUserAudioToggle && !!scriptUserAudioFile;
             scriptData.useCustomAudio = hasUserAudio;
             // Realistic flow: advance normally to step 7 (realistic settings)
         } else {
@@ -11931,9 +11955,6 @@ function scriptNext() {
 
     scriptStep = Math.min(scriptStep + 1, flow.length);
     updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
-    if (currentDataStep === 2) {
-        _applyPendingScriptImageCreatorVideoDraft();
-    }
 }
 
 function scriptBack() {
@@ -11959,10 +11980,7 @@ async function handleScriptCreate() {
     // Check if this is a realistic video
     if (scriptData.videoType === "realista") {
         const scriptText = document.getElementById("script-text").value.trim();
-        const selectedRealisticEngine = document.querySelector("#script-realistic-engine .engine-option.selected")?.dataset.value || "grok";
-        const prompt = selectedRealisticEngine === "avatar31"
-            ? scriptText
-            : (scriptText || scriptData.title || "");
+        const prompt = scriptText || scriptData.title || "";
         const realisticTitle = (document.getElementById("script-title").value || "").trim() || scriptData.title || "";
         await handleRealisticVideoCreate(
             prompt,
@@ -12233,12 +12251,8 @@ let scriptPhotos = []; // array of File objects
 let scriptUserAudioFile = null;
 let scriptUserVideoFile = null; // single File object for custom video
 const MAX_PHOTOS = 20;
-let _pendingScriptImageCreatorVideoDraft = false;
-let _keepScriptNarrationEnabledOnNextPhotoSync = false;
 const MAX_AI_SCRIPT_PHOTO_ANALYSIS = 8;
 const MAX_AI_SUGGEST_CUSTOM_IMAGES = 8;
-    _pendingScriptImageCreatorVideoDraft = false;
-    _keepScriptNarrationEnabledOnNextPhotoSync = false;
 const MAX_PHOTO_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_AUDIO_SIZE = 80 * 1024 * 1024; // 80MB
 const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB
@@ -12928,9 +12942,7 @@ async function _dataUrlToImageFile(dataUrl, fileName) {
     return new File([blob], fileName, { type: blob.type || "image/png" });
 }
 
-async function _addScriptImageCreatorResultToProject(index, options = {}) {
-    const activatePhotoUpload = options.activatePhotoUpload !== false;
-    const renderPreview = options.renderPreview !== false;
+async function _addScriptImageCreatorResultToProject(index) {
     const item = _scriptImageCreatorState.generatedImages[index];
     if (!item?.image_url || !item?.upload_id) {
         throw new Error("Imagem gerada inválida.");
@@ -12949,31 +12961,33 @@ async function _addScriptImageCreatorResultToProject(index, options = {}) {
     generatedFile.source_label = item.label || "";
     scriptPhotos.push(generatedFile);
 
-    if (activatePhotoUpload) {
-        const photoCb = document.getElementById("script-use-photos");
-        if (photoCb && !photoCb.checked) {
-            photoCb.checked = true;
-            togglePhotoUpload();
-        }
+    const photoCb = document.getElementById("script-use-photos");
+    if (photoCb && !photoCb.checked) {
+        photoCb.checked = true;
+        togglePhotoUpload();
     }
 
-    if (renderPreview) {
-        renderPhotoPreview();
-    }
-
-    return generatedFile;
+    renderPhotoPreview();
 }
 
-function _applyPendingScriptImageCreatorVideoDraft() {
-    if (!_pendingScriptImageCreatorVideoDraft || !scriptPhotos.length) {
-        return;
-    }
-
-    _pendingScriptImageCreatorVideoDraft = false;
+function _prepareScriptImageCreatorVideoDraftState() {
+    scriptData.videoType = "imagens_proprias";
+    scriptData.useCustomImages = scriptPhotos.length > 0;
+    scriptData.createNarration = true;
 
     const photoCb = document.getElementById("script-use-photos");
     if (photoCb) {
-        photoCb.checked = true;
+        photoCb.checked = scriptPhotos.length > 0;
+    }
+
+    const photoArea = document.getElementById("script-photo-area");
+    if (photoArea) {
+        photoArea.hidden = scriptPhotos.length === 0;
+    }
+
+    const narChoice = document.getElementById("script-narration-choice");
+    if (narChoice) {
+        narChoice.hidden = scriptPhotos.length === 0;
     }
 
     const narCb = document.getElementById("script-create-narration");
@@ -12981,19 +12995,9 @@ function _applyPendingScriptImageCreatorVideoDraft() {
         narCb.checked = true;
     }
 
-    _keepScriptNarrationEnabledOnNextPhotoSync = true;
-    togglePhotoUpload();
-    renderPhotoPreview();
-
-    window.requestAnimationFrame(() => {
-        const promptField = document.getElementById("script-text");
-        if (!promptField) {
-            return;
-        }
-        promptField.disabled = false;
-        promptField.focus();
-        promptField.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
+    toggleScriptNarration();
+    _updateScriptRealisticPersonaVisibility();
+    scheduleScriptCreditEstimate();
 }
 
 async function useScriptImageCreatorResult(index) {
@@ -13008,15 +13012,11 @@ async function useScriptImageCreatorResult(index) {
 async function createVideoFromScriptImageCreatorResult(index) {
     try {
         const launchSource = _scriptImageCreatorLaunchSource;
-        await _addScriptImageCreatorResultToProject(
-            index,
-            launchSource === "create-mode" ? { activatePhotoUpload: false, renderPreview: false } : {},
-        );
+        await _addScriptImageCreatorResultToProject(index);
         closeScriptImageCreatorModal();
 
         if (launchSource === "create-mode") {
-            _pendingScriptImageCreatorVideoDraft = true;
-            scriptData.videoType = "imagens_proprias";
+            _prepareScriptImageCreatorVideoDraftState();
             adaptScriptStepForVideoType("imagens_proprias");
 
             const scriptTypeGrid = document.getElementById("script-video-type-grid");
@@ -13026,14 +13026,20 @@ async function createVideoFromScriptImageCreatorResult(index) {
                 });
             }
 
-            scriptStep = 1;
+            scriptStep = 2;
             switchCreateMode("script");
             updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+            _prepareScriptImageCreatorVideoDraftState();
 
             window.requestAnimationFrame(() => {
-                document.querySelector("#script-video-type-grid .video-type-card.selected")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                const promptField = document.getElementById("script-text");
+                if (promptField) {
+                    promptField.disabled = false;
+                }
+                promptField?.focus();
+                promptField?.scrollIntoView({ behavior: "smooth", block: "center" });
             });
-            showToast("Imagem pronta. Escolha o tipo de vídeo para continuar.", "success");
+            showToast("Imagem adicionada. Agora descreva como você quer o vídeo.", "success");
             return;
         }
 
@@ -13465,9 +13471,8 @@ function updateNarrationChoiceVisibility() {
     if (narChoice) narChoice.hidden = !shouldShow;
     // When photos are first added, default narration to OFF
     if (shouldShow && wasHidden && narCb) {
-        narCb.checked = _keepScriptNarrationEnabledOnNextPhotoSync ? true : false;
+        narCb.checked = false;
     }
-    _keepScriptNarrationEnabledOnNextPhotoSync = false;
     toggleScriptNarration();
 }
 
@@ -15415,7 +15420,11 @@ async function generateAiScript() {
         const selectedPersonaId = selectedPersonaIds[0] || 0;
         const usePhotosToggle = document.getElementById("script-use-photos");
         const hasPersonaReference = !disablePersonaReference && selectedPersonaIds.length > 0;
-        const engineLabel = getRealisticEngineLabel(engine);
+        const engineLabel = engine === "grok"
+            ? "Cria 3.0 speed"
+            : engine === "wan2"
+                    ? "Ultra High 1.0"
+                    : "Mega 2.0 Ultra";
         try {
             let customImageIds = [];
             if (usePersonalizedReferences && aiSuggestCustomImages.length > 0) {
@@ -15874,47 +15883,23 @@ function _renderPublishAnalysisSummary(project = null) {
     const contextSummary = String(tags.similar_context_summary || "").trim();
     const cameraLabel = String(tags.similar_camera_label || "").trim();
     const detectedReason = String(tags.similar_detected_reason || "").trim();
-    const transcriptText = String(tags.similar_transcript_full || tags.similar_transcript_excerpt || "").trim();
-    const transcriptLanguage = String(tags.similar_transcript_language_label_pt || "").trim();
-    let speechDetected = null;
-    if (typeof tags.similar_transcript_speech_detected === "boolean") {
-        speechDetected = tags.similar_transcript_speech_detected;
-    } else if (String(tags.similar_transcript_speech_detected || "").trim().toLowerCase() === "true") {
-        speechDetected = true;
-    } else if (String(tags.similar_transcript_speech_detected || "").trim().toLowerCase() === "false") {
-        speechDetected = false;
-    }
     const summaryPreview = contextSummary
         ? (contextSummary.length > 360 ? `${contextSummary.slice(0, 360).trim()}...` : contextSummary)
         : "";
-    const transcriptPreview = transcriptText
-        ? (transcriptText.length > 320 ? `${transcriptText.slice(0, 320).trim()}...` : transcriptText)
-        : "";
-    const audioMeta = speechDetected === false
-        ? "audio sem fala detectada"
-        : (transcriptText ? (transcriptLanguage ? `audio transcrito (${transcriptLanguage})` : "audio transcrito") : "");
     const sceneItems = scenes.slice(0, 3).map((scene, index) => {
         const prompt = String(scene?.prompt || "").trim();
-        const dialogue = String(scene?.lyrics_segment || "").trim();
-        if (!prompt && !dialogue) {
+        if (!prompt) {
             return "";
         }
 
         const start = Number(scene?.start_time || 0);
         const end = Number(scene?.end_time || start);
         const excerpt = prompt.length > 150 ? `${prompt.slice(0, 150).trim()}...` : prompt;
-        const dialogueExcerpt = dialogue.length > 140 ? `${dialogue.slice(0, 140).trim()}...` : dialogue;
         const label = `Cena ${Number(scene?.scene_index ?? index) + 1} (${start.toFixed(1)}s - ${end.toFixed(1)}s)`;
-        return `
-            <li>
-                <strong>${esc(label)}</strong>
-                ${excerpt ? ` ${esc(excerpt)}` : ""}
-                ${dialogueExcerpt ? `<div class="publish-analysis-scene-audio">Audio: ${esc(dialogueExcerpt)}</div>` : ""}
-            </li>
-        `;
+        return `<li><strong>${esc(label)}</strong> ${esc(excerpt)}</li>`;
     }).filter(Boolean);
 
-    if (!sceneCount && !summaryPreview && !sceneItems.length && !cameraLabel && !detectedReason && !audioMeta && !transcriptPreview) {
+    if (!sceneCount && !summaryPreview && !sceneItems.length && !cameraLabel && !detectedReason) {
         summaryEl.hidden = true;
         summaryEl.innerHTML = "";
         return;
@@ -15922,7 +15907,6 @@ function _renderPublishAnalysisSummary(project = null) {
 
     const metaBits = [
         sceneCount > 0 ? `${sceneCount} cenas mapeadas` : "",
-        audioMeta,
         cameraLabel,
         detectedReason,
     ].filter(Boolean);
@@ -15933,7 +15917,6 @@ function _renderPublishAnalysisSummary(project = null) {
             ${metaBits.map((item) => `<span>${esc(item)}</span>`).join("")}
         </div>
         ${summaryPreview ? `<p>${esc(summaryPreview)}</p>` : ""}
-        ${transcriptPreview ? `<div class="publish-analysis-transcript"><strong>Transcricao do audio</strong><p>${esc(transcriptPreview)}</p></div>` : ""}
         ${sceneItems.length ? `<ul class="publish-analysis-scene-list">${sceneItems.join("")}</ul>` : ""}
     `;
 }
@@ -15964,7 +15947,7 @@ function _refreshPublishAnalysisActions() {
         analyzeBtn.disabled = !hasRender || isAnalyzing || isGenerating;
     }
     if (analyzeLabel) {
-        analyzeLabel.textContent = isAnalyzing ? "Analisando..." : "Analisar audio + cena";
+        analyzeLabel.textContent = isAnalyzing ? "Analisando..." : "Analisar por cena";
     }
     if (generateBtn) {
         generateBtn.disabled = !hasRender || !analysisReady || isAnalyzing || isGenerating;
@@ -16024,7 +16007,7 @@ function _resetPublishAnalysisState({ keepRenderId = true } = {}) {
 
     if (_publishAnalysisState.renderId > 0) {
         _setPublishAnalysisStatus(
-            "Clique em Analisar audio + cena para mapear o contexto visual e transcrever o audio do video antes de gerar o titulo e a descricao.",
+            "Clique em Analisar por cena para mapear o contexto do vídeo antes de gerar o título e a descrição.",
             "idle",
         );
     } else {
@@ -16105,9 +16088,6 @@ async function _refreshPublishAnalysisProject() {
         const stage = String(tags.similar_stage || "").trim().toLowerCase();
         const stageLabel = SIMILAR_STAGE_LABELS[stage] || "Processando analise do video...";
         const sceneCount = Number(tags.similar_scene_count || (Array.isArray(project.scenes) ? project.scenes.length : 0) || 0);
-        const speechDetected = typeof tags.similar_transcript_speech_detected === "boolean"
-            ? tags.similar_transcript_speech_detected
-            : null;
 
         _publishAnalysisState.status = status;
         _publishAnalysisState.progress = progress;
@@ -16123,9 +16103,7 @@ async function _refreshPublishAnalysisProject() {
         } else if (_isPublishAnalysisReady(project)) {
             kind = "success";
             message = sceneCount > 0
-                ? (speechDetected === false
-                    ? `Analise concluida. ${sceneCount} cenas prontas e o audio foi analisado sem fala relevante.`
-                    : `Analise concluida. ${sceneCount} cenas e a transcricao do audio estao prontas para gerar o titulo e a descricao.`)
+                ? `Analise concluida. ${sceneCount} cenas prontas para gerar o título e a descrição.`
                 : "Analise concluida. Gere o título e a descrição usando o contexto do video.";
         } else if (progress > 0) {
             message = `${stageLabel} (${progress}%)`;
@@ -16170,7 +16148,7 @@ async function publishStartAnalysis() {
     _publishAnalysisState.lastProjectSnapshot = null;
     _publishAnalysisState.running = true;
     _publishAnalysisState.generatingMetadata = false;
-    _setPublishAnalysisStatus("Iniciando analise visual por cenas e transcricao do audio do video...", "running");
+    _setPublishAnalysisStatus("Iniciando analise do video enviado por cenas...", "running");
     _renderPublishAnalysisSummary(null);
     _refreshPublishAnalysisActions();
 
@@ -16192,7 +16170,7 @@ async function publishStartAnalysis() {
         }
 
         _publishAnalysisState.projectId = projectId;
-    _setPublishAnalysisStatus("Analise visual + audio iniciada. Aguardando retorno da IA...", "running");
+        _setPublishAnalysisStatus("Analise por cenas iniciada. Aguardando retorno da IA...", "running");
         _startPublishAnalysisPolling();
         await _refreshPublishAnalysisProject();
     } catch (error) {
@@ -16226,7 +16204,7 @@ async function generatePublishTitleDescription() {
     const analysisProject = _publishAnalysisState.lastProjectSnapshot;
 
     if (!renderId || !_isPublishAnalysisReady(analysisProject)) {
-        alert("Analise o video com audio + cena antes de gerar o titulo e a descricao.");
+        alert("Analise o vídeo por cena antes de gerar o título e a descrição.");
         return;
     }
 
@@ -17299,15 +17277,376 @@ async function submitPublishNow() {
     if (!payload) return;
 
     try {
-        await api("/publish/", {
+        _startPublishProgress(payload);
+        const response = await api("/publish/", {
             method: "POST",
             body: JSON.stringify(payload),
         });
-        alert("Publicação iniciada.");
+        _attachPublishProgressJobs(response?.jobs || []);
         loadPublishJobs();
     } catch (error) {
-        alert(`Erro: ${error.message}`);
+        _showPublishProgressFailure(error);
     }
+}
+
+function _normalizePublishProgressJob(rawJob) {
+    return {
+        id: parseInt(rawJob?.job_id || rawJob?.id || "0", 10) || 0,
+        platform: String(rawJob?.platform || "").trim().toLowerCase(),
+        accountLabel: String(rawJob?.account_label || "").trim(),
+        status: String(rawJob?.status || (rawJob?.error ? "failed" : "pending")).trim().toLowerCase(),
+        platformUrl: String(rawJob?.platform_url || "").trim(),
+        errorMessage: String(rawJob?.error_message || rawJob?.error || "").trim(),
+        publishedAt: String(rawJob?.published_at || "").trim(),
+        scheduledAt: String(rawJob?.scheduled_at || "").trim(),
+    };
+}
+
+function _publishProgressTone(status) {
+    if (status === "published") return "success";
+    if (status === "failed") return "error";
+    if (status === "uploading") return "live";
+    if (status === "scheduled") return "scheduled";
+    return "pending";
+}
+
+function _publishProgressStatusLabel(status) {
+    if (status === "pending") return "Na fila";
+    if (status === "uploading") return "Enviando";
+    if (status === "published") return "No ar";
+    if (status === "scheduled") return "Agendado";
+    if (status === "failed") return "Falhou";
+    return "Preparando";
+}
+
+function _publishProgressPlatformSummary(jobs) {
+    const names = Array.from(new Set((jobs || []).map((job) => socialPlatformName(job.platform)).filter(Boolean)));
+    if (!names.length) return "sua plataforma";
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return `${names[0]} e ${names[1]}`;
+    return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+}
+
+function _stopPublishProgressPolling() {
+    if (_publishProgressState.pollingTimer) {
+        clearTimeout(_publishProgressState.pollingTimer);
+        _publishProgressState.pollingTimer = null;
+    }
+}
+
+function _renderPublishProgressPanel() {
+    const panel = document.getElementById("publish-progress-panel");
+    const actionRow = document.getElementById("publish-action-row");
+    if (!panel || !actionRow) {
+        return;
+    }
+
+    const visible = !!_publishProgressState.visible;
+    panel.hidden = !visible;
+    actionRow.hidden = visible;
+    if (!visible) {
+        return;
+    }
+
+    const card = document.getElementById("publish-progress-card");
+    const kicker = document.getElementById("publish-progress-kicker");
+    const title = document.getElementById("publish-progress-title");
+    const message = document.getElementById("publish-progress-message");
+    const percent = document.getElementById("publish-progress-percent");
+    const fill = document.getElementById("publish-progress-fill");
+    const statuses = document.getElementById("publish-progress-statuses");
+    const link = document.getElementById("publish-progress-link");
+    const dismissBtn = document.getElementById("btn-publish-progress-dismiss");
+
+    if (card) {
+        card.classList.toggle("is-success", !!_publishProgressState.completed);
+        card.classList.toggle("is-failed", !!_publishProgressState.failed);
+    }
+    if (kicker) {
+        kicker.textContent = _publishProgressState.kicker || "Publicando agora";
+    }
+    if (title) {
+        title.textContent = _publishProgressState.title || "Preparando seu vídeo para entrar no ar";
+    }
+    if (message) {
+        message.textContent = _publishProgressState.message || "Separando arquivo, conta e metadados para iniciar a publicação.";
+    }
+
+    const clampedProgress = Math.max(0, Math.min(100, Math.round(_publishProgressState.progress || 0)));
+    if (percent) {
+        percent.textContent = `${clampedProgress}%`;
+    }
+    if (fill) {
+        fill.style.width = `${clampedProgress}%`;
+    }
+
+    if (statuses) {
+        statuses.innerHTML = (_publishProgressState.jobs || []).map((job) => {
+            const tone = _publishProgressTone(job.status);
+            const platformLabel = socialPlatformName(job.platform) || job.platform || "Plataforma";
+            return `
+                <span class="publish-progress-status-pill publish-progress-status-pill--${tone}">
+                    <span class="publish-progress-platform">${esc(platformLabel)}</span>
+                    <span class="publish-progress-status-text">${esc(_publishProgressStatusLabel(job.status))}</span>
+                </span>
+            `;
+        }).join("");
+    }
+
+    if (link) {
+        if (_publishProgressState.primaryUrl) {
+            link.hidden = false;
+            link.href = _publishProgressState.primaryUrl;
+        } else {
+            link.hidden = true;
+            link.removeAttribute("href");
+        }
+    }
+
+    if (dismissBtn) {
+        dismissBtn.hidden = !_publishProgressState.dismissible;
+    }
+}
+
+function _computePublishProgressPercent(jobs) {
+    const total = Math.max(1, (jobs || []).length);
+    const publishedCount = (jobs || []).filter((job) => job.status === "published").length;
+    if (publishedCount === total) {
+        return 100;
+    }
+
+    const elapsedSeconds = Math.max(0, (Date.now() - (_publishProgressState.startedAt || Date.now())) / 1000);
+    let progress = 12;
+
+    if ((jobs || []).some((job) => job.status === "pending" || !job.status)) {
+        progress = Math.max(progress, Math.min(44, 18 + elapsedSeconds * 6));
+    }
+    if ((jobs || []).some((job) => job.status === "uploading")) {
+        progress = Math.max(progress, Math.min(92, 54 + elapsedSeconds * 8));
+    }
+    if (publishedCount > 0) {
+        progress = Math.max(progress, 62 + (publishedCount / total) * 30);
+    }
+
+    return Math.round(Math.min(98, progress));
+}
+
+function _refreshPublishProgressSummary() {
+    const jobs = _publishProgressState.jobs || [];
+    const total = Math.max(1, jobs.length);
+    const publishedJobs = jobs.filter((job) => job.status === "published");
+    const failedJobs = jobs.filter((job) => job.status === "failed");
+    const uploadingJobs = jobs.filter((job) => job.status === "uploading");
+    const scheduledJobs = jobs.filter((job) => job.status === "scheduled");
+    const platformSummary = _publishProgressPlatformSummary(jobs);
+
+    if (failedJobs.length) {
+        _publishProgressState.running = false;
+        _publishProgressState.completed = false;
+        _publishProgressState.failed = true;
+        _publishProgressState.progress = 100;
+        _publishProgressState.kicker = "Publicação interrompida";
+        _publishProgressState.title = "Não foi possível colocar esse vídeo no ar";
+        _publishProgressState.message = friendlyPublishError(failedJobs[0].errorMessage || "Erro desconhecido. Tente novamente.");
+        _publishProgressState.primaryUrl = publishedJobs[0]?.platformUrl || "";
+        _publishProgressState.dismissible = true;
+        _stopPublishProgressPolling();
+        _renderPublishProgressPanel();
+        loadPublishJobs();
+        return;
+    }
+
+    if (scheduledJobs.length === total && total > 0) {
+        _publishProgressState.running = false;
+        _publishProgressState.completed = true;
+        _publishProgressState.failed = false;
+        _publishProgressState.progress = 100;
+        _publishProgressState.kicker = "Agendamento confirmado";
+        _publishProgressState.title = "Sua publicação ficou agendada";
+        _publishProgressState.message = `Tudo certo. O vídeo será publicado automaticamente em ${platformSummary}.`;
+        _publishProgressState.primaryUrl = "";
+        _publishProgressState.dismissible = true;
+        _stopPublishProgressPolling();
+        _renderPublishProgressPanel();
+        loadPublishJobs();
+        return;
+    }
+
+    if (publishedJobs.length === total && total > 0) {
+        _publishProgressState.running = false;
+        _publishProgressState.completed = true;
+        _publishProgressState.failed = false;
+        _publishProgressState.progress = 100;
+        _publishProgressState.kicker = "Parabéns";
+        _publishProgressState.title = "Seu vídeo está no ar";
+        _publishProgressState.message = total === 1
+            ? `A publicação terminou com sucesso em ${platformSummary}.`
+            : `As ${total} plataformas selecionadas já receberam o seu vídeo.`;
+        _publishProgressState.primaryUrl = publishedJobs.find((job) => job.platformUrl)?.platformUrl || "";
+        _publishProgressState.dismissible = true;
+        _stopPublishProgressPolling();
+        _renderPublishProgressPanel();
+        loadPublishJobs();
+        return;
+    }
+
+    _publishProgressState.running = true;
+    _publishProgressState.completed = false;
+    _publishProgressState.failed = false;
+    _publishProgressState.dismissible = false;
+    _publishProgressState.progress = _computePublishProgressPercent(jobs);
+    if (uploadingJobs.length) {
+        _publishProgressState.kicker = "Publicando agora";
+        _publishProgressState.title = total === 1
+            ? `Enviando seu vídeo para ${platformSummary}`
+            : `Enviando para ${uploadingJobs.length} de ${total} plataformas`;
+        _publishProgressState.message = publishedJobs.length
+            ? `${publishedJobs.length} plataforma${publishedJobs.length > 1 ? "s" : ""} já concluída${publishedJobs.length > 1 ? "s" : ""}. Estamos finalizando o restante.`
+            : "A plataforma está processando o upload. Isso pode levar alguns instantes.";
+    } else {
+        _publishProgressState.kicker = "Preparando publicação";
+        _publishProgressState.title = "Organizando tudo para colocar seu vídeo no ar";
+        _publishProgressState.message = `Conferindo arquivo, conta conectada e metadados antes de iniciar em ${platformSummary}.`;
+    }
+
+    _renderPublishProgressPanel();
+}
+
+function _schedulePublishProgressPoll(delayMs = 1800) {
+    _stopPublishProgressPolling();
+    if (!_publishProgressState.running) {
+        return;
+    }
+    if (!(_publishProgressState.jobs || []).some((job) => job.id)) {
+        return;
+    }
+    _publishProgressState.pollingTimer = window.setTimeout(() => {
+        _pollPublishProgressJobs();
+    }, delayMs);
+}
+
+async function _pollPublishProgressJobs() {
+    if (!_publishProgressState.running) {
+        return;
+    }
+
+    const trackableJobs = (_publishProgressState.jobs || []).filter((job) => job.id);
+    if (!trackableJobs.length) {
+        _refreshPublishProgressSummary();
+        return;
+    }
+
+    try {
+        const liveJobs = await Promise.all(trackableJobs.map((job) => api(`/publish/jobs/${job.id}`)));
+        const liveJobsById = new Map(liveJobs.map((job) => [job.id, job]));
+        _publishProgressState.jobs = (_publishProgressState.jobs || []).map((job) => {
+            const liveJob = liveJobsById.get(job.id);
+            if (!liveJob) {
+                return job;
+            }
+            return {
+                ...job,
+                status: String(liveJob.status || job.status || "pending").trim().toLowerCase(),
+                platformUrl: String(liveJob.platform_url || job.platformUrl || "").trim(),
+                errorMessage: String(liveJob.error_message || job.errorMessage || "").trim(),
+                publishedAt: String(liveJob.published_at || job.publishedAt || "").trim(),
+                scheduledAt: String(liveJob.scheduled_at || job.scheduledAt || "").trim(),
+            };
+        });
+        _refreshPublishProgressSummary();
+        if (_publishProgressState.running) {
+            _schedulePublishProgressPoll();
+        }
+    } catch (error) {
+        if (!_publishProgressState.running) {
+            return;
+        }
+        _publishProgressState.message = "A publicação segue em andamento. Se a rede oscilar, continuaremos tentando atualizar o status.";
+        _renderPublishProgressPanel();
+        _schedulePublishProgressPoll(2600);
+    }
+}
+
+function _startPublishProgress(payload) {
+    _stopPublishProgressPolling();
+    _publishProgressState.visible = true;
+    _publishProgressState.running = true;
+    _publishProgressState.completed = false;
+    _publishProgressState.failed = false;
+    _publishProgressState.progress = 12;
+    _publishProgressState.kicker = "Publicando agora";
+    _publishProgressState.title = "Preparando seu vídeo para entrar no ar";
+    _publishProgressState.message = "Separando arquivo, conta e metadados para iniciar a publicação.";
+    _publishProgressState.jobs = (payload?.platforms || []).map((platform) => _normalizePublishProgressJob({
+        platform,
+        status: "pending",
+    }));
+    _publishProgressState.startedAt = Date.now();
+    _publishProgressState.primaryUrl = "";
+    _publishProgressState.dismissible = false;
+    _renderPublishProgressPanel();
+}
+
+function _attachPublishProgressJobs(rawJobs) {
+    const nextJobs = Array.isArray(rawJobs) ? rawJobs.map(_normalizePublishProgressJob) : [];
+    if (!nextJobs.length) {
+        _showPublishProgressFailure(new Error("Nao foi possivel acompanhar a publicacao. Tente novamente."));
+        return;
+    }
+
+    const mergedJobs = [];
+    const existingJobsByPlatform = new Map((_publishProgressState.jobs || []).map((job) => [job.platform, job]));
+    const nextJobsByPlatform = new Map(nextJobs.map((job) => [job.platform, job]));
+
+    for (const existingJob of _publishProgressState.jobs || []) {
+        mergedJobs.push(nextJobsByPlatform.get(existingJob.platform) || existingJob);
+    }
+    for (const nextJob of nextJobs) {
+        if (!existingJobsByPlatform.has(nextJob.platform)) {
+            mergedJobs.push(nextJob);
+        }
+    }
+
+    _publishProgressState.jobs = mergedJobs.length ? mergedJobs : nextJobs;
+    _refreshPublishProgressSummary();
+    if (_publishProgressState.running) {
+        _schedulePublishProgressPoll(900);
+    }
+}
+
+function _showPublishProgressFailure(error) {
+    _stopPublishProgressPolling();
+    _publishProgressState.visible = true;
+    _publishProgressState.running = false;
+    _publishProgressState.completed = false;
+    _publishProgressState.failed = true;
+    _publishProgressState.progress = 100;
+    _publishProgressState.kicker = "Publicação não iniciada";
+    _publishProgressState.title = "Não foi possível iniciar a publicação";
+    _publishProgressState.message = friendlyPublishError(error?.message || String(error || "Erro desconhecido."));
+    _publishProgressState.primaryUrl = "";
+    _publishProgressState.dismissible = true;
+    _renderPublishProgressPanel();
+}
+
+function dismissPublishProgressPanel() {
+    if (_publishProgressState.running) {
+        return;
+    }
+    _stopPublishProgressPolling();
+    _publishProgressState.visible = false;
+    _publishProgressState.running = false;
+    _publishProgressState.completed = false;
+    _publishProgressState.failed = false;
+    _publishProgressState.progress = 0;
+    _publishProgressState.kicker = "";
+    _publishProgressState.title = "";
+    _publishProgressState.message = "";
+    _publishProgressState.jobs = [];
+    _publishProgressState.startedAt = 0;
+    _publishProgressState.primaryUrl = "";
+    _publishProgressState.dismissible = false;
+    _renderPublishProgressPanel();
 }
 
 function _toDatetimeLocalValue(date) {
@@ -19021,7 +19360,13 @@ function _setAutoRealisticEngine(engineValue) {
 
 function _applyAutoRealisticEngineRules() {
     const engineGroup = document.getElementById("auto-realistic-engine-group");
-    if (engineGroup) engineGroup.hidden = false;
+    const forceWan2 = _isAutoTevoxiShortMode();
+    if (engineGroup) engineGroup.hidden = forceWan2;
+
+    if (forceWan2) {
+        _setAutoRealisticEngine("wan2");
+        return;
+    }
 
     const selected = document.querySelector("#auto-realistic-engine .engine-option.selected");
     if (!selected) _setAutoRealisticEngine("wan2");
@@ -21170,7 +21515,7 @@ async function createAutoSchedule() {
             persona_profile_id: personaProfileId,
             persona_profile_ids: personaProfileIds,
             persona_composition: personaCandidates,
-            engine: selectedEngine ? selectedEngine.dataset.value : "wan2",
+            engine: useTevoxi ? "wan2" : (selectedEngine ? selectedEngine.dataset.value : "wan2"),
             duration: selectedDur ? parseInt(selectedDur.dataset.value) : 8,
             aspect_ratio: document.getElementById("auto-realistic-aspect")?.value || "9:16",
             add_music: useMusic && !useTevoxi,

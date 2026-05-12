@@ -2809,6 +2809,183 @@ a {
     margin-top: 0.75rem;
 }
 
+.publish-progress-panel {
+    margin-top: 0.75rem;
+}
+
+.publish-progress-card {
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    gap: 0.85rem;
+    padding: 1rem;
+    border-radius: 18px;
+    border: 1px solid rgba(0, 212, 255, 0.22);
+    background:
+        radial-gradient(circle at top right, rgba(0, 212, 255, 0.2), transparent 34%),
+        linear-gradient(145deg, rgba(6, 18, 30, 0.96), rgba(8, 30, 49, 0.94));
+    box-shadow: 0 18px 40px rgba(2, 10, 18, 0.28);
+}
+
+.publish-progress-card::before {
+    content: "";
+    position: absolute;
+    inset: auto -18% -40px 34%;
+    height: 130px;
+    background: radial-gradient(circle, rgba(110, 242, 255, 0.16), transparent 68%);
+    pointer-events: none;
+}
+
+.publish-progress-card.is-success {
+    border-color: rgba(41, 231, 168, 0.3);
+    background:
+        radial-gradient(circle at top right, rgba(41, 231, 168, 0.2), transparent 34%),
+        linear-gradient(145deg, rgba(7, 21, 24, 0.96), rgba(10, 45, 39, 0.94));
+}
+
+.publish-progress-card.is-failed {
+    border-color: rgba(255, 112, 112, 0.34);
+    background:
+        radial-gradient(circle at top right, rgba(255, 112, 112, 0.2), transparent 34%),
+        linear-gradient(145deg, rgba(26, 12, 16, 0.96), rgba(54, 20, 24, 0.94));
+}
+
+.publish-progress-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.9rem;
+}
+
+.publish-progress-kicker {
+    margin: 0;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #8fefff;
+}
+
+.publish-progress-title {
+    margin: 0.16rem 0 0;
+    font-size: 1.04rem;
+    line-height: 1.25;
+    color: var(--text);
+}
+
+.publish-progress-percent {
+    flex: 0 0 auto;
+    min-width: 52px;
+    text-align: right;
+    font-size: 1.12rem;
+    font-weight: 800;
+    color: var(--text);
+}
+
+.publish-progress-message {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.publish-progress-bar {
+    margin-top: 0;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.publish-progress-fill {
+    background: linear-gradient(90deg, #00d4ff, #6be6ff, #5cf0ca);
+    background-size: 200% 100%;
+    animation: publish-progress-flow 2.4s linear infinite;
+}
+
+.publish-progress-card.is-success .publish-progress-fill {
+    background: linear-gradient(90deg, #34e8ae, #79f6c4);
+    animation: none;
+}
+
+.publish-progress-card.is-failed .publish-progress-fill {
+    background: linear-gradient(90deg, #ff6f6f, #ffab7a);
+    animation: none;
+}
+
+.publish-progress-statuses {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.publish-progress-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.42rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 0.78rem;
+    line-height: 1.2;
+}
+
+.publish-progress-status-pill--pending {
+    border-color: rgba(143, 239, 255, 0.18);
+    background: rgba(143, 239, 255, 0.08);
+    color: #caf8ff;
+}
+
+.publish-progress-status-pill--live {
+    border-color: rgba(0, 212, 255, 0.28);
+    background: rgba(0, 212, 255, 0.12);
+    color: #9df7ff;
+}
+
+.publish-progress-status-pill--success {
+    border-color: rgba(41, 231, 168, 0.24);
+    background: rgba(41, 231, 168, 0.12);
+    color: #b6ffd8;
+}
+
+.publish-progress-status-pill--error {
+    border-color: rgba(255, 112, 112, 0.3);
+    background: rgba(255, 112, 112, 0.12);
+    color: #ffd0d0;
+}
+
+.publish-progress-status-pill--scheduled {
+    border-color: rgba(255, 209, 102, 0.28);
+    background: rgba(255, 209, 102, 0.12);
+    color: #ffe5a8;
+}
+
+.publish-progress-platform {
+    font-weight: 700;
+}
+
+.publish-progress-status-text {
+    color: inherit;
+    opacity: 0.9;
+}
+
+.publish-progress-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+}
+
+.publish-progress-actions .btn {
+    min-width: 148px;
+}
+
+@keyframes publish-progress-flow {
+    0% {
+        background-position: 0% 50%;
+    }
+    100% {
+        background-position: 200% 50%;
+    }
+}
+
 .publish-action-btn {
     min-height: 44px;
     padding: 0.45rem 0.35rem;
@@ -6033,6 +6210,29 @@ svg.spin {
 
     .publish-action-row {
         gap: 0.4rem;
+    }
+
+    .publish-progress-head {
+        flex-direction: column;
+    }
+
+    .publish-progress-percent {
+        min-width: 0;
+        text-align: left;
+    }
+
+    .publish-progress-statuses {
+        flex-direction: column;
+    }
+
+    .publish-progress-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .publish-progress-actions .btn {
+        width: 100%;
+        min-width: 0;
     }
 
     .publish-action-btn {
