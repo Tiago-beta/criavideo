@@ -250,9 +250,9 @@ async def ai_suggest(
             spoken_text = re.sub(r"\s+", " ", str(scene.lyrics_segment or "")).strip()
             fragments = []
             if prompt_text:
-                fragments.append(prompt_text)
+                fragments.append(f"Visual: {prompt_text}")
             if spoken_text:
-                fragments.append(f"Fala/trecho: {spoken_text}")
+                fragments.append(f"Audio/transcricao: {spoken_text}")
             if not fragments:
                 continue
 
@@ -260,6 +260,20 @@ async def ai_suggest(
             label = _format_scene_time_label(scene.start_time, scene.end_time)
             line = f"- Cena {scene_index} ({label}): {' '.join(fragments)}"
             lines.append(line[:460].strip())
+
+        return "\n".join(lines).strip()
+
+    def _build_scene_audio_context(scene_rows: list[VideoScene]) -> str:
+        lines = []
+        for scene in scene_rows[:18]:
+            spoken_text = re.sub(r"\s+", " ", str(scene.lyrics_segment or "")).strip()
+            if not spoken_text:
+                continue
+
+            scene_index = int(scene.scene_index or 0) + 1
+            label = _format_scene_time_label(scene.start_time, scene.end_time)
+            line = f"- Cena {scene_index} ({label}): {spoken_text}"
+            lines.append(line[:320].strip())
 
         return "\n".join(lines).strip()
 
@@ -945,10 +959,15 @@ async def ai_suggest(
         return _normalize_ptbr_copy("\n".join(lines).strip())
 
     analysis_context_summary = str(analysis_tags.get("similar_context_summary") or "").strip()
-    analysis_transcript_excerpt = str(analysis_tags.get("similar_transcript_excerpt") or "").strip()
+    analysis_transcript_full = str(
+        analysis_tags.get("similar_transcript_full")
+        or analysis_tags.get("similar_transcript_excerpt")
+        or ""
+    ).strip()
     analysis_scene_context = _build_scene_analysis_context(analysis_scenes)
+    analysis_scene_audio_context = _build_scene_audio_context(analysis_scenes)
 
-    render_transcription = _strip_lyrics_blocks(analysis_transcript_excerpt)
+    render_transcription = _strip_lyrics_blocks(analysis_transcript_full)
     has_spoken_transcription = bool(render_transcription)
     if not has_spoken_transcription and not analysis_context_summary and not analysis_scene_context:
         render_transcription, has_spoken_transcription = await _load_render_transcription()
@@ -966,6 +985,7 @@ async def ai_suggest(
     transcription_preview = render_transcription[:1800]
     visual_context_preview = render_visual_context[:1200]
     analysis_scene_context_preview = analysis_scene_context[:2400]
+    analysis_scene_audio_context_preview = analysis_scene_audio_context[:1600]
     project_tags = _normalize_project_tags(project.tags)
 
     context_parts = []
@@ -981,6 +1001,10 @@ async def ai_suggest(
         context_parts.append(f"Resumo da analise cena a cena:\n{analysis_context_summary[:1800]}")
     if analysis_scene_context_preview:
         context_parts.append(f"Mapa de cenas analisadas frame a frame:\n{analysis_scene_context_preview}")
+    if analysis_scene_audio_context_preview:
+        context_parts.append(f"Transcricao do audio organizada por cena:\n{analysis_scene_audio_context_preview}")
+    if transcription_preview:
+        context_parts.append(f"Transcricao completa do audio do video:\n{transcription_preview}")
     analysis_scene_count = int(analysis_tags.get("similar_scene_count") or len(analysis_scenes) or 0)
     if analysis_scene_count > 0:
         context_parts.append(f"Total de cenas detectadas: {analysis_scene_count}")
@@ -990,8 +1014,6 @@ async def ai_suggest(
     camera_label = str(analysis_tags.get("similar_camera_label") or "").strip()
     if camera_label:
         context_parts.append(f"Perfil de camera detectado: {camera_label}")
-    if transcription_preview:
-        context_parts.append(f"Transcricao/contexto real do video:\n{transcription_preview}")
     elif project.lyrics_text:
         lyrics_preview = project.lyrics_text[:700]
         context_parts.append(f"Trecho da letra/roteiro:\n{lyrics_preview}")
@@ -1016,9 +1038,11 @@ async def ai_suggest(
     objetivo = "Maximizar CTR sem clickbait enganoso e melhorar descoberta em busca/sugeridos."
     tom_desejado = project.style_prompt or "envolvente, premium e humano"
     context_priority = (
-        "Use primeiro a transcrição/contexto real do vídeo para entender o assunto. "
-        "Se não houver falas suficientes, use o resumo visual extraído dos frames do vídeo. "
-        "Só use o nome do projeto, do arquivo ou da música como apoio quando esses contextos não trouxerem informação suficiente."
+        "Combine a transcricao completa do audio com a analise visual frame a frame para entender o assunto real do video. "
+        "Quando houver falas ou narracao, a transcricao do audio deve ter prioridade para identificar tema, promessa e palavras-chave. "
+        "Use a analise visual das cenas para confirmar contexto, emocao, acao e ambiente. "
+        "Se nao houver falas suficientes, use o resumo visual extraido dos frames do video. "
+        "So use o nome do projeto, do arquivo ou da musica como apoio quando esses contextos nao trouxerem informacao suficiente."
     )
 
     stage1_prompt = f"""Você é um estrategista sênior de YouTube SEO + CTR no Brasil.
@@ -1026,6 +1050,7 @@ async def ai_suggest(
 Sua tarefa é criar metadados que maximizem descoberta em busca e cliques qualificados sem enganar.
 
 REGRA DE CONTEXTO (OBRIGATORIA):
+- combine a transcricao completa do audio com a analise visual frame a frame para descobrir o contexto real
 - priorize a transcrição/contexto real do vídeo acima do nome do projeto ou do arquivo
 - se o vídeo não tiver falas suficientes, use o resumo visual dos frames para descobrir o contexto real
 - se o título atual for vago, descubra o assunto principal pela transcrição e pela descrição real
@@ -1189,6 +1214,7 @@ REGRAS FINAIS OBRIGATORIAS:
 - titulo no formato: [palavra-chave] + [beneficio] + [promessa]
 - titulo deve começar com letra maiúscula
 - usar caixa mista: maioria das palavras em minúsculas e 1 a 3 palavras de gatilho em MAIÚSCULAS
+- combine a transcricao completa do audio com a analise visual das cenas antes de decidir o assunto principal do video
 - descricao com primeiras 2 linhas muito fortes para clique
 - descrição deve começar com letra maiúscula
 - descricao sem letra completa

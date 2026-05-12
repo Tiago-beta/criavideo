@@ -2368,6 +2368,7 @@ async def run_similar_reference_analysis(
                     "similar_reference_frames": reference_frames_by_scene_index,
                     "similar_total_duration": duration_seconds,
                     "similar_context_summary": context_summary,
+                    "similar_transcript_full": transcript_text,
                     "similar_transcript_excerpt": _normalize_similar_context_text(transcript_text, limit=900),
                     "similar_transcript_speech_detected": bool(transcript_text),
                     "similar_transcript_language": transcript_language,

@@ -2587,6 +2587,26 @@ a {
     line-height: 1.55;
 }
 
+.publish-analysis-transcript {
+    margin: 0 0 0.85rem;
+    padding: 0.8rem 0.9rem;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 212, 255, 0.14);
+    background: rgba(8, 30, 49, 0.68);
+}
+
+.publish-analysis-transcript strong {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: #f3f9ff;
+    font-size: 0.88rem;
+}
+
+.publish-analysis-transcript p {
+    margin: 0;
+    color: #cfe1ef;
+}
+
 .publish-analysis-summary-meta {
     display: flex;
     flex-wrap: wrap;
@@ -2616,6 +2636,13 @@ a {
 
 .publish-analysis-scene-list strong {
     color: #f3f9ff;
+}
+
+.publish-analysis-scene-audio {
+    margin-top: 0.22rem;
+    color: #8fe5ff;
+    font-size: 0.88rem;
+    line-height: 1.45;
 }
 
 .publish-generate-ai-btn {
