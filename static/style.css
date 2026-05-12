@@ -3625,16 +3625,24 @@ th {
     position: relative;
     width: min(80vw, 1280px);
     max-width: calc(100vw - 2rem);
-    height: calc(100vh - 1rem);
+    height: auto;
     max-height: calc(100vh - 1rem);
     display: flex;
     flex-direction: column;
 }
 
 #modal-new-project .modal-body {
-    flex: 1;
+    flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
+}
+
+#modal-new-project.workflow-expanded .modal-content-wide {
+    height: calc(100vh - 1rem);
+}
+
+#modal-new-project.workflow-expanded .modal-body {
+    flex: 1 1 0;
 }
 
 #modal-new-project.similar-busy .modal-body,
@@ -6016,8 +6024,12 @@ svg.spin {
     #modal-new-project .modal-content-wide {
         width: calc(100vw - 0.5rem);
         max-width: calc(100vw - 0.5rem);
-        height: calc(100vh - 0.5rem);
+        height: auto;
         max-height: calc(100vh - 0.5rem);
+    }
+
+    #modal-new-project.workflow-expanded .modal-content-wide {
+        height: calc(100vh - 0.5rem);
     }
 
     .modal-body {
