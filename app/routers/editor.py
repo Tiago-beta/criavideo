@@ -885,6 +885,16 @@ def _normalize_trim_segments(
     return [(float(item["start"]), float(item["end"])) for item in entries]
 
 
+def _clamp_trim_segment_volume_pct(value: float | None, fallback: float = 100.0) -> float:
+    try:
+        safe_volume = float(value if value is not None else fallback)
+    except Exception:
+        safe_volume = float(fallback)
+    if not math.isfinite(safe_volume):
+        safe_volume = float(fallback)
+    return max(0.0, min(100.0, safe_volume))
+
+
 def _normalize_trim_segment_entries(
     raw_segments: list,
     trim_start: float,
@@ -901,12 +911,14 @@ def _normalize_trim_segment_entries(
             reversed_flag = bool(seg.get("reversed", False))
             speed = float(seg.get("speed") or 1)
             timeline_start = float(seg.get("timeline_start") or st)
+            volume = _clamp_trim_segment_volume_pct(seg.get("volume", 100.0))
         else:
             st = float(getattr(seg, "start", 0) or 0)
             et = float(getattr(seg, "end", 0) or 0)
             reversed_flag = bool(getattr(seg, "reversed", False))
             speed = float(getattr(seg, "speed", 1) or 1)
             timeline_start = float(getattr(seg, "timeline_start", st) or st)
+            volume = _clamp_trim_segment_volume_pct(getattr(seg, "volume", 100.0))
 
         if not math.isfinite(speed) or speed <= 0:
             speed = 1.0
@@ -924,6 +936,7 @@ def _normalize_trim_segment_entries(
                 "end": et,
                 "reversed": reversed_flag,
                 "speed": speed,
+                "volume": volume,
                 "timeline_start": timeline_start,
             })
 
@@ -934,16 +947,16 @@ def _normalize_trim_segment_entries(
             st = min(st, max_duration)
             et = min(et, max_duration)
         if et - st >= 0.05:
-            segments.append({"start": st, "end": et, "reversed": False, "speed": 1.0, "timeline_start": st})
+            segments.append({"start": st, "end": et, "reversed": False, "speed": 1.0, "volume": 100.0, "timeline_start": st})
 
     if not segments and trim_start > 0 and max_duration > trim_start:
-        segments.append({"start": float(trim_start), "end": max_duration, "reversed": False, "speed": 1.0, "timeline_start": float(trim_start)})
+        segments.append({"start": float(trim_start), "end": max_duration, "reversed": False, "speed": 1.0, "volume": 100.0, "timeline_start": float(trim_start)})
 
     if not segments:
         if max_duration > 0:
-            segments.append({"start": 0.0, "end": max_duration, "reversed": False, "speed": 1.0, "timeline_start": 0.0})
+            segments.append({"start": 0.0, "end": max_duration, "reversed": False, "speed": 1.0, "volume": 100.0, "timeline_start": 0.0})
         else:
-            segments.append({"start": 0.0, "end": 1e9, "reversed": False, "speed": 1.0, "timeline_start": 0.0})
+            segments.append({"start": 0.0, "end": 1e9, "reversed": False, "speed": 1.0, "volume": 100.0, "timeline_start": 0.0})
 
     segments.sort(key=lambda item: (float(item.get("timeline_start", item["start"])), float(item["start"])))
 
@@ -954,12 +967,14 @@ def _normalize_trim_segment_entries(
         et = float(item["end"])
         reversed_flag = bool(item.get("reversed", False))
         speed = float(item.get("speed", 1.0) or 1.0)
+        volume = _clamp_trim_segment_volume_pct(item.get("volume", 100.0))
         if not merged:
             merged.append({
                 "start": st,
                 "end": et,
                 "reversed": reversed_flag,
                 "speed": speed,
+                "volume": volume,
                 "timeline_start": float(item.get("timeline_start", st)),
             })
             continue
@@ -968,6 +983,7 @@ def _normalize_trim_segment_entries(
             st <= float(prev["end"]) + 0.01
             and reversed_flag == bool(prev.get("reversed", False))
             and abs(speed - float(prev.get("speed", 1.0) or 1.0)) <= 1e-4
+            and abs(volume - _clamp_trim_segment_volume_pct(prev.get("volume", 100.0))) <= 1e-4
         ):
             prev["end"] = max(float(prev["end"]), et)
         else:
@@ -976,6 +992,7 @@ def _normalize_trim_segment_entries(
                 "end": et,
                 "reversed": reversed_flag,
                 "speed": speed,
+                "volume": volume,
                 "timeline_start": float(item.get("timeline_start", st)),
             })
 
@@ -1001,6 +1018,12 @@ def _segment_entry_values(entry: dict | tuple[float, float]) -> tuple[float, flo
     return start, end, speed
 
 
+def _segment_entry_volume_pct(entry: dict | tuple[float, float]) -> float:
+    if isinstance(entry, dict):
+        return _clamp_trim_segment_volume_pct(entry.get("volume", 100.0))
+    return 100.0
+
+
 def _segment_output_duration(entry: dict | tuple[float, float]) -> float:
     start, end, speed = _segment_entry_values(entry)
     return max(0.0, end - start) / speed
@@ -1008,6 +1031,10 @@ def _segment_output_duration(entry: dict | tuple[float, float]) -> float:
 
 def _segments_have_speed_adjustment(entries: list[dict]) -> bool:
     return any(abs(float(item.get("speed", 1.0) or 1.0) - 1.0) > 1e-4 for item in entries or [])
+
+
+def _segments_have_volume_adjustment(entries: list[dict]) -> bool:
+    return any(abs(_segment_entry_volume_pct(item) - 100.0) > 1e-4 for item in entries or [])
 
 
 def _clamp_editor_media_layer_speed(value: float) -> float:
@@ -1075,6 +1102,7 @@ def _build_segment_concat_filter_parts(
         start = max(0.0, float(entry.get("start", 0.0) or 0.0))
         end = max(start, float(entry.get("end", 0.0) or 0.0))
         speed = max(0.05, float(entry.get("speed", 1.0) or 1.0))
+        volume_pct = _segment_entry_volume_pct(entry)
         if end - start < 0.02:
             continue
 
@@ -1093,6 +1121,9 @@ def _build_segment_concat_filter_parts(
             atempo_chain = _build_atempo_filter_chain(speed)
             if atempo_chain:
                 chain += f",{atempo_chain}"
+            volume_factor = max(0.0, min(2.0, volume_pct / 100.0))
+            if abs(volume_factor - 1.0) > 1e-4:
+                chain += f",volume={volume_factor:.4f}"
         chain += f"[{label}]"
         parts.append(chain)
         labels.append(f"[{label}]")
@@ -1226,6 +1257,7 @@ class TrimSegment(BaseModel):
     end: float
     reversed: bool = False
     speed: float = 1.0
+    volume: float = 100
     timeline_start: float = 0.0
 
 
@@ -2477,6 +2509,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         video_has_speed_adjusted_segments = _segments_have_speed_adjustment(video_segment_entries)
         audio_has_speed_adjusted_segments = _segments_have_speed_adjustment(audio_segment_entries)
         base_audio_has_speed_adjusted_segments = _segments_have_speed_adjustment(base_audio_segment_entries)
+        audio_has_volume_adjusted_segments = _segments_have_volume_adjustment(audio_segment_entries)
+        base_audio_has_volume_adjusted_segments = _segments_have_volume_adjustment(base_audio_segment_entries)
 
         video_select_expr = _build_segment_select_expr(video_segments)
         audio_select_expr = _build_segment_select_expr(audio_segments)
@@ -2775,7 +2809,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
             if source_has_audio:
                 base_audio_label = "[0:a]"
-                if base_audio_has_reversed_segments or base_audio_has_speed_adjusted_segments:
+                if base_audio_has_reversed_segments or base_audio_has_speed_adjusted_segments or base_audio_has_volume_adjusted_segments:
                     reversed_audio_parts, reversed_audio_label = _build_segment_concat_filter_parts(
                         base_audio_segment_entries,
                         "0:a",
@@ -2832,7 +2866,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             use_complex_segment_filters = (
                 video_has_reversed_segments
                 or video_has_speed_adjusted_segments
-                or (source_has_audio and (audio_has_reversed_segments or audio_has_speed_adjusted_segments))
+                or (source_has_audio and (audio_has_reversed_segments or audio_has_speed_adjusted_segments or audio_has_volume_adjusted_segments))
             )
             if use_complex_segment_filters:
                 filter_complex_parts: list[str] = []
@@ -2858,7 +2892,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 audio_map = ""
                 if source_has_audio:
                     base_audio_label = "[0:a]"
-                    if audio_has_reversed_segments or audio_has_speed_adjusted_segments:
+                    if audio_has_reversed_segments or audio_has_speed_adjusted_segments or audio_has_volume_adjusted_segments:
                         reversed_audio_parts, reversed_audio_label = _build_segment_concat_filter_parts(
                             audio_segment_entries,
                             "0:a",
