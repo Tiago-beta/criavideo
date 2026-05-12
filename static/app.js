@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v425 loaded");
+console.log("[CriaVideo] app.js v426 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -22971,6 +22971,41 @@ function _editorSegmentPlaybackSpeed(seg) {
     return _editorClampSegmentSpeed(seg?.speed);
 }
 
+function _editorMediaLayerPlaybackSpeed(layer) {
+    return _editorClampSegmentSpeed(layer?.speed);
+}
+
+function _editorGetMediaLayerSourceOffset(layer) {
+    const duration = Math.max(0, Number(layer?.duration || 0));
+    let sourceOffset = Math.max(0, Number(layer?.sourceOffset || 0));
+    if (duration > 0) {
+        sourceOffset = Math.min(sourceOffset, Math.max(0, duration - 0.05));
+    }
+    return sourceOffset;
+}
+
+function _editorGetMediaLayerSourceSpan(layer) {
+    const kind = String(layer?.kind || "").trim().toLowerCase();
+    if (kind !== "video" && kind !== "audio") {
+        return 0;
+    }
+
+    const duration = Math.max(0, Number(layer?.duration || 0));
+    if (duration <= 0) {
+        return 0;
+    }
+
+    return Math.max(0, duration - _editorGetMediaLayerSourceOffset(layer));
+}
+
+function _editorGetMediaLayerMaxTimelineSpan(layer) {
+    const sourceSpan = _editorGetMediaLayerSourceSpan(layer);
+    if (sourceSpan <= 0) {
+        return Number.POSITIVE_INFINITY;
+    }
+    return Math.max(0.1, sourceSpan / _editorMediaLayerPlaybackSpeed(layer));
+}
+
 function _editorSegTimelineDuration(seg) {
     return Math.max(0, Number(seg?.end || 0) - Number(seg?.start || 0));
 }
@@ -24381,6 +24416,45 @@ function _editorClampSegmentResizeBounds(track, segmentId, nextStart, nextEnd, m
     return [anchorStart, safeEnd];
 }
 
+function _editorClampMediaLayerResizeBounds(layerId, nextStart, nextEnd, mode = "resize-end") {
+    const layer = _editorGetMediaLayerById(layerId);
+    if (!layer) {
+        const safeStart = Math.max(0, Number(nextStart || 0));
+        const safeEnd = Math.max(safeStart + 0.1, Number(nextEnd || 0));
+        return [safeStart, safeEnd];
+    }
+
+    const sourceSpan = _editorGetMediaLayerSourceSpan(layer);
+    if (sourceSpan <= 0) {
+        const safeStart = Math.max(0, Number(nextStart || 0));
+        const safeEnd = Math.max(safeStart + 0.1, Number(nextEnd || 0));
+        return [safeStart, safeEnd];
+    }
+
+    const minDuration = Math.max(0.1, sourceSpan / _EDITOR_SEGMENT_SPEED_MAX);
+    const maxDuration = Math.max(minDuration, sourceSpan / _EDITOR_SEGMENT_SPEED_MIN);
+    const timelineCeiling = Math.max(
+        _editorGetTimelineDuration(),
+        Number(layer.endTime || 0),
+        Number(nextEnd || 0),
+        Number(nextStart || 0) + minDuration,
+    ) + maxDuration + 30;
+
+    if (mode === "resize-start") {
+        const anchorEnd = Math.max(0.1, Number(nextEnd || layer.endTime || 0.1));
+        const lowerBound = Math.max(0, anchorEnd - maxDuration);
+        const upperBound = Math.max(lowerBound, anchorEnd - minDuration);
+        const safeStart = Math.max(lowerBound, Math.min(upperBound, Number(nextStart || layer.startTime || 0)));
+        return [safeStart, anchorEnd];
+    }
+
+    const anchorStart = Math.max(0, Number(nextStart || layer.startTime || 0));
+    const lowerBound = anchorStart + minDuration;
+    const upperBound = Math.max(lowerBound, Math.min(timelineCeiling, anchorStart + maxDuration));
+    const safeEnd = Math.max(lowerBound, Math.min(upperBound, Number(nextEnd || layer.endTime || lowerBound)));
+    return [anchorStart, safeEnd];
+}
+
 function _editorApplySegmentSpeedResize(seg, nextStart, nextEnd, mode = "resize-end") {
     if (!seg) return;
 
@@ -24402,6 +24476,32 @@ function _editorApplySegmentSpeedResize(seg, nextStart, nextEnd, mode = "resize-
 
     seg.start = Number(nextStart || 0);
     seg.end = Number(seg.start || 0) + actualDuration;
+}
+
+function _editorApplyMediaLayerSpeedResize(layer, nextStart, nextEnd, mode = "resize-end") {
+    if (!layer) return;
+
+    const sourceSpan = _editorGetMediaLayerSourceSpan(layer);
+    if (sourceSpan <= 0) {
+        layer.startTime = Number(nextStart || 0);
+        layer.endTime = Math.max(layer.startTime + 0.1, Number(nextEnd || layer.startTime + 0.1));
+        return;
+    }
+
+    const desiredDuration = Math.max(0.1, Number(nextEnd || 0) - Number(nextStart || 0));
+    const nextSpeed = _editorClampSegmentSpeed(sourceSpan / desiredDuration);
+    const actualDuration = sourceSpan / nextSpeed;
+
+    layer.speed = nextSpeed;
+
+    if (mode === "resize-start") {
+        layer.endTime = Number(nextEnd || 0);
+        layer.startTime = Number(layer.endTime || 0) - actualDuration;
+        return;
+    }
+
+    layer.startTime = Number(nextStart || 0);
+    layer.endTime = Number(layer.startTime || 0) + actualDuration;
 }
 
 // ---------- Load completed videos for selection ----------
@@ -26777,11 +26877,30 @@ function _editorResolveMediaLayerPlacement(layer) {
 }
 
 function _editorNormalizeMediaLayer(layer) {
+    const kind = String(layer?.kind || "image").trim().toLowerCase();
     const aspect = Math.max(0.2, Number(layer.aspectRatio || 1));
     const duration = Math.max(0, Number(layer.duration || 0));
-    let sourceOffset = Math.max(0, Number(layer.sourceOffset || 0));
-    if (duration > 0) {
-        sourceOffset = Math.min(sourceOffset, Math.max(0, duration - 0.05));
+    const sourceOffset = _editorGetMediaLayerSourceOffset({
+        ...layer,
+        kind,
+        duration,
+    });
+    const speed = _editorMediaLayerPlaybackSpeed(layer);
+    const startTime = Math.max(0, Number(layer.startTime || 0));
+    let endTime = Math.max(startTime, Number(layer.endTime || 0));
+    const maxTimelineSpan = _editorGetMediaLayerMaxTimelineSpan({
+        ...layer,
+        kind,
+        duration,
+        sourceOffset,
+        speed,
+    });
+    if (endTime <= startTime + 0.02) {
+        endTime = startTime + (Number.isFinite(maxTimelineSpan) ? maxTimelineSpan : 0.1);
+    }
+    endTime = Math.max(startTime + 0.1, endTime);
+    if (Number.isFinite(maxTimelineSpan)) {
+        endTime = Math.min(endTime, startTime + maxTimelineSpan);
     }
     const trackIndex = _editorGetLayerTrackIndex(layer);
     const placement = _editorResolveMediaLayerPlacement(layer);
@@ -26790,10 +26909,11 @@ function _editorNormalizeMediaLayer(layer) {
         width: placement.width,
         x: placement.x,
         y: placement.y,
-        startTime: Math.max(0, Number(layer.startTime || 0)),
-        endTime: Math.max(0, Number(layer.endTime || 0)),
+        startTime,
+        endTime,
         duration,
         sourceOffset,
+        speed,
         volume: Math.max(0, Math.min(200, Number(layer.volume ?? 100))),
         audioOnly: Boolean(layer.audioOnly),
         reversed: Boolean(layer.reversed),
@@ -26845,11 +26965,12 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         const transitionState = _editorGetLayerPreviewTransitionState(normalizedLayer, currentTime);
         const localTime = Math.max(0, currentTime - normalizedLayer.startTime);
         const sourceOffset = Math.max(0, Number(normalizedLayer.sourceOffset || 0));
+        const layerSpeed = _editorMediaLayerPlaybackSpeed(normalizedLayer);
         const clipDuration = Math.max(0, Number(normalizedLayer.endTime || 0) - Number(normalizedLayer.startTime || 0));
-        let playbackTime = Math.max(0, sourceOffset + localTime);
+        let playbackTime = Math.max(0, sourceOffset + (localTime * layerSpeed));
         if (normalizedLayer.kind === "video" && normalizedLayer.reversed && Number(normalizedLayer.duration || 0) > 0) {
-            const layerSourceEnd = Math.min(Number(normalizedLayer.duration || 0), sourceOffset + clipDuration);
-            playbackTime = Math.max(sourceOffset, layerSourceEnd - localTime - 0.03);
+            const layerSourceEnd = Math.min(Number(normalizedLayer.duration || 0), sourceOffset + (clipDuration * layerSpeed));
+            playbackTime = Math.max(sourceOffset, layerSourceEnd - (localTime * layerSpeed) - 0.03);
         }
         const reachedVideoEnd = normalizedLayer.kind === "video"
             && Number(normalizedLayer.duration || 0) > 0
@@ -26907,6 +27028,7 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         }
         mediaEl.volume = Math.max(0, Math.min(1, normalizedLayer.volume / 100));
         mediaEl.muted = normalizedLayer.volume <= 0;
+        mediaEl.playbackRate = Math.max(0.25, Math.min(8, Number(_editor.playbackRate || 1) * layerSpeed));
 
         if (shouldPlay && inRange && !mediaEl.ended && !normalizedLayer.reversed && !transitionState?.freezeFrame) {
             if (mediaEl.paused) {
@@ -27047,10 +27169,7 @@ function _editorSetMediaLayerStart(id, val) {
     const layer = _editorGetMediaLayerById(id);
     if (!layer) return;
     const maxTimeline = _editorGetTimelineDuration();
-    const sourceOffset = Math.max(0, Number(layer.sourceOffset || 0));
-    const maxSpan = (layer.kind === "video" || layer.kind === "audio") && Number(layer.duration || 0) > 0
-        ? Math.max(0.1, Number(layer.duration || 0) - sourceOffset)
-        : Number.POSITIVE_INFINITY;
+    const maxSpan = _editorGetMediaLayerMaxTimelineSpan(layer);
     const nextStart = Math.max(0, Math.min(maxTimeline, Number(val || 0)));
     layer.startTime = nextStart;
     layer.endTime = Math.max(nextStart + 0.1, Number(layer.endTime || nextStart + 0.1));
@@ -27070,10 +27189,7 @@ function _editorSetMediaLayerEnd(id, val) {
     const layer = _editorGetMediaLayerById(id);
     if (!layer) return;
     const maxTimeline = _editorGetTimelineDuration();
-    const sourceOffset = Math.max(0, Number(layer.sourceOffset || 0));
-    const maxSpan = (layer.kind === "video" || layer.kind === "audio") && Number(layer.duration || 0) > 0
-        ? Math.max(0.1, Number(layer.duration || 0) - sourceOffset)
-        : Number.POSITIVE_INFINITY;
+    const maxSpan = _editorGetMediaLayerMaxTimelineSpan(layer);
     const nextEnd = Math.max(0, Math.min(maxTimeline, Number(val || 0)));
     layer.endTime = nextEnd;
     layer.startTime = Math.min(layer.startTime, Math.max(0, nextEnd - 0.1));
@@ -27144,6 +27260,7 @@ function _editorPushMediaLayer(kind, payload, options = {}) {
         endTime: Math.max(0.1, initialEnd),
         duration: layerDuration,
         sourceOffset: 0,
+        speed: 1,
         aspectRatio,
         volume: 100,
         audioOnly: false,
@@ -29600,11 +29717,14 @@ function _editorSplitAtCurrentTime() {
         const firstClipDuration = Math.max(0.1, firstEnd - normalizedLayer.startTime);
         const secondClipDuration = Math.max(0.1, normalizedLayer.endTime - secondStart);
         const originalSourceOffset = Math.max(0, Number(normalizedLayer.sourceOffset || 0));
+        const playbackSpeed = _editorMediaLayerPlaybackSpeed(normalizedLayer);
+        const firstConsumedDuration = firstClipDuration * playbackSpeed;
+        const secondConsumedDuration = secondClipDuration * playbackSpeed;
         const secondSourceOffset = Boolean(normalizedLayer.reversed)
             ? originalSourceOffset
-            : Math.max(0, originalSourceOffset + (t - normalizedLayer.startTime));
+            : Math.max(0, originalSourceOffset + firstConsumedDuration);
         const firstSourceOffset = Boolean(normalizedLayer.reversed)
-            ? Math.max(0, originalSourceOffset + Math.max(0, layerClipDuration - firstClipDuration))
+            ? Math.max(0, originalSourceOffset + secondConsumedDuration)
             : originalSourceOffset;
         layer.sourceOffset = firstSourceOffset;
         layer.endTime = firstEnd;
@@ -29618,10 +29738,8 @@ function _editorSplitAtCurrentTime() {
             reversed: Boolean(normalizedLayer.reversed),
         };
 
-        if (Number(secondLayer.duration || 0) > 0) {
-            const remainingDuration = Boolean(normalizedLayer.reversed)
-                ? Math.max(0.1, secondClipDuration)
-                : Math.max(0.1, Number(secondLayer.duration || 0) - secondSourceOffset);
+        if (Number(secondLayer.duration || 0) > 0 && Number.isFinite(_editorGetMediaLayerMaxTimelineSpan(secondLayer))) {
+            const remainingDuration = _editorGetMediaLayerMaxTimelineSpan(secondLayer);
             secondLayer.endTime = Math.min(secondLayer.endTime, secondLayer.startTime + remainingDuration);
         }
         secondLayer.endTime = Math.max(secondLayer.startTime + 0.1, secondLayer.endTime);
@@ -30506,7 +30624,7 @@ function _editorRenderTimeline() {
             }
 
             baseVideoClipsByTrack.get(trackIndex).push(
-                `<div class="editor-track-clip clip-video${waveClass}${selectedClass}${reversedClass}" data-kind="segment" data-track="${clipTrack}" data-id="${seg.id}" style="${styleParts.join(";")}">Video ${idx + 1}</div>`
+                `<div class="editor-track-clip clip-video clip-resizable${waveClass}${selectedClass}${reversedClass}" data-kind="segment" data-track="${clipTrack}" data-id="${seg.id}" style="${styleParts.join(";")}">${_editorBuildTimelineClipContent(`Video ${idx + 1}`, { resizable: true })}</div>`
             );
         });
     }
@@ -30516,12 +30634,7 @@ function _editorRenderTimeline() {
     _editor.mediaLayers.forEach((layer, idx) => {
         const normalizedLayer = _editorNormalizeMediaLayer(layer);
         const start = Math.max(0, Math.min(Number(normalizedLayer.startTime || 0), dur));
-        const availableLayerDuration = (normalizedLayer.kind === "video" || normalizedLayer.kind === "audio") && Number(normalizedLayer.duration || 0) > 0
-            ? Math.max(0, Number(normalizedLayer.duration || 0) - Number(normalizedLayer.sourceOffset || 0))
-            : 0;
-        const maxLayerEnd = availableLayerDuration > 0 ? start + availableLayerDuration : dur;
-        const requestedEnd = Number(normalizedLayer.endTime || dur);
-        const end = Math.max(start + 0.05, Math.min(dur, Math.min(requestedEnd, maxLayerEnd)));
+        const end = Math.max(start + 0.05, Math.min(dur, Number(normalizedLayer.endTime || dur)));
         const left = (start / dur) * 100;
         const width = Math.max(0.5, ((end - start) / dur) * 100);
         const trackIndex = _editorGetLayerTrackIndex(normalizedLayer);
@@ -30540,7 +30653,8 @@ function _editorRenderTimeline() {
         const label = `${labelPrefix} ${idx + 1}`;
         const layerTrack = _editorBuildMediaLayerTrackId(layerTrackType, trackIndex);
         const clipToneClass = normalizedLayer.kind === "audio" ? " clip-audio" : " clip-media";
-        const clipHtml = `<div class="editor-track-clip${clipToneClass}${selectedClass}${reversedClass}" data-kind="media-layer" data-track="${layerTrack}" data-id="${normalizedLayer.id}" style="left:${left}%;width:${width}%">${label}</div>`;
+        const showResizeHandle = normalizedLayer.kind === "video";
+        const clipHtml = `<div class="editor-track-clip${clipToneClass}${showResizeHandle ? " clip-resizable" : ""}${selectedClass}${reversedClass}" data-kind="media-layer" data-track="${layerTrack}" data-id="${normalizedLayer.id}" style="left:${left}%;width:${width}%">${_editorBuildTimelineClipContent(label, { resizable: showResizeHandle })}</div>`;
 
         const clipsByTrack = layerTrackType === "audio" ? audioLayerClipsByTrack : videoLayerClipsByTrack;
         if (!clipsByTrack.has(trackIndex)) {
@@ -30592,7 +30706,7 @@ function _editorRenderTimeline() {
                 if (sourceAudioWaveStyle) {
                     styleParts.push(sourceAudioWaveStyle);
                 }
-                return `<div class="editor-track-clip clip-audio${waveClass}${selectedClass}" data-kind="segment" data-track="audio" data-id="${seg.id}" style="${styleParts.join(";")}">Audio ${idx + 1}</div>`;
+                return `<div class="editor-track-clip clip-audio${waveClass}${selectedClass}" data-kind="segment" data-track="audio" data-id="${seg.id}" style="${styleParts.join(";")}">${_editorBuildTimelineClipContent(`Audio ${idx + 1}`)}</div>`;
             }).join("");
 
             if (_editorShouldRenderAudioMasterClip()) {
@@ -30605,7 +30719,7 @@ function _editorRenderTimeline() {
                 if (waveformStyle) {
                     masterStyleParts.push(waveformStyle);
                 }
-                audioClips += `<div class="editor-track-clip clip-audio clip-audio-master${masterClasses}" data-kind="music" data-track="audio" data-id="music" style="${masterStyleParts.join(";")}"><span>Audio</span></div>`;
+                audioClips += `<div class="editor-track-clip clip-audio clip-audio-master${masterClasses}" data-kind="music" data-track="audio" data-id="music" style="${masterStyleParts.join(";")}">${_editorBuildTimelineClipContent("Audio")}</div>`;
             }
 
             rows.push({
@@ -30647,7 +30761,7 @@ function _editorRenderTimeline() {
             track: `text-${item.id}`,
             kind: "text",
             label: `Texto ${idx + 1}`,
-            clipsHtml: `<div class="editor-track-clip clip-text${selectedClass}" data-kind="text" data-track="text-${item.id}" data-id="${item.id}" style="left:${left}%;width:${width}%">${clipLabel}</div>`,
+            clipsHtml: `<div class="editor-track-clip clip-text${selectedClass}" data-kind="text" data-track="text-${item.id}" data-id="${item.id}" style="left:${left}%;width:${width}%">${_editorBuildTimelineClipContent(clipLabel)}</div>`,
         });
     });
 
@@ -30659,7 +30773,7 @@ function _editorRenderTimeline() {
             const width = Math.max(0.5, ((end - start) / dur) * 100);
             const selectedClass = selectedKind === "subtitle" && selectedId === String(item.id) ? " selected" : "";
             const clipLabel = esc(String(item.text || "Legenda").trim().substring(0, 20));
-            return `<div class="editor-track-clip clip-text${selectedClass}" data-kind="subtitle" data-track="subtitle" data-id="${item.id}" style="left:${left}%;width:${width}%">${clipLabel}</div>`;
+            return `<div class="editor-track-clip clip-text${selectedClass}" data-kind="subtitle" data-track="subtitle" data-id="${item.id}" style="left:${left}%;width:${width}%">${_editorBuildTimelineClipContent(clipLabel)}</div>`;
         }).join("");
 
         rows.push({
@@ -30680,7 +30794,7 @@ function _editorRenderTimeline() {
             track: `sticker-${item.id}`,
             kind: "sticker",
             label: `Sticker ${idx + 1}`,
-            clipsHtml: `<div class="editor-track-clip clip-sticker${selectedClass}" data-kind="sticker" data-track="sticker-${item.id}" data-id="${item.id}" style="left:${left}%;width:${width}%">${esc(String(item.emoji || "Sticker"))}</div>`,
+            clipsHtml: `<div class="editor-track-clip clip-sticker${selectedClass}" data-kind="sticker" data-track="sticker-${item.id}" data-id="${item.id}" style="left:${left}%;width:${width}%">${_editorBuildTimelineClipContent(esc(String(item.emoji || "Sticker")))}</div>`,
         });
     });
 
@@ -31470,6 +31584,19 @@ function _editorTimelineCanResize(kind, track = "") {
     return ["text", "subtitle", "media-layer"].includes(kind);
 }
 
+function _editorBuildTimelineClipContent(label, options = {}) {
+    const safeLabel = String(label || "");
+    if (!options?.resizable) {
+        return `<span class="editor-track-clip-label">${safeLabel}</span>`;
+    }
+
+    return `
+        <span class="editor-track-clip-handle start" data-resize-edge="start" aria-hidden="true"></span>
+        <span class="editor-track-clip-label">${safeLabel}</span>
+        <span class="editor-track-clip-handle end" data-resize-edge="end" aria-hidden="true"></span>
+    `;
+}
+
 function _editorGetTimelineRange(kind, id, track = "") {
     if (kind === "segment") {
         const item = _editorFindSegment(track || "video", id);
@@ -31572,12 +31699,21 @@ function _editorApplyDraggedRange(kind, id, start, end, track = "", options = {}
     if (kind === "media-layer") {
         const item = _editorGetMediaLayerById(id);
         if (item) {
-            const sourceOffset = Math.max(0, Number(item.sourceOffset || 0));
-            const maxByDuration = (item.kind === "video" || item.kind === "audio") && Number(item.duration || 0) > 0
-                ? safeStart + Math.max(0.1, Number(item.duration || 0) - sourceOffset)
-                : safeEnd;
+            const dragMode = String(options.mode || "move");
+            if (item.kind === "video" && (dragMode === "resize-start" || dragMode === "resize-end") && _editorGetMediaLayerSourceSpan(item) > 0.05) {
+                const [clampedStart, clampedEnd] = _editorClampMediaLayerResizeBounds(id, safeStart, safeEnd, dragMode);
+                _editorApplyMediaLayerSpeedResize(item, clampedStart, clampedEnd, dragMode);
+                return;
+            }
+
+            const maxSpan = _editorGetMediaLayerMaxTimelineSpan(item);
             item.startTime = safeStart;
-            item.endTime = Math.max(safeStart + 0.1, Math.min(safeEnd, maxByDuration));
+            item.endTime = Math.max(
+                safeStart + 0.1,
+                Number.isFinite(maxSpan)
+                    ? Math.min(safeEnd, safeStart + maxSpan)
+                    : safeEnd,
+            );
         }
     }
 }
@@ -31608,11 +31744,12 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
 
     let mode = "move";
     if (_editorTimelineCanResize(kind, track) && frozenClipRect) {
+        const handleEdge = event.target?.closest?.(".editor-track-clip-handle")?.dataset?.resizeEdge || "";
         const localX = event.clientX - frozenClipRect.left;
-        const edgeSize = Math.max(6, Math.min(14, frozenClipRect.width * 0.2));
-        if (localX <= edgeSize) {
+        const edgeSize = Math.max(10, Math.min(20, frozenClipRect.width * 0.24));
+        if (handleEdge === "start" || localX <= edgeSize) {
             mode = "resize-start";
-        } else if (localX >= frozenClipRect.width - edgeSize) {
+        } else if (handleEdge === "end" || localX >= frozenClipRect.width - edgeSize) {
             mode = "resize-end";
         }
     }
@@ -31643,6 +31780,7 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
         startY: event.clientY,
         baseTrackIndex,
         trackWidth: stableTrackWidth,
+        pixelDuration: Math.max(timelineDuration, 0.1),
         duration: (kind === "media-layer" || (kind === "segment" && _editorIsVideoTrack(track)))
             ? extendedTrackDuration
             : Math.max(_editor.duration, 0.1),
@@ -31712,7 +31850,7 @@ function _editorOnTimelineDragMove(event) {
     const drag = _editorTimelineDrag;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
-    const deltaSec = (dx / drag.trackWidth) * drag.duration;
+    const deltaSec = (dx / drag.trackWidth) * Math.max(0.1, Number(drag.pixelDuration || drag.duration || 0.1));
     const baseSpan = Math.max(0.1, drag.baseEnd - drag.baseStart);
     let nextStart = drag.baseStart;
     let nextEnd = drag.baseEnd;
@@ -31979,6 +32117,7 @@ async function _editorExport() {
                 end_time: Number(normalizedLayer.endTime || 0),
                 duration: Number(normalizedLayer.duration || 0),
                 source_offset: Number(normalizedLayer.sourceOffset || 0),
+                speed: Number(normalizedLayer.speed || 1),
                 volume: Number(normalizedLayer.volume ?? 100),
                 audio_only: Boolean(normalizedLayer.audioOnly),
                 reversed: Boolean(normalizedLayer.reversed),

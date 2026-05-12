@@ -12702,6 +12702,76 @@ th,
 }
 .editor-track-clip:hover { opacity: 0.85; }
 
+.editor-track-clip-label {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.editor-track-clip.clip-resizable {
+    padding: 0 18px;
+}
+
+.editor-track-clip-handle {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    width: 14px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06));
+    border: 1px solid rgba(255, 255, 255, 0.26);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+    opacity: 0;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    cursor: ew-resize;
+    z-index: 2;
+}
+
+.editor-track-clip-handle.start {
+    left: 2px;
+}
+
+.editor-track-clip-handle.end {
+    right: 2px;
+}
+
+.editor-track-clip-handle::before {
+    content: "";
+    width: 6px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.95);
+}
+
+.editor-track-clip-handle.start::before {
+    clip-path: polygon(100% 0, 0 50%, 100% 100%);
+}
+
+.editor-track-clip-handle.end::before {
+    clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.editor-track-clip.clip-resizable:hover .editor-track-clip-handle,
+.editor-track-clip.clip-resizable.selected .editor-track-clip-handle {
+    opacity: 1;
+}
+
+.editor-track-clip.clip-resizable:hover .editor-track-clip-handle.start,
+.editor-track-clip.clip-resizable.selected .editor-track-clip-handle.start {
+    transform: translateX(-1px);
+}
+
+.editor-track-clip.clip-resizable:hover .editor-track-clip-handle.end,
+.editor-track-clip.clip-resizable.selected .editor-track-clip-handle.end {
+    transform: translateX(1px);
+}
+
 .editor-track-clip.clip-text {
     padding: 0 10px;
 }
@@ -12822,7 +12892,7 @@ th,
     pointer-events: none;
 }
 
-.editor-track-clip.clip-audio.clip-audio-master > span {
+.editor-track-clip.clip-audio.clip-audio-master .editor-track-clip-label {
     position: relative;
     z-index: 1;
     font-weight: 600;

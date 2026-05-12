@@ -1008,6 +1008,16 @@ def _segments_have_speed_adjustment(entries: list[dict]) -> bool:
     return any(abs(float(item.get("speed", 1.0) or 1.0) - 1.0) > 1e-4 for item in entries or [])
 
 
+def _clamp_editor_media_layer_speed(value: float) -> float:
+    try:
+        safe_speed = float(value or 1.0)
+    except Exception:
+        safe_speed = 1.0
+    if not math.isfinite(safe_speed) or safe_speed <= 0:
+        safe_speed = 1.0
+    return max(0.25, min(4.0, safe_speed))
+
+
 def _build_atempo_filter_chain(speed: float) -> str:
     safe_speed = float(speed or 1.0)
     if not math.isfinite(safe_speed) or safe_speed <= 0:
@@ -1184,6 +1194,7 @@ class MediaLayerEntry(BaseModel):
     end_time: float = 0
     duration: float = 0
     source_offset: float = 0
+    speed: float = 1.0
     reversed: bool = False
 
 
@@ -2493,6 +2504,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             start_time = max(0.0, float(getattr(layer, "start_time", 0) or 0))
             end_time = max(start_time, float(getattr(layer, "end_time", 0) or 0))
             source_offset = max(0.0, float(getattr(layer, "source_offset", 0) or 0))
+            speed = _clamp_editor_media_layer_speed(getattr(layer, "speed", 1.0))
             reversed_flag = bool(getattr(layer, "reversed", False))
             source_width = 0
             source_height = 0
@@ -2514,12 +2526,12 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
             if end_time <= start_time + 0.02:
                 if kind in {"video", "audio"} and available_source_duration > 0:
-                    end_time = start_time + available_source_duration
+                    end_time = start_time + (available_source_duration / speed)
                 else:
                     end_time = start_time + 0.1
 
             if kind in {"video", "audio"} and available_source_duration > 0:
-                end_time = min(end_time, start_time + available_source_duration)
+                end_time = min(end_time, start_time + (available_source_duration / speed))
             if end_time <= start_time + 0.02:
                 continue
 
@@ -2530,7 +2542,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             mapped_source_offset = source_offset
             if kind in {"video", "audio"} and layer_duration > 0:
                 mapped_source_offset = min(mapped_source_offset, max(0.0, layer_duration - 0.05))
-                max_clip_duration = max(0.0, layer_duration - mapped_source_offset)
+                max_clip_duration = max(0.0, layer_duration - mapped_source_offset) / speed
                 if max_clip_duration <= 0.02:
                     continue
                 clip_duration = min(clip_duration, max_clip_duration)
@@ -2555,6 +2567,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     "end_time": mapped_end,
                     "duration": max(0.0, layer_duration),
                     "source_offset": mapped_source_offset,
+                    "speed": speed,
                     "reversed": reversed_flag,
                     "source_width": source_width,
                     "source_height": source_height,
@@ -2933,13 +2946,20 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 if layer["kind"] == "video":
                     clip_duration = max(0.02, float(layer["end_time"]) - float(layer["start_time"]))
                     source_offset = max(0.0, float(layer.get("source_offset", 0.0) or 0.0))
+                    speed = _clamp_editor_media_layer_speed(layer.get("speed", 1.0))
+                    source_clip_duration = clip_duration * speed
+                    available_source_duration = max(0.0, float(layer.get("duration", 0.0) or 0.0) - source_offset)
+                    if available_source_duration > 0:
+                        source_clip_duration = min(source_clip_duration, available_source_duration)
                     layer_video_chain = (
                         f"[{layer['input_idx']}:v]"
-                        f"trim=start={source_offset:.6f}:duration={clip_duration:.6f},"
+                        f"trim=start={source_offset:.6f}:duration={source_clip_duration:.6f},"
                         "setpts=PTS-STARTPTS"
                     )
                     if layer.get("reversed"):
                         layer_video_chain += ",reverse,setpts=PTS-STARTPTS"
+                    if abs(speed - 1.0) > 1e-4:
+                        layer_video_chain += f",setpts=PTS/{speed:.6f}"
                     layer_video_chain += f",setpts=PTS-STARTPTS+{layer['start_time']:.6f}/TB[{src_label}]"
                     overlay_parts.append(layer_video_chain)
                 else:
@@ -3003,15 +3023,22 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 start_time = max(0.0, float(layer.get("start_time", 0.0) or 0.0))
                 configured_end = max(start_time, float(layer.get("end_time", 0.0) or 0.0))
                 source_offset = max(0.0, float(layer.get("source_offset", 0.0) or 0.0))
+                speed = _clamp_editor_media_layer_speed(layer.get("speed", 1.0))
 
                 clip_duration = max(0.0, configured_end - start_time)
                 if clip_duration <= 0.02:
-                    clip_duration = layer_duration if layer_duration > 0 else max(0.0, final_output_duration - start_time)
+                    clip_duration = (layer_duration / speed) if layer_duration > 0 else max(0.0, final_output_duration - start_time)
                 if layer_duration > 0:
-                    clip_duration = min(clip_duration, max(0.0, layer_duration - source_offset))
+                    clip_duration = min(clip_duration, max(0.0, layer_duration - source_offset) / speed)
                 if final_output_duration > 0:
                     clip_duration = min(clip_duration, max(0.0, final_output_duration - start_time))
                 if clip_duration <= 0.02:
+                    continue
+
+                source_clip_duration = clip_duration * speed
+                if layer_duration > 0:
+                    source_clip_duration = min(source_clip_duration, max(0.0, layer_duration - source_offset))
+                if source_clip_duration <= 0.02:
                     continue
 
                 volume_factor = max(0.0, min(2.0, float(layer.get("volume_pct", 100.0)) / 100.0))
@@ -3022,11 +3049,14 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 out_label = f"la{audio_idx}"
                 layer_audio_chain = (
                     f"[{layer['input_idx']}:a]"
-                    f"atrim=start={source_offset:.6f}:duration={clip_duration:.6f},"
+                    f"atrim=start={source_offset:.6f}:duration={source_clip_duration:.6f},"
                     "asetpts=PTS-STARTPTS"
                 )
                 if layer.get("reversed"):
                     layer_audio_chain += ",areverse,asetpts=PTS-STARTPTS"
+                atempo_chain = _build_atempo_filter_chain(speed)
+                if atempo_chain:
+                    layer_audio_chain += f",{atempo_chain}"
                 layer_audio_chain += f",adelay={delay_ms}|{delay_ms},volume={volume_factor:.4f}[{out_label}]"
                 filter_parts.append(layer_audio_chain)
                 layer_audio_labels.append(f"[{out_label}]")
