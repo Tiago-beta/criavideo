@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v436 loaded");
+console.log("[CriaVideo] app.js v437 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -194,6 +194,7 @@ function _pickClosestDurationOption(options, targetValue) {
 function _renderDurationButtons(containerId, options, preferredValue = null) {
     const container = document.getElementById(containerId);
     if (!container) return;
+    container.classList.remove("is-locked");
     const selectedNow = parseInt(container.querySelector(".duration-option.selected")?.dataset.value || "0", 10) || 0;
     const targetValue = preferredValue != null ? parseInt(preferredValue, 10) : selectedNow;
     const selectedValue = _pickClosestDurationOption(options, targetValue);
@@ -212,8 +213,90 @@ function _formatDurationOptionLabel(value) {
     return "Auto";
 }
 
+function _renderLockedAutomaticDurationButton(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.classList.add("is-locked");
+    container.innerHTML = '<button class="duration-option duration-option-auto selected" data-value="auto" type="button" disabled>Automatico</button>';
+}
+
+function _normalizeAutomaticAudioDurationSeconds(value) {
+    const parsed = Number(value || 0);
+    if (!Number.isFinite(parsed) || parsed <= 0.05) return 0;
+    return Math.max(1, Math.ceil(parsed));
+}
+
+function _getRealisticSelectedEngine(prefix) {
+    return document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
+}
+
+function _getAvatarAutomaticDurationSeconds(prefix) {
+    const useTevoxi = !!document.getElementById(`${prefix}-realistic-tevoxi`)?.checked;
+    const selectedClip = useTevoxi ? _getStoredClipSelection(prefix) : null;
+    const clipDuration = Number(selectedClip?.clip_duration || selectedClip?.song_duration || 0);
+    if (clipDuration > 0.05) {
+        return _normalizeAutomaticAudioDurationSeconds(clipDuration);
+    }
+    if (prefix === "script" && !!document.getElementById("script-use-user-audio")?.checked) {
+        return _normalizeAutomaticAudioDurationSeconds(scriptUserAudioDurationSeconds);
+    }
+    return 0;
+}
+
+function _getAvatarEstimatePendingMessage(prefix) {
+    return prefix === "wizard"
+        ? "Selecione um trecho do Tevoxi para calcular o custo automaticamente."
+        : "Envie um audio ou escolha um trecho do Tevoxi para calcular o custo automaticamente.";
+}
+
+function _buildAvatarEstimateMessage(prefix, creditsNeeded, label) {
+    const durationSeconds = _getAvatarAutomaticDurationSeconds(prefix);
+    const durationChunk = durationSeconds > 0 ? ` • duracao automatica: ${durationSeconds}s` : "";
+    return `${label}: ${_formatCreditsInt(creditsNeeded)} créditos${durationChunk}${_buildBalanceSuffix(creditsNeeded)}`;
+}
+
+async function _resolveLocalAudioFileDurationSeconds(file, fallbackDuration = 0) {
+    if (!file) return 0;
+
+    let objectUrl = "";
+    try {
+        objectUrl = URL.createObjectURL(file);
+        const resolvedDuration = await _editorResolveAudioDurationSeconds(objectUrl, fallbackDuration);
+        return _normalizeAutomaticAudioDurationSeconds(resolvedDuration);
+    } catch {
+        return _normalizeAutomaticAudioDurationSeconds(fallbackDuration);
+    } finally {
+        if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+        }
+    }
+}
+
+async function _resolveAvatarAutomaticDurationForCreate(prefix) {
+    const knownDuration = _getAvatarAutomaticDurationSeconds(prefix);
+    if (knownDuration > 0) {
+        return knownDuration;
+    }
+
+    if (prefix === "script" && !!document.getElementById("script-use-user-audio")?.checked && scriptUserAudioFile) {
+        const currentFile = scriptUserAudioFile;
+        const resolvedDuration = await _resolveLocalAudioFileDurationSeconds(currentFile);
+        if (scriptUserAudioFile === currentFile) {
+            scriptUserAudioDurationSeconds = resolvedDuration;
+            return resolvedDuration;
+        }
+    }
+
+    return 0;
+}
+
 function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
-    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
+    const engine = _getRealisticSelectedEngine(prefix);
+    if (engine === "avatar31") {
+        _renderLockedAutomaticDurationButton(`${prefix}-realistic-duration`);
+        _syncSeedanceLastFrameToggle(prefix);
+        return;
+    }
     const options = engine === "wan2"
         ? WAN_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
@@ -2577,10 +2660,12 @@ function _getSelectedDurationSeconds(containerId, fallbackSeconds = 8) {
 
 function _buildRealisticEstimatePayload(prefix) {
     const useTevoxi = !!document.getElementById(`${prefix}-realistic-tevoxi`)?.checked;
-    const selectedEngine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
+    const selectedEngine = _getRealisticSelectedEngine(prefix);
     const engine = (prefix === "auto" && useTevoxi) ? "wan2" : selectedEngine;
 
-    let durationSeconds = _getSelectedDurationSeconds(`${prefix}-realistic-duration`, 5);
+    let durationSeconds = (selectedEngine === "avatar31" && (prefix === "wizard" || prefix === "script"))
+        ? _getAvatarAutomaticDurationSeconds(prefix)
+        : _getSelectedDurationSeconds(`${prefix}-realistic-duration`, 5);
     if (engine === "wan2") {
         durationSeconds = _normalizeWanDurationMultiple(durationSeconds);
     }
@@ -2827,12 +2912,18 @@ async function updateWizardCreditEstimate() {
         _setCreditEstimateBadge("wizard-credit-estimate", "", "ready", true);
         return;
     }
+    if (_getRealisticSelectedEngine("wizard") === "avatar31" && _getAvatarAutomaticDurationSeconds("wizard") <= 0) {
+        _setCreditEstimateBadge("wizard-credit-estimate", _getAvatarEstimatePendingMessage("wizard"), "ready");
+        return;
+    }
     const payload = _buildWizardEstimatePayload();
     await _refreshCreditEstimate(
         "wizard",
         "wizard-credit-estimate",
         payload,
-        (creditsNeeded) => `Custo: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
+        (creditsNeeded) => _getRealisticSelectedEngine("wizard") === "avatar31"
+            ? _buildAvatarEstimateMessage("wizard", creditsNeeded, "Custo")
+            : `Custo: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
     );
 }
 
@@ -2842,12 +2933,18 @@ async function updateScriptCreditEstimate() {
         _setCreditEstimateBadge("script-credit-estimate", "", "ready", true);
         return;
     }
+    if (_getRealisticSelectedEngine("script") === "avatar31" && _getAvatarAutomaticDurationSeconds("script") <= 0) {
+        _setCreditEstimateBadge("script-credit-estimate", _getAvatarEstimatePendingMessage("script"), "ready");
+        return;
+    }
     const payload = _buildScriptEstimatePayload();
     await _refreshCreditEstimate(
         "script",
         "script-credit-estimate",
         payload,
-        (creditsNeeded) => `Custo estimado: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
+        (creditsNeeded) => _getRealisticSelectedEngine("script") === "avatar31"
+            ? _buildAvatarEstimateMessage("script", creditsNeeded, "Custo estimado")
+            : `Custo estimado: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
     );
 }
 
@@ -11189,6 +11286,16 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const addMusicRequested = useTevoxi ? false : addMusic;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
     let engine = engineBtn ? engineBtn.dataset.value : selectedEngineForPromptCheck;
+    const avatarAutomaticDuration = engine === "avatar31"
+        ? await _resolveAvatarAutomaticDurationForCreate(prefix)
+        : 0;
+    if (engine === "avatar31" && (selectedTevoxiSong || hasUploadedAudio) && avatarAutomaticDuration <= 0) {
+        alert("Nao foi possivel identificar a duracao do audio. Reenvie o arquivo ou escolha outro trecho do Tevoxi.");
+        return;
+    }
+    if (avatarAutomaticDuration > 0) {
+        duration = avatarAutomaticDuration;
+    }
     if (engine === "wan2") {
         const normalizedDuration = _normalizeWanDurationMultiple(duration);
         if (normalizedDuration !== duration) {
@@ -11213,6 +11320,9 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const narrationVoice = voiceBtn ? voiceBtn.dataset.value : "onyx";
 
     const realisticEstimatePayload = _buildRealisticEstimatePayload(prefix);
+    if (engine === "avatar31" && avatarAutomaticDuration > 0) {
+        realisticEstimatePayload.duration_seconds = avatarAutomaticDuration;
+    }
     const realisticEstimateKey = prefix === "wizard" ? "wizard" : "script";
     const realisticCreditsNeeded = await _resolveCreditsNeededForAction(realisticEstimatePayload, realisticEstimateKey);
     if (realisticCreditsNeeded > 0 && _userCredits < realisticCreditsNeeded) {
@@ -11569,6 +11679,7 @@ function resetCreateWizard() {
 
     // Reset user audio upload
     scriptUserAudioFile = null;
+    scriptUserAudioDurationSeconds = 0;
     const userAudioCb = document.getElementById("script-use-user-audio");
     if (userAudioCb) userAudioCb.checked = false;
     const userAudioArea = document.getElementById("script-user-audio-area");
@@ -12290,6 +12401,7 @@ async function uploadTempFileWithRetry(file, kind, label, options = {}) {
 // ── Photo Upload (Meu Roteiro) ──
 let scriptPhotos = []; // array of File objects
 let scriptUserAudioFile = null;
+let scriptUserAudioDurationSeconds = 0;
 let scriptUserVideoFile = null; // single File object for custom video
 const MAX_PHOTOS = 20;
 const MAX_AI_SCRIPT_PHOTO_ANALYSIS = 8;
@@ -13405,6 +13517,7 @@ function toggleUserAudioUpload() {
 
     if (!checked) {
         scriptUserAudioFile = null;
+        scriptUserAudioDurationSeconds = 0;
         const input = document.getElementById("script-user-audio-input");
         if (input) input.value = "";
         const nameEl = document.getElementById("script-user-audio-name");
@@ -13414,6 +13527,7 @@ function toggleUserAudioUpload() {
         }
     }
 
+    _syncCreateRealisticDurationOptions("script");
     toggleAudioMusicOptions();
     scheduleScriptCreditEstimate();
 }
@@ -13435,7 +13549,7 @@ function _updateScriptRealisticPersonaVisibility() {
     personaGroup.hidden = scriptData.videoType === "realista" && usingUploadedPhotos;
 }
 
-function handleUserAudioSelect(event) {
+async function handleUserAudioSelect(event) {
     const file = event.target.files && event.target.files[0] ? event.target.files[0] : null;
     if (!file) return;
 
@@ -13451,13 +13565,26 @@ function handleUserAudioSelect(event) {
     }
 
     scriptUserAudioFile = file;
+    scriptUserAudioDurationSeconds = 0;
     const nameEl = document.getElementById("script-user-audio-name");
     if (nameEl) {
         nameEl.hidden = false;
         nameEl.textContent = `Audio selecionado: ${file.name}`;
     }
+    _syncCreateRealisticDurationOptions("script");
     toggleAudioMusicOptions();
     scheduleScriptCreditEstimate();
+
+    try {
+        const resolvedDuration = await _resolveLocalAudioFileDurationSeconds(file);
+        if (scriptUserAudioFile === file) {
+            scriptUserAudioDurationSeconds = resolvedDuration;
+            _syncCreateRealisticDurationOptions("script");
+            scheduleScriptCreditEstimate();
+        }
+    } catch {
+        // Keep the cached duration at zero so Avatar can ask for a fresh file if needed.
+    }
 }
 
 function toggleScriptPhotoDependentFields() {

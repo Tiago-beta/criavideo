@@ -4367,6 +4367,21 @@ th {
     text-align: center;
 }
 
+.duration-options.is-locked .duration-option,
+.duration-option:disabled {
+    cursor: not-allowed;
+    opacity: 0.78;
+}
+
+.duration-options.is-locked .duration-option:hover,
+.duration-option:disabled:hover {
+    border-color: var(--accent);
+}
+
+.duration-option.duration-option-auto {
+    min-width: 132px;
+}
+
 .duration-option:hover {
     border-color: rgba(246, 165, 47, 0.4);
 }
