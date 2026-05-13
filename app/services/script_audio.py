@@ -8,10 +8,12 @@ import logging
 import re
 import subprocess
 import tempfile
+import unicodedata
 from pathlib import Path
 
 import openai
 from PIL import Image
+from pypdf import PdfReader
 
 from app.config import get_settings
 
@@ -21,6 +23,81 @@ _openai = openai.AsyncOpenAI(api_key=settings.openai_api_key)
 SCRIPT_TEXT_MODEL = "gpt-4o"
 SCRIPT_VISION_MODEL = "gpt-4.1"
 MAX_SCRIPT_REFERENCE_IMAGES = 8
+HYPNOSIS_REFERENCE_DIR = Path(__file__).resolve().parents[2] / "scripts_hipnose"
+HYPNOSIS_REFERENCE_EXTS = {".pdf", ".txt", ".md"}
+HYPNOSIS_REFERENCE_NAME_HINTS = ("hipnose", "ficar", "inteligente", "base")
+HYPNOSIS_TOPIC_HINTS = ("hipnose", "hipnot", "hipnoterap", "inducao", "transe")
+MAX_HYPNOSIS_REFERENCE_CHARS = 5000
+
+
+def _normalize_lookup_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch)).lower()
+
+
+def _is_hypnosis_topic(topic: str) -> bool:
+    normalized_topic = _normalize_lookup_text(topic)
+    if not normalized_topic:
+        return False
+    return any(hint in normalized_topic for hint in HYPNOSIS_TOPIC_HINTS)
+
+
+def _clean_reference_text(text: str) -> str:
+    if not text:
+        return ""
+    text = text.replace("\u00a0", " ").replace("…", "...")
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+    return text
+
+
+def _find_hypnosis_reference_file() -> Path | None:
+    if not HYPNOSIS_REFERENCE_DIR.exists() or not HYPNOSIS_REFERENCE_DIR.is_dir():
+        return None
+
+    candidates = sorted(
+        [
+            path
+            for path in HYPNOSIS_REFERENCE_DIR.iterdir()
+            if path.is_file() and path.suffix.lower() in HYPNOSIS_REFERENCE_EXTS
+        ],
+        key=lambda path: _normalize_lookup_text(path.name),
+    )
+    if not candidates:
+        return None
+
+    scored_candidates = [
+        (
+            sum(1 for hint in HYPNOSIS_REFERENCE_NAME_HINTS if hint in _normalize_lookup_text(path.stem)),
+            path,
+        )
+        for path in candidates
+    ]
+    best_score, best_path = max(scored_candidates, key=lambda item: item[0])
+    if best_score > 0:
+        return best_path
+    return candidates[0]
+
+
+def _load_hypnosis_reference_excerpt() -> tuple[str, str]:
+    reference_path = _find_hypnosis_reference_file()
+    if not reference_path:
+        return "", ""
+
+    try:
+        if reference_path.suffix.lower() == ".pdf":
+            reader = PdfReader(str(reference_path))
+            raw_text = " ".join((page.extract_text() or "") for page in reader.pages)
+        else:
+            raw_text = reference_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception as e:
+        logger.warning("Failed to load hypnosis reference file %s: %s", reference_path, e)
+        return "", ""
+
+    clean_text = _clean_reference_text(raw_text)
+    if not clean_text:
+        return reference_path.name, ""
+    return reference_path.name, clean_text[:MAX_HYPNOSIS_REFERENCE_CHARS]
 
 
 def _image_to_data_url(image_path: str) -> str | None:
@@ -241,6 +318,7 @@ async def generate_script(
     """Use GPT-4o to generate a viral video narration script."""
     topic = (topic or "").strip() or "Conteudo enviado pelo usuario"
     word_target = int(duration_seconds * 2.5)
+    is_hypnosis = _is_hypnosis_topic(topic)
     visual_context = ""
     if image_paths:
         try:
@@ -248,9 +326,28 @@ async def generate_script(
         except Exception as e:
             logger.warning("Image-aware script context failed, continuing with text-only prompt: %s", e)
 
-    # For long videos (>5 min), adapt the prompt for long-form content
     is_long = duration_seconds > 300
-    if is_long:
+    reference_name = ""
+    reference_text = ""
+    if is_hypnosis:
+        reference_name, reference_text = _load_hypnosis_reference_excerpt()
+        if reference_name:
+            logger.info("Using hypnosis reference script: %s", reference_name)
+
+    if is_hypnosis:
+        structure = f"""ESTRUTURA OBRIGATÓRIA PARA ROTEIRO DE HIPNOSE:
+1. ACOLHIMENTO INICIAL: convide a pessoa a se acomodar, respirar e se permitir relaxar.
+2. INDUÇÃO: conduza a atenção para respiração, corpo, soltura muscular e foco interno.
+3. APROFUNDAMENTO: leve a pessoa para um estado cada vez mais calmo, com frases progressivas, suaves e repetição natural.
+4. SUGESTÕES CENTRAIS: introduza sugestões positivas ligadas ao tema "{topic}", mantendo o texto acolhedor e hipnótico.
+5. FECHAMENTO: finalize de forma serena e segura, reforçando bem-estar, clareza e integração da experiência.
+
+IMPORTANTE: o texto PRECISA ter aproximadamente {word_target} palavras para preencher ~{duration_seconds} segundos de narração."""
+        system_prompt = (
+            "Você é um hipnoterapeuta experiente e roteirista de induções guiadas. "
+            "Escreva como quem conduz uma sessão real, com calma, acolhimento e profundidade."
+        )
+    elif is_long:
         mins = duration_seconds // 60
         structure = f"""ESTRUTURA OBRIGATÓRIA PARA VÍDEO LONGO (~{mins} minutos):
 1. GANCHO (primeiros 10 segundos): Uma abertura CHOCANTE e envolvente.
@@ -260,12 +357,14 @@ async def generate_script(
 5. CONCLUSÃO: Resumo dos pontos-chave e chamada para ação poderosa.
 
 IMPORTANTE: O texto PRECISA ter aproximadamente {word_target} palavras para preencher {mins} minutos de narração."""
+        system_prompt = "Você é o melhor roteirista de vídeos virais do Brasil. Seus textos são magnéticos — quem ouve não consegue parar."
     else:
         structure = """ESTRUTURA OBRIGATÓRIA:
 1. GANCHO (primeiros 3 segundos): Uma frase CHOCANTE, reveladora ou provocativa que torne impossível parar de assistir. Use padrões como: "Você sabia que...", "Ninguém te conta isso sobre...", "O segredo que...", "A verdade sobre..."
 2. DESENVOLVIMENTO: Revele informações de forma crescente, criando tensão e curiosidade. Cada frase deve fazer o espectador querer ouvir a próxima. Use dados reais, histórias ou exemplos concretos.
 3. CLÍMAX: O momento de revelação ou insight principal — a informação mais valiosa ou emocionante.
 4. FECHAMENTO: Chamada para ação poderosa ou frase de reflexão que fica na mente."""
+        system_prompt = "Você é o melhor roteirista de vídeos virais do Brasil. Seus textos são magnéticos — quem ouve não consegue parar."
 
     photos_section = ""
     if visual_context:
@@ -279,7 +378,45 @@ REGRAS EXTRAS PARA ESTE CASO:
 - Se algo estiver ambiguo, use formulacoes seguras (ex.: "parece", "lembra", "transmite").
 """
 
-    prompt = f"""Você é um roteirista VIRAL{"" if is_long else " de vídeos curtos"} que acumula milhões de views no YouTube{" Shorts, TikTok e Instagram Reels" if not is_long else ""}.
+    reference_section = ""
+    if reference_text:
+        reference_section = f"""
+REFERENCIA LOCAL DE ESCRITA PARA HIPNOSE (USE COMO MODELO DE RITMO, CADENCIA E TIPO DE CONDUCAO; NAO COPIE TRECHOS LITERALMENTE):
+Arquivo-base: {reference_name}
+{reference_text}
+
+REGRAS EXTRAS PARA ESTA REFERENCIA:
+- Siga o PADRAO de escrita, de respiracao textual, de aprofundamento e de progressao emocional desse exemplo.
+- Adapte totalmente o conteudo ao novo tema pedido pelo usuario.
+- Nao replique frases inteiras, paragrafos inteiros ou sequencias unicas do arquivo-base.
+"""
+
+    if is_hypnosis:
+        prompt = f"""Você vai escrever um roteiro de hipnose guiada em portugues do Brasil.
+O texto deve soar como uma sessão real, acolhedora, profunda e progressiva.
+
+TEMA: {topic}
+TOM: {tone}
+DURAÇÃO: ~{duration_seconds} segundos (~{word_target} palavras)
+
+{reference_section}
+
+{photos_section}
+
+{structure}
+
+REGRAS DE OURO:
+- Escreva APENAS o texto falado (narração pura, sem indicações técnicas como [CENA])
+- Use frases suaves, envolventes e progressivas, com ritmo calmo e condução segura
+- Use reticências (...) em pausas naturais para respiração, relaxamento e aprofundamento
+- Leve a pessoa do relaxamento inicial para sugestões positivas ligadas ao tema
+- Soe acolhedor, humano e terapêutico, nunca como anúncio, vídeo viral ou texto de blog
+- Evite promessas absolutas, sensacionalismo e comandos agressivos
+- PROIBIDO: copiar literalmente o arquivo-base, fazer chamada para ação de marketing ou soar robótico
+
+Responda SOMENTE com o texto do roteiro. Sem títulos, sem formatação."""
+    else:
+        prompt = f"""Você é um roteirista VIRAL{"" if is_long else " de vídeos curtos"} que acumula milhões de views no YouTube{" Shorts, TikTok e Instagram Reels" if not is_long else ""}.
 Seu estilo combina storytelling emocional, ganchos psicológicos e linguagem que prende desde o primeiro segundo.
 
 TEMA: {topic}
@@ -308,7 +445,7 @@ Responda SOMENTE com o texto do roteiro. Sem títulos, sem formatação."""
         resp = await _openai.chat.completions.create(
             model=SCRIPT_TEXT_MODEL,
             messages=[
-                {"role": "system", "content": "Você é o melhor roteirista de vídeos virais do Brasil. Seus textos são magnéticos — quem ouve não consegue parar."},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.85,
@@ -318,11 +455,14 @@ Responda SOMENTE com o texto do roteiro. Sem títulos, sem formatação."""
         word_count = len(script_text.split())
         estimated_duration = round(word_count / 2.5)  # ~150 wpm = 2.5 wps
 
-        return {
+        result = {
             "script": script_text,
             "word_count": word_count,
             "estimated_duration": estimated_duration,
         }
+        if reference_name:
+            result["style_reference_used"] = reference_name
+        return result
     except Exception as e:
         logger.error("Script generation failed: %s", e)
         raise
