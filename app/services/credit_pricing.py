@@ -305,6 +305,7 @@ def estimate_image_generation_credits(
     thinking_mode: bool = False,
 ) -> dict[str, Any]:
     normalized_model = str(model or "google/nano-banana-pro/text-to-image").strip()
+    estimated_outputs = max(1, min(int(image_count or 1), 20))
     has_references = int(reference_image_count or 0) > 0
     if normalized_model == "ultra-high-3.0":
         normalized_model = "alibaba/wan-2.6/image-edit" if has_references else "z-image/turbo"
@@ -325,7 +326,7 @@ def estimate_image_generation_credits(
             breakdown={
                 "mode": "image_generation",
                 "model": normalized_model,
-                "image_count": max(1, min(int(image_count or 1), 4)),
+                "image_count": estimated_outputs,
                 "size": "FREE",
                 "reference_image_count": 0,
                 "thinking_mode": False,
@@ -344,7 +345,7 @@ def estimate_image_generation_credits(
     if normalized_size not in IMAGE_GENERATION_SIZE_MULTIPLIERS:
         normalized_size = "2K"
 
-    outputs = max(1, min(int(image_count or 1), 4))
+    outputs = estimated_outputs
     references = max(0, min(int(reference_image_count or 0), 9))
     thinking_enabled = bool(thinking_mode)
 

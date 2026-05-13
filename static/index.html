@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260512-15">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260513-01">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 437;
+        var REQUIRED_VER = 438;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -3875,10 +3875,15 @@
                                     <option value="4">4</option>
                                 </select>
                                 <div id="script-image-generator-count-options" class="script-image-generator-segmented script-image-generator-segmented--count">
-                                    <button type="button" class="script-image-generator-segment" data-count="1" onclick="setScriptImageCreatorCount(1)">1</button>
-                                    <button type="button" class="script-image-generator-segment" data-count="2" onclick="setScriptImageCreatorCount(2)">2</button>
-                                    <button type="button" class="script-image-generator-segment" data-count="3" onclick="setScriptImageCreatorCount(3)">3</button>
-                                    <button type="button" class="script-image-generator-segment" data-count="4" onclick="setScriptImageCreatorCount(4)">4</button>
+                                    <button type="button" class="script-image-generator-segment script-image-generator-segment--compact" data-count="1" onclick="setScriptImageCreatorCount(1)">1</button>
+                                    <button type="button" class="script-image-generator-segment script-image-generator-segment--compact" data-count="2" onclick="setScriptImageCreatorCount(2)">2</button>
+                                    <button type="button" class="script-image-generator-segment script-image-generator-segment--compact" data-count="3" onclick="setScriptImageCreatorCount(3)">3</button>
+                                    <button type="button" class="script-image-generator-segment script-image-generator-segment--compact" data-count="4" onclick="setScriptImageCreatorCount(4)">4</button>
+                                    <button type="button" class="script-image-generator-segment script-image-generator-segment--compact" data-count="custom" onclick="openScriptImageCreatorCustomCount()">+</button>
+                                </div>
+                                <div id="script-image-generator-count-custom" class="script-image-generator-count-custom" hidden>
+                                    <input id="script-image-generator-count-manual" class="input" type="number" min="1" max="20" step="1" value="5" inputmode="numeric" placeholder="Mais de 4" oninput="handleScriptImageCreatorCustomCountInput(this.value)" onchange="handleScriptImageCreatorCustomCountInput(this.value)">
+                                    <span class="script-image-generator-field-note">Digite a quantidade total de imagens para a sequência. Máximo 20.</span>
                                 </div>
                             </div>
                             <div id="script-image-generator-size-group" class="form-group" hidden>
@@ -3895,9 +3900,30 @@
                             </div>
                         </div>
 
+                        <div id="script-image-generator-sequence-group" class="form-group" hidden>
+                            <div class="script-image-generator-section-head">
+                                <label for="script-image-generator-sequence-mode">Base da sequência</label>
+                            </div>
+                            <select id="script-image-generator-sequence-mode" class="input script-image-generator-native-select" hidden>
+                                <option value="none">Sem base fixa</option>
+                                <option value="first-generated" selected>Usar a 1a imagem gerada</option>
+                                <option value="reference">Usar as referências</option>
+                            </select>
+                            <div id="script-image-generator-sequence-options" class="script-image-generator-segmented script-image-generator-segmented--sequence">
+                                <button type="button" class="script-image-generator-segment script-image-generator-segment--wide" data-sequence="none" onclick="setScriptImageCreatorSequenceMode('none')">Livre</button>
+                                <button type="button" class="script-image-generator-segment script-image-generator-segment--wide" data-sequence="first-generated" onclick="setScriptImageCreatorSequenceMode('first-generated')">1a imagem</button>
+                                <button type="button" class="script-image-generator-segment script-image-generator-segment--wide" data-sequence="reference" onclick="setScriptImageCreatorSequenceMode('reference')">Referência</button>
+                            </div>
+                            <span class="script-image-generator-field-note">Escolha se as próximas cenas devem seguir a 1a imagem criada ou as referências enviadas.</span>
+                        </div>
+
                         <div class="form-group">
-                            <label for="script-image-generator-prompt">Prompt</label>
-                            <textarea id="script-image-generator-prompt" class="wizard-textarea script-image-generator-prompt" rows="9" maxlength="5000" placeholder="Descreva a imagem que você quer criar." onpaste="handleScriptImageCreatorPromptPaste(event)"></textarea>
+                            <div class="script-image-generator-section-head">
+                                <label>Prompts por cena</label>
+                                <span id="script-image-generator-prompt-summary" class="photo-upload-hint">1 cena</span>
+                            </div>
+                            <div id="script-image-generator-prompt-list" class="script-image-generator-prompt-list"></div>
+                            <span class="script-image-generator-field-note">Defina o que acontece em cada imagem para criar uma sequência coerente de cenas.</span>
                             <small id="script-image-generator-paste-hint" class="muted script-image-generator-paste-hint">Cole uma captura de tela com Ctrl+V para enviar direto para as imagens de referência.</small>
                         </div>
 
@@ -3922,8 +3948,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260512-15"></script>
-    <script src="/video/static/pwa.js?v=20260512-15"></script>
+    <script src="/video/static/app.js?v=20260513-01"></script>
+    <script src="/video/static/pwa.js?v=20260513-01"></script>
 </body>
 </html>
 

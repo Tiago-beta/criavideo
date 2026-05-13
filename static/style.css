@@ -4972,7 +4972,7 @@ svg.spin {
 }
 
 .script-image-generator-prompt {
-    min-height: 180px;
+    min-height: 150px;
 }
 
 .script-image-generator-paste-hint {
@@ -5226,7 +5226,13 @@ svg.spin {
 
 .script-image-generator-segmented--count {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.script-image-generator-segmented--sequence {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .script-image-generator-segment {
@@ -5239,6 +5245,17 @@ svg.spin {
     font-weight: 700;
     cursor: pointer;
     transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.script-image-generator-segment--compact {
+    min-width: 0;
+    padding: 0 10px;
+}
+
+.script-image-generator-segment--wide {
+    min-width: 0;
+    padding: 0 12px;
+    font-size: 0.82rem;
 }
 
 .script-image-generator-segment:hover,
@@ -5268,6 +5285,57 @@ svg.spin {
     margin-top: 6px;
     color: var(--text-muted);
     font-size: 0.78rem;
+}
+
+.script-image-generator-count-custom {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+    max-width: 180px;
+}
+
+.script-image-generator-prompt-list {
+    display: grid;
+    gap: 12px;
+}
+
+.script-image-generator-prompt-card {
+    display: grid;
+    gap: 10px;
+    padding: 14px 16px;
+    border: 1px solid rgba(96, 129, 162, 0.22);
+    border-radius: 18px;
+    background: rgba(4, 18, 33, 0.5);
+}
+
+.script-image-generator-prompt-card.is-base {
+    border-color: rgba(255, 193, 92, 0.42);
+    box-shadow: 0 0 0 1px rgba(255, 193, 92, 0.12);
+}
+
+.script-image-generator-prompt-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.script-image-generator-prompt-card-head strong {
+    color: var(--text);
+    font-size: 0.95rem;
+}
+
+.script-image-generator-prompt-card-head span {
+    max-width: 360px;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.4;
+    text-align: right;
+}
+
+.script-image-generator-prompt-card .script-image-generator-prompt {
+    min-height: 126px;
+    margin: 0;
 }
 
 .form-group.is-disabled .input,
@@ -5608,6 +5676,24 @@ svg.spin {
     .script-image-generator-model-options {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         justify-content: stretch;
+    }
+
+    .script-image-generator-segmented--count,
+    .script-image-generator-segmented--sequence {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .script-image-generator-count-custom {
+        max-width: none;
+    }
+
+    .script-image-generator-prompt-card-head {
+        flex-direction: column;
+    }
+
+    .script-image-generator-prompt-card-head span {
+        max-width: none;
+        text-align: left;
     }
 
     .script-image-generator-footer {
