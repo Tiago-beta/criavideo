@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v434 loaded");
+console.log("[CriaVideo] app.js v436 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -8351,6 +8351,7 @@ function workflowAddNode(kind) {
                 <option value="wan2">Ultra High 1.0</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
+                <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
@@ -8685,9 +8686,18 @@ function workflowControlSelector(el) {
     return `${el.tagName.toLowerCase()}:nth-of-type(${Math.max(1, all.indexOf(el) + 1)})`;
 }
 
-function workflowGetEngineLabel(engine) {
-    const labels = { grok: "Cria 3.0 speed", wan2: "Ultra High 1.0", seedance: "Mega 2.0 Ultra" };
+function getRealisticEngineLabel(engine) {
+    const labels = {
+        grok: "Cria 3.0 speed",
+        wan2: "Ultra High 1.0",
+        seedance: "Mega 2.0 Ultra",
+        avatar31: "Avatar 3.1 Plus",
+    };
     return labels[engine] || labels.grok;
+}
+
+function workflowGetEngineLabel(engine) {
+    return getRealisticEngineLabel(engine);
 }
 
 function workflowRuntimeTemplateKey(templateKey = "") {
@@ -8961,6 +8971,7 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
                 <option value="wan2">Ultra High 1.0</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
+                <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
@@ -9659,7 +9670,7 @@ async function workflowRunSeedance() {
         const imageUploadIds = await workflowConnectedImageUploadIds(runTemplateKey);
         if (!imageUploadIds.length) throw new Error("Conecte pelo menos uma imagem à entrada do Gerador de vídeo.");
         await workflowEnsureUploadedVideos(runTemplateKey);
-        await workflowEnsureUploadedAudio(runTemplateKey);
+        const workflowAudioUploadId = await workflowEnsureUploadedAudio(runTemplateKey);
         workflowSetOutputProgress(16, "Enviando referências para o gerador...", runTemplateKey);
 
         workflowSyncEngineDurationOptions();
@@ -9671,6 +9682,9 @@ async function workflowRunSeedance() {
         const useLastImageAsFinalFrame = workflowEngine === "seedance"
             && !!document.getElementById("workflow-seedance-last-frame")?.checked;
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
+        if (workflowEngine === "avatar31" && !workflowAudioUploadId) {
+            throw new Error("Avatar 3.1 Plus exige uma imagem e um áudio no workflow.");
+        }
 
         const resp = await api("/video/generate-realistic", {
             method: "POST",
@@ -9678,12 +9692,13 @@ async function workflowRunSeedance() {
                 prompt,
                 duration,
                 aspect_ratio: aspect,
-                generate_audio: generateAudio,
+                generate_audio: generateAudio || workflowEngine === "avatar31",
                 add_music: false,
                 add_narration: false,
                 title: "Workflow de vídeo",
                 image_upload_id: imageUploadIds[0] || "",
                 image_upload_ids: imageUploadIds,
+                audio_upload_id: workflowAudioUploadId,
                 engine: workflowEngine,
                 use_last_image_as_final_frame: useLastImageAsFinalFrame,
                 prompt_optimized: false,
@@ -11137,13 +11152,15 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         }
     }
 
-    if (!finalPrompt) {
+    const selectedEngineForPromptCheck = document.querySelector(`#${engineSelectorId} .engine-option.selected`)?.dataset.value || "grok";
+    if (!finalPrompt && selectedEngineForPromptCheck !== "avatar31") {
         alert("Descreva a cena que você quer ver no vídeo.");
         return;
     }
+    const avatarPromptlessMode = selectedEngineForPromptCheck === "avatar31" && !finalPrompt;
 
     let finalTitle = String(title || "").trim();
-    if (!finalTitle && selectedTevoxiSong) {
+    if (!finalTitle && selectedTevoxiSong && selectedEngineForPromptCheck !== "avatar31") {
         finalTitle = String(selectedTevoxiSong.title || "").trim();
     }
 
@@ -11159,6 +11176,10 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         return;
     }
 
+    const hasUploadedAudio = prefix === "script"
+        && !!document.getElementById("script-use-user-audio")?.checked
+        && !!scriptUserAudioFile;
+
     const durBtn = document.querySelector(`#${durationSelectorId} .duration-option.selected`);
     let duration = durBtn ? parseInt(durBtn.dataset.value, 10) : 8;
     const aspectEl = document.getElementById(aspectSelectorId);
@@ -11167,7 +11188,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const addMusic = musicEl ? musicEl.checked : true;
     const addMusicRequested = useTevoxi ? false : addMusic;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
-    let engine = engineBtn ? engineBtn.dataset.value : "grok";
+    let engine = engineBtn ? engineBtn.dataset.value : selectedEngineForPromptCheck;
     if (engine === "wan2") {
         const normalizedDuration = _normalizeWanDurationMultiple(duration);
         if (normalizedDuration !== duration) {
@@ -11177,11 +11198,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
         }
     }
-    const engineLabel = engine === "wan2"
-            ? "Ultra High 1.0"
-            : engine === "grok"
-                ? "Cria 3.0 speed"
-                : "Mega 2.0 Ultra";
+    const engineLabel = getRealisticEngineLabel(engine);
     const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
     const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
     let personaProfileId = 0;
@@ -11257,12 +11274,16 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         // Upload reference image if available
         let imageUploadId = "";
         let imageUploadIds = [];
+        let audioUploadId = "";
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
         const referencePhotosToUpload = engine === "avatar31"
             ? scriptPhotos.slice(-1)
             : scriptPhotos.slice(0, 6);
         if (disablePersonaReference && engine !== "grok" && !shouldUploadReferenceImage) {
             throw new Error("O modo Nenhum sem foto funciona no Cria 3.0 speed. Para outros motores, envie uma imagem de referência.");
+        }
+        if (engine === "avatar31" && !selectedTevoxiSong && !hasUploadedAudio) {
+            throw new Error("Avatar 3.1 Plus exige um áudio enviado ou um trecho do Tevoxi.");
         }
         if (shouldUploadReferenceImage) {
             setCreateProgress(5, "Gerando vídeo realista...", "Enviando imagem de referência...");
@@ -11294,11 +11315,22 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             _smoothProgressTarget = 15;
         }
 
-        const speechStatusLabel = speechMode === "dialogue_auto"
-            ? "Otimizando prompt e preparando falas automaticas por personagem..."
-            : speechMode === "narration_manual"
-                ? "Otimizando prompt e preparando narracao do texto informado..."
-                : "Otimizando prompt com IA...";
+        if (hasUploadedAudio) {
+            setCreateProgress(9, "Gerando vídeo realista...", "Enviando áudio de referência...");
+            const uploadedAudio = await uploadTempFileWithRetry(scriptUserAudioFile, "audio", "áudio de referência");
+            audioUploadId = uploadedAudio?.upload_id || "";
+            if (!audioUploadId) {
+                throw new Error("Falha ao enviar o áudio de referência.");
+            }
+        }
+
+        const speechStatusLabel = avatarPromptlessMode
+            ? "Preparando avatar com foto e áudio..."
+            : speechMode === "dialogue_auto"
+                ? "Otimizando prompt e preparando falas automaticas por personagem..."
+                : speechMode === "narration_manual"
+                    ? "Otimizando prompt e preparando narracao do texto informado..."
+                    : "Otimizando prompt com IA...";
         setCreateProgress(10, "Gerando vídeo realista...", speechStatusLabel);
         _smoothProgressTarget = 15;
 
@@ -11306,10 +11338,10 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             method: "POST",
             body: JSON.stringify({
                 prompt: finalPrompt,
-                preserve_prompt_exactly: prefix === "script",
+                preserve_prompt_exactly: prefix === "script" || avatarPromptlessMode,
                 duration,
                 aspect_ratio: aspect,
-                generate_audio: addMusicRequested || addNarration || !!selectedTevoxiSong,
+                generate_audio: addMusicRequested || addNarration || !!selectedTevoxiSong || !!audioUploadId || engine === "avatar31",
                 add_music: addMusicRequested,
                 add_narration: addNarration,
                 narration_text: narrationText,
@@ -11322,6 +11354,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 title: finalTitle || "",
                 image_upload_id: imageUploadId,
                 image_upload_ids: imageUploadIds,
+                audio_upload_id: audioUploadId,
                 engine: engine,
                 use_last_image_as_final_frame: engine === "seedance"
                     && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
@@ -11819,13 +11852,15 @@ function scriptNext() {
 
         // Realistic mode: only need prompt text, optionally photos/audio
         if (scriptData.videoType === "realista") {
-            if (!title && !text) { alert("Escreva um título ou um prompt para o vídeo."); return; }
+            const useUserAudioToggle = document.getElementById("script-use-user-audio")?.checked;
+            const hasUserAudio = useUserAudioToggle && !!scriptUserAudioFile;
+            const hasTevoxiClip = !!(_scriptSelectedSong && _scriptSelectedClip);
+            const hasAvatarPromptlessInputs = scriptPhotos.length > 0 && (hasUserAudio || hasTevoxiClip);
+            if (!title && !text && !hasAvatarPromptlessInputs) { alert("Escreva um título ou um prompt para o vídeo."); return; }
             scriptData.title = title || text.substring(0, 100);
             scriptData.text = text;
             const usePhotos = document.getElementById("script-use-photos").checked;
             scriptData.useCustomImages = usePhotos && scriptPhotos.length > 0;
-            const useUserAudioToggle = document.getElementById("script-use-user-audio")?.checked;
-            const hasUserAudio = useUserAudioToggle && !!scriptUserAudioFile;
             scriptData.useCustomAudio = hasUserAudio;
             // Realistic flow: advance normally to step 7 (realistic settings)
         } else {
@@ -11983,7 +12018,10 @@ async function handleScriptCreate() {
     // Check if this is a realistic video
     if (scriptData.videoType === "realista") {
         const scriptText = document.getElementById("script-text").value.trim();
-        const prompt = scriptText || scriptData.title || "";
+        const selectedRealisticEngine = document.querySelector("#script-realistic-engine .engine-option.selected")?.dataset.value || "grok";
+        const prompt = selectedRealisticEngine === "avatar31"
+            ? scriptText
+            : (scriptText || scriptData.title || "");
         const realisticTitle = (document.getElementById("script-title").value || "").trim() || scriptData.title || "";
         await handleRealisticVideoCreate(
             prompt,
@@ -15423,11 +15461,7 @@ async function generateAiScript() {
         const selectedPersonaId = selectedPersonaIds[0] || 0;
         const usePhotosToggle = document.getElementById("script-use-photos");
         const hasPersonaReference = !disablePersonaReference && selectedPersonaIds.length > 0;
-        const engineLabel = engine === "grok"
-            ? "Cria 3.0 speed"
-            : engine === "wan2"
-                    ? "Ultra High 1.0"
-                    : "Mega 2.0 Ultra";
+        const engineLabel = getRealisticEngineLabel(engine);
         try {
             let customImageIds = [];
             if (usePersonalizedReferences && aiSuggestCustomImages.length > 0) {
