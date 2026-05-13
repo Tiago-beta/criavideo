@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v433 loaded");
+console.log("[CriaVideo] app.js v434 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -2072,7 +2072,10 @@ function _isEditorProjectListItem(project) {
 }
 
 function _projectVisibleInCreateList(project) {
-    return !_isEditorProjectListItem(project) && !(project?.status === "completed" && project?.video_expired);
+    const normalizedStatus = String(project?.status || "").trim().toLowerCase();
+    return !_isEditorProjectListItem(project)
+        && normalizedStatus === "completed"
+        && !project?.video_expired;
 }
 
 function _projectVisibleInEditorList(project) {
