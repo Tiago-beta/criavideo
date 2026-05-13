@@ -431,7 +431,9 @@ async def ai_suggest(
             "- cores com alto contraste\n"
             "- texto grande, legivel no celular\n"
             "- espaco livre sem poluicao visual\n"
-            "- composicao que desperte curiosidade sem parecer falsa\n"
+            "- composicao que desperte curiosidade sem parecer falsa, usando apenas elementos reais do contexto\n"
+            "- se houver pessoa, retrato bonito, fotorealista, bem iluminado e com expressao positiva ou serena conforme o tema\n"
+            "- nunca usar setas, circulos, selos, stickers, emojis ou icones genericos fora de contexto\n"
             "- aparencia moderna, viral e profissional"
         )
 
@@ -1058,10 +1060,10 @@ REGRA DE CONTEXTO (OBRIGATORIA):
 
 GUIDE OBRIGATORIO DE THUMBNAIL (seguir estritamente):
 - a thumbnail precisa ter 1 ideia principal e ser entendida em menos de 1 segundo
-- usar rosto/personagem com emocao clara
+- usar rosto/personagem com emocao clara, aparencia bonita e sensacao positiva ou serena conforme o tema
 - usar poucas palavras grandes (2 a 5)
 - contraste forte para funcionar no celular
-- incluir elemento de curiosidade visual
+- incluir curiosidade visual apenas com elementos reais do contexto, nunca com setas, circulos ou icones genericos
 - promessa verdadeira e fiel ao video
 
 GUIDE OBRIGATORIO DE TITULO E DESCRICAO:

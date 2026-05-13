@@ -129,6 +129,39 @@ def _extract_inline_image_bytes(response: object) -> bytes:
     return b""
 
 
+def _build_thumbnail_subject_direction(
+    title_text: str,
+    description_text: str,
+    mood: str,
+) -> str:
+    combined_context = " ".join(
+        part for part in [title_text, description_text, mood] if str(part or "").strip()
+    ).lower()
+    calm_terms = (
+        "sono",
+        "dormir",
+        "sleep",
+        "relax",
+        "relaxamento",
+        "hipnose",
+        "medit",
+        "calma",
+        "deep rest",
+        "descanso",
+    )
+
+    if any(term in combined_context for term in calm_terms):
+        return (
+            "Se houver pessoa, use retrato fotorealista bonito, bem iluminado e acolhedor, "
+            "com expressao serena, calma e confiavel, transmitindo alivio, seguranca e bem-estar."
+        )
+
+    return (
+        "Se houver pessoa, use retrato fotorealista bonito, bem iluminado e profissional, "
+        "com expressao positiva, confiante ou acolhedora, transmitindo algo bom e verdadeiro."
+    )
+
+
 def _build_thumbnail_prompt(
     title_text: str,
     description_text: str,
@@ -144,6 +177,7 @@ def _build_thumbnail_prompt(
     audience_hint = "Publico brasileiro do YouTube interessado nesse tema."
     emotion_hint = mood_short[:120] if mood_short else "curiosidade, impacto e vontade de clicar"
     central_element_hint = "pessoa ou elemento principal ligado ao tema"
+    subject_direction = _build_thumbnail_subject_direction(title_text, description_text, mood_short)
 
     base_prompt = f"""Voce e um diretor de arte senior especialista em thumbnails de alto CTR para YouTube.
 
@@ -162,7 +196,7 @@ A formula campea que deve ser seguida:
 2) Um rosto/personagem com emocao forte e clara
 3) Texto grande de 2 a 5 palavras, muito legivel no celular
 4) Contraste forte entre fundo e texto
-5) Elemento de curiosidade visual (seta, circulo, sombra, olhar, objeto misterioso)
+5) Curiosidade visual vinda do proprio contexto (olhar, luz, gesto, objeto real do tema, atmosfera)
 6) Promessa verdadeira e fiel ao conteudo
 
 REGRAS OBRIGATORIAS:
@@ -172,11 +206,18 @@ REGRAS OBRIGATORIAS:
 - texto com fonte bold, alto contraste e destaque visual
 - sem logos, sem marcas d'agua, sem UI de app
 - sem poluicao visual
+- NUNCA usar setas, circulos, selos, stickers, emojis, maos apontando, icones flutuantes ou outros enfeites genericos fora do contexto real do video
+- a curiosidade visual deve nascer da cena, do enquadramento, da iluminacao ou de um elemento real do tema
+- se houver pessoa, ela deve parecer natural, bonita, saudavel, proporcional e fotorealista
+- evitar expressoes de dor, medo, desespero, susto exagerado, boca aberta estranha, pose humilhante ou qualquer visual que passe sensacao ruim
 
 CONTEXTO DO VIDEO:
 Titulo: {title_text}
 Descricao resumida: {description_text}
 Tom/estilo visual: {style_short or 'cinematico, moderno e emocional'}
+
+DIRECAO DE PERSONAGEM/HUMANO:
+{subject_direction}
 """
 
     if strategy_short:
