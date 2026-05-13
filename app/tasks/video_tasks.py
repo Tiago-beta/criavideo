@@ -92,6 +92,21 @@ def _prepare_reference_delivery_images(
     return prepared_paths
 
 
+def _reference_paths_from_tags(raw_tags: dict[str, object] | None) -> list[str]:
+    if not isinstance(raw_tags, dict):
+        return []
+
+    delivery_paths = raw_tags.get("reference_delivery_image_paths")
+    if isinstance(delivery_paths, list) and delivery_paths:
+        return delivery_paths
+
+    upload_paths = raw_tags.get("reference_upload_image_paths")
+    if isinstance(upload_paths, list):
+        return upload_paths
+
+    return []
+
+
 async def _normalize_video_aspect(input_path: str, aspect_ratio: str, output_path: str) -> str:
     """Force output video to requested aspect ratio using scale+crop."""
     tw, th = _aspect_to_resolution(aspect_ratio)
@@ -1668,13 +1683,7 @@ async def run_realistic_video_pipeline(project_id: int):
 
             raw_upload_reference_paths_early = [
                 str(path).strip()
-                for path in (
-                    tags_data_early.get("reference_delivery_image_paths", [])
-                    if isinstance(tags_data_early.get("reference_delivery_image_paths", []), list)
-                    else tags_data_early.get("reference_upload_image_paths", [])
-                    if isinstance(tags_data_early.get("reference_upload_image_paths", []), list)
-                    else []
-                )
+                for path in _reference_paths_from_tags(tags_data_early)
                 if str(path).strip() and os.path.exists(str(path).strip())
             ][:6]
             prepared_upload_reference_paths_early: list[str] = []
@@ -1775,13 +1784,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 project.style_prompt = prepared_upload_reference_paths_early[0]
             upload_reference_paths_for_prompt = [
                 str(path).strip()
-                for path in (
-                    tags_data.get("reference_delivery_image_paths", [])
-                    if isinstance(tags_data.get("reference_delivery_image_paths", []), list)
-                    else tags_data.get("reference_upload_image_paths", [])
-                    if isinstance(tags_data.get("reference_upload_image_paths", []), list)
-                    else []
-                )
+                for path in _reference_paths_from_tags(tags_data)
                 if str(path).strip() and os.path.exists(str(path).strip())
             ][:6]
             upload_reference_lock_mode = (
@@ -2020,13 +2023,7 @@ async def run_realistic_video_pipeline(project_id: int):
             grok_direct_reference_path = image_path if (image_path and os.path.exists(image_path)) else ""
             upload_reference_paths = [
                 str(path).strip()
-                for path in (
-                    tags_data.get("reference_delivery_image_paths", [])
-                    if isinstance(tags_data.get("reference_delivery_image_paths", []), list)
-                    else tags_data.get("reference_upload_image_paths", [])
-                    if isinstance(tags_data.get("reference_upload_image_paths", []), list)
-                    else []
-                )
+                for path in _reference_paths_from_tags(tags_data)
                 if str(path).strip() and os.path.exists(str(path).strip())
             ][:6]
 
