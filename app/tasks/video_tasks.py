@@ -2079,7 +2079,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     engine,
                     scene_reference_path,
                 )
-            elif has_reference_image and image_path and engine != "grok":
+            elif has_reference_image and image_path and engine not in {"grok", "avatar31"}:
                 from app.services.scene_generator import build_single_scene_anchor_prompt, generate_scene_image
 
                 try:
@@ -2277,6 +2277,7 @@ async def run_realistic_video_pipeline(project_id: int):
             elif engine == "avatar31":
                 from app.services.avatar_video import generate_avatar_video
 
+                avatar_reference_path = upload_reference_paths[0] if upload_reference_paths else (image_path or scene_reference_path)
                 avatar_audio_source = str(
                     tags_data.get("audio_upload_path")
                     or tags_data.get("audio_url")
@@ -2284,7 +2285,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 ).strip()
                 if not avatar_audio_source:
                     raise RuntimeError("Avatar 3.1 Plus exige um áudio enviado pelo usuário ou um trecho do Tevoxi.")
-                if not scene_reference_path or not os.path.exists(scene_reference_path):
+                if not avatar_reference_path or not os.path.exists(avatar_reference_path):
                     raise RuntimeError("Avatar 3.1 Plus exige uma imagem de referência válida.")
 
                 avatar_audio_path = await materialize_audio_source(
@@ -2297,7 +2298,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 await _on_progress(18, "Iniciando geracao de video Avatar 3.1 Plus...")
                 await generate_avatar_video(
                     prompt=optimized_prompt,
-                    image_path=scene_reference_path,
+                    image_path=avatar_reference_path,
                     audio_source=avatar_audio_path,
                     output_path=output_path,
                     aspect_ratio=aspect_ratio,
