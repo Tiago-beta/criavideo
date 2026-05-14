@@ -3053,8 +3053,9 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                         f"{current_video_label}[{lay_label}]overlay="
                         "x=0:"
                         "y=0:"
-                        "repeatlast=0:"
-                        "eof_action=pass"
+                        f"enable='between(t,{layer['start_time']:.6f},{layer['end_time']:.6f})':"
+                        "repeatlast=1:"
+                        "eof_action=repeat"
                     )
                 else:
                     overlay_parts.append(
@@ -3068,8 +3069,9 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                             f"[{ref_label}][{lay_label}]overlay="
                             f"x={left_px}:"
                             f"y={top_px}:"
-                            "repeatlast=0:"
-                            "eof_action=pass"
+                            f"enable='between(t,{layer['start_time']:.6f},{layer['end_time']:.6f})':"
+                            "repeatlast=1:"
+                            "eof_action=repeat"
                         )
                     else:
                         overlay_expr = (
