@@ -821,12 +821,17 @@ async def _extract_frame(video_path: str, timestamp_seconds: float, output_path:
 async def _detect_scene_change_timestamps(
     video_path: str,
     threshold: float = _SIMILAR_SCENE_DETECT_THRESHOLD,
+    max_duration_seconds: float = 0.0,
 ) -> list[float]:
-    proc = await asyncio.create_subprocess_exec(
+    ffmpeg_args = [
         "ffmpeg",
         "-hide_banner",
         "-i",
         video_path,
+    ]
+    if max_duration_seconds > 0.05:
+        ffmpeg_args.extend(["-t", f"{float(max_duration_seconds):.3f}"])
+    ffmpeg_args.extend([
         "-an",
         "-vf",
         f"select=gt(scene\\,{float(threshold):.3f}),showinfo",
@@ -835,6 +840,9 @@ async def _detect_scene_change_timestamps(
         "-f",
         "null",
         "-",
+    ])
+    proc = await asyncio.create_subprocess_exec(
+        *ffmpeg_args,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -1181,13 +1189,17 @@ def _extract_scene_transcript_excerpt(
     return _normalize_similar_context_text(" ".join(tokens), limit=limit)
 
 
-async def _extract_audio_track_for_similar_context(video_path: str, output_path: str) -> str:
+async def _extract_audio_track_for_similar_context(video_path: str, output_path: str, max_duration_seconds: float = 0.0) -> str:
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    proc = await asyncio.create_subprocess_exec(
+    ffmpeg_args = [
         "ffmpeg",
         "-y",
         "-i",
         video_path,
+    ]
+    if max_duration_seconds > 0.05:
+        ffmpeg_args.extend(["-t", f"{float(max_duration_seconds):.3f}"])
+    ffmpeg_args.extend([
         "-vn",
         "-ac",
         "1",
@@ -1198,6 +1210,9 @@ async def _extract_audio_track_for_similar_context(video_path: str, output_path:
         "-b:a",
         "64k",
         output_path,
+    ])
+    proc = await asyncio.create_subprocess_exec(
+        *ffmpeg_args,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -1208,12 +1223,16 @@ async def _extract_audio_track_for_similar_context(video_path: str, output_path:
     return output_path
 
 
-async def _transcribe_similar_video_context(video_path: str) -> tuple[str, list[dict], str]:
+async def _transcribe_similar_video_context(video_path: str, max_duration_seconds: float = 0.0) -> tuple[str, list[dict], str]:
     audio_path = str(Path(video_path).with_name("reference_audio_context.mp3"))
     try:
         if not await _similar_video_has_meaningful_audio(video_path):
             return "", [], ""
-        await _extract_audio_track_for_similar_context(video_path, audio_path)
+        await _extract_audio_track_for_similar_context(
+            video_path,
+            audio_path,
+            max_duration_seconds=max_duration_seconds,
+        )
         from app.services.transcriber import transcribe_audio
 
         result = await asyncio.to_thread(transcribe_audio, audio_path, "", "")
@@ -1304,8 +1323,12 @@ async def _build_similar_video_context(
     video_path: str,
     duration_seconds: float,
     frame_paths: list[str],
+    max_duration_seconds: float = 0.0,
 ) -> tuple[str, str, list[dict], str]:
-    transcript_text, transcript_words, transcript_language = await _transcribe_similar_video_context(video_path)
+    transcript_text, transcript_words, transcript_language = await _transcribe_similar_video_context(
+        video_path,
+        max_duration_seconds=max_duration_seconds,
+    )
 
     context_summary = ""
     try:
@@ -2121,6 +2144,7 @@ async def run_similar_reference_analysis(
     analysis_mode: str = "scene",
     source_type: str = "",
     source_render_id: int = 0,
+    analysis_limit_seconds: int = 0,
 ) -> None:
     async with async_session() as db:
         project = await db.get(VideoProject, project_id)
@@ -2141,6 +2165,7 @@ async def run_similar_reference_analysis(
                 "similar_source_render_id": int(source_render_id or 0),
                 "similar_source_upload_name": source_upload_name,
                 "similar_analysis_mode": "general" if str(analysis_mode or "scene").strip().lower() == "general" else "scene",
+                "similar_analysis_limit_seconds": max(0, int(analysis_limit_seconds or 0)),
             }
         )
         project.tags = tags
@@ -2229,6 +2254,7 @@ async def run_similar_reference_analysis(
                     "similar_source_render_id": int(source_render_id or 0),
                     "similar_source_upload_name": source_upload_name,
                     "similar_analysis_mode": "general" if str(analysis_mode or "scene").strip().lower() == "general" else "scene",
+                    "similar_analysis_limit_seconds": max(0, int(analysis_limit_seconds or 0)),
                 }
             )
             if reused_project_id > 0:
@@ -2237,9 +2263,17 @@ async def run_similar_reference_analysis(
             project.progress = 15
             await db.commit()
 
-            duration_seconds = await _ffprobe_duration(resolved_video_path)
+            source_duration_seconds = await _ffprobe_duration(resolved_video_path)
+            requested_analysis_limit = max(0.0, float(analysis_limit_seconds or 0.0))
+            duration_seconds = source_duration_seconds
+            if requested_analysis_limit > 0.05:
+                duration_seconds = min(source_duration_seconds, max(1.0, requested_analysis_limit))
+            analysis_truncated = duration_seconds + 0.05 < source_duration_seconds
             scene_seconds = max(1.0, float(settings.similar_scene_default_seconds or 5))
-            detected_cut_times = await _detect_scene_change_timestamps(resolved_video_path)
+            detected_cut_times = await _detect_scene_change_timestamps(
+                resolved_video_path,
+                max_duration_seconds=duration_seconds,
+            )
             scene_ranges = _build_similar_scene_ranges(
                 duration_seconds,
                 detected_cut_times,
@@ -2274,6 +2308,7 @@ async def run_similar_reference_analysis(
                 resolved_video_path,
                 duration_seconds,
                 [payload.get("frame_path", "") for payload in scene_frame_payloads],
+                max_duration_seconds=duration_seconds,
             )
 
             for idx, payload in enumerate(scene_frame_payloads):
@@ -2367,6 +2402,9 @@ async def run_similar_reference_analysis(
                     "similar_detected_scene_durations": detected_scene_durations,
                     "similar_reference_frames": reference_frames_by_scene_index,
                     "similar_total_duration": duration_seconds,
+                    "similar_source_total_duration": source_duration_seconds,
+                    "similar_analysis_duration": duration_seconds,
+                    "similar_analysis_truncated": analysis_truncated,
                     "similar_context_summary": context_summary,
                     "similar_transcript_full": transcript_text,
                     "similar_transcript_excerpt": _normalize_similar_context_text(transcript_text, limit=900),

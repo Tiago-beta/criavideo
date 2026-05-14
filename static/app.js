@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v444 loaded");
+console.log("[CriaVideo] app.js v445 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -106,6 +106,7 @@ const REALISTIC_PERSONA_LABELS = {
     desenho: "Desenho",
     personalizado: "Personalizado",
 };
+const PUBLISH_ANALYSIS_MAX_SECONDS = 60;
 let _personaProfilesByType = {};
 let _personaSelectionByContext = {
     wizard: {},
@@ -4806,81 +4807,8 @@ function _renderSimilarUnifiedPrompt(project) {
     const textEl = document.getElementById("similar-unified-prompt-text");
     const metaEl = document.getElementById("similar-unified-prompt-meta");
     const enginePickerEl = document.getElementById("similar-unified-engine-picker");
-    const createImageBtn = document.getElementById("similar-unified-create-image-button");
-    const previewWrapEl = document.getElementById("similar-unified-preview-wrap");
-    const previewMetaEl = document.getElementById("similar-unified-preview-meta");
-    const previewStageEl = document.getElementById("similar-unified-preview-stage");
-    const generateBtn = document.getElementById("similar-generate-unified-scene");
-    if (!wrapEl || !textEl || !metaEl || !enginePickerEl || !previewWrapEl || !previewMetaEl || !previewStageEl) return;
-
-    const tags = _safeSimilarTags(project?.tags);
-    const promptText = String(tags.similar_unified_prompt || "").trim();
-    const analysisMode = String(tags.similar_analysis_mode || "scene").trim().toLowerCase() || "scene";
-    if (!promptText) {
-        _clearSimilarUnifiedPrompt();
-        return;
-    }
-
-    const source = String(tags.similar_unified_prompt_source || "").trim();
-    const generatedAt = _formatSimilarUnifiedPromptGeneratedAt(tags.similar_unified_prompt_generated_at);
-    let metaText = analysisMode === "general"
-        ? source === "ai"
-            ? "Prompt geral sintetizado pela IA a partir do video inteiro."
-            : source === "fallback"
-                ? "Prompt geral montado com o fallback local a partir da analise salva."
-                : "Prompt geral derivado da analise atual."
-        : source === "ai"
-            ? "Prompt unico sintetizado pela IA a partir das cenas analisadas."
-            : source === "fallback"
-                ? "Prompt unico montado com o fallback local a partir da analise salva."
-                : "Prompt unico derivado da analise atual.";
-    if (generatedAt) {
-        metaText = `${metaText} Atualizado em ${generatedAt}.`;
-    }
-
-    const selectedEngine = _getSimilarUnifiedSelectedEngine(tags);
-    const selectedDuration = _getSimilarUnifiedSelectedDuration(tags);
-    similarState.unifiedEngine = selectedEngine;
-    similarState.unifiedDuration = selectedDuration;
-
-    enginePickerEl.innerHTML = ["grok", "wan2", "seedance"].map((engineValue) => `
-        <button
-            class="similar-scene-engine-btn${selectedEngine === engineValue ? " selected" : ""}"
-            type="button"
-            onclick="similarSelectUnifiedEngine('${engineValue}')"
-            title="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
-            aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
-        >${_similarSceneEngineLabel(engineValue)}</button>
-    `).join("");
-    _renderDurationButtons("similar-unified-duration-options", [5, 10, 15], selectedDuration);
-
-    const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
-    const unifiedClipUrl = String(tags.similar_unified_clip_url || "").trim();
-    const unifiedReferenceImageUrl = String(tags.similar_unified_reference_image_url || "").trim();
-    const referenceFrameCount = Number(tags.similar_unified_reference_frame_count || 0) || 0;
-    const generatedEngine = _normalizeSimilarEngine(tags.similar_unified_clip_engine || selectedEngine);
-    const generatedDuration = parseInt(tags.similar_unified_clip_duration || selectedDuration || "10", 10) || 10;
-    const previewItems = [];
-    if (unifiedClipUrl) {
-        previewItems.push(`
-            <div class="similar-preview-box ${previewAspectClass}">
-                <video src="${esc(unifiedClipUrl)}" controls preload="metadata"></video>
-            </div>
-        `);
-    }
-
-    if (previewItems.length) {
-        const previewMetaParts = [];
-        if (referenceFrameCount > 0) {
             previewMetaParts.push(`${referenceFrameCount} frame(s) de referencia`);
-        }
-        previewMetaParts.push(`Motor: ${_similarEngineDisplayLabel(generatedEngine)}`);
-        previewMetaParts.push(`Duracao: ${generatedDuration}s`);
-        previewMetaEl.textContent = previewMetaParts.join(" | ");
-        previewStageEl.innerHTML = `<div class="similar-scene-preview${previewItems.length === 1 ? " similar-scene-preview-single" : ""}">${previewItems.join("")}</div>`;
-        previewWrapEl.hidden = false;
-    } else {
-        previewMetaEl.textContent = "";
+    summaryEl.innerHTML = "";
         previewStageEl.innerHTML = "";
         previewWrapEl.hidden = true;
     }
@@ -16803,7 +16731,7 @@ function _refreshPublishAnalysisActions() {
         analyzeBtn.disabled = !hasRender || isAnalyzing || isGenerating;
     }
     if (analyzeLabel) {
-        analyzeLabel.textContent = isAnalyzing ? "Analisando..." : "Analisar audio + cena";
+        analyzeLabel.textContent = isAnalyzing ? "Analisando..." : "Analisar 1 min";
     }
     if (generateBtn) {
         generateBtn.disabled = !hasRender || !analysisReady || isAnalyzing || isGenerating;
@@ -16861,14 +16789,7 @@ function _resetPublishAnalysisState({ keepRenderId = true } = {}) {
     _publishAnalysisState.running = false;
     _publishAnalysisState.generatingMetadata = false;
 
-    if (_publishAnalysisState.renderId > 0) {
-        _setPublishAnalysisStatus(
-            "Clique em Analisar audio + cena para mapear o contexto visual e transcrever o audio do video antes de gerar o titulo e a descricao.",
-            "idle",
-        );
-    } else {
-        _setPublishAnalysisStatus("", "idle");
-    }
+    _setPublishAnalysisStatus("", "idle");
     _renderPublishAnalysisSummary(null);
     _refreshPublishAnalysisActions();
     schedulePublishAnalysisCreditEstimate();
@@ -16890,6 +16811,14 @@ function _resolvePublishAnalysisDurationSeconds() {
     return 0;
 }
 
+function _resolvePublishAnalysisWindowSeconds() {
+    const durationSeconds = _resolvePublishAnalysisDurationSeconds();
+    if (!(durationSeconds > 0.05)) {
+        return 0;
+    }
+    return Math.min(durationSeconds, PUBLISH_ANALYSIS_MAX_SECONDS);
+}
+
 async function updatePublishAnalysisCreditEstimate() {
     const renderId = Number(document.getElementById("pub-render-select")?.value || 0);
     if (!renderId) {
@@ -16897,7 +16826,8 @@ async function updatePublishAnalysisCreditEstimate() {
         return;
     }
 
-    const durationSeconds = _resolvePublishAnalysisDurationSeconds();
+    const fullDurationSeconds = _resolvePublishAnalysisDurationSeconds();
+    const durationSeconds = _resolvePublishAnalysisWindowSeconds();
     if (!(durationSeconds > 0.05)) {
         const previewVideo = document.getElementById("pub-render-preview");
         const hasPreview = !!String(previewVideo?.getAttribute("src") || "").trim();
@@ -16917,7 +16847,9 @@ async function updatePublishAnalysisCreditEstimate() {
             duration_seconds: durationSeconds,
             analysis_mode: "scene",
         },
-        (creditsNeeded) => `Custo por cena: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
+        (creditsNeeded) => fullDurationSeconds > PUBLISH_ANALYSIS_MAX_SECONDS
+            ? `Custo do 1º minuto: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`
+            : `Custo da análise: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
     );
 }
 
@@ -16951,21 +16883,14 @@ async function _refreshPublishAnalysisProject() {
         _publishAnalysisState.running = isProcessing;
 
         let kind = "running";
-        let message = stageLabel;
+        let message = "";
 
         if (status === "failed") {
             kind = "error";
             message = project.error_message || stageLabel;
         } else if (_isPublishAnalysisReady(project)) {
-            const speechDetected = String(tags.similar_transcript_speech_detected || "").trim().toLowerCase();
             kind = "success";
-            message = sceneCount > 0
-                ? (speechDetected === "false"
-                    ? `Analise concluida. ${sceneCount} cenas prontas e o audio foi analisado sem fala relevante.`
-                    : `Analise concluida. ${sceneCount} cenas e a transcricao do audio estao prontas para gerar o titulo e a descricao.`)
-                : "Analise concluida. Gere o título e a descrição usando o contexto do video.";
-        } else if (progress > 0) {
-            message = `${stageLabel} (${progress}%)`;
+            message = "Pronto para gerar título e descrição.";
         }
 
         _setPublishAnalysisStatus(message, kind);
@@ -17007,7 +16932,7 @@ async function publishStartAnalysis() {
     _publishAnalysisState.lastProjectSnapshot = null;
     _publishAnalysisState.running = true;
     _publishAnalysisState.generatingMetadata = false;
-    _setPublishAnalysisStatus("Iniciando analise visual por cenas e transcricao do audio do video...", "running");
+    _setPublishAnalysisStatus("", "running");
     _renderPublishAnalysisSummary(null);
     _refreshPublishAnalysisActions();
 
@@ -17020,6 +16945,7 @@ async function publishStartAnalysis() {
                 title: titleSeed || "Video para publicar",
                 aspect_ratio: aspectRatio,
                 analysis_mode: "scene",
+                analysis_limit_seconds: PUBLISH_ANALYSIS_MAX_SECONDS,
             }),
         });
 
@@ -17029,7 +16955,7 @@ async function publishStartAnalysis() {
         }
 
         _publishAnalysisState.projectId = projectId;
-    _setPublishAnalysisStatus("Analise por cenas e audio iniciada. Aguardando retorno da IA...", "running");
+        _setPublishAnalysisStatus("", "running");
         _startPublishAnalysisPolling();
         await _refreshPublishAnalysisProject();
     } catch (error) {
@@ -17063,7 +16989,7 @@ async function generatePublishTitleDescription() {
     const analysisProject = _publishAnalysisState.lastProjectSnapshot;
 
     if (!renderId || !_isPublishAnalysisReady(analysisProject)) {
-        alert("Analise o vídeo por cena antes de gerar o título e a descrição.");
+        alert("Analise o vídeo antes de gerar o título e a descrição.");
         return;
     }
 

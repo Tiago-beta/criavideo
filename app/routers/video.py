@@ -2361,6 +2361,7 @@ class StartSimilarAnalysisRequest(BaseModel):
     title: str = ""
     aspect_ratio: str = "16:9"
     analysis_mode: str = "scene"
+    analysis_limit_seconds: int = 0
 
 
 class SimilarUpdateSceneRequest(BaseModel):
@@ -2492,6 +2493,7 @@ async def start_similar_analysis(
         raise HTTPException(status_code=400, detail="Formato inválido. Use 16:9, 9:16 ou 1:1.")
 
     analysis_mode = str(req.analysis_mode or "scene").strip().lower() or "scene"
+    analysis_limit_seconds = max(0, int(req.analysis_limit_seconds or 0))
     if analysis_mode not in {"scene", "general"}:
         raise HTTPException(status_code=400, detail="Modo de análise inválido.")
 
@@ -2509,6 +2511,7 @@ async def start_similar_analysis(
         "similar_source_render_id": source_render_id,
         "similar_source_upload_name": source_upload_name,
         "similar_analysis_mode": analysis_mode,
+        "similar_analysis_limit_seconds": analysis_limit_seconds,
         "similar_scene_seconds": max(int(settings.similar_scene_default_seconds or 5), 1),
     }
 
@@ -2545,6 +2548,7 @@ async def start_similar_analysis(
         analysis_mode,
         source_type,
         source_render_id,
+        analysis_limit_seconds,
     )
     return {
         "project_id": project.id,
