@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v443 loaded");
+console.log("[CriaVideo] app.js v444 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -386,7 +386,10 @@ async function api(path, options = {}) {
     }
     if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(getApiErrorMessage(data, response.statusText || "Erro inesperado"));
+        const error = new Error(getApiErrorMessage(data, response.statusText || "Erro inesperado"));
+        error.apiData = data;
+        error.status = response.status;
+        throw error;
     }
     if (response.status === 204) {
         return null;
@@ -428,7 +431,10 @@ async function apiForm(path, formData, options = {}) {
     }
     if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(getApiErrorMessage(data, response.statusText || "Erro inesperado"));
+        const error = new Error(getApiErrorMessage(data, response.statusText || "Erro inesperado"));
+        error.apiData = data;
+        error.status = response.status;
+        throw error;
     }
     if (response.status === 204) {
         return null;
@@ -11937,8 +11943,11 @@ async function handleWizardCreate() {
         pollProject(result.id);
         loadProjects();
     } catch (error) {
-        hideCreateProgress();
-        alert(`Erro: ${error.message}`);
+        const surfacedFailedProject = await revealFailedProjectFromCreateError(error);
+        if (!surfacedFailedProject) {
+            hideCreateProgress();
+            alert(`Erro: ${error.message}`);
+        }
     }
 }
 
@@ -12358,6 +12367,10 @@ async function handleScriptCreate() {
         pollProject(result.id);
         loadProjects();
     } catch (error) {
+        const surfacedFailedProject = await revealFailedProjectFromCreateError(error);
+        if (surfacedFailedProject) {
+            return;
+        }
         stopKaraokeProgressPolling();
         hideCreateProgress();
         if (error.message && error.message.includes("insuficientes")) {
@@ -16366,6 +16379,25 @@ function hideCreateProgress() {
     document.getElementById("create-progress").hidden = true;
     const panel = document.getElementById(`create-panel-${createMode}`);
     if (panel) panel.hidden = false;
+}
+
+async function revealFailedProjectFromCreateError(error) {
+    const detail = error?.apiData?.detail;
+    const projectId = Number.parseInt(detail?.project_id || "", 10) || 0;
+    const projectStatus = String(detail?.project_status || "").trim().toLowerCase();
+    const shouldReveal = projectId > 0 && projectStatus === "failed" && detail?.show_in_projects !== false;
+    if (!shouldReveal) {
+        return false;
+    }
+
+    hideCreateProgress();
+    closeModal("modal-new-project");
+    navigateTo("create");
+    await loadProjects();
+
+    const reason = String(detail?.message || error?.message || "Falha ao criar o video.").trim();
+    showToast(`Projeto salvo com falha: ${reason}`, "error");
+    return true;
 }
 
 function createKaraokeOperationId() {

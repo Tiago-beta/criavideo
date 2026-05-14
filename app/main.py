@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import get_settings
 from app.scheduler import start_scheduler, stop_scheduler
+from app.tasks.video_tasks import fail_interrupted_video_projects_on_startup
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,6 +48,12 @@ async def lifespan(app: FastAPI):
         (Path(settings.media_dir) / sub).mkdir(exist_ok=True)
 
     start_scheduler()
+    try:
+        recovered_count = await fail_interrupted_video_projects_on_startup()
+        if recovered_count:
+            logger.warning("Recovered %s interrupted video projects on startup", recovered_count)
+    except Exception:
+        logger.exception("Failed to recover interrupted video projects on startup")
     logger.info("CriaVideo started")
     yield
     stop_scheduler()

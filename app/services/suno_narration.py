@@ -143,17 +143,20 @@ async def generate_suno_narration(
         tone: Optional tone hint (e.g., "dramatico", "motivacional")
     
     Returns:
-        Path to the generated audio file, or empty string on failure.
+        Path to the generated audio file.
+
+    Raises:
+        RuntimeError: When Suno rejects the request or does not return usable audio.
     """
     api_key = settings.suno_api_key
     if not api_key:
         logger.warning("SUNO_API_KEY not configured, cannot generate Suno narration")
-        return ""
+        raise RuntimeError("SUNO_API_KEY nao configurada no servidor")
     
     preset = VOICE_PRESETS.get(voice_preset)
     if not preset:
         logger.warning(f"Unknown Suno voice preset: {voice_preset}")
-        return ""
+        raise RuntimeError(f"Preset de voz Suno invalido: {voice_preset}")
     
     # Output directory
     audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
@@ -185,9 +188,6 @@ async def generate_suno_narration(
                 tone=tone,
                 output_path=seg_path,
             )
-            if not result:
-                logger.warning(f"Suno narration segment {i} failed, aborting")
-                return ""
             segment_paths.append(result)
         
         # Concatenate segments with FFmpeg
@@ -209,7 +209,9 @@ async def _generate_single_narration(
 ) -> str:
     """Generate a single Suno narration segment.
     
-    Returns output_path on success, empty string on failure.
+    Returns output_path on success.
+
+    Raises RuntimeError on failure.
     """
     # Build style with tone adjustment
     style = preset["style"]
@@ -274,14 +276,12 @@ async def _generate_single_narration(
             
             if not task_id:
                 logger.warning(f"Suno narration: no taskId in response: {resp_data}")
-                return ""
+                raise RuntimeError("Suno nao retornou taskId para a narracao")
             
             logger.info(f"Suno narration: generation started, taskId={task_id}")
             
             # Step 2: Poll for completion (max 10 min for longer narrations)
             audio_url = await _poll_suno_task(client, headers, task_id, max_wait=600)
-            if not audio_url:
-                return ""
             
             # Step 3: Download the audio
             logger.info(f"Suno narration: downloading from {audio_url[:80]}...")
@@ -295,9 +295,23 @@ async def _generate_single_narration(
             logger.info(f"Suno narration: saved to {output_path} ({file_size} bytes)")
             return output_path
     
+    except RuntimeError:
+        raise
+    except httpx.HTTPStatusError as e:
+        status_code = e.response.status_code if e.response is not None else "unknown"
+        response_text = ""
+        try:
+            response_text = (e.response.text or "")[:300] if e.response is not None else ""
+        except Exception:
+            response_text = ""
+        logger.warning(f"Suno narration generation failed with HTTP {status_code}: {response_text}")
+        raise RuntimeError(
+            f"Suno retornou HTTP {status_code} ao gerar a narracao"
+            + (f": {response_text}" if response_text else "")
+        )
     except Exception as e:
         logger.warning(f"Suno narration generation failed: {e}")
-        return ""
+        raise RuntimeError(f"Falha ao gerar narracao Suno: {e}")
 
 
 async def _poll_suno_task(
@@ -306,7 +320,7 @@ async def _poll_suno_task(
     task_id: str,
     max_wait: int = 600,
 ) -> str:
-    """Poll Suno API for task completion. Returns audio_url or empty string.
+    """Poll Suno API for task completion.
     
     Replicates the polling logic from suno_music.py for consistency.
     """
@@ -352,12 +366,12 @@ async def _poll_suno_task(
                         return audio_url
                 
                 logger.warning("Suno narration: SUCCESS but no audio URL in response")
-                return ""
+                raise RuntimeError("Suno concluiu a narracao, mas nao retornou o audio final")
             
             elif status == "FAILED":
                 err = inner.get("errorMessage") or inner.get("errorCode") or "unknown"
                 logger.warning(f"Suno narration: task failed after {elapsed}s, error: {err}")
-                return ""
+                raise RuntimeError(f"Suno falhou ao gerar a narracao: {err}")
             
             # Still pending
             if elapsed % 30 == 0:
@@ -367,7 +381,7 @@ async def _poll_suno_task(
             logger.warning(f"Suno narration poll error: {e}")
     
     logger.warning(f"Suno narration: timed out after {max_wait}s")
-    return ""
+    raise RuntimeError(f"Suno demorou mais de {max_wait}s para concluir a narracao")
 
 
 async def _concatenate_segments(segment_paths: list[str], output_path: str) -> bool:

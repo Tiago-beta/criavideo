@@ -4549,6 +4549,47 @@ async def generate_audio_endpoint(
                 voice_type = "builtin"
             tts_instructions = default_profile.tts_instructions or ""
 
+    project: VideoProject | None = None
+
+    def _http_exception_message(exc: HTTPException, fallback: str) -> str:
+        detail = exc.detail
+        if isinstance(detail, dict):
+            detail = detail.get("message") or detail.get("detail") or detail.get("error") or fallback
+        message = str(detail or fallback).strip()
+        return message or fallback
+
+    def _build_creation_failure_detail(message: str) -> dict:
+        detail = {"message": message}
+        if project and getattr(project, "id", 0):
+            detail["project_id"] = int(project.id)
+            detail["project_status"] = VideoStatus.FAILED.value
+            detail["show_in_projects"] = True
+        return detail
+
+    async def _raise_created_project_failure(status_code: int, message: str) -> None:
+        nonlocal project
+        clean_message = str(message or "Falha ao criar o video").strip() or "Falha ao criar o video"
+        if project and getattr(project, "id", 0):
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+            try:
+                stored_project = await db.get(VideoProject, project.id)
+                if stored_project:
+                    stored_project.status = VideoStatus.FAILED
+                    stored_project.progress = 0
+                    stored_project.error_message = clean_message[:1000]
+                    await db.commit()
+                    project = stored_project
+            except Exception:
+                logger.exception("Failed to persist failed creation state for project %s", getattr(project, "id", None))
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+        raise HTTPException(status_code=status_code, detail=_build_creation_failure_detail(clean_message))
+
     # Create project first to get an ID for the audio path
     has_custom_images = len(custom_image_uploads) > 0 or len(custom_image_ids) > 0
     has_custom_audio = req.use_custom_audio and has_uploaded_custom_audio
@@ -4637,11 +4678,14 @@ async def generate_audio_endpoint(
             if vid_dur > 0:
                 project.track_duration = round(vid_dur)
             logger.info(f"Custom video saved for project {project.id}: {custom_video_path} ({vid_dur:.1f}s)")
-        except HTTPException:
-            raise
+        except HTTPException as exc:
+            await _raise_created_project_failure(
+                exc.status_code,
+                _http_exception_message(exc, "Falha ao processar video enviado"),
+            )
         except Exception as e:
             logger.warning(f"Failed to save custom video for project {project.id}: {e}")
-            raise HTTPException(status_code=400, detail=f"Falha ao processar video enviado: {e}")
+            await _raise_created_project_failure(400, f"Falha ao processar video enviado: {e}")
 
     # Save custom thumbnail uploaded by user
     if custom_thumbnail_id:
@@ -4823,11 +4867,14 @@ async def generate_audio_endpoint(
 
                     project.audio_path = instrumental_path
                     logger.info(f"Karaoke instrumental created for project {project.id}: {instrumental_path}")
-        except HTTPException:
-            raise
+        except HTTPException as exc:
+            await _raise_created_project_failure(
+                exc.status_code,
+                _http_exception_message(exc, "Falha ao processar audio enviado"),
+            )
         except Exception as e:
             logger.warning(f"Failed to save custom main audio for project {project.id}: {e}")
-            raise HTTPException(status_code=400, detail=f"Falha ao processar áudio enviado: {e}")
+            await _raise_created_project_failure(400, f"Falha ao processar audio enviado: {e}")
 
     if use_tevoxi_audio:
         try:
@@ -4859,7 +4906,7 @@ async def generate_audio_endpoint(
             logger.info(f"Tevoxi main audio ready for project {project.id}: {tevoxi_main_audio_path}")
         except Exception as e:
             logger.warning(f"Failed to prepare Tevoxi main audio for project {project.id}: {e}")
-            raise HTTPException(status_code=400, detail=f"Falha ao processar áudio do Tevoxi: {e}")
+            await _raise_created_project_failure(400, f"Falha ao processar audio do Tevoxi: {e}")
 
     try:
         primary_main_audio_path = custom_main_audio_path or tevoxi_main_audio_path
@@ -4880,8 +4927,6 @@ async def generate_audio_endpoint(
                     project_id=project.id,
                     tone=req.tone,
                 )
-                if not audio_path:
-                    raise Exception("Falha ao gerar narração Suno AI. Tente novamente.")
                 project.audio_path = audio_path
                 # Suno narration includes background music — skip separate BGM
                 project.no_background_music = True
@@ -4937,16 +4982,13 @@ async def generate_audio_endpoint(
             "status": "generating_scenes",
             "estimated_duration": project.track_duration,
         }
-    except HTTPException:
-        project.status = VideoStatus.FAILED
-        project.error_message = "Configuração inválida para geração de áudio"
-        await db.commit()
-        raise
+    except HTTPException as exc:
+        await _raise_created_project_failure(
+            exc.status_code,
+            _http_exception_message(exc, "Configuracao invalida para geracao de audio"),
+        )
     except Exception as e:
-        project.status = VideoStatus.FAILED
-        project.error_message = str(e)
-        await db.commit()
-        raise HTTPException(status_code=500, detail=f"Erro ao gerar áudio: {e}")
+        await _raise_created_project_failure(500, f"Erro ao gerar audio: {e}")
 
 
 # ── Realistic Video ──────────────────────────────

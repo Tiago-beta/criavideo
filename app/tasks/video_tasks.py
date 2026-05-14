@@ -8,6 +8,7 @@ import shutil
 import httpx
 from pathlib import Path
 from PIL import Image
+from sqlalchemy import select
 from app.config import get_settings
 from app.database import async_session
 from app.models import VideoProject, VideoScene, VideoRender, VideoStatus
@@ -37,6 +38,40 @@ def _safe_error_message(err, fallback: str) -> str:
 
     err_name = type(err).__name__ if err is not None else "ErroDesconhecido"
     return f"{fallback} ({err_name})."
+
+
+async def fail_interrupted_video_projects_on_startup() -> int:
+    """Mark in-memory video jobs lost during restart as failed so they reappear in the UI."""
+    interrupted_statuses = [
+        VideoStatus.GENERATING_SCENES,
+        VideoStatus.GENERATING_CLIPS,
+        VideoStatus.RENDERING,
+    ]
+    restart_message = "Processamento interrompido durante reinicio do servidor. Gere novamente."
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(VideoProject).where(VideoProject.status.in_(interrupted_statuses))
+        )
+        interrupted_projects = result.scalars().all()
+        if not interrupted_projects:
+            return 0
+
+        interrupted_ids: list[int] = []
+        for project in interrupted_projects:
+            project.status = VideoStatus.FAILED
+            project.progress = 0
+            if not str(project.error_message or "").strip():
+                project.error_message = restart_message
+            interrupted_ids.append(int(project.id or 0))
+
+        await db.commit()
+        logger.warning(
+            "Marked %s interrupted video projects as failed after startup: %s",
+            len(interrupted_ids),
+            interrupted_ids,
+        )
+        return len(interrupted_ids)
 
 
 def _aspect_to_resolution(aspect_ratio: str) -> tuple[int, int]:
