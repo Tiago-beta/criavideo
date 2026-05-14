@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v438 loaded");
+console.log("[CriaVideo] app.js v439 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -12500,6 +12500,9 @@ let _scriptImageCreatorState = {
     activeResultIndex: 0,
     promptValues: [""],
     customCountOpen: false,
+    activeSceneIndex: -1,
+    promptPlannerBusy: false,
+    promptPlannerTargetIndex: -1,
     busy: false,
     estimateTimer: null,
     estimateSeq: 0,
@@ -12665,6 +12668,142 @@ function _getScriptImageCreatorPromptInput(index = 0) {
     return document.querySelector(`#script-image-generator-prompt-list textarea[data-prompt-index="${index}"]`);
 }
 
+function _getScriptImageCreatorSceneResultIndex(sceneIndex) {
+    for (let index = 0; index < _scriptImageCreatorState.generatedImages.length; index += 1) {
+        const item = _scriptImageCreatorState.generatedImages[index];
+        const currentSceneIndex = Number.parseInt(String(item?.scene_index ?? index), 10);
+        if (currentSceneIndex === sceneIndex) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+function _getScriptImageCreatorSceneResult(sceneIndex) {
+    const resultIndex = _getScriptImageCreatorSceneResultIndex(sceneIndex);
+    return resultIndex >= 0 ? _scriptImageCreatorState.generatedImages[resultIndex] : null;
+}
+
+function _getScriptImageCreatorPromptValues(count = null) {
+    const desiredCount = _normalizeScriptImageCreatorCount(count ?? (_isScriptImageCreatorEditMode() ? 1 : _getScriptImageCreatorCount()));
+    _ensureScriptImageCreatorPromptCapacity(desiredCount);
+    return _scriptImageCreatorState.promptValues.slice(0, desiredCount).map((value) => String(value || ""));
+}
+
+function _scriptImageCreatorPromptSuggestsMultipleImages(promptText) {
+    const normalized = String(promptText || "").trim().toLowerCase();
+    if (!normalized) return false;
+    return /(\d{1,2})\s*(imagens?|cenas?|fotos?|frames?)/i.test(normalized)
+        || /foto por foto|cena por cena|imagem por imagem/i.test(normalized);
+}
+
+function focusScriptImageCreatorPrompt(index = 0) {
+    const promptInput = _getScriptImageCreatorPromptInput(index);
+    if (!promptInput) {
+        return;
+    }
+    promptInput.focus();
+    promptInput.select();
+}
+
+async function _planScriptImageCreatorPrompts(options = {}) {
+    if (_scriptImageCreatorState.busy || _scriptImageCreatorState.promptPlannerBusy) {
+        return null;
+    }
+
+    const isEditing = _isScriptImageCreatorEditMode();
+    const initialCount = isEditing ? 1 : _getScriptImageCreatorCount();
+    const targetIndex = Number.isInteger(options.targetIndex) ? Math.max(0, options.targetIndex) : null;
+    const rewriteAll = !!options.rewriteAll;
+    const currentPrompts = _getScriptImageCreatorPromptValues(initialCount);
+    const trimmedPrompts = currentPrompts.map((value) => String(value || "").trim());
+    const masterPrompt = String(trimmedPrompts[0] || "").trim();
+    const seedPrompt = targetIndex === null ? masterPrompt : (String(trimmedPrompts[targetIndex] || "").trim() || masterPrompt);
+    if (!seedPrompt) {
+        alert("Descreva o prompt mestre antes de criar os prompts.");
+        return null;
+    }
+
+    const targetLabel = targetIndex === null && initialCount > 1
+        ? "Criando prompts detalhados para a sequência..."
+        : `Criando prompt da cena ${Math.min((targetIndex ?? 0) + 1, Math.max(initialCount, 1))}...`;
+
+    _scriptImageCreatorState.promptPlannerBusy = true;
+    _scriptImageCreatorState.promptPlannerTargetIndex = targetIndex === null ? -1 : targetIndex;
+    renderScriptImageCreatorPromptEditors();
+    setScriptImageCreatorStatus(options.statusMessage || targetLabel, "info");
+
+    try {
+        const response = await api("/video/script-image/plan-prompts", {
+            method: "POST",
+            body: JSON.stringify({
+                master_prompt: masterPrompt || seedPrompt,
+                scene_count: initialCount,
+                aspect_ratio: document.getElementById("script-image-generator-aspect")?.value || "1:1",
+                target_scene_index: targetIndex,
+                existing_prompts: currentPrompts,
+                reference_image_count: _scriptImageCreatorState.referenceFiles.length,
+                sequence_mode: isEditing ? "first-generated" : _getScriptImageCreatorSequenceMode(),
+                rewrite_all: rewriteAll,
+            }),
+        });
+
+        let nextCount = _normalizeScriptImageCreatorCount(response?.scene_count || initialCount);
+        if (isEditing) {
+            nextCount = 1;
+        } else {
+            _setScriptImageCreatorCountValue(nextCount);
+            _scriptImageCreatorState.customCountOpen = nextCount > SCRIPT_IMAGE_CREATOR_PRESET_COUNTS[SCRIPT_IMAGE_CREATOR_PRESET_COUNTS.length - 1];
+        }
+
+        _ensureScriptImageCreatorPromptCapacity(nextCount);
+        const incomingPrompts = Array.isArray(response?.prompts) ? response.prompts : [];
+        const mergedPrompts = _getScriptImageCreatorPromptValues(nextCount);
+        for (let index = 0; index < nextCount; index += 1) {
+            const incoming = String(incomingPrompts[index] || "").trim();
+            if (incoming) {
+                mergedPrompts[index] = incoming;
+            }
+        }
+        _scriptImageCreatorState.promptValues = mergedPrompts;
+        syncScriptImageCreatorControls();
+        return {
+            sceneCount: nextCount,
+            prompts: mergedPrompts,
+        };
+    } finally {
+        _scriptImageCreatorState.promptPlannerBusy = false;
+        _scriptImageCreatorState.promptPlannerTargetIndex = -1;
+        syncScriptImageCreatorControls();
+    }
+}
+
+async function createScriptImageCreatorPrompt(index) {
+    const totalCount = _isScriptImageCreatorEditMode() ? 1 : _getScriptImageCreatorCount();
+    const planEntireSequence = !_isScriptImageCreatorEditMode() && totalCount > 1 && index === 0;
+
+    try {
+        const plan = await _planScriptImageCreatorPrompts({
+            targetIndex: planEntireSequence ? null : index,
+            rewriteAll: planEntireSequence || totalCount === 1,
+        });
+        if (!plan) {
+            return;
+        }
+        focusScriptImageCreatorPrompt(Math.min(index, Math.max(plan.sceneCount - 1, 0)));
+        setScriptImageCreatorStatus(
+            plan.sceneCount > 1 ? `${plan.sceneCount} prompts prontos para a sequência.` : "Prompt pronto para gerar a imagem.",
+            "success",
+        );
+        showToast(
+            plan.sceneCount > 1 ? "Prompts da sequência criados com sucesso." : "Prompt criado com sucesso.",
+            "success",
+        );
+    } catch (error) {
+        setScriptImageCreatorStatus(`Erro ao criar prompt: ${error.message}`, "error");
+    }
+}
+
 function _getScriptImageCreatorPromptPlaceholder(index, totalCount) {
     const meta = _getScriptImageCreatorModelMeta();
     if (_isScriptImageCreatorEditMode()) {
@@ -12737,14 +12876,99 @@ function renderScriptImageCreatorPromptEditors() {
         const head = document.createElement("div");
         head.className = "script-image-generator-prompt-card-head";
 
+        const copy = document.createElement("div");
+        copy.className = "script-image-generator-prompt-card-copy";
+
         const title = document.createElement("strong");
         title.textContent = _isScriptImageCreatorEditMode() ? "Editar imagem" : `Cena ${index + 1}`;
 
         const note = document.createElement("span");
         note.textContent = _getScriptImageCreatorPromptNote(index, totalCount);
 
-        head.appendChild(title);
-        head.appendChild(note);
+        copy.appendChild(title);
+        copy.appendChild(note);
+
+        const actions = document.createElement("div");
+        actions.className = "script-image-generator-prompt-card-actions";
+
+        const createPromptBtn = document.createElement("button");
+        createPromptBtn.type = "button";
+        createPromptBtn.className = "script-image-generator-prompt-card-action is-primary";
+        createPromptBtn.textContent = (_scriptImageCreatorState.promptPlannerBusy
+            && ((_scriptImageCreatorState.promptPlannerTargetIndex < 0 && index === 0 && totalCount > 1)
+                || _scriptImageCreatorState.promptPlannerTargetIndex === index))
+            ? "Criando..."
+            : (!_isScriptImageCreatorEditMode() && totalCount > 1 && index === 0 ? "Criar prompts" : "Criar prompt");
+        createPromptBtn.disabled = _scriptImageCreatorState.busy || _scriptImageCreatorState.promptPlannerBusy;
+        createPromptBtn.onclick = () => {
+            createScriptImageCreatorPrompt(index);
+        };
+
+        const editPromptBtn = document.createElement("button");
+        editPromptBtn.type = "button";
+        editPromptBtn.className = "script-image-generator-prompt-card-action";
+        editPromptBtn.textContent = "Editar prompt";
+        editPromptBtn.disabled = _scriptImageCreatorState.busy;
+        editPromptBtn.onclick = () => {
+            focusScriptImageCreatorPrompt(index);
+        };
+
+        actions.appendChild(createPromptBtn);
+        actions.appendChild(editPromptBtn);
+
+        head.appendChild(copy);
+        head.appendChild(actions);
+
+        const scenePreview = document.createElement("button");
+        scenePreview.type = "button";
+        scenePreview.className = "script-image-generator-prompt-card-preview";
+        scenePreview.style.aspectRatio = _scriptImageCreatorAspectToCssValue(
+            document.getElementById("script-image-generator-aspect")?.value || "1:1",
+        );
+
+        const sceneResult = _getScriptImageCreatorSceneResult(index);
+        const sceneResultIndex = _getScriptImageCreatorSceneResultIndex(index);
+        const isGeneratingScene = _scriptImageCreatorState.busy && _scriptImageCreatorState.activeSceneIndex === index;
+        if (sceneResult?.image_url && sceneResultIndex >= 0) {
+            scenePreview.classList.add("is-ready");
+            if (isGeneratingScene) {
+                scenePreview.classList.add("is-loading");
+            }
+            scenePreview.title = `Abrir resultado da cena ${index + 1}`;
+            scenePreview.onclick = () => {
+                setActiveScriptImageCreatorResult(sceneResultIndex);
+            };
+
+            const previewImage = document.createElement("img");
+            previewImage.src = sceneResult.image_url;
+            previewImage.alt = `Cena ${index + 1}`;
+            scenePreview.appendChild(previewImage);
+
+            const previewBadge = document.createElement("span");
+            previewBadge.className = "script-image-generator-prompt-card-preview-badge";
+            previewBadge.textContent = isGeneratingScene ? "Atualizando" : "Imagem pronta";
+            scenePreview.appendChild(previewBadge);
+        } else {
+            scenePreview.disabled = true;
+            if (isGeneratingScene) {
+                scenePreview.classList.add("is-loading");
+            }
+
+            const emptyState = document.createElement("div");
+            emptyState.className = "script-image-generator-prompt-card-preview-empty";
+
+            const emptyTitle = document.createElement("strong");
+            emptyTitle.textContent = isGeneratingScene ? `Gerando cena ${index + 1}...` : `Imagem da cena ${index + 1}`;
+
+            const emptyCopy = document.createElement("small");
+            emptyCopy.textContent = isGeneratingScene
+                ? "A sequencia segue assim que este frame terminar."
+                : "A imagem desta cena aparece aqui assim que a geracao avancar.";
+
+            emptyState.appendChild(emptyTitle);
+            emptyState.appendChild(emptyCopy);
+            scenePreview.appendChild(emptyState);
+        }
 
         const textarea = document.createElement("textarea");
         textarea.className = "wizard-textarea script-image-generator-prompt";
@@ -12759,6 +12983,7 @@ function renderScriptImageCreatorPromptEditors() {
         textarea.addEventListener("paste", handleScriptImageCreatorPromptPaste);
 
         card.appendChild(head);
+        card.appendChild(scenePreview);
         card.appendChild(textarea);
         host.appendChild(card);
     }
@@ -12856,6 +13081,9 @@ function resetScriptImageCreatorModalState() {
         activeResultIndex: 0,
         promptValues: [""],
         customCountOpen: false,
+        activeSceneIndex: -1,
+        promptPlannerBusy: false,
+        promptPlannerTargetIndex: -1,
         busy: false,
         estimateTimer: null,
         estimateSeq: _scriptImageCreatorState.estimateSeq || 0,
@@ -13121,7 +13349,8 @@ function handleScriptImageCreatorPromptPaste(event) {
         return;
     }
 
-    document.getElementById("script-image-generator-prompt")?.focus();
+    const promptIndex = Number.parseInt(String(event?.target?.dataset?.promptIndex || "0"), 10) || 0;
+    focusScriptImageCreatorPrompt(promptIndex);
     showToast(
         addedCount === 1
             ? "Captura colada nas referências."
@@ -13579,35 +13808,84 @@ function _resolveScriptImageCreatorSceneReferenceUploadIds(options = {}) {
     const baseReferenceUploadIds = Array.isArray(options.baseReferenceUploadIds) ? options.baseReferenceUploadIds : [];
     const sequenceMode = String(options.sequenceMode || "none").trim();
     const firstGeneratedBaseUploadId = String(options.firstGeneratedBaseUploadId || "").trim();
+    const previousGeneratedUploadIds = Array.isArray(options.previousGeneratedUploadIds) ? options.previousGeneratedUploadIds : [];
+    const maxReferences = Math.max(1, Number.parseInt(String(options.maxReferences || 5), 10) || 5);
     const isEditing = !!options.isEditing;
 
+    const mergedReferenceIds = [];
+    const addUnique = (candidateIds) => {
+        for (const rawId of candidateIds) {
+            const uploadId = String(rawId || "").trim();
+            if (!uploadId || mergedReferenceIds.includes(uploadId)) {
+                continue;
+            }
+            mergedReferenceIds.push(uploadId);
+            if (mergedReferenceIds.length >= maxReferences) {
+                break;
+            }
+        }
+    };
+
     if (isEditing || totalScenes <= 1 || sceneIndex === 0) {
-        return baseReferenceUploadIds;
+        addUnique(baseReferenceUploadIds);
+        return mergedReferenceIds;
     }
+
     if (sequenceMode === "reference") {
-        return baseReferenceUploadIds;
+        addUnique(baseReferenceUploadIds);
     }
     if (sequenceMode === "first-generated") {
         if (!firstGeneratedBaseUploadId) {
             throw new Error("A primeira imagem precisa ser criada antes de continuar a sequência.");
         }
-        return [firstGeneratedBaseUploadId];
+        addUnique([firstGeneratedBaseUploadId]);
+        addUnique(baseReferenceUploadIds);
     }
-    return [];
+    if (sequenceMode === "none") {
+        return [];
+    }
+
+    const recentGeneratedIds = previousGeneratedUploadIds
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .reverse();
+    addUnique(recentGeneratedIds);
+    return mergedReferenceIds.slice(0, maxReferences);
 }
 
 async function generateScriptImageFromModal() {
-    if (_scriptImageCreatorState.busy) {
+    if (_scriptImageCreatorState.busy || _scriptImageCreatorState.promptPlannerBusy) {
         return;
     }
 
     const meta = _getScriptImageCreatorModelMeta();
     const isEditing = _isScriptImageCreatorEditMode();
-    const requestedCount = isEditing ? 1 : _getScriptImageCreatorCount();
+    let requestedCount = isEditing ? 1 : _getScriptImageCreatorCount();
     _ensureScriptImageCreatorPromptCapacity(requestedCount);
-    const prompts = _scriptImageCreatorState.promptValues
-        .slice(0, requestedCount)
-        .map((value) => String(value || "").trim());
+    let prompts = _getScriptImageCreatorPromptValues(requestedCount).map((value) => String(value || "").trim());
+    const masterPrompt = String(prompts[0] || "").trim();
+    const missingScenePrompts = !isEditing && requestedCount > 1 && prompts.slice(1).some((value) => !value);
+    const masterRequestsSequence = !isEditing && requestedCount === 1 && _scriptImageCreatorPromptSuggestsMultipleImages(masterPrompt);
+
+    if (masterPrompt && (missingScenePrompts || masterRequestsSequence)) {
+        try {
+            const promptPlan = await _planScriptImageCreatorPrompts({
+                targetIndex: null,
+                rewriteAll: masterRequestsSequence,
+                statusMessage: masterRequestsSequence
+                    ? "Expandindo o prompt mestre em uma sequência de cenas..."
+                    : "Completando os prompts da sequência automaticamente...",
+            });
+            if (promptPlan) {
+                requestedCount = promptPlan.sceneCount;
+                prompts = promptPlan.prompts.map((value) => String(value || "").trim());
+            }
+        } catch (error) {
+            setScriptImageCreatorStatus(`Erro ao criar prompt: ${error.message}`, "error");
+            return;
+        }
+    }
+
     const emptyPromptIndex = prompts.findIndex((value) => !value);
     if (emptyPromptIndex >= 0) {
         alert(requestedCount > 1
@@ -13650,18 +13928,24 @@ async function generateScriptImageFromModal() {
         if (!isEditing) {
             _scriptImageCreatorState.generatedImages = [];
             _scriptImageCreatorState.activeResultIndex = 0;
+            _scriptImageCreatorState.activeSceneIndex = -1;
+            renderScriptImageCreatorPromptEditors();
             renderScriptImageCreatorResults();
         }
 
         for (let sceneIndex = 0; sceneIndex < prompts.length; sceneIndex += 1) {
             lastSceneIndex = sceneIndex;
             const scenePrompt = prompts[sceneIndex];
+            _scriptImageCreatorState.activeSceneIndex = sceneIndex;
+            renderScriptImageCreatorPromptEditors();
             const sceneReferenceUploadIds = _resolveScriptImageCreatorSceneReferenceUploadIds({
                 sceneIndex,
                 totalScenes: prompts.length,
                 baseReferenceUploadIds,
                 sequenceMode,
                 firstGeneratedBaseUploadId,
+                previousGeneratedUploadIds: parsedImages.map((item) => item.upload_id),
+                maxReferences: meta.maxReferences,
                 isEditing,
             });
 
@@ -13755,6 +14039,8 @@ async function generateScriptImageFromModal() {
         setScriptImageCreatorStatus(`Erro ao gerar imagem${sceneLabel}: ${error.message}${partialLabel}`, "error");
     } finally {
         _scriptImageCreatorState.busy = false;
+        _scriptImageCreatorState.activeSceneIndex = -1;
+        renderScriptImageCreatorPromptEditors();
         renderScriptImageCreatorResults();
         if (submitBtn) {
             submitBtn.disabled = false;

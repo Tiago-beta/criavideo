@@ -5320,6 +5320,13 @@ svg.spin {
     gap: 12px;
 }
 
+.script-image-generator-prompt-card-copy {
+    display: grid;
+    gap: 5px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 .script-image-generator-prompt-card-head strong {
     color: var(--text);
     font-size: 0.95rem;
@@ -5336,6 +5343,120 @@ svg.spin {
 .script-image-generator-prompt-card .script-image-generator-prompt {
     min-height: 126px;
     margin: 0;
+}
+
+.script-image-generator-prompt-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.script-image-generator-prompt-card-action {
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid rgba(96, 129, 162, 0.24);
+    border-radius: 999px;
+    background: rgba(3, 17, 31, 0.56);
+    color: var(--text);
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease, color 0.18s ease;
+}
+
+.script-image-generator-prompt-card-action:hover,
+.script-image-generator-prompt-card-action:focus-visible {
+    outline: none;
+    transform: translateY(-1px);
+    border-color: rgba(255, 193, 92, 0.42);
+    color: #fff4cf;
+}
+
+.script-image-generator-prompt-card-action:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+    transform: none;
+}
+
+.script-image-generator-prompt-card-action.is-primary {
+    border-color: rgba(255, 193, 92, 0.38);
+    background: rgba(255, 193, 92, 0.12);
+    color: #ffe3a6;
+}
+
+.script-image-generator-prompt-card-preview {
+    width: 100%;
+    min-height: 150px;
+    border: 1px dashed rgba(96, 129, 162, 0.24);
+    border-radius: 16px;
+    background: rgba(3, 17, 31, 0.42);
+    position: relative;
+    overflow: hidden;
+    padding: 0;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+}
+
+.script-image-generator-prompt-card-preview.is-ready {
+    cursor: pointer;
+    border-style: solid;
+    border-color: rgba(255, 193, 92, 0.26);
+}
+
+.script-image-generator-prompt-card-preview.is-ready:hover,
+.script-image-generator-prompt-card-preview.is-ready:focus-visible {
+    outline: none;
+    border-color: rgba(255, 193, 92, 0.48);
+    transform: translateY(-1px);
+}
+
+.script-image-generator-prompt-card-preview.is-loading {
+    border-color: rgba(0, 212, 255, 0.36);
+    box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.08);
+}
+
+.script-image-generator-prompt-card-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.script-image-generator-prompt-card-preview-badge {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(4, 18, 33, 0.78);
+    border: 1px solid rgba(255, 193, 92, 0.28);
+    color: #ffe3a6;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.script-image-generator-prompt-card-preview-empty {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 8px;
+    padding: 18px;
+    text-align: center;
+}
+
+.script-image-generator-prompt-card-preview-empty strong {
+    color: var(--text);
+    font-size: 0.9rem;
+}
+
+.script-image-generator-prompt-card-preview-empty small {
+    max-width: 320px;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
 }
 
 .form-group.is-disabled .input,
@@ -5694,6 +5815,11 @@ svg.spin {
     .script-image-generator-prompt-card-head span {
         max-width: none;
         text-align: left;
+    }
+
+    .script-image-generator-prompt-card-actions {
+        width: 100%;
+        justify-content: flex-start;
     }
 
     .script-image-generator-footer {

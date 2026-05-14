@@ -1026,9 +1026,227 @@ class ScriptImageGeneratorRequest(BaseModel):
     reference_upload_ids: list[str] = Field(default_factory=list)
 
 
+class ScriptImagePromptPlannerRequest(BaseModel):
+    master_prompt: str
+    scene_count: int = Field(default=1, ge=1, le=20)
+    aspect_ratio: str = "1:1"
+    target_scene_index: Optional[int] = Field(default=None, ge=0, le=19)
+    existing_prompts: list[str] = Field(default_factory=list)
+    reference_image_count: int = Field(default=0, ge=0, le=9)
+    sequence_mode: str = "first-generated"
+    rewrite_all: bool = False
+
+
 class WorkflowImportVideoUrlRequest(BaseModel):
     source_url: str
     formato: str = "video_melhor"
+
+
+_SCRIPT_IMAGE_PROMPT_SCENE_COUNT_RE = re.compile(
+    r"(?i)(?:\b(?:crie|gere|fa[cç]a|monte|mostre|envie)\b[^\n\r]{0,48}?)?(\d{1,2})\s+(?:imagens?|cenas?|fotos?|frames?)\b"
+)
+
+
+def _detect_script_image_prompt_scene_count(master_prompt: str, fallback_count: int) -> int:
+    detected_count = 0
+    for match in _SCRIPT_IMAGE_PROMPT_SCENE_COUNT_RE.finditer(str(master_prompt or "")):
+        try:
+            candidate = int(match.group(1))
+        except Exception:
+            continue
+        if candidate > detected_count:
+            detected_count = candidate
+    normalized_fallback = max(1, min(int(fallback_count or 1), 20))
+    if detected_count <= 0:
+        return normalized_fallback
+    return max(1, min(max(normalized_fallback, detected_count), 20))
+
+
+def _build_script_image_prompt_plan_fallback(
+    master_prompt: str,
+    scene_count: int,
+    aspect_ratio: str,
+    sequence_mode: str,
+    existing_prompts: list[str],
+    target_scene_index: Optional[int],
+    rewrite_all: bool,
+) -> list[str]:
+    normalized_master = re.sub(r"\s+", " ", str(master_prompt or "")).strip()
+    normalized_count = max(1, min(int(scene_count or 1), 20))
+    prompts = [""] * normalized_count
+    for index in range(normalized_count):
+        if index < len(existing_prompts):
+            prompts[index] = str(existing_prompts[index] or "").strip()
+
+    for index in range(normalized_count):
+        if target_scene_index is not None and index != target_scene_index and not rewrite_all:
+            continue
+        if prompts[index] and not rewrite_all and target_scene_index is None:
+            continue
+
+        if normalized_count == 1:
+            prompts[index] = (
+                f"{normalized_master}\n\n"
+                f"Cena unica. Frame fotografico detalhado em {aspect_ratio}, com acabamento ultra realista, continuidade visual forte e composicao cinematografica."
+            ).strip()
+            continue
+
+        if index == 0:
+            prompts[index] = (
+                f"{normalized_master}\n\n"
+                f"Cena 1 de {normalized_count}. Esta e a imagem mestre da sequencia. Defina claramente personagens, ambiente, arquitetura, objetos, horario, clima, figurino e textura visual em formato {aspect_ratio}."
+            ).strip()
+            continue
+
+        continuity_hint = (
+            "Use as referencias originais e o ultimo frame da cena anterior como base visual."
+            if sequence_mode == "reference"
+            else "Use a primeira imagem e o ultimo frame da cena anterior como base visual."
+            if sequence_mode == "first-generated"
+            else "Mantenha a continuidade cronologica com a cena anterior mesmo sem base fixa."
+        )
+        prompts[index] = (
+            f"{normalized_master}\n\n"
+            f"Cena {index + 1} de {normalized_count}. Continuacao cronologica direta da cena {index}. {continuity_hint} "
+            f"Mostre um novo estagio visual do processo, com progresso realista, detalhes materiais coerentes e composicao cinematografica em {aspect_ratio}."
+        ).strip()
+
+    return prompts
+
+
+async def _plan_script_image_prompts(
+    master_prompt: str,
+    scene_count: int,
+    aspect_ratio: str,
+    sequence_mode: str,
+    reference_image_count: int,
+    existing_prompts: list[str],
+    target_scene_index: Optional[int],
+    rewrite_all: bool,
+) -> tuple[int, list[str]]:
+    effective_scene_count = _detect_script_image_prompt_scene_count(master_prompt, scene_count)
+    normalized_existing = [str(item or "").strip() for item in (existing_prompts or [])[:20]]
+    while len(normalized_existing) < effective_scene_count:
+        normalized_existing.append("")
+
+    fallback_prompts = _build_script_image_prompt_plan_fallback(
+        master_prompt=master_prompt,
+        scene_count=effective_scene_count,
+        aspect_ratio=aspect_ratio,
+        sequence_mode=sequence_mode,
+        existing_prompts=normalized_existing,
+        target_scene_index=target_scene_index,
+        rewrite_all=rewrite_all,
+    )
+
+    if not settings.openai_api_key:
+        return effective_scene_count, fallback_prompts
+
+    preserved_indices = [
+        index + 1
+        for index, value in enumerate(normalized_existing[:effective_scene_count])
+        if value and not rewrite_all and (target_scene_index is None or index != target_scene_index)
+    ]
+    existing_section = "\n".join(
+        f"Cena {index + 1}: {value or '[vazio]'}"
+        for index, value in enumerate(normalized_existing[:effective_scene_count])
+    )
+    sequence_label = {
+        "none": "sem base fixa, mas ainda cronologica",
+        "reference": "usar referencias enviadas e frames anteriores",
+        "first-generated": "usar a primeira imagem e os frames anteriores",
+    }.get(str(sequence_mode or "first-generated").strip(), "usar a primeira imagem e os frames anteriores")
+
+    planner_system = (
+        "Voce e um diretor de arte especializado em sequencias de imagens estaticas para video. "
+        "Transforme um prompt mestre em prompts prontos para geracao de imagem, em portugues do Brasil, com continuidade visual e narrativa. "
+        "Cada prompt deve descrever apenas um frame estatico, sem markdown, sem listas, sem explicacoes extras. "
+        "Cena 1 e o frame mestre. Cenas 2+ devem ser continuacoes cronologicas diretas do ultimo frame da cena anterior. "
+        "Mantenha consistencia de personagens, figurino, arquitetura, materiais, clima, luz, lente e estilo, salvo quando o prompt pedir mudanca progressiva. "
+        "Quando o pedido falar de reforma, construcao, transformacao ou processo, distribua o progresso em etapas visuais realistas. "
+        "Retorne SOMENTE JSON no formato {\"scene_count\": N, \"prompts\": [\"...\", \"...\"]}."
+    )
+    planner_user = (
+        f"PROMPT MESTRE:\n{master_prompt.strip()}\n\n"
+        f"CENAS SOLICITADAS: {effective_scene_count}\n"
+        f"FORMATO: {aspect_ratio}\n"
+        f"MODO DE CONTINUIDADE: {sequence_label}\n"
+        f"REFERENCIAS ENVIADAS: {max(0, int(reference_image_count or 0))}\n"
+        f"PROMPTS EXISTENTES:\n{existing_section}\n\n"
+        f"ALVO ESPECIFICO: {'cena ' + str(target_scene_index + 1) if target_scene_index is not None else 'gerar a grade completa'}\n"
+        f"PRESERVAR CENAS JA PREENCHIDAS: {'sim' if preserved_indices else 'nao'}\n"
+        f"INDICES PRESERVADOS: {preserved_indices or 'nenhum'}\n\n"
+        "REGRAS OBRIGATORIAS:\n"
+        "1. Cena 1 deve estabelecer a identidade visual mestre da sequencia.\n"
+        "2. Cenas seguintes devem mostrar progressao cronologica, como se cada imagem partisse do ultimo frame da anterior.\n"
+        "3. Os prompts precisam ser detalhados e prontos para um gerador de imagem: sujeito, ambiente, composicao, luz, textura, profundidade e acabamento.\n"
+        "4. Se ja existir prompt bom em alguma cena preservada, mantenha-o sem reescrever.\n"
+        "5. Nao mencione camera motion de video; descreva um instante visual forte por cena.\n"
+        "6. Se o prompt mestre pedir varias imagens, distribua isso em etapas coerentes, da base ao resultado final."
+    )
+
+    try:
+        response = await _openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": planner_system},
+                {"role": "user", "content": planner_user},
+            ],
+            temperature=0.55,
+            max_tokens=min(4200, 500 + (effective_scene_count * 220)),
+            response_format={"type": "json_object"},
+        )
+        raw_content = str(response.choices[0].message.content or "").strip()
+        payload = json.loads(raw_content)
+        raw_prompts = payload if isinstance(payload, list) else payload.get("prompts") or payload.get("scenes") or []
+        if not isinstance(raw_prompts, list):
+            raise ValueError("Prompt planner returned a non-list payload")
+
+        planned_prompts = list(fallback_prompts)
+        for index in range(effective_scene_count):
+            candidate = str(raw_prompts[index] or "").strip() if index < len(raw_prompts) else ""
+            if not candidate:
+                continue
+            if target_scene_index is not None and index != target_scene_index and not rewrite_all:
+                continue
+            if planned_prompts[index] and not rewrite_all and target_scene_index is None and index in [value - 1 for value in preserved_indices]:
+                continue
+            planned_prompts[index] = candidate
+
+        return effective_scene_count, planned_prompts
+    except Exception as exc:
+        logger.warning("Script image prompt planning failed; using fallback prompts: %s", exc)
+        return effective_scene_count, fallback_prompts
+
+
+@router.post("/script-image/plan-prompts")
+async def plan_script_image_prompts(
+    req: ScriptImagePromptPlannerRequest,
+    user: dict = Depends(get_current_user),
+):
+    _ = user
+    master_prompt = str(req.master_prompt or "").strip()
+    if not master_prompt:
+        raise HTTPException(status_code=400, detail="Descreva o prompt mestre antes de criar os prompts.")
+    if len(master_prompt) > 6000:
+        raise HTTPException(status_code=400, detail="Prompt mestre muito longo.")
+    if req.aspect_ratio not in {"1:1", "16:9", "9:16", "4:3", "3:4"}:
+        raise HTTPException(status_code=400, detail="Formato invalido para planejar os prompts.")
+
+    effective_scene_count, prompts = await _plan_script_image_prompts(
+        master_prompt=master_prompt,
+        scene_count=req.scene_count,
+        aspect_ratio=req.aspect_ratio,
+        sequence_mode=req.sequence_mode,
+        reference_image_count=req.reference_image_count,
+        existing_prompts=req.existing_prompts,
+        target_scene_index=req.target_scene_index,
+        rewrite_all=bool(req.rewrite_all),
+    )
+    return {
+        "scene_count": effective_scene_count,
+        "prompts": prompts,
+    }
 
 
 @router.post("/workflow/generate-image")
