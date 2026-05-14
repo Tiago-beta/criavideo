@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v440 loaded");
+console.log("[CriaVideo] app.js v441 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -30453,6 +30453,14 @@ function _editorTransitionSlotLabel(slot) {
     return `${_editorTransitionClipLabel(slot.fromLayer)} → ${_editorTransitionClipLabel(slot.toLayer)}`;
 }
 
+function _editorGetVideoTransitionSlots() {
+    return _editorGetTransitionSlots().filter((slot) => {
+        const fromKind = String(slot?.fromLayer?.kind || "").trim().toLowerCase();
+        const toKind = String(slot?.toLayer?.kind || "").trim().toLowerCase();
+        return fromKind === "video" && toKind === "video";
+    });
+}
+
 function _editorSetTransitionType(slotKey, type) {
     const safeKey = String(slotKey || "").trim();
     if (!safeKey) {
@@ -30491,6 +30499,49 @@ function _editorSetTransitionType(slotKey, type) {
     }
 }
 window._editorSetTransitionType = _editorSetTransitionType;
+
+function _editorApplyTransitionTypeToAllVideoSlots(slotKey, type) {
+    const safeType = String(type || "").trim();
+    if (!safeType) {
+        showToast("Selecione um tipo de transição antes de aplicar em todas.", "error");
+        return;
+    }
+
+    const videoSlots = _editorGetVideoTransitionSlots();
+    if (!videoSlots.length) {
+        showToast("Não há emendas de vídeo disponíveis para aplicar a transição.", "error");
+        return;
+    }
+
+    _editorSaveState();
+
+    const videoSlotKeys = new Set(videoSlots.map((slot) => String(slot.key || "")));
+    _editor.transitions = (_editor.transitions || []).filter((transition) => !videoSlotKeys.has(String(transition?.key || "")));
+    videoSlots.forEach((slot) => {
+        _editor.transitions.push({
+            key: slot.key,
+            track: slot.track,
+            fromId: slot.fromId,
+            toId: slot.toId,
+            type: safeType,
+        });
+    });
+
+    const selectedSlot = videoSlots.find((slot) => String(slot.key || "") === String(slotKey || "")) || videoSlots[0];
+    if (selectedSlot) {
+        _editor.selectedClip = { kind: "transition", id: selectedSlot.key, track: selectedSlot.track };
+        _editor.selectedInsertTrack = _editorResolveInsertTrackForUi(selectedSlot.track);
+    }
+
+    _editorRenderProps();
+    _editorRenderTimeline();
+    _editorRenderMediaLayers();
+
+    const appliedCount = videoSlots.length;
+    const countLabel = appliedCount === 1 ? "1 emenda de vídeo" : `${appliedCount} emendas de vídeo`;
+    showToast(`Transição ${_editorGetTransitionOption(safeType).label.toLowerCase()} aplicada em ${countLabel}.`, "success");
+}
+window._editorApplyTransitionTypeToAllVideoSlots = _editorApplyTransitionTypeToAllVideoSlots;
 
 // ---------- Tool selection ----------
 function _editorSelectTool(toolName) {
@@ -31018,9 +31069,12 @@ function _editorRenderProps() {
         `;
     } else if (tool === "transitions") {
         const slots = _editorGetTransitionSlots();
+        const videoSlots = _editorGetVideoTransitionSlots();
         const selectedKey = _editor.selectedClip.kind === "transition" ? String(_editor.selectedClip.id || "") : "";
         const selectedSlot = slots.find((slot) => slot.key === selectedKey) || null;
         const selectedTransition = selectedSlot ? _editorGetTransitionByKey(selectedSlot.key) : null;
+        const selectedTransitionType = String(selectedTransition?.type || "").trim();
+        const showApplyAllButton = Boolean(selectedTransitionType) && videoSlots.length > 1;
 
         container.innerHTML = `
             <div class="editor-props-title">Transições</div>
@@ -31041,6 +31095,7 @@ function _editorRenderProps() {
                     }).join("")}
                 </div>
                 ${selectedSlot ? `<button class="editor-add-btn" type="button" onclick="_editorSetTransitionType('${selectedSlot.key}', '')" style="margin-top:6px">Remover transição</button>` : ""}
+                ${showApplyAllButton ? `<button class="editor-add-btn" type="button" onclick="_editorApplyTransitionTypeToAllVideoSlots('${selectedSlot?.key || ""}', '${selectedTransitionType}')" style="margin-top:10px">Aplicar esta transição em todas as emendas de vídeo (${videoSlots.length})</button>` : ""}
             ` : '<div class="editor-transition-empty">Adicione pelo menos dois clipes em sequência na mesma faixa.</div>'}
         `;
     } else if (tool === "filters") {
