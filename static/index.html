@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260514-05">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260514-06">
     <script>
     // Force SW refresh — bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 446;
+        var REQUIRED_VER = 447;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -420,6 +420,19 @@
                                         </div>
                                     </div>
                                     <div id="publish-selected-render-info" class="publish-selected-render-info">Nenhum video selecionado.</div>
+                                    <div id="pub-upload-loading" class="publish-upload-loading" hidden>
+                                        <div class="publish-upload-loading-head">
+                                            <div class="publish-upload-loading-copy">
+                                                <strong>Enviando vídeo</strong>
+                                                <span id="pub-upload-loading-file"></span>
+                                            </div>
+                                            <span id="pub-upload-loading-percent">0%</span>
+                                        </div>
+                                        <div class="progress-bar publish-upload-progress" aria-hidden="true">
+                                            <div id="pub-upload-loading-fill" class="progress-bar-fill publish-upload-progress-fill" style="width: 0%;"></div>
+                                        </div>
+                                        <p id="pub-upload-loading-status" class="publish-upload-loading-status">Preparando upload do vídeo...</p>
+                                    </div>
                                     <div id="pub-render-preview-card" class="publish-render-preview-card" hidden>
                                         <video id="pub-render-preview" class="publish-render-preview" controls playsinline preload="metadata"></video>
                                     </div>
@@ -427,7 +440,7 @@
                                         <div class="publish-analysis-actions">
                                             <button class="btn btn-primary" id="btn-publish-analyze" type="button">
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
-                                                <span id="btn-publish-analyze-label">Analisar 1 min</span>
+                                                <span id="btn-publish-analyze-label">Analisar</span>
                                             </button>
                                             <div class="credit-estimate-pill similar-analysis-estimate" id="publish-scene-analysis-estimate" hidden>Calculando custo...</div>
                                         </div>
@@ -484,7 +497,13 @@
                                             <div class="spinner-small"></div>
                                             <span>Gerando thumbnail com IA...</span>
                                         </div>
-                                        <img id="pub-thumbnail-preview" class="pub-thumbnail-preview" alt="Thumbnail preview" hidden>
+                                        <div id="pub-thumbnail-preview-wrap" class="pub-thumbnail-preview-wrap" hidden>
+                                            <img id="pub-thumbnail-preview" class="pub-thumbnail-preview" alt="Thumbnail preview" hidden>
+                                            <a id="btn-download-publish-thumb" class="pub-thumbnail-download-btn" href="#" download="thumbnail.jpg" hidden title="Baixar thumbnail" aria-label="Baixar thumbnail">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                                <span>Baixar</span>
+                                            </a>
+                                        </div>
                                         <button id="btn-regenerate-thumb" class="btn btn-secondary btn-sm" type="button" hidden>Gerar thumbnail</button>
                                     </div>
                                     <div id="publish-action-row" class="publish-action-row">
@@ -3944,8 +3963,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260514-05"></script>
-    <script src="/video/static/pwa.js?v=20260514-05"></script>
+    <script src="/video/static/app.js?v=20260514-06"></script>
+    <script src="/video/static/pwa.js?v=20260514-06"></script>
 </body>
 </html>
 

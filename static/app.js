@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v446 loaded");
+console.log("[CriaVideo] app.js v447 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -36,6 +36,7 @@ let _publishRenderLibrary = {
 let _publishThumbReferenceUploadId = "";
 let _publishThumbReferenceObjectUrl = "";
 let _publishLastThumbnailPrompt = "";
+let _publishThumbnailDownloadName = "thumbnail.jpg";
 let _publishAnalysisState = {
     renderId: 0,
     projectId: 0,
@@ -441,6 +442,75 @@ async function apiForm(path, formData, options = {}) {
         return null;
     }
     return response.json();
+}
+
+function apiFormWithProgress(path, formData, options = {}) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(options.method || "POST", `${API}${path}`, true);
+
+        const headers = {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(options.headers || {}),
+        };
+        Object.entries(headers).forEach(([key, value]) => {
+            if (value == null) {
+                return;
+            }
+            xhr.setRequestHeader(key, String(value));
+        });
+
+        if (typeof options.onUploadProgress === "function") {
+            xhr.upload.addEventListener("progress", (event) => {
+                const loaded = Number(event.loaded || 0);
+                const total = Number(event.total || 0);
+                const progress = event.lengthComputable && total > 0 ? loaded / total : 0;
+                options.onUploadProgress({
+                    loaded,
+                    total,
+                    lengthComputable: !!event.lengthComputable,
+                    progress,
+                });
+            });
+            xhr.upload.addEventListener("load", () => {
+                if (typeof options.onUploadProcessing === "function") {
+                    options.onUploadProcessing();
+                }
+            });
+        }
+
+        xhr.onerror = () => {
+            reject(new Error("Falha de conexão ao enviar arquivos. Verifique a internet e tente novamente."));
+        };
+
+        xhr.onload = () => {
+            if (xhr.status === 401) {
+                clearSession();
+                showAuth("Sua sessao expirou. Entre novamente.");
+                reject(new Error("Unauthorized"));
+                return;
+            }
+
+            let data = null;
+            try {
+                data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+            } catch {
+                data = null;
+            }
+
+            if (xhr.status < 200 || xhr.status >= 300) {
+                const error = new Error(getApiErrorMessage(data || {}, xhr.statusText || "Erro inesperado"));
+                error.apiData = data || {};
+                error.status = xhr.status;
+                reject(error);
+                return;
+            }
+
+            resolve(data);
+        };
+
+        xhr.send(formData);
+    });
 }
 
 function setSession(accessToken, user) {
@@ -16793,6 +16863,31 @@ function _isPublishAnalysisReady(project = null) {
     return Boolean(_publishAnalysisState.projectId && (stage === "analysis_ready" || scenes.length));
 }
 
+function _setPublishUploadProgress({ active = false, progress = 0, message = "", fileName = "" } = {}) {
+    const wrapEl = document.getElementById("pub-upload-loading");
+    const fillEl = document.getElementById("pub-upload-loading-fill");
+    const percentEl = document.getElementById("pub-upload-loading-percent");
+    const statusEl = document.getElementById("pub-upload-loading-status");
+    const fileEl = document.getElementById("pub-upload-loading-file");
+    const boundedProgress = Math.max(0, Math.min(100, Number(progress || 0)));
+
+    if (wrapEl) {
+        wrapEl.hidden = !active;
+    }
+    if (fillEl) {
+        fillEl.style.width = `${boundedProgress}%`;
+    }
+    if (percentEl) {
+        percentEl.textContent = active ? `${Math.round(boundedProgress)}%` : "";
+    }
+    if (statusEl) {
+        statusEl.textContent = active ? (String(message || "Enviando video...").trim() || "Enviando video...") : "";
+    }
+    if (fileEl) {
+        fileEl.textContent = active && fileName ? `Arquivo: ${fileName}` : "";
+    }
+}
+
 function _refreshPublishAnalysisActions() {
     const renderId = Number(document.getElementById("pub-render-select")?.value || 0);
     const hasRender = renderId > 0;
@@ -16800,22 +16895,33 @@ function _refreshPublishAnalysisActions() {
     const analyzeBtn = document.getElementById("btn-publish-analyze");
     const analyzeLabel = document.getElementById("btn-publish-analyze-label");
     const generateBtn = document.getElementById("btn-generate-publish-ai");
+    const previewCard = document.getElementById("pub-render-preview-card");
+    const previewVideo = document.getElementById("pub-render-preview");
     const isAnalyzing = !!_publishAnalysisState.running;
     const isGenerating = !!_publishAnalysisState.generatingMetadata;
     const analysisReady = _isPublishAnalysisReady();
 
     if (analysisCard) {
         analysisCard.hidden = !hasRender;
+        analysisCard.classList.toggle("is-analyzing", hasRender && isAnalyzing);
     }
     if (analyzeBtn) {
         analyzeBtn.disabled = !hasRender || isAnalyzing || isGenerating;
+        analyzeBtn.classList.toggle("is-analyzing", hasRender && isAnalyzing);
+        analyzeBtn.setAttribute("aria-busy", isAnalyzing ? "true" : "false");
     }
     if (analyzeLabel) {
-        analyzeLabel.textContent = isAnalyzing ? "Analisando..." : "Analisar 1 min";
+        analyzeLabel.textContent = isAnalyzing ? "Analisando..." : "Analisar";
     }
     if (generateBtn) {
         generateBtn.disabled = !hasRender || !analysisReady || isAnalyzing || isGenerating;
         generateBtn.textContent = isGenerating ? "Gerando..." : "Gerar título e descrição";
+    }
+    if (previewCard) {
+        previewCard.classList.toggle("is-analyzing", hasRender && isAnalyzing);
+    }
+    if (previewVideo) {
+        previewVideo.classList.toggle("is-analyzing", hasRender && isAnalyzing);
     }
 }
 
@@ -16927,9 +17033,7 @@ async function updatePublishAnalysisCreditEstimate() {
             duration_seconds: durationSeconds,
             analysis_mode: "scene",
         },
-        (creditsNeeded) => fullDurationSeconds > PUBLISH_ANALYSIS_MAX_SECONDS
-            ? `Custo do 1º minuto: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`
-            : `Custo da análise: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
+        (creditsNeeded) => `Custo: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
     );
 }
 
@@ -17150,10 +17254,44 @@ async function _publishUploadVideoAndSelect(input) {
 
     try {
         showToast("Enviando video para publicar...");
+        _setPublishUploadProgress({
+            active: true,
+            progress: 4,
+            message: "Preparando upload do video...",
+            fileName: String(file.name || "video").trim(),
+        });
         const formData = new FormData();
         formData.append("file", file);
-        const payload = await apiForm("/video/editor/upload-video", formData, { method: "POST" });
+        const payload = await apiFormWithProgress("/video/editor/upload-video", formData, {
+            method: "POST",
+            onUploadProgress: ({ progress, lengthComputable }) => {
+                const percent = lengthComputable
+                    ? Math.max(6, Math.min(94, Math.round(progress * 100)))
+                    : 35;
+                _setPublishUploadProgress({
+                    active: true,
+                    progress: percent,
+                    message: percent >= 94 ? "Finalizando envio do video..." : "Enviando video para a biblioteca...",
+                    fileName: String(file.name || "video").trim(),
+                });
+            },
+            onUploadProcessing: () => {
+                _setPublishUploadProgress({
+                    active: true,
+                    progress: 96,
+                    message: "Processando video enviado...",
+                    fileName: String(file.name || "video").trim(),
+                });
+            },
+        });
         const uploadedProjectId = parseInt(payload?.project_id || "0", 10) || 0;
+
+        _setPublishUploadProgress({
+            active: true,
+            progress: 100,
+            message: "Video pronto. Selecionando automaticamente...",
+            fileName: String(file.name || "video").trim(),
+        });
 
         await loadRenders(uploadedProjectId);
         const selectedRenderId = parseInt(document.getElementById("pub-render-select")?.value || "", 10) || 0;
@@ -17167,6 +17305,7 @@ async function _publishUploadVideoAndSelect(input) {
     } catch (error) {
         showToast(`Erro ao enviar video: ${error.message}`, "error");
     } finally {
+        _setPublishUploadProgress({ active: false });
         input.value = "";
     }
 }
@@ -17746,22 +17885,75 @@ async function handlePublishThumbReferenceSelect(event) {
 function clearPublishThumbnail() {
     const thumbArea = document.getElementById("pub-thumbnail-area");
     const thumbLoading = document.getElementById("pub-thumbnail-loading");
+    const thumbPreviewWrap = document.getElementById("pub-thumbnail-preview-wrap");
     const thumbPreview = document.getElementById("pub-thumbnail-preview");
+    const downloadBtn = document.getElementById("btn-download-publish-thumb");
     const btnRegen = document.getElementById("btn-regenerate-thumb");
 
     if (thumbArea) thumbArea.hidden = true;
     if (thumbLoading) thumbLoading.hidden = true;
+    if (thumbPreviewWrap) thumbPreviewWrap.hidden = true;
     if (thumbPreview) {
         thumbPreview.hidden = true;
         thumbPreview.src = "";
         thumbPreview.removeAttribute("data-raw-url");
     }
+    if (downloadBtn) {
+        downloadBtn.hidden = true;
+        downloadBtn.removeAttribute("href");
+        downloadBtn.setAttribute("download", "thumbnail.jpg");
+    }
+    _publishThumbnailDownloadName = "thumbnail.jpg";
     if (btnRegen) btnRegen.hidden = true;
+}
+
+function _buildPublishThumbnailDownloadName(seedValue = "") {
+    const normalized = String(seedValue || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 60);
+    return `${normalized || "thumbnail"}.jpg`;
+}
+
+function _resolvePublishThumbnailDownloadName(renderId = 0) {
+    const manualTitle = String(document.getElementById("pub-title")?.value || "").trim();
+    const selectedMeta = _getPublishSelectedRenderMeta(renderId);
+    const fallbackTitle = String(selectedMeta?.title || selectedMeta?.picker_label || "").trim();
+    return _buildPublishThumbnailDownloadName(manualTitle || fallbackTitle || "thumbnail");
+}
+
+function _syncPublishThumbnailPreviewUi(thumbnailUrl = "", downloadName = "") {
+    const thumbPreviewWrap = document.getElementById("pub-thumbnail-preview-wrap");
+    const thumbPreview = document.getElementById("pub-thumbnail-preview");
+    const downloadBtn = document.getElementById("btn-download-publish-thumb");
+    const cleanUrl = String(thumbnailUrl || "").trim();
+    const hasPreview = !!cleanUrl;
+
+    if (thumbPreviewWrap) {
+        thumbPreviewWrap.hidden = !hasPreview;
+    }
+    if (thumbPreview) {
+        thumbPreview.hidden = !hasPreview;
+    }
+    if (downloadBtn) {
+        downloadBtn.hidden = !hasPreview;
+        if (hasPreview) {
+            downloadBtn.href = cleanUrl;
+            downloadBtn.setAttribute("download", downloadName || _publishThumbnailDownloadName || "thumbnail.jpg");
+        } else {
+            downloadBtn.removeAttribute("href");
+            downloadBtn.setAttribute("download", "thumbnail.jpg");
+        }
+    }
 }
 
 function setPublishThumbnailManualState(hasPreview = false) {
     const thumbArea = document.getElementById("pub-thumbnail-area");
     const thumbLoading = document.getElementById("pub-thumbnail-loading");
+    const thumbPreviewWrap = document.getElementById("pub-thumbnail-preview-wrap");
     const thumbPreview = document.getElementById("pub-thumbnail-preview");
     const btnRegen = document.getElementById("btn-regenerate-thumb");
 
@@ -17771,6 +17963,12 @@ function setPublishThumbnailManualState(hasPreview = false) {
         thumbPreview.hidden = true;
         thumbPreview.src = "";
         thumbPreview.removeAttribute("data-raw-url");
+    }
+    if (thumbPreviewWrap && !hasPreview) {
+        thumbPreviewWrap.hidden = true;
+    }
+    if (!hasPreview) {
+        _syncPublishThumbnailPreviewUi("");
     }
     if (btnRegen) {
         btnRegen.hidden = false;
@@ -17807,16 +18005,20 @@ function applyPublishDraftThumbnail(thumbnailUrl) {
 
     const thumbArea = document.getElementById("pub-thumbnail-area");
     const thumbLoading = document.getElementById("pub-thumbnail-loading");
+    const thumbPreviewWrap = document.getElementById("pub-thumbnail-preview-wrap");
     const thumbPreview = document.getElementById("pub-thumbnail-preview");
     const btnRegen = document.getElementById("btn-regenerate-thumb");
+    _publishThumbnailDownloadName = _resolvePublishThumbnailDownloadName();
 
     if (thumbArea) thumbArea.hidden = false;
     if (thumbLoading) thumbLoading.hidden = true;
+    if (thumbPreviewWrap) thumbPreviewWrap.hidden = false;
     if (thumbPreview) {
         thumbPreview.dataset.rawUrl = cleanUrl;
         thumbPreview.src = `${cleanUrl}?t=${Date.now()}`;
         thumbPreview.hidden = false;
     }
+    _syncPublishThumbnailPreviewUi(cleanUrl, _publishThumbnailDownloadName);
     if (btnRegen) {
         btnRegen.hidden = false;
         btnRegen.disabled = false;
@@ -18611,15 +18813,19 @@ async function onRenderSelected(renderId) {
 async function generatePublishThumbnail(renderId, customTitle, customDescription = "", thumbnailPrompt = "") {
     const thumbArea = document.getElementById("pub-thumbnail-area");
     const thumbLoading = document.getElementById("pub-thumbnail-loading");
+    const thumbPreviewWrap = document.getElementById("pub-thumbnail-preview-wrap");
     const thumbPreview = document.getElementById("pub-thumbnail-preview");
     const btnRegen = document.getElementById("btn-regenerate-thumb");
 
     thumbArea.hidden = false;
     thumbLoading.hidden = false;
+    if (thumbPreviewWrap) thumbPreviewWrap.hidden = true;
     thumbPreview.hidden = true;
+    _syncPublishThumbnailPreviewUi("");
     btnRegen.hidden = false;
     btnRegen.disabled = true;
     btnRegen.textContent = "Gerando thumbnail...";
+    _publishThumbnailDownloadName = _resolvePublishThumbnailDownloadName(renderId);
 
     try {
         const body = { render_id: renderId };
@@ -18641,6 +18847,8 @@ async function generatePublishThumbnail(renderId, customTitle, customDescription
             thumbPreview.dataset.rawUrl = data.thumbnail_url;
             thumbPreview.src = data.thumbnail_url + "?t=" + Date.now();
             thumbPreview.hidden = false;
+            if (thumbPreviewWrap) thumbPreviewWrap.hidden = false;
+            _syncPublishThumbnailPreviewUi(data.thumbnail_url, _publishThumbnailDownloadName);
             btnRegen.hidden = false;
             btnRegen.textContent = "Gerar nova thumbnail";
         }
