@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v441 loaded");
+console.log("[CriaVideo] app.js v442 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -24945,6 +24945,15 @@ function _editorGetAudioTrackEndTime() {
     }, 0);
 }
 
+function _editorGetMediaLayerTimelineBounds(layer) {
+    const normalizedLayer = _editorNormalizeMediaLayer(layer);
+    return {
+        kind: String(normalizedLayer?.kind || "").trim().toLowerCase(),
+        startTime: Math.max(0, Number(normalizedLayer?.startTime || 0)),
+        endTime: Math.max(0, Number(normalizedLayer?.endTime || 0)),
+    };
+}
+
 function _editorGetVideoTrackEndTime() {
     if (!_editor.videoSegments.length) {
         return Math.max(0, Number(_editor.duration || 0));
@@ -24958,7 +24967,7 @@ function _editorGetVideoTrackEndTime() {
 function _editorGetLayerTrackEndTime() {
     if (!_editor.mediaLayers.length) return 0;
     return _editor.mediaLayers.reduce((maxEnd, layer) => {
-        const end = Math.max(0, Number(layer?.endTime || 0));
+        const { endTime: end } = _editorGetMediaLayerTimelineBounds(layer);
         return Math.max(maxEnd, end);
     }, 0);
 }
@@ -25022,7 +25031,8 @@ function _editorCollectNonBaseTimelineRanges() {
     };
 
     (_editor.mediaLayers || []).forEach((layer) => {
-        pushRange(layer?.startTime, layer?.endTime);
+        const { startTime, endTime } = _editorGetMediaLayerTimelineBounds(layer);
+        pushRange(startTime, endTime);
     });
     if (_editorShouldShowAudioTrack()) {
         (_editor.audioSegments || []).forEach((segment) => {
@@ -25129,8 +25139,8 @@ function _editorGetTimelineDuration() {
 function _editorGetLayerVideoAppendStart() {
     const baseEnd = _editorGetVideoTrackEndTime();
     const layerVideoEnd = _editor.mediaLayers.reduce((maxEnd, layer) => {
-        if (String(layer?.kind || "") !== "video") return maxEnd;
-        const end = Math.max(0, Number(layer?.endTime || 0));
+        const { kind, endTime: end } = _editorGetMediaLayerTimelineBounds(layer);
+        if (kind !== "video") return maxEnd;
         return Math.max(maxEnd, end);
     }, 0);
     return Math.max(baseEnd, layerVideoEnd);
