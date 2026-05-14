@@ -119,6 +119,7 @@ Se esses 4 pontos não forem sincronizados, o navegador pode continuar carregand
 - Ao mexer no editor (`static/app.js`, `static/index.html`, `static/style.css`), preservar recursos já restaurados anteriormente.
 - Em qualquer UI nova, priorizar visual moderno, pouco texto, mais ícones e menos blocos explicativos.
 - Evitar visual genérico/clean demais quando o pedido permitir algo mais marcante e direto.
+- Em fluxos de criação e modais de criação, preferir interface limpa: títulos curtos, ações com ícones quando possível, sem textos explicativos longos e sem áreas de preview vazias antes da ação do usuário.
 - Se a tarefa tocar qualquer arquivo do bundle frontend (`static/app.js`, `static/index.html`, `static/style.css`, `static/pwa.js`, `static/sw.js`), tratar esses arquivos como um conjunto. Nunca restaurar ou publicar só HTML/JS sem conferir o CSS correspondente e o versionamento do PWA.
 - Antes de editar hotfix de frontend, rodar `git status --short`. Se algum arquivo do bundle frontend já estiver modificado por outra janela, NAO editar por cima no workspace principal. Criar um `git worktree` limpo no commit atual e fazer o hotfix nele para evitar reverter partes recentes sem perceber.
 - Em qualquer restauracao de recurso visual, validar localmente pelo menos 1 token de cada camada antes do deploy:

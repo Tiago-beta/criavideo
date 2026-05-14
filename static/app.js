@@ -12807,46 +12807,26 @@ async function createScriptImageCreatorPrompt(index) {
 function _getScriptImageCreatorPromptPlaceholder(index, totalCount) {
     const meta = _getScriptImageCreatorModelMeta();
     if (_isScriptImageCreatorEditMode()) {
-        return "Ex.: mantenha a personagem e troque o cenário para um café noturno.";
+        return "Ajuste o prompt";
     }
     if (meta.requiresReference) {
         return index === 0
-            ? "Descreva como a referência deve virar a cena inicial."
-            : `Descreva a cena ${index + 1} e o que muda em relação à base escolhida.`;
+            ? "Cena inicial"
+            : `Cena ${index + 1}`;
     }
     if (totalCount > 1) {
         return index === 0
-            ? "Defina a cena base da sequência com personagem, ambiente e estilo."
-            : `Descreva a cena ${index + 1} e o avanço visual da sequência.`;
+            ? "Prompt mestre"
+            : `Cena ${index + 1}`;
     }
-    return "Descreva a imagem que você quer criar. Use referências se quiser guiar enquadramento, pose ou estilo.";
+    return "Descreva a imagem";
 }
 
-function _getScriptImageCreatorPromptNote(index, totalCount) {
-    if (_isScriptImageCreatorEditMode()) {
-        return "Explique o ajuste desejado mantendo a imagem coerente com o restante.";
+function _getScriptImageCreatorActionIcon(kind) {
+    if (kind === "edit") {
+        return '<svg class="script-image-generator-prompt-card-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>';
     }
-    if (totalCount <= 1) {
-        return "Você pode usar referências para manter direção de arte, pose ou estilo visual.";
-    }
-
-    const sequenceMode = _getScriptImageCreatorSequenceMode();
-    if (index === 0) {
-        if (sequenceMode === "first-generated") {
-            return "Esta primeira cena vira a base visual das próximas imagens.";
-        }
-        if (sequenceMode === "reference") {
-            return "As próximas cenas vão seguir as referências enviadas como base visual.";
-        }
-        return "Esta primeira cena abre a sequência sem reaproveitar uma base fixa nas próximas.";
-    }
-    if (sequenceMode === "first-generated") {
-        return "Esta cena será gerada usando a 1a imagem como base para manter personagem, figurino e estilo.";
-    }
-    if (sequenceMode === "reference") {
-        return "Esta cena será gerada usando as referências enviadas como base de continuidade.";
-    }
-    return "Esta cena será criada apenas com este prompt, sem reaproveitar base visual fixa.";
+    return '<svg class="script-image-generator-prompt-card-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3z"></path><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"></path></svg>';
 }
 
 function handleScriptImageCreatorPromptInput(index, value) {
@@ -12862,14 +12842,15 @@ function renderScriptImageCreatorPromptEditors() {
     const totalCount = _isScriptImageCreatorEditMode() ? 1 : _getScriptImageCreatorCount();
     _ensureScriptImageCreatorPromptCapacity(totalCount);
     if (summary) {
-        summary.textContent = totalCount === 1 ? "1 cena" : `${totalCount} cenas`;
+        summary.textContent = String(totalCount);
     }
 
     host.innerHTML = "";
     for (let index = 0; index < totalCount; index += 1) {
         const card = document.createElement("div");
         card.className = "script-image-generator-prompt-card";
-        if (!_isScriptImageCreatorEditMode() && totalCount > 1 && index === 0) {
+        const isMasterCard = !_isScriptImageCreatorEditMode() && totalCount > 1 && index === 0;
+        if (isMasterCard) {
             card.classList.add("is-base");
         }
 
@@ -12880,13 +12861,9 @@ function renderScriptImageCreatorPromptEditors() {
         copy.className = "script-image-generator-prompt-card-copy";
 
         const title = document.createElement("strong");
-        title.textContent = _isScriptImageCreatorEditMode() ? "Editar imagem" : `Cena ${index + 1}`;
-
-        const note = document.createElement("span");
-        note.textContent = _getScriptImageCreatorPromptNote(index, totalCount);
+        title.textContent = _isScriptImageCreatorEditMode() ? "Editar" : (isMasterCard ? "Mestre" : `Cena ${index + 1}`);
 
         copy.appendChild(title);
-        copy.appendChild(note);
 
         const actions = document.createElement("div");
         actions.className = "script-image-generator-prompt-card-actions";
@@ -12894,11 +12871,15 @@ function renderScriptImageCreatorPromptEditors() {
         const createPromptBtn = document.createElement("button");
         createPromptBtn.type = "button";
         createPromptBtn.className = "script-image-generator-prompt-card-action is-primary";
-        createPromptBtn.textContent = (_scriptImageCreatorState.promptPlannerBusy
+        const createPromptBusy = _scriptImageCreatorState.promptPlannerBusy
             && ((_scriptImageCreatorState.promptPlannerTargetIndex < 0 && index === 0 && totalCount > 1)
-                || _scriptImageCreatorState.promptPlannerTargetIndex === index))
-            ? "Criando..."
-            : (!_isScriptImageCreatorEditMode() && totalCount > 1 && index === 0 ? "Criar prompts" : "Criar prompt");
+                || _scriptImageCreatorState.promptPlannerTargetIndex === index);
+        const createPromptLabel = createPromptBusy
+            ? "Criando prompt"
+            : (isMasterCard ? "Criar prompts" : "Criar prompt");
+        createPromptBtn.title = createPromptLabel;
+        createPromptBtn.setAttribute("aria-label", createPromptLabel);
+        createPromptBtn.innerHTML = `${_getScriptImageCreatorActionIcon("create")}<span>${createPromptBusy ? "Criando" : "Criar"}</span>`;
         createPromptBtn.disabled = _scriptImageCreatorState.busy || _scriptImageCreatorState.promptPlannerBusy;
         createPromptBtn.onclick = () => {
             createScriptImageCreatorPrompt(index);
@@ -12907,7 +12888,9 @@ function renderScriptImageCreatorPromptEditors() {
         const editPromptBtn = document.createElement("button");
         editPromptBtn.type = "button";
         editPromptBtn.className = "script-image-generator-prompt-card-action";
-        editPromptBtn.textContent = "Editar prompt";
+        editPromptBtn.title = "Editar prompt";
+        editPromptBtn.setAttribute("aria-label", "Editar prompt");
+        editPromptBtn.innerHTML = `${_getScriptImageCreatorActionIcon("edit")}<span>Editar</span>`;
         editPromptBtn.disabled = _scriptImageCreatorState.busy;
         editPromptBtn.onclick = () => {
             focusScriptImageCreatorPrompt(index);
@@ -12929,6 +12912,7 @@ function renderScriptImageCreatorPromptEditors() {
         const sceneResult = _getScriptImageCreatorSceneResult(index);
         const sceneResultIndex = _getScriptImageCreatorSceneResultIndex(index);
         const isGeneratingScene = _scriptImageCreatorState.busy && _scriptImageCreatorState.activeSceneIndex === index;
+        const shouldShowScenePreview = Boolean(sceneResult?.image_url) || isGeneratingScene;
         if (sceneResult?.image_url && sceneResultIndex >= 0) {
             scenePreview.classList.add("is-ready");
             if (isGeneratingScene) {
@@ -12946,7 +12930,7 @@ function renderScriptImageCreatorPromptEditors() {
 
             const previewBadge = document.createElement("span");
             previewBadge.className = "script-image-generator-prompt-card-preview-badge";
-            previewBadge.textContent = isGeneratingScene ? "Atualizando" : "Imagem pronta";
+            previewBadge.textContent = isGeneratingScene ? "Gerando" : "Pronta";
             scenePreview.appendChild(previewBadge);
         } else {
             scenePreview.disabled = true;
@@ -12958,15 +12942,9 @@ function renderScriptImageCreatorPromptEditors() {
             emptyState.className = "script-image-generator-prompt-card-preview-empty";
 
             const emptyTitle = document.createElement("strong");
-            emptyTitle.textContent = isGeneratingScene ? `Gerando cena ${index + 1}...` : `Imagem da cena ${index + 1}`;
-
-            const emptyCopy = document.createElement("small");
-            emptyCopy.textContent = isGeneratingScene
-                ? "A sequencia segue assim que este frame terminar."
-                : "A imagem desta cena aparece aqui assim que a geracao avancar.";
+            emptyTitle.textContent = isGeneratingScene ? "Gerando..." : "";
 
             emptyState.appendChild(emptyTitle);
-            emptyState.appendChild(emptyCopy);
             scenePreview.appendChild(emptyState);
         }
 
@@ -12983,8 +12961,10 @@ function renderScriptImageCreatorPromptEditors() {
         textarea.addEventListener("paste", handleScriptImageCreatorPromptPaste);
 
         card.appendChild(head);
-        card.appendChild(scenePreview);
         card.appendChild(textarea);
+        if (shouldShowScenePreview) {
+            card.appendChild(scenePreview);
+        }
         host.appendChild(card);
     }
 }

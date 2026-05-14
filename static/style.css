@@ -5322,7 +5322,7 @@ svg.spin {
 
 .script-image-generator-prompt-card-copy {
     display: grid;
-    gap: 5px;
+    gap: 0;
     flex: 1 1 auto;
     min-width: 0;
 }
@@ -5330,14 +5330,7 @@ svg.spin {
 .script-image-generator-prompt-card-head strong {
     color: var(--text);
     font-size: 0.95rem;
-}
-
-.script-image-generator-prompt-card-head span {
-    max-width: 360px;
-    color: var(--text-muted);
-    font-size: 0.78rem;
-    line-height: 1.4;
-    text-align: right;
+    letter-spacing: 0.01em;
 }
 
 .script-image-generator-prompt-card .script-image-generator-prompt {
@@ -5353,16 +5346,31 @@ svg.spin {
 }
 
 .script-image-generator-prompt-card-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     min-height: 34px;
-    padding: 0 12px;
+    padding: 0 11px;
     border: 1px solid rgba(96, 129, 162, 0.24);
     border-radius: 999px;
     background: rgba(3, 17, 31, 0.56);
     color: var(--text);
-    font-size: 0.8rem;
+    font-size: 0.76rem;
     font-weight: 700;
     cursor: pointer;
     transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease, color 0.18s ease;
+}
+
+.script-image-generator-prompt-card-action span {
+    white-space: nowrap;
+}
+
+.script-image-generator-prompt-card-action-icon {
+    width: 14px;
+    height: 14px;
+    display: block;
+    flex: 0 0 14px;
 }
 
 .script-image-generator-prompt-card-action:hover,
@@ -5442,7 +5450,7 @@ svg.spin {
     display: grid;
     align-content: center;
     justify-items: center;
-    gap: 8px;
+    gap: 0;
     padding: 18px;
     text-align: center;
 }
@@ -5810,11 +5818,6 @@ svg.spin {
 
     .script-image-generator-prompt-card-head {
         flex-direction: column;
-    }
-
-    .script-image-generator-prompt-card-head span {
-        max-width: none;
-        text-align: left;
     }
 
     .script-image-generator-prompt-card-actions {
