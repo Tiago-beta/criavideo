@@ -2235,6 +2235,17 @@ a {
     margin-bottom: 1rem;
 }
 
+@media (min-width: 1280px) {
+    #page-publish > .page-header,
+    #page-publish > .page-subheader,
+    #page-publish > .publish-tab-content {
+        width: clamp(760px, 60%, 980px);
+        max-width: 100%;
+        margin-left: auto;
+        margin-right: auto;
+    }
+}
+
 .cards-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

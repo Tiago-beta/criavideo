@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v445 loaded");
+console.log("[CriaVideo] app.js v446 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4807,8 +4807,88 @@ function _renderSimilarUnifiedPrompt(project) {
     const textEl = document.getElementById("similar-unified-prompt-text");
     const metaEl = document.getElementById("similar-unified-prompt-meta");
     const enginePickerEl = document.getElementById("similar-unified-engine-picker");
+    const createImageBtn = document.getElementById("similar-unified-create-image-button");
+    const previewWrapEl = document.getElementById("similar-unified-preview-wrap");
+    const previewMetaEl = document.getElementById("similar-unified-preview-meta");
+    const previewStageEl = document.getElementById("similar-unified-preview-stage");
+    const generateBtn = document.getElementById("similar-generate-unified-scene");
+    if (!wrapEl || !textEl || !metaEl || !enginePickerEl || !previewWrapEl || !previewMetaEl || !previewStageEl) return;
+
+    const tags = _safeSimilarTags(project?.tags);
+    const promptText = String(tags.similar_unified_prompt || "").trim();
+    const analysisMode = String(tags.similar_analysis_mode || "scene").trim().toLowerCase() || "scene";
+    if (!promptText) {
+        _clearSimilarUnifiedPrompt();
+        return;
+    }
+
+    const source = String(tags.similar_unified_prompt_source || "").trim();
+    const generatedAt = _formatSimilarUnifiedPromptGeneratedAt(tags.similar_unified_prompt_generated_at);
+    let metaText = analysisMode === "general"
+        ? source === "ai"
+            ? "Prompt geral sintetizado pela IA a partir do video inteiro."
+            : source === "fallback"
+                ? "Prompt geral montado com o fallback local a partir da analise salva."
+                : "Prompt geral derivado da analise atual."
+        : source === "ai"
+            ? "Prompt unico sintetizado pela IA a partir das cenas analisadas."
+            : source === "fallback"
+                ? "Prompt unico montado com o fallback local a partir da analise salva."
+                : "Prompt unico derivado da analise atual.";
+    if (generatedAt) {
+        metaText = `${metaText} Atualizado em ${generatedAt}.`;
+    }
+
+    const selectedEngine = _getSimilarUnifiedSelectedEngine(tags);
+    const selectedDuration = _getSimilarUnifiedSelectedDuration(tags);
+    similarState.unifiedEngine = selectedEngine;
+    similarState.unifiedDuration = selectedDuration;
+
+    enginePickerEl.innerHTML = ["grok", "wan2", "seedance"].map((engineValue) => `
+        <button
+            class="similar-scene-engine-btn${selectedEngine === engineValue ? " selected" : ""}"
+            type="button"
+            onclick="similarSelectUnifiedEngine('${engineValue}')"
+            title="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
+            aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
+        >${_similarSceneEngineLabel(engineValue)}</button>
+    `).join("");
+    _renderDurationButtons("similar-unified-duration-options", [5, 10, 15], selectedDuration);
+
+    const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
+    const unifiedClipUrl = String(tags.similar_unified_clip_url || "").trim();
+    const unifiedReferenceImageUrl = String(tags.similar_unified_reference_image_url || "").trim();
+    const referenceFrameCount = Number(tags.similar_unified_reference_frame_count || 0) || 0;
+    const generatedEngine = _normalizeSimilarEngine(tags.similar_unified_clip_engine || selectedEngine);
+    const generatedDuration = parseInt(tags.similar_unified_clip_duration || selectedDuration || "10", 10) || 10;
+    const previewItems = [];
+    if (unifiedClipUrl) {
+        previewItems.push(`
+            <div class="similar-preview-box ${previewAspectClass}">
+                <video src="${esc(unifiedClipUrl)}" controls preload="metadata"></video>
+            </div>
+        `);
+    }
+    if (unifiedReferenceImageUrl) {
+        previewItems.push(`
+            <div class="similar-preview-box ${previewAspectClass}">
+                <img src="${esc(unifiedReferenceImageUrl)}" alt="Imagem de referencia da cena unica" loading="lazy">
+            </div>
+        `);
+    }
+
+    if (previewItems.length) {
+        const previewMetaParts = [];
+        if (referenceFrameCount > 0) {
             previewMetaParts.push(`${referenceFrameCount} frame(s) de referencia`);
-    summaryEl.innerHTML = "";
+        }
+        previewMetaParts.push(`Motor: ${_similarEngineDisplayLabel(generatedEngine)}`);
+        previewMetaParts.push(`Duracao: ${generatedDuration}s`);
+        previewMetaEl.textContent = previewMetaParts.join(" | ");
+        previewStageEl.innerHTML = `<div class="similar-scene-preview${previewItems.length === 1 ? " similar-scene-preview-single" : ""}">${previewItems.join("")}</div>`;
+        previewWrapEl.hidden = false;
+    } else {
+        previewMetaEl.textContent = "";
         previewStageEl.innerHTML = "";
         previewWrapEl.hidden = true;
     }
