@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v439 loaded");
+console.log("[CriaVideo] app.js v440 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -25663,6 +25663,117 @@ function _editorRevokeMusicPreviewObjectUrl() {
     }
 }
 
+function _editorGetMediaLayerWaveformKey(layer) {
+    const kind = String(layer?.kind || "").trim().toLowerCase();
+    if (kind !== "video" && kind !== "audio") {
+        return "";
+    }
+    const normalizedUrl = _editorNormalizeMediaUrl(layer?.url || "");
+    if (!normalizedUrl) {
+        return "";
+    }
+    return `${kind}:${normalizedUrl}`;
+}
+
+function _editorGetMediaLayerWaveformState(layer) {
+    const key = _editorGetMediaLayerWaveformKey(layer);
+    if (!key) {
+        return null;
+    }
+    return _editorLayerWaveformState.get(key) || null;
+}
+
+function _editorEnsureMediaLayerWaveform(layer) {
+    const normalizedLayer = _editorNormalizeMediaLayer(layer);
+    if (!_editorMediaLayerHasAudio(normalizedLayer)) {
+        return null;
+    }
+
+    const key = _editorGetMediaLayerWaveformKey(normalizedLayer);
+    if (!key) {
+        return null;
+    }
+
+    const existing = _editorLayerWaveformState.get(key);
+    if (existing && (existing.loading || existing.svgDataUrl || existing.error)) {
+        return existing;
+    }
+
+    const requestId = Number(existing?.requestId || 0) + 1;
+    const durationHint = Math.max(
+        0.1,
+        Number(normalizedLayer.sourceDuration || 0),
+        Number(normalizedLayer.duration || 0),
+        Number(normalizedLayer.endTime || 0) - Number(normalizedLayer.startTime || 0),
+    );
+    const loadingState = {
+        key,
+        loading: true,
+        peaks: [],
+        duration: durationHint,
+        svgDataUrl: "",
+        error: "",
+        requestId,
+    };
+    _editorLayerWaveformState.set(key, loadingState);
+
+    const sourceUrl = _editorNormalizeMediaUrl(normalizedLayer.url);
+    _editorExtractMusicWaveformPeaks(sourceUrl, {
+        durationHint,
+        allowFallback: false,
+    })
+        .then(({ peaks, duration }) => {
+            const latest = _editorLayerWaveformState.get(key);
+            if (!latest || latest.requestId !== requestId) return;
+
+            const safePeaks = Array.isArray(peaks)
+                ? peaks
+                    .map((value) => Math.max(0, Math.min(1, Number(value || 0))))
+                    .filter((value) => Number.isFinite(value))
+                : [];
+            const svgDataUrl = normalizedLayer.kind === "audio"
+                ? _editorBuildMediaLayerAudioWaveformSvg(safePeaks)
+                : _editorBuildMediaLayerVideoWaveformSvg(safePeaks);
+
+            _editorLayerWaveformState.set(key, {
+                key,
+                loading: false,
+                peaks: safePeaks,
+                duration: Math.max(0, Number(duration || 0), durationHint),
+                svgDataUrl,
+                error: "",
+                requestId,
+            });
+            _editorRenderTimeline();
+        })
+        .catch((err) => {
+            const latest = _editorLayerWaveformState.get(key);
+            if (!latest || latest.requestId !== requestId) return;
+
+            _editorLayerWaveformState.set(key, {
+                key,
+                loading: false,
+                peaks: [],
+                duration: durationHint,
+                svgDataUrl: "",
+                error: String(err?.message || "waveform-error"),
+                requestId,
+            });
+            _editorRenderTimeline();
+        });
+
+    return loadingState;
+}
+
+function _editorGetMediaLayerWaveformInlineStyle(layer) {
+    const waveState = _editorGetMediaLayerWaveformState(layer);
+    const waveUrl = String(waveState?.svgDataUrl || "");
+    if (!waveUrl) {
+        return "";
+    }
+    return `--editor-track-wave-image:url('${waveUrl}');--editor-track-wave-size:100% 100%;--editor-track-wave-repeat:no-repeat;`;
+}
+
 async function _editorLoadMusicPreviewSource(url) {
     const audio = _editorGetMusicPreviewAudio();
     const normalizedUrl = _editorNormalizeMediaUrl(url);
@@ -25705,117 +25816,6 @@ async function _editorLoadMusicPreviewSource(url) {
     })
         .then(async (resp) => {
             if (resp.status === 401) {
-
-    function _editorGetMediaLayerWaveformKey(layer) {
-        const kind = String(layer?.kind || "").trim().toLowerCase();
-        if (kind !== "video" && kind !== "audio") {
-            return "";
-        }
-        const normalizedUrl = _editorNormalizeMediaUrl(layer?.url || "");
-        if (!normalizedUrl) {
-            return "";
-        }
-        return `${kind}:${normalizedUrl}`;
-    }
-
-    function _editorGetMediaLayerWaveformState(layer) {
-        const key = _editorGetMediaLayerWaveformKey(layer);
-        if (!key) {
-            return null;
-        }
-        return _editorLayerWaveformState.get(key) || null;
-    }
-
-    function _editorEnsureMediaLayerWaveform(layer) {
-        const normalizedLayer = _editorNormalizeMediaLayer(layer);
-        if (!_editorMediaLayerHasAudio(normalizedLayer)) {
-            return null;
-        }
-
-        const key = _editorGetMediaLayerWaveformKey(normalizedLayer);
-        if (!key) {
-            return null;
-        }
-
-        const existing = _editorLayerWaveformState.get(key);
-        if (existing && (existing.loading || existing.svgDataUrl || existing.error)) {
-            return existing;
-        }
-
-        const requestId = Number(existing?.requestId || 0) + 1;
-        const durationHint = Math.max(
-            0.1,
-            Number(normalizedLayer.sourceDuration || 0),
-            Number(normalizedLayer.duration || 0),
-            Number(normalizedLayer.endTime || 0) - Number(normalizedLayer.startTime || 0),
-        );
-        const loadingState = {
-            key,
-            loading: true,
-            peaks: [],
-            duration: durationHint,
-            svgDataUrl: "",
-            error: "",
-            requestId,
-        };
-        _editorLayerWaveformState.set(key, loadingState);
-
-        const sourceUrl = _editorNormalizeMediaUrl(normalizedLayer.url);
-        _editorExtractMusicWaveformPeaks(sourceUrl, {
-            durationHint,
-            allowFallback: false,
-        })
-            .then(({ peaks, duration }) => {
-                const latest = _editorLayerWaveformState.get(key);
-                if (!latest || latest.requestId !== requestId) return;
-
-                const safePeaks = Array.isArray(peaks)
-                    ? peaks
-                        .map((value) => Math.max(0, Math.min(1, Number(value || 0))))
-                        .filter((value) => Number.isFinite(value))
-                    : [];
-                const svgDataUrl = normalizedLayer.kind === "audio"
-                    ? _editorBuildMediaLayerAudioWaveformSvg(safePeaks)
-                    : _editorBuildMediaLayerVideoWaveformSvg(safePeaks);
-
-                _editorLayerWaveformState.set(key, {
-                    key,
-                    loading: false,
-                    peaks: safePeaks,
-                    duration: Math.max(0, Number(duration || 0), durationHint),
-                    svgDataUrl,
-                    error: "",
-                    requestId,
-                });
-                _editorRenderTimeline();
-            })
-            .catch((err) => {
-                const latest = _editorLayerWaveformState.get(key);
-                if (!latest || latest.requestId !== requestId) return;
-
-                _editorLayerWaveformState.set(key, {
-                    key,
-                    loading: false,
-                    peaks: [],
-                    duration: durationHint,
-                    svgDataUrl: "",
-                    error: String(err?.message || "waveform-error"),
-                    requestId,
-                });
-                _editorRenderTimeline();
-            });
-
-        return loadingState;
-    }
-
-    function _editorGetMediaLayerWaveformInlineStyle(layer) {
-        const waveState = _editorGetMediaLayerWaveformState(layer);
-        const waveUrl = String(waveState?.svgDataUrl || "");
-        if (!waveUrl) {
-            return "";
-        }
-        return `--editor-track-wave-image:url('${waveUrl}');--editor-track-wave-size:100% 100%;--editor-track-wave-repeat:no-repeat;`;
-    }
                 clearSession();
                 showAuth("Sua sessao expirou. Entre novamente.");
                 throw new Error("Unauthorized");
