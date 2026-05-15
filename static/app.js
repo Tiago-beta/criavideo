@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v450 loaded");
+console.log("[CriaVideo] app.js v451 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -13515,7 +13515,8 @@ function setScriptImageCreatorStatus(message, tone = "info") {
     const status = document.getElementById("script-image-generator-status");
     if (!status) return;
     const text = String(message || "").trim();
-    status.hidden = !text;
+    const showStatus = !!text && tone === "error";
+    status.hidden = !showStatus;
     status.textContent = text;
     status.classList.remove("is-error", "is-success");
     if (tone === "error") status.classList.add("is-error");
@@ -13579,8 +13580,11 @@ function renderScriptImageCreatorResults() {
         host.innerHTML = `
             <div class="script-image-generator-result-card script-image-generator-result-card--loading">
                 <div class="script-image-generator-card-preview">
-                    <div class="script-image-generator-empty script-image-generator-empty--inline">
-                        Gerando...
+                    <div class="script-image-generator-card-loading" aria-hidden="true">
+                        <span class="script-image-generator-card-loading-shimmer"></span>
+                    </div>
+                    <div class="script-image-generator-card-loading-label">
+                        Criando imagem
                     </div>
                 </div>
             </div>
@@ -13600,8 +13604,11 @@ function renderScriptImageCreatorResults() {
         ? `
             <div class="script-image-generator-result-card script-image-generator-result-card--loading" aria-live="polite">
                 <div class="script-image-generator-card-preview">
-                    <div class="script-image-generator-empty script-image-generator-empty--inline">
-                        Gerando...
+                    <div class="script-image-generator-card-loading" aria-hidden="true">
+                        <span class="script-image-generator-card-loading-shimmer"></span>
+                    </div>
+                    <div class="script-image-generator-card-loading-label">
+                        Criando imagem
                     </div>
                 </div>
             </div>
@@ -13616,25 +13623,23 @@ function renderScriptImageCreatorResults() {
             const editButtonAction = isEditingActive ? "cancelScriptImageCreatorEdit()" : `startScriptImageCreatorEdit(${index})`;
             return `
                 <article class="script-image-generator-result-card${isActive ? " is-active" : ""}">
-                    <button
-                        type="button"
-                        class="script-image-generator-card-preview"
-                        onclick="openScriptImageCreatorExpandedResult(${index})"
-                        aria-label="Expandir resultado ${index + 1}"
-                    >
-                        <img src="${workflowEscapeHtml(item.image_url)}" alt="${workflowEscapeHtml(item.label || `Imagem gerada ${index + 1}`)}">
-                    </button>
-                    <div class="script-image-generator-result-meta">
-                        <strong>Imagem ${index + 1}</strong>
-                        <span>Clique para ampliar</span>
-                    </div>
-                    <div class="script-image-generator-result-actions">
-                        <button class="btn-icon-sm script-image-generator-card-icon${isEditingActive ? " is-active" : ""}" type="button" title="${editButtonTitle}" aria-label="${editButtonTitle}"${busyAttr} onclick="${editButtonAction}">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 20 9-9-3-3-9 9-1 4Z"/><path d="M16 7 19 10"/></svg>
+                    <div class="script-image-generator-card-frame">
+                        <button
+                            type="button"
+                            class="script-image-generator-card-preview"
+                            onclick="openScriptImageCreatorExpandedResult(${index})"
+                            aria-label="Expandir resultado ${index + 1}"
+                        >
+                            <img src="${workflowEscapeHtml(item.image_url)}" alt="${workflowEscapeHtml(item.label || `Imagem gerada ${index + 1}`)}">
                         </button>
-                        <button class="btn-icon-sm script-image-generator-card-icon" type="button" title="Baixar imagem" aria-label="Baixar imagem"${busyAttr} onclick="downloadScriptImageCreatorResult(${index})">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
-                        </button>
+                        <div class="script-image-generator-result-actions">
+                            <button class="btn-icon-sm script-image-generator-card-icon${isEditingActive ? " is-active" : ""}" type="button" title="${editButtonTitle}" aria-label="${editButtonTitle}"${busyAttr} onclick="${editButtonAction}">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 20 9-9-3-3-9 9-1 4Z"/><path d="M16 7 19 10"/></svg>
+                            </button>
+                            <button class="btn-icon-sm script-image-generator-card-icon" type="button" title="Baixar imagem" aria-label="Baixar imagem"${busyAttr} onclick="downloadScriptImageCreatorResult(${index})">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                            </button>
+                        </div>
                     </div>
                     <button class="btn btn-primary btn-sm script-image-generator-create-btn" type="button"${busyAttr} onclick="createVideoFromScriptImageCreatorResult(${index})">Criar video</button>
                 </article>
@@ -14131,12 +14136,7 @@ async function generateScriptImageFromModal() {
         }
 
         renderScriptImageCreatorResults();
-        setScriptImageCreatorStatus(
-            isEditing
-                ? "Imagem atualizada com sucesso."
-                : (parsedImages.length === 1 ? "1 imagem pronta." : `${parsedImages.length} cenas prontas.`),
-            "success",
-        );
+        setScriptImageCreatorStatus("", "info");
         showToast(
             isEditing
                 ? "Imagem atualizada com sucesso."
