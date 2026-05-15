@@ -1,5 +1,5 @@
 """
-Script & Audio Generator — Creates video scripts with AI and generates TTS narration via OpenAI.
+Script & Audio Generator — Creates video scripts with AI and generates TTS narration via OpenAI/ElevenLabs.
 """
 import os
 import io
@@ -16,6 +16,7 @@ from PIL import Image
 from pypdf import PdfReader
 
 from app.config import get_settings
+from app.services.voice_catalog import is_elevenlabs_br_voice_id
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -482,7 +483,7 @@ async def generate_tts_audio(
 
     For custom voices (voice_type="custom"), uses Fish Audio with the voice as reference_id.
     For ElevenLabs voices (voice_type="elevenlabs"), uses ElevenLabs API with voice_id.
-    For builtin voices, uses OpenAI TTS.
+    For builtin voices, uses OpenAI TTS unless the voice ID matches a curated ElevenLabs preset.
     pause_level: "normal" | "relaxed" | "deep" — controls silence insertion between segments.
     tone: narration tone — passed to Fish Audio for prosody control.
     """
@@ -498,6 +499,11 @@ async def generate_tts_audio(
     if pause_level in ("relaxed", "deep"):
         pacing = _get_pacing_instructions(pause_level)
         tts_instructions = f"{tts_instructions}\n{pacing}" if tts_instructions else pacing
+
+    normalized_voice_type = str(voice_type or "builtin").strip().lower() or "builtin"
+    if normalized_voice_type == "builtin" and is_elevenlabs_br_voice_id(voice):
+        normalized_voice_type = "elevenlabs"
+    voice_type = normalized_voice_type
 
     try:
         logger.info(f"TTS generation: voice_type={voice_type}, pause_level={pause_level}, tone={tone}, voice={voice[:20] if voice else 'none'}")

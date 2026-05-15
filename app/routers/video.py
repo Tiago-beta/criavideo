@@ -40,6 +40,7 @@ from app.services.credit_pricing import (
     estimate_similar_scene_credits,
     estimate_standard_credits,
 )
+from app.services.voice_catalog import ELEVENLABS_BR_VOICE_PRESETS, is_elevenlabs_br_voice_id
 from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
 from app.services.realistic_cover_guidance import (
     apply_cover_guidance,
@@ -64,6 +65,15 @@ VOICE_DEMOS = {
     "fable":   {"name": "Mateus",  "label": "Narrativa",         "text": "Olá, sou o Mateus! Minha voz narrativa vai transformar seus vídeos em histórias inesquecíveis. Me escolha!"},
     "sage":    {"name": "Luna",    "label": "Calma e Clara",     "text": "Oi, eu sou a Luna! Com minha voz calma e clara, vou transmitir tranquilidade nos seus vídeos. Me escolha!"},
 }
+
+VOICE_DEMOS.update({
+    preset["id"]: {
+        "name": preset["name"],
+        "label": preset["label"],
+        "text": preset["demo_text"],
+    }
+    for preset in ELEVENLABS_BR_VOICE_PRESETS
+})
 
 VOICE_DEMO_DIR = os.path.join(settings.media_dir, "voice_demos")
 os.makedirs(VOICE_DEMO_DIR, exist_ok=True)
@@ -1744,13 +1754,26 @@ async def get_voice_demo(voice_id: str):
     cache_path = os.path.join(VOICE_DEMO_DIR, f"{voice_id}.mp3")
     if not os.path.exists(cache_path):
         demo = VOICE_DEMOS[voice_id]
-        resp = await _openai.audio.speech.create(
-            model="tts-1",
-            voice=voice_id,
-            input=demo["text"],
-            response_format="mp3",
-        )
-        Path(cache_path).write_bytes(resp.content)
+        try:
+            if is_elevenlabs_br_voice_id(voice_id):
+                from app.services.elevenlabs_audio import generate_tts as generate_elevenlabs_tts
+
+                await generate_elevenlabs_tts(
+                    demo["text"],
+                    voice_id,
+                    cache_path,
+                    tts_instructions="Fale em portugues do Brasil com diccao clara, natural e amigavel.",
+                )
+            else:
+                resp = await _openai.audio.speech.create(
+                    model="tts-1",
+                    voice=voice_id,
+                    input=demo["text"],
+                    response_format="mp3",
+                )
+                Path(cache_path).write_bytes(resp.content)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"Nao foi possivel gerar a demo dessa voz agora: {exc}")
 
     return FileResponse(cache_path, media_type="audio/mpeg")
 

@@ -1476,7 +1476,16 @@
                                         <span class="script-media-chip-icon" aria-hidden="true">
                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
                                         </span>
-                                        <span class="script-media-chip-label">Enviar áudio</span>
+                                        <span class="script-media-chip-label">Enviar ou criar áudio</span>
+                                    </span>
+                                </label>
+                                <label class="media-toggle-chip media-toggle-chip--full script-media-chip script-media-chip--video">
+                                    <input type="checkbox" id="script-use-video" onchange="toggleVideoUpload(true)">
+                                    <span class="media-toggle-chip-body">
+                                        <span class="script-media-chip-icon" aria-hidden="true">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                                        </span>
+                                        <span class="script-media-chip-label">Enviar vídeo</span>
                                     </span>
                                 </label>
                                 <label class="media-toggle-chip media-toggle-chip--full script-media-chip script-media-chip--tevoxi">
@@ -1513,7 +1522,6 @@
                         <!-- Upload de vídeo próprio -->
                         <div class="photo-upload-section script-video-tools-section" id="script-video-upload-section">
                             <div class="photo-upload-header script-video-tools-header">
-                                <input type="checkbox" id="script-use-video" hidden onchange="toggleVideoUpload()">
                                 <button
                                     class="script-video-icon-btn"
                                     id="script-video-upload-trigger"
@@ -1546,7 +1554,7 @@
 
                                 <div id="script-generated-audio-summary" class="script-generated-audio-summary" hidden>
                                     <div class="script-generated-audio-copy">
-                                        <strong>Áudio pronto para este vídeo</strong>
+                                        <strong id="script-generated-audio-title">Áudio pronto para este projeto</strong>
                                         <small id="script-generated-audio-name"></small>
                                     </div>
                                     <audio id="script-generated-audio-player" controls preload="none"></audio>
@@ -1572,8 +1580,8 @@
                                 <div id="script-video-audio-builder" class="script-video-audio-builder" hidden>
                                     <div class="script-video-audio-builder-head">
                                         <div>
-                                            <strong>Criar áudio para este vídeo</strong>
-                                            <small>Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.</small>
+                                            <strong id="script-audio-builder-heading">Criar áudio com voz IA</strong>
+                                            <small id="script-audio-builder-subheading">Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.</small>
                                         </div>
                                         <button class="btn-icon-sm" type="button" onclick="toggleScriptAudioBuilder(false)" title="Fechar" aria-label="Fechar">&times;</button>
                                     </div>
@@ -1658,6 +1666,15 @@
                         <!-- Upload de áudio próprio -->
                         <div class="photo-upload-section script-media-panel">
                             <div id="script-user-audio-area" class="photo-upload-area" hidden>
+                                <div class="script-audio-entry-row">
+                                    <button class="script-video-audio-btn script-video-audio-btn--secondary" id="script-user-audio-builder-trigger" type="button" onclick="toggleScriptAudioBuilder(true)">
+                                        <span class="script-video-audio-btn-icon" aria-hidden="true">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                        </span>
+                                        <span>Criar áudio com IA</span>
+                                    </button>
+                                    <span class="photo-upload-hint">Envie um arquivo ou gere o áudio com a voz IA antes de continuar.</span>
+                                </div>
                                 <div id="script-audio-dropzone" class="photo-dropzone" onclick="document.getElementById('script-user-audio-input').click()">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                     <p>Clique ou arraste seu áudio aqui</p>
