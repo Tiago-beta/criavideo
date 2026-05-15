@@ -3,281 +3,1751 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CriaVideo — Crie e publique vídeos com inteligencia artificial</title>
-    <meta name="description" content="CriaVideo é uma plataforma de criação e publicação automatizada de vídeos com IA. Gere roteiros, narrações, legendas e publique diretamente no YouTube, TikTok e Instagram.">
+    <title>CriaVideo | Plataforma completa para criar, editar e publicar videos com IA</title>
+    <meta name="description" content="CriaVideo reune roteiro, storyboard, geracao de video, timeline, automacao e publicacao social em um unico fluxo com IA.">
     <link rel="icon" type="image/x-icon" href="/video/static/icons/favicon.ico?v=20260404-19">
     <link rel="icon" type="image/png" sizes="16x16" href="/video/static/icons/favicon-16.png?v=20260404-19">
     <link rel="icon" type="image/png" sizes="32x32" href="/video/static/icons/favicon-32.png?v=20260404-19">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260404-19">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #081a2f;
-            --bg-card: rgba(12, 35, 60, 0.92);
-            --border: rgba(79, 126, 173, 0.32);
-            --text: #f7f3ec;
-            --text-muted: #98aec4;
-            --accent: #f6a52f;
-            --accent-soft: rgba(246, 165, 47, 0.18);
+            --bg: #05070b;
+            --bg-soft: #0a1120;
+            --bg-deep: #081a31;
+            --panel: rgba(12, 18, 31, 0.86);
+            --panel-strong: rgba(17, 24, 40, 0.96);
+            --line: rgba(255, 255, 255, 0.1);
+            --line-strong: rgba(255, 184, 61, 0.28);
+            --text: #f7f4ec;
+            --muted: #9fb0c9;
+            --accent: #ffb83d;
+            --accent-soft: rgba(255, 184, 61, 0.14);
+            --accent-glow: rgba(255, 204, 92, 0.32);
+            --ice: #b8d3ff;
+            --success: #8be4b1;
+            --shadow: 0 32px 80px rgba(0, 0, 0, 0.45);
+            --radius-xl: 36px;
+            --radius-lg: 24px;
+            --radius-md: 18px;
+            --container: min(1180px, calc(100vw - 48px));
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
 
         body {
             min-height: 100vh;
-            font-family: "Manrope", sans-serif;
+            font-family: "Space Grotesk", sans-serif;
             color: var(--text);
             background:
-                radial-gradient(circle at top left, rgba(25, 70, 120, 0.55), transparent 28%),
-                radial-gradient(circle at right center, rgba(246, 165, 47, 0.12), transparent 30%),
-                linear-gradient(180deg, #071729 0%, #081a2f 48%, #071423 100%);
-            display: flex;
-            flex-direction: column;
+                radial-gradient(circle at 20% 0%, rgba(31, 66, 118, 0.38), transparent 32%),
+                radial-gradient(circle at 82% 14%, rgba(255, 184, 61, 0.12), transparent 18%),
+                radial-gradient(circle at 70% 58%, rgba(34, 127, 214, 0.14), transparent 28%),
+                linear-gradient(180deg, #040507 0%, #06111d 28%, #071120 58%, #040507 100%);
+            overflow-x: hidden;
         }
 
-        a { color: var(--accent); }
-
-        h1, h2, h3 { font-family: "Outfit", sans-serif; }
-
-        /* ── Header ── */
-        header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 20px clamp(20px, 5vw, 80px);
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background:
+                linear-gradient(115deg, rgba(255, 255, 255, 0.02), transparent 18%, transparent 82%, rgba(255, 255, 255, 0.02)),
+                repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0, rgba(255, 255, 255, 0.015) 1px, transparent 1px, transparent 120px);
+            opacity: 0.35;
+            mix-blend-mode: screen;
         }
 
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 12px;
+        a {
+            color: inherit;
             text-decoration: none;
         }
 
-        .logo img {
+        img {
+            display: block;
+            max-width: 100%;
+        }
+
+        .site-shell {
+            width: 100%;
+            position: relative;
+        }
+
+        .site-header {
+            width: var(--container);
+            margin: 18px auto 0;
+            padding: 16px 22px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            position: sticky;
+            top: 12px;
+            z-index: 20;
+            background: rgba(11, 13, 19, 0.72);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(18px);
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .brand-mark {
             width: 40px;
             height: 40px;
-            border-radius: 10px;
+            border-radius: 12px;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
         }
 
-        .logo span {
-            font-family: "Outfit", sans-serif;
+        .brand-copy {
+            display: grid;
+            gap: 2px;
+        }
+
+        .brand-name {
+            font-size: 1rem;
             font-weight: 700;
-            font-size: 1.4rem;
-            color: var(--text);
+            letter-spacing: -0.03em;
         }
 
-        .header-links {
+        .brand-tag {
+            font-size: 0.72rem;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .site-nav {
             display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: clamp(14px, 2.5vw, 34px);
+            flex: 1;
+        }
+
+        .site-nav a {
+            color: rgba(247, 244, 236, 0.82);
+            font-size: 0.95rem;
+            transition: color 0.18s ease;
+        }
+
+        .site-nav a:hover,
+        .site-nav a:focus-visible {
+            color: var(--accent);
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            min-height: 48px;
+            padding: 0 22px;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            font-size: 0.95rem;
+            font-weight: 700;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+        }
+
+        .button:hover,
+        .button:focus-visible {
+            transform: translateY(-1px);
+        }
+
+        .button-primary {
+            color: #121212;
+            background: linear-gradient(135deg, #fff08d 0%, #ffb83d 100%);
+            box-shadow: 0 18px 34px rgba(255, 184, 61, 0.24);
+        }
+
+        .button-secondary {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.03);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .hero {
+            width: var(--container);
+            margin: 0 auto;
+            padding: 92px 0 44px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(440px, 520px);
+            gap: 42px;
+            align-items: center;
+        }
+
+        .hero-copy {
+            position: relative;
+            z-index: 1;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 22px;
+            color: var(--accent);
+            font-size: 0.78rem;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+        }
+
+        .eyebrow::before,
+        .eyebrow::after {
+            content: "";
+            width: 34px;
+            height: 1px;
+            background: rgba(255, 184, 61, 0.38);
+        }
+
+        .hero-title {
+            font-size: clamp(3.2rem, 6vw, 6rem);
+            line-height: 0.95;
+            letter-spacing: -0.065em;
+            max-width: 12ch;
+        }
+
+        .hero-title em {
+            font-family: "Instrument Serif", serif;
+            font-style: italic;
+            font-weight: 400;
+            color: #fff4a6;
+            letter-spacing: -0.03em;
+        }
+
+        .hero-subtitle {
+            max-width: 60ch;
+            margin-top: 26px;
+            color: var(--muted);
+            font-size: 1.1rem;
+            line-height: 1.75;
+        }
+
+        .hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            margin-top: 34px;
+        }
+
+        .hero-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 28px;
+        }
+
+        .meta-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.03);
+            color: rgba(247, 244, 236, 0.86);
+            font-size: 0.9rem;
+        }
+
+        .meta-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #fff08d 0%, #ffb83d 100%);
+            box-shadow: 0 0 18px rgba(255, 184, 61, 0.42);
+        }
+
+        .hero-stage {
+            position: relative;
+            min-height: 640px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .hero-stage::before {
+            content: "";
+            position: absolute;
+            inset: 10% 0 auto;
+            width: 78%;
+            height: 78%;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255, 184, 61, 0.22) 0%, rgba(255, 184, 61, 0.08) 32%, transparent 70%);
+            filter: blur(24px);
+            animation: pulseGlow 6s ease-in-out infinite;
+        }
+
+        .stage-frame {
+            width: min(100%, 520px);
+            border-radius: var(--radius-xl);
+            padding: 18px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+                linear-gradient(180deg, rgba(7, 13, 23, 0.98), rgba(8, 17, 28, 0.94));
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: var(--shadow);
+            position: relative;
+            z-index: 1;
+            overflow: hidden;
+            animation: floatHero 8s ease-in-out infinite;
+        }
+
+        .stage-frame::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(130deg, rgba(255, 255, 255, 0.08), transparent 24%, transparent 72%, rgba(255, 184, 61, 0.08));
+            pointer-events: none;
+        }
+
+        .stage-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 8px 8px 18px;
+        }
+
+        .toolbar-dots {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toolbar-dots span {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .toolbar-dots span:first-child {
+            background: rgba(255, 120, 120, 0.9);
+        }
+
+        .toolbar-dots span:nth-child(2) {
+            background: rgba(255, 202, 100, 0.9);
+        }
+
+        .toolbar-dots span:nth-child(3) {
+            background: rgba(133, 239, 157, 0.9);
+        }
+
+        .toolbar-label {
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            font-size: 0.78rem;
+            color: rgba(247, 244, 236, 0.85);
+        }
+
+        .stage-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding-bottom: 18px;
+        }
+
+        .stage-tab {
+            padding: 8px 12px;
+            border-radius: 999px;
+            font-size: 0.76rem;
+            color: var(--muted);
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .stage-tab.active {
+            color: #111214;
+            background: linear-gradient(135deg, #fff2a2 0%, #ffb83d 100%);
+            border-color: transparent;
+        }
+
+        .stage-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.15fr) minmax(220px, 0.85fr);
+            gap: 14px;
+        }
+
+        .panel {
+            border-radius: 24px;
+            padding: 18px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .panel::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: linear-gradient(150deg, rgba(255, 255, 255, 0.05), transparent 28%, transparent 74%, rgba(255, 184, 61, 0.05));
+        }
+
+        .panel-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--accent);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+        }
+
+        .panel-title {
+            margin-top: 14px;
+            font-size: 1.08rem;
+            line-height: 1.35;
+            letter-spacing: -0.03em;
+        }
+
+        .panel-copy {
+            margin-top: 12px;
+            font-size: 0.9rem;
+            line-height: 1.7;
+            color: var(--muted);
+        }
+
+        .prompt-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 18px;
+        }
+
+        .prompt-tag {
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(255, 184, 61, 0.08);
+            border: 1px solid rgba(255, 184, 61, 0.2);
+            color: #ffe6ae;
+            font-size: 0.78rem;
+        }
+
+        .prompt-box {
+            margin-top: 18px;
+            padding: 16px;
+            border-radius: 18px;
+            background: rgba(4, 7, 13, 0.78);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .prompt-line {
+            display: block;
+            color: rgba(247, 244, 236, 0.94);
+            font-size: 0.88rem;
+            line-height: 1.65;
+        }
+
+        .timeline-panel {
+            grid-column: 1 / -1;
+        }
+
+        .shot-list {
+            display: grid;
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .shot-item {
+            display: grid;
+            grid-template-columns: 66px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .shot-thumb {
+            height: 56px;
+            border-radius: 14px;
+            background-size: cover;
+            background-position: center;
+        }
+
+        .shot-thumb.one {
+            background: linear-gradient(135deg, rgba(255, 192, 92, 0.82), rgba(84, 31, 8, 0.78));
+        }
+
+        .shot-thumb.two {
+            background: linear-gradient(135deg, rgba(100, 145, 255, 0.82), rgba(15, 34, 79, 0.78));
+        }
+
+        .shot-thumb.three {
+            background: linear-gradient(135deg, rgba(112, 239, 186, 0.82), rgba(19, 59, 58, 0.78));
+        }
+
+        .shot-copy strong {
+            display: block;
+            font-size: 0.9rem;
+        }
+
+        .shot-copy span {
+            display: block;
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 0.8rem;
+        }
+
+        .shot-time {
+            color: rgba(247, 244, 236, 0.86);
+            font-size: 0.76rem;
+            white-space: nowrap;
+        }
+
+        .assistant-steps {
+            display: grid;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        .assistant-step {
+            display: grid;
+            grid-template-columns: 20px minmax(0, 1fr);
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.035);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.82rem;
+            color: rgba(247, 244, 236, 0.88);
+        }
+
+        .assistant-step::before {
+            content: "";
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-top: 2px;
+            background: rgba(255, 255, 255, 0.18);
+        }
+
+        .assistant-step.complete::before {
+            background: var(--success);
+            box-shadow: 0 0 18px rgba(139, 228, 177, 0.36);
+        }
+
+        .assistant-step.active {
+            border-color: rgba(255, 184, 61, 0.22);
+            background: rgba(255, 184, 61, 0.08);
+        }
+
+        .assistant-note {
+            margin-top: 18px;
+            padding: 14px;
+            border-radius: 18px;
+            background: rgba(4, 7, 13, 0.72);
+            color: var(--muted);
+            font-size: 0.82rem;
+            line-height: 1.65;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .timeline-track {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr 1.2fr 0.9fr;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        .timeline-clip {
+            min-height: 52px;
+            padding: 12px 14px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            font-size: 0.82rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            color: #101010;
+        }
+
+        .clip-script {
+            background: linear-gradient(135deg, #ffe58b 0%, #ffb83d 100%);
+        }
+
+        .clip-storyboard {
+            background: linear-gradient(135deg, #a7d2ff 0%, #5ba9ff 100%);
+        }
+
+        .clip-edit {
+            background: linear-gradient(135deg, #90f0c3 0%, #38c68a 100%);
+        }
+
+        .clip-publish {
+            background: linear-gradient(135deg, #ffd0f4 0%, #ee8dd2 100%);
+        }
+
+        .floating-card {
+            position: absolute;
+            border-radius: 22px;
+            background: rgba(9, 13, 22, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 20px 56px rgba(0, 0, 0, 0.32);
+            backdrop-filter: blur(18px);
+            z-index: 2;
+        }
+
+        .floating-card strong {
+            display: block;
+            font-size: 0.96rem;
+            letter-spacing: -0.02em;
+        }
+
+        .floating-card p {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 0.78rem;
+            line-height: 1.55;
+        }
+
+        .result-card {
+            right: -24px;
+            bottom: 84px;
+            width: 200px;
+            padding: 18px;
+        }
+
+        .result-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .result-tags span {
+            padding: 7px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(247, 244, 236, 0.86);
+            font-size: 0.72rem;
+        }
+
+        .consistency-card {
+            left: -18px;
+            top: 124px;
+            width: 184px;
+            padding: 16px 18px;
+        }
+
+        .consistency-bar {
+            margin-top: 12px;
+            width: 100%;
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            overflow: hidden;
+        }
+
+        .consistency-bar span {
+            display: block;
+            width: 82%;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(135deg, #fff1a0 0%, #ffb83d 100%);
+        }
+
+        .section {
+            width: var(--container);
+            margin: 0 auto;
+            padding: 40px 0;
+        }
+
+        .section-header {
+            max-width: 760px;
+            margin-bottom: 28px;
+        }
+
+        .section-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            font-size: 0.72rem;
+        }
+
+        .section-kicker::before {
+            content: "";
+            width: 28px;
+            height: 1px;
+            background: rgba(255, 184, 61, 0.35);
+        }
+
+        .section-title {
+            margin-top: 14px;
+            font-size: clamp(2rem, 4vw, 3.4rem);
+            line-height: 1.02;
+            letter-spacing: -0.06em;
+            max-width: 14ch;
+        }
+
+        .section-copy {
+            margin-top: 16px;
+            color: var(--muted);
+            font-size: 1rem;
+            line-height: 1.8;
+            max-width: 62ch;
+        }
+
+        .workflow-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .workflow-card,
+        .platform-card,
+        .wall-card,
+        .model-column,
+        .faq-shell,
+        .cta-ribbon {
+            border-radius: 28px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 24px 54px rgba(0, 0, 0, 0.18);
+        }
+
+        .workflow-card {
+            padding: 22px;
+            min-height: 276px;
+            display: grid;
+            gap: 16px;
+            transition: transform 0.18s ease, border-color 0.18s ease;
+        }
+
+        .workflow-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 184, 61, 0.22);
+        }
+
+        .workflow-card h3,
+        .platform-card h3,
+        .wall-card h3,
+        .cta-ribbon h3,
+        .model-column h3 {
+            font-size: 1.08rem;
+            letter-spacing: -0.03em;
+        }
+
+        .workflow-card p,
+        .platform-card p,
+        .wall-card p,
+        .cta-ribbon p,
+        .model-column p {
+            color: var(--muted);
+            font-size: 0.9rem;
+            line-height: 1.7;
+        }
+
+        .workflow-preview {
+            min-height: 130px;
+            border-radius: 20px;
+            background: rgba(5, 8, 14, 0.72);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 14px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .preview-line,
+        .preview-pill,
+        .preview-bar,
+        .preview-thumb {
+            border-radius: 999px;
+        }
+
+        .preview-line {
+            height: 10px;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .preview-line.short {
+            width: 62%;
+        }
+
+        .preview-pill {
+            padding: 7px 10px;
+            background: rgba(255, 184, 61, 0.1);
+            border: 1px solid rgba(255, 184, 61, 0.2);
+            color: #ffe2a0;
+            font-size: 0.72rem;
+            width: fit-content;
+        }
+
+        .preview-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .preview-thumb {
+            height: 54px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(169, 213, 255, 0.8), rgba(38, 76, 138, 0.78));
+        }
+
+        .preview-thumb.alt {
+            background: linear-gradient(135deg, rgba(255, 204, 104, 0.82), rgba(113, 53, 17, 0.78));
+        }
+
+        .preview-thumb.green {
+            background: linear-gradient(135deg, rgba(120, 236, 190, 0.82), rgba(19, 62, 49, 0.78));
+        }
+
+        .preview-bar {
+            height: 18px;
+            background: rgba(255, 255, 255, 0.07);
+            overflow: hidden;
+        }
+
+        .preview-bar span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+        }
+
+        .preview-bar.script span {
+            width: 70%;
+            background: linear-gradient(135deg, #ffe58b 0%, #ffb83d 100%);
+        }
+
+        .preview-bar.board span {
+            width: 54%;
+            background: linear-gradient(135deg, #a7d2ff 0%, #5ba9ff 100%);
+        }
+
+        .preview-bar.publish span {
+            width: 84%;
+            background: linear-gradient(135deg, #90f0c3 0%, #38c68a 100%);
+        }
+
+        .split-section {
+            display: grid;
+            grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
             gap: 24px;
             align-items: center;
         }
 
-        .header-links a {
-            text-decoration: none;
-            font-size: 0.9rem;
-            color: var(--text-muted);
+        .creative-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
         }
 
-        .header-links a:hover {
-            color: var(--accent);
-        }
-
-        .btn-cta {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 12px 28px;
-            border-radius: 999px;
-            background: var(--accent);
-            color: #081a2f;
-            font-weight: 700;
-            font-size: 0.95rem;
-            text-decoration: none;
-            border: none;
-            cursor: pointer;
-            transition: transform 0.15s, box-shadow 0.15s;
-        }
-
-        .btn-cta:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 8px 24px rgba(246, 165, 47, 0.35);
-        }
-
-        /* ── Hero ── */
-        .hero {
-            flex: 1;
+        .creative-card {
+            min-height: 340px;
+            padding: 18px;
+            border-radius: 28px;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+            box-shadow: 0 26px 58px rgba(0, 0, 0, 0.2);
             display: flex;
             flex-direction: column;
+            justify-content: flex-end;
+        }
+
+        .creative-card::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            opacity: 0.95;
+        }
+
+        .creative-card.one::before {
+            background: linear-gradient(180deg, rgba(9, 14, 20, 0.05) 0%, rgba(9, 14, 20, 0.62) 75%), linear-gradient(135deg, rgba(255, 184, 61, 0.9), rgba(52, 25, 10, 0.88));
+        }
+
+        .creative-card.two::before {
+            background: linear-gradient(180deg, rgba(9, 14, 20, 0.08) 0%, rgba(9, 14, 20, 0.66) 75%), linear-gradient(135deg, rgba(163, 212, 255, 0.88), rgba(28, 56, 108, 0.9));
+        }
+
+        .creative-card.three::before {
+            background: linear-gradient(180deg, rgba(9, 14, 20, 0.08) 0%, rgba(9, 14, 20, 0.66) 75%), linear-gradient(135deg, rgba(119, 237, 191, 0.88), rgba(18, 55, 43, 0.9));
+        }
+
+        .creative-card.four::before {
+            background: linear-gradient(180deg, rgba(9, 14, 20, 0.08) 0%, rgba(9, 14, 20, 0.66) 75%), linear-gradient(135deg, rgba(240, 160, 255, 0.85), rgba(69, 29, 82, 0.9));
+        }
+
+        .creative-card > * {
+            position: relative;
+            z-index: 1;
+        }
+
+        .creative-label {
+            display: inline-flex;
             align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 60px clamp(20px, 5vw, 80px) 40px;
-        }
-
-        .hero .eyebrow {
-            text-transform: uppercase;
-            letter-spacing: 0.2em;
+            width: fit-content;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.34);
+            border: 1px solid rgba(255, 255, 255, 0.14);
             font-size: 0.72rem;
-            color: var(--accent);
-            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: rgba(247, 244, 236, 0.9);
         }
 
-        .hero h1 {
-            font-size: clamp(2.2rem, 6vw, 3.8rem);
-            line-height: 1.15;
-            max-width: 720px;
-            margin-bottom: 20px;
+        .creative-card h3 {
+            margin-top: 16px;
+            font-size: 1.18rem;
+            letter-spacing: -0.04em;
         }
 
-        .hero h1 .accent {
-            color: var(--accent);
+        .creative-card p {
+            margin-top: 10px;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            color: rgba(247, 244, 236, 0.84);
         }
 
-        .hero .subtitle {
-            font-size: clamp(1rem, 2.5vw, 1.2rem);
-            color: var(--text-muted);
-            max-width: 600px;
-            line-height: 1.7;
-            margin-bottom: 36px;
-        }
-
-        /* ── Features ── */
-        .features {
+        .platform-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 20px;
-            width: min(960px, calc(100% - 40px));
-            margin: 0 auto 60px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
         }
 
-        .feature-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 18px;
-            padding: 28px;
+        .platform-card {
+            padding: 24px;
+            min-height: 320px;
+            display: grid;
+            gap: 18px;
         }
 
-        .feature-card .icon {
-            width: 44px;
-            height: 44px;
-            border-radius: 12px;
-            background: var(--accent-soft);
+        .platform-card .mini-shell {
+            border-radius: 20px;
+            background: rgba(4, 7, 13, 0.78);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 16px;
+            display: grid;
+            gap: 12px;
+        }
+
+        .mini-row {
             display: flex;
             align-items: center;
-            justify-content: center;
-            margin-bottom: 16px;
-            color: var(--accent);
+            gap: 8px;
+            flex-wrap: wrap;
         }
 
-        .feature-card h3 {
-            font-size: 1.05rem;
-            margin-bottom: 8px;
+        .mini-token,
+        .model-chip,
+        .wall-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 7px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.04);
+            font-size: 0.72rem;
+            color: rgba(247, 244, 236, 0.88);
         }
 
-        .feature-card p {
-            color: var(--text-muted);
-            font-size: 0.88rem;
-            line-height: 1.6;
+        .mini-code {
+            font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+            font-size: 0.78rem;
+            color: #d7e7ff;
+            line-height: 1.7;
         }
 
-        /* ── Footer ── */
-        footer {
-            border-top: 1px solid var(--border);
-            padding: 28px clamp(20px, 5vw, 80px);
+        .wall-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .wall-card {
+            padding: 18px;
+            min-height: 190px;
+            display: grid;
+            align-content: space-between;
+            gap: 18px;
+        }
+
+        .wall-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .wall-index {
+            font-size: 2rem;
+            letter-spacing: -0.08em;
+            color: rgba(255, 255, 255, 0.18);
+        }
+
+        .wall-tags {
             display: flex;
             flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .models-shell {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .model-column {
+            padding: 24px;
+        }
+
+        .model-list {
+            display: grid;
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .model-chip {
+            width: 100%;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 14px 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.03);
+            font-size: 0.84rem;
+        }
+
+        .model-chip strong {
+            font-size: 0.92rem;
+            letter-spacing: -0.02em;
+        }
+
+        .model-chip span {
+            color: var(--muted);
+            text-align: right;
+        }
+
+        .faq-shell {
+            padding: 12px 22px;
+        }
+
+        .faq-item {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .faq-item:last-child {
+            border-bottom: 0;
+        }
+
+        .faq-item summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 24px 0;
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 16px;
-            font-size: 0.82rem;
-            color: var(--text-muted);
         }
 
-        footer a {
-            color: var(--text-muted);
-            text-decoration: none;
+        .faq-item summary::-webkit-details-marker {
+            display: none;
         }
 
-        footer a:hover {
+        .faq-item summary::after {
+            content: "+";
+            font-size: 1.4rem;
             color: var(--accent);
+            flex: 0 0 auto;
+        }
+
+        .faq-item[open] summary::after {
+            content: "−";
+        }
+
+        .faq-item p {
+            padding: 0 0 22px;
+            color: var(--muted);
+            line-height: 1.8;
+            max-width: 70ch;
+        }
+
+        .cta-ribbon {
+            margin-top: 18px;
+            padding: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            background:
+                radial-gradient(circle at 10% 10%, rgba(255, 184, 61, 0.12), transparent 24%),
+                linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+        }
+
+        .cta-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        footer {
+            width: var(--container);
+            margin: 0 auto;
+            padding: 24px 0 38px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            color: var(--muted);
+            font-size: 0.84rem;
         }
 
         .footer-links {
             display: flex;
-            gap: 24px;
+            flex-wrap: wrap;
+            gap: 18px;
+        }
+
+        .footer-links a:hover,
+        .footer-links a:focus-visible {
+            color: var(--accent);
+        }
+
+        @keyframes floatHero {
+            0%,
+            100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        @keyframes pulseGlow {
+            0%,
+            100% { opacity: 0.7; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.04); }
+        }
+
+        @media (max-width: 1100px) {
+            .hero {
+                grid-template-columns: 1fr;
+                padding-top: 72px;
+            }
+
+            .hero-copy,
+            .section-header,
+            .section-title,
+            .hero-title {
+                max-width: none;
+            }
+
+            .hero-stage {
+                min-height: auto;
+                padding-top: 18px;
+            }
+
+            .workflow-grid,
+            .platform-grid,
+            .wall-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .split-section,
+            .models-shell {
+                grid-template-columns: 1fr;
+            }
+
+            .creative-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 820px) {
+            .site-header {
+                position: static;
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            .site-nav {
+                order: 3;
+                flex-wrap: wrap;
+                width: 100%;
+            }
+
+            .header-actions {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .stage-grid,
+            .timeline-track,
+            .workflow-grid,
+            .platform-grid,
+            .wall-grid,
+            .creative-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .floating-card {
+                position: static;
+                width: 100%;
+                margin-top: 14px;
+            }
+
+            .hero-stage {
+                display: block;
+            }
+
+            .cta-ribbon,
+            footer {
+                flex-direction: column;
+                align-items: flex-start;
+            }
         }
 
         @media (max-width: 640px) {
-            header { flex-direction: column; gap: 16px; }
-            .header-links { gap: 16px; }
-            .hero { padding-top: 32px; }
-            footer { flex-direction: column; text-align: center; }
+            :root {
+                --container: min(100vw - 28px, 100%);
+            }
+
+            .hero {
+                padding-top: 52px;
+                gap: 28px;
+            }
+
+            .hero-title {
+                font-size: clamp(2.6rem, 16vw, 4.1rem);
+            }
+
+            .hero-subtitle,
+            .section-copy {
+                font-size: 0.96rem;
+            }
+
+            .button {
+                width: 100%;
+            }
+
+            .hero-actions,
+            .cta-actions {
+                width: 100%;
+            }
+
+            .site-header,
+            .stage-frame,
+            .workflow-card,
+            .platform-card,
+            .model-column,
+            .faq-shell,
+            .cta-ribbon {
+                border-radius: 22px;
+            }
+
+            .shot-item {
+                grid-template-columns: 56px minmax(0, 1fr);
+            }
+
+            .shot-time {
+                grid-column: 2;
+            }
         }
     </style>
 </head>
 <body>
+    <div class="site-shell">
+        <header class="site-header">
+            <a href="/" class="brand" aria-label="CriaVideo home">
+                <img class="brand-mark" src="/video/static/icons/logo-upload-120.png?v=20260404-19" alt="CriaVideo" width="40" height="40">
+                <span class="brand-copy">
+                    <span class="brand-name">CriaVideo</span>
+                    <span class="brand-tag">Criacao autônoma com IA</span>
+                </span>
+            </a>
 
-    <!-- Header -->
-    <header>
-        <a href="/" class="logo">
-            <img src="/video/static/icons/logo-upload-120.png?v=20260404-19" alt="CriaVideo" width="40" height="40">
-            <span>CriaVideo</span>
-        </a>
-        <nav class="header-links">
-            <a href="/privacy">Política de Privacidade</a>
-            <a href="/terms">Termos de Serviço</a>
-            <a href="/video" class="btn-cta">Acessar plataforma</a>
-        </nav>
-    </header>
+            <nav class="site-nav" aria-label="Navegacao principal">
+                <a href="#flow">Fluxo</a>
+                <a href="#cases">Aplicacoes</a>
+                <a href="#platform">Plataforma</a>
+                <a href="#models">Modelos</a>
+                <a href="#faq">FAQ</a>
+            </nav>
 
-    <!-- Hero -->
-    <section class="hero">
-        <p class="eyebrow">Plataforma de criação de vídeos com IA</p>
-        <h1>Crie e publique vídeos com <span class="accent">inteligencia artificial</span></h1>
-        <p class="subtitle">
-            O CriaVideo é uma plataforma que utiliza inteligencia artificial para gerar roteiros, narrações, legendas e thumbnails automaticamente — e publicar seus vídeos diretamente no YouTube, TikTok e Instagram.
-        </p>
-        <a href="/video" class="btn-cta">Comecar agora &rarr;</a>
-    </section>
-
-    <!-- Features -->
-    <section class="features">
-        <div class="feature-card">
-            <div class="icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+            <div class="header-actions">
+                <a href="/video" class="button button-secondary">Entrar</a>
+                <a href="/video" class="button button-primary">Comecar gratis &rarr;</a>
             </div>
-            <h3>Geração automática de vídeos</h3>
-            <p>Crie vídeos completos a partir de um tema. A IA gera o roteiro, seleciona cenas e monta o vídeo com narração e legendas.</p>
-        </div>
-        <div class="feature-card">
-            <div class="icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
-            </div>
-            <h3>Publicação em múltiplas redes</h3>
-            <p>Conecte suas contas do YouTube, TikTok e Instagram e publique seus vídeos diretamente pela plataforma.</p>
-        </div>
-        <div class="feature-card">
-            <div class="icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            </div>
-            <h3>Agendamento inteligente</h3>
-            <p>Agende a publicação dos seus vídeos para os melhores horários e mantenha uma frequência constante de conteúdo.</p>
-        </div>
-    </section>
+        </header>
 
-    <!-- Footer -->
-    <footer>
-        <span>&copy; 2026 CriaVideo. Todos os direitos reservados.</span>
-        <nav class="footer-links">
-            <a href="/privacy">Política de Privacidade</a>
-            <a href="/terms">Termos de Serviço</a>
-            <a href="mailto:tgsantos66@hotmail.com">Contato</a>
-        </nav>
-    </footer>
+        <main>
+            <section class="hero">
+                <div class="hero-copy">
+                    <span class="eyebrow">Plataforma de criacao, edicao e publicacao com IA</span>
+                    <h1 class="hero-title">A plataforma <em>autônoma</em> para criar videos com volume, consistencia e distribuicao.</h1>
+                    <p class="hero-subtitle">
+                        Do briefing ao upload: gere roteiro, storyboard, cenas, thumbnails, timeline e agenda de publicacao dentro do mesmo painel. O CriaVideo foi feito para transformar ideias em pecas prontas para YouTube, TikTok e Instagram sem trocar de ferramenta no meio do caminho.
+                    </p>
 
+                    <div class="hero-actions">
+                        <a href="/video" class="button button-primary">Comecar agora &rarr;</a>
+                        <a href="#flow" class="button button-secondary">Ver o fluxo completo</a>
+                    </div>
+
+                    <div class="hero-meta" aria-label="Destaques do produto">
+                        <span class="meta-chip"><span class="meta-dot"></span>Roteiro + storyboard + timeline</span>
+                        <span class="meta-chip"><span class="meta-dot"></span>Publicacao e agendamento social</span>
+                        <span class="meta-chip"><span class="meta-dot"></span>Referencias visuais e modelos reais</span>
+                    </div>
+                </div>
+
+                <div class="hero-stage" aria-hidden="true">
+                    <article class="stage-frame">
+                        <div class="stage-toolbar">
+                            <div class="toolbar-dots"><span></span><span></span><span></span></div>
+                            <span class="toolbar-label">Direcao autonoma ativa</span>
+                        </div>
+
+                        <div class="stage-tabs">
+                            <span class="stage-tab active">Criar</span>
+                            <span class="stage-tab">Editar</span>
+                            <span class="stage-tab">Analisar</span>
+                            <span class="stage-tab">Publicar</span>
+                            <span class="stage-tab">Automatizar</span>
+                        </div>
+
+                        <div class="stage-grid">
+                            <section class="panel">
+                                <span class="panel-label">Briefing</span>
+                                <h2 class="panel-title">Campanha com gancho rapido, oferta clara e cortes prontos para Reels, Shorts e anuncios.</h2>
+                                <p class="panel-copy">O sistema organiza a estrutura, separa cenas, aplica referencias e prepara variacoes de saida sem quebrar o contexto visual.</p>
+
+                                <div class="prompt-tags">
+                                    <span class="prompt-tag">Hook forte</span>
+                                    <span class="prompt-tag">Referencia travada</span>
+                                    <span class="prompt-tag">CTA final</span>
+                                </div>
+
+                                <div class="prompt-box">
+                                    <span class="prompt-line">01. Abrir com dor e prova visual do produto.</span>
+                                    <span class="prompt-line">02. Alternar close, uso real e comparacao em ritmo curto.</span>
+                                    <span class="prompt-line">03. Fechar com oferta, urgencia e versoes para cada canal.</span>
+                                </div>
+                            </section>
+
+                            <section class="panel">
+                                <span class="panel-label">Pipeline</span>
+                                <div class="assistant-steps">
+                                    <div class="assistant-step complete">Roteiro estruturado com promessa, prova e CTA.</div>
+                                    <div class="assistant-step complete">Storyboards alinhados com referencia visual do projeto.</div>
+                                    <div class="assistant-step active">Gerando cortes, thumbnail e versoes por plataforma.</div>
+                                    <div class="assistant-step">Publicacao e agendamento multi-canal.</div>
+                                </div>
+                                <p class="assistant-note">Seedance, Wan 2.6, Hailuo, GPT Image, Nano Banana e outros modelos podem entrar no mesmo fluxo dependendo do tipo de criacao.</p>
+                            </section>
+
+                            <section class="panel timeline-panel">
+                                <span class="panel-label">Storyboard + timeline</span>
+                                <div class="shot-list">
+                                    <div class="shot-item">
+                                        <div class="shot-thumb one"></div>
+                                        <div class="shot-copy">
+                                            <strong>Cena 01</strong>
+                                            <span>Close no produto com a promessa principal e movimento de abertura.</span>
+                                        </div>
+                                        <span class="shot-time">0s - 3s</span>
+                                    </div>
+                                    <div class="shot-item">
+                                        <div class="shot-thumb two"></div>
+                                        <div class="shot-copy">
+                                            <strong>Cena 02</strong>
+                                            <span>Demonstracao rapida com referencia visual consistente e fala curta.</span>
+                                        </div>
+                                        <span class="shot-time">3s - 7s</span>
+                                    </div>
+                                    <div class="shot-item">
+                                        <div class="shot-thumb three"></div>
+                                        <div class="shot-copy">
+                                            <strong>Cena 03</strong>
+                                            <span>Fechamento com prova social, oferta e janela de publicacao pronta.</span>
+                                        </div>
+                                        <span class="shot-time">7s - 12s</span>
+                                    </div>
+                                </div>
+
+                                <div class="timeline-track">
+                                    <span class="timeline-clip clip-script">Roteiro</span>
+                                    <span class="timeline-clip clip-storyboard">Storyboard</span>
+                                    <span class="timeline-clip clip-edit">Edicao</span>
+                                    <span class="timeline-clip clip-publish">Publicacao</span>
+                                </div>
+                            </section>
+                        </div>
+                    </article>
+
+                    <aside class="floating-card consistency-card">
+                        <strong>Consistencia visual</strong>
+                        <p>Referencias multi-image e controle por cena para manter produto, pessoa ou ambiente sob a mesma identidade.</p>
+                        <div class="consistency-bar"><span></span></div>
+                    </aside>
+
+                    <aside class="floating-card result-card">
+                        <strong>Saidas prontas</strong>
+                        <p>Mesma ideia, multiplas pecas e formatos de entrega.</p>
+                        <div class="result-tags">
+                            <span>Shorts</span>
+                            <span>UGC</span>
+                            <span>Ads</span>
+                            <span>Thumb</span>
+                        </div>
+                    </aside>
+                </div>
+            </section>
+
+            <section class="section" id="flow">
+                <div class="section-header">
+                    <span class="section-kicker">Como funciona</span>
+                    <h2 class="section-title">Um fluxo unico para sair do roteiro e chegar no video final.</h2>
+                    <p class="section-copy">A home precisava parecer produto de verdade. Por isso a estrutura agora apresenta o processo inteiro: planejamento, referencia, storyboard, timeline e entrega em um painel coerente com o que o CriaVideo realmente faz.</p>
+                </div>
+
+                <div class="workflow-grid">
+                    <article class="workflow-card">
+                        <div>
+                            <h3>Roteiro guiado por objetivo</h3>
+                            <p>Estruture hooks, promessas, falas e blocos de cena sem depender de ferramentas externas.</p>
+                        </div>
+                        <div class="workflow-preview">
+                            <span class="preview-pill">Hook + oferta + CTA</span>
+                            <div class="preview-line"></div>
+                            <div class="preview-line short"></div>
+                            <div class="preview-line"></div>
+                        </div>
+                    </article>
+
+                    <article class="workflow-card">
+                        <div>
+                            <h3>Referencias e personagens</h3>
+                            <p>Trave rosto, produto, fachada ou ambiente antes de gerar as cenas para reduzir variacao desnecessaria.</p>
+                        </div>
+                        <div class="workflow-preview">
+                            <span class="preview-pill">Multi-image reference</span>
+                            <div class="preview-grid">
+                                <div class="preview-thumb"></div>
+                                <div class="preview-thumb alt"></div>
+                                <div class="preview-thumb green"></div>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="workflow-card">
+                        <div>
+                            <h3>Storyboard por cena</h3>
+                            <p>Transforme o briefing em quadros claros, com ordem, foco visual e duracoes pensadas para o formato final.</p>
+                        </div>
+                        <div class="workflow-preview">
+                            <span class="preview-pill">Frames com contexto</span>
+                            <div class="preview-grid">
+                                <div class="preview-thumb alt"></div>
+                                <div class="preview-thumb"></div>
+                                <div class="preview-thumb green"></div>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="workflow-card">
+                        <div>
+                            <h3>Timeline e entrega</h3>
+                            <p>Edite, refine, gere thumbnail e deixe a janela de publicacao pronta sem sair da plataforma.</p>
+                        </div>
+                        <div class="workflow-preview">
+                            <span class="preview-pill">Pronto para publicar</span>
+                            <div class="preview-bar script"><span></span></div>
+                            <div class="preview-bar board"><span></span></div>
+                            <div class="preview-bar publish"><span></span></div>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="section split-section" id="cases">
+                <div>
+                    <div class="section-header">
+                        <span class="section-kicker">Aplicacoes reais</span>
+                        <h2 class="section-title">Do criativo de anuncio ao conteudo recorrente do canal.</h2>
+                        <p class="section-copy">A landing nova precisava sair do institucional curto e mostrar amplitude. O CriaVideo atende desde videos de produto e UGC ate sequencias com personagens, cenas realistas, clipes de apresentacao e cadencias de publicacao recorrentes.</p>
+                    </div>
+                </div>
+
+                <div class="creative-grid">
+                    <article class="creative-card one">
+                        <span class="creative-label">UGC e produto</span>
+                        <h3>Vitrine de ecommerce</h3>
+                        <p>Mostre beneficio, textura, detalhe e CTA em blocos curtos prontos para conversao.</p>
+                    </article>
+                    <article class="creative-card two">
+                        <span class="creative-label">Shorts e Reels</span>
+                        <h3>Cortes com ritmo rapido</h3>
+                        <p>Combine roteiro curto, fala enxuta e visuals orientados para retenção de feed.</p>
+                    </article>
+                    <article class="creative-card three">
+                        <span class="creative-label">Conteudo recorrente</span>
+                        <h3>Series e piloto de canal</h3>
+                        <p>Mantenha tema, identidade e agenda em campanhas continuas sem operar tudo manualmente.</p>
+                    </article>
+                    <article class="creative-card four">
+                        <span class="creative-label">Video realista</span>
+                        <h3>Cenas com referencias visuais</h3>
+                        <p>Trabalhe com frames base, ambientes e pessoas consistentes ao longo da narrativa.</p>
+                    </article>
+                </div>
+            </section>
+
+            <section class="section" id="platform">
+                <div class="section-header">
+                    <span class="section-kicker">Plataforma</span>
+                    <h2 class="section-title">Criacao centralizada, edicao direta e publicacao encaixada no mesmo painel.</h2>
+                    <p class="section-copy">Em vez de só dizer que faz muito, a landing agora mostra os blocos principais do produto com uma cara mais robusta e comercial.</p>
+                </div>
+
+                <div class="platform-grid">
+                    <article class="platform-card">
+                        <div>
+                            <h3>Criacao centralizada</h3>
+                            <p>Do prompt ao storyboard, o fluxo pode combinar roteiro, referencia visual, duracao e motor de geracao em uma unica passagem.</p>
+                        </div>
+                        <div class="mini-shell">
+                            <div class="mini-row">
+                                <span class="mini-token">Texto</span>
+                                <span class="mini-token">Referencia</span>
+                                <span class="mini-token">Cena</span>
+                            </div>
+                            <div class="mini-code">Briefing &rarr; roteiro &rarr; storyboard &rarr; video</div>
+                            <div class="mini-row">
+                                <span class="mini-token">Thumbnail</span>
+                                <span class="mini-token">Legenda</span>
+                                <span class="mini-token">CTA</span>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="platform-card">
+                        <div>
+                            <h3>Editor com contexto</h3>
+                            <p>A timeline entra como continuidade do processo, nao como uma tela isolada. Ajuste ordem, cortes, faixas e entregas com o material já estruturado.</p>
+                        </div>
+                        <div class="mini-shell">
+                            <div class="mini-row">
+                                <span class="mini-token">Timeline</span>
+                                <span class="mini-token">Camadas</span>
+                                <span class="mini-token">Audio</span>
+                            </div>
+                            <div class="preview-bar script"><span></span></div>
+                            <div class="preview-bar board"><span></span></div>
+                            <div class="preview-bar publish"><span></span></div>
+                        </div>
+                    </article>
+
+                    <article class="platform-card">
+                        <div>
+                            <h3>Publicacao e agenda</h3>
+                            <p>Conecte YouTube, TikTok e Instagram para publicar, acompanhar e programar a distribuicao a partir do proprio projeto.</p>
+                        </div>
+                        <div class="mini-shell">
+                            <div class="mini-row">
+                                <span class="mini-token">YouTube</span>
+                                <span class="mini-token">TikTok</span>
+                                <span class="mini-token">Instagram</span>
+                            </div>
+                            <div class="mini-code">Hoje 19:00  •  Reels produto A</div>
+                            <div class="mini-code">Amanha 08:30 •  Shorts corte 02</div>
+                            <div class="mini-code">Sexta 12:00  •  Sequencia promocional</div>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="section">
+                <div class="section-header">
+                    <span class="section-kicker">O que voce pode construir</span>
+                    <h2 class="section-title">Casos de uso que pedem ritmo, repeticao e consistencia visual.</h2>
+                    <p class="section-copy">A estrutura abaixo ajuda a sair da home curta atual e posiciona melhor o produto para quem ainda nao viu o sistema por dentro.</p>
+                </div>
+
+                <div class="wall-grid">
+                    <article class="wall-card">
+                        <div class="wall-head">
+                            <div>
+                                <h3>UGC para ecommerce</h3>
+                                <p>Demonstracao, antes e depois, prova social e CTA em sequencias curtas.</p>
+                            </div>
+                            <span class="wall-index">01</span>
+                        </div>
+                        <div class="wall-tags">
+                            <span class="wall-tag">Produto</span>
+                            <span class="wall-tag">Reels</span>
+                        </div>
+                    </article>
+
+                    <article class="wall-card">
+                        <div class="wall-head">
+                            <div>
+                                <h3>Canal faceless</h3>
+                                <p>Roteiro, storyboard, thumbnails e publicacao recorrente no mesmo fluxo.</p>
+                            </div>
+                            <span class="wall-index">02</span>
+                        </div>
+                        <div class="wall-tags">
+                            <span class="wall-tag">Shorts</span>
+                            <span class="wall-tag">Agenda</span>
+                        </div>
+                    </article>
+
+                    <article class="wall-card">
+                        <div class="wall-head">
+                            <div>
+                                <h3>Apresentacao de servico</h3>
+                                <p>Explique oferta, processo e diferenciais com cenas organizadas e editaveis.</p>
+                            </div>
+                            <span class="wall-index">03</span>
+                        </div>
+                        <div class="wall-tags">
+                            <span class="wall-tag">VSL</span>
+                            <span class="wall-tag">Landing</span>
+                        </div>
+                    </article>
+
+                    <article class="wall-card">
+                        <div class="wall-head">
+                            <div>
+                                <h3>Video realista guiado</h3>
+                                <p>Use referencias por pessoa, ambiente ou projeto para segurar a cena ao longo do video.</p>
+                            </div>
+                            <span class="wall-index">04</span>
+                        </div>
+                        <div class="wall-tags">
+                            <span class="wall-tag">Referencia</span>
+                            <span class="wall-tag">Storyboard</span>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="section" id="models">
+                <div class="section-header">
+                    <span class="section-kicker">Modelos e motores</span>
+                    <h2 class="section-title">O CriaVideo combina diferentes motores sem quebrar o seu fluxo de trabalho.</h2>
+                    <p class="section-copy">Em vez de uma lista solta, a home passa a enquadrar os modelos como parte da plataforma. Os nomes abaixo refletem engines e recursos já presentes no projeto.</p>
+                </div>
+
+                <div class="models-shell">
+                    <article class="model-column">
+                        <h3>Video e avatar</h3>
+                        <p>Escolha o motor de acordo com o formato, referencia e proposta visual da criacao.</p>
+                        <div class="model-list">
+                            <div class="model-chip"><strong>Seedance 2.0</strong><span>Text-to-video e image-to-video</span></div>
+                            <div class="model-chip"><strong>Wan 2.6</strong><span>Videos realistas e sequencias guiadas</span></div>
+                            <div class="model-chip"><strong>MiniMax Hailuo</strong><span>Alternativa para geracao de video</span></div>
+                            <div class="model-chip"><strong>Cria 3.0 speed</strong><span>Fluxos mais rapidos quando prioridade e velocidade</span></div>
+                            <div class="model-chip"><strong>Avatar 3.1 Plus</strong><span>Avatar com fala e duracao ajustada ao audio</span></div>
+                        </div>
+                    </article>
+
+                    <article class="model-column">
+                        <h3>Imagem e apoio criativo</h3>
+                        <p>Ferramentas auxiliares entram para estruturar melhor as pecas e preparar entrega final.</p>
+                        <div class="model-list">
+                            <div class="model-chip"><strong>GPT Image</strong><span>Thumbnails e variacoes de apoio visual</span></div>
+                            <div class="model-chip"><strong>Nano Banana</strong><span>Fallback visual para geracoes de imagem</span></div>
+                            <div class="model-chip"><strong>Referencias multi-image</strong><span>Travar sujeito, ambiente e identidade visual</span></div>
+                            <div class="model-chip"><strong>Storyboard orientado</strong><span>Quadros por cena antes da geracao final</span></div>
+                            <div class="model-chip"><strong>Publicacao social</strong><span>Entrega para YouTube, TikTok e Instagram</span></div>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="section" id="faq">
+                <div class="section-header">
+                    <span class="section-kicker">Perguntas frequentes</span>
+                    <h2 class="section-title">Uma home mais completa precisa responder as duvidas antes do login.</h2>
+                    <p class="section-copy">Aqui a pagina já prepara o visitante para entrar no produto entendendo onde o CriaVideo é forte e como o fluxo está organizado.</p>
+                </div>
+
+                <div class="faq-shell">
+                    <details class="faq-item" open>
+                        <summary>O que eu consigo fazer dentro do CriaVideo?</summary>
+                        <p>Voce consegue estruturar roteiros, preparar storyboards, gerar videos e imagens de apoio, editar na timeline e publicar ou agendar a distribuicao para redes sociais sem sair da plataforma.</p>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary>O sistema serve so para videos publicitarios?</summary>
+                        <p>Nao. A plataforma encaixa muito bem para anuncios, UGC e ecommerce, mas tambem atende conteudo recorrente de canal, apresentacoes de servico, videos realistas guiados por referencia e fluxos de volume.</p>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary>Posso manter consistencia de pessoa, produto ou ambiente?</summary>
+                        <p>Sim. O fluxo do projeto já suporta referencias visuais e combinacoes de imagens para travar melhor sujeito, local, fachada, produto ou identidade visual ao longo das cenas.</p>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary>Quais modelos entram no fluxo hoje?</summary>
+                        <p>O projeto já trabalha com motores como Seedance 2.0, Wan 2.6, MiniMax Hailuo e Avatar 3.1 Plus para video, além de GPT Image e Nano Banana como apoio visual e thumbnails.</p>
+                    </details>
+
+                    <details class="faq-item">
+                        <summary>Como eu acesso a plataforma depois da home?</summary>
+                        <p>O CTA leva para <a href="/video">/video</a>, onde fica a area de login e o aplicativo principal. A ideia agora é que o visitante conheca melhor o produto antes de cair direto na autenticação.</p>
+                    </details>
+                </div>
+
+                <div class="cta-ribbon">
+                    <div>
+                        <h3>Pronto para ver o produto por dentro?</h3>
+                        <p>Entre na plataforma e siga do briefing ao upload com o mesmo contexto criativo do inicio ao fim.</p>
+                    </div>
+
+                    <div class="cta-actions">
+                        <a href="/video" class="button button-primary">Abrir plataforma &rarr;</a>
+                        <a href="mailto:tgsantos66@hotmail.com" class="button button-secondary">Falar com a equipe</a>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <span>&copy; 2026 CriaVideo. Todos os direitos reservados.</span>
+            <nav class="footer-links">
+                <a href="/privacy">Politica de Privacidade</a>
+                <a href="/terms">Termos de Servico</a>
+                <a href="mailto:tgsantos66@hotmail.com">Contato</a>
+                <a href="/video">Entrar na plataforma</a>
+            </nav>
+        </footer>
+    </div>
 </body>
 </html>
 
