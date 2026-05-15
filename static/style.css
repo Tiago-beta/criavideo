@@ -10510,10 +10510,16 @@ th,
 
 #similar-engine-options {
     margin-top: 10px;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 88px));
+    display: flex;
+    flex-wrap: wrap;
     justify-content: flex-start;
-    gap: 10px;
+    gap: 6px;
+}
+
+#similar-engine-options .similar-generation-engine-btn {
+    min-width: 42px;
+    min-height: 30px;
+    padding: 0 10px;
 }
 
 #similar-engine-options .engine-option {

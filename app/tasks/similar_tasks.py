@@ -1039,6 +1039,49 @@ def _compose_similar_unified_reference_paths(
     return ordered_paths
 
 
+def _extract_similar_unified_boundary_frame_paths(tags: dict | None) -> list[str]:
+    safe_tags = _safe_tags_dict(tags)
+    ordered_paths: list[str] = []
+    for key in ("similar_unified_start_frame_path", "similar_unified_end_frame_path"):
+        candidate = str(safe_tags.get(key) or "").strip()
+        if candidate and os.path.exists(candidate) and candidate not in ordered_paths:
+            ordered_paths.append(candidate)
+    return ordered_paths
+
+
+def _compose_similar_unified_scene_reference_paths(
+    boundary_frame_paths: list[str],
+    uploaded_image_paths: list[str],
+    fallback_reference_paths: list[str],
+    custom_reference_path: str = "",
+) -> list[str]:
+    valid_boundary_paths = [path for path in (boundary_frame_paths or []) if path and os.path.exists(path)]
+    if not valid_boundary_paths:
+        fallback_sources = list(fallback_reference_paths or [])
+        custom_path = str(custom_reference_path or "").strip()
+        if custom_path and os.path.exists(custom_path):
+            fallback_sources.append(custom_path)
+        return _compose_similar_unified_reference_paths(fallback_sources, uploaded_image_paths)
+
+    ordered_paths: list[str] = []
+    start_path = valid_boundary_paths[0]
+    end_path = valid_boundary_paths[-1] if len(valid_boundary_paths) > 1 else ""
+
+    ordered_paths.append(start_path)
+    for candidate in [*(uploaded_image_paths or []), *(fallback_reference_paths or []), str(custom_reference_path or "").strip()]:
+        path = str(candidate or "").strip()
+        if not (path and os.path.exists(path)):
+            continue
+        if path in ordered_paths or (end_path and path == end_path):
+            continue
+        ordered_paths.append(path)
+
+    if end_path and end_path not in ordered_paths:
+        ordered_paths.append(end_path)
+
+    return ordered_paths
+
+
 async def _prepare_similar_unified_reference_image(
     reference_image_paths: list[str],
     prompt_text: str,
@@ -2692,6 +2735,7 @@ async def run_similar_generate_unified_scene(
                 reference_image_paths = _collect_similar_reference_frame_paths(scenes, reference_frames_by_scene_index)
             else:
                 reference_image_paths = _collect_similar_reference_frame_paths_from_map(reference_frames_by_scene_index)
+            boundary_reference_paths = _extract_similar_unified_boundary_frame_paths(tags)
 
             custom_unified_reference_path = str(tags.get("similar_unified_reference_image_path") or "").strip()
             has_custom_unified_reference = bool(
@@ -2702,21 +2746,18 @@ async def run_similar_generate_unified_scene(
                 for path in (tags.get("similar_unified_upload_image_paths", []) if isinstance(tags.get("similar_unified_upload_image_paths", []), list) else [])
                 if str(path).strip() and os.path.exists(str(path).strip())
             ][:6]
-            if uploaded_reference_paths:
-                prioritized_reference_paths = list(reference_image_paths)
-                if has_custom_unified_reference and custom_unified_reference_path not in prioritized_reference_paths:
-                    prioritized_reference_paths.append(custom_unified_reference_path)
-                combined_reference_paths = _compose_similar_unified_reference_paths(
-                    prioritized_reference_paths,
-                    uploaded_reference_paths,
-                )
-            elif has_custom_unified_reference:
-                combined_reference_paths = [custom_unified_reference_path]
-            else:
-                combined_reference_paths = _compose_similar_unified_reference_paths(reference_image_paths, uploaded_reference_paths)
+            combined_reference_paths = _compose_similar_unified_scene_reference_paths(
+                boundary_reference_paths,
+                uploaded_reference_paths,
+                reference_image_paths,
+                custom_reference_path=custom_unified_reference_path if has_custom_unified_reference else "",
+            )
             if not combined_reference_paths:
                 raise RuntimeError("Nenhum frame de referencia foi encontrado para a cena unica")
-            use_last_image_as_final_frame = bool(tags.get("similar_unified_use_last_image_as_final_frame")) and normalized_engine == "seedance" and len(uploaded_reference_paths) > 1
+            use_last_image_as_final_frame = normalized_engine == "seedance" and (
+                len(boundary_reference_paths) > 1
+                or (bool(tags.get("similar_unified_use_last_image_as_final_frame")) and len(uploaded_reference_paths) > 1)
+            )
 
             clip_dir = Path(settings.media_dir) / "clips" / str(project_id)
             image_dir = Path(settings.media_dir) / "images" / str(project_id)

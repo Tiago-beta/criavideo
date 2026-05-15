@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v454 loaded");
+console.log("[CriaVideo] app.js v455 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4678,7 +4678,7 @@ function _clearSimilarUnifiedPrompt() {
     if (previewMetaEl) previewMetaEl.textContent = "";
     if (previewStageEl) previewStageEl.innerHTML = "";
     if (previewWrapEl) previewWrapEl.hidden = true;
-    if (generateBtn) generateBtn.textContent = "Gerar cena unica";
+    if (generateBtn) generateBtn.textContent = "Gerar vídeo";
     if (createImageBtn) createImageBtn.hidden = true;
     similarState.unifiedEngine = "";
     similarState.unifiedDuration = 10;
@@ -4757,31 +4757,20 @@ function _syncSimilarUnifiedUploadUi(project = null) {
     }
     if (uploadCountEl) {
         uploadCountEl.textContent = pendingUploads.length
-            ? `${pendingUploads.length} imagem(ns) pronta(s) para a cena unica`
-            : "0 imagem(ns)";
+            ? `${pendingUploads.length} imagem(ns) extra(s) pronta(s)`
+            : "0 imagem(ns) extra(s)";
     }
     if (clearBtnEl) {
         clearBtnEl.hidden = pendingUploads.length === 0;
     }
 
-    const selectedEngine = _getSimilarUnifiedSelectedEngine(tags);
-    const canUseLastFrame = selectedEngine === "seedance" && pendingUploads.length > 1;
     if (toggleGroupEl) {
-        toggleGroupEl.hidden = !canUseLastFrame;
+        toggleGroupEl.hidden = true;
     }
     if (toggleEl) {
-        if (!canUseLastFrame) {
-            toggleEl.checked = false;
-            similarState.unifiedUseLastImageAsFinalFrame = false;
-            similarState.unifiedLastFrameDirty = false;
-            return;
-        }
-        if (!similarState.unifiedLastFrameDirty) {
-            toggleEl.checked = !!tags.similar_unified_use_last_image_as_final_frame;
-            similarState.unifiedUseLastImageAsFinalFrame = !!toggleEl.checked;
-        } else {
-            toggleEl.checked = !!similarState.unifiedUseLastImageAsFinalFrame;
-        }
+        toggleEl.checked = false;
+        similarState.unifiedUseLastImageAsFinalFrame = false;
+        similarState.unifiedLastFrameDirty = false;
     }
 }
 
@@ -4836,94 +4825,65 @@ function _renderSimilarUnifiedReferencePanel(project) {
     if (!wrapEl) return;
 
     const tags = _safeSimilarTags(project?.tags);
-    const unifiedReferenceImageUrl = String(tags.similar_unified_reference_image_url || "").trim();
-    if (!unifiedReferenceImageUrl) {
+    const startFrameUrl = String(tags.similar_unified_start_frame_url || "").trim();
+    const endFrameUrl = String(tags.similar_unified_end_frame_url || "").trim();
+    const frameEntries = [
+        startFrameUrl
+            ? {
+                url: startFrameUrl,
+                badge: "Início",
+                alt: "Primeiro frame do vídeo analisado",
+                downloadName: "prompt-unico-frame-inicial.jpg",
+            }
+            : null,
+        endFrameUrl
+            ? {
+                url: endFrameUrl,
+                badge: "Fim",
+                alt: "Último frame do vídeo analisado",
+                downloadName: "prompt-unico-frame-final.jpg",
+            }
+            : null,
+    ].filter(Boolean);
+
+    if (!frameEntries.length) {
         wrapEl.innerHTML = "";
         wrapEl.hidden = true;
-        similarState.unifiedFrameEditorOpen = false;
-        similarState.unifiedFrameBusy = false;
-        similarState.unifiedFrameBusyLabel = "";
         return;
     }
 
     const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
     const pendingUploads = _getSimilarUnifiedPendingUploads();
     const pendingCount = pendingUploads.length;
-    const frameEditorOpen = !!similarState.unifiedFrameEditorOpen;
-    const frameBusy = !!similarState.unifiedFrameBusy;
-    const frameBusyDisabledAttr = frameBusy ? "disabled" : "";
-    const frameInstructionValue = esc(String(similarState.unifiedFrameInstruction || ""));
-    const frameBusyLabel = esc(String(similarState.unifiedFrameBusyLabel || "Criando uma nova imagem base..."));
-    const editActionIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
     const downloadActionIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
     const summary = pendingCount
-        ? `${pendingCount} nova(s) foto(s) pronta(s) para refinar esta base.`
-        : "Contexto visual consolidado da cena unica.";
-    const uploadsMarkup = pendingCount
-        ? pendingUploads.map((item, uploadIdx) => {
-            const previewUrl = esc(item?.preview_url || "");
-            const fileName = esc(_formatSimilarUploadFileName(item?.file_name || `imagem-${uploadIdx + 1}`));
-            return `
-                <figure class="similar-upload-thumb">
-                    <img src="${previewUrl}" alt="Referencia da cena unica upload ${uploadIdx + 1}" loading="lazy">
-                    <figcaption>${fileName}</figcaption>
-                </figure>
-            `;
-        }).join("")
-        : "";
-    const frameUploadsMarkup = pendingCount
-        ? `
-            <div class="similar-reference-frame-upload-list">
-                <span class="similar-reference-frame-upload-title">Novas fotos enviadas para esta troca</span>
-                <div class="similar-reference-frame-upload-grid">${uploadsMarkup}</div>
+        ? `O vídeo será gerado com o primeiro frame, o último frame e mais ${pendingCount} imagem(ns) extra(s) enviada(s) por você.`
+        : "O vídeo será gerado com o primeiro frame, o último frame e o prompt único atual.";
+    const galleryMarkup = frameEntries.map((entry) => `
+        <article class="similar-frame-gallery-item is-base">
+            <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}">
+                <img src="${esc(entry.url)}" alt="${esc(entry.alt)}" loading="lazy">
+                <div class="similar-frame-image-actions">
+                    <a class="similar-frame-image-action" href="${esc(entry.url)}" download="${entry.downloadName}" title="Baixar ${entry.badge.toLowerCase()}" aria-label="Baixar ${entry.badge.toLowerCase()}">${downloadActionIcon}</a>
+                </div>
+                <span class="similar-frame-gallery-badge">${entry.badge}</span>
             </div>
-        `
-        : "";
-    const frameBusyMarkup = frameBusy
-        ? `
-            <div class="similar-reference-frame-progress" role="status" aria-live="polite">
-                <span class="similar-reference-frame-progress-label">${frameBusyLabel}</span>
-                <div class="similar-reference-frame-progress-bar"><span></span></div>
-            </div>
-        `
-        : "";
+        </article>
+    `).join("");
 
     wrapEl.innerHTML = `
         <section class="similar-reference-frame-panel">
             <div class="similar-reference-frame-head">
                 <div>
-                    <strong>Frame base</strong>
+                    <strong>Frames usados no vídeo</strong>
                     <span>${summary}</span>
                 </div>
             </div>
             <div class="similar-reference-frame-body">
-                <div class="similar-reference-frame-gallery similar-reference-frame-gallery-single">
-                    <article class="similar-frame-gallery-item is-base">
-                        <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}">
-                            <img src="${esc(unifiedReferenceImageUrl)}" alt="Frame base da cena unica" loading="lazy">
-                            <div class="similar-frame-image-actions">
-                                <a class="similar-frame-image-action" href="${esc(unifiedReferenceImageUrl)}" download title="Baixar imagem base" aria-label="Baixar imagem base">${downloadActionIcon}</a>
-                                <button class="similar-frame-image-action" type="button" onclick="similarOpenUnifiedFrameEdit()" title="Editar imagem base" aria-label="Editar imagem base" ${frameBusyDisabledAttr}>${editActionIcon}</button>
-                            </div>
-                            <span class="similar-frame-gallery-badge">Base</span>
-                        </div>
-                    </article>
-                </div>
-            </div>
-            <div class="similar-reference-frame-editor${frameEditorOpen ? " is-open" : ""}" ${frameEditorOpen ? "" : "hidden"}>
-                <label for="similar-unified-frame-instruction">O que a IA deve mudar nesta imagem?</label>
-                <textarea id="similar-unified-frame-instruction" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar a roupa, mudar o produto, manter o mesmo enquadramento e a mesma luz." ${frameBusyDisabledAttr}>${frameInstructionValue}</textarea>
-                <p class="field-hint">A nova imagem usa o frame base do prompt unico e respeita o texto atual para manter o contexto.</p>
-                <div class="similar-reference-frame-editor-tools">
-                    <button class="similar-frame-tool-btn" type="button" onclick="similarUploadUnifiedImages()" ${frameBusyDisabledAttr}>Enviar nova foto</button>
-                    ${pendingCount ? `<button class="similar-frame-tool-btn" type="button" onclick="similarClearUnifiedUploads()" ${frameBusyDisabledAttr}>Limpar</button>` : ""}
-                    <span class="similar-reference-frame-upload-note">${pendingCount ? `${pendingCount} nova(s) foto(s) pronta(s) para a troca.` : "Use o botao + acima quantas vezes quiser para enviar novas fotos e orientar a troca de pessoa, produto ou detalhe."}</span>
-                </div>
-                ${frameUploadsMarkup}
-                ${frameBusyMarkup}
-                <div class="similar-reference-frame-editor-actions">
-                    <button class="btn btn-primary similar-reference-frame-submit-btn" type="button" onclick="similarApplyUnifiedFrameEdit()" ${frameBusyDisabledAttr}>${frameBusy ? "Gerando..." : "Aplicar edicao"}</button>
-                    <button class="btn btn-secondary" type="button" onclick="similarCloseUnifiedFrameEdit()" ${frameBusyDisabledAttr}>Fechar</button>
+                <div class="similar-reference-frame-primary-column">
+                    <div class="similar-reference-frame-gallery${frameEntries.length === 1 ? " similar-reference-frame-gallery-single" : ""}">
+                        ${galleryMarkup}
+                    </div>
                 </div>
             </div>
         </section>
@@ -4936,7 +4896,6 @@ function _renderSimilarUnifiedPrompt(project) {
     const textEl = document.getElementById("similar-unified-prompt-text");
     const metaEl = document.getElementById("similar-unified-prompt-meta");
     const enginePickerEl = document.getElementById("similar-unified-engine-picker");
-    const createImageBtn = document.getElementById("similar-unified-create-image-button");
     const previewWrapEl = document.getElementById("similar-unified-preview-wrap");
     const previewMetaEl = document.getElementById("similar-unified-preview-meta");
     const previewStageEl = document.getElementById("similar-unified-preview-stage");
@@ -4986,7 +4945,6 @@ function _renderSimilarUnifiedPrompt(project) {
 
     const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
     const unifiedClipUrl = String(tags.similar_unified_clip_url || "").trim();
-    const unifiedReferenceImageUrl = String(tags.similar_unified_reference_image_url || "").trim();
     const referenceFrameCount = Number(tags.similar_unified_reference_frame_count || 0) || 0;
     const generatedEngine = _normalizeSimilarEngine(tags.similar_unified_clip_engine || selectedEngine);
     const generatedDuration = parseInt(tags.similar_unified_clip_duration || selectedDuration || "10", 10) || 10;
@@ -4998,18 +4956,11 @@ function _renderSimilarUnifiedPrompt(project) {
             </div>
         `);
     }
-    if (unifiedReferenceImageUrl) {
-        previewItems.push(`
-            <div class="similar-preview-box ${previewAspectClass}">
-                <img src="${esc(unifiedReferenceImageUrl)}" alt="Imagem de referencia da cena unica" loading="lazy">
-            </div>
-        `);
-    }
 
     if (previewItems.length) {
         const previewMetaParts = [];
         if (referenceFrameCount > 0) {
-            previewMetaParts.push(`${referenceFrameCount} frame(s) de referencia`);
+            previewMetaParts.push(`${referenceFrameCount} imagem(ns) de referencia`);
         }
         previewMetaParts.push(`Motor: ${_similarEngineDisplayLabel(generatedEngine)}`);
         previewMetaParts.push(`Duracao: ${generatedDuration}s`);
@@ -5024,18 +4975,12 @@ function _renderSimilarUnifiedPrompt(project) {
 
     textEl.value = promptText;
     metaEl.textContent = metaText;
-    if (createImageBtn) {
-        createImageBtn.hidden = true;
-    }
     if (generateBtn) {
-        generateBtn.textContent = unifiedClipUrl ? "Gerar novamente a cena unica" : "Gerar cena unica";
+        generateBtn.textContent = unifiedClipUrl ? "Gerar novamente o vídeo" : "Gerar vídeo";
     }
     _renderSimilarUnifiedReferencePanel(project);
     _syncSimilarUnifiedUploadUi(project);
     wrapEl.hidden = false;
-    queueMicrotask(() => {
-        void _maybeAutoGenerateSimilarUnifiedReferenceImage(project);
-    });
 }
 
 function _normalizeSimilarSourceUrl(rawValue) {
@@ -5810,8 +5755,8 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
         title = sceneNumber ? `Regenerando cena ${sceneNumber}...` : "Regenerando cena...";
         detail = "Criando uma nova versao desta cena. Aguarde a conclusao para continuar.";
     } else if (busyStage === "generating_unified_scene") {
-        title = "Gerando cena unica...";
-        detail = "Usando o prompt unico e todos os frames de referencia para montar a cena final.";
+        title = "Gerando vídeo...";
+        detail = "Usando o prompt único com o primeiro e o último frame do vídeo analisado para montar o resultado final.";
     } else if (busyStage === "generating_previews") {
         title = "Gerando previas...";
         detail = currentSceneIndex && totalScenes
@@ -5846,7 +5791,7 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
 function _setSimilarEngineSelection(engineValue, options = {}) {
     const markManual = !!options.markManual;
     const normalized = _normalizeSimilarEngine(engineValue);
-    const optionNodes = document.querySelectorAll("#similar-engine-options .engine-option");
+    const optionNodes = document.querySelectorAll("#similar-engine-options [data-value]");
     if (!optionNodes.length) {
         similarState.selectedEngine = normalized;
         if (markManual) {
@@ -5865,7 +5810,7 @@ function _setSimilarEngineSelection(engineValue, options = {}) {
     });
 
     if (!found) {
-        const fallback = document.querySelector("#similar-engine-options .engine-option[data-value='wan2']");
+        const fallback = document.querySelector("#similar-engine-options [data-value='wan2']");
         if (fallback) {
             fallback.classList.add("selected");
         }
@@ -5879,7 +5824,7 @@ function _setSimilarEngineSelection(engineValue, options = {}) {
 }
 
 function _getSimilarSelectedEngine() {
-    const selected = document.querySelector("#similar-engine-options .engine-option.selected");
+    const selected = document.querySelector("#similar-engine-options [data-value].selected");
     if (selected) {
         return _normalizeSimilarEngine(selected.dataset.value);
     }
@@ -10106,7 +10051,8 @@ async function _refreshSimilarProject({ silent = false } = {}) {
             _hideSimilarBusyOverlay();
         }
 
-        _setSimilarStatus(suppressGlobalStatus ? "" : message, kind);
+        const showGlobalStatus = status === "failed" || isProcessing;
+        _setSimilarStatus(showGlobalStatus && !suppressGlobalStatus ? message : "", kind);
         similarState.lastProjectSnapshot = project;
         _syncSimilarSourcePreview(project);
         scheduleSimilarAnalysisCreditEstimates();
@@ -10466,6 +10412,10 @@ async function similarBuildUnifiedPrompt() {
             "similar_unified_clip_generated_at",
             "similar_unified_reference_image_path",
             "similar_unified_reference_image_url",
+            "similar_unified_start_frame_path",
+            "similar_unified_start_frame_url",
+            "similar_unified_end_frame_path",
+            "similar_unified_end_frame_url",
             "similar_unified_reference_frame_count",
         ].forEach((key) => {
             delete nextTags[key];
@@ -10477,7 +10427,8 @@ async function similarBuildUnifiedPrompt() {
 
         similarState.lastProjectSnapshot = nextProject;
         _renderSimilarUnifiedPrompt(nextProject);
-        _setSimilarStatus("Prompt unico gerado. Revise e copie se quiser.", "success");
+        await _refreshSimilarProject({ silent: true });
+        _setSimilarStatus("", "running");
         showToast("Prompt unico criado.", "success");
     } catch (error) {
         _setSimilarStatus(`Erro ao gerar prompt unico: ${error.message}`, "error");
@@ -10563,7 +10514,7 @@ async function similarGenerateUnifiedScene() {
                 use_last_image_as_final_frame: useLastImageAsFinalFrame,
             }),
         });
-        _setSimilarStatus("Geracao da cena unica iniciada...", "running");
+        _setSimilarStatus("Geração do vídeo iniciada...", "running");
         _startSimilarPolling();
         await _refreshSimilarProject();
     } catch (error) {

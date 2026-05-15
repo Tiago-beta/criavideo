@@ -1850,6 +1850,130 @@ def _collect_similar_unified_video_reference_paths(
     return ordered_paths
 
 
+def _extract_similar_unified_boundary_frame_paths(raw_tags: object) -> tuple[str, str]:
+    tags = _safe_tags_dict(raw_tags)
+    start_path = str(tags.get("similar_unified_start_frame_path") or "").strip()
+    end_path = str(tags.get("similar_unified_end_frame_path") or "").strip()
+    if not (start_path and os.path.exists(start_path)):
+        start_path = ""
+    if not (end_path and os.path.exists(end_path)):
+        end_path = ""
+    return start_path, end_path
+
+
+def _pick_similar_unified_boundary_reference_candidates(
+    scenes: list[VideoScene],
+    tags_data: dict[str, Any],
+) -> tuple[str, str]:
+    reference_frame_map = _extract_similar_reference_frame_map(tags_data)
+    ordered_scenes = sorted(scenes or [], key=lambda scene: int(getattr(scene, "scene_index", 0) or 0))
+
+    start_path = ""
+    end_path = ""
+    for scene in ordered_scenes:
+        scene_index = str(int(getattr(scene, "scene_index", 0) or 0))
+        candidate = str(reference_frame_map.get(scene_index) or "").strip()
+        if not (candidate and os.path.exists(candidate)):
+            continue
+        if not start_path:
+            start_path = candidate
+        end_path = candidate
+
+    if start_path and end_path:
+        return start_path, end_path
+
+    for _key, raw_path in sorted(
+        reference_frame_map.items(),
+        key=lambda item: int(item[0]) if str(item[0]).isdigit() else 999999,
+    ):
+        candidate = str(raw_path or "").strip()
+        if not (candidate and os.path.exists(candidate)):
+            continue
+        if not start_path:
+            start_path = candidate
+        end_path = candidate
+
+    return start_path, end_path or start_path
+
+
+def _resolve_similar_unified_end_frame_seconds(
+    scenes: list[VideoScene],
+    tags_data: dict[str, Any],
+) -> float:
+    end_seconds = 0.0
+    for scene in scenes or []:
+        try:
+            candidate = float(getattr(scene, "end_time", 0) or 0)
+        except Exception:
+            candidate = 0.0
+        end_seconds = max(end_seconds, candidate)
+
+    try:
+        total_duration = float(tags_data.get("similar_total_duration") or 0)
+    except Exception:
+        total_duration = 0.0
+    if total_duration > 0.05:
+        end_seconds = max(end_seconds, total_duration)
+
+    return max(0.0, end_seconds)
+
+
+async def _extract_similar_unified_video_frame(
+    video_path: str,
+    timestamp_seconds: float,
+    output_path: str,
+) -> str:
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{max(0.0, float(timestamp_seconds or 0.0)):.3f}",
+        "-i",
+        video_path,
+        "-frames:v",
+        "1",
+        "-q:v",
+        "2",
+        output_path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    out_path = Path(output_path)
+    if proc.returncode != 0 or not out_path.exists() or out_path.stat().st_size <= 0:
+        details = (stderr or b"").decode(errors="ignore")[-500:]
+        raise RuntimeError(f"Falha ao extrair frame do prompt unico: {details}")
+    return str(out_path)
+
+
+async def _ensure_similar_unified_boundary_frame_paths(
+    project_id: int,
+    scenes: list[VideoScene],
+    tags_data: dict[str, Any],
+) -> tuple[str, str]:
+    cached_start, cached_end = _extract_similar_unified_boundary_frame_paths(tags_data)
+    detected_start, fallback_end = _pick_similar_unified_boundary_reference_candidates(scenes, tags_data)
+
+    start_path = cached_start or detected_start
+    end_path = cached_end
+
+    if not end_path:
+        local_video_path = str(tags_data.get("similar_local_video_path") or "").strip()
+        boundary_end_seconds = _resolve_similar_unified_end_frame_seconds(scenes, tags_data)
+        if local_video_path and os.path.exists(local_video_path) and boundary_end_seconds > 0.05:
+            target_path = Path(settings.media_dir) / "images" / str(project_id) / "similar_unified_end_frame.jpg"
+            safe_timestamp = max(0.0, boundary_end_seconds - 0.05)
+            end_path = await _extract_similar_unified_video_frame(local_video_path, safe_timestamp, str(target_path))
+
+    if not start_path:
+        start_path = fallback_end
+    if not end_path:
+        end_path = fallback_end or start_path
+
+    return str(start_path or "").strip(), str(end_path or "").strip()
+
+
 def _extract_similar_detected_scene_duration_map(raw_tags: object) -> dict[str, float]:
     tags = _safe_tags_dict(raw_tags)
     raw_map = tags.get("similar_detected_scene_durations") if isinstance(tags.get("similar_detected_scene_durations"), dict) else {}
@@ -2847,6 +2971,12 @@ async def get_project(
         unified_reference_image_path = str(response_tags.get("similar_unified_reference_image_path") or "").strip()
         if unified_reference_image_path and os.path.exists(unified_reference_image_path):
             response_tags["similar_unified_reference_image_url"] = _to_media_url(unified_reference_image_path)
+        unified_start_frame_path = str(response_tags.get("similar_unified_start_frame_path") or "").strip()
+        if unified_start_frame_path and os.path.exists(unified_start_frame_path):
+            response_tags["similar_unified_start_frame_url"] = _to_media_url(unified_start_frame_path)
+        unified_end_frame_path = str(response_tags.get("similar_unified_end_frame_path") or "").strip()
+        if unified_end_frame_path and os.path.exists(unified_end_frame_path):
+            response_tags["similar_unified_end_frame_url"] = _to_media_url(unified_end_frame_path)
         reference_frame_map = _extract_similar_reference_frame_map(response_tags)
         generated_frame_variant_map = _extract_similar_generated_frame_variant_map(response_tags)
         detected_scene_duration_map = _extract_similar_detected_scene_duration_map(response_tags)
@@ -2950,6 +3080,7 @@ async def build_similar_unified_prompt(
 
     prompt_text, prompt_source = await _generate_similar_unified_prompt(project, scenes, tags_data)
     generated_at = datetime.utcnow().isoformat() + "Z"
+    start_frame_path, end_frame_path = await _ensure_similar_unified_boundary_frame_paths(project_id, scenes, tags_data)
 
     for stale_key in (
         "similar_unified_clip_path",
@@ -2957,6 +3088,8 @@ async def build_similar_unified_prompt(
         "similar_unified_clip_duration",
         "similar_unified_clip_generated_at",
         "similar_unified_reference_image_path",
+        "similar_unified_start_frame_path",
+        "similar_unified_end_frame_path",
         "similar_unified_reference_frame_count",
     ):
         tags_data.pop(stale_key, None)
@@ -2969,6 +3102,13 @@ async def build_similar_unified_prompt(
             "similar_unified_prompt_generated_at": generated_at,
         }
     )
+    if start_frame_path:
+        tags_data["similar_unified_start_frame_path"] = start_frame_path
+    if end_frame_path:
+        tags_data["similar_unified_end_frame_path"] = end_frame_path
+    reference_frame_count = len({path for path in (start_frame_path, end_frame_path) if path})
+    if reference_frame_count > 0:
+        tags_data["similar_unified_reference_frame_count"] = reference_frame_count
     project.tags = tags_data
     await db.commit()
 
@@ -3042,8 +3182,23 @@ async def generate_similar_unified_scene(
             shutil.copy2(source_file, target_file)
             unified_upload_paths.append(str(target_file))
 
+    result_scenes = await db.execute(
+        select(VideoScene).where(VideoScene.project_id == project_id).order_by(VideoScene.scene_index.asc())
+    )
+    scenes = result_scenes.scalars().all()
+    start_frame_path, end_frame_path = await _ensure_similar_unified_boundary_frame_paths(project.id, scenes, tags_data)
+    has_boundary_pair = bool(start_frame_path and end_frame_path and start_frame_path != end_frame_path)
+    if start_frame_path:
+        tags_data["similar_unified_start_frame_path"] = start_frame_path
+    if end_frame_path:
+        tags_data["similar_unified_end_frame_path"] = end_frame_path
+    if start_frame_path or end_frame_path:
+        tags_data["similar_unified_reference_frame_count"] = len({path for path in (start_frame_path, end_frame_path) if path})
+
     tags_data["similar_unified_upload_image_paths"] = unified_upload_paths
-    tags_data["similar_unified_use_last_image_as_final_frame"] = bool(req.use_last_image_as_final_frame) and engine == "seedance" and len(unified_upload_paths) > 1
+    tags_data["similar_unified_use_last_image_as_final_frame"] = engine == "seedance" and (
+        has_boundary_pair or (bool(req.use_last_image_as_final_frame) and len(unified_upload_paths) > 1)
+    )
 
     from app.routers.credits import deduct_credits
 
@@ -3279,6 +3434,8 @@ async def update_similar_scene(
             "similar_unified_clip_duration",
             "similar_unified_clip_generated_at",
             "similar_unified_reference_image_path",
+            "similar_unified_start_frame_path",
+            "similar_unified_end_frame_path",
             "similar_unified_reference_frame_count",
         ):
             tags_data.pop(stale_key, None)
