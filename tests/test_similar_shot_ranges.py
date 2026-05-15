@@ -1,6 +1,9 @@
 import unittest
 
-from app.tasks.similar_tasks import _build_similar_scene_ranges
+from app.tasks.similar_tasks import (
+    _build_similar_scene_ranges,
+    _resolve_similar_reference_frame_timestamp,
+)
 
 
 class TestSimilarShotRanges(unittest.TestCase):
@@ -18,11 +21,11 @@ class TestSimilarShotRanges(unittest.TestCase):
         ranges = _build_similar_scene_ranges(
             12.0,
             [],
-            target_chunk_seconds=5.0,
+            target_chunk_seconds=3.0,
             min_seconds=0.85,
         )
 
-        self.assertEqual(ranges, [(0.0, 4.0), (4.0, 8.0), (8.0, 12.0)])
+        self.assertEqual(ranges, [(0.0, 3.0), (3.0, 6.0), (6.0, 9.0), (9.0, 12.0)])
 
     def test_tiny_cuts_are_merged_into_neighbors(self):
         ranges = _build_similar_scene_ranges(
@@ -33,6 +36,11 @@ class TestSimilarShotRanges(unittest.TestCase):
         )
 
         self.assertEqual(ranges, [(0.0, 1.0), (1.0, 3.0), (3.0, 4.0)])
+
+    def test_reference_frame_timestamp_uses_scene_start(self):
+        self.assertEqual(_resolve_similar_reference_frame_timestamp(0.0, 12.0), 0.0)
+        self.assertEqual(_resolve_similar_reference_frame_timestamp(3.0, 12.0), 3.0)
+        self.assertEqual(_resolve_similar_reference_frame_timestamp(-2.0, 12.0), 0.0)
 
 
 if __name__ == "__main__":

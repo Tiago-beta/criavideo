@@ -946,6 +946,12 @@ def _build_similar_scene_ranges(
     return _compress_similar_scene_ranges(final_ranges, max_count=max_count)
 
 
+def _resolve_similar_reference_frame_timestamp(start_time: float, duration_seconds: float) -> float:
+    safe_duration = max(float(duration_seconds or 0.0), 0.0)
+    max_timestamp = max(0.0, safe_duration - 0.05)
+    return round(min(max_timestamp, max(0.0, float(start_time or 0.0))), 3)
+
+
 def _extract_similar_reference_frames(tags: dict | None) -> dict[str, str]:
     raw_map = tags.get("similar_reference_frames") if isinstance(tags, dict) else {}
     if not isinstance(raw_map, dict):
@@ -2269,7 +2275,7 @@ async def run_similar_reference_analysis(
             if requested_analysis_limit > 0.05:
                 duration_seconds = min(source_duration_seconds, max(1.0, requested_analysis_limit))
             analysis_truncated = duration_seconds + 0.05 < source_duration_seconds
-            scene_seconds = max(1.0, float(settings.similar_scene_default_seconds or 5))
+            scene_seconds = max(1.0, float(settings.similar_scene_default_seconds or 3))
             detected_cut_times = await _detect_scene_change_timestamps(
                 resolved_video_path,
                 max_duration_seconds=duration_seconds,
@@ -2287,12 +2293,10 @@ async def run_similar_reference_analysis(
             reference_frames_by_scene_index: dict[str, str] = {}
 
             for idx, (start, end) in enumerate(scene_ranges):
-                midpoint = min(duration_seconds - 0.05, start + ((end - start) / 2.0))
-                if midpoint < 0:
-                    midpoint = 0
+                frame_timestamp = _resolve_similar_reference_frame_timestamp(start, duration_seconds)
 
                 frame_path = str(frames_dir / f"frame_{idx:03d}.jpg")
-                await _extract_frame(resolved_video_path, midpoint, frame_path)
+                await _extract_frame(resolved_video_path, frame_timestamp, frame_path)
 
                 scene_frame_payloads.append(
                     {

@@ -65,6 +65,8 @@ class TestSimilarCreditPricing(unittest.TestCase):
         self.assertEqual(general["breakdown"]["mode"], "similar_analysis")
         self.assertEqual(general["breakdown"]["analysis_mode"], "general")
         self.assertEqual(scene["breakdown"]["analysis_mode"], "scene")
+        self.assertEqual(scene["breakdown"]["scene_count"], 5)
+        self.assertEqual(scene["breakdown"]["reference_frame_count"], 11)
         self.assertGreater(scene["credits_needed"], general["credits_needed"])
 
     def test_similar_preview_estimate_sums_scene_costs(self):

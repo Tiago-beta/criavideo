@@ -143,7 +143,7 @@ _DIALOGUE_TIMING_LINE_RE = re.compile(
 
 def _similar_scene_duration_seconds(scene: VideoScene | None) -> float:
     if not scene:
-        return float(max(1, int(settings.similar_scene_default_seconds or 5)))
+        return float(max(1, int(settings.similar_scene_default_seconds or 3)))
 
     try:
         start_time = float(scene.start_time or 0)
@@ -157,7 +157,7 @@ def _similar_scene_duration_seconds(scene: VideoScene | None) -> float:
     duration = end_time - start_time
     if duration > 0.1:
         return max(1.0, duration)
-    return float(max(1, int(settings.similar_scene_default_seconds or 5)))
+    return float(max(1, int(settings.similar_scene_default_seconds or 3)))
 
 
 def _ensure_reference_image_instruction(prompt: str, reference_mode: str = "") -> str:
@@ -2676,7 +2676,7 @@ async def start_similar_analysis(
         "similar_source_upload_name": source_upload_name,
         "similar_analysis_mode": analysis_mode,
         "similar_analysis_limit_seconds": analysis_limit_seconds,
-        "similar_scene_seconds": max(int(settings.similar_scene_default_seconds or 5), 1),
+        "similar_scene_seconds": max(int(settings.similar_scene_default_seconds or 3), 1),
     }
 
     project = VideoProject(

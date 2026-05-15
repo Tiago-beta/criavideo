@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     baixatudo_poll_interval_seconds: float = 2.5
     baixatudo_max_wait_seconds: int = 900
     similar_analysis_model: str = "gpt-4o"
-    similar_scene_default_seconds: int = 5
+    similar_scene_default_seconds: int = 3
     similar_scene_min_seconds: int = 5
     similar_scene_max_seconds: int = 15
 

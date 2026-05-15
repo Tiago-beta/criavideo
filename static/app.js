@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v453 loaded");
+console.log("[CriaVideo] app.js v454 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4637,9 +4637,10 @@ function _queueSimilarScroll(options = {}) {
         }
 
         if (target && typeof target.scrollIntoView === "function") {
+            const block = sceneId > 0 || preferScenes || preferUnified ? "start" : "center";
             target.scrollIntoView({
                 behavior: "smooth",
-                block: sceneId > 0 ? "start" : "center",
+                block,
                 inline: "nearest",
             });
         }
@@ -11093,7 +11094,7 @@ function similarToggleFrameEdit(sceneId) {
     setTimeout(() => {
         const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
         instructionEl?.focus();
-        instructionEl?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+        instructionEl?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
     }, 0);
 }
 

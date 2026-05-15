@@ -4107,12 +4107,14 @@ th {
     max-height: calc(100vh - 1rem);
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 #modal-new-project .modal-body {
     flex: 1 1 auto;
     min-height: 0;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 #modal-new-project.workflow-expanded .modal-content-wide {
