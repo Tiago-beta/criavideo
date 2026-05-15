@@ -1969,7 +1969,15 @@ async def _ensure_similar_unified_boundary_frame_paths(
         if local_video_path and os.path.exists(local_video_path) and boundary_end_seconds > 0.05:
             target_path = Path(settings.media_dir) / "images" / str(project_id) / "similar_unified_end_frame.jpg"
             safe_timestamp = max(0.0, boundary_end_seconds - 0.05)
-            end_path = await _extract_similar_unified_video_frame(local_video_path, safe_timestamp, str(target_path))
+            try:
+                end_path = await _extract_similar_unified_video_frame(local_video_path, safe_timestamp, str(target_path))
+            except Exception as exc:
+                logger.warning(
+                    "Failed to extract unified end frame for project %s at %.3fs: %s",
+                    project_id,
+                    safe_timestamp,
+                    exc,
+                )
 
     if not start_path:
         start_path = fallback_end

@@ -4319,12 +4319,16 @@ function initCreateWizard() {
                 }
             }
         }
-        const eng = e.target.closest(".engine-option");
+        const eng = e.target.closest(".engine-option, #similar-engine-options .similar-generation-engine-btn");
         if (eng) {
-            eng.closest(".engine-options").querySelectorAll(".engine-option").forEach((d) => d.classList.remove("selected"));
+            const engineGroup = eng.closest(".engine-options");
+            if (!engineGroup) {
+                return;
+            }
+            engineGroup.querySelectorAll("[data-value]").forEach((d) => d.classList.remove("selected"));
             eng.classList.add("selected");
             const engineVal = eng.dataset.value;
-            const engineGroupId = eng.closest(".engine-options")?.id || "";
+            const engineGroupId = engineGroup.id || "";
             const container = eng.closest(".form-group")?.parentElement;
             if (container) {
                 // Keep realistic engines without auto music by default (user can still enable manually).

@@ -1,9 +1,18 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
-from app.routers.video import _extract_similar_unified_boundary_frame_paths
-from app.tasks.similar_tasks import _compose_similar_unified_scene_reference_paths
+import app.tasks.similar_tasks as similar_tasks
+from app.routers.video import (
+    _ensure_similar_unified_boundary_frame_paths,
+    _extract_similar_unified_boundary_frame_paths,
+)
+from app.tasks.similar_tasks import (
+    _compose_similar_unified_scene_reference_paths,
+    _resolve_similar_scene_boundary_reference_paths,
+)
 
 
 class TestSimilarUnifiedReferenceFrames(unittest.TestCase):
@@ -53,6 +62,110 @@ class TestSimilarUnifiedReferenceFrames(unittest.TestCase):
             ordered_paths,
             [self.start_path, self.upload_path, self.fallback_path, self.end_path],
         )
+
+
+class TestSimilarUnifiedBoundaryFallbacks(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        root = Path(self.temp_dir.name)
+        self.start_path = str(root / "scene-0.jpg")
+        self.end_path = str(root / "scene-1.jpg")
+        self.video_path = str(root / "source.mp4")
+        Path(self.start_path).write_bytes(b"start")
+        Path(self.end_path).write_bytes(b"end")
+        Path(self.video_path).write_bytes(b"video")
+        self.scenes = [
+            SimpleNamespace(scene_index=0, start_time=0.0, end_time=2.6),
+            SimpleNamespace(scene_index=1, start_time=2.6, end_time=5.2),
+        ]
+
+    async def asyncTearDown(self):
+        self.temp_dir.cleanup()
+
+    async def test_unified_boundary_falls_back_when_terminal_extraction_fails(self):
+        with patch(
+            "app.routers.video._extract_similar_unified_video_frame",
+            new=AsyncMock(side_effect=RuntimeError("ffmpeg failed")),
+        ):
+            start_path, end_path = await _ensure_similar_unified_boundary_frame_paths(
+                99,
+                self.scenes,
+                {
+                    "similar_local_video_path": self.video_path,
+                    "similar_reference_frames": {
+                        "0": self.start_path,
+                        "1": self.end_path,
+                    },
+                },
+            )
+
+        self.assertEqual(start_path, self.start_path)
+        self.assertEqual(end_path, self.end_path)
+
+
+class TestSimilarSceneBoundaryReferences(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        root = Path(self.temp_dir.name)
+        self.frame_paths = [
+            str(root / "scene-0.jpg"),
+            str(root / "scene-1.jpg"),
+            str(root / "scene-2.jpg"),
+        ]
+        self.video_path = str(root / "source.mp4")
+        for path in self.frame_paths:
+            Path(path).write_bytes(b"frame")
+        Path(self.video_path).write_bytes(b"video")
+        self.scenes = [
+            SimpleNamespace(scene_index=0, start_time=0.0, end_time=2.6),
+            SimpleNamespace(scene_index=1, start_time=2.6, end_time=5.2),
+            SimpleNamespace(scene_index=2, start_time=5.2, end_time=7.8),
+        ]
+
+    async def asyncTearDown(self):
+        self.temp_dir.cleanup()
+
+    async def test_scene_boundary_uses_next_scene_start_frame(self):
+        ordered_paths = await _resolve_similar_scene_boundary_reference_paths(
+            77,
+            self.scenes[0],
+            self.scenes,
+            {"similar_local_video_path": self.video_path},
+            {
+                "0": self.frame_paths[0],
+                "1": self.frame_paths[1],
+                "2": self.frame_paths[2],
+            },
+        )
+
+        self.assertEqual(ordered_paths, [self.frame_paths[0], self.frame_paths[1]])
+
+    async def test_last_scene_boundary_extracts_terminal_frame(self):
+        async def fake_extract_frame(_video_path, _timestamp_seconds, output_path):
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_path).write_bytes(b"terminal")
+
+        with patch.object(similar_tasks.settings, "media_dir", self.temp_dir.name), patch(
+            "app.tasks.similar_tasks._extract_frame",
+            new=AsyncMock(side_effect=fake_extract_frame),
+        ):
+            ordered_paths = await _resolve_similar_scene_boundary_reference_paths(
+                77,
+                self.scenes[2],
+                self.scenes,
+                {
+                    "similar_local_video_path": self.video_path,
+                    "similar_total_duration": 7.8,
+                },
+                {
+                    "0": self.frame_paths[0],
+                    "1": self.frame_paths[1],
+                    "2": self.frame_paths[2],
+                },
+            )
+
+        self.assertEqual(ordered_paths[0], self.frame_paths[2])
+        self.assertEqual(Path(ordered_paths[1]).name, "similar_scene_002_end_frame.jpg")
 
 
 if __name__ == "__main__":

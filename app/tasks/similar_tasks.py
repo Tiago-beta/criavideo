@@ -31,6 +31,7 @@ from app.models import VideoProject, VideoRender, VideoScene, VideoStatus
 from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
 from app.services.grok_video import generate_video_clip, generate_video_from_prompt
 from app.services.multi_clip import concatenate_clips
+from app.services.persona_registry import build_persona_reference_montage
 from app.services.runpod_video import generate_wan_video
 from app.services.scene_generator import (
     build_similar_scene_continuity_prompt,
@@ -974,6 +975,90 @@ def _get_similar_scene_reference_frame_path(
     if candidate and os.path.exists(candidate):
         return candidate
     return ""
+
+
+async def _extract_similar_scene_terminal_reference_frame(
+    project_id: int,
+    scene: VideoScene,
+    tags: dict | None = None,
+) -> str:
+    safe_tags = _safe_tags_dict(tags)
+    local_video_path = str(safe_tags.get("similar_local_video_path") or "").strip()
+    if project_id <= 0 or not (local_video_path and os.path.exists(local_video_path)):
+        return ""
+
+    try:
+        scene_start = float(getattr(scene, "start_time", 0) or 0)
+    except Exception:
+        scene_start = 0.0
+    try:
+        scene_end = float(getattr(scene, "end_time", scene_start) or scene_start)
+    except Exception:
+        scene_end = scene_start
+    try:
+        total_duration = float(safe_tags.get("similar_total_duration") or 0)
+    except Exception:
+        total_duration = 0.0
+
+    target_timestamp = max(scene_end, total_duration if total_duration > 0.05 else 0.0)
+    if target_timestamp <= 0.05:
+        target_timestamp = max(scene_start, scene_end)
+    safe_timestamp = max(0.0, max(scene_start, target_timestamp - 0.05))
+
+    target_path = Path(settings.media_dir) / "images" / str(project_id) / f"similar_scene_{int(scene.scene_index or 0):03d}_end_frame.jpg"
+    if target_path.exists() and target_path.stat().st_size > 0:
+        return str(target_path)
+
+    try:
+        await _extract_frame(local_video_path, safe_timestamp, str(target_path))
+    except Exception as exc:
+        logger.warning(
+            "Failed to extract terminal frame for project %s scene %s at %.3fs: %s",
+            project_id,
+            int(getattr(scene, "scene_index", 0) or 0),
+            safe_timestamp,
+            exc,
+        )
+        return ""
+
+    return str(target_path) if target_path.exists() and target_path.stat().st_size > 0 else ""
+
+
+async def _resolve_similar_scene_boundary_reference_paths(
+    project_id: int,
+    scene: VideoScene,
+    scenes: list[VideoScene],
+    tags: dict | None,
+    reference_frames_by_scene_index: dict[str, str] | None = None,
+    preferred_start_path: str = "",
+) -> list[str]:
+    start_path = str(preferred_start_path or "").strip()
+    if not (start_path and os.path.exists(start_path)):
+        start_path = _get_similar_scene_reference_frame_path(scene, reference_frames_by_scene_index)
+
+    current_scene_index = int(getattr(scene, "scene_index", 0) or 0)
+    end_path = ""
+    for candidate_scene in sorted(scenes or [], key=lambda item: int(getattr(item, "scene_index", 0) or 0)):
+        candidate_index = int(getattr(candidate_scene, "scene_index", 0) or 0)
+        if candidate_index <= current_scene_index:
+            continue
+        candidate = _get_similar_scene_reference_frame_path(candidate_scene, reference_frames_by_scene_index)
+        if candidate:
+            end_path = candidate
+            break
+
+    if not end_path:
+        end_path = await _extract_similar_scene_terminal_reference_frame(project_id, scene, tags)
+
+    if not start_path:
+        start_path = end_path
+
+    ordered_paths: list[str] = []
+    for candidate in (start_path, end_path):
+        path = str(candidate or "").strip()
+        if path and os.path.exists(path) and path not in ordered_paths:
+            ordered_paths.append(path)
+    return ordered_paths
 
 
 def _clear_similar_unified_clip_tags(tags: dict | None) -> dict:
@@ -2068,6 +2153,9 @@ async def _generate_clip_for_scene(
     clip_dir: Path,
     image_dir: Path,
     generation_mode: str = "image",
+    project: VideoProject | None = None,
+    all_scenes: list[VideoScene] | None = None,
+    tags_data: dict | None = None,
     anchor_scene: VideoScene | None = None,
     reference_frames_by_scene_index: dict[str, str] | None = None,
 ) -> str:
@@ -2087,12 +2175,52 @@ async def _generate_clip_for_scene(
         manual_image_path = ""
     output_path = str(clip_dir / f"similar_scene_{int(scene.scene_index or 0):03d}.mp4")
 
-    base_reference_image = (manual_image_path or reference_image_path) if normalized_generation_mode == "image" else ""
-    if normalized_engine == "seedance" and base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
-        seedance_target_duration = min(
-            float(_engine_min_duration(normalized_engine)),
-            max(3.0, float(scene_duration_seconds or 0.0)),
+    safe_tags = _safe_tags_dict(tags_data if isinstance(tags_data, dict) else getattr(project, "tags", None))
+    project_id = int(getattr(project, "id", 0) or 0)
+    project_user_id = int(getattr(project, "user_id", 0) or 0) or project_id
+    scene_reference_paths: list[str] = []
+    merged_reference_image = ""
+    if normalized_generation_mode == "image":
+        preferred_start_path = manual_image_path or reference_image_path
+        scene_reference_paths = await _resolve_similar_scene_boundary_reference_paths(
+            project_id,
+            scene,
+            list(all_scenes or [scene]),
+            safe_tags,
+            reference_frames_by_scene_index,
+            preferred_start_path=preferred_start_path,
         )
+        if not scene_reference_paths:
+            generated_image_path = await _ensure_scene_image(
+                scene,
+                aspect_ratio,
+                image_dir,
+                anchor_scene=anchor_scene,
+                reference_frames_by_scene_index=reference_frames_by_scene_index,
+            )
+            scene_reference_paths = [generated_image_path]
+        if normalized_engine != "seedance" and len(scene_reference_paths) > 1:
+            merged_reference_image = str(
+                build_persona_reference_montage(
+                    project_user_id,
+                    scene_reference_paths,
+                    prefix=f"similar_scene_{int(scene.scene_index or 0):03d}_bounds",
+                )
+                or ""
+            ).strip()
+            if not (merged_reference_image and os.path.exists(merged_reference_image)):
+                merged_reference_image = ""
+
+    use_last_image_as_final_frame = len(scene_reference_paths) > 1
+    base_reference_image = ""
+    if normalized_generation_mode == "image":
+        if normalized_engine == "seedance":
+            base_reference_image = scene_reference_paths[0] if scene_reference_paths else ""
+        else:
+            base_reference_image = merged_reference_image or (scene_reference_paths[0] if scene_reference_paths else "")
+
+    if normalized_engine == "seedance" and base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
+        seedance_target_duration = max(0.6, float(scene_duration_seconds or 0.0))
         tmp_output_path = str(clip_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_seedance_full.mp4")
         await generate_realistic_video(
             prompt=prompt,
@@ -2101,7 +2229,9 @@ async def _generate_clip_for_scene(
             output_path=tmp_output_path,
             resolution="480p",
             generate_audio=True,
-            image_path=base_reference_image,
+            image_path=scene_reference_paths[0] if scene_reference_paths else base_reference_image,
+            image_paths=scene_reference_paths[1:] if len(scene_reference_paths) > 1 else None,
+            use_last_image_as_final_frame=use_last_image_as_final_frame,
             on_progress=None,
         )
         await _trim_clip_duration(tmp_output_path, seedance_target_duration, output_path)
@@ -2111,6 +2241,25 @@ async def _generate_clip_for_scene(
         except Exception:
             pass
         clip_duration = seedance_target_duration
+    elif normalized_engine == "wan2" and base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
+        wan_target_duration = max(0.6, float(scene_duration_seconds or 0.0))
+        tmp_output_path = str(clip_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_wan_full.mp4")
+        await generate_wan_video(
+            prompt=prompt,
+            duration=int(_engine_min_duration(normalized_engine)),
+            aspect_ratio=aspect_ratio,
+            output_path=tmp_output_path,
+            image_path=base_reference_image,
+            generate_audio=True,
+            on_progress=None,
+        )
+        await _trim_clip_duration(tmp_output_path, wan_target_duration, output_path)
+        try:
+            if os.path.exists(tmp_output_path):
+                os.remove(tmp_output_path)
+        except Exception:
+            pass
+        clip_duration = max(0.6, scene_duration_seconds)
     elif base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
         await _render_reference_frame_clip(
             base_reference_image,
@@ -2120,15 +2269,7 @@ async def _generate_clip_for_scene(
         )
         clip_duration = max(0.6, scene_duration_seconds)
     else:
-        image_path = manual_image_path or reference_image_path
-        if normalized_generation_mode == "image" and not image_path:
-            image_path = await _ensure_scene_image(
-                scene,
-                aspect_ratio,
-                image_dir,
-                anchor_scene=anchor_scene,
-                reference_frames_by_scene_index=reference_frames_by_scene_index,
-            )
+        image_path = base_reference_image
 
         if normalized_engine == "grok":
             if normalized_generation_mode == "text":
@@ -2167,7 +2308,9 @@ async def _generate_clip_for_scene(
                 output_path=output_path,
                 resolution="480p",
                 generate_audio=True,
-                image_path=image_path if normalized_generation_mode == "image" else None,
+                image_path=(scene_reference_paths[0] if scene_reference_paths else image_path) if normalized_generation_mode == "image" else None,
+                image_paths=scene_reference_paths[1:] if normalized_generation_mode == "image" and len(scene_reference_paths) > 1 else None,
+                use_last_image_as_final_frame=use_last_image_as_final_frame,
                 on_progress=None,
             )
 
@@ -2555,6 +2698,7 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
             image_dir = Path(settings.media_dir) / "images" / str(project_id)
             anchor_scene = scenes[0] if scenes else None
             reference_frames_by_scene_index = _extract_similar_reference_frames(tags)
+            generation_tags = _safe_tags_dict(project.tags)
 
             for idx, scene in enumerate(scenes):
                 tags = _safe_tags_dict(project.tags)
@@ -2576,6 +2720,9 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
                     aspect_ratio=aspect_ratio,
                     clip_dir=clip_dir,
                     image_dir=image_dir,
+                    project=project,
+                    all_scenes=scenes,
+                    tags_data=generation_tags,
                     anchor_scene=anchor_scene,
                     reference_frames_by_scene_index=reference_frames_by_scene_index,
                 )
@@ -2646,15 +2793,15 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
             clip_dir = Path(settings.media_dir) / "clips" / str(project_id)
             image_dir = Path(settings.media_dir) / "images" / str(project_id)
             reference_frames_by_scene_index = _extract_similar_reference_frames(tags)
+            all_scenes_result = await db.execute(
+                select(VideoScene)
+                .where(VideoScene.project_id == project_id)
+                .order_by(VideoScene.scene_index.asc())
+            )
+            all_scenes = all_scenes_result.scalars().all()
             anchor_scene = None
             if int(scene.scene_index or 0) > 0:
-                anchor_result = await db.execute(
-                    select(VideoScene)
-                    .where(VideoScene.project_id == project_id)
-                    .order_by(VideoScene.scene_index.asc())
-                    .limit(1)
-                )
-                anchor_candidate = anchor_result.scalars().first()
+                anchor_candidate = all_scenes[0] if all_scenes else None
                 if anchor_candidate and int(anchor_candidate.id or 0) != int(scene.id or 0):
                     anchor_scene = anchor_candidate
 
@@ -2665,6 +2812,9 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
                 clip_dir=clip_dir,
                 image_dir=image_dir,
                 generation_mode=generation_mode,
+                project=project,
+                all_scenes=all_scenes,
+                tags_data=tags,
                 anchor_scene=anchor_scene,
                 reference_frames_by_scene_index=reference_frames_by_scene_index,
             )
