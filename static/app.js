@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v456 loaded");
+console.log("[CriaVideo] app.js v457 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -5778,7 +5778,7 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
             : "Criando as cenas uma por uma. Aguarde a conclusao para editar novamente.";
     }
 
-    const usesInlineSceneProgress = busyStage === "generating_scene" || busyStage === "regenerating_scene";
+    const usesInlineSceneProgress = busyStage === "generating_scene" || busyStage === "regenerating_scene" || busyStage === "generating_previews";
     if (similarState.busyProgressStage !== busyStage || (!usesInlineSceneProgress && overlayEl.hidden)) {
         similarState.busyProgressStage = busyStage;
         similarState.busyProgressCurrent = Math.max(4, Math.min(100, progress));
@@ -5857,6 +5857,7 @@ function _updateSimilarGenerationStep(project, tags) {
     const generationStepEl = document.getElementById("similar-generation-step");
     const profileEl = document.getElementById("similar-detected-profile");
     const unifiedPromptBtn = document.getElementById("similar-build-unified-prompt");
+    const mergePreviewEl = document.getElementById("similar-merge-preview-wrap");
     if (!generationStepEl) return;
 
     const stage = String(tags?.similar_stage || "").trim();
@@ -5870,6 +5871,10 @@ function _updateSimilarGenerationStep(project, tags) {
         unifiedPromptBtn.hidden = analysisMode === "general" || !canConfigure;
     }
     if (!canConfigure) {
+        if (mergePreviewEl) {
+            mergePreviewEl.hidden = true;
+            mergePreviewEl.innerHTML = "";
+        }
         return;
     }
 
@@ -5898,6 +5903,104 @@ function _updateSimilarGenerationStep(project, tags) {
     } else {
         _setSimilarEngineSelection(_getSimilarSelectedEngine(), { markManual: false });
     }
+
+    _renderSimilarMergePreview(project, tags);
+}
+
+function _renderSimilarMergePreview(project, tags = {}) {
+    const wrapEl = document.getElementById("similar-merge-preview-wrap");
+    if (!wrapEl) return;
+
+    const safeTags = _safeSimilarTags(tags);
+    const scenes = Array.isArray(project?.scenes) ? project.scenes : [];
+    const status = String(project?.status || "").trim().toLowerCase();
+    const stage = String(safeTags.similar_stage || "").trim().toLowerCase();
+    const pendingStage = String(similarState.pendingBusyStage || "").trim().toLowerCase();
+    const render = _pickLatestAvailableRender(project?.renders || []);
+    const renderUrl = String(render?.video_url || "").trim();
+    const renderDuration = Number(render?.duration || 0) || 0;
+    const isMerging = stage === "merging_scenes" || (pendingStage === "merging_scenes" && status === "rendering");
+    const isMergeFailed = stage === "merge_failed" || (status === "failed" && (stage === "merge_failed" || pendingStage === "merging_scenes"));
+
+    if (!isMerging && !isMergeFailed && !renderUrl) {
+        wrapEl.innerHTML = "";
+        wrapEl.hidden = true;
+        return;
+    }
+
+    const selectedCount = scenes.filter((scene) => {
+        const sceneKey = _similarSceneStateKey(scene?.id);
+        if (!sceneKey) return false;
+        if (!Object.prototype.hasOwnProperty.call(similarState.sceneMergeSelectionBySceneId, sceneKey)) {
+            return true;
+        }
+        return !!similarState.sceneMergeSelectionBySceneId[sceneKey];
+    }).length || scenes.length;
+    const selectedLabel = `${selectedCount} ${selectedCount === 1 ? "cena" : "cenas"}`;
+    const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
+    const durationLabel = renderDuration > 0 ? `${renderDuration.toFixed(1)}s` : "";
+    const errorText = esc(String(project?.error_message || "Falha ao unir as cenas selecionadas.").trim());
+
+    if (isMerging) {
+        wrapEl.innerHTML = `
+            <section class="similar-merge-preview">
+                <div class="similar-merge-preview-head">
+                    <strong>Vídeo final em criação</strong>
+                    <span>${selectedLabel}</span>
+                </div>
+                <div class="similar-merge-preview-card is-processing" role="status" aria-live="polite">
+                    <div class="similar-merge-preview-placeholder">
+                        <span class="similar-scene-clip-spinner" aria-hidden="true"></span>
+                        <strong>Unindo cenas...</strong>
+                        <p>Costurando o vídeo final com ${selectedLabel}. O resultado aparece aqui assim que terminar.</p>
+                        <div class="similar-merge-preview-frames" aria-hidden="true">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        `;
+        wrapEl.hidden = false;
+        return;
+    }
+
+    if (isMergeFailed && !renderUrl) {
+        wrapEl.innerHTML = `
+            <section class="similar-merge-preview is-error">
+                <div class="similar-merge-preview-head">
+                    <strong>Falha ao unir cenas</strong>
+                    <span>${selectedLabel}</span>
+                </div>
+                <div class="similar-merge-preview-card is-error">
+                    <div class="similar-merge-preview-placeholder">
+                        <strong>Não foi possível concluir a união.</strong>
+                        <p>${errorText}</p>
+                    </div>
+                </div>
+            </section>
+        `;
+        wrapEl.hidden = false;
+        return;
+    }
+
+    wrapEl.innerHTML = `
+        <section class="similar-merge-preview">
+            <div class="similar-merge-preview-head">
+                <strong>Vídeo final unido</strong>
+                <span>${durationLabel ? `${selectedLabel} • ${durationLabel}` : selectedLabel}</span>
+            </div>
+            <div class="similar-merge-preview-card">
+                <div class="similar-preview-box ${previewAspectClass} similar-merge-video-box">
+                    <video src="${esc(renderUrl)}" controls preload="metadata" playsinline></video>
+                </div>
+            </div>
+        </section>
+    `;
+    wrapEl.hidden = false;
 }
 
 function _similarSceneStateKey(sceneId) {
@@ -6427,7 +6530,13 @@ function _renderSimilarScenes(project, options = {}) {
     const projectTags = _safeSimilarTags(project?.tags);
     const activeBusyStage = _resolveSimilarBusyStage(String(projectTags.similar_stage || "").trim(), String(project?.status || "").trim().toLowerCase())
         || String(similarState.pendingBusyStage || "").trim();
-    const activeBusySceneId = Number(projectTags.similar_regenerating_scene_id || similarState.pendingBusySceneId || 0);
+    const activeBusySceneId = Number(
+        (activeBusyStage === "generating_previews"
+            ? projectTags.similar_current_scene_id
+            : (projectTags.similar_regenerating_scene_id || projectTags.similar_current_scene_id))
+        || similarState.pendingBusySceneId
+        || 0
+    );
     const similarActionIcons = {
         save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
         upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
@@ -6468,7 +6577,7 @@ function _renderSimilarScenes(project, options = {}) {
         const clipUrlSafe = esc(clipUrlRaw);
         const hasClipPreview = !!clipUrlRaw.trim();
         const hasReferenceFrame = !!String(scene.reference_frame_url || "").trim();
-        const isGeneratingSceneClip = activeBusySceneId === sceneId && ["generating_scene", "regenerating_scene"].includes(activeBusyStage);
+        const isGeneratingSceneClip = activeBusySceneId === sceneId && ["generating_scene", "regenerating_scene", "generating_previews"].includes(activeBusyStage);
         const frameEditorOpen = !!draft.frameEditorOpen;
         const narrationEditorOpen = !!draft.narrationEditorOpen;
         const frameBusy = !!draft.frameBusy;
@@ -6504,7 +6613,9 @@ function _renderSimilarScenes(project, options = {}) {
         const sceneClipProgress = isGeneratingSceneClip
             ? Math.max(4, Math.min(99, Math.round(Number(similarState.busyProgressCurrent || project?.progress || similarState.progress || 0) || 4)))
             : 0;
-        const sceneClipBusyLabel = hasClipPreview ? "Gerando nova versão" : "Gerando vídeo";
+        const sceneClipBusyLabel = activeBusyStage === "generating_previews"
+            ? "Gerando prévia"
+            : (hasClipPreview ? "Gerando nova versão" : "Gerando vídeo");
         const sceneClipBusyProgressLabel = sceneClipProgress > 0 ? `${sceneClipProgress}%` : "Processando";
         const sceneClipBusyMarkup = isGeneratingSceneClip
             ? `<div class="similar-scene-clip-busy-overlay" role="status" aria-live="polite"><span class="similar-scene-clip-spinner" aria-hidden="true"></span><div class="similar-scene-clip-busy-copy"><strong>${sceneClipBusyLabel}</strong><span class="similar-scene-clip-busy-progress">${sceneClipBusyProgressLabel}</span></div></div>`
@@ -10027,10 +10138,10 @@ async function _refreshSimilarProject({ silent = false } = {}) {
         const isProcessing = ["generating_scenes", "generating_clips", "rendering"].includes(status);
         const rawStage = String(tags.similar_stage || "").trim();
         const stage = _resolveSimilarBusyStage(rawStage, status) || rawStage;
-        const lockGlobalUi = isProcessing && !["generating_scene", "regenerating_scene"].includes(stage);
+        const lockGlobalUi = isProcessing && !["generating_scene", "regenerating_scene", "generating_previews"].includes(stage);
         const suppressGlobalStatus = status !== "failed" && (
-            (isProcessing && ["generating_scene", "regenerating_scene"].includes(stage))
-            || (!isProcessing && ["generating_scene", "regenerating_scene"].includes(rawStage))
+            (isProcessing && ["generating_scene", "regenerating_scene", "generating_previews"].includes(stage))
+            || (!isProcessing && ["generating_scene", "regenerating_scene", "generating_previews"].includes(rawStage))
             || (!isProcessing && ["scene_edited", "scene_image_ready", "preview_ready"].includes(rawStage))
         );
         const stageLabel = stage === "downloading_reference" && String(tags.similar_source_type || "").trim().toLowerCase() === "upload"
@@ -11244,7 +11355,11 @@ async function similarGenerateAllPreviews() {
             showToast("Nao foi possivel salvar os prompts editados antes de gerar as cenas.", "error");
             return;
         }
-        _setSimilarBusyIntent("generating_previews");
+        const scenes = Array.isArray(similarState.lastProjectSnapshot?.scenes)
+            ? [...similarState.lastProjectSnapshot.scenes].sort((a, b) => Number(a?.scene_index || 0) - Number(b?.scene_index || 0))
+            : [];
+        const firstSceneId = Number(scenes[0]?.id || 0);
+        _setSimilarBusyIntent("generating_previews", firstSceneId);
         _updateSimilarBusyOverlay(similarState.lastProjectSnapshot, {
             similar_total_scenes: Array.isArray(similarState.lastProjectSnapshot?.scenes) ? similarState.lastProjectSnapshot.scenes.length : 0,
         }, {
@@ -11252,8 +11367,10 @@ async function similarGenerateAllPreviews() {
             status: "generating_clips",
             progress: 4,
         });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
         _queueSimilarScroll({ preferScenes: true, preferStatus: true });
-        _refreshSimilarButtonsDisabled(true);
         await api(`/video/projects/${projectId}/similar/generate-previews`, {
             method: "POST",
             body: JSON.stringify({
@@ -11269,6 +11386,9 @@ async function similarGenerateAllPreviews() {
         _clearSimilarBusyIntent();
         _hideSimilarBusyOverlay();
         _refreshSimilarButtonsDisabled(false);
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
     }
 }
 
@@ -11304,6 +11424,18 @@ async function similarMergeSelectedScenes() {
     }
 
     try {
+        _setSimilarBusyIntent("merging_scenes");
+        if (similarState.lastProjectSnapshot) {
+            const optimisticProject = {
+                ...similarState.lastProjectSnapshot,
+                status: "rendering",
+            };
+            const optimisticTags = {
+                ..._safeSimilarTags(similarState.lastProjectSnapshot?.tags),
+                similar_stage: "merging_scenes",
+            };
+            _updateSimilarGenerationStep(optimisticProject, optimisticTags);
+        }
         _refreshSimilarButtonsDisabled(true);
         _queueSimilarScroll({ preferScenes: true, preferStatus: true });
         await api(`/video/projects/${projectId}/similar/merge`, {
@@ -11318,7 +11450,11 @@ async function similarMergeSelectedScenes() {
         await _refreshSimilarProject();
     } catch (error) {
         showToast(`Erro ao unir cenas: ${error.message}`, "error");
+        _clearSimilarBusyIntent();
         _refreshSimilarButtonsDisabled(false);
+        if (similarState.lastProjectSnapshot) {
+            _updateSimilarGenerationStep(similarState.lastProjectSnapshot, _safeSimilarTags(similarState.lastProjectSnapshot?.tags));
+        }
     }
 }
 
