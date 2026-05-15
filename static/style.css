@@ -6556,6 +6556,25 @@ svg.spin {
     min-width: min(100%, 240px);
 }
 
+.script-media-icon-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+    gap: 0;
+}
+
+.script-media-icon-btn.script-video-audio-btn--secondary {
+    min-width: 44px;
+}
+
+.script-media-icon-btn .script-video-audio-btn-icon {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    background: transparent;
+}
+
 .script-video-audio-btn.active,
 .script-video-audio-btn.is-ready {
     border-color: rgba(var(--accent-rgb), 0.64);
@@ -6589,6 +6608,25 @@ svg.spin {
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
+}
+
+.script-audio-selection-row {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.script-audio-selection-row .script-media-status {
+    flex: 1;
+}
+
+.script-media-compact-panel .narration-choice {
+    margin-top: 12px;
+}
+
+.create-elevenlabs-voice-section {
+    margin-top: 14px;
 }
 
 .script-video-selection-row {

@@ -40,7 +40,11 @@ from app.services.credit_pricing import (
     estimate_similar_scene_credits,
     estimate_standard_credits,
 )
-from app.services.voice_catalog import ELEVENLABS_BR_VOICE_PRESETS, is_elevenlabs_br_voice_id
+from app.services.voice_catalog import (
+    ELEVENLABS_BR_VOICE_PRESETS,
+    build_elevenlabs_ptbr_instructions,
+    is_elevenlabs_br_voice_id,
+)
 from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
 from app.services.realistic_cover_guidance import (
     apply_cover_guidance,
@@ -76,6 +80,7 @@ VOICE_DEMOS.update({
 })
 
 VOICE_DEMO_DIR = os.path.join(settings.media_dir, "voice_demos")
+VOICE_DEMO_VERSION = "20260515-01"
 os.makedirs(VOICE_DEMO_DIR, exist_ok=True)
 
 TEMP_UPLOAD_DIR = Path(settings.media_dir) / "temp_uploads"
@@ -1751,7 +1756,7 @@ async def get_voice_demo(voice_id: str):
     if voice_id not in VOICE_DEMOS:
         raise HTTPException(404, "Voice not found")
 
-    cache_path = os.path.join(VOICE_DEMO_DIR, f"{voice_id}.mp3")
+    cache_path = os.path.join(VOICE_DEMO_DIR, f"{VOICE_DEMO_VERSION}-{voice_id}.mp3")
     if not os.path.exists(cache_path):
         demo = VOICE_DEMOS[voice_id]
         try:
@@ -1762,7 +1767,7 @@ async def get_voice_demo(voice_id: str):
                     demo["text"],
                     voice_id,
                     cache_path,
-                    tts_instructions="Fale em portugues do Brasil com diccao clara, natural e amigavel.",
+                    tts_instructions=build_elevenlabs_ptbr_instructions(voice_id),
                 )
             else:
                 resp = await _openai.audio.speech.create(

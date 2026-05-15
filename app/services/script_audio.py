@@ -16,7 +16,7 @@ from PIL import Image
 from pypdf import PdfReader
 
 from app.config import get_settings
-from app.services.voice_catalog import is_elevenlabs_br_voice_id
+from app.services.voice_catalog import build_elevenlabs_ptbr_instructions, is_elevenlabs_br_voice_id
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -504,6 +504,8 @@ async def generate_tts_audio(
     if normalized_voice_type == "builtin" and is_elevenlabs_br_voice_id(voice):
         normalized_voice_type = "elevenlabs"
     voice_type = normalized_voice_type
+    if voice_type == "elevenlabs":
+        tts_instructions = build_elevenlabs_ptbr_instructions(voice, tts_instructions)
 
     try:
         logger.info(f"TTS generation: voice_type={voice_type}, pause_level={pause_level}, tone={tone}, voice={voice[:20] if voice else 'none'}")

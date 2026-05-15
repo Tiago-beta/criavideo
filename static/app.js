@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v455 loaded");
+console.log("[CriaVideo] app.js v456 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -2934,6 +2934,12 @@ function _clearScriptManualAudioInputUi() {
         userAudioName.hidden = true;
         userAudioName.textContent = "";
     }
+    const userAudioSelectionRow = document.getElementById("script-user-audio-selection-row");
+    if (userAudioSelectionRow) userAudioSelectionRow.hidden = true;
+    const userAudioClearBtn = document.getElementById("script-user-audio-clear-btn");
+    if (userAudioClearBtn) userAudioClearBtn.hidden = true;
+    const audioMusicChoice = document.getElementById("script-audio-music-choice");
+    if (audioMusicChoice) audioMusicChoice.hidden = true;
 }
 
 function _getScriptAudioSourceState(includeGeneratedAudio = true) {
@@ -3639,12 +3645,7 @@ async function createSimilar(projectId) {
         }
 
         const narrationVoice = String(tagsData.narration_voice || "onyx").trim();
-        const voiceButtons = Array.from(document.querySelectorAll("#script-realistic-voices .voice-btn"));
-        let selectedVoiceBtn = voiceButtons.find((btn) => (btn.dataset.value || "") === narrationVoice);
-        if (!selectedVoiceBtn) {
-            selectedVoiceBtn = voiceButtons.find((btn) => btn.classList.contains("selected")) || voiceButtons[0] || null;
-        }
-        voiceButtons.forEach((btn) => btn.classList.toggle("selected", btn === selectedVoiceBtn));
+        _applyCreateRealisticVoiceSelection("script", narrationVoice);
 
         const selectedPersona = _normalizeRealisticPersonaType(tagsData.interaction_persona || "natureza");
         setSelectedRealisticPersona(selectedPersona);
@@ -4268,13 +4269,18 @@ function initCreateWizard() {
             const voiceSelector = opt.closest(".voice-selector");
             if (voiceSelector) {
                 voiceSelector.querySelectorAll(".persona-item.selected").forEach(o => o.classList.remove("selected"));
-                // Cross-deselect: if selecting suno voice, deselect builtin; and vice-versa
                 const voiceType = opt.dataset.voiceType;
-                if (voiceType === "suno") {
-                    voiceSelector.querySelectorAll('.wizard-option[data-voice-type="builtin"].selected').forEach(o => o.classList.remove("selected"));
-                } else if (voiceType === "builtin") {
-                    voiceSelector.querySelectorAll('.wizard-option[data-voice-type="suno"].selected').forEach(o => o.classList.remove("selected"));
-                }
+                voiceSelector.querySelectorAll(".wizard-option.selected").forEach((selectedOption) => {
+                    if (selectedOption === opt) return;
+                    if ((selectedOption.dataset.voiceType || "") !== voiceType) {
+                        selectedOption.classList.remove("selected");
+                    }
+                });
+            }
+
+            const realisticOptions = opt.closest(".realistic-narration-options");
+            if (realisticOptions && opt.dataset.voiceType === "elevenlabs") {
+                realisticOptions.querySelectorAll(".voice-btn.selected").forEach((button) => button.classList.remove("selected"));
             }
         }
         const dur = e.target.closest(".duration-option");
@@ -4353,6 +4359,10 @@ function initCreateWizard() {
         if (vbtn) {
             vbtn.closest(".realistic-voice-grid").querySelectorAll(".voice-btn").forEach((d) => d.classList.remove("selected"));
             vbtn.classList.add("selected");
+            const realisticOptions = vbtn.closest(".realistic-narration-options");
+            if (realisticOptions) {
+                realisticOptions.querySelectorAll('.wizard-option[data-voice-type="elevenlabs"].selected').forEach((button) => button.classList.remove("selected"));
+            }
         }
     });
 
@@ -11310,6 +11320,54 @@ async function similarMergeSelectedScenes() {
 
 // ── Shared Realistic Create Logic ──
 
+function _resolveCreateRealisticVoiceSelection(prefix) {
+    const narrationOptions = document.getElementById(`${prefix}-realistic-narration-options`);
+    if (!narrationOptions) {
+        return { voice: DEFAULT_CREATE_AI_VOICE_ID, voiceType: "builtin" };
+    }
+
+    const elevenlabsOption = narrationOptions.querySelector('.wizard-option[data-voice-type="elevenlabs"].selected');
+    if (elevenlabsOption) {
+        return {
+            voice: elevenlabsOption.dataset.value || DEFAULT_CREATE_ELEVENLABS_VOICE_ID,
+            voiceType: elevenlabsOption.dataset.voiceType || "elevenlabs",
+        };
+    }
+
+    const builtinButton = narrationOptions.querySelector(`#${prefix}-realistic-voices .voice-btn.selected`);
+    if (builtinButton) {
+        return {
+            voice: builtinButton.dataset.value || DEFAULT_CREATE_AI_VOICE_ID,
+            voiceType: builtinButton.dataset.voiceType || "builtin",
+        };
+    }
+
+    return { voice: DEFAULT_CREATE_AI_VOICE_ID, voiceType: "builtin" };
+}
+
+function _applyCreateRealisticVoiceSelection(prefix, voiceId = "") {
+    const targetVoiceId = String(voiceId || "").trim() || DEFAULT_CREATE_AI_VOICE_ID;
+    const narrationOptions = document.getElementById(`${prefix}-realistic-narration-options`);
+    if (!narrationOptions) return;
+
+    const builtinButtons = Array.from(narrationOptions.querySelectorAll(`#${prefix}-realistic-voices .voice-btn`));
+    const elevenlabsOptions = Array.from(narrationOptions.querySelectorAll('.wizard-option[data-voice-type="elevenlabs"]'));
+
+    const matchingElevenlabs = elevenlabsOptions.find((option) => (option.dataset.value || "") === targetVoiceId);
+    if (matchingElevenlabs) {
+        builtinButtons.forEach((button) => button.classList.remove("selected"));
+        elevenlabsOptions.forEach((option) => option.classList.toggle("selected", option === matchingElevenlabs));
+        return;
+    }
+
+    elevenlabsOptions.forEach((option) => option.classList.remove("selected"));
+    let selectedBuiltin = builtinButtons.find((button) => (button.dataset.value || "") === targetVoiceId);
+    if (!selectedBuiltin) {
+        selectedBuiltin = builtinButtons.find((button) => button.classList.contains("selected")) || builtinButtons[0] || null;
+    }
+    builtinButtons.forEach((button) => button.classList.toggle("selected", button === selectedBuiltin));
+}
+
 async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, musicCheckboxId, title, engineSelectorId, prefix, realisticStyle) {
     // Derive prefix from selector IDs if not provided
     if (!prefix) {
@@ -11410,8 +11468,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const addNarration = narrationEl ? narrationEl.checked : false;
     const narrationTextEl = document.getElementById(`${prefix}-realistic-narration-text`);
     const narrationText = addNarration ? (narrationTextEl ? narrationTextEl.value.trim() : "") : "";
-    const voiceBtn = document.querySelector(`#${prefix}-realistic-voices .voice-btn.selected`);
-    const narrationVoice = voiceBtn ? voiceBtn.dataset.value : DEFAULT_CREATE_AI_VOICE_ID;
+    const voiceSelection = _resolveCreateRealisticVoiceSelection(prefix);
+    const narrationVoice = voiceSelection.voice;
 
     const realisticEstimatePayload = _buildRealisticEstimatePayload(prefix);
     if (engine === "avatar31" && avatarAutomaticDuration > 0) {
@@ -11986,6 +12044,7 @@ function wizardNext() {
     if (currentDataStep === 4) {
         const personaSel = document.querySelector("#wizard-persona-list .persona-item.selected");
         const builtinSel = document.querySelector("#create-panel-wizard .wizard-step[data-step='4'] .wizard-option[data-voice-type='builtin'].selected");
+        const elevenlabsSel = document.querySelector("#create-panel-wizard .wizard-step[data-step='4'] .wizard-option[data-voice-type='elevenlabs'].selected");
         const sunoSel = document.querySelector("#create-panel-wizard .wizard-step[data-step='4'] .wizard-option[data-voice-type='suno'].selected");
         if (personaSel) {
             wizardData.voice = personaSel.dataset.value;
@@ -11995,6 +12054,10 @@ function wizardNext() {
             wizardData.voice = sunoSel.dataset.value;
             wizardData.voiceProfileId = 0;
             wizardData.voiceType = "suno";
+        } else if (elevenlabsSel) {
+            wizardData.voice = elevenlabsSel.dataset.value;
+            wizardData.voiceProfileId = 0;
+            wizardData.voiceType = "elevenlabs";
         } else if (builtinSel) {
             wizardData.voice = builtinSel.dataset.value;
             wizardData.voiceProfileId = 0;
@@ -12241,6 +12304,7 @@ function scriptNext() {
         } else {
             const personaSel = document.querySelector("#script-persona-list .persona-item.selected");
             const builtinSel = document.querySelector("#create-panel-script .wizard-step[data-step='4'] .wizard-option[data-voice-type='builtin'].selected");
+            const elevenlabsSel = document.querySelector("#create-panel-script .wizard-step[data-step='4'] .wizard-option[data-voice-type='elevenlabs'].selected");
             const sunoSel = document.querySelector("#create-panel-script .wizard-step[data-step='4'] .wizard-option[data-voice-type='suno'].selected");
             if (personaSel) {
                 scriptData.voice = personaSel.dataset.value;
@@ -12250,6 +12314,10 @@ function scriptNext() {
                 scriptData.voice = sunoSel.dataset.value;
                 scriptData.voiceProfileId = 0;
                 scriptData.voiceType = "suno";
+            } else if (elevenlabsSel) {
+                scriptData.voice = elevenlabsSel.dataset.value;
+                scriptData.voiceProfileId = 0;
+                scriptData.voiceType = "elevenlabs";
             } else if (builtinSel) {
                 scriptData.voice = builtinSel.dataset.value;
                 scriptData.voiceProfileId = 0;
@@ -14336,25 +14404,47 @@ function _updateScriptGeneratedAudioSummary() {
 }
 
 function updateScriptVideoAreaVisibility() {
+    const section = document.getElementById("script-video-upload-section");
+    const header = document.getElementById("script-video-tools-header");
     const area = document.getElementById("script-video-area");
     const builder = document.getElementById("script-video-audio-builder");
     const selectionRow = document.getElementById("script-video-selection-row");
     const narrationChoice = document.getElementById("script-video-narration-choice");
     const clearBtn = document.getElementById("script-video-clear-btn");
     const uploadTrigger = document.getElementById("script-video-upload-trigger");
+    const builderTrigger = document.getElementById("script-video-audio-builder-trigger");
+    const audioSection = document.getElementById("script-user-audio-section");
+    const audioArea = document.getElementById("script-user-audio-area");
+    const audioSelectionRow = document.getElementById("script-user-audio-selection-row");
+    const audioClearBtn = document.getElementById("script-user-audio-clear-btn");
+    const audioMusicChoice = document.getElementById("script-audio-music-choice");
+    const audioUploadTrigger = document.getElementById("script-user-audio-upload-trigger");
     const builderHeading = document.getElementById("script-audio-builder-heading");
     const builderSubheading = document.getElementById("script-audio-builder-subheading");
-    const hintEl = document.getElementById("script-video-hint");
+    const videoEnabled = !!document.getElementById("script-use-video")?.checked;
+    const userAudioEnabled = !!document.getElementById("script-use-user-audio")?.checked;
     const hasVideo = !!scriptUserVideoFile;
+    const hasManualAudio = !!scriptUserAudioFile;
     const builderOpen = !!builder && !builder.hidden;
     const hasGeneratedAudio = !!scriptGeneratedAudioUploadId;
+    const shouldShowSection = videoEnabled || builderOpen || hasGeneratedAudio;
     const shouldShow = hasVideo || builderOpen || hasGeneratedAudio;
 
+    if (section) section.hidden = !shouldShowSection;
+    if (header) header.hidden = !videoEnabled;
     if (area) area.hidden = !shouldShow;
     if (selectionRow) selectionRow.hidden = !hasVideo;
     if (clearBtn) clearBtn.hidden = !hasVideo;
     if (narrationChoice) narrationChoice.hidden = !hasVideo || hasGeneratedAudio;
     if (uploadTrigger) uploadTrigger.classList.toggle("has-file", hasVideo);
+    if (uploadTrigger) uploadTrigger.hidden = !videoEnabled;
+    if (builderTrigger) builderTrigger.hidden = !videoEnabled;
+    if (audioSection) audioSection.hidden = !userAudioEnabled;
+    if (audioArea) audioArea.hidden = !userAudioEnabled;
+    if (audioSelectionRow) audioSelectionRow.hidden = !hasManualAudio;
+    if (audioClearBtn) audioClearBtn.hidden = !hasManualAudio;
+    if (audioMusicChoice) audioMusicChoice.hidden = !hasManualAudio;
+    if (audioUploadTrigger) audioUploadTrigger.classList.toggle("has-file", hasManualAudio);
     if (builderHeading) {
         builderHeading.textContent = hasVideo ? "Criar áudio para este vídeo" : "Criar áudio com voz IA";
     }
@@ -14363,15 +14453,14 @@ function updateScriptVideoAreaVisibility() {
             ? "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar."
             : "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio para usar neste projeto.";
     }
-    if (hintEl) {
-        hintEl.textContent = hasVideo
-            ? "Envie o vídeo e, ao lado, grave ou escreva a narração antes de gerar."
-            : "Envie um vídeo quando precisar ou use este mesmo criador para gerar o áudio do projeto.";
-    }
 }
 
 function openScriptVideoPicker() {
     document.getElementById("script-video-input")?.click();
+}
+
+function openScriptUserAudioPicker() {
+    document.getElementById("script-user-audio-input")?.click();
 }
 
 function clearScriptGeneratedAudio(preserveBuilderText = true) {
@@ -14397,6 +14486,18 @@ function clearScriptVideoSelection() {
     const videoCb = document.getElementById("script-use-video");
     if (videoCb) videoCb.checked = false;
     toggleVideoUpload();
+}
+
+function clearScriptUserAudioSelection() {
+    scriptUserAudioFile = null;
+    scriptUserAudioDurationSeconds = 0;
+    const audioMusicCb = document.getElementById("script-audio-is-music");
+    if (audioMusicCb) audioMusicCb.checked = false;
+    _clearScriptManualAudioInputUi();
+    updateScriptVideoAreaVisibility();
+    toggleAudioMusicOptions();
+    _syncCreateRealisticDurationOptions("script");
+    scheduleScriptCreditEstimate();
 }
 
 function toggleScriptAudioBuilder(forceOpen = null) {
@@ -14760,8 +14861,6 @@ function removeScriptThumb() {
 
 function toggleUserAudioUpload() {
     const checked = document.getElementById("script-use-user-audio").checked;
-    const area = document.getElementById("script-user-audio-area");
-    if (area) area.hidden = !checked;
     toggleScriptPhotoDependentFields();
 
     if (!checked) {
@@ -14770,9 +14869,9 @@ function toggleUserAudioUpload() {
         _clearScriptManualAudioInputUi();
     } else {
         clearScriptGeneratedAudio(true);
-        updateScriptVideoAreaVisibility();
     }
 
+    updateScriptVideoAreaVisibility();
     _syncCreateRealisticDurationOptions("script");
     toggleAudioMusicOptions();
     scheduleScriptCreditEstimate();
@@ -14810,14 +14909,21 @@ async function handleUserAudioSelect(event) {
         return;
     }
 
+    const audioCb = document.getElementById("script-use-user-audio");
+    if (audioCb) audioCb.checked = true;
     scriptUserAudioFile = file;
     clearScriptGeneratedAudio(true);
     scriptUserAudioDurationSeconds = 0;
     const nameEl = document.getElementById("script-user-audio-name");
+    const selectionRow = document.getElementById("script-user-audio-selection-row");
+    const clearBtn = document.getElementById("script-user-audio-clear-btn");
     if (nameEl) {
         nameEl.hidden = false;
-        nameEl.textContent = `Audio selecionado: ${file.name}`;
+        nameEl.textContent = `Áudio selecionado: ${file.name}`;
     }
+    if (selectionRow) selectionRow.hidden = false;
+    if (clearBtn) clearBtn.hidden = false;
+    updateScriptVideoAreaVisibility();
     _syncCreateRealisticDurationOptions("script");
     toggleAudioMusicOptions();
     scheduleScriptCreditEstimate();
@@ -23629,24 +23735,32 @@ function setSelectedStyles(containerId, styleStr) {
 }
 
 // ── Voice Preview System ──
-const CREATE_AI_VOICE_PRESETS = [
-    { id: "ErXwobaYiN019PkySvjV", name: "Caio", label: "Masculina quente", shortLabel: "Masc. Quente" },
-    { id: "N2lVS1w4EtoT3dr4eOWO", name: "Davi", label: "Masculina clara", shortLabel: "Masc. Clara" },
-    { id: "TxGEqnHWrfWFTfGW9XjX", name: "Mateus", label: "Narrativa premium", shortLabel: "Narrativa" },
-    { id: "EXAVITQu4vr4xnSDxMaL", name: "Clara", label: "Feminina brilhante", shortLabel: "Fem. Brilhante" },
-    { id: "MF3mGyEYCl7XYWbV9V6O", name: "Helena", label: "Feminina madura", shortLabel: "Fem. Madura" },
-    { id: "21m00Tcm4TlvDq8ikWAM", name: "Luisa", label: "Feminina natural", shortLabel: "Fem. Natural" },
+const CREATE_ELEVENLABS_VOICE_PRESETS = [
+    { id: "ErXwobaYiN019PkySvjV", name: "Antoni", label: "Masculina quente", shortLabel: "Masc. Quente" },
+    { id: "N2lVS1w4EtoT3dr4eOWO", name: "Callum", label: "Masculina clara", shortLabel: "Masc. Clara" },
+    { id: "yoZ06aMxZJJ28mfd3POQ", name: "Sam", label: "Masculina limpa", shortLabel: "Masc. Limpa" },
+    { id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh", label: "Narrativa premium", shortLabel: "Narrativa" },
+    { id: "pNInz6obpgDQGcFmaJgB", name: "Adam", label: "Masculina profunda", shortLabel: "Masc. Profunda" },
+    { id: "JBFqnCBsd6RMkjVDRZzb", name: "George", label: "Narrador firme", shortLabel: "Narrador" },
+    { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella", label: "Feminina brilhante", shortLabel: "Fem. Brilhante" },
+    { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", label: "Feminina natural", shortLabel: "Fem. Natural" },
+    { id: "MF3mGyEYCl7XYWbV9V6O", name: "Elli", label: "Feminina madura", shortLabel: "Fem. Madura" },
+    { id: "AZnzlk1XvdvUeBnXmlld", name: "Domi", label: "Feminina intensa", shortLabel: "Fem. Intensa" },
+    { id: "pMsXgVXv3BLzUgSXRplE", name: "Serena", label: "Feminina suave", shortLabel: "Fem. Suave" },
+    { id: "VR6AewLTigWG4xSOuka", name: "Arnold", label: "Masculina forte", shortLabel: "Masc. Forte" },
+    { id: "2EiwWnXFnvU5JabPnv8n", name: "Clyde", label: "Masculina grave", shortLabel: "Masc. Grave" },
 ];
-const DEFAULT_CREATE_AI_VOICE_ID = CREATE_AI_VOICE_PRESETS[0].id;
+const DEFAULT_CREATE_AI_VOICE_ID = "onyx";
+const DEFAULT_CREATE_ELEVENLABS_VOICE_ID = CREATE_ELEVENLABS_VOICE_PRESETS[0].id;
 
 function _renderCreateAiVoiceCards(containerId) {
     const container = document.getElementById(containerId);
     if (!container) return;
 
-    const currentValue = container.querySelector(".wizard-option.selected")?.dataset.value || DEFAULT_CREATE_AI_VOICE_ID;
-    container.innerHTML = CREATE_AI_VOICE_PRESETS.map((preset) => {
+    const currentValue = container.querySelector(".wizard-option.selected")?.dataset.value || DEFAULT_CREATE_ELEVENLABS_VOICE_ID;
+    container.innerHTML = CREATE_ELEVENLABS_VOICE_PRESETS.map((preset) => {
         const selectedClass = preset.id === currentValue ? " selected" : "";
-        return `<div class="voice-card"><button class="wizard-option${selectedClass}" data-value="${preset.id}" data-voice-type="builtin" type="button">${esc(preset.name)}<small>${esc(preset.label)}</small></button><button class="voice-preview-btn" data-voice="${preset.id}" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>`;
+        return `<div class="voice-card"><button class="wizard-option${selectedClass}" data-value="${preset.id}" data-voice-type="elevenlabs" type="button">${esc(preset.name)}<small>${esc(preset.label)}</small></button><button class="voice-preview-btn" data-voice="${preset.id}" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>`;
     }).join("");
 }
 
@@ -23654,16 +23768,16 @@ function _renderCreateAiRealisticVoiceButtons(containerId) {
     const container = document.getElementById(containerId);
     if (!container) return;
 
-    const currentValue = container.querySelector(".voice-btn.selected")?.dataset.value || DEFAULT_CREATE_AI_VOICE_ID;
-    container.innerHTML = CREATE_AI_VOICE_PRESETS.map((preset) => {
+    const currentValue = container.querySelector(".wizard-option.selected")?.dataset.value || DEFAULT_CREATE_ELEVENLABS_VOICE_ID;
+    container.innerHTML = CREATE_ELEVENLABS_VOICE_PRESETS.map((preset) => {
         const selectedClass = preset.id === currentValue ? " selected" : "";
-        return `<button class="voice-btn${selectedClass}" data-value="${preset.id}" data-voice-type="builtin" type="button">${esc(preset.name)} <small>${esc(preset.shortLabel || preset.label)}</small></button>`;
+        return `<div class="voice-card"><button class="wizard-option${selectedClass}" data-value="${preset.id}" data-voice-type="elevenlabs" type="button">${esc(preset.name)}<small>${esc(preset.shortLabel || preset.label)}</small></button><button class="voice-preview-btn" data-voice="${preset.id}" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>`;
     }).join("");
 }
 
 function applyCreateAiVoicePresets() {
-    ["wizard-builtin-voices", "script-builtin-voices", "script-audio-builder-builtin-voices"].forEach(_renderCreateAiVoiceCards);
-    ["wizard-realistic-voices", "script-realistic-voices"].forEach(_renderCreateAiRealisticVoiceButtons);
+    ["wizard-elevenlabs-voices", "script-elevenlabs-voices", "script-audio-builder-elevenlabs-voices"].forEach(_renderCreateAiVoiceCards);
+    ["wizard-realistic-elevenlabs-voices", "script-realistic-elevenlabs-voices"].forEach(_renderCreateAiRealisticVoiceButtons);
 }
 
 let _voicePreviewAudio = null;

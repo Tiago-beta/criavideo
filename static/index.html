@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260515-04">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260515-05">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 455;
+        var REQUIRED_VER = 456;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1227,6 +1227,10 @@
                                     <div class="voice-card"><button class="wizard-option" data-value="sage" data-voice-type="builtin" type="button">Luna<small>Calma e Clara</small></button><button class="voice-preview-btn" data-voice="sage" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
                                 </div>
                             </div>
+                            <div class="voice-section create-elevenlabs-voice-section">
+                                <span class="voice-section-title">ElevenLabs</span>
+                                <div class="wizard-grid" id="wizard-elevenlabs-voices"></div>
+                            </div>
                             <!-- Vozes com emocao -->
                             <div class="voice-section">
                                 <span class="voice-section-title">Vozes com emoção</span>
@@ -1424,6 +1428,10 @@
                                     <button class="voice-btn" data-value="nova" data-voice-type="builtin" type="button">Clara <small>Fem. Clara</small></button>
                                     <button class="voice-btn" data-value="shimmer" data-voice-type="builtin" type="button">Sofia <small>Fem. Suave</small></button>
                                 </div>
+                                <div class="voice-section create-elevenlabs-voice-section">
+                                    <span class="voice-section-title">ElevenLabs</span>
+                                    <div class="wizard-grid" id="wizard-realistic-elevenlabs-voices"></div>
+                                </div>
                             </div>
                         </div>
 
@@ -1520,30 +1528,28 @@
                         </div>
 
                         <!-- Upload de vídeo próprio -->
-                        <div class="photo-upload-section script-video-tools-section" id="script-video-upload-section">
-                            <div class="photo-upload-header script-video-tools-header">
+                        <div class="photo-upload-section script-video-tools-section" id="script-video-upload-section" hidden>
+                            <div class="photo-upload-header script-video-tools-header" id="script-video-tools-header">
                                 <button
                                     class="script-video-icon-btn"
                                     id="script-video-upload-trigger"
                                     type="button"
                                     onclick="openScriptVideoPicker()"
-                                    title="Enviar vídeo"
                                     aria-label="Enviar vídeo"
                                 >
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </button>
                                 <button
-                                    class="script-video-audio-btn"
+                                    class="script-video-audio-btn script-media-icon-btn"
                                     id="script-video-audio-builder-trigger"
                                     type="button"
+                                    aria-label="Criar áudio"
                                     onclick="toggleScriptAudioBuilder()"
                                 >
                                     <span class="script-video-audio-btn-icon" aria-hidden="true">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                                     </span>
-                                    <span>Criar áudio</span>
                                 </button>
-                                <span class="photo-upload-hint" id="script-video-hint">Envie o vídeo e, ao lado, grave ou escreva a narração antes de gerar.</span>
                             </div>
                             <input id="script-video-input" type="file" accept="video/mp4,video/quicktime,video/x-msvideo,video/webm,video/*" hidden onchange="handleUserVideoSelect(event)">
                             <div id="script-video-area" class="photo-upload-area script-video-tools-body" hidden>
@@ -1651,6 +1657,10 @@
                                                 <div class="voice-card"><button class="wizard-option" data-value="fable" data-voice-type="builtin" type="button">Mateus<small>Narrativa</small></button><button class="voice-preview-btn" data-voice="fable" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
                                                 <div class="voice-card"><button class="wizard-option" data-value="sage" data-voice-type="builtin" type="button">Luna<small>Calma e Clara</small></button><button class="voice-preview-btn" data-voice="sage" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
                                             </div>
+                                            <div class="voice-section create-elevenlabs-voice-section">
+                                                <span class="voice-section-title">ElevenLabs</span>
+                                                <div class="wizard-grid" id="script-audio-builder-elevenlabs-voices"></div>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -1664,26 +1674,25 @@
                         </div>
 
                         <!-- Upload de áudio próprio -->
-                        <div class="photo-upload-section script-media-panel">
-                            <div id="script-user-audio-area" class="photo-upload-area" hidden>
+                        <div class="photo-upload-section script-media-panel" id="script-user-audio-section" hidden>
+                            <div id="script-user-audio-area" class="photo-upload-area script-media-compact-panel" hidden>
                                 <div class="script-audio-entry-row">
-                                    <button class="script-video-audio-btn script-video-audio-btn--secondary" id="script-user-audio-builder-trigger" type="button" onclick="toggleScriptAudioBuilder(true)">
+                                    <button class="script-video-icon-btn" id="script-user-audio-upload-trigger" type="button" onclick="openScriptUserAudioPicker()" aria-label="Enviar áudio">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                    </button>
+                                    <button class="script-video-audio-btn script-video-audio-btn--secondary script-media-icon-btn" id="script-user-audio-builder-trigger" type="button" aria-label="Criar áudio" onclick="toggleScriptAudioBuilder(true)">
                                         <span class="script-video-audio-btn-icon" aria-hidden="true">
                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                                         </span>
-                                        <span>Criar áudio com IA</span>
                                     </button>
-                                    <span class="photo-upload-hint">Envie um arquivo ou gere o áudio com a voz IA antes de continuar.</span>
                                 </div>
-                                <div id="script-audio-dropzone" class="photo-dropzone" onclick="document.getElementById('script-user-audio-input').click()">
-                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                    <p>Clique ou arraste seu áudio aqui</p>
-                                    <small>MP3, WAV, M4A, OGG, FLAC, OPUS ou WEBM &bull; Max 80MB</small>
+                                <div id="script-user-audio-selection-row" class="script-audio-selection-row" hidden>
+                                    <div id="script-user-audio-name" class="script-media-status" hidden></div>
+                                    <button class="btn-icon-sm script-video-clear-btn" id="script-user-audio-clear-btn" type="button" onclick="clearScriptUserAudioSelection()" title="Remover áudio" aria-label="Remover áudio" hidden>&times;</button>
                                 </div>
                                 <input id="script-user-audio-input" type="file" accept="audio/*" hidden onchange="handleUserAudioSelect(event)">
-                                <div id="script-user-audio-name" class="photo-count" hidden></div>
 
-                                <div class="narration-choice">
+                                <div class="narration-choice" id="script-audio-music-choice" hidden>
                                     <label class="toggle-switch">
                                         <input type="checkbox" id="script-audio-is-music" onchange="toggleAudioMusicOptions()">
                                         <span class="toggle-slider"></span>
@@ -1833,6 +1842,10 @@
                                     <div class="voice-card"><button class="wizard-option" data-value="fable" data-voice-type="builtin" type="button">Mateus<small>Narrativa</small></button><button class="voice-preview-btn" data-voice="fable" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
                                     <div class="voice-card"><button class="wizard-option" data-value="sage" data-voice-type="builtin" type="button">Luna<small>Calma e Clara</small></button><button class="voice-preview-btn" data-voice="sage" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
                                 </div>
+                            </div>
+                            <div class="voice-section create-elevenlabs-voice-section">
+                                <span class="voice-section-title">ElevenLabs</span>
+                                <div class="wizard-grid" id="script-elevenlabs-voices"></div>
                             </div>
                             <!-- Vozes com emocao -->
                             <div class="voice-section">
@@ -2066,6 +2079,10 @@
                                     <button class="voice-btn" data-value="echo" data-voice-type="builtin" type="button">Rafael <small>Masc. Suave</small></button>
                                     <button class="voice-btn" data-value="nova" data-voice-type="builtin" type="button">Clara <small>Fem. Clara</small></button>
                                     <button class="voice-btn" data-value="shimmer" data-voice-type="builtin" type="button">Sofia <small>Fem. Suave</small></button>
+                                </div>
+                                <div class="voice-section create-elevenlabs-voice-section">
+                                    <span class="voice-section-title">ElevenLabs</span>
+                                    <div class="wizard-grid" id="script-realistic-elevenlabs-voices"></div>
                                 </div>
                             </div>
                         </div>
@@ -4091,8 +4108,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260515-04"></script>
-    <script src="/video/static/pwa.js?v=20260515-04"></script>
+    <script src="/video/static/app.js?v=20260515-05"></script>
+    <script src="/video/static/pwa.js?v=20260515-05"></script>
 </body>
 </html>
 
