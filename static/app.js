@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v448 loaded");
+console.log("[CriaVideo] app.js v449 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -2028,6 +2028,7 @@ function closeModal(id) {
         _setNewProjectModalWorkflowLayout(false);
     }
     if (id === "modal-script-image-creator") {
+        closeScriptImageCreatorExpandedResult();
         resetScriptImageCreatorModalState();
     }
     if (id === "modal-edit-project") {
@@ -13579,9 +13580,11 @@ function renderScriptImageCreatorResults() {
 
     if (_scriptImageCreatorState.busy && !items.length) {
         host.innerHTML = `
-            <div class="script-image-generator-stage is-loading">
-                <div class="script-image-generator-empty script-image-generator-empty--inline">
-                    Gerando imagem...
+            <div class="script-image-generator-result-card script-image-generator-result-card--loading">
+                <div class="script-image-generator-card-preview">
+                    <div class="script-image-generator-empty script-image-generator-empty--inline">
+                        Gerando...
+                    </div>
                 </div>
             </div>
         `;
@@ -13595,45 +13598,83 @@ function renderScriptImageCreatorResults() {
 
     const activeIndex = Math.min(_scriptImageCreatorState.activeResultIndex || 0, items.length - 1);
     _scriptImageCreatorState.activeResultIndex = activeIndex;
-    const activeItem = items[activeIndex];
     const busyAttr = _scriptImageCreatorState.busy ? " disabled" : "";
-    const isEditingActive = _scriptImageCreatorState.editingIndex === activeIndex;
-    const editButtonTitle = isEditingActive ? "Cancelar edição" : "Editar imagem";
-    const editButtonAction = isEditingActive ? "cancelScriptImageCreatorEdit()" : `startScriptImageCreatorEdit(${activeIndex})`;
-    const thumbMarkup = items.length > 1
+    const loadingCard = _scriptImageCreatorState.busy
         ? `
-            <div class="script-image-generator-result-thumbs">
-                ${items.map((item, index) => `
-                    <button
-                        type="button"
-                        class="script-image-generator-result-thumb${index === activeIndex ? " is-active" : ""}"
-                        onclick="setActiveScriptImageCreatorResult(${index})"
-                        aria-label="Selecionar resultado ${index + 1}"
-                    >
-                        <img src="${workflowEscapeHtml(item.image_url)}" alt="Resultado ${index + 1}">
-                    </button>
-                `).join("")}
+            <div class="script-image-generator-result-card script-image-generator-result-card--loading" aria-live="polite">
+                <div class="script-image-generator-card-preview">
+                    <div class="script-image-generator-empty script-image-generator-empty--inline">
+                        Gerando...
+                    </div>
+                </div>
             </div>
         `
         : "";
 
     host.innerHTML = `
-        <div class="script-image-generator-stage">
-            <img src="${workflowEscapeHtml(activeItem.image_url)}" alt="${workflowEscapeHtml(activeItem.label || "Imagem gerada")}">
-            <div class="script-image-generator-stage-actions">
-                <button class="btn-icon-sm script-image-generator-stage-icon${isEditingActive ? " is-active" : ""}" type="button" title="${editButtonTitle}" aria-label="${editButtonTitle}"${busyAttr} onclick="${editButtonAction}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 20 9-9-3-3-9 9-1 4Z"/><path d="M16 7 19 10"/></svg>
-                </button>
-                <button class="btn-icon-sm script-image-generator-stage-icon" type="button" title="Baixar imagem" aria-label="Baixar imagem"${busyAttr} onclick="downloadScriptImageCreatorResult(${activeIndex})">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
-                </button>
-            </div>
-        </div>
-        <div class="script-image-generator-result-footer script-image-generator-result-footer--single">
-            <button class="btn btn-primary script-image-generator-create-btn" type="button"${busyAttr} onclick="createVideoFromScriptImageCreatorResult(${activeIndex})">Criar vídeo</button>
-        </div>
-        ${thumbMarkup}
+        ${items.map((item, index) => {
+            const isActive = index === activeIndex;
+            const isEditingActive = _scriptImageCreatorState.editingIndex === index;
+            const editButtonTitle = isEditingActive ? "Cancelar edicao" : "Editar imagem";
+            const editButtonAction = isEditingActive ? "cancelScriptImageCreatorEdit()" : `startScriptImageCreatorEdit(${index})`;
+            return `
+                <article class="script-image-generator-result-card${isActive ? " is-active" : ""}">
+                    <button
+                        type="button"
+                        class="script-image-generator-card-preview"
+                        onclick="openScriptImageCreatorExpandedResult(${index})"
+                        aria-label="Expandir resultado ${index + 1}"
+                    >
+                        <img src="${workflowEscapeHtml(item.image_url)}" alt="${workflowEscapeHtml(item.label || `Imagem gerada ${index + 1}`)}">
+                    </button>
+                    <div class="script-image-generator-result-meta">
+                        <strong>Imagem ${index + 1}</strong>
+                        <span>Clique para ampliar</span>
+                    </div>
+                    <div class="script-image-generator-result-actions">
+                        <button class="btn-icon-sm script-image-generator-card-icon${isEditingActive ? " is-active" : ""}" type="button" title="${editButtonTitle}" aria-label="${editButtonTitle}"${busyAttr} onclick="${editButtonAction}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 20 9-9-3-3-9 9-1 4Z"/><path d="M16 7 19 10"/></svg>
+                        </button>
+                        <button class="btn-icon-sm script-image-generator-card-icon" type="button" title="Baixar imagem" aria-label="Baixar imagem"${busyAttr} onclick="downloadScriptImageCreatorResult(${index})">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                        </button>
+                    </div>
+                    <button class="btn btn-primary btn-sm script-image-generator-create-btn" type="button"${busyAttr} onclick="createVideoFromScriptImageCreatorResult(${index})">Criar video</button>
+                </article>
+            `;
+        }).join("")}
+        ${loadingCard}
     `;
+}
+
+function openScriptImageCreatorExpandedResult(index) {
+    const parsed = Number.parseInt(index, 10);
+    const item = _scriptImageCreatorState.generatedImages[parsed];
+    if (!item?.image_url) return;
+
+    _scriptImageCreatorState.activeResultIndex = parsed;
+    renderScriptImageCreatorResults();
+
+    const titleEl = document.getElementById("script-image-viewer-title");
+    if (titleEl) {
+        titleEl.textContent = `Imagem ${parsed + 1}`;
+    }
+
+    const imageEl = document.getElementById("script-image-viewer-img");
+    if (imageEl) {
+        imageEl.src = item.image_url;
+        imageEl.alt = item.label || `Imagem gerada ${parsed + 1}`;
+    }
+
+    openModal("modal-script-image-viewer");
+}
+
+function closeScriptImageCreatorExpandedResult() {
+    const imageEl = document.getElementById("script-image-viewer-img");
+    if (imageEl) {
+        imageEl.removeAttribute("src");
+    }
+    closeModal("modal-script-image-viewer");
 }
 
 function downloadScriptImageCreatorResult(index) {

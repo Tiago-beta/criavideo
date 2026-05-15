@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260514-07">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260514-08">
     <script>
-    // Force SW refresh — bump this version to invalidate stale workers
+    // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 448;
+        var REQUIRED_VER = 449;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -3962,9 +3962,23 @@
             </div>
         </div>
     </div>
+    <div id="modal-script-image-viewer" class="modal" style="z-index:3220">
+        <div class="modal-content modal-content-wide script-image-viewer-content">
+            <div class="modal-header">
+                <h3 id="script-image-viewer-title">Imagem gerada</h3>
+                <button class="modal-close" onclick="closeScriptImageCreatorExpandedResult()" type="button">&times;</button>
+            </div>
+            <div class="modal-body script-image-viewer-body">
+                <img id="script-image-viewer-img" class="script-image-viewer-img" src="" alt="Imagem gerada">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" type="button" onclick="closeScriptImageCreatorExpandedResult()">Fechar</button>
+            </div>
+        </div>
+    </div>
 
-    <script src="/video/static/app.js?v=20260514-07"></script>
-    <script src="/video/static/pwa.js?v=20260514-07"></script>
+    <script src="/video/static/app.js?v=20260514-08"></script>
+    <script src="/video/static/pwa.js?v=20260514-08"></script>
 </body>
 </html>
 
