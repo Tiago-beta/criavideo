@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v449 loaded");
+console.log("[CriaVideo] app.js v450 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -13058,9 +13058,6 @@ function renderScriptImageCreatorPromptEditors() {
 
         card.appendChild(head);
         card.appendChild(textarea);
-        if (shouldShowScenePreview) {
-            card.appendChild(scenePreview);
-        }
         host.appendChild(card);
     }
 }
