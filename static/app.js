@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v452 loaded");
+console.log("[CriaVideo] app.js v453 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -2823,12 +2823,12 @@ function _buildScriptEstimatePayload() {
 
     const usePhotosSelected = !!document.getElementById("script-use-photos")?.checked;
     const useVideoSelected = !!document.getElementById("script-use-video")?.checked;
-    const useAudioSelected = !!document.getElementById("script-use-user-audio")?.checked;
 
     const useTevoxiAudio = _isScriptTevoxiMainAudioMode() && !!_scriptSelectedSong && !!_scriptSelectedClip;
     const hasCustomVideo = useVideoSelected && !!scriptUserVideoFile;
+    const audioSource = _getScriptAudioSourceState(hasCustomVideo);
     const hasCustomImages = !hasCustomVideo && usePhotosSelected && scriptPhotos.length > 0;
-    const hasCustomAudio = !hasCustomVideo && !useTevoxiAudio && useAudioSelected && !!scriptUserAudioFile;
+    const hasCustomAudio = !useTevoxiAudio && audioSource.hasAudio;
 
     const imageSeconds = parseFloat(document.getElementById("script-image-seconds")?.value || "0") || 0;
     const tevoxiDurationSeconds = useTevoxiAudio
@@ -2836,7 +2836,9 @@ function _buildScriptEstimatePayload() {
         : 0;
 
     let durationSeconds = 60;
-    if (tevoxiDurationSeconds > 0) {
+    if (hasCustomAudio && audioSource.durationSeconds > 0) {
+        durationSeconds = Math.max(8, Math.round(audioSource.durationSeconds));
+    } else if (tevoxiDurationSeconds > 0) {
         durationSeconds = tevoxiDurationSeconds;
     } else if (wordCount > 0) {
         durationSeconds = Math.max(8, Math.round(wordCount / 2.5));
@@ -2845,7 +2847,7 @@ function _buildScriptEstimatePayload() {
     }
 
     const createNarration = hasCustomVideo
-        ? (!!document.getElementById("script-video-create-narration")?.checked && !!scriptText)
+        ? (hasCustomAudio ? false : (!!document.getElementById("script-video-create-narration")?.checked && !!scriptText))
         : (hasCustomAudio || useTevoxiAudio)
             ? false
             : ((!hasCustomImages || !!document.getElementById("script-create-narration")?.checked) && !!scriptText);
@@ -2858,7 +2860,7 @@ function _buildScriptEstimatePayload() {
 
     const audioIsMusic = useTevoxiAudio
         ? true
-        : (hasCustomAudio ? !!document.getElementById("script-audio-is-music")?.checked : false);
+        : (hasCustomAudio && audioSource.kind === "upload" ? !!document.getElementById("script-audio-is-music")?.checked : false);
     const removeVocals = hasCustomAudio && audioIsMusic;
 
     return {
@@ -2922,6 +2924,57 @@ function _buildAutoEstimatePayload() {
         audio_is_music: false,
         remove_vocals: false,
     };
+}
+
+function _clearScriptManualAudioInputUi() {
+    const userAudioInput = document.getElementById("script-user-audio-input");
+    if (userAudioInput) userAudioInput.value = "";
+    const userAudioName = document.getElementById("script-user-audio-name");
+    if (userAudioName) {
+        userAudioName.hidden = true;
+        userAudioName.textContent = "";
+    }
+}
+
+function _getScriptAudioSourceState(includeGeneratedAudio = true) {
+    if (includeGeneratedAudio && scriptGeneratedAudioUploadId) {
+        return {
+            kind: "generated",
+            hasAudio: true,
+            uploadId: scriptGeneratedAudioUploadId,
+            previewUrl: scriptGeneratedAudioPreviewUrl,
+            durationSeconds: scriptGeneratedAudioDurationSeconds,
+            label: scriptGeneratedAudioFileName || "audio-gerado.mp3",
+        };
+    }
+
+    const useUserAudioToggle = document.getElementById("script-use-user-audio")?.checked;
+    if (useUserAudioToggle && scriptUserAudioFile) {
+        return {
+            kind: "upload",
+            hasAudio: true,
+            uploadId: "",
+            previewUrl: "",
+            durationSeconds: scriptUserAudioDurationSeconds,
+            label: scriptUserAudioFile.name || "audio.mp3",
+        };
+    }
+
+    return {
+        kind: "none",
+        hasAudio: false,
+        uploadId: "",
+        previewUrl: "",
+        durationSeconds: 0,
+        label: "",
+    };
+}
+
+function _setScriptTextValue(value) {
+    const textEl = document.getElementById("script-text");
+    if (!textEl) return;
+    textEl.value = String(value || "");
+    textEl.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 function _buildWorkflowEstimatePayload() {
@@ -11769,17 +11822,16 @@ function resetCreateWizard() {
     // Reset user audio upload
     scriptUserAudioFile = null;
     scriptUserAudioDurationSeconds = 0;
+    scriptGeneratedAudioUploadId = "";
+    scriptGeneratedAudioPreviewUrl = "";
+    scriptGeneratedAudioDurationSeconds = 0;
+    scriptGeneratedAudioFileName = "";
+    scriptGeneratedAudioText = "";
     const userAudioCb = document.getElementById("script-use-user-audio");
     if (userAudioCb) userAudioCb.checked = false;
     const userAudioArea = document.getElementById("script-user-audio-area");
     if (userAudioArea) userAudioArea.hidden = true;
-    const userAudioInput = document.getElementById("script-user-audio-input");
-    if (userAudioInput) userAudioInput.value = "";
-    const userAudioName = document.getElementById("script-user-audio-name");
-    if (userAudioName) {
-        userAudioName.hidden = true;
-        userAudioName.textContent = "";
-    }
+    _clearScriptManualAudioInputUi();
     const audioIsMusicCb = document.getElementById("script-audio-is-music");
     if (audioIsMusicCb) audioIsMusicCb.checked = false;
 
@@ -11796,10 +11848,66 @@ function resetCreateWizard() {
         userVideoName.hidden = true;
         userVideoName.textContent = "";
     }
+    const userVideoSelectionRow = document.getElementById("script-video-selection-row");
+    if (userVideoSelectionRow) userVideoSelectionRow.hidden = true;
+    const userVideoClearBtn = document.getElementById("script-video-clear-btn");
+    if (userVideoClearBtn) userVideoClearBtn.hidden = true;
     const videoNarChoice = document.getElementById("script-video-narration-choice");
     if (videoNarChoice) videoNarChoice.hidden = true;
     const videoNarCb = document.getElementById("script-video-create-narration");
     if (videoNarCb) videoNarCb.checked = true;
+    const videoUploadTrigger = document.getElementById("script-video-upload-trigger");
+    if (videoUploadTrigger) videoUploadTrigger.classList.remove("has-file");
+    const generatedSummary = document.getElementById("script-generated-audio-summary");
+    if (generatedSummary) generatedSummary.hidden = true;
+    const generatedName = document.getElementById("script-generated-audio-name");
+    if (generatedName) generatedName.textContent = "";
+    const generatedPlayer = document.getElementById("script-generated-audio-player");
+    if (generatedPlayer) {
+        generatedPlayer.pause();
+        generatedPlayer.removeAttribute("src");
+        generatedPlayer.load();
+    }
+    const audioBuilder = document.getElementById("script-video-audio-builder");
+    if (audioBuilder) audioBuilder.hidden = true;
+    const audioBuilderTrigger = document.getElementById("script-video-audio-builder-trigger");
+    if (audioBuilderTrigger) audioBuilderTrigger.classList.remove("active", "is-ready");
+    const audioBuilderText = document.getElementById("script-audio-builder-text");
+    if (audioBuilderText) audioBuilderText.value = "";
+    const audioBuilderCharCount = document.getElementById("script-audio-builder-char-count");
+    if (audioBuilderCharCount) audioBuilderCharCount.textContent = "0";
+    const audioBuilderStatus = document.getElementById("script-audio-builder-status");
+    if (audioBuilderStatus) {
+        audioBuilderStatus.hidden = true;
+        audioBuilderStatus.textContent = "";
+        audioBuilderStatus.className = "script-audio-builder-status";
+    }
+    const dictationStatus = document.getElementById("script-audio-dictation-status");
+    if (dictationStatus) {
+        dictationStatus.hidden = true;
+        dictationStatus.textContent = "";
+        dictationStatus.className = "script-audio-builder-inline-status";
+    }
+    if (scriptAudioDictationRecorder && scriptAudioDictationRecorder.state === "recording") {
+        scriptAudioDictationRecorder.onstop = null;
+        scriptAudioDictationRecorder.stop();
+    }
+    if (scriptAudioDictationStream) {
+        scriptAudioDictationStream.getTracks().forEach((track) => track.stop());
+    }
+    scriptAudioDictationRecorder = null;
+    scriptAudioDictationChunks = [];
+    scriptAudioDictationStream = null;
+    scriptAudioDictationElapsedSeconds = 0;
+    clearInterval(scriptAudioDictationTimer);
+    scriptAudioDictationTimer = null;
+    const dictationBtnLabel = document.getElementById("script-audio-record-btn-label");
+    if (dictationBtnLabel) dictationBtnLabel.textContent = "Gravar e transcrever";
+    const dictationBtn = document.getElementById("script-audio-record-btn");
+    if (dictationBtn) {
+        dictationBtn.disabled = false;
+        dictationBtn.classList.remove("is-recording");
+    }
 
     // Reset thumbnail upload
     scriptThumbFile = null;
@@ -12071,10 +12179,11 @@ function scriptNext() {
         const usePhotos = document.getElementById("script-use-photos").checked;
         const useVideo = document.getElementById("script-use-video") ? document.getElementById("script-use-video").checked : false;
         const hasVideo = useVideo && !!scriptUserVideoFile;
+        const audioSource = _getScriptAudioSourceState(hasVideo);
         const useUserAudioToggle = document.getElementById("script-use-user-audio")
             ? document.getElementById("script-use-user-audio").checked
             : false;
-        const hasUserAudio = useUserAudioToggle && !!scriptUserAudioFile;
+        const hasUserAudio = audioSource.hasAudio;
         const createNarration = !usePhotos || document.getElementById("script-create-narration").checked;
         const useTevoxiAudio = _isScriptTevoxiMainAudioMode();
         const videoCreateNarration = hasVideo ? !!document.getElementById("script-video-create-narration")?.checked : false;
@@ -12091,7 +12200,7 @@ function scriptNext() {
         }
 
         if (useTevoxiAudio && hasUserAudio) {
-            alert("Desative o seu áudio enviado para usar o trecho do Tevoxi como áudio principal.");
+            alert("Desative o áudio anexado para usar o trecho do Tevoxi como áudio principal.");
             return;
         }
 
@@ -12099,13 +12208,17 @@ function scriptNext() {
             scriptData.title = title;
             scriptData.useCustomVideo = true;
             scriptData.useCustomImages = false;
-            scriptData.useCustomAudio = false;
+            scriptData.useCustomAudio = useTevoxiAudio ? false : hasUserAudio;
             scriptData.useTevoxiAudio = false;
             scriptData.audioIsMusic = false;
             scriptData.removeVocals = false;
-            scriptData.createNarration = videoCreateNarration;
-            scriptData.text = videoCreateNarration ? text : "";
-            if (videoCreateNarration && (!text || text.length < 20)) {
+            scriptData.createNarration = hasUserAudio ? false : videoCreateNarration;
+            scriptData.text = hasUserAudio ? text : (videoCreateNarration ? text : "");
+            if (hasUserAudio && !text) {
+                alert("Grave/transcreva ou escreva o texto do áudio para continuar.");
+                return;
+            }
+            if (!hasUserAudio && videoCreateNarration && (!text || text.length < 20)) {
                 alert("Escreva um roteiro com pelo menos 20 caracteres para a narração.");
                 return;
             }
@@ -12129,8 +12242,8 @@ function scriptNext() {
             scriptData.useTevoxiAudio = useTevoxiAudio;
             scriptData.audioIsMusic = useTevoxiAudio
                 ? true
-                : (hasUserAudio ? !!document.getElementById("script-audio-is-music")?.checked : false);
-            scriptData.removeVocals = hasUserAudio && scriptData.audioIsMusic;
+                : (audioSource.kind === "upload" && hasUserAudio ? !!document.getElementById("script-audio-is-music")?.checked : false);
+            scriptData.removeVocals = audioSource.kind === "upload" && hasUserAudio && scriptData.audioIsMusic;
             scriptData.createNarration = useTevoxiAudio ? false : (hasUserAudio ? false : createNarration);
             scriptData.text = (hasUserAudio || useTevoxiAudio) ? text : (createNarration ? text : "");
 
@@ -12246,6 +12359,8 @@ async function handleScriptCreate() {
     scriptData.pauseLevel = getSelectedPause("script-pause-options");
     const usePhotosSelected = document.getElementById("script-use-photos").checked;
     const useVideoSelected = document.getElementById("script-use-video") ? document.getElementById("script-use-video").checked : false;
+    const hasVideoSelected = useVideoSelected && !!scriptUserVideoFile;
+    const audioSource = _getScriptAudioSourceState(hasVideoSelected);
     const useAudioSelected = document.getElementById("script-use-user-audio")
         ? document.getElementById("script-use-user-audio").checked
         : false;
@@ -12262,17 +12377,17 @@ async function handleScriptCreate() {
     scriptData.imageDisplaySeconds = usePhotosSelected
         ? (parseFloat(document.getElementById("script-image-seconds").value || "0") || 0)
         : 0;
-    scriptData.useCustomVideo = useVideoSelected && !!scriptUserVideoFile;
+    scriptData.useCustomVideo = hasVideoSelected;
     scriptData.useCustomImages = !scriptData.useCustomVideo && usePhotosSelected && scriptPhotos.length > 0;
-    scriptData.useCustomAudio = !scriptData.useCustomVideo && !useTevoxiAudio && useAudioSelected && !!scriptUserAudioFile;
+    scriptData.useCustomAudio = !useTevoxiAudio && audioSource.hasAudio;
     scriptData.useTevoxiAudio = useTevoxiAudio;
     scriptData.audioIsMusic = useTevoxiAudio
         ? true
-        : (scriptData.useCustomAudio ? !!document.getElementById("script-audio-is-music")?.checked : false);
-    scriptData.removeVocals = scriptData.useCustomAudio && scriptData.audioIsMusic;
+        : (scriptData.useCustomAudio && audioSource.kind === "upload" ? !!document.getElementById("script-audio-is-music")?.checked : false);
+    scriptData.removeVocals = scriptData.useCustomAudio && audioSource.kind === "upload" && scriptData.audioIsMusic;
 
     const createNarration = scriptData.useCustomVideo
-        ? (!!document.getElementById("script-video-create-narration")?.checked && !!scriptData.text)
+        ? (scriptData.useCustomAudio ? false : (!!document.getElementById("script-video-create-narration")?.checked && !!scriptData.text))
         : (scriptData.useCustomAudio || scriptData.useTevoxiAudio)
             ? false
             : (!scriptData.useCustomImages || !!document.getElementById("script-create-narration")?.checked);
@@ -12329,7 +12444,7 @@ async function handleScriptCreate() {
     }
 
     const startMessage = scriptData.useCustomVideo
-        ? "Preparando vídeo com legendas..."
+        ? (scriptData.useCustomAudio ? "Preparando vídeo com áudio anexado..." : "Preparando vídeo com legendas...")
         : scriptData.useTevoxiAudio
         ? "Preparando vídeo com trecho do Tevoxi..."
         : scriptData.useCustomAudio
@@ -12339,6 +12454,7 @@ async function handleScriptCreate() {
     showCreateProgress(startMessage, { progress: 12, stage: startStage });
 
     try {
+        const finalAudioSource = _getScriptAudioSourceState(scriptData.useCustomVideo);
         const uploadedImageIds = [];
         let uploadedMusicId = "";
         let uploadedMainAudioId = "";
@@ -12370,10 +12486,17 @@ async function handleScriptCreate() {
             uploadedMusicId = uploadedAudio.upload_id || "";
         }
 
-        if (scriptData.useCustomAudio && scriptUserAudioFile) {
-            showCreateProgress("Enviando áudio principal...", { progress: 48, stage: "Enviando arquivos..." });
-            const uploadedMainAudio = await uploadTempFileWithRetry(scriptUserAudioFile, "audio", "audio principal");
-            uploadedMainAudioId = uploadedMainAudio.upload_id || "";
+        if (scriptData.useCustomAudio) {
+            if (finalAudioSource.kind === "generated") {
+                uploadedMainAudioId = finalAudioSource.uploadId || "";
+                if (!uploadedMainAudioId) {
+                    throw new Error("O áudio gerado não está mais disponível. Gere novamente antes de continuar.");
+                }
+            } else if (scriptUserAudioFile) {
+                showCreateProgress("Enviando áudio principal...", { progress: 48, stage: "Enviando arquivos..." });
+                const uploadedMainAudio = await uploadTempFileWithRetry(scriptUserAudioFile, "audio", "audio principal");
+                uploadedMainAudioId = uploadedMainAudio.upload_id || "";
+            }
         }
 
         if (scriptData.removeVocals) {
@@ -12499,6 +12622,16 @@ let scriptPhotos = []; // array of File objects
 let scriptUserAudioFile = null;
 let scriptUserAudioDurationSeconds = 0;
 let scriptUserVideoFile = null; // single File object for custom video
+let scriptGeneratedAudioUploadId = "";
+let scriptGeneratedAudioPreviewUrl = "";
+let scriptGeneratedAudioDurationSeconds = 0;
+let scriptGeneratedAudioFileName = "";
+let scriptGeneratedAudioText = "";
+let scriptAudioDictationRecorder = null;
+let scriptAudioDictationChunks = [];
+let scriptAudioDictationTimer = null;
+let scriptAudioDictationElapsedSeconds = 0;
+let scriptAudioDictationStream = null;
 const MAX_PHOTOS = 20;
 const MAX_AI_SCRIPT_PHOTO_ANALYSIS = 8;
 const MAX_AI_SUGGEST_CUSTOM_IMAGES = 8;
@@ -14178,10 +14311,377 @@ function togglePhotoUpload() {
     scheduleScriptCreditEstimate();
 }
 
+function _setScriptAudioBuilderStatus(message = "", tone = "") {
+    const statusEl = document.getElementById("script-audio-builder-status");
+    if (!statusEl) return;
+    if (!message) {
+        statusEl.hidden = true;
+        statusEl.textContent = "";
+        statusEl.className = "script-audio-builder-status";
+        return;
+    }
+    statusEl.hidden = false;
+    statusEl.textContent = message;
+    statusEl.className = `script-audio-builder-status${tone ? ` is-${tone}` : ""}`;
+}
+
+function _setScriptAudioDictationStatus(message = "", tone = "") {
+    const statusEl = document.getElementById("script-audio-dictation-status");
+    if (!statusEl) return;
+    if (!message) {
+        statusEl.hidden = true;
+        statusEl.textContent = "";
+        statusEl.className = "script-audio-builder-inline-status";
+        return;
+    }
+    statusEl.hidden = false;
+    statusEl.textContent = message;
+    statusEl.className = `script-audio-builder-inline-status${tone ? ` is-${tone}` : ""}`;
+}
+
+function _updateScriptGeneratedAudioSummary() {
+    const summaryEl = document.getElementById("script-generated-audio-summary");
+    const nameEl = document.getElementById("script-generated-audio-name");
+    const playerEl = document.getElementById("script-generated-audio-player");
+    const hasGeneratedAudio = !!scriptGeneratedAudioUploadId;
+
+    if (summaryEl) summaryEl.hidden = !hasGeneratedAudio;
+    if (nameEl) {
+        if (!hasGeneratedAudio) {
+            nameEl.textContent = "";
+        } else {
+            const durationLabel = scriptGeneratedAudioDurationSeconds > 0
+                ? ` • ${Math.max(1, Math.round(scriptGeneratedAudioDurationSeconds))}s`
+                : "";
+            nameEl.textContent = `${scriptGeneratedAudioFileName || "audio-gerado.mp3"}${durationLabel}`;
+        }
+    }
+    if (playerEl) {
+        if (!hasGeneratedAudio || !scriptGeneratedAudioPreviewUrl) {
+            playerEl.pause();
+            playerEl.removeAttribute("src");
+            playerEl.load();
+        } else if (playerEl.src !== scriptGeneratedAudioPreviewUrl) {
+            playerEl.src = scriptGeneratedAudioPreviewUrl;
+            playerEl.load();
+        }
+    }
+
+    const builderTrigger = document.getElementById("script-video-audio-builder-trigger");
+    if (builderTrigger) {
+        builderTrigger.classList.toggle("is-ready", hasGeneratedAudio);
+    }
+}
+
+function updateScriptVideoAreaVisibility() {
+    const area = document.getElementById("script-video-area");
+    const builder = document.getElementById("script-video-audio-builder");
+    const selectionRow = document.getElementById("script-video-selection-row");
+    const narrationChoice = document.getElementById("script-video-narration-choice");
+    const clearBtn = document.getElementById("script-video-clear-btn");
+    const uploadTrigger = document.getElementById("script-video-upload-trigger");
+    const hasVideo = !!scriptUserVideoFile;
+    const builderOpen = !!builder && !builder.hidden;
+    const hasGeneratedAudio = !!scriptGeneratedAudioUploadId;
+    const shouldShow = hasVideo || builderOpen || hasGeneratedAudio;
+
+    if (area) area.hidden = !shouldShow;
+    if (selectionRow) selectionRow.hidden = !hasVideo;
+    if (clearBtn) clearBtn.hidden = !hasVideo;
+    if (narrationChoice) narrationChoice.hidden = !hasVideo || hasGeneratedAudio;
+    if (uploadTrigger) uploadTrigger.classList.toggle("has-file", hasVideo);
+}
+
+function openScriptVideoPicker() {
+    document.getElementById("script-video-input")?.click();
+}
+
+function clearScriptGeneratedAudio(preserveBuilderText = true) {
+    scriptGeneratedAudioUploadId = "";
+    scriptGeneratedAudioPreviewUrl = "";
+    scriptGeneratedAudioDurationSeconds = 0;
+    scriptGeneratedAudioFileName = "";
+    scriptGeneratedAudioText = "";
+
+    if (!preserveBuilderText) {
+        const builderText = document.getElementById("script-audio-builder-text");
+        if (builderText) builderText.value = "";
+        const builderCharCount = document.getElementById("script-audio-builder-char-count");
+        if (builderCharCount) builderCharCount.textContent = "0";
+    }
+
+    _updateScriptGeneratedAudioSummary();
+    updateScriptVideoAreaVisibility();
+    scheduleScriptCreditEstimate();
+}
+
+function clearScriptVideoSelection() {
+    const videoCb = document.getElementById("script-use-video");
+    if (videoCb) videoCb.checked = false;
+    toggleVideoUpload();
+}
+
+function toggleScriptAudioBuilder(forceOpen = null) {
+    const builder = document.getElementById("script-video-audio-builder");
+    const trigger = document.getElementById("script-video-audio-builder-trigger");
+    if (!builder) return;
+
+    const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : builder.hidden;
+    builder.hidden = !shouldOpen;
+    if (trigger) trigger.classList.toggle("active", shouldOpen);
+
+    if (shouldOpen) {
+        loadVoiceProfiles();
+        const builderText = document.getElementById("script-audio-builder-text");
+        if (builderText && !builderText.value.trim()) {
+            builderText.value = (scriptGeneratedAudioText || document.getElementById("script-text")?.value || "").trim();
+            syncScriptAudioBuilderDraft();
+        }
+    }
+
+    updateScriptVideoAreaVisibility();
+}
+
+function syncScriptAudioBuilderDraft() {
+    const textEl = document.getElementById("script-audio-builder-text");
+    const countEl = document.getElementById("script-audio-builder-char-count");
+    const currentText = String(textEl?.value || "");
+    if (countEl) countEl.textContent = currentText.length.toLocaleString("pt-BR");
+
+    if (scriptGeneratedAudioUploadId && currentText.trim() !== String(scriptGeneratedAudioText || "").trim()) {
+        clearScriptGeneratedAudio(true);
+        _setScriptAudioBuilderStatus("Texto alterado. Gere o áudio novamente para manter tudo sincronizado.", "info");
+    }
+}
+
+function _pickScriptAudioRecorderMimeType() {
+    const candidates = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4",
+    ];
+    if (typeof MediaRecorder === "undefined") return "";
+    if (typeof MediaRecorder.isTypeSupported !== "function") return candidates[0];
+    return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || "";
+}
+
+function _resetScriptAudioDictationUi() {
+    const recordBtn = document.getElementById("script-audio-record-btn");
+    const recordLabel = document.getElementById("script-audio-record-btn-label");
+    if (recordBtn) {
+        recordBtn.disabled = false;
+        recordBtn.classList.remove("is-recording");
+    }
+    if (recordLabel) recordLabel.textContent = "Gravar e transcrever";
+}
+
+function stopScriptAudioDictationRecording(skipTranscription = false) {
+    if (scriptAudioDictationRecorder && scriptAudioDictationRecorder.state === "recording") {
+        scriptAudioDictationRecorder._skipTranscription = !!skipTranscription;
+        scriptAudioDictationRecorder.stop();
+    } else if (scriptAudioDictationStream) {
+        scriptAudioDictationStream.getTracks().forEach((track) => track.stop());
+        scriptAudioDictationStream = null;
+        scriptAudioDictationChunks = [];
+        scriptAudioDictationElapsedSeconds = 0;
+        clearInterval(scriptAudioDictationTimer);
+        scriptAudioDictationTimer = null;
+        _resetScriptAudioDictationUi();
+    }
+}
+
+async function toggleScriptAudioDictationRecording() {
+    if (scriptAudioDictationRecorder && scriptAudioDictationRecorder.state === "recording") {
+        stopScriptAudioDictationRecording(false);
+        return;
+    }
+
+    if (typeof MediaRecorder === "undefined") {
+        alert("Seu navegador não suporta gravação de áudio neste fluxo.");
+        return;
+    }
+
+    try {
+        scriptAudioDictationStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        scriptAudioDictationChunks = [];
+        scriptAudioDictationElapsedSeconds = 0;
+
+        const mimeType = _pickScriptAudioRecorderMimeType();
+        scriptAudioDictationRecorder = mimeType
+            ? new MediaRecorder(scriptAudioDictationStream, { mimeType })
+            : new MediaRecorder(scriptAudioDictationStream);
+
+        scriptAudioDictationRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                scriptAudioDictationChunks.push(event.data);
+            }
+        };
+
+        scriptAudioDictationRecorder.onstop = async () => {
+            const skipTranscription = !!scriptAudioDictationRecorder?._skipTranscription;
+            if (scriptAudioDictationStream) {
+                scriptAudioDictationStream.getTracks().forEach((track) => track.stop());
+            }
+            scriptAudioDictationStream = null;
+            clearInterval(scriptAudioDictationTimer);
+            scriptAudioDictationTimer = null;
+            _resetScriptAudioDictationUi();
+
+            const chunks = scriptAudioDictationChunks.slice();
+            scriptAudioDictationChunks = [];
+            scriptAudioDictationRecorder = null;
+
+            if (skipTranscription || !chunks.length) {
+                _setScriptAudioDictationStatus("", "");
+                return;
+            }
+
+            const blobType = chunks[0]?.type || mimeType || "audio/webm";
+            const extension = blobType.includes("mp4") ? "m4a" : "webm";
+            const blob = new Blob(chunks, { type: blobType });
+            const formData = new FormData();
+            formData.append("file", blob, `dictation.${extension}`);
+
+            _setScriptAudioDictationStatus("Transcrevendo o áudio gravado...", "info");
+
+            try {
+                const result = await apiForm("/video/transcribe-temp-audio", formData);
+                const text = String(result?.text || "").trim();
+                if (!text) {
+                    _setScriptAudioDictationStatus("Não detectei fala suficiente. Tente gravar novamente.", "error");
+                    return;
+                }
+
+                const builderText = document.getElementById("script-audio-builder-text");
+                if (builderText) builderText.value = text;
+                syncScriptAudioBuilderDraft();
+                _setScriptTextValue(text);
+                scriptGeneratedAudioText = text;
+                _setScriptAudioDictationStatus("Texto transcrito e copiado para o roteiro.", "success");
+            } catch (error) {
+                _setScriptAudioDictationStatus(`Erro ao transcrever: ${error.message}`, "error");
+            }
+        };
+
+        scriptAudioDictationRecorder.start();
+        const recordBtn = document.getElementById("script-audio-record-btn");
+        const recordLabel = document.getElementById("script-audio-record-btn-label");
+        if (recordBtn) recordBtn.classList.add("is-recording");
+        if (recordLabel) recordLabel.textContent = "Parar gravação";
+        _setScriptAudioDictationStatus("Gravando... 0:00", "info");
+
+        scriptAudioDictationTimer = setInterval(() => {
+            scriptAudioDictationElapsedSeconds += 1;
+            const minutes = Math.floor(scriptAudioDictationElapsedSeconds / 60);
+            const seconds = String(scriptAudioDictationElapsedSeconds % 60).padStart(2, "0");
+            _setScriptAudioDictationStatus(`Gravando... ${minutes}:${seconds}`, "info");
+            if (scriptAudioDictationElapsedSeconds >= 90) {
+                stopScriptAudioDictationRecording(false);
+            }
+        }, 1000);
+    } catch (error) {
+        scriptAudioDictationRecorder = null;
+        scriptAudioDictationChunks = [];
+        if (scriptAudioDictationStream) {
+            scriptAudioDictationStream.getTracks().forEach((track) => track.stop());
+            scriptAudioDictationStream = null;
+        }
+        clearInterval(scriptAudioDictationTimer);
+        scriptAudioDictationTimer = null;
+        _resetScriptAudioDictationUi();
+        alert("Não foi possível acessar o microfone. Verifique as permissões do navegador.");
+    }
+}
+
+function _resolveVoiceSelectionFromSelector(prefix) {
+    const selector = document.getElementById(`${prefix}-voice-selector`);
+    if (!selector) {
+        return { voice: "onyx", voiceType: "builtin", voiceProfileId: 0 };
+    }
+
+    const selectedPersona = selector.querySelector(".persona-item.selected");
+    if (selectedPersona) {
+        return {
+            voice: selectedPersona.dataset.value || "alloy",
+            voiceType: "profile",
+            voiceProfileId: parseInt(selectedPersona.dataset.profileId || "0", 10) || 0,
+        };
+    }
+
+    const selectedOption = selector.querySelector(".wizard-option.selected");
+    if (selectedOption) {
+        return {
+            voice: selectedOption.dataset.value || "onyx",
+            voiceType: selectedOption.dataset.voiceType || "builtin",
+            voiceProfileId: 0,
+        };
+    }
+
+    return { voice: "onyx", voiceType: "builtin", voiceProfileId: 0 };
+}
+
+async function generateScriptVideoAudio() {
+    const textEl = document.getElementById("script-audio-builder-text");
+    const text = String(textEl?.value || "").trim();
+    if (!text) {
+        alert("Grave/transcreva ou escreva o texto antes de gerar o áudio.");
+        return;
+    }
+
+    const voiceSelection = _resolveVoiceSelectionFromSelector("script-audio-builder");
+    const generateBtn = document.getElementById("script-generate-audio-btn");
+    if (generateBtn) {
+        generateBtn.disabled = true;
+        generateBtn.textContent = "Gerando...";
+    }
+    _setScriptAudioBuilderStatus("Gerando o áudio com a voz selecionada...", "info");
+
+    try {
+        const result = await api("/video/generate-temp-audio", {
+            method: "POST",
+            body: JSON.stringify({
+                text,
+                voice: voiceSelection.voice,
+                voice_profile_id: voiceSelection.voiceProfileId,
+                voice_type: voiceSelection.voiceType,
+                pause_level: getSelectedPause("script-pause-options"),
+                tone: scriptData.tone || "informativo",
+                filename: "narracao-video.mp3",
+            }),
+        });
+
+        scriptGeneratedAudioUploadId = String(result?.upload_id || "").trim();
+        scriptGeneratedAudioPreviewUrl = String(result?.preview_url || "").trim();
+        scriptGeneratedAudioDurationSeconds = Math.max(0, Number(result?.duration_seconds || 0));
+        scriptGeneratedAudioFileName = String(result?.filename || "narracao-video.mp3").trim() || "narracao-video.mp3";
+        scriptGeneratedAudioText = text;
+
+        scriptUserAudioFile = null;
+        scriptUserAudioDurationSeconds = 0;
+        const userAudioCb = document.getElementById("script-use-user-audio");
+        if (userAudioCb) userAudioCb.checked = false;
+        const userAudioArea = document.getElementById("script-user-audio-area");
+        if (userAudioArea) userAudioArea.hidden = true;
+        _clearScriptManualAudioInputUi();
+
+        _setScriptTextValue(text);
+        _updateScriptGeneratedAudioSummary();
+        updateScriptVideoAreaVisibility();
+        toggleScriptAudioBuilder(false);
+        scheduleScriptCreditEstimate();
+        _setScriptAudioBuilderStatus("Áudio gerado e anexado a este vídeo.", "success");
+    } catch (error) {
+        _setScriptAudioBuilderStatus(`Erro ao gerar o áudio: ${error.message}`, "error");
+    } finally {
+        if (generateBtn) {
+            generateBtn.disabled = false;
+            generateBtn.textContent = "Gerar áudio";
+        }
+    }
+}
+
 function toggleVideoUpload() {
     const checked = document.getElementById("script-use-video").checked;
-    const area = document.getElementById("script-video-area");
-    if (area) area.hidden = !checked;
     // Video and photos are mutually exclusive
     if (checked) {
         const photoCb = document.getElementById("script-use-photos");
@@ -14196,9 +14696,13 @@ function toggleVideoUpload() {
         if (input) input.value = "";
         const nameEl = document.getElementById("script-video-name");
         if (nameEl) { nameEl.hidden = true; nameEl.textContent = ""; }
-        const narChoice = document.getElementById("script-video-narration-choice");
-        if (narChoice) narChoice.hidden = true;
+        const selectionRow = document.getElementById("script-video-selection-row");
+        if (selectionRow) selectionRow.hidden = true;
+        clearScriptGeneratedAudio(false);
+        toggleScriptAudioBuilder(false);
     }
+    _updateScriptGeneratedAudioSummary();
+    updateScriptVideoAreaVisibility();
     toggleScriptPhotoDependentFields();
     scheduleScriptCreditEstimate();
 }
@@ -14219,14 +14723,19 @@ function handleUserVideoSelect(event) {
         return;
     }
 
+    const videoCb = document.getElementById("script-use-video");
+    if (videoCb) videoCb.checked = true;
     scriptUserVideoFile = file;
     const nameEl = document.getElementById("script-video-name");
     if (nameEl) {
         nameEl.hidden = false;
         nameEl.textContent = "Vídeo selecionado: " + file.name + " (" + (file.size / 1024 / 1024).toFixed(1) + "MB)";
     }
-    const narChoice = document.getElementById("script-video-narration-choice");
-    if (narChoice) narChoice.hidden = false;
+    const selectionRow = document.getElementById("script-video-selection-row");
+    if (selectionRow) selectionRow.hidden = false;
+    updateScriptVideoAreaVisibility();
+    _updateScriptGeneratedAudioSummary();
+    toggleVideoUpload();
     scheduleScriptCreditEstimate();
 }
 
@@ -14279,13 +14788,9 @@ function toggleUserAudioUpload() {
     if (!checked) {
         scriptUserAudioFile = null;
         scriptUserAudioDurationSeconds = 0;
-        const input = document.getElementById("script-user-audio-input");
-        if (input) input.value = "";
-        const nameEl = document.getElementById("script-user-audio-name");
-        if (nameEl) {
-            nameEl.hidden = true;
-            nameEl.textContent = "";
-        }
+        _clearScriptManualAudioInputUi();
+    } else {
+        clearScriptGeneratedAudio(true);
     }
 
     _syncCreateRealisticDurationOptions("script");
@@ -14326,6 +14831,7 @@ async function handleUserAudioSelect(event) {
     }
 
     scriptUserAudioFile = file;
+    clearScriptGeneratedAudio(true);
     scriptUserAudioDurationSeconds = 0;
     const nameEl = document.getElementById("script-user-audio-name");
     if (nameEl) {
@@ -23186,14 +23692,17 @@ let personaRecordedChunks = [];
 let personaRecordingTimer = null;
 let personaSampleBlobs = {}; // keyed by prefix: 'wizard' or 'script'
 
+function renderAllCreatePersonaLists() {
+    ["wizard", "script", "script-audio-builder"].forEach((prefix) => renderPersonaList(prefix));
+}
+
 async function loadVoiceProfiles() {
     try {
         voiceProfiles = await api("/voice/profiles");
     } catch {
         voiceProfiles = [];
     }
-    renderPersonaList("wizard");
-    renderPersonaList("script");
+    renderAllCreatePersonaLists();
 }
 
 function renderPersonaList(prefix) {
@@ -23525,8 +24034,7 @@ async function saveVoiceProfile() {
 
         await loadVoiceManagerProfiles();
         showVoiceProfilesList();
-        renderPersonaList("wizard");
-        renderPersonaList("script");
+        renderAllCreatePersonaLists();
     } catch (error) {
         alert(`Erro ao salvar: ${error.message}`);
     } finally {
@@ -23539,8 +24047,7 @@ async function setDefaultVoice(profileId) {
     try {
         await api(`/voice/profiles/${profileId}/set-default`, { method: "POST" });
         await loadVoiceManagerProfiles();
-        renderPersonaList("wizard");
-        renderPersonaList("script");
+        renderAllCreatePersonaLists();
     } catch (error) {
         alert(`Erro: ${error.message}`);
     }
@@ -23570,6 +24077,13 @@ async function deleteVoiceProfile(profileId) {
 }
 
 window.toggleMinhaVoz = toggleMinhaVoz;
+window.openScriptVideoPicker = openScriptVideoPicker;
+window.clearScriptVideoSelection = clearScriptVideoSelection;
+window.toggleScriptAudioBuilder = toggleScriptAudioBuilder;
+window.syncScriptAudioBuilderDraft = syncScriptAudioBuilderDraft;
+window.toggleScriptAudioDictationRecording = toggleScriptAudioDictationRecording;
+window.generateScriptVideoAudio = generateScriptVideoAudio;
+window.clearScriptGeneratedAudio = clearScriptGeneratedAudio;
 window.selectPersona = selectPersona;
 window.startPersonaRecording = startPersonaRecording;
 window.stopPersonaRecording = stopPersonaRecording;

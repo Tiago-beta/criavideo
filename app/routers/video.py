@@ -1010,6 +1010,170 @@ async def upload_temp_video(
     return {"upload_id": upload_id, "size": len(content)}
 
 
+class GenerateTempAudioRequest(BaseModel):
+    text: str
+    voice: str = ""
+    voice_profile_id: int = 0
+    voice_type: str = ""
+    pause_level: str = "normal"
+    tone: str = "informativo"
+    filename: str = "audio-gerado.mp3"
+
+
+async def _resolve_tts_voice_selection(
+    user_id: int,
+    db: AsyncSession,
+    requested_voice: str = "",
+    requested_voice_profile_id: int = 0,
+    requested_voice_type: str = "",
+) -> tuple[str, str, str]:
+    from app.models import VoiceProfile
+
+    voice = str(requested_voice or "").strip() or "onyx"
+    voice_type = str(requested_voice_type or "").strip().lower() or "builtin"
+    tts_instructions = ""
+
+    if requested_voice_profile_id:
+        profile = await db.get(VoiceProfile, int(requested_voice_profile_id))
+        if not profile or profile.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Perfil de voz não encontrado")
+
+        profile_voice_type = str(profile.voice_type or "builtin").strip().lower()
+        if profile_voice_type == "elevenlabs" and profile.openai_voice_id:
+            voice = profile.openai_voice_id
+            voice_type = "elevenlabs"
+        elif profile_voice_type == "custom" and profile.openai_voice_id:
+            voice = profile.openai_voice_id
+            voice_type = "custom"
+        elif profile.builtin_voice:
+            voice = profile.builtin_voice
+            voice_type = "builtin"
+        tts_instructions = str(profile.tts_instructions or "")
+
+    return voice, voice_type, tts_instructions
+
+
+@router.post("/transcribe-temp-audio")
+async def transcribe_temp_audio(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    from app.services.transcriber import transcribe_audio
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Arquivo de áudio inválido")
+
+    ext = Path(file.filename).suffix.lower() or ".webm"
+    if ext not in AUDIO_EXTS:
+        ext = ".webm"
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Áudio vazio")
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Áudio excede 25MB para transcrição")
+
+    temp_token = uuid.uuid4().hex
+    source_path = _temp_user_dir(user["id"]) / f"transcribe_{temp_token}{ext}"
+    with open(source_path, "wb") as f:
+        f.write(content)
+
+    try:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, lambda: transcribe_audio(str(source_path)))
+    except Exception as exc:
+        logger.warning("Temporary audio transcription failed for user %s: %s", user["id"], exc)
+        raise HTTPException(status_code=500, detail="Não foi possível transcrever o áudio agora")
+    finally:
+        try:
+            source_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    text = str(result.get("text", "") if isinstance(result, dict) else "").strip()
+    words = result.get("words", []) if isinstance(result, dict) else []
+    speech_detected_raw = result.get("speech_detected") if isinstance(result, dict) else None
+    speech_detected = bool(text)
+    if isinstance(speech_detected_raw, bool):
+        speech_detected = speech_detected_raw
+
+    return {
+        "text": text,
+        "speech_detected": speech_detected,
+        "word_count": len(words) if isinstance(words, list) else 0,
+    }
+
+
+@router.post("/generate-temp-audio")
+async def generate_temp_audio(
+    req: GenerateTempAudioRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.script_audio import generate_tts_audio
+    from app.services.video_composer import _get_duration as get_media_duration
+
+    text = str(req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Escreva o texto antes de gerar o áudio")
+    if len(text) > 20000:
+        raise HTTPException(status_code=400, detail="Texto muito longo para gerar áudio")
+
+    voice, voice_type, tts_instructions = await _resolve_tts_voice_selection(
+        int(user["id"]),
+        db,
+        requested_voice=req.voice,
+        requested_voice_profile_id=req.voice_profile_id,
+        requested_voice_type=req.voice_type,
+    )
+
+    temp_token = uuid.uuid4().hex
+    raw_filename = os.path.basename(str(req.filename or "audio-gerado.mp3").strip() or "audio-gerado.mp3")
+    safe_filename = re.sub(r"[^A-Za-z0-9._-]+", "-", raw_filename).strip("-._") or "audio-gerado"
+    if not safe_filename.lower().endswith(".mp3"):
+        safe_filename = f"{safe_filename}.mp3"
+    generated_name = f"temp-create-{user['id']}-{temp_token}-{safe_filename}"
+
+    try:
+        generated_path = await generate_tts_audio(
+            text,
+            voice=voice,
+            project_id=0,
+            tts_instructions=tts_instructions,
+            voice_type=voice_type,
+            pause_level=str(req.pause_level or "normal").strip() or "normal",
+            tone=str(req.tone or "informativo").strip() or "informativo",
+            output_filename=generated_name,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Temporary TTS generation failed for user %s: %s", user["id"], exc)
+        raise HTTPException(status_code=500, detail="Não foi possível gerar o áudio agora")
+
+    upload_id = f"{temp_token}.mp3"
+    target = _temp_user_dir(user["id"]) / upload_id
+
+    try:
+        shutil.copy2(generated_path, target)
+        duration_seconds = float(get_media_duration(str(target)) or 0)
+    finally:
+        try:
+            generated_file = Path(generated_path)
+            generated_file.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    return {
+        "upload_id": upload_id,
+        "preview_url": _to_media_url(str(target)),
+        "duration_seconds": duration_seconds,
+        "filename": safe_filename,
+        "voice": voice,
+        "voice_type": voice_type,
+    }
+
+
 class WorkflowGenerateImageRequest(BaseModel):
     prompt: str
     aspect_ratio: str = "16:9"
