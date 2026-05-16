@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v459 loaded");
+console.log("[CriaVideo] app.js v460 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4298,6 +4298,9 @@ function initCreateWizard() {
                         selectedOption.classList.remove("selected");
                     }
                 });
+                if (voiceSelector.id === "script-audio-builder-voice-selector") {
+                    _syncScriptAudioBuilderVoiceUi();
+                }
             }
 
         }
@@ -12132,6 +12135,7 @@ function resetCreateWizard() {
     initStyleTags();
     // Initialize pause option buttons
     initPauseOptions();
+    _resetScriptAudioBuilderControls();
     // Reset video type cards
     document.querySelectorAll(".video-type-card").forEach(c => {
         c.classList.toggle("selected", c.dataset.type === "imagens_ia");
@@ -14847,7 +14851,65 @@ function _describeCreateVoiceProvider(voiceType = "") {
     return "voz IA selecionada";
 }
 
-function _buildScriptAudioBuilderTtsInstructions() {
+function _getSelectedSegmentedOptionValue(containerId, fallbackValue = "", optionSelector = ".pause-option") {
+    const container = document.getElementById(containerId);
+    if (!container) {
+        return fallbackValue;
+    }
+    const selectedOption = container.querySelector(`${optionSelector}.selected`);
+    return selectedOption?.dataset?.value || fallbackValue;
+}
+
+function _setSelectedSegmentedOptionValue(containerId, targetValue, optionSelector = ".pause-option") {
+    const container = document.getElementById(containerId);
+    if (!container) {
+        return;
+    }
+    container.querySelectorAll(optionSelector).forEach((option) => {
+        option.classList.toggle("selected", option.dataset.value === targetValue);
+    });
+}
+
+function _syncScriptAudioBuilderVoiceUi() {
+    const directionPanel = document.getElementById("script-audio-direction-panel");
+    if (!directionPanel) {
+        return;
+    }
+    const voiceSelection = _resolveVoiceSelectionFromSelector("script-audio-builder");
+    const isGeminiVoice = String(voiceSelection.voiceType || "").trim().toLowerCase() === "gemini";
+    directionPanel.hidden = !isGeminiVoice;
+}
+
+function _resetScriptAudioBuilderControls() {
+    _setSelectedSegmentedOptionValue("script-audio-builder-tone-options", "informativo");
+    _setSelectedSegmentedOptionValue("script-audio-builder-pause-options", "normal");
+
+    const styleEl = document.getElementById("script-audio-style");
+    if (styleEl) styleEl.value = "natural";
+    const paceEl = document.getElementById("script-audio-pace");
+    if (paceEl) paceEl.value = "natural";
+    const accentEl = document.getElementById("script-audio-accent");
+    if (accentEl) accentEl.value = "neutral";
+    const notesEl = document.getElementById("script-audio-notes");
+    if (notesEl) notesEl.value = "";
+
+    const toggleBtn = document.querySelector(".script-audio-builder-voice-toggle");
+    if (toggleBtn) {
+        toggleBtn.setAttribute("aria-expanded", "true");
+    }
+    const bodyEl = document.getElementById("script-audio-builder-voice-body");
+    if (bodyEl) {
+        bodyEl.hidden = false;
+    }
+
+    _syncScriptAudioBuilderVoiceUi();
+}
+
+function _buildScriptAudioBuilderTtsInstructions(voiceType = "") {
+    if (String(voiceType || "").trim().toLowerCase() !== "gemini") {
+        return "";
+    }
+
     const style = document.getElementById("script-audio-style")?.value || "natural";
     const pace = document.getElementById("script-audio-pace")?.value || "natural";
     const accent = document.getElementById("script-audio-accent")?.value || "neutral";
@@ -14892,14 +14954,17 @@ async function generateScriptVideoAudio() {
     }
 
     const voiceSelection = _resolveVoiceSelectionFromSelector("script-audio-builder");
-    const providerLabel = _describeCreateVoiceProvider(voiceSelection.voiceType);
-    const ttsInstructions = _buildScriptAudioBuilderTtsInstructions();
+    const selectedTone = _getSelectedSegmentedOptionValue("script-audio-builder-tone-options", scriptData.tone || "informativo");
+    const selectedPauseLevel = _getSelectedSegmentedOptionValue("script-audio-builder-pause-options", getSelectedPause("script-pause-options") || "normal");
+    const ttsInstructions = _buildScriptAudioBuilderTtsInstructions(voiceSelection.voiceType);
+    scriptData.tone = selectedTone;
+    scriptData.pauseLevel = selectedPauseLevel;
     const generateBtn = document.getElementById("script-generate-audio-btn");
     if (generateBtn) {
         generateBtn.disabled = true;
         generateBtn.textContent = "Gerando...";
     }
-    _setScriptAudioBuilderStatus(`Gerando o áudio com ${providerLabel}...`, "info");
+    _setScriptAudioBuilderStatus("Gerando o áudio...", "info");
 
     try {
         const result = await api("/video/generate-temp-audio", {
@@ -14910,8 +14975,8 @@ async function generateScriptVideoAudio() {
                 voice_profile_id: voiceSelection.voiceProfileId,
                 voice_type: voiceSelection.voiceType,
                 tts_instructions: ttsInstructions,
-                pause_level: getSelectedPause("script-pause-options"),
-                tone: scriptData.tone || "informativo",
+                pause_level: selectedPauseLevel,
+                tone: selectedTone,
                 filename: usingVideo ? "narracao-video.mp3" : "narracao-projeto.mp3",
             }),
         });
@@ -23959,7 +24024,7 @@ function _renderCreateAiVoiceCards(containerId) {
 
     container.querySelectorAll(".create-ai-extra-voice-card").forEach((node) => node.remove());
     const extraCardsHtml = CREATE_AI_EXTRA_VOICE_PRESETS.map((preset) => {
-        const subtitle = [preset.label, preset.providerLabel].filter(Boolean).join(" · ");
+        const subtitle = [preset.label].filter(Boolean).join(" · ");
         return `<div class="voice-card create-ai-extra-voice-card"><button class="wizard-option" data-value="${preset.id}" data-voice-type="${preset.voiceType}" type="button">${esc(preset.name)}<small>${esc(subtitle)}</small></button><button class="voice-preview-btn" data-voice="${preset.id}" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>`;
     }).join("");
     container.insertAdjacentHTML("beforeend", extraCardsHtml);
@@ -23971,7 +24036,7 @@ function _renderCreateAiRealisticVoiceButtons(containerId) {
 
     container.querySelectorAll(".create-ai-realistic-voice-btn").forEach((node) => node.remove());
     const extraButtonsHtml = CREATE_AI_EXTRA_VOICE_PRESETS.map((preset) => {
-        const subtitle = [preset.shortLabel || preset.label, preset.providerLabel].filter(Boolean).join(" · ");
+        const subtitle = [preset.shortLabel || preset.label].filter(Boolean).join(" · ");
         return `<button class="voice-btn create-ai-realistic-voice-btn" data-value="${preset.id}" data-voice-type="${preset.voiceType}" type="button">${esc(preset.name)} <small>${esc(subtitle)}</small></button>`;
     }).join("");
     container.insertAdjacentHTML("beforeend", extraButtonsHtml);
@@ -24062,6 +24127,9 @@ function selectPersona(el, prefix) {
     const selector = document.getElementById(`${prefix}-voice-selector`);
     selector.querySelectorAll('.persona-item.selected, .wizard-option.selected').forEach(o => o.classList.remove('selected'));
     el.classList.add('selected');
+    if (prefix === "script-audio-builder") {
+        _syncScriptAudioBuilderVoiceUi();
+    }
 }
 
 function toggleMinhaVoz(prefix) {

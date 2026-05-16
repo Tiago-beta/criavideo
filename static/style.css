@@ -6772,6 +6772,39 @@ svg.spin {
     margin-bottom: 12px;
 }
 
+.script-audio-builder-quick-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.script-audio-builder-option-group {
+    margin-bottom: 0;
+}
+
+.script-audio-builder-option-group label {
+    display: block;
+    margin-bottom: 8px;
+}
+
+.script-audio-builder-option-row .pause-option {
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+}
+
+.script-audio-builder-voice-collapse {
+    margin-top: 4px;
+}
+
+.script-audio-builder-voice-toggle {
+    padding: 0.72rem 0.95rem;
+}
+
+.script-audio-builder-voice-toggle .section-title {
+    font-size: 0.98rem;
+}
+
 .script-audio-direction-panel {
     padding: 14px;
     border-radius: 16px;
