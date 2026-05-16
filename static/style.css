@@ -4635,7 +4635,7 @@ th {
 .realistic-narration-options .form-group:last-child { margin-bottom: 0; }
 .realistic-voice-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
 }
 .voice-btn {
@@ -6625,10 +6625,6 @@ svg.spin {
     margin-top: 12px;
 }
 
-.create-elevenlabs-voice-section {
-    margin-top: 14px;
-}
-
 .script-video-selection-row {
     display: flex;
     align-items: center;
@@ -6765,6 +6761,46 @@ svg.spin {
     margin-bottom: 12px;
 }
 
+.script-audio-direction-panel {
+    padding: 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(96, 129, 162, 0.18);
+    background: rgba(255, 255, 255, 0.03);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.script-audio-direction-head strong {
+    display: block;
+    font-size: 0.92rem;
+    color: var(--text);
+}
+
+.script-audio-direction-head small {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.script-audio-direction-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.script-audio-direction-grid .form-group {
+    margin-bottom: 0;
+}
+
+.script-audio-direction-note {
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
 .script-audio-builder-inline-status,
 .script-audio-builder-status {
     padding: 10px 12px;
@@ -6804,6 +6840,11 @@ svg.spin {
 
 @media (max-width: 768px) {
     .script-media-toggle-group {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .realistic-voice-grid,
+    .script-audio-direction-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 

@@ -65,15 +65,24 @@ def _voice_settings_from_instructions(tts_instructions: str = "") -> dict:
     style = 0.2
     similarity_boost = 0.82
 
-    if any(token in text for token in ("portugues do brasil", "pronuncia nativa", "sem sotaque", "sem sotaque estrangeiro")):
+    if any(token in text for token in (
+        "portugues do brasil",
+        "português do brasil",
+        "pronuncia nativa",
+        "pronúncia nativa",
+        "sem sotaque",
+        "sem sotaque estrangeiro",
+        "diccao clara",
+        "dicção clara",
+    )):
         stability = 0.7
         style = 0.08
         similarity_boost = 0.9
 
-    if any(token in text for token in ("calma", "suave", "serena", "lento", "reflexivo")):
+    if any(token in text for token in ("calma", "suave", "serena", "lento", "lentamente", "reflexivo", "reflexiva")):
         stability = 0.6
         style = 0.1
-    elif any(token in text for token in ("alegre", "energet", "dinam", "animad", "urgente")):
+    elif any(token in text for token in ("alegre", "energ", "dinam", "dinâm", "animad", "urgente", "vibrante")):
         stability = 0.32
         style = 0.45
 

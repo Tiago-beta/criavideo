@@ -1,5 +1,5 @@
 """
-Script & Audio Generator — Creates video scripts with AI and generates TTS narration via OpenAI/ElevenLabs.
+Script & Audio Generator — Creates video scripts with AI and generates TTS narration via OpenAI, ElevenLabs, and Gemini.
 """
 import os
 import io
@@ -16,7 +16,12 @@ from PIL import Image
 from pypdf import PdfReader
 
 from app.config import get_settings
-from app.services.voice_catalog import build_elevenlabs_ptbr_instructions, is_elevenlabs_br_voice_id
+from app.services.voice_catalog import (
+    build_elevenlabs_ptbr_instructions,
+    build_gemini_ptbr_instructions,
+    is_elevenlabs_br_voice_id,
+    is_gemini_br_voice_id,
+)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -483,7 +488,8 @@ async def generate_tts_audio(
 
     For custom voices (voice_type="custom"), uses Fish Audio with the voice as reference_id.
     For ElevenLabs voices (voice_type="elevenlabs"), uses ElevenLabs API with voice_id.
-    For builtin voices, uses OpenAI TTS unless the voice ID matches a curated ElevenLabs preset.
+    For Gemini voices (voice_type="gemini"), uses Gemini 3.1 Flash TTS Preview.
+    For builtin voices, uses OpenAI TTS unless the voice ID matches a curated ElevenLabs or Gemini preset.
     pause_level: "normal" | "relaxed" | "deep" — controls silence insertion between segments.
     tone: narration tone — passed to Fish Audio for prosody control.
     """
@@ -503,9 +509,13 @@ async def generate_tts_audio(
     normalized_voice_type = str(voice_type or "builtin").strip().lower() or "builtin"
     if normalized_voice_type == "builtin" and is_elevenlabs_br_voice_id(voice):
         normalized_voice_type = "elevenlabs"
+    if normalized_voice_type == "builtin" and is_gemini_br_voice_id(voice):
+        normalized_voice_type = "gemini"
     voice_type = normalized_voice_type
     if voice_type == "elevenlabs":
         tts_instructions = build_elevenlabs_ptbr_instructions(voice, tts_instructions)
+    elif voice_type == "gemini":
+        tts_instructions = build_gemini_ptbr_instructions(voice, tts_instructions)
 
     try:
         logger.info(f"TTS generation: voice_type={voice_type}, pause_level={pause_level}, tone={tone}, voice={voice[:20] if voice else 'none'}")
@@ -532,6 +542,17 @@ async def generate_tts_audio(
             )
             if not ok:
                 raise RuntimeError("ElevenLabs TTS generation failed")
+        elif voice_type == "gemini" and voice:
+            from app.services.gemini_tts import generate_tts_long
+
+            ok = await generate_tts_long(
+                text,
+                voice,
+                str(output_path),
+                tts_instructions=tts_instructions,
+            )
+            if not ok:
+                raise RuntimeError("Gemini TTS generation failed")
         # For long texts, split into chunks and concatenate
         elif len(text) > 4000:
             chunks = _split_text_for_tts(text, max_chars=3800)
@@ -798,6 +819,25 @@ async def _generate_with_pauses(
                 )
             if not ok:
                 raise RuntimeError(f"ElevenLabs TTS failed for segment {i}")
+        elif voice_type == "gemini" and voice:
+            from app.services.gemini_tts import generate_tts, generate_tts_long
+
+            if len(seg_text) > 4500:
+                ok = await generate_tts_long(
+                    seg_text,
+                    voice,
+                    seg_path,
+                    tts_instructions=seg_instructions,
+                )
+            else:
+                ok = await generate_tts(
+                    seg_text,
+                    voice,
+                    seg_path,
+                    tts_instructions=seg_instructions,
+                )
+            if not ok:
+                raise RuntimeError(f"Gemini TTS failed for segment {i}")
         elif len(seg_text) > 4000:
             # Long segment — split into sub-chunks
             chunks = _split_text_for_tts(seg_text, max_chars=3800)

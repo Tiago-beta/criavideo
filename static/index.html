@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260515-06">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260516-01">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 457;
+        var REQUIRED_VER = 458;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1227,10 +1227,6 @@
                                     <div class="voice-card"><button class="wizard-option" data-value="sage" data-voice-type="builtin" type="button">Luna<small>Calma e Clara</small></button><button class="voice-preview-btn" data-voice="sage" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
                                 </div>
                             </div>
-                            <div class="voice-section create-elevenlabs-voice-section">
-                                <span class="voice-section-title">ElevenLabs</span>
-                                <div class="wizard-grid" id="wizard-elevenlabs-voices"></div>
-                            </div>
                             <!-- Vozes com emocao -->
                             <div class="voice-section">
                                 <span class="voice-section-title">Vozes com emoção</span>
@@ -1427,10 +1423,6 @@
                                     <button class="voice-btn" data-value="echo" data-voice-type="builtin" type="button">Rafael <small>Masc. Suave</small></button>
                                     <button class="voice-btn" data-value="nova" data-voice-type="builtin" type="button">Clara <small>Fem. Clara</small></button>
                                     <button class="voice-btn" data-value="shimmer" data-voice-type="builtin" type="button">Sofia <small>Fem. Suave</small></button>
-                                </div>
-                                <div class="voice-section create-elevenlabs-voice-section">
-                                    <span class="voice-section-title">ElevenLabs</span>
-                                    <div class="wizard-grid" id="wizard-realistic-elevenlabs-voices"></div>
                                 </div>
                             </div>
                         </div>
@@ -1657,11 +1649,51 @@
                                                 <div class="voice-card"><button class="wizard-option" data-value="fable" data-voice-type="builtin" type="button">Mateus<small>Narrativa</small></button><button class="voice-preview-btn" data-voice="fable" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
                                                 <div class="voice-card"><button class="wizard-option" data-value="sage" data-voice-type="builtin" type="button">Luna<small>Calma e Clara</small></button><button class="voice-preview-btn" data-voice="sage" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
                                             </div>
-                                            <div class="voice-section create-elevenlabs-voice-section">
-                                                <span class="voice-section-title">ElevenLabs</span>
-                                                <div class="wizard-grid" id="script-audio-builder-elevenlabs-voices"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="script-audio-direction-panel">
+                                        <div class="script-audio-direction-head">
+                                            <strong>Direção da voz</strong>
+                                            <small>Ajuste Style, Pace, Accent e detalhes finos. Ao escolher uma voz Gemini, a geração usa Gemini 3.1 Flash TTS Preview.</small>
+                                        </div>
+                                        <div class="script-audio-direction-grid">
+                                            <div class="form-group">
+                                                <label for="script-audio-style">Style</label>
+                                                <select id="script-audio-style" class="input">
+                                                    <option value="natural">Natural</option>
+                                                    <option value="premium">Premium</option>
+                                                    <option value="close">Próxima</option>
+                                                    <option value="energetic">Energética</option>
+                                                    <option value="calm">Calma</option>
+                                                    <option value="dramatic">Dramática</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="script-audio-pace">Pace</label>
+                                                <select id="script-audio-pace" class="input">
+                                                    <option value="natural">Natural</option>
+                                                    <option value="smooth">Suave</option>
+                                                    <option value="fast">Ágil</option>
+                                                    <option value="slow">Mais lenta</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="script-audio-accent">Accent</label>
+                                                <select id="script-audio-accent" class="input">
+                                                    <option value="neutral">PT-BR neutro</option>
+                                                    <option value="paulista">Paulista discreto</option>
+                                                    <option value="carioca">Carioca discreto</option>
+                                                    <option value="nordestino">Nordestino discreto</option>
+                                                    <option value="gaucho">Gaúcho discreto</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="script-audio-notes">Detalhes</label>
+                                                <input id="script-audio-notes" type="text" class="input" maxlength="240" placeholder="Ex.: mais sorridente, mais vendedor, tom de podcast...">
                                             </div>
                                         </div>
+                                        <div class="script-audio-direction-note">As instruções acima refinam a interpretação sem trocar o texto falado.</div>
                                     </div>
 
                                     <div id="script-audio-builder-status" class="script-audio-builder-status" hidden></div>
@@ -1842,10 +1874,6 @@
                                     <div class="voice-card"><button class="wizard-option" data-value="fable" data-voice-type="builtin" type="button">Mateus<small>Narrativa</small></button><button class="voice-preview-btn" data-voice="fable" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
                                     <div class="voice-card"><button class="wizard-option" data-value="sage" data-voice-type="builtin" type="button">Luna<small>Calma e Clara</small></button><button class="voice-preview-btn" data-voice="sage" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
                                 </div>
-                            </div>
-                            <div class="voice-section create-elevenlabs-voice-section">
-                                <span class="voice-section-title">ElevenLabs</span>
-                                <div class="wizard-grid" id="script-elevenlabs-voices"></div>
                             </div>
                             <!-- Vozes com emocao -->
                             <div class="voice-section">
@@ -2079,10 +2107,6 @@
                                     <button class="voice-btn" data-value="echo" data-voice-type="builtin" type="button">Rafael <small>Masc. Suave</small></button>
                                     <button class="voice-btn" data-value="nova" data-voice-type="builtin" type="button">Clara <small>Fem. Clara</small></button>
                                     <button class="voice-btn" data-value="shimmer" data-voice-type="builtin" type="button">Sofia <small>Fem. Suave</small></button>
-                                </div>
-                                <div class="voice-section create-elevenlabs-voice-section">
-                                    <span class="voice-section-title">ElevenLabs</span>
-                                    <div class="wizard-grid" id="script-realistic-elevenlabs-voices"></div>
                                 </div>
                             </div>
                         </div>
@@ -4110,8 +4134,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260515-06"></script>
-    <script src="/video/static/pwa.js?v=20260515-06"></script>
+    <script src="/video/static/app.js?v=20260516-01"></script>
+    <script src="/video/static/pwa.js?v=20260516-01"></script>
 </body>
 </html>
 

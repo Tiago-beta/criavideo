@@ -42,8 +42,11 @@ from app.services.credit_pricing import (
 )
 from app.services.voice_catalog import (
     ELEVENLABS_BR_VOICE_PRESETS,
+    GEMINI_BR_VOICE_PRESETS,
     build_elevenlabs_ptbr_instructions,
+    build_gemini_ptbr_instructions,
     is_elevenlabs_br_voice_id,
+    is_gemini_br_voice_id,
 )
 from app.services.baixatudo_client import BaixaTudoClient, BaixaTudoError
 from app.services.realistic_cover_guidance import (
@@ -79,8 +82,17 @@ VOICE_DEMOS.update({
     for preset in ELEVENLABS_BR_VOICE_PRESETS
 })
 
+VOICE_DEMOS.update({
+    preset["id"]: {
+        "name": preset["name"],
+        "label": preset["label"],
+        "text": preset["demo_text"],
+    }
+    for preset in GEMINI_BR_VOICE_PRESETS
+})
+
 VOICE_DEMO_DIR = os.path.join(settings.media_dir, "voice_demos")
-VOICE_DEMO_VERSION = "20260515-01"
+VOICE_DEMO_VERSION = "20260516-01"
 os.makedirs(VOICE_DEMO_DIR, exist_ok=True)
 
 TEMP_UPLOAD_DIR = Path(settings.media_dir) / "temp_uploads"
@@ -1030,6 +1042,7 @@ class GenerateTempAudioRequest(BaseModel):
     voice: str = ""
     voice_profile_id: int = 0
     voice_type: str = ""
+    tts_instructions: str = ""
     pause_level: str = "normal"
     tone: str = "informativo"
     filename: str = "audio-gerado.mp3"
@@ -1141,6 +1154,9 @@ async def generate_temp_audio(
         requested_voice_profile_id=req.voice_profile_id,
         requested_voice_type=req.voice_type,
     )
+    extra_tts_instructions = str(req.tts_instructions or "").strip()
+    if extra_tts_instructions:
+        tts_instructions = f"{tts_instructions}\n{extra_tts_instructions}".strip() if tts_instructions else extra_tts_instructions
 
     temp_token = uuid.uuid4().hex
     raw_filename = os.path.basename(str(req.filename or "audio-gerado.mp3").strip() or "audio-gerado.mp3")
@@ -1768,6 +1784,15 @@ async def get_voice_demo(voice_id: str):
                     voice_id,
                     cache_path,
                     tts_instructions=build_elevenlabs_ptbr_instructions(voice_id),
+                )
+            elif is_gemini_br_voice_id(voice_id):
+                from app.services.gemini_tts import generate_tts as generate_gemini_tts
+
+                await generate_gemini_tts(
+                    demo["text"],
+                    voice_id,
+                    cache_path,
+                    tts_instructions=build_gemini_ptbr_instructions(voice_id),
                 )
             else:
                 resp = await _openai.audio.speech.create(
