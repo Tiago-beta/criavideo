@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v462 loaded");
+console.log("[CriaVideo] app.js v463 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -96,6 +96,18 @@ let _autoThemeRunState = {};
 const PUBLISH_DRAFT_STORAGE_PREFIX = "publish_draft_";
 let _profileAdminIframeLoaded = false;
 let _lastTrackedPage = "";
+let _seriesWorkspaceState = {
+    initialized: false,
+    creating: false,
+    loading: false,
+    activeSeriesId: 0,
+    activeTab: "tela",
+    series: null,
+    episodes: [],
+    threads: [],
+    activeThreadId: 0,
+    messages: [],
+};
 
 const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
 const REALISTIC_PERSONA_LABELS = {
@@ -1150,6 +1162,7 @@ async function bootstrap() {
     bindAuthEvents();
     bindNavigation();
     bindDashboardEvents();
+    initSeriesWorkspace();
     await loadProviders();
     if (new URLSearchParams(window.location.search).has("token")) {
         cleanUrlTokenParam();
@@ -1269,6 +1282,9 @@ function loadPageData(page) {
     if (page === "projects") {
         loadProjects();
         _closeProfileAdminPanel(false);
+    } else if (page === "series-workspace") {
+        void loadSeriesWorkspacePage();
+        _closeProfileAdminPanel(false);
     } else if (page === "publish" || page === "accounts") {
         setPublishTab(page === "publish" ? "publish" : page);
         _closeProfileAdminPanel(false);
@@ -1317,6 +1333,557 @@ function setPublishTab(tabName) {
     } else if (nextTab === "accounts") {
         loadAccounts();
     }
+}
+
+function _seriesKindLabel(kind) {
+    const normalized = String(kind || "").trim().toLowerCase();
+    if (normalized === "film") return "Filme";
+    if (normalized === "drama") return "Drama";
+    return "Série";
+}
+
+function _seriesDefaultCreatePayload(kind) {
+    const normalized = String(kind || "series").trim().toLowerCase();
+    if (normalized === "film") {
+        return {
+            kind: "film",
+            title: "Novo filme",
+            description: "",
+            aspect_ratio: "16:9",
+            language: "pt-BR",
+            target_duration_seconds: 1800,
+            episode_count: 1,
+            default_settings: { mode: "long_form", pacing: "cinematic" },
+            workspace_state: { active_tab: "tela" },
+        };
+    }
+    if (normalized === "drama") {
+        return {
+            kind: "drama",
+            title: "Novo drama",
+            description: "",
+            aspect_ratio: "16:9",
+            language: "pt-BR",
+            target_duration_seconds: 1200,
+            episode_count: 8,
+            default_settings: { mode: "dramatic", pacing: "episodic" },
+            workspace_state: { active_tab: "tela" },
+        };
+    }
+    return {
+        kind: "series",
+        title: "Nova série",
+        description: "",
+        aspect_ratio: "16:9",
+        language: "pt-BR",
+        target_duration_seconds: 900,
+        episode_count: 5,
+        default_settings: { mode: "episodic", pacing: "continuous" },
+        workspace_state: { active_tab: "tela" },
+    };
+}
+
+function _seriesResetWorkspaceState() {
+    _seriesWorkspaceState.creating = false;
+    _seriesWorkspaceState.loading = false;
+    _seriesWorkspaceState.activeSeriesId = 0;
+    _seriesWorkspaceState.activeTab = "tela";
+    _seriesWorkspaceState.series = null;
+    _seriesWorkspaceState.episodes = [];
+    _seriesWorkspaceState.threads = [];
+    _seriesWorkspaceState.activeThreadId = 0;
+    _seriesWorkspaceState.messages = [];
+}
+
+function _seriesGetActiveThread() {
+    return _seriesWorkspaceState.threads.find((thread) => Number(thread.id || 0) === Number(_seriesWorkspaceState.activeThreadId || 0)) || null;
+}
+
+function _seriesBuildWelcomeMessage() {
+    const kindLabel = _seriesKindLabel(_seriesWorkspaceState.series?.kind);
+    return `Workspace de ${kindLabel.toLowerCase()} pronto. Nesta primeira etapa eu já consigo registrar o contexto da conversa e organizar o fluxo por Tela, Roteiro, Personagens, Storyboard e Linha do tempo. Na próxima integração vou ligar este chat diretamente aos geradores existentes do CriaVideo.`;
+}
+
+function _seriesBuildAssistantReply(userMessage) {
+    const content = String(userMessage || "").trim();
+    const snippet = content.length > 140 ? `${content.slice(0, 140)}...` : content;
+    const tab = _seriesWorkspaceState.activeTab;
+    if (tab === "tela") {
+        return `Recebi sua ideia na aba Tela: "${snippet}". Já posso persistir o briefing deste workspace; o próximo passo é conectar isso aos geradores de capa, estrutura geral e duração longa.`;
+    }
+    if (tab === "roteiro") {
+        return `Mensagem registrada em Roteiro: "${snippet}". O chat desta fase já fica salvo na thread atual; em seguida vou conectar este ponto aos geradores de roteiro e expansão de duração que o app já possui.`;
+    }
+    if (tab === "personagens") {
+        return `Contexto salvo em Personagens: "${snippet}". A persistência do bate-papo já está pronta para depois acoplar a criação de personas e vozes com os serviços existentes.`;
+    }
+    if (tab === "storyboard") {
+        return `Storyboard anotado: "${snippet}". A conversa já fica amarrada ao workspace; a próxima ligação será com as rotinas de cenas, continuidade visual e geração semelhante.`;
+    }
+    return `Linha do tempo atualizada com o seu pedido: "${snippet}". Esta thread já é persistida por workspace e vai servir de base para a ligação com episódios, timing e envio ao editor.`;
+}
+
+function _seriesTabLabel(tab) {
+    if (tab === "roteiro") return "Roteiro";
+    if (tab === "personagens") return "Personagens";
+    if (tab === "storyboard") return "Storyboard";
+    if (tab === "timeline") return "Linha do tempo";
+    return "Tela";
+}
+
+function _seriesRenderTelaTab() {
+    const series = _seriesWorkspaceState.series;
+    const episodes = _seriesWorkspaceState.episodes || [];
+    return `
+        <div class="series-tab-grid series-tab-grid-overview">
+            <article class="series-data-card series-data-card-highlight">
+                <span class="series-card-label">Visão geral</span>
+                <h3>${esc(series.title || "Sem título")}</h3>
+                <p>${esc(series.description || "Use esta área para estruturar o filme, a série ou o drama antes de aprofundar roteiro, personagens, storyboard e timeline.")}</p>
+            </article>
+            <article class="series-data-card">
+                <span class="series-card-label">Formato</span>
+                <strong>${esc(series.aspect_ratio || "16:9")}</strong>
+                <p>Idioma: ${esc(series.language || "pt-BR")}</p>
+            </article>
+            <article class="series-data-card">
+                <span class="series-card-label">Duração-alvo</span>
+                <strong>${Math.round(Number(series.target_duration_seconds || 0))}s</strong>
+                <p>${episodes.length} estrutura(s) de episódio criada(s).</p>
+            </article>
+        </div>
+        <div class="series-episode-strip">
+            ${episodes.map((episode) => `
+                <article class="series-mini-card">
+                    <span>${esc(`T${episode.season_number} · E${episode.episode_number}`)}</span>
+                    <strong>${esc(episode.title || `Episódio ${episode.episode_number}`)}</strong>
+                </article>
+            `).join("")}
+        </div>
+    `;
+}
+
+function _seriesRenderRoteiroTab() {
+    const episodes = _seriesWorkspaceState.episodes || [];
+    return `
+        <div class="series-list-stack">
+            ${episodes.map((episode) => `
+                <article class="series-story-card">
+                    <div class="series-story-card-head">
+                        <div>
+                            <span class="series-card-label">${esc(`T${episode.season_number} · E${episode.episode_number}`)}</span>
+                            <h3>${esc(episode.title || `Episódio ${episode.episode_number}`)}</h3>
+                        </div>
+                        <span class="series-status-pill">${esc(episode.status || "draft")}</span>
+                    </div>
+                    <p>${esc(episode.synopsis || "Sinopse ainda vazia. Use o chat ao lado para começar a estruturar o arco deste episódio.")}</p>
+                    <div class="series-code-block">${esc(episode.script_text || "Nenhum roteiro gerado ainda para este episódio.")}</div>
+                </article>
+            `).join("")}
+        </div>
+    `;
+}
+
+function _seriesRenderPersonagensTab() {
+    const episodes = _seriesWorkspaceState.episodes || [];
+    const personaRows = episodes.filter((episode) => Array.isArray(episode.selected_persona_ids) && episode.selected_persona_ids.length > 0);
+    if (!personaRows.length) {
+        return `
+            <div class="series-empty-card">
+                <strong>Nenhum personagem vinculado ainda.</strong>
+                <span>O workspace já está pronto para receber personas por episódio. Na próxima etapa, esse painel vai ligar diretamente às personas e vozes existentes do CriaVideo.</span>
+            </div>
+        `;
+    }
+    return `
+        <div class="series-list-stack">
+            ${personaRows.map((episode) => `
+                <article class="series-story-card">
+                    <div class="series-story-card-head">
+                        <div>
+                            <span class="series-card-label">${esc(`T${episode.season_number} · E${episode.episode_number}`)}</span>
+                            <h3>${esc(episode.title || `Episódio ${episode.episode_number}`)}</h3>
+                        </div>
+                    </div>
+                    <p>Personas vinculadas: ${esc((episode.selected_persona_ids || []).join(", "))}</p>
+                </article>
+            `).join("")}
+        </div>
+    `;
+}
+
+function _seriesRenderStoryboardTab() {
+    const episodes = _seriesWorkspaceState.episodes || [];
+    return `
+        <div class="series-card-grid two-up">
+            ${episodes.map((episode) => `
+                <article class="series-storyboard-card">
+                    <div class="series-storyboard-thumb">
+                        <span>${esc(`Storyboard ${episode.episode_number}`)}</span>
+                    </div>
+                    <div class="series-storyboard-body">
+                        <strong>${esc(episode.title || `Episódio ${episode.episode_number}`)}</strong>
+                        <p>${esc(episode.storyboard?.length ? `${episode.storyboard.length} bloco(s) de storyboard armazenado(s).` : "Nenhum storyboard salvo ainda. Use o chat para começar a decompor as cenas.")}</p>
+                    </div>
+                </article>
+            `).join("")}
+        </div>
+    `;
+}
+
+function _seriesRenderTimelineTab() {
+    const episodes = _seriesWorkspaceState.episodes || [];
+    return `
+        <div class="series-list-stack">
+            ${episodes.map((episode) => `
+                <article class="series-story-card series-timeline-card">
+                    <div class="series-story-card-head">
+                        <div>
+                            <span class="series-card-label">${esc(`T${episode.season_number} · E${episode.episode_number}`)}</span>
+                            <h3>${esc(episode.title || `Episódio ${episode.episode_number}`)}</h3>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" data-series-open-episode="${episode.id}" type="button" ${episode.video_project_id ? "" : "disabled"}>Abrir no editor</button>
+                    </div>
+                    <p>${esc(episode.timeline_data && Object.keys(episode.timeline_data).length ? "Este episódio já possui dados iniciais de timeline salvos." : "A timeline detalhada vai continuar no editor atual assim que um VideoProject for vinculado a este episódio.")}</p>
+                    <div class="series-meta-inline">
+                        <span>Status: ${esc(episode.status || "draft")}</span>
+                        <span>Projeto ligado: ${episode.video_project_id ? esc(String(episode.video_project_id)) : "não"}</span>
+                    </div>
+                </article>
+            `).join("")}
+        </div>
+    `;
+}
+
+function _seriesRenderTabPanel() {
+    if (!_seriesWorkspaceState.series) {
+        return "";
+    }
+    if (_seriesWorkspaceState.activeTab === "roteiro") {
+        return _seriesRenderRoteiroTab();
+    }
+    if (_seriesWorkspaceState.activeTab === "personagens") {
+        return _seriesRenderPersonagensTab();
+    }
+    if (_seriesWorkspaceState.activeTab === "storyboard") {
+        return _seriesRenderStoryboardTab();
+    }
+    if (_seriesWorkspaceState.activeTab === "timeline") {
+        return _seriesRenderTimelineTab();
+    }
+    return _seriesRenderTelaTab();
+}
+
+function _seriesRenderChat() {
+    const threadSelect = document.getElementById("series-thread-select");
+    const messagesEl = document.getElementById("series-chat-messages");
+    const emptyEl = document.getElementById("series-chat-empty");
+    const inputEl = document.getElementById("series-chat-input");
+    const sendBtn = document.getElementById("series-chat-send");
+    const newChatBtn = document.getElementById("series-new-chat-btn");
+    if (!threadSelect || !messagesEl || !emptyEl || !inputEl || !sendBtn || !newChatBtn) {
+        return;
+    }
+
+    const hasSeries = Boolean(_seriesWorkspaceState.series);
+    const threads = _seriesWorkspaceState.threads || [];
+    threadSelect.disabled = !hasSeries || !threads.length;
+    inputEl.disabled = !hasSeries || !_seriesWorkspaceState.activeThreadId;
+    sendBtn.disabled = !hasSeries || !_seriesWorkspaceState.activeThreadId;
+    newChatBtn.disabled = !hasSeries;
+
+    threadSelect.innerHTML = threads.length
+        ? threads.map((thread) => `<option value="${thread.id}"${Number(thread.id) === Number(_seriesWorkspaceState.activeThreadId || 0) ? " selected" : ""}>${esc(thread.title || "Novo bate-papo")}</option>`).join("")
+        : '<option value="">Novo bate-papo</option>';
+
+    if (!hasSeries) {
+        emptyEl.hidden = false;
+        emptyEl.innerHTML = "<strong>Como posso ajudá-lo hoje?</strong><span>Crie um workspace para começar a usar este bate-papo com o projeto.</span>";
+        messagesEl.querySelectorAll(".series-chat-bubble").forEach((node) => node.remove());
+        return;
+    }
+
+    const messages = _seriesWorkspaceState.messages || [];
+    emptyEl.hidden = messages.length > 0;
+    if (!messages.length) {
+        emptyEl.innerHTML = `<strong>${esc(_seriesTabLabel(_seriesWorkspaceState.activeTab))}</strong><span>Esta conversa já é persistida por workspace. Envie uma mensagem para começar.</span>`;
+    }
+    messagesEl.querySelectorAll(".series-chat-bubble").forEach((node) => node.remove());
+    if (messages.length) {
+        messagesEl.insertAdjacentHTML("beforeend", messages.map((message) => `
+            <article class="series-chat-bubble ${message.role === "user" ? "user" : "assistant"}">
+                <span class="series-chat-bubble-role">${esc(message.role === "user" ? "Você" : "Assistente")}</span>
+                <p>${esc(message.content || "")}</p>
+            </article>
+        `).join(""));
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+}
+
+function _seriesRenderWorkspace() {
+    const titleEl = document.getElementById("series-workspace-title");
+    const kindPill = document.getElementById("series-kind-pill");
+    const startPanel = document.getElementById("series-start-panel");
+    const contentPanel = document.getElementById("series-content-panel");
+    const tabPanel = document.getElementById("series-tab-panel");
+    const tabs = document.querySelectorAll("#series-workspace-tabs [data-series-tab]");
+    const hasSeries = Boolean(_seriesWorkspaceState.series);
+    if (!titleEl || !kindPill || !startPanel || !contentPanel || !tabPanel) {
+        return;
+    }
+
+    titleEl.textContent = hasSeries ? (_seriesWorkspaceState.series.title || "Séries") : "Séries";
+    kindPill.hidden = !hasSeries;
+    kindPill.textContent = hasSeries ? _seriesKindLabel(_seriesWorkspaceState.series.kind) : "";
+    startPanel.hidden = hasSeries;
+    contentPanel.hidden = !hasSeries;
+    tabs.forEach((tab) => {
+        const isActive = tab.dataset.seriesTab === _seriesWorkspaceState.activeTab;
+        tab.disabled = !hasSeries;
+        tab.classList.toggle("active", isActive);
+    });
+    tabPanel.innerHTML = hasSeries ? _seriesRenderTabPanel() : "";
+    _seriesRenderChat();
+}
+
+async function _seriesEnsureWelcomeMessage() {
+    if (!_seriesWorkspaceState.series || !_seriesWorkspaceState.activeThreadId) {
+        return;
+    }
+    if ((_seriesWorkspaceState.messages || []).length > 0) {
+        return;
+    }
+    await api(`/series/${_seriesWorkspaceState.activeSeriesId}/threads/${_seriesWorkspaceState.activeThreadId}/messages`, {
+        method: "POST",
+        body: JSON.stringify({
+            role: "assistant",
+            content: _seriesBuildWelcomeMessage(),
+            actions: [{ type: "bootstrap_workspace", target_tab: _seriesWorkspaceState.activeTab }],
+        }),
+    });
+    await _seriesLoadThreadMessages(_seriesWorkspaceState.activeThreadId, { silent: true });
+}
+
+async function _seriesLoadThreadMessages(threadId, options = {}) {
+    if (!_seriesWorkspaceState.activeSeriesId || !threadId) {
+        _seriesWorkspaceState.messages = [];
+        _seriesRenderChat();
+        return;
+    }
+    const payload = await api(`/series/${_seriesWorkspaceState.activeSeriesId}/threads/${threadId}/messages`);
+    _seriesWorkspaceState.activeThreadId = Number(payload.thread?.id || threadId || 0);
+    _seriesWorkspaceState.messages = Array.isArray(payload.messages) ? payload.messages : [];
+    _seriesRenderChat();
+    if (!options.silent) {
+        showToast("Bate-papo carregado.", "success");
+    }
+}
+
+async function _seriesLoadWorkspace(seriesId, options = {}) {
+    if (!seriesId) {
+        _seriesRenderWorkspace();
+        return;
+    }
+    _seriesWorkspaceState.loading = true;
+    try {
+        const payload = await api(`/series/${seriesId}`);
+        _seriesWorkspaceState.activeSeriesId = Number(payload.series?.id || seriesId || 0);
+        _seriesWorkspaceState.series = payload.series || null;
+        _seriesWorkspaceState.episodes = Array.isArray(payload.episodes) ? payload.episodes : [];
+        _seriesWorkspaceState.threads = Array.isArray(payload.threads) ? payload.threads : [];
+        _seriesWorkspaceState.activeThreadId = Number(payload.active_thread?.id || _seriesWorkspaceState.threads[0]?.id || 0);
+        _seriesWorkspaceState.messages = Array.isArray(payload.messages) ? payload.messages : [];
+        _seriesWorkspaceState.activeTab = String(_seriesWorkspaceState.series?.workspace_state?.active_tab || _seriesWorkspaceState.activeTab || "tela").toLowerCase();
+        _seriesRenderWorkspace();
+        await _seriesEnsureWelcomeMessage();
+        if (!options.silent) {
+            showToast(`${_seriesKindLabel(_seriesWorkspaceState.series?.kind)} carregado.`, "success");
+        }
+    } catch (error) {
+        showToast(`Erro ao abrir workspace de séries: ${error.message}`, "error");
+    } finally {
+        _seriesWorkspaceState.loading = false;
+    }
+}
+
+async function _seriesCreateWorkspace(kind) {
+    if (_seriesWorkspaceState.creating) {
+        return;
+    }
+    _seriesWorkspaceState.creating = true;
+    try {
+        const payload = await api("/series", {
+            method: "POST",
+            body: JSON.stringify(_seriesDefaultCreatePayload(kind)),
+        });
+        _seriesWorkspaceState.activeSeriesId = Number(payload.series?.id || 0);
+        _seriesWorkspaceState.series = payload.series || null;
+        _seriesWorkspaceState.episodes = Array.isArray(payload.episodes) ? payload.episodes : [];
+        _seriesWorkspaceState.threads = payload.active_thread ? [payload.active_thread] : [];
+        _seriesWorkspaceState.activeThreadId = Number(payload.active_thread?.id || 0);
+        _seriesWorkspaceState.messages = [];
+        _seriesWorkspaceState.activeTab = "tela";
+        _seriesRenderWorkspace();
+        await _seriesEnsureWelcomeMessage();
+        showToast(`${_seriesKindLabel(kind)} criado no novo workspace.`, "success");
+    } catch (error) {
+        showToast(`Erro ao criar workspace de séries: ${error.message}`, "error");
+    } finally {
+        _seriesWorkspaceState.creating = false;
+    }
+}
+
+function openSeriesWorkspaceStart(options = {}) {
+    if (options.fromCreateModal) {
+        closeModal("modal-new-project");
+        resetCreateWizard();
+    }
+    _seriesResetWorkspaceState();
+    navigateTo("series-workspace");
+    _seriesRenderWorkspace();
+}
+
+async function loadSeriesWorkspacePage() {
+    if (_seriesWorkspaceState.activeSeriesId) {
+        await _seriesLoadWorkspace(_seriesWorkspaceState.activeSeriesId, { silent: true });
+        return;
+    }
+    _seriesRenderWorkspace();
+}
+
+async function _seriesCreateThread() {
+    if (!_seriesWorkspaceState.activeSeriesId) {
+        return;
+    }
+    try {
+        const payload = await api(`/series/${_seriesWorkspaceState.activeSeriesId}/threads`, {
+            method: "POST",
+            body: JSON.stringify({ title: "Novo bate-papo" }),
+        });
+        if (payload.thread) {
+            _seriesWorkspaceState.threads.unshift(payload.thread);
+            _seriesWorkspaceState.activeThreadId = Number(payload.thread.id || 0);
+            _seriesWorkspaceState.messages = [];
+            _seriesRenderWorkspace();
+            await _seriesEnsureWelcomeMessage();
+        }
+    } catch (error) {
+        showToast(`Erro ao criar conversa: ${error.message}`, "error");
+    }
+}
+
+async function _seriesSendMessage() {
+    const inputEl = document.getElementById("series-chat-input");
+    if (!inputEl || !_seriesWorkspaceState.activeSeriesId || !_seriesWorkspaceState.activeThreadId) {
+        return;
+    }
+    const content = String(inputEl.value || "").trim();
+    if (!content) {
+        showToast("Escreva uma mensagem antes de enviar.", "error");
+        return;
+    }
+    const assistantReply = _seriesBuildAssistantReply(content);
+    try {
+        inputEl.value = "";
+        await api(`/series/${_seriesWorkspaceState.activeSeriesId}/threads/${_seriesWorkspaceState.activeThreadId}/messages`, {
+            method: "POST",
+            body: JSON.stringify({
+                role: "user",
+                content,
+                actions: [{ type: "note", target_tab: _seriesWorkspaceState.activeTab }],
+            }),
+        });
+        await api(`/series/${_seriesWorkspaceState.activeSeriesId}/threads/${_seriesWorkspaceState.activeThreadId}/messages`, {
+            method: "POST",
+            body: JSON.stringify({
+                role: "assistant",
+                content: assistantReply,
+                actions: [{ type: "placeholder_reply", target_tab: _seriesWorkspaceState.activeTab }],
+            }),
+        });
+        await _seriesLoadThreadMessages(_seriesWorkspaceState.activeThreadId, { silent: true });
+    } catch (error) {
+        showToast(`Erro ao enviar mensagem: ${error.message}`, "error");
+    }
+}
+
+function _seriesOpenEpisodeLinkedProject(episodeId) {
+    const episode = (_seriesWorkspaceState.episodes || []).find((item) => Number(item.id || 0) === Number(episodeId || 0));
+    if (!episode || !episode.video_project_id) {
+        showToast("Este episódio ainda não possui um projeto de vídeo vinculado.", "info");
+        return;
+    }
+    navigateTo("editor");
+    void openEditor(Number(episode.video_project_id), { restoreDraft: true });
+}
+
+function initSeriesWorkspace() {
+    if (_seriesWorkspaceState.initialized) {
+        return;
+    }
+    _seriesWorkspaceState.initialized = true;
+
+    const page = document.getElementById("page-series-workspace");
+    const backBtn = document.getElementById("series-back-btn");
+    const newChatBtn = document.getElementById("series-new-chat-btn");
+    const threadSelect = document.getElementById("series-thread-select");
+    const sendBtn = document.getElementById("series-chat-send");
+    const inputEl = document.getElementById("series-chat-input");
+
+    if (backBtn) {
+        backBtn.addEventListener("click", () => {
+            navigateTo("projects");
+        });
+    }
+    if (newChatBtn) {
+        newChatBtn.addEventListener("click", () => {
+            void _seriesCreateThread();
+        });
+    }
+    if (threadSelect) {
+        threadSelect.addEventListener("change", () => {
+            const nextThreadId = Number(threadSelect.value || 0);
+            if (nextThreadId > 0) {
+                void _seriesLoadThreadMessages(nextThreadId, { silent: true });
+            }
+        });
+    }
+    if (sendBtn) {
+        sendBtn.addEventListener("click", () => {
+            void _seriesSendMessage();
+        });
+    }
+    if (inputEl) {
+        inputEl.addEventListener("keydown", (event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                event.preventDefault();
+                void _seriesSendMessage();
+            }
+        });
+    }
+    if (page) {
+        page.addEventListener("click", (event) => {
+            const createKindBtn = event.target.closest("[data-series-create-kind]");
+            if (createKindBtn) {
+                void _seriesCreateWorkspace(createKindBtn.dataset.seriesCreateKind || "series");
+                return;
+            }
+
+            const tabBtn = event.target.closest("[data-series-tab]");
+            if (tabBtn && _seriesWorkspaceState.series) {
+                _seriesWorkspaceState.activeTab = String(tabBtn.dataset.seriesTab || "tela").toLowerCase();
+                _seriesRenderWorkspace();
+                return;
+            }
+
+            const openEpisodeBtn = event.target.closest("[data-series-open-episode]");
+            if (openEpisodeBtn) {
+                _seriesOpenEpisodeLinkedProject(openEpisodeBtn.dataset.seriesOpenEpisode);
+            }
+        });
+    }
+
+    _seriesRenderWorkspace();
 }
 
 function _analyzeFormatNumber(value, compact = false) {
@@ -3999,20 +4566,6 @@ async function saveProjectEdit() {
 }
 
 function initCreateWizard() {
-    // Mode selection cards
-    document.querySelectorAll("#create-mode-selection .mode-selection-card").forEach((card) => {
-        card.addEventListener("click", () => {
-            const mode = card.dataset.createMode;
-            if (!mode) return;
-            if (mode === "images") {
-                openScriptImageCreatorFromCreateMode();
-                return;
-            }
-            document.getElementById("create-mode-selection").hidden = true;
-            switchCreateMode(mode);
-        });
-    });
-
     // Tab switching (kept for programmatic use)
     document.querySelectorAll(".create-tab").forEach((tab) => {
         tab.addEventListener("click", () => switchCreateMode(tab.dataset.createMode));
@@ -4447,6 +5000,23 @@ function initCreateWizard() {
     _updateScriptDetailsForTevoxiMode();
     scheduleWizardCreditEstimate();
     scheduleScriptCreditEstimate();
+}
+
+function _chooseCreateMode(mode) {
+    const normalizedMode = String(mode || "").trim().toLowerCase();
+    if (!normalizedMode) {
+        return;
+    }
+    if (normalizedMode === "images") {
+        openScriptImageCreatorFromCreateMode();
+        return;
+    }
+    if (normalizedMode === "series") {
+        openSeriesWorkspaceStart({ fromCreateModal: true });
+        return;
+    }
+    document.getElementById("create-mode-selection").hidden = true;
+    switchCreateMode(normalizedMode);
 }
 
 function switchCreateMode(mode) {

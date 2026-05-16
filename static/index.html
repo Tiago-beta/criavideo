@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260516-05">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260516-06">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 462;
+        var REQUIRED_VER = 463;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -191,6 +191,94 @@
                         </div>
                         <div id="projects-list" class="cards-grid">
                             <div class="loading">Carregando projetos...</div>
+                        </div>
+                    </section>
+
+                    <section id="page-series-workspace" class="page">
+                        <div class="series-workspace-shell">
+                            <div class="series-workspace-topbar">
+                                <div class="series-workspace-topbar-left">
+                                    <button class="series-back-btn" id="series-back-btn" type="button" title="Voltar para criar">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                                    </button>
+                                    <div class="series-workspace-heading">
+                                        <span class="series-workspace-kicker">Modo Séries</span>
+                                        <h1 id="series-workspace-title">Séries</h1>
+                                    </div>
+                                </div>
+                                <div class="series-workspace-topbar-right">
+                                    <span id="series-kind-pill" class="series-kind-pill" hidden></span>
+                                    <button class="btn btn-secondary btn-sm" id="series-new-chat-btn" type="button" disabled>Novo bate-papo</button>
+                                </div>
+                            </div>
+
+                            <div class="series-workspace-tabs" id="series-workspace-tabs">
+                                <button class="series-tab-btn active" data-series-tab="tela" type="button" disabled>Tela</button>
+                                <button class="series-tab-btn" data-series-tab="roteiro" type="button" disabled>Roteiro</button>
+                                <button class="series-tab-btn" data-series-tab="personagens" type="button" disabled>Personagens</button>
+                                <button class="series-tab-btn" data-series-tab="storyboard" type="button" disabled>Storyboard</button>
+                                <button class="series-tab-btn" data-series-tab="timeline" type="button" disabled>Linha do tempo</button>
+                            </div>
+
+                            <div class="series-workspace-stage">
+                                <div class="series-workspace-main">
+                                    <div id="series-start-panel" class="series-start-panel">
+                                        <div class="series-start-hero">
+                                            <span class="series-start-kicker">Filmes completos, séries e dramas</span>
+                                            <h2>Escolha a estrutura do seu projeto longo</h2>
+                                            <p>Vamos usar as ferramentas que o CriaVideo já possui, mas dentro de um workspace pensado para obras maiores, episódios, personagens recorrentes, storyboard e linha do tempo contínua.</p>
+                                        </div>
+                                        <div class="series-launch-grid">
+                                            <button class="series-launch-card" data-series-create-kind="film" type="button">
+                                                <span class="series-launch-icon">
+                                                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16"/><path d="M17 4v16"/><path d="M3 9h18"/><path d="M3 15h18"/></svg>
+                                                </span>
+                                                <strong>Filme</strong>
+                                                <small>Uma obra longa única, com narrativa contínua e foco em duração estendida.</small>
+                                            </button>
+                                            <button class="series-launch-card" data-series-create-kind="series" type="button">
+                                                <span class="series-launch-icon">
+                                                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 9h8"/><path d="M8 13h5"/><path d="M15 3v4"/><path d="M9 3v4"/></svg>
+                                                </span>
+                                                <strong>Série</strong>
+                                                <small>Organize temporadas, episódios, personagens fixos e progressão visual no mesmo workspace.</small>
+                                            </button>
+                                            <button class="series-launch-card" data-series-create-kind="drama" type="button">
+                                                <span class="series-launch-icon">
+                                                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c4.97 0 9 3.58 9 8 0 2.2-1 4.2-2.64 5.64L19 21l-4.48-1.34A10.9 10.9 0 0 1 12 20c-4.97 0-9-3.58-9-8s4.03-9 9-9Z"/><path d="M8.5 11.5h7"/><path d="M8.5 15h4.5"/></svg>
+                                                </span>
+                                                <strong>Drama</strong>
+                                                <small>Estruture capítulos, viradas emocionais, diálogos e ganchos com cadência de novela ou minissérie.</small>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div id="series-content-panel" class="series-content-panel" hidden>
+                                        <div id="series-tab-panel" class="series-tab-panel"></div>
+                                    </div>
+                                </div>
+
+                                <aside class="series-chat-rail">
+                                    <div class="series-chat-head">
+                                        <div class="series-chat-head-icon">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                        </div>
+                                        <select id="series-thread-select" class="series-thread-select" aria-label="Selecionar conversa" disabled>
+                                            <option value="">Novo bate-papo</option>
+                                        </select>
+                                    </div>
+                                    <div id="series-chat-messages" class="series-chat-messages">
+                                        <div id="series-chat-empty" class="series-chat-empty">
+                                            <strong>Como posso ajudá-lo hoje?</strong>
+                                            <span>Crie um workspace para começar a usar este bate-papo com o projeto.</span>
+                                        </div>
+                                    </div>
+                                    <div class="series-chat-compose">
+                                        <textarea id="series-chat-input" class="series-chat-input" rows="4" placeholder="Descreva o filme, a série, um arco, uma cena, um personagem ou um ajuste de storyboard..." disabled></textarea>
+                                        <button class="btn btn-primary" id="series-chat-send" type="button" disabled>Enviar</button>
+                                    </div>
+                                </aside>
+                            </div>
                         </div>
                     </section>
 
@@ -1069,41 +1157,48 @@
                 <div id="create-mode-selection" class="create-mode-selection">
                     <h3 class="wizard-question">Como você quer criar seu vídeo?</h3>
                     <div class="mode-selection-grid mode-selection-grid-create">
-                        <div class="mode-selection-card" data-create-mode="wizard" tabindex="0">
+                        <button class="mode-selection-card" data-create-mode="wizard" onclick="_chooseCreateMode('wizard')" type="button">
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                             </div>
                             <strong>Assistente</strong>
                             <small>A IA cria o roteiro, imagens e narração automaticamente. Basta informar o tema.</small>
-                        </div>
-                        <div class="mode-selection-card" data-create-mode="script" tabindex="0">
+                        </button>
+                        <button class="mode-selection-card" data-create-mode="script" onclick="_chooseCreateMode('script')" type="button">
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                             </div>
                             <strong>Meu Roteiro</strong>
                             <small>Escreva ou cole seu próprio roteiro e envie fotos, áudios ou vídeos.</small>
-                        </div>
-                        <div class="mode-selection-card" data-create-mode="similar" tabindex="0">
+                        </button>
+                        <button class="mode-selection-card" data-create-mode="series" onclick="_chooseCreateMode('series')" type="button">
+                            <div class="mode-selection-icon">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8"/><path d="M8 13h6"/><path d="M15 2v4"/><path d="M9 2v4"/></svg>
+                            </div>
+                            <strong>Séries</strong>
+                            <small>Crie filmes completos, séries e dramas longos com personagens, storyboard e timeline.</small>
+                        </button>
+                        <button class="mode-selection-card" data-create-mode="similar" onclick="_chooseCreateMode('similar')" type="button">
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                             </div>
                             <strong>Semelhante</strong>
                             <small>Cole o link de qualquer vídeo da internet e recrie cena por cena com IA.</small>
-                        </div>
-                        <div class="mode-selection-card" data-create-mode="workflow" tabindex="0">
+                        </button>
+                        <button class="mode-selection-card" data-create-mode="workflow" onclick="_chooseCreateMode('workflow')" type="button">
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.7 7.5 10.8 15"/><path d="M15.3 7.5 13.2 15"/><path d="M9 6h6"/></svg>
                             </div>
                             <strong>Workflow</strong>
                             <small>Monte um fluxo visual com prompt, referências, Imputs e motores de IA.</small>
-                        </div>
-                        <div class="mode-selection-card" data-create-mode="images" tabindex="0">
+                        </button>
+                        <button class="mode-selection-card" data-create-mode="images" onclick="_chooseCreateMode('images')" type="button">
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
                             </div>
                             <strong>Imagens</strong>
                             <small>Criar imagens primeiro, antes de gerar o vídeo.</small>
-                        </div>
+                        </button>
                     </div>
                 </div>
 
@@ -4166,8 +4261,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260516-05"></script>
-    <script src="/video/static/pwa.js?v=20260516-05"></script>
+    <script src="/video/static/app.js?v=20260516-06"></script>
+    <script src="/video/static/pwa.js?v=20260516-06"></script>
 </body>
 </html>
 

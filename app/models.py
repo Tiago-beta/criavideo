@@ -104,6 +104,79 @@ class VideoProject(Base):
     renders = relationship("VideoRender", back_populates="project", cascade="all, delete-orphan")
 
 
+class VideoSeries(Base):
+    __tablename__ = "video_series"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("auth_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(20), nullable=False, default="series", index=True)
+    title = Column(String(500), nullable=False)
+    description = Column(Text, default="")
+    status = Column(String(30), nullable=False, default="draft", index=True)
+    aspect_ratio = Column(String(10), default="16:9")
+    language = Column(String(20), default="pt-BR")
+    target_duration_seconds = Column(Float, default=0)
+    episode_count = Column(Integer, default=0)
+    cover_image_path = Column(Text, default="")
+    default_settings = Column(JSON, default=dict)
+    workspace_state = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    episodes = relationship("VideoSeriesEpisode", back_populates="series", cascade="all, delete-orphan")
+    chat_threads = relationship("VideoSeriesChatThread", back_populates="series", cascade="all, delete-orphan")
+
+
+class VideoSeriesEpisode(Base):
+    __tablename__ = "video_series_episodes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    series_id = Column(Integer, ForeignKey("video_series.id", ondelete="CASCADE"), nullable=False, index=True)
+    video_project_id = Column(Integer, ForeignKey("video_projects.id", ondelete="SET NULL"), index=True)
+    season_number = Column(Integer, nullable=False, default=1)
+    episode_number = Column(Integer, nullable=False, default=1)
+    title = Column(String(500), nullable=False)
+    synopsis = Column(Text, default="")
+    script_text = Column(Text, default="")
+    status = Column(String(30), nullable=False, default="draft", index=True)
+    storyboard = Column(JSON, default=list)
+    timeline_data = Column(JSON, default=dict)
+    selected_persona_ids = Column(JSON, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    series = relationship("VideoSeries", back_populates="episodes")
+    video_project = relationship("VideoProject")
+
+
+class VideoSeriesChatThread(Base):
+    __tablename__ = "video_series_chat_threads"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    series_id = Column(Integer, ForeignKey("video_series.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(255), nullable=False, default="Novo bate-papo")
+    is_default = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    series = relationship("VideoSeries", back_populates="chat_threads")
+    messages = relationship("VideoSeriesChatMessage", back_populates="thread", cascade="all, delete-orphan")
+
+
+class VideoSeriesChatMessage(Base):
+    __tablename__ = "video_series_chat_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    thread_id = Column(Integer, ForeignKey("video_series_chat_threads.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String(20), nullable=False, default="assistant", index=True)
+    content = Column(Text, default="")
+    actions = Column(JSON, default=list)
+    status = Column(String(30), nullable=False, default="completed")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    thread = relationship("VideoSeriesChatThread", back_populates="messages")
+
+
 class VideoScene(Base):
     __tablename__ = "video_scenes"
 
