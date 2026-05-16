@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v458 loaded");
+console.log("[CriaVideo] app.js v459 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -280,12 +280,20 @@ async function _resolveAvatarAutomaticDurationForCreate(prefix) {
         return knownDuration;
     }
 
-    if (prefix === "script" && !!document.getElementById("script-use-user-audio")?.checked && scriptUserAudioFile) {
-        const currentFile = scriptUserAudioFile;
-        const resolvedDuration = await _resolveLocalAudioFileDurationSeconds(currentFile);
-        if (scriptUserAudioFile === currentFile) {
-            scriptUserAudioDurationSeconds = resolvedDuration;
-            return resolvedDuration;
+    if (prefix === "script") {
+        const audioSource = _getScriptAudioSourceState(true);
+        const knownSourceDuration = _normalizeAutomaticAudioDurationSeconds(audioSource.durationSeconds || 0);
+        if (audioSource.hasAudio && knownSourceDuration > 0) {
+            return knownSourceDuration;
+        }
+
+        if (audioSource.kind === "upload" && scriptUserAudioFile) {
+            const currentFile = scriptUserAudioFile;
+            const resolvedDuration = await _resolveLocalAudioFileDurationSeconds(currentFile);
+            if (scriptUserAudioFile === currentFile) {
+                scriptUserAudioDurationSeconds = resolvedDuration;
+                return resolvedDuration;
+            }
         }
     }
 
@@ -2232,11 +2240,21 @@ function _isEditorProjectListItem(project) {
     return Boolean(project?.is_editor_project || String(project?.workflow_type || "").trim().toLowerCase() === "editor");
 }
 
+function _isProjectProcessingStatus(status) {
+    const normalizedStatus = String(status || "").trim().toLowerCase();
+    return normalizedStatus === "pending"
+        || normalizedStatus.includes("generat")
+        || normalizedStatus.includes("render");
+}
+
 function _projectVisibleInCreateList(project) {
     const normalizedStatus = String(project?.status || "").trim().toLowerCase();
     return !_isEditorProjectListItem(project)
-        && normalizedStatus === "completed"
-        && !project?.video_expired;
+        && (
+            _isProjectProcessingStatus(normalizedStatus)
+            || normalizedStatus === "failed"
+            || ((normalizedStatus === "completed" || normalizedStatus === "published") && !project?.video_expired)
+        );
 }
 
 function _projectVisibleInEditorList(project) {
@@ -2256,19 +2274,22 @@ async function loadProjects() {
             return;
         }
         container.innerHTML = visibleData.map((project) => {
+            const normalizedStatus = String(project.status || "").trim().toLowerCase();
             const dateStr = _renderExpiryOrDate(project);
             const statusPt = _statusPt(project.status);
             const isExpired = project.video_expired || false;
-            const canWatch = project.status === "completed" && !isExpired;
+            const canWatch = (normalizedStatus === "completed" || normalizedStatus === "published") && !isExpired;
+            const isGenerating = _isProjectProcessingStatus(normalizedStatus);
             const thumbClick = canWatch ? `onclick="watchVideo(${project.id})" style="cursor:pointer"` : "";
-            const thumbnailDownloadButton = project.thumbnail_url
+            const cardClasses = `card${isGenerating ? " is-generating" : ""}`;
+            const thumbnailDownloadButton = canWatch && project.thumbnail_url
                 ? `<a class="card-btn card-btn-download" href="${esc(project.thumbnail_url)}" download="${esc(`${project.title || "thumbnail"}.jpg`)}" title="Baixar thumbnail" aria-label="Baixar thumbnail"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M21 21H3"/></svg></a>`
                 : "";
             const thumb = project.thumbnail_url
-                ? `<img class="card-thumb" src="${project.thumbnail_url}" alt="" loading="lazy" onerror="handleProjectThumbError(this, ${project.id}, ${canWatch})" ${thumbClick}>`
-                : `<div class="card-thumb card-thumb-placeholder" ${thumbClick}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
+                ? `<img class="card-thumb${isGenerating ? " is-generating" : ""}" src="${project.thumbnail_url}" alt="" loading="lazy" onerror="handleProjectThumbError(this, ${project.id}, ${canWatch})" ${thumbClick}>`
+                : `<div class="card-thumb card-thumb-placeholder${isGenerating ? " is-generating" : ""}" ${thumbClick}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
             return `
-                <div class="card">
+                <div class="${cardClasses}" data-project-id="${project.id}">
                     ${thumb}
                     <div class="card-body">
                         <h4 class="card-title">${esc(project.title)}</h4>
@@ -2302,6 +2323,9 @@ async function loadProjects() {
 function handleProjectThumbError(imgElement, projectId, canWatch) {
     const placeholder = document.createElement("div");
     placeholder.className = "card-thumb card-thumb-placeholder";
+    if (imgElement.classList.contains("is-generating")) {
+        placeholder.classList.add("is-generating");
+    }
     if (canWatch) {
         placeholder.style.cursor = "pointer";
         placeholder.addEventListener("click", () => watchVideo(projectId));
@@ -2441,42 +2465,40 @@ async function _autoDownloadCompleted(projects) {
 
 function _updateCardInPlace(project) {
     const container = document.getElementById("projects-list");
-    const cards = container.querySelectorAll(".card");
-    for (const card of cards) {
-        const watchBtn = card.querySelector("[onclick*='watchVideo(" + project.id + ")']");
-        const genBtn = card.querySelector("[onclick*='generateVideo(" + project.id + ")']");
-        const simBtn = card.querySelector("[onclick*='createSimilar(" + project.id + ")']");
-        const delBtn = card.querySelector("[onclick*='deleteProject(" + project.id + ")']");
-        if (watchBtn || genBtn || simBtn || delBtn) {
-            const body = card.querySelector(".card-body");
-            // Update or create badge
-            const isActive = project.status !== "completed" && project.status !== "failed" && project.status !== "pending";
-            let badge = card.querySelector(".badge");
-            if (project.status !== "completed") {
-                if (!badge) {
-                    badge = document.createElement("span");
-                    body.appendChild(badge);
-                }
-                badge.textContent = _statusPt(project.status);
-                badge.className = `badge badge-${badgeClass(project.status)}`;
-            } else if (badge) {
-                badge.remove();
-            }
-            // Update or create progress bar
-            let barWrap = card.querySelector(".progress-bar");
-            if (isActive && project.progress != null) {
-                if (!barWrap) {
-                    barWrap = document.createElement("div");
-                    barWrap.className = "progress-bar";
-                    barWrap.innerHTML = '<div class="progress-bar-fill"></div>';
-                    body.appendChild(barWrap);
-                }
-                barWrap.querySelector(".progress-bar-fill").style.width = project.progress + "%";
-            } else if (barWrap) {
-                barWrap.remove();
-            }
-            break;
+    const card = container.querySelector(`.card[data-project-id="${project.id}"]`);
+    if (!card) {
+        return;
+    }
+    const body = card.querySelector(".card-body");
+    const thumb = card.querySelector(".card-thumb");
+    const isActive = project.status !== "completed" && project.status !== "failed" && project.status !== "pending";
+    const isGenerating = _isProjectProcessingStatus(project.status);
+    card.classList.toggle("is-generating", isGenerating);
+    if (thumb) {
+        thumb.classList.toggle("is-generating", isGenerating);
+    }
+    let badge = card.querySelector(".badge");
+    if (project.status !== "completed") {
+        if (!badge) {
+            badge = document.createElement("span");
+            body.appendChild(badge);
         }
+        badge.textContent = _statusPt(project.status);
+        badge.className = `badge badge-${badgeClass(project.status)}`;
+    } else if (badge) {
+        badge.remove();
+    }
+    let barWrap = card.querySelector(".progress-bar");
+    if (isActive && project.progress != null) {
+        if (!barWrap) {
+            barWrap = document.createElement("div");
+            barWrap.className = "progress-bar";
+            barWrap.innerHTML = '<div class="progress-bar-fill"></div>';
+            body.appendChild(barWrap);
+        }
+        barWrap.querySelector(".progress-bar-fill").style.width = project.progress + "%";
+    } else if (barWrap) {
+        barWrap.remove();
     }
 }
 
@@ -11539,9 +11561,10 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         return;
     }
 
-    const hasUploadedAudio = prefix === "script"
-        && !!document.getElementById("script-use-user-audio")?.checked
-        && !!scriptUserAudioFile;
+    const createAudioSource = prefix === "script"
+        ? _getScriptAudioSourceState(true)
+        : { kind: "none", hasAudio: false, uploadId: "", durationSeconds: 0 };
+    const hasAttachedAudio = prefix === "script" && !!createAudioSource.hasAudio;
 
     const durBtn = document.querySelector(`#${durationSelectorId} .duration-option.selected`);
     let duration = durBtn ? parseInt(durBtn.dataset.value, 10) : 8;
@@ -11555,7 +11578,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const avatarAutomaticDuration = engine === "avatar31"
         ? await _resolveAvatarAutomaticDurationForCreate(prefix)
         : 0;
-    if (engine === "avatar31" && (selectedTevoxiSong || hasUploadedAudio) && avatarAutomaticDuration <= 0) {
+    if (engine === "avatar31" && (selectedTevoxiSong || hasAttachedAudio) && avatarAutomaticDuration <= 0) {
         alert("Nao foi possivel identificar a duracao do audio. Reenvie o arquivo ou escolha outro trecho do Tevoxi.");
         return;
     }
@@ -11658,7 +11681,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         if (disablePersonaReference && engine !== "grok" && !shouldUploadReferenceImage) {
             throw new Error("O modo Nenhum sem foto funciona no Cria 3.0 speed. Para outros motores, envie uma imagem de referência.");
         }
-        if (engine === "avatar31" && !selectedTevoxiSong && !hasUploadedAudio) {
+        if (engine === "avatar31" && !selectedTevoxiSong && !hasAttachedAudio) {
             throw new Error("Avatar 3.1 Plus exige um áudio enviado ou um trecho do Tevoxi.");
         }
         if (shouldUploadReferenceImage) {
@@ -11691,12 +11714,16 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             _smoothProgressTarget = 15;
         }
 
-        if (hasUploadedAudio) {
-            setCreateProgress(9, "Gerando vídeo realista...", "Enviando áudio de referência...");
-            const uploadedAudio = await uploadTempFileWithRetry(scriptUserAudioFile, "audio", "áudio de referência");
-            audioUploadId = uploadedAudio?.upload_id || "";
+        if (hasAttachedAudio) {
+            if (createAudioSource.kind === "generated" && createAudioSource.uploadId) {
+                audioUploadId = String(createAudioSource.uploadId || "").trim();
+            } else if (scriptUserAudioFile) {
+                setCreateProgress(9, "Gerando vídeo realista...", "Enviando áudio de referência...");
+                const uploadedAudio = await uploadTempFileWithRetry(scriptUserAudioFile, "audio", "áudio de referência");
+                audioUploadId = uploadedAudio?.upload_id || "";
+            }
             if (!audioUploadId) {
-                throw new Error("Falha ao enviar o áudio de referência.");
+                throw new Error("Falha ao preparar o áudio de referência.");
             }
         }
 
@@ -11749,21 +11776,11 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             }),
         });
 
-        const projectId = resp.id;
-
-        _smoothProgressTarget = 25;
-        setCreateProgress(25, "Gerando vídeo realista...", `${engineLabel} está criando seu vídeo...`);
-
-        await pollRealisticProgress(projectId, engineLabel);
-
         _stopSmoothProgress();
-        setCreateProgress(100, "Concluído!", "Vídeo realista gerado com sucesso!");
-
-        setTimeout(() => {
-            closeModal("modal-new-project");
-            resetCreateWizard();
-            loadProjects();
-        }, 1200);
+        closeModal("modal-new-project");
+        resetCreateWizard();
+        await loadProjects();
+        showToast(`${engineLabel} começou a criar seu vídeo. A miniatura vai piscar na lista enquanto renderiza.`, "success");
 
     } catch (e) {
         _stopSmoothProgress();

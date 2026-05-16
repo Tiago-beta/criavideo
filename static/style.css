@@ -2287,6 +2287,17 @@ a {
     background: rgba(96, 129, 162, 0.08);
 }
 
+.card.is-generating {
+    border-color: rgba(246, 165, 47, 0.5);
+    box-shadow: 0 0 0 1px rgba(246, 165, 47, 0.14), 0 10px 28px rgba(246, 165, 47, 0.18);
+}
+
+.card-thumb.is-generating,
+.card-thumb-placeholder.is-generating {
+    animation: similar-scene-clip-image-pulse 1.2s ease-in-out infinite;
+    filter: saturate(1.08);
+}
+
 .card-thumb-placeholder {
     display: flex;
     align-items: center;

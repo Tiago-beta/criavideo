@@ -2933,6 +2933,25 @@ async def list_projects(
         latest_any = ordered[0] if ordered else None
         latest_active = next((r for r in ordered if r.file_path), None)
         display_render = latest_active or latest_any
+        thumbnail_path = str(display_render.thumbnail_path or "").strip() if display_render and display_render.thumbnail_path else ""
+        if not thumbnail_path:
+            fallback_thumbnail_candidates = []
+            reference_upload_paths = tags_data.get("reference_upload_image_paths") or []
+            if isinstance(reference_upload_paths, (list, tuple)):
+                fallback_thumbnail_candidates.extend(str(path or "").strip() for path in reference_upload_paths)
+            elif reference_upload_paths:
+                fallback_thumbnail_candidates.append(str(reference_upload_paths).strip())
+            style_prompt_path = str(p.style_prompt or "").strip()
+            if style_prompt_path and os.path.splitext(style_prompt_path)[1].lower() in IMAGE_EXTS:
+                fallback_thumbnail_candidates.append(style_prompt_path)
+            thumbnail_path = next(
+                (
+                    candidate
+                    for candidate in fallback_thumbnail_candidates
+                    if candidate and os.path.exists(candidate)
+                ),
+                "",
+            )
         render_paths = [str(r.file_path or "").replace("\\", "/").lower() for r in ordered]
         description_text = str(p.description or "").strip().lower()
         workflow_type = str(tags_data.get("type") or "").strip().lower() or "standard"
@@ -2960,7 +2979,7 @@ async def list_projects(
                 "video_expired": bool(ordered) and latest_active is None,
                 "lyrics_text": p.lyrics_text or "",
                 "style_prompt": p.style_prompt or "",
-                "thumbnail_url": _to_media_url(display_render.thumbnail_path) if display_render else None,
+                "thumbnail_url": _to_media_url(thumbnail_path) if thumbnail_path else None,
                 "duration": float(display_render.duration) if display_render and display_render.duration else float(p.track_duration or 0),
                 "workflow_type": workflow_type,
                 "workflow_stage": str(tags_data.get("similar_stage") or "").strip(),
