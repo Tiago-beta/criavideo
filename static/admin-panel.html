@@ -591,7 +591,7 @@
     function getDashboardCards(data) {
         return [
             { icon: "fa-users", label: "Total de Usuários", value: asNumber(data.totalUsers) },
-            { icon: "fa-crown", label: "Usuários Pro", value: asNumber(data.proUsers) },
+            { icon: "fa-crown", label: "Usuários pagos", value: asNumber(data.proUsers) },
             { icon: "fa-user-plus", label: "Novos (30 dias)", value: asNumber(data.newUsersLast30d) },
             { icon: "fa-bolt", label: "Ativos (7 dias)", value: asNumber(data.activeUsersLast7d) },
             { icon: "fa-video", label: "Projetos de Vídeo", value: asNumber(data.totalProjects) },
@@ -757,11 +757,7 @@
             `;
 
             for (const u of (data.users || [])) {
-                const planBadge = String(u.role || "").toLowerCase() === "admin"
-                    ? '<span class="badge badge-admin">ADMIN</span>'
-                    : String(u.plan || "free").toLowerCase() === "pro"
-                    ? '<span class="badge badge-pro">PRO</span>'
-                    : '<span class="badge badge-free">FREE</span>';
+                const planBadge = renderPlanBadge(u.plan, u.role);
                 const created = u.created_at ? new Date(u.created_at).toLocaleDateString("pt-BR") : "—";
 
                 html += `
@@ -810,6 +806,34 @@
         overlay.innerHTML = "";
     }
 
+    function normalizePlanCode(plan) {
+        const normalized = String(plan || "free").trim().toLowerCase() || "free";
+        return normalized === "pro" ? "professional" : normalized;
+    }
+
+    function formatPlanName(plan) {
+        const labels = {
+            free: "FREE",
+            starter: "INICIANTE",
+            basic: "BÁSICO",
+            professional: "PROFISSIONAL",
+            supreme: "SUPREMO",
+        };
+        const normalized = normalizePlanCode(plan);
+        return labels[normalized] || String(normalized).toUpperCase();
+    }
+
+    function renderPlanBadge(plan, role) {
+        if (String(role || "").toLowerCase() === "admin") {
+            return '<span class="badge badge-admin">ADMIN</span>';
+        }
+        const normalized = normalizePlanCode(plan);
+        if (normalized === "free") {
+            return '<span class="badge badge-free">FREE</span>';
+        }
+        return `<span class="badge badge-pro">${formatPlanName(normalized)}</span>`;
+    }
+
     function formatPaymentMethod(method) {
         const normalized = String(method || "").trim().toLowerCase();
         if (normalized === "pix") return "PIX";
@@ -845,6 +869,7 @@
             const data = await readJsonSafe(res);
             if (!res.ok) throw new Error(getApiErrorMessage(data, "Erro ao carregar usuário"));
             const u = data.user || {};
+            const normalizedPlan = normalizePlanCode(u.plan);
 
             const planExpiry = u.plan_expires_at
                 ? new Date(u.plan_expires_at).toLocaleDateString("pt-BR")
@@ -892,7 +917,7 @@
                         <div class="detail-row"><span class="label">Email</span><span class="value">${escHtml(u.email || "—")}</span></div>
                         <div class="detail-row"><span class="label">Nome</span><span class="value">${escHtml(u.name || "—")}</span></div>
                         <div class="detail-row"><span class="label">Role</span><span class="value">${escHtml(u.role || "user")}</span></div>
-                        <div class="detail-row"><span class="label">Plano</span><span class="value">${escHtml(String(u.plan || "free").toUpperCase())}</span></div>
+                        <div class="detail-row"><span class="label">Plano</span><span class="value">${escHtml(formatPlanName(normalizedPlan))}</span></div>
                         <div class="detail-row"><span class="label">Expira em</span><span class="value">${escHtml(planExpiry)}</span></div>
                         <div class="detail-row"><span class="label">Cadastro</span><span class="value">${escHtml(formatDateTime(u.created_at))}</span></div>
                         <div class="detail-row"><span class="label">Primeiro acesso</span><span class="value">${escHtml(formatDateTime(u.first_seen_at))}</span></div>
@@ -920,8 +945,11 @@
                         <h4><i class="fas fa-crown"></i> Alterar Plano</h4>
                         <div class="plan-form">
                             <select id="plan-select">
-                                <option value="free" ${String(u.plan || "free").toLowerCase() === "free" ? "selected" : ""}>Free</option>
-                                <option value="pro" ${String(u.plan || "free").toLowerCase() === "pro" ? "selected" : ""}>Pro</option>
+                                <option value="free" ${normalizedPlan === "free" ? "selected" : ""}>Free</option>
+                                <option value="starter" ${normalizedPlan === "starter" ? "selected" : ""}>Iniciante</option>
+                                <option value="basic" ${normalizedPlan === "basic" ? "selected" : ""}>Básico</option>
+                                <option value="professional" ${normalizedPlan === "professional" ? "selected" : ""}>Profissional</option>
+                                <option value="supreme" ${normalizedPlan === "supreme" ? "selected" : ""}>Supremo</option>
                             </select>
                             <input type="number" id="plan-days" value="30" min="1" max="1825" placeholder="Dias">
                             <button class="btn btn-accent" id="btn-plan-save"><i class="fas fa-save"></i> Salvar</button>
@@ -987,11 +1015,11 @@
         try {
             const res = await adminPost(`/admin/users/${userId}/plan`, {
                 plan,
-                durationDays: plan === "pro" ? days : null,
+                durationDays: plan === "free" ? null : days,
             });
             const data = await readJsonSafe(res);
             if (!res.ok) throw new Error(getApiErrorMessage(data, "Falha ao atualizar plano"));
-            showAdminToast(`Plano atualizado: ${String(data.plan || plan).toUpperCase()}`);
+            showAdminToast(`Plano atualizado: ${formatPlanName(data.plan || plan)}`);
             await openUserDetail(userId);
             await loadUsers(usersPage);
             await loadDashboard();

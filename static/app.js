@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v460 loaded");
+console.log("[CriaVideo] app.js v461 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -2684,7 +2684,7 @@ function _extractEstimateCredits(estimate) {
 }
 
 function _resolveCreditUnitBrl() {
-    return _creditValueBrl > 0 ? _creditValueBrl : (99.99 / 2800);
+    return _creditValueBrl > 0 ? _creditValueBrl : 0.049756;
 }
 
 function _creditsToBrl(credits) {
@@ -24518,9 +24518,51 @@ window.deleteVoiceProfile = deleteVoiceProfile;
 let _userCredits = 0;
 let _creditsPerMinute = 5;
 let _creditPackages = [];
-let _selectedCreditPkg = 0;
+let _creditPlans = [];
+let _creditComparisonSections = [];
 let _creditValueBrl = 0;
+let _creditValueUsd = 0.01;
 let _creditPricingVersion = "";
+let _currentCreditPlan = "free";
+let _currentCreditPlanExpiresAt = "";
+let _creditDisplayCurrency = "usd";
+let _creditFaqOpenIndex = 0;
+let _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
+const _creditExpandedComparisonSections = {};
+const _creditFaqItems = [
+    {
+        question: "Como os créditos funcionam?",
+        answer: "Cada crédito representa 1 centavo de dólar no custo unitário do modelo. Se um modelo custa US$ 0,09 por segundo, ele consome 9 créditos por segundo.",
+    },
+    {
+        question: "Se meu saldo acabar, posso continuar gerando?",
+        answer: "Sim. Você pode comprar uma recarga extra a qualquer momento, sem trocar o plano mensal atual.",
+    },
+    {
+        question: "Como funciona o ciclo mensal do plano?",
+        answer: "Ao ativar um plano mensal, você recebe o volume de créditos daquele ciclo. O plano fica ativo por 30 dias e você pode renovar ou complementar com recargas extras.",
+    },
+    {
+        question: "Quais moedas e métodos de pagamento estão disponíveis?",
+        answer: "Você pode comparar os valores em USD ou BRL no modal. O checkout atual acontece em BRL, com PIX ou cartão.",
+    },
+    {
+        question: "Quantas imagens ou vídeos consigo gerar?",
+        answer: "A tabela abaixo mostra exatamente quantas imagens ou segundos cada plano cobre em cada modelo da plataforma.",
+    },
+];
+const _fallbackCreditPlans = [
+    { code: "free", name: "Gratuito", shortName: "Gratuito", monthlyCredits: 0, comparisonCredits: 100, priceUsd: 0, price: 0, billingLabel: "100 creditos iniciais", accent: "free", ctaLabel: "Pacote atual", benefits: [] },
+    { code: "starter", name: "Iniciante", shortName: "Iniciante", monthlyCredits: 1600, comparisonCredits: 1600, priceUsd: 16, price: 79.61, billingLabel: "Ciclo mensal de 30 dias", accent: "starter", benefits: [] },
+    { code: "basic", name: "Basico", shortName: "Basico", monthlyCredits: 2900, comparisonCredits: 2900, priceUsd: 29, price: 144.29, billingLabel: "Ciclo mensal de 30 dias", accent: "basic", benefits: [] },
+    { code: "professional", name: "Profissional", shortName: "Profissional", monthlyCredits: 6900, comparisonCredits: 6900, priceUsd: 69, price: 343.32, billingLabel: "Ciclo mensal de 30 dias", accent: "professional", recommended: true, badge: "Mais popular", benefits: [] },
+    { code: "supreme", name: "Supremo", shortName: "Supremo", monthlyCredits: 20500, comparisonCredits: 20500, priceUsd: 199, price: 990.14, billingLabel: "Ciclo mensal de 30 dias", accent: "supreme", badge: "Melhor valor", benefits: [] },
+];
+const _fallbackCreditPackages = [
+    { code: "topup-500", credits: 500, priceUsd: 5, price: 24.88, label: "Recarga 500", description: "Complemento rapido para continuar gerando." },
+    { code: "topup-1500", credits: 1500, priceUsd: 15, price: 74.63, label: "Recarga 1.500", badge: "Mais usada", description: "Ideal para reforcar o ciclo atual sem trocar de plano." },
+    { code: "topup-5000", credits: 5000, priceUsd: 50, price: 248.78, label: "Recarga 5.000", badge: "Maior saldo", description: "Volume extra para lotes grandes de imagens e videos." },
+];
 
 function _renderGlobalBalance() {
     const balanceText = `${_formatCreditsInt(_userCredits)} créditos`;
@@ -24536,8 +24578,13 @@ async function updateCreditsDisplay() {
         _userCredits = data.credits;
         _creditsPerMinute = data.creditsPerMinute || 5;
         _creditPackages = data.packages || [];
+        _creditPlans = data.plans || [];
+        _creditComparisonSections = data.comparisonSections || [];
         _creditValueBrl = Number(data.creditValueBrl || 0);
+        _creditValueUsd = Number(data.creditValueUsd || 0.01) || 0.01;
         _creditPricingVersion = String(data.pricingVersion || "");
+        _currentCreditPlan = String(data.currentPlan || "free").trim().toLowerCase() || "free";
+        _currentCreditPlanExpiresAt = data.planExpiresAt || "";
         _renderGlobalBalance();
 
         scheduleWizardCreditEstimate();
@@ -24547,76 +24594,423 @@ async function updateCreditsDisplay() {
     } catch {}
 }
 
-function showCreditsPurchaseModal() {
-    const existing = document.getElementById("credits-modal-overlay");
-    if (existing) existing.remove();
+function _formatUsd(value, suffix = "") {
+    const parsed = Number(value || 0);
+    const safe = Number.isFinite(parsed) ? parsed : 0;
+    const decimals = safe >= 10 && Math.abs(safe - Math.round(safe)) < 0.0001 ? 0 : 2;
+    const suffixText = suffix ? ` ${suffix}` : "";
+    return `$${safe.toFixed(decimals)}${suffixText}`;
+}
 
-    const pkgs = _creditPackages.length ? _creditPackages : [
-        { credits: 500, price: 19.99 },
-        { credits: 1300, price: 49.99 },
-        { credits: 2800, price: 99.99 },
-    ];
+function _formatCompactMoney(value, currency = "usd") {
+    return currency === "brl" ? _formatBrl(value) : _formatUsd(value, "USD");
+}
 
-    const creditUnitText = _creditValueBrl > 0
-        ? _creditValueBrl.toFixed(4).replace(".", ",")
-        : "--";
+function _creditPlansCatalog() {
+    return _creditPlans.length ? _creditPlans : _fallbackCreditPlans;
+}
 
-    let pkgHtml = "";
-    pkgs.forEach((p, i) => {
-        const sel = i === 0 ? " credit-package-selected" : "";
-        const badge = i === pkgs.length - 1
-            ? '<span class="credit-pkg-badge">Melhor custo</span>'
-            : "";
-        pkgHtml += `
-            <label class="credit-package${sel}" data-pkg="${i}" onclick="selectCreditPackage(${i})">
-                <span class="credit-pkg-amount">${p.credits} créditos</span>
-                <span class="credit-pkg-price">R$ ${p.price.toFixed(2).replace(".", ",")}</span>
+function _creditPackagesCatalog() {
+    return _creditPackages.length ? _creditPackages : _fallbackCreditPackages;
+}
+
+function _paidCreditPlans() {
+    return _creditPlansCatalog().filter((plan) => String(plan.code || "").toLowerCase() !== "free");
+}
+
+function _getCreditPlanByCode(planCode) {
+    const raw = String(planCode || "free").trim().toLowerCase() || "free";
+    const normalized = raw === "pro" ? "professional" : raw;
+    return _creditPlansCatalog().find((plan) => String(plan.code || "").toLowerCase() === normalized) || _creditPlansCatalog()[0] || null;
+}
+
+function _getCurrentPlanLabel() {
+    const current = _getCreditPlanByCode(_currentCreditPlan);
+    return current ? (current.name || current.shortName || current.code || "Gratuito") : "Gratuito";
+}
+
+function _getDisplayPrice(entry) {
+    if (_creditDisplayCurrency === "brl") {
+        return _formatBrl(entry.price || 0);
+    }
+    return _formatUsd(entry.priceUsd || 0, "USD");
+}
+
+function _getDisplayUnitPrice(row) {
+    const unitSuffix = row.unit === "second" ? "s" : "img";
+    if (_creditDisplayCurrency === "brl") {
+        return `${_formatBrl(row.brlPerUnit || 0)}/${unitSuffix}`;
+    }
+    return `${_formatUsd(row.usdPerUnit || 0).replace(" USD", "")}/${unitSuffix}`;
+}
+
+function _formatComparisonUnits(row, count) {
+    const formatted = _formatCreditsInt(count);
+    if (row.unit === "second") {
+        return `${formatted} s`;
+    }
+    return `${formatted} imagens`;
+}
+
+function _ensureCreditOfferSelection(preferredKind = "") {
+    const packages = _creditPackagesCatalog();
+    const paidPlans = _paidCreditPlans();
+    const currentPaidPlan = _currentCreditPlan && _currentCreditPlan !== "free"
+        ? paidPlans.find((plan) => String(plan.code || "").toLowerCase() === _currentCreditPlan)
+        : null;
+    const defaultPlan = currentPaidPlan || paidPlans[0] || null;
+
+    if (preferredKind === "package" && packages.length) {
+        _selectedCreditOffer = { kind: "package", code: "", packageIndex: 0 };
+        return;
+    }
+    if (preferredKind === "plan" && defaultPlan) {
+        _selectedCreditOffer = { kind: "plan", code: defaultPlan.code, packageIndex: 0 };
+        return;
+    }
+
+    if (_selectedCreditOffer.kind === "plan") {
+        const hasPlan = paidPlans.some((plan) => String(plan.code || "") === String(_selectedCreditOffer.code || ""));
+        if (hasPlan) return;
+    }
+    if (_selectedCreditOffer.kind === "package") {
+        const idx = Number(_selectedCreditOffer.packageIndex || 0);
+        if (packages[idx]) {
+            _selectedCreditOffer.packageIndex = idx;
+            return;
+        }
+    }
+
+    if (_currentCreditPlan && _currentCreditPlan !== "free" && packages.length) {
+        _selectedCreditOffer = { kind: "package", code: "", packageIndex: 0 };
+        return;
+    }
+    if (defaultPlan) {
+        _selectedCreditOffer = { kind: "plan", code: defaultPlan.code, packageIndex: 0 };
+        return;
+    }
+    if (packages.length) {
+        _selectedCreditOffer = { kind: "package", code: "", packageIndex: 0 };
+    }
+}
+
+function _getSelectedCreditOfferDetails() {
+    _ensureCreditOfferSelection();
+
+    if (_selectedCreditOffer.kind === "package") {
+        const pkg = _creditPackagesCatalog()[Number(_selectedCreditOffer.packageIndex || 0)] || _creditPackagesCatalog()[0] || null;
+        if (!pkg) return null;
+        return {
+            kind: "package",
+            title: pkg.label || `Recarga ${_formatCreditsInt(pkg.credits)}`,
+            subtitle: `${_formatCreditsInt(pkg.credits)} créditos extras avulsos`,
+            priceLabel: _getDisplayPrice(pkg),
+            purchaseLabel: "Créditos extras",
+        };
+    }
+
+    const plan = _getCreditPlanByCode(_selectedCreditOffer.code || "");
+    if (!plan) return null;
+    return {
+        kind: "plan",
+        title: plan.name || plan.shortName || "Plano mensal",
+        subtitle: `${_formatCreditsInt(plan.monthlyCredits || 0)} créditos por ciclo de 30 dias`,
+        priceLabel: _getDisplayPrice(plan),
+        purchaseLabel: "Plano mensal",
+    };
+}
+
+function _renderPricingPlanCards() {
+    const selectedPlanCode = _selectedCreditOffer.kind === "plan" ? String(_selectedCreditOffer.code || "") : "";
+    return _paidCreditPlans().map((plan) => {
+        const planCode = String(plan.code || "");
+        const isSelected = selectedPlanCode === planCode;
+        const isCurrent = planCode === _currentCreditPlan;
+        const badge = plan.badge ? `<span class="pricing-plan-badge">${plan.badge}</span>` : "";
+        const ctaLabel = isCurrent ? "Plano atual" : "Selecionar plano";
+        const creditsLabel = `${_formatCreditsInt(plan.monthlyCredits || 0)} pontos por mês`;
+        const benefits = Array.isArray(plan.benefits) ? plan.benefits : [];
+        const detailLine = _creditDisplayCurrency === "brl"
+            ? `${_formatBrl(plan.price || 0)}/mês`
+            : `${_formatUsd(plan.priceUsd || 0, "USD")}/mês`;
+        return `
+            <article class="pricing-plan-card ${isSelected ? "is-selected" : ""}" data-theme="${plan.accent || planCode}">
                 ${badge}
-            </label>`;
-    });
+                <div class="pricing-plan-card-head">
+                    <h3>${plan.name || plan.shortName || planCode}</h3>
+                    <p>${plan.description || ""}</p>
+                </div>
+                <div class="pricing-plan-price">${detailLine}</div>
+                <div class="pricing-plan-cycle">${plan.billingLabel || "Ciclo mensal de 30 dias"}</div>
+                <button class="pricing-plan-select" type="button" onclick="selectCreditPlan('${planCode}')">${ctaLabel}</button>
+                <div class="pricing-plan-points">${creditsLabel}</div>
+                <ul class="pricing-plan-benefits">
+                    ${benefits.map((item) => `<li>${item}</li>`).join("")}
+                </ul>
+            </article>
+        `;
+    }).join("");
+}
 
-    const overlay = document.createElement("div");
-    overlay.id = "credits-modal-overlay";
-    overlay.className = "credits-modal-overlay";
-    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
-    overlay.innerHTML = `
-        <div class="credits-modal">
-            <button class="credits-modal-close" onclick="document.getElementById('credits-modal-overlay').remove()">&times;</button>
-            <h2 class="credits-modal-title">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f0a030" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                Comprar Créditos
-            </h2>
-            <div class="credit-packages">${pkgHtml}</div>
-            <div class="credits-cta">
-                <button class="credits-btn credits-btn-pix" onclick="purchaseCredits('pix')">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><circle cx="17.5" cy="17.5" r="3.5"/></svg>
-                    Pagar com PIX
-                </button>
-                <button class="credits-btn credits-btn-card" onclick="purchaseCredits('card')">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                    Pagar com Cartão
-                </button>
+function _renderPricingPackages() {
+    const selectedPackageIndex = _selectedCreditOffer.kind === "package"
+        ? Number(_selectedCreditOffer.packageIndex || 0)
+        : -1;
+
+    return _creditPackagesCatalog().map((pkg, index) => {
+        const badge = pkg.badge ? `<span class="pricing-topup-badge">${pkg.badge}</span>` : "";
+        const selected = selectedPackageIndex === index ? "is-selected" : "";
+        return `
+            <button class="pricing-topup-card ${selected}" type="button" onclick="selectCreditPackage(${index})">
+                ${badge}
+                <span class="pricing-topup-title">${pkg.label || `Recarga ${_formatCreditsInt(pkg.credits)}`}</span>
+                <strong class="pricing-topup-price">${_getDisplayPrice(pkg)}</strong>
+                <span class="pricing-topup-meta">${_formatCreditsInt(pkg.credits || 0)} créditos extras</span>
+                <span class="pricing-topup-copy">${pkg.description || "Saldo avulso para complementar seu ciclo atual."}</span>
+            </button>
+        `;
+    }).join("");
+}
+
+function _renderPricingComparisonSections() {
+    const sections = Array.isArray(_creditComparisonSections) ? _creditComparisonSections : [];
+    const plans = _creditPlansCatalog();
+    if (!sections.length || !plans.length) {
+        return '<div class="pricing-table-card"><p class="credits-hint">Carregando comparativo de modelos...</p></div>';
+    }
+
+    const comparisonHeader = plans.map((plan) => {
+        const code = String(plan.code || "free");
+        const isCurrent = code === _currentCreditPlan;
+        const planBudget = parseInt(plan.comparisonCredits || plan.monthlyCredits || 0, 10) || 0;
+        const priceLabel = code === "free"
+            ? _formatUsd(0, "USD")
+            : _getDisplayPrice(plan);
+        const metaLine = code === "free"
+            ? (plan.billingLabel || `${_formatCreditsInt(planBudget)} créditos iniciais`)
+            : `${_formatCreditsInt(planBudget)} créditos`;
+        const actionLabel = isCurrent ? "Plano atual" : "Selecionar plano";
+        return `
+            <th class="pricing-compare-plan ${isCurrent ? "is-current" : ""}">
+                <div class="pricing-compare-plan-name">${plan.shortName || plan.name || code}</div>
+                <div class="pricing-compare-plan-price">${priceLabel}</div>
+                <div class="pricing-compare-plan-meta">${metaLine}</div>
+                ${code === "free"
+                    ? `<button class="pricing-compare-plan-btn ${isCurrent ? "is-disabled" : ""}" type="button" onclick="selectCreditPlan('starter')">${isCurrent ? "Pacote atual" : "Ver planos"}</button>`
+                    : `<button class="pricing-compare-plan-btn ${isCurrent ? "is-disabled" : ""}" type="button" onclick="selectCreditPlan('${code}')">${actionLabel}</button>`}
+            </th>
+        `;
+    }).join("");
+
+    return sections.map((section) => {
+        const rows = Array.isArray(section.rows) ? section.rows : [];
+        const defaultVisibleRows = Number(section.defaultVisibleRows || rows.length) || rows.length;
+        const expanded = !!_creditExpandedComparisonSections[section.key];
+        const visibleRows = expanded ? rows : rows.slice(0, defaultVisibleRows);
+        const canToggle = rows.length > defaultVisibleRows;
+        const rowsHtml = visibleRows.map((row) => {
+            const firstCell = `
+                <td class="pricing-model-cell">
+                    <strong>${row.label || row.key}</strong>
+                    <span>${row.creditsPerUnit || 0} créditos/${row.unit === "second" ? "s" : "imagem"}</span>
+                </td>
+            `;
+            const planCells = plans.map((plan) => {
+                const usage = row.plans?.[plan.code] || {};
+                const count = parseInt(usage.includedUnits || 0, 10) || 0;
+                return `
+                    <td class="pricing-model-value-cell">
+                        <strong>${_formatComparisonUnits(row, count)}</strong>
+                        <span>${_getDisplayUnitPrice(row)}</span>
+                    </td>
+                `;
+            }).join("");
+            return `<tr>${firstCell}${planCells}</tr>`;
+        }).join("");
+
+        return `
+            <section class="pricing-table-card">
+                <div class="pricing-table-section-head">
+                    <h3>${section.title || "Comparativo"}</h3>
+                </div>
+                <div class="pricing-table-scroll">
+                    <table class="pricing-comparison-table">
+                        <thead>
+                            <tr>
+                                <th class="pricing-model-cell pricing-model-cell--head">Modelo</th>
+                                ${comparisonHeader}
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                </div>
+                ${canToggle
+                    ? `<button class="pricing-table-toggle" type="button" onclick="toggleCreditComparisonSection('${section.key}')">${expanded ? "Ver menos" : "Ver mais"}</button>`
+                    : ""}
+            </section>
+        `;
+    }).join("");
+}
+
+function _renderCreditFaq() {
+    return _creditFaqItems.map((item, index) => {
+        const isOpen = _creditFaqOpenIndex === index;
+        return `
+            <button class="pricing-faq-item ${isOpen ? "is-open" : ""}" type="button" onclick="toggleCreditFaq(${index})">
+                <span>${item.question}</span>
+                <span class="pricing-faq-icon">${isOpen ? "-" : "+"}</span>
+            </button>
+            <div class="pricing-faq-answer" ${isOpen ? "" : "hidden"}>${item.answer}</div>
+        `;
+    }).join("");
+}
+
+function _renderCreditsPurchaseModalContent() {
+    _ensureCreditOfferSelection();
+    const selectedOffer = _getSelectedCreditOfferDetails();
+    const currentPlan = _getCurrentPlanLabel();
+    const creditUnitText = _creditDisplayCurrency === "brl"
+        ? _formatBrl(_creditValueBrl || 0)
+        : _formatUsd(_creditValueUsd || 0.01, "USD");
+    const expiresText = _currentCreditPlanExpiresAt
+        ? new Date(_currentCreditPlanExpiresAt).toLocaleDateString("pt-BR")
+        : "";
+
+    return `
+        <div class="credits-modal credits-modal--pricing">
+            <button class="credits-modal-close" type="button" onclick="document.getElementById('credits-modal-overlay').remove()">&times;</button>
+            <div class="pricing-shell">
+                <div class="pricing-head">
+                    <div>
+                        <h2>Mude seu plano</h2>
+                        <p>Plano mensal com créditos inclusos e recarga extra sempre disponível quando o saldo acabar.</p>
+                    </div>
+                    <div class="pricing-toolbar">
+                        <div class="pricing-currency-switch">
+                            <button type="button" class="${_creditDisplayCurrency === "usd" ? "is-active" : ""}" onclick="setCreditDisplayCurrency('usd')">USD</button>
+                            <button type="button" class="${_creditDisplayCurrency === "brl" ? "is-active" : ""}" onclick="setCreditDisplayCurrency('brl')">BRL</button>
+                        </div>
+                        <div class="pricing-period-switch">
+                            <button type="button" class="is-active">Mensal</button>
+                            <button type="button" disabled>Anual <span>20% OFF</span></button>
+                        </div>
+                        <button class="pricing-enterprise-btn" type="button" disabled>Empresa</button>
+                    </div>
+                </div>
+
+                <div class="pricing-status-strip">
+                    <div>
+                        <strong>Plano atual:</strong> ${currentPlan}${expiresText ? ` até ${expiresText}` : ""}
+                    </div>
+                    <div>
+                        <strong>1 crédito =</strong> ${creditUnitText}${_creditDisplayCurrency === "usd" ? " por centavo do modelo" : " por crédito"} · ${_creditPricingVersion || "v3.0"}
+                    </div>
+                </div>
+
+                <div class="pricing-plan-grid">${_renderPricingPlanCards()}</div>
+
+                <section class="pricing-topup-section">
+                    <div class="pricing-topup-section-head">
+                        <h3>Créditos extras</h3>
+                        <p>Se o saldo acabar antes do fim do ciclo, adicione recargas avulsas sem mexer no plano atual.</p>
+                    </div>
+                    <div class="pricing-topup-grid">${_renderPricingPackages()}</div>
+                </section>
+
+                <div class="pricing-comparison-stack">${_renderPricingComparisonSections()}</div>
+
+                <section class="pricing-faq-section">
+                    <h3>Perguntas frequentes</h3>
+                    <div class="pricing-faq-list">${_renderCreditFaq()}</div>
+                </section>
+
+                <div class="pricing-checkout-bar">
+                    <div class="pricing-checkout-copy">
+                        <span>${selectedOffer ? selectedOffer.purchaseLabel : "Compra"}</span>
+                        <strong>${selectedOffer ? selectedOffer.title : "Selecione um plano ou recarga"}</strong>
+                        <small>${selectedOffer ? `${selectedOffer.subtitle} • ${selectedOffer.priceLabel}` : "Escolha acima para continuar."}</small>
+                    </div>
+                    <div class="pricing-checkout-actions">
+                        <button class="credits-btn credits-btn-pix" type="button" onclick="purchaseCredits('pix')">Pagar com PIX</button>
+                        <button class="credits-btn credits-btn-card" type="button" onclick="purchaseCredits('card')">Pagar com Cartão</button>
+                    </div>
+                </div>
             </div>
-            <p class="credits-hint">Preco por credito desde R$ ${creditUnitText} (${_creditPricingVersion || "v2.1"}). O custo de geracao aparece em creditos ao lado dos botoes de gerar.</p>
         </div>
     `;
-    document.body.appendChild(overlay);
-    _selectedCreditPkg = 0;
+}
+
+function _rerenderCreditsPurchaseModal() {
+    const overlay = document.getElementById("credits-modal-overlay");
+    if (!overlay) return;
+    overlay.innerHTML = _renderCreditsPurchaseModalContent();
+}
+
+function showCreditsPurchaseModal(preferredKind = "") {
+    let overlay = document.getElementById("credits-modal-overlay");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "credits-modal-overlay";
+        overlay.className = "credits-modal-overlay";
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) {
+                overlay.remove();
+            }
+        });
+        document.body.appendChild(overlay);
+    }
+
+    _ensureCreditOfferSelection(preferredKind);
+    overlay.innerHTML = _renderCreditsPurchaseModalContent();
+}
+
+function selectCreditPlan(planCode) {
+    _selectedCreditOffer = { kind: "plan", code: String(planCode || "starter"), packageIndex: 0 };
+    _rerenderCreditsPurchaseModal();
 }
 
 function selectCreditPackage(idx) {
-    _selectedCreditPkg = idx;
-    document.querySelectorAll(".credit-package").forEach((el, i) => {
-        el.classList.toggle("credit-package-selected", i === idx);
-    });
+    _selectedCreditOffer = { kind: "package", code: "", packageIndex: Math.max(0, parseInt(idx || "0", 10) || 0) };
+    _rerenderCreditsPurchaseModal();
+}
+
+function setCreditDisplayCurrency(currency) {
+    const normalized = String(currency || "usd").trim().toLowerCase();
+    if (!["usd", "brl"].includes(normalized)) return;
+    _creditDisplayCurrency = normalized;
+    _rerenderCreditsPurchaseModal();
+}
+
+function toggleCreditComparisonSection(sectionKey) {
+    _creditExpandedComparisonSections[sectionKey] = !_creditExpandedComparisonSections[sectionKey];
+    _rerenderCreditsPurchaseModal();
+}
+
+function toggleCreditFaq(index) {
+    _creditFaqOpenIndex = _creditFaqOpenIndex === index ? -1 : index;
+    _rerenderCreditsPurchaseModal();
 }
 
 async function purchaseCredits(method) {
     try {
-        const endpoint = method === "pix" ? "/credits/purchase/pix" : "/credits/purchase/card";
+        const selectedOffer = _getSelectedCreditOfferDetails();
+        if (!selectedOffer) {
+            showToast("Selecione um plano ou uma recarga para continuar.", "error");
+            return;
+        }
+
+        let endpoint = method === "pix" ? "/credits/purchase/pix" : "/credits/purchase/card";
+        let payload = { packageIndex: 0 };
+        if (_selectedCreditOffer.kind === "plan") {
+            endpoint = method === "pix" ? "/credits/purchase/plan/pix" : "/credits/purchase/plan/card";
+            payload = { planCode: _selectedCreditOffer.code };
+        } else {
+            payload = { packageIndex: Number(_selectedCreditOffer.packageIndex || 0) || 0 };
+        }
+
         const data = await api(endpoint, {
             method: "POST",
-            body: JSON.stringify({ packageIndex: _selectedCreditPkg }),
+            body: JSON.stringify(payload),
         });
         document.getElementById("credits-modal-overlay")?.remove();
 
@@ -24625,10 +25019,11 @@ async function purchaseCredits(method) {
             pollCreditStatus(data.reference);
         } else if (data.checkoutUrl) {
             window.open(data.checkoutUrl, "_blank");
+            showToast(`${selectedOffer.title}: checkout aberto em nova aba.`, "info");
             pollCreditStatus(data.reference);
         }
     } catch (err) {
-        alert(err.message || "Erro ao processar compra.");
+        showToast(err.message || "Erro ao processar compra.", "error");
     }
 }
 
@@ -24636,17 +25031,24 @@ function showPixQrModal(data) {
     const existing = document.getElementById("pix-modal-overlay");
     if (existing) existing.remove();
 
+    const purchaseTitle = String(data.kind || "").toLowerCase() === "plan"
+        ? `Ative ${data.planName || "seu plano"} com PIX`
+        : "Pague com PIX";
+    const purchaseHint = String(data.kind || "").toLowerCase() === "plan"
+        ? `${_formatCreditsInt(data.credits || 0)} créditos entram assim que o pagamento confirmar.`
+        : `${_formatCreditsInt(data.credits || 0)} créditos extras entram assim que o pagamento confirmar.`;
+
     const overlay = document.createElement("div");
     overlay.id = "pix-modal-overlay";
     overlay.className = "pix-modal-overlay";
     overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
     overlay.innerHTML = `
         <div class="pix-modal">
-            <h3>Pague com PIX</h3>
+            <h3>${purchaseTitle}</h3>
             ${data.qrBase64 ? `<img class="pix-qr-img" src="data:image/png;base64,${data.qrBase64}" alt="QR Code PIX"/>` : ""}
             <div class="pix-code-box" id="pix-code">${data.pixCopiaECola}</div>
             <button class="pix-copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('pix-code').textContent);this.textContent='Copiado!';">Copiar código PIX</button>
-            <p class="pix-waiting">Aguardando pagamento...</p>
+            <p class="pix-waiting">${purchaseHint}</p>
         </div>
     `;
     document.body.appendChild(overlay);
@@ -24659,7 +25061,13 @@ async function pollCreditStatus(reference) {
             const data = await api(`/credits/status/${encodeURIComponent(reference)}`);
             if (data.status === "confirmed") {
                 document.getElementById("pix-modal-overlay")?.remove();
-                alert(`${data.credits} créditos adicionados!`);
+                const isPlan = String(data.kind || "").toLowerCase() === "plan";
+                const plan = isPlan ? _getCreditPlanByCode(data.planCode || "") : null;
+                if (isPlan && plan) {
+                    showToast(`${plan.name || "Plano"} ativado com ${_formatCreditsInt(data.credits || 0)} créditos.`, "success");
+                } else {
+                    showToast(`${_formatCreditsInt(data.credits || 0)} créditos adicionados!`, "success");
+                }
                 updateCreditsDisplay();
                 return;
             }
@@ -24675,6 +25083,10 @@ document.querySelectorAll("[data-credits-trigger]").forEach((el) => {
 });
 
 window.selectCreditPackage = selectCreditPackage;
+window.selectCreditPlan = selectCreditPlan;
+window.setCreditDisplayCurrency = setCreditDisplayCurrency;
+window.toggleCreditComparisonSection = toggleCreditComparisonSection;
+window.toggleCreditFaq = toggleCreditFaq;
 window.purchaseCredits = purchaseCredits;
 
 /* ══════════════════════════════════════════════════════════════

@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -20,6 +20,12 @@ from app.database import get_db
 from app.services.credit_pricing import (
     CREDIT_PACKAGES,
     CREDIT_PRICING_RULES_VERSION,
+    USD_PER_CREDIT,
+    get_credit_comparison_sections,
+    get_credit_packages,
+    get_paid_plan_codes,
+    get_subscription_plan,
+    get_subscription_plans,
     get_credit_value_brl,
 )
 
@@ -29,6 +35,8 @@ settings = get_settings()
 
 INITIAL_CREDITS = 100
 CREDITS_PER_MINUTE = 5
+CREDIT_REFERENCE_PREFIX = "CVCR"
+PLAN_REFERENCE_PREFIX = "CVPLN"
 
 
 def _extract_error_detail_message(detail) -> str:
@@ -77,7 +85,31 @@ async def get_credit_balance(db: AsyncSession, user_id: int) -> int:
 
 
 def _generate_reference() -> str:
-    return f"CV{secrets.token_hex(8).upper()}"
+    return _generate_purchase_reference()
+
+
+def _generate_purchase_reference(kind: str = "credits", plan_code: str = "") -> str:
+    token = secrets.token_hex(6).upper()
+    normalized_kind = str(kind or "credits").strip().lower()
+    if normalized_kind == "plan":
+        normalized_plan = "".join(ch for ch in str(plan_code or "").lower() if ch.isalnum()) or "starter"
+        return f"{PLAN_REFERENCE_PREFIX}-{normalized_plan.upper()}-{token}"
+    return f"{CREDIT_REFERENCE_PREFIX}-{token}"
+
+
+def _parse_reference_metadata(reference: str) -> dict[str, str]:
+    raw = str(reference or "").strip()
+    upper = raw.upper()
+    if upper.startswith(f"{PLAN_REFERENCE_PREFIX}-"):
+        parts = raw.split("-", 2)
+        plan_code = parts[1].strip().lower() if len(parts) >= 2 else ""
+        return {"kind": "plan", "plan_code": plan_code}
+    return {"kind": "credits", "plan_code": ""}
+
+
+def _normalize_plan_code(plan_code: str) -> str:
+    normalized = str(plan_code or "free").strip().lower() or "free"
+    return "professional" if normalized == "pro" else normalized
 
 
 async def _mp_request(endpoint: str, method: str = "GET", body: dict | None = None, idempotency_key: str = "") -> dict:
@@ -109,22 +141,43 @@ async def get_credits(
     db: AsyncSession = Depends(get_db),
 ):
     row = await db.execute(
-        text("SELECT credits FROM auth_users WHERE id = :uid"),
+        text(
+            """
+            SELECT credits, COALESCE(plan, 'free') AS plan, plan_expires_at
+            FROM auth_users
+            WHERE id = :uid
+            """
+        ),
         {"uid": user["id"]},
     )
-    credits = row.scalar() or 0
+    profile = row.mappings().first() or {}
+    credits = int(profile.get("credits") or 0)
+    current_plan = _normalize_plan_code(profile.get("plan") or "free")
+    plan_expires_at = profile.get("plan_expires_at")
+    if current_plan != "free" and plan_expires_at and plan_expires_at <= datetime.utcnow():
+        current_plan = "free"
+
     return {
         "credits": credits,
         "creditsPerMinute": CREDITS_PER_MINUTE,
-        "packages": CREDIT_PACKAGES,
+        "packages": get_credit_packages(),
+        "plans": get_subscription_plans(),
+        "comparisonSections": get_credit_comparison_sections(),
         "creditValueBrl": round(get_credit_value_brl(CREDIT_PACKAGES), 6),
+        "creditValueUsd": round(float(USD_PER_CREDIT), 6),
         "pricingVersion": CREDIT_PRICING_RULES_VERSION,
+        "currentPlan": current_plan,
+        "planExpiresAt": plan_expires_at,
     }
 
 
 # ── POST /api/credits/purchase/pix ──
 class PurchaseRequest(BaseModel):
     packageIndex: int
+
+
+class PlanPurchaseRequest(BaseModel):
+    planCode: str
 
 
 @router.post("/purchase/pix")
@@ -137,7 +190,7 @@ async def purchase_pix(
         raise HTTPException(status_code=400, detail="Pacote inválido.")
 
     pkg = CREDIT_PACKAGES[req.packageIndex]
-    reference = _generate_reference()
+    reference = _generate_purchase_reference(kind="credits")
 
     # Get user email
     row = await db.execute(
@@ -180,6 +233,7 @@ async def purchase_pix(
             "ok": True,
             "reference": reference,
             "credits": pkg["credits"],
+            "kind": "credits",
             "pixCopiaECola": pix_info.get("qr_code", ""),
             "qrBase64": pix_info.get("qr_code_base64", ""),
         }
@@ -203,7 +257,7 @@ async def purchase_card(
         raise HTTPException(status_code=400, detail="Pacote inválido.")
 
     pkg = CREDIT_PACKAGES[req.packageIndex]
-    reference = _generate_reference()
+    reference = _generate_purchase_reference(kind="credits")
 
     row = await db.execute(
         text("SELECT email FROM auth_users WHERE id = :uid"),
@@ -242,6 +296,7 @@ async def purchase_card(
             "ok": True,
             "reference": reference,
             "credits": pkg["credits"],
+            "kind": "credits",
             "checkoutUrl": result.get("init_point", ""),
         }
     else:
@@ -251,6 +306,148 @@ async def purchase_card(
         )
         await db.commit()
         raise HTTPException(status_code=400, detail=result.get("message", "Erro ao criar pagamento."))
+
+
+@router.post("/purchase/plan/pix")
+async def purchase_plan_pix(
+    req: PlanPurchaseRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    plan = get_subscription_plan(req.planCode)
+    if plan["code"] not in get_paid_plan_codes():
+        raise HTTPException(status_code=400, detail="Plano mensal invalido.")
+
+    reference = _generate_purchase_reference(kind="plan", plan_code=plan["code"])
+
+    row = await db.execute(
+        text("SELECT email FROM auth_users WHERE id = :uid"),
+        {"uid": user["id"]},
+    )
+    email = row.scalar() or "user@criavideo.pro"
+
+    await db.execute(
+        text(
+            """
+            INSERT INTO credit_purchases (user_id, credits, amount, type, status, reference)
+            VALUES (:uid, :credits, :amount, 'pix', 'pending', :ref)
+            """
+        ),
+        {
+            "uid": user["id"],
+            "credits": plan["monthlyCredits"],
+            "amount": plan["price"],
+            "ref": reference,
+        },
+    )
+    await db.commit()
+
+    payment_data = {
+        "transaction_amount": plan["price"],
+        "description": f"CriaVideo — Plano {plan['name']} ({plan['monthlyCredits']} creditos)",
+        "payment_method_id": "pix",
+        "payer": {"email": email},
+        "external_reference": reference,
+        "notification_url": f"{settings.site_url}/api/credits/webhook",
+    }
+
+    result = await _mp_request("/v1/payments", method="POST", body=payment_data, idempotency_key=reference)
+
+    if result.get("id"):
+        await db.execute(
+            text("UPDATE credit_purchases SET mp_payment_id = :mpid WHERE reference = :ref"),
+            {"mpid": str(result["id"]), "ref": reference},
+        )
+        await db.commit()
+
+        pix_info = result.get("point_of_interaction", {}).get("transaction_data", {})
+        return {
+            "ok": True,
+            "reference": reference,
+            "credits": plan["monthlyCredits"],
+            "kind": "plan",
+            "planCode": plan["code"],
+            "planName": plan["name"],
+            "pixCopiaECola": pix_info.get("qr_code", ""),
+            "qrBase64": pix_info.get("qr_code_base64", ""),
+        }
+
+    await db.execute(
+        text("UPDATE credit_purchases SET status = 'failed' WHERE reference = :ref"),
+        {"ref": reference},
+    )
+    await db.commit()
+    raise HTTPException(status_code=400, detail=result.get("message", "Erro ao criar pagamento PIX."))
+
+
+@router.post("/purchase/plan/card")
+async def purchase_plan_card(
+    req: PlanPurchaseRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    plan = get_subscription_plan(req.planCode)
+    if plan["code"] not in get_paid_plan_codes():
+        raise HTTPException(status_code=400, detail="Plano mensal invalido.")
+
+    reference = _generate_purchase_reference(kind="plan", plan_code=plan["code"])
+
+    row = await db.execute(
+        text("SELECT email FROM auth_users WHERE id = :uid"),
+        {"uid": user["id"]},
+    )
+    email = row.scalar() or "user@criavideo.pro"
+
+    await db.execute(
+        text(
+            """
+            INSERT INTO credit_purchases (user_id, credits, amount, type, status, reference)
+            VALUES (:uid, :credits, :amount, 'card', 'pending', :ref)
+            """
+        ),
+        {
+            "uid": user["id"],
+            "credits": plan["monthlyCredits"],
+            "amount": plan["price"],
+            "ref": reference,
+        },
+    )
+    await db.commit()
+
+    payment_data = {
+        "transaction_amount": plan["price"],
+        "description": f"CriaVideo — Plano {plan['name']} ({plan['monthlyCredits']} creditos)",
+        "payment_method_id": "master",
+        "payer": {"email": email},
+        "external_reference": reference,
+        "notification_url": f"{settings.site_url}/api/credits/webhook",
+        "back_url": f"{settings.site_url}/video?payment=plan",
+    }
+
+    result = await _mp_request("/v1/payments", method="POST", body=payment_data, idempotency_key=reference)
+
+    if result.get("id"):
+        await db.execute(
+            text("UPDATE credit_purchases SET mp_payment_id = :mpid WHERE reference = :ref"),
+            {"mpid": str(result["id"]), "ref": reference},
+        )
+        await db.commit()
+        return {
+            "ok": True,
+            "reference": reference,
+            "credits": plan["monthlyCredits"],
+            "kind": "plan",
+            "planCode": plan["code"],
+            "planName": plan["name"],
+            "checkoutUrl": result.get("init_point", ""),
+        }
+
+    await db.execute(
+        text("UPDATE credit_purchases SET status = 'failed' WHERE reference = :ref"),
+        {"ref": reference},
+    )
+    await db.commit()
+    raise HTTPException(status_code=400, detail=result.get("message", "Erro ao criar pagamento."))
 
 
 # ── GET /api/credits/status/:reference ──
@@ -268,13 +465,25 @@ async def check_status(
     if not purchase:
         raise HTTPException(status_code=404, detail="Compra não encontrada.")
 
+    purchase_meta = _parse_reference_metadata(reference)
+
     if purchase["status"] == "pending" and purchase["mp_payment_id"]:
         mp = await _mp_request(f"/v1/payments/{purchase['mp_payment_id']}")
         if mp.get("status") == "approved":
             await _confirm_credit_purchase(db, reference, purchase["mp_payment_id"])
-            return {"status": "confirmed", "credits": purchase["credits"]}
+            return {
+                "status": "confirmed",
+                "credits": purchase["credits"],
+                "kind": purchase_meta["kind"],
+                "planCode": purchase_meta["plan_code"] or None,
+            }
 
-    return {"status": purchase["status"], "credits": purchase["credits"]}
+    return {
+        "status": purchase["status"],
+        "credits": purchase["credits"],
+        "kind": purchase_meta["kind"],
+        "planCode": purchase_meta["plan_code"] or None,
+    }
 
 
 # ── POST /api/credits/webhook — Mercado Pago IPN/Webhook ──
@@ -348,6 +557,32 @@ async def _confirm_credit_purchase(db: AsyncSession, reference: str, mp_payment_
         text("UPDATE auth_users SET credits = credits + :credits WHERE id = :uid"),
         {"credits": credits, "uid": user_id},
     )
+
+    purchase_meta = _parse_reference_metadata(reference)
+    if purchase_meta["kind"] == "plan" and purchase_meta["plan_code"] in get_paid_plan_codes():
+        now = datetime.utcnow()
+        expires_row = await db.execute(
+            text("SELECT plan_expires_at FROM auth_users WHERE id = :uid"),
+            {"uid": user_id},
+        )
+        current_expires_at = expires_row.scalar()
+        base_date = current_expires_at if isinstance(current_expires_at, datetime) and current_expires_at > now else now
+        new_expires_at = base_date + timedelta(days=30)
+        await db.execute(
+            text(
+                """
+                UPDATE auth_users
+                SET plan = :plan, plan_expires_at = :expires_at
+                WHERE id = :uid
+                """
+            ),
+            {
+                "plan": purchase_meta["plan_code"],
+                "expires_at": new_expires_at,
+                "uid": user_id,
+            },
+        )
+
     await db.commit()
     logger.info(f"[Credits] Confirmed {reference} — user {user_id} received {credits} credits")
 

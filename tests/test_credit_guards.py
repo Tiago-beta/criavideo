@@ -4,6 +4,7 @@ from fastapi import HTTPException
 
 from app.routers.credits import build_insufficient_credits_message, deduct_credits
 from app.services.credit_pricing import (
+    get_credit_comparison_sections,
     estimate_local_video_processing_credits,
     estimate_similar_analysis_credits,
     estimate_similar_previews_credits,
@@ -58,6 +59,15 @@ class TestCreditGuards(unittest.IsolatedAsyncioTestCase):
 
 
 class TestSimilarCreditPricing(unittest.TestCase):
+    def test_comparison_catalog_uses_usd_cent_credit_mapping(self):
+        sections = get_credit_comparison_sections()
+        video_section = next(section for section in sections if section["key"] == "video-models")
+        seedance_row = next(row for row in video_section["rows"] if row["key"] == "seedance-video")
+
+        self.assertEqual(seedance_row["creditsPerUnit"], 9)
+        self.assertEqual(seedance_row["plans"]["starter"]["includedUnits"], 177)
+        self.assertEqual(seedance_row["plans"]["free"]["includedUnits"], 11)
+
     def test_similar_analysis_estimate_distinguishes_general_and_scene_modes(self):
         general = estimate_similar_analysis_credits(duration_seconds=15, analysis_mode="general")
         scene = estimate_similar_analysis_credits(duration_seconds=15, analysis_mode="scene")
@@ -80,7 +90,7 @@ class TestSimilarCreditPricing(unittest.TestCase):
     def test_local_processing_estimate_has_processing_floor(self):
         estimate = estimate_local_video_processing_credits(duration_seconds=30)
 
-        self.assertGreaterEqual(estimate["credits_needed"], 8)
+        self.assertEqual(estimate["credits_needed"], 1)
         self.assertEqual(estimate["breakdown"]["mode"], "local_video_processing")
 
 

@@ -4,23 +4,160 @@ This module is the single source of truth for credit calculations.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 import math
 from dataclasses import dataclass
 from typing import Any
 
-CREDIT_PRICING_RULES_VERSION = "v2.1"
+CREDIT_PRICING_RULES_VERSION = "v3.0"
 
 # Business rules
 USD_TO_BRL = 4.9756
-MARGIN_MULTIPLIER = 1.30
+USD_PER_CREDIT = 0.01
+USD_CENTS_PER_USD = 100
+MARGIN_MULTIPLIER = 1.0
+INITIAL_FREE_CREDITS = 100
+
+
+def _usd_to_brl_amount(value: float | int) -> float:
+    return round(max(0.0, float(value or 0.0)) * USD_TO_BRL, 2)
+
+
+def _credits_to_usd_amount(credits: int) -> float:
+    return round(max(0, int(credits or 0)) * USD_PER_CREDIT, 2)
 
 # Public package catalog used by backend + frontend.
-# Entry package starts at R$ 19.99 as requested.
 CREDIT_PACKAGES = [
-    {"credits": 500, "price": 19.99, "label": "500 creditos"},
-    {"credits": 1300, "price": 49.99, "label": "1300 creditos"},
-    {"credits": 2800, "price": 99.99, "label": "2800 creditos"},
+    {
+        "code": "topup-500",
+        "credits": 500,
+        "priceUsd": _credits_to_usd_amount(500),
+        "price": _usd_to_brl_amount(_credits_to_usd_amount(500)),
+        "label": "Recarga 500",
+        "description": "Complemento rapido para continuar gerando.",
+    },
+    {
+        "code": "topup-1500",
+        "credits": 1500,
+        "priceUsd": _credits_to_usd_amount(1500),
+        "price": _usd_to_brl_amount(_credits_to_usd_amount(1500)),
+        "label": "Recarga 1.500",
+        "badge": "Mais usada",
+        "description": "Ideal para reforcar o ciclo atual sem trocar de plano.",
+    },
+    {
+        "code": "topup-5000",
+        "credits": 5000,
+        "priceUsd": _credits_to_usd_amount(5000),
+        "price": _usd_to_brl_amount(_credits_to_usd_amount(5000)),
+        "label": "Recarga 5.000",
+        "badge": "Maior saldo",
+        "description": "Volume extra para lotes grandes de imagens e videos.",
+    },
 ]
+
+CREDIT_SUBSCRIPTION_PLANS = [
+    {
+        "code": "free",
+        "name": "Gratuito",
+        "shortName": "Gratuito",
+        "monthlyCredits": 0,
+        "comparisonCredits": INITIAL_FREE_CREDITS,
+        "priceUsd": 0.0,
+        "price": 0.0,
+        "billingLabel": "100 creditos iniciais",
+        "accent": "free",
+        "ctaLabel": "Pacote atual",
+        "description": "Teste o fluxo completo e recarregue quando precisar.",
+        "benefits": [
+            "100 creditos para comecar",
+            "Recarga extra a qualquer momento",
+            "Uso em modelos de imagem e video",
+            "Comparativo de custo por modelo",
+            "Editor, automacoes e similar inclusos",
+        ],
+    },
+    {
+        "code": "starter",
+        "name": "Iniciante",
+        "shortName": "Iniciante",
+        "monthlyCredits": 1600,
+        "comparisonCredits": 1600,
+        "priceUsd": 16.0,
+        "price": _usd_to_brl_amount(16.0),
+        "billingLabel": "Ciclo mensal de 30 dias",
+        "accent": "starter",
+        "description": "Para validar campanhas, criativos e videos curtos toda semana.",
+        "benefits": [
+            "1600 creditos por ciclo",
+            "Use em imagens, videos e workflow",
+            "Recarga extra sem trocar de plano",
+            "Custos por segundo e por imagem visiveis",
+            "Ideal para operacao leve e recorrente",
+        ],
+    },
+    {
+        "code": "basic",
+        "name": "Basico",
+        "shortName": "Basico",
+        "monthlyCredits": 2900,
+        "comparisonCredits": 2900,
+        "priceUsd": 29.0,
+        "price": _usd_to_brl_amount(29.0),
+        "billingLabel": "Ciclo mensal de 30 dias",
+        "accent": "basic",
+        "description": "Mais folga para rodar imagens, editor e videos realistas no mes.",
+        "benefits": [
+            "2900 creditos por ciclo",
+            "Melhor margem para workflow e similar",
+            "Recarga extra sem perder o plano",
+            "Tabela comparativa com todos os modelos",
+            "Pensado para producao semanal consistente",
+        ],
+    },
+    {
+        "code": "professional",
+        "name": "Profissional",
+        "shortName": "Profissional",
+        "monthlyCredits": 6900,
+        "comparisonCredits": 6900,
+        "priceUsd": 69.0,
+        "price": _usd_to_brl_amount(69.0),
+        "billingLabel": "Ciclo mensal de 30 dias",
+        "accent": "professional",
+        "badge": "Mais popular",
+        "recommended": True,
+        "description": "Volume ideal para operacao continua com video, imagem e automacao.",
+        "benefits": [
+            "6900 creditos por ciclo",
+            "Cobertura forte para imagem e video",
+            "Recargas extras quando o saldo apertar",
+            "Leitura rapida de custo por modelo",
+            "Feito para rotina pesada de producao",
+        ],
+    },
+    {
+        "code": "supreme",
+        "name": "Supremo",
+        "shortName": "Supremo",
+        "monthlyCredits": 20500,
+        "comparisonCredits": 20500,
+        "priceUsd": 199.0,
+        "price": _usd_to_brl_amount(199.0),
+        "billingLabel": "Ciclo mensal de 30 dias",
+        "accent": "supreme",
+        "badge": "Melhor valor",
+        "description": "Para volume alto de geracao e lotes intensos no mesmo mes.",
+        "benefits": [
+            "20500 creditos por ciclo",
+            "Maior cobertura mensal do catalogo",
+            "Recargas extras para picos de demanda",
+            "Comparativo completo por modelo",
+            "Indicado para operacao de alto volume",
+        ],
+    },
+]
+PAID_PLAN_CODES = {plan["code"] for plan in CREDIT_SUBSCRIPTION_PLANS if plan["code"] != "free"}
 
 # Realistic engine baseline (8 seconds)
 REALISTIC_BASE_CREDITS_8S = {
@@ -87,6 +224,104 @@ IMAGE_GENERATION_BASE_FLOOR = {
     "alibaba/wan-2.6/image-edit": 15,
 }
 
+IMAGE_COMPARISON_MODELS = [
+    {
+        "key": "nano-banana-1k",
+        "label": "Nano Banana 1K",
+        "kind": "image",
+        "model": "google/nano-banana/text-to-image",
+        "size": "1K",
+        "featured": True,
+    },
+    {
+        "key": "nano-banana-2k",
+        "label": "Nano Banana 2K",
+        "kind": "image",
+        "model": "google/nano-banana/text-to-image",
+        "size": "2K",
+        "featured": True,
+    },
+    {
+        "key": "nano-banana-4k",
+        "label": "Nano Banana 4K",
+        "kind": "image",
+        "model": "google/nano-banana/text-to-image",
+        "size": "4K",
+        "featured": True,
+    },
+    {
+        "key": "nano-banana-pro-1k",
+        "label": "Nano Banana Pro 1K",
+        "kind": "image",
+        "model": "google/nano-banana-pro/text-to-image",
+        "size": "1K",
+        "featured": True,
+    },
+    {
+        "key": "nano-banana-pro-2k",
+        "label": "Nano Banana Pro 2K",
+        "kind": "image",
+        "model": "google/nano-banana-pro/text-to-image",
+        "size": "2K",
+        "featured": True,
+    },
+    {
+        "key": "mega-anime-2k",
+        "label": "Mega 5.0 Anime 2K",
+        "kind": "image",
+        "model": "bytedance/seedream-v5.0-lite/sequential",
+        "size": "2K",
+        "featured": False,
+    },
+    {
+        "key": "mega-real-2k",
+        "label": "Mega 5.0 Real 2K",
+        "kind": "image",
+        "model": "bytedance/seedream-v4.5",
+        "size": "2K",
+        "featured": False,
+    },
+    {
+        "key": "gpt-image-2k",
+        "label": "GPT Image 2K",
+        "kind": "image",
+        "model": "openai/gpt-image-1/text-to-image",
+        "size": "2K",
+        "featured": False,
+    },
+]
+
+VIDEO_COMPARISON_MODELS = [
+    {
+        "key": "grok-video",
+        "label": "Cria 3.0 Speed",
+        "kind": "video",
+        "engine": "grok",
+        "featured": True,
+    },
+    {
+        "key": "wan-video",
+        "label": "Ultra High 1.0",
+        "kind": "video",
+        "engine": "wan2",
+        "featured": True,
+    },
+    {
+        "key": "seedance-video",
+        "label": "Mega 2.0 Ultra",
+        "kind": "video",
+        "engine": "seedance",
+        "featured": True,
+    },
+    {
+        "key": "avatar-video",
+        "label": "Avatar 3.1 Plus",
+        "kind": "video",
+        "engine": "avatar31",
+        "featured": True,
+    },
+]
+
 
 @dataclass
 class CreditEstimate:
@@ -113,21 +348,124 @@ class CreditEstimate:
 
 
 def get_credit_packages() -> list[dict[str, Any]]:
-    return [dict(pkg) for pkg in CREDIT_PACKAGES]
+    return deepcopy(CREDIT_PACKAGES)
+
+
+def get_subscription_plans() -> list[dict[str, Any]]:
+    return deepcopy(CREDIT_SUBSCRIPTION_PLANS)
+
+
+def get_paid_plan_codes() -> set[str]:
+    return set(PAID_PLAN_CODES)
+
+
+def get_subscription_plan(plan_code: str) -> dict[str, Any]:
+    normalized = str(plan_code or "free").strip().lower()
+    if normalized == "pro":
+        normalized = "professional"
+    for plan in CREDIT_SUBSCRIPTION_PLANS:
+        if plan["code"] == normalized:
+            return deepcopy(plan)
+    return deepcopy(CREDIT_SUBSCRIPTION_PLANS[0])
+
+
+def _plan_credit_budget(plan: dict[str, Any]) -> int:
+    return int(plan.get("comparisonCredits") or plan.get("monthlyCredits") or 0)
+
+
+def _credits_from_usd_value(provider_cost_usd: float | int, minimum: int = 1) -> int:
+    normalized_cost = max(0.0, float(provider_cost_usd or 0.0))
+    if normalized_cost <= 0:
+        return max(0, int(minimum or 0))
+    exact = normalized_cost * USD_CENTS_PER_USD
+    return max(int(minimum or 0), int(math.ceil(exact - 1e-9)))
+
+
+def _estimate_image_unit_cost_usd(model: str, size: str) -> float:
+    normalized_model = str(model or "google/nano-banana-pro/text-to-image").strip()
+    if normalized_model not in IMAGE_GENERATION_MODEL_USD:
+        normalized_model = "google/nano-banana-pro/text-to-image"
+
+    normalized_size = str(size or "2K").strip().upper()
+    if normalized_size not in IMAGE_GENERATION_SIZE_MULTIPLIERS:
+        normalized_size = "2K"
+
+    return IMAGE_GENERATION_MODEL_USD[normalized_model] * IMAGE_GENERATION_SIZE_MULTIPLIERS[normalized_size]
+
+
+def get_credit_comparison_sections() -> list[dict[str, Any]]:
+    plans = get_subscription_plans()
+    sections: list[dict[str, Any]] = []
+
+    image_rows: list[dict[str, Any]] = []
+    for item in IMAGE_COMPARISON_MODELS:
+        usd_per_unit = _estimate_image_unit_cost_usd(item["model"], item["size"])
+        credits_per_unit = _credits_from_usd_value(usd_per_unit, minimum=0 if usd_per_unit <= 0 else 1)
+        usage = {}
+        for plan in plans:
+            plan_budget = _plan_credit_budget(plan)
+            included_units = int(math.floor(plan_budget / credits_per_unit)) if credits_per_unit > 0 else 0
+            usage[plan["code"]] = {
+                "includedUnits": included_units,
+                "budgetCredits": plan_budget,
+            }
+        image_rows.append({
+            "key": item["key"],
+            "label": item["label"],
+            "kind": item["kind"],
+            "unit": "image",
+            "creditsPerUnit": credits_per_unit,
+            "usdPerUnit": round(usd_per_unit, 4),
+            "brlPerUnit": _usd_to_brl_amount(usd_per_unit),
+            "featured": bool(item.get("featured")),
+            "plans": usage,
+        })
+
+    sections.append({
+        "key": "image-models",
+        "title": "Modelos de imagem",
+        "rows": image_rows,
+        "defaultVisibleRows": 5,
+    })
+
+    video_rows: list[dict[str, Any]] = []
+    for item in VIDEO_COMPARISON_MODELS:
+        engine = str(item["engine"] or "grok").strip().lower()
+        usd_per_unit = REALISTIC_ENGINE_USD_PER_SEC.get(engine, REALISTIC_ENGINE_USD_PER_SEC["grok"])
+        credits_per_unit = _credits_from_usd_value(usd_per_unit, minimum=1)
+        usage = {}
+        for plan in plans:
+            plan_budget = _plan_credit_budget(plan)
+            included_units = int(math.floor(plan_budget / credits_per_unit)) if credits_per_unit > 0 else 0
+            usage[plan["code"]] = {
+                "includedUnits": included_units,
+                "budgetCredits": plan_budget,
+            }
+        video_rows.append({
+            "key": item["key"],
+            "label": item["label"],
+            "kind": item["kind"],
+            "unit": "second",
+            "creditsPerUnit": credits_per_unit,
+            "usdPerUnit": round(usd_per_unit, 4),
+            "brlPerUnit": _usd_to_brl_amount(usd_per_unit),
+            "featured": bool(item.get("featured")),
+            "plans": usage,
+        })
+
+    sections.append({
+        "key": "video-models",
+        "title": "Modelos de video",
+        "rows": video_rows,
+        "defaultVisibleRows": len(video_rows),
+    })
+
+    return sections
 
 
 def get_credit_value_brl(packages: list[dict[str, Any]] | None = None) -> float:
-    catalog = packages or CREDIT_PACKAGES
-    ratios: list[float] = []
-    for pkg in catalog:
-        try:
-            credits = int(pkg.get("credits", 0) or 0)
-            price = float(pkg.get("price", 0.0) or 0.0)
-        except Exception:
-            continue
-        if credits > 0 and price > 0:
-            ratios.append(price / credits)
-    return min(ratios) if ratios else (99.99 / 2800.0)
+    _ = packages
+    return round(USD_TO_BRL * USD_PER_CREDIT, 6)
 
 
 def _safe_duration_seconds(duration_seconds: float | int | None, word_count: int | None = None) -> float:
@@ -155,8 +493,11 @@ def _credits_from_provider_cost(provider_cost_usd: float, floor_credits: int = 1
     billed_cost_brl = provider_cost_brl * MARGIN_MULTIPLIER
     brl_per_credit = get_credit_value_brl(CREDIT_PACKAGES)
 
-    credits_exact = billed_cost_brl / brl_per_credit if brl_per_credit > 0 else 0.0
-    credits_needed = max(int(floor_credits), int(math.ceil(credits_exact)), 1)
+    credits_exact = max(0.0, float(provider_cost_usd or 0.0)) * USD_CENTS_PER_USD
+    minimum_credits = max(0, int(floor_credits or 0))
+    if provider_cost_usd > 0:
+        minimum_credits = max(1, minimum_credits)
+    credits_needed = max(minimum_credits, int(math.ceil(credits_exact - 1e-9)))
 
     return CreditEstimate(
         credits_needed=credits_needed,
@@ -191,15 +532,12 @@ def estimate_realistic_credits(
 
     provider_cost_usd = video_usd + anchor_usd + music_usd + narration_usd + subtitles_usd
 
-    base_8s = REALISTIC_BASE_CREDITS_8S.get(normalized_engine, REALISTIC_BASE_CREDITS_8S["wan2"])
-    linear_floor = int(math.ceil((base_8s * duration) / 8.0))
-
-    estimate = _credits_from_provider_cost(provider_cost_usd, floor_credits=linear_floor)
+    estimate = _credits_from_provider_cost(provider_cost_usd, floor_credits=1)
     estimate.breakdown = {
         "mode": "realistic",
         "engine": normalized_engine,
         "duration_seconds": round(duration, 2),
-        "linear_floor_credits": linear_floor,
+        "credits_per_second": _credits_from_usd_value(REALISTIC_ENGINE_USD_PER_SEC[normalized_engine], minimum=1),
         "components_usd": {
             "video_generation": round(video_usd, 6),
             "anchor_reference": round(anchor_usd, 6),
@@ -244,16 +582,7 @@ def estimate_standard_credits(
 
     provider_cost_usd = ai_images_usd + narration_usd + subtitles_usd + music_usd + custom_video_usd + karaoke_usd
 
-    if has_custom_video:
-        floor_credits = 30
-    elif has_ai_images:
-        floor_credits = 40
-    elif has_custom_images:
-        floor_credits = 24
-    elif use_custom_audio or use_tevoxi_audio:
-        floor_credits = 22
-    else:
-        floor_credits = 12
+    floor_credits = 1 if provider_cost_usd > 0 else 0
 
     estimate = _credits_from_provider_cost(provider_cost_usd, floor_credits=floor_credits)
     estimate.breakdown = {
@@ -354,14 +683,7 @@ def estimate_image_generation_credits(
     thinking_multiplier = IMAGE_GENERATION_THINKING_MULTIPLIER if thinking_enabled else 1.0
     provider_cost_usd = (base_usd * size_multiplier * thinking_multiplier * outputs) + (references * IMAGE_GENERATION_REFERENCE_USD)
 
-    base_floor = IMAGE_GENERATION_BASE_FLOOR[normalized_model]
-    size_floor_multiplier = 1.0 if normalized_size == "1K" else (1.25 if normalized_size == "2K" else 1.55)
-    thinking_floor_multiplier = 1.12 if thinking_enabled else 1.0
-    floor_credits = max(
-        base_floor,
-        int(math.ceil(base_floor * outputs * size_floor_multiplier * thinking_floor_multiplier))
-        + max(0, references - 1),
-    )
+    floor_credits = 0 if provider_cost_usd <= 0 else 1
 
     estimate = _credits_from_provider_cost(provider_cost_usd, floor_credits=floor_credits)
     estimate.breakdown = {
@@ -484,11 +806,11 @@ def estimate_similar_analysis_credits(
 def estimate_local_video_processing_credits(duration_seconds: float | int) -> dict[str, Any]:
     duration = max(1.0, _safe_duration_seconds(duration_seconds))
     provider_cost_usd = (duration / 60.0) * CUSTOM_VIDEO_PROCESS_USD_PER_MIN
-    estimate = _credits_from_provider_cost(provider_cost_usd, floor_credits=8)
+    estimate = _credits_from_provider_cost(provider_cost_usd, floor_credits=1)
     estimate.breakdown = {
         "mode": "local_video_processing",
         "duration_seconds": round(duration, 2),
-        "floor_credits": 8,
+        "floor_credits": 1,
         "components_usd": {
             "local_processing": round(provider_cost_usd, 6),
         },

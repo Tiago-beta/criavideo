@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_db
+from app.services.credit_pricing import get_paid_plan_codes
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -24,7 +25,7 @@ class AdminCreditChangeRequest(BaseModel):
 
 
 class AdminPlanChangeRequest(BaseModel):
-    plan: str = Field(min_length=4, max_length=10)
+    plan: str = Field(min_length=4, max_length=20)
     durationDays: int | None = Field(default=None, ge=1, le=365 * 5)
 
 
@@ -34,6 +35,11 @@ class TrackViewRequest(BaseModel):
 
 def _normalize_email(value: Any) -> str:
     return str(value or "").strip().lower()
+
+
+def _normalize_plan_code(value: Any) -> str:
+    normalized = str(value or "free").strip().lower() or "free"
+    return "professional" if normalized == "pro" else normalized
 
 
 def _as_int(value: Any, default: int = 0) -> int:
@@ -164,7 +170,7 @@ async def admin_stats(
     pro_users = 0
     if has_plan:
         pro_filters = [
-            "COALESCE(plan, 'free') = 'pro'",
+            "COALESCE(plan, 'free') != 'free'",
             "(plan_expires_at IS NULL OR plan_expires_at > NOW())" if has_plan_expires else "",
             "COALESCE(is_active, TRUE)" if has_is_active else "",
         ]
@@ -578,7 +584,10 @@ async def admin_user_details(
             db,
             f"""
             SELECT
-                'creditos' AS kind,
+                CASE
+                    WHEN COALESCE(reference, '') LIKE 'CVPLN-%' THEN 'plano'
+                    ELSE 'creditos'
+                END AS kind,
                 COALESCE(type, '') AS method,
                 COALESCE(status, '') AS status,
                 COALESCE(amount, 0) AS amount,
@@ -686,16 +695,17 @@ async def admin_change_plan(
 ):
     _require_admin(user)
 
-    plan = str(req.plan or "").strip().lower()
-    if plan not in {"free", "pro"}:
-        raise HTTPException(status_code=400, detail='Plano invalido. Use "free" ou "pro".')
+    plan = _normalize_plan_code(req.plan)
+    allowed_plans = {"free"} | get_paid_plan_codes()
+    if plan not in allowed_plans:
+        raise HTTPException(status_code=400, detail='Plano invalido. Use "free", "starter", "basic", "professional" ou "supreme".')
 
     auth_cols = await _get_columns(db, "auth_users") if await _table_exists(db, "auth_users") else set()
     if "plan" not in auth_cols:
         raise HTTPException(status_code=400, detail="Coluna de plano nao encontrada em auth_users.")
 
     expires_at = None
-    if plan == "pro" and "plan_expires_at" in auth_cols:
+    if plan != "free" and "plan_expires_at" in auth_cols:
         duration_days = int(req.durationDays or 30)
         duration_days = max(1, min(365 * 5, duration_days))
         expires_at = datetime.utcnow() + timedelta(days=duration_days)
