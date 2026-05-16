@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v463 loaded");
+console.log("[CriaVideo] app.js v464 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -186,6 +186,13 @@ const WORKFLOW_PROMPT_AI_STYLE_OPTIONS = [
     { value: "cinematic", label: "Cinemático" },
     { value: "product", label: "Produto" },
 ];
+const SESSION_PLAN_LABELS = {
+    free: "Plano Gratuito",
+    starter: "Plano Iniciante",
+    basic: "Plano Básico",
+    professional: "Plano Profissional",
+    supreme: "Plano Supremo",
+};
 
 function _normalizeWanDurationMultiple(value) {
     const raw = parseInt(value || 0, 10);
@@ -536,6 +543,8 @@ function apiFormWithProgress(path, formData, options = {}) {
 function setSession(accessToken, user) {
     token = accessToken;
     currentUser = user;
+    _currentCreditPlan = "free";
+    _currentCreditPlanExpiresAt = "";
     localStorage.setItem(APP_TOKEN_KEY, accessToken);
     _resetTevoxiRuntimeState();
     renderSession();
@@ -544,6 +553,8 @@ function setSession(accessToken, user) {
 function clearSession() {
     token = "";
     currentUser = null;
+    _currentCreditPlan = "free";
+    _currentCreditPlanExpiresAt = "";
     _lastTrackedPage = "";
     localStorage.removeItem(APP_TOKEN_KEY);
     _closeProfileAdminPanel(true);
@@ -609,18 +620,44 @@ function _trackPageView(pageName) {
     }).catch(() => {});
 }
 
+function _normalizeSessionPlanCode(planCode = "") {
+    const normalized = String(planCode || "free").trim().toLowerCase() || "free";
+    const resolved = normalized === "pro" ? "professional" : normalized;
+    return SESSION_PLAN_LABELS[resolved] ? resolved : "free";
+}
+
+function _getSessionPlanPresentation() {
+    const planCode = _normalizeSessionPlanCode(currentUser?.plan || _currentCreditPlan || "free");
+    const label = SESSION_PLAN_LABELS[planCode] || SESSION_PLAN_LABELS.free;
+    const expiresText = planCode !== "free" && _currentCreditPlanExpiresAt
+        ? ` até ${new Date(_currentCreditPlanExpiresAt).toLocaleDateString("pt-BR")}`
+        : "";
+    return {
+        code: planCode,
+        label,
+        title: `${label}${expiresText}`,
+    };
+}
+
 function renderSession() {
     if (!currentUser) {
         return;
     }
     const sessionName = document.getElementById("session-name");
     const sessionMeta = document.getElementById("session-meta");
+    const sidebarProfileTrigger = document.getElementById("sidebar-profile-trigger");
+    const sessionPlan = _getSessionPlanPresentation();
     if (sessionName) {
         sessionName.textContent = currentUser.name || "Cliente";
     }
     if (sessionMeta) {
-        const sourceLabel = currentUser.source === "google" ? "Google" : "CriaVideo";
-        sessionMeta.textContent = sourceLabel;
+        sessionMeta.textContent = sessionPlan.label;
+        sessionMeta.className = `user-role plan-${sessionPlan.code}`;
+        sessionMeta.title = sessionPlan.title;
+    }
+    if (sidebarProfileTrigger) {
+        sidebarProfileTrigger.dataset.plan = sessionPlan.code;
+        sidebarProfileTrigger.title = `${sessionPlan.title} · Abrir perfil`;
     }
     // Profile page
     const profileName = document.getElementById("profile-name");
@@ -25157,6 +25194,7 @@ async function updateCreditsDisplay() {
         _currentCreditPlan = String(data.currentPlan || "free").trim().toLowerCase() || "free";
         _currentCreditPlanExpiresAt = data.planExpiresAt || "";
         _renderGlobalBalance();
+        renderSession();
 
         scheduleWizardCreditEstimate();
         scheduleScriptCreditEstimate();

@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260516-06">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260516-07">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 463;
+        var REQUIRED_VER = 464;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -163,10 +163,6 @@
                             <button id="btn-logout" class="btn-logout-icon" type="button" title="Sair">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                             </button>
-                        </div>
-                        <div class="sidebar-legal-links">
-                            <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacidade</a>
-                            <a href="/terms" target="_blank" rel="noopener noreferrer">Termos</a>
                         </div>
                     </div>
                 </aside>
@@ -4261,8 +4257,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260516-06"></script>
-    <script src="/video/static/pwa.js?v=20260516-06"></script>
+    <script src="/video/static/app.js?v=20260516-07"></script>
+    <script src="/video/static/pwa.js?v=20260516-07"></script>
 </body>
 </html>
 
