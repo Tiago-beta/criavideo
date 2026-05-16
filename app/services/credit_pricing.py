@@ -9,13 +9,13 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-CREDIT_PRICING_RULES_VERSION = "v3.1"
+CREDIT_PRICING_RULES_VERSION = "v3.2"
 
 # Business rules
 USD_TO_BRL = 4.9756
 USD_PER_CREDIT = 0.01
 USD_CENTS_PER_USD = 100
-MARGIN_MULTIPLIER = 1.0
+MARGIN_MULTIPLIER = 1.5
 INITIAL_FREE_CREDITS = 100
 ANNUAL_PLAN_MONTHS = 12
 MONTHLY_PLAN_DAYS = 30
@@ -29,6 +29,10 @@ def _usd_to_brl_amount(value: float | int) -> float:
 
 def _credits_to_usd_amount(credits: int) -> float:
     return round(max(0, int(credits or 0)) * USD_PER_CREDIT, 2)
+
+
+def _billed_usd_per_unit_from_credits(credits: int) -> float:
+    return round(max(0, int(credits or 0)) * USD_PER_CREDIT, 4)
 
 
 def _normalize_billing_period(billing_period: str) -> str:
@@ -231,6 +235,9 @@ REALISTIC_ENGINE_USD_PER_SEC = {
     "grok": 0.050,
     "seedance": 0.085,
     "avatar31": 0.048,
+}
+REALISTIC_ENGINE_MIN_CREDITS_PER_SEC = {
+    "seedance": 15,
 }
 
 # Additional operation costs
@@ -446,8 +453,15 @@ def _credits_from_usd_value(provider_cost_usd: float | int, minimum: int = 1) ->
     normalized_cost = max(0.0, float(provider_cost_usd or 0.0))
     if normalized_cost <= 0:
         return max(0, int(minimum or 0))
-    exact = normalized_cost * USD_CENTS_PER_USD
+    exact = normalized_cost * USD_CENTS_PER_USD * MARGIN_MULTIPLIER
     return max(int(minimum or 0), int(math.ceil(exact - 1e-9)))
+
+
+def _realistic_engine_credits_per_second(engine: str) -> int:
+    normalized_engine = str(engine or "grok").strip().lower()
+    usd_per_second = REALISTIC_ENGINE_USD_PER_SEC.get(normalized_engine, REALISTIC_ENGINE_USD_PER_SEC["grok"])
+    minimum = REALISTIC_ENGINE_MIN_CREDITS_PER_SEC.get(normalized_engine, 1)
+    return _credits_from_usd_value(usd_per_second, minimum=minimum)
 
 
 def _estimate_image_unit_cost_usd(model: str, size: str) -> float:
@@ -470,6 +484,7 @@ def get_credit_comparison_sections() -> list[dict[str, Any]]:
     for item in IMAGE_COMPARISON_MODELS:
         usd_per_unit = _estimate_image_unit_cost_usd(item["model"], item["size"])
         credits_per_unit = _credits_from_usd_value(usd_per_unit, minimum=0 if usd_per_unit <= 0 else 1)
+        billed_usd_per_unit = _billed_usd_per_unit_from_credits(credits_per_unit)
         usage = {}
         for plan in plans:
             plan_budget = _plan_credit_budget(plan)
@@ -484,8 +499,8 @@ def get_credit_comparison_sections() -> list[dict[str, Any]]:
             "kind": item["kind"],
             "unit": "image",
             "creditsPerUnit": credits_per_unit,
-            "usdPerUnit": round(usd_per_unit, 4),
-            "brlPerUnit": _usd_to_brl_amount(usd_per_unit),
+            "usdPerUnit": billed_usd_per_unit,
+            "brlPerUnit": _usd_to_brl_amount(billed_usd_per_unit),
             "featured": bool(item.get("featured")),
             "plans": usage,
         })
@@ -500,8 +515,8 @@ def get_credit_comparison_sections() -> list[dict[str, Any]]:
     video_rows: list[dict[str, Any]] = []
     for item in VIDEO_COMPARISON_MODELS:
         engine = str(item["engine"] or "grok").strip().lower()
-        usd_per_unit = REALISTIC_ENGINE_USD_PER_SEC.get(engine, REALISTIC_ENGINE_USD_PER_SEC["grok"])
-        credits_per_unit = _credits_from_usd_value(usd_per_unit, minimum=1)
+        credits_per_unit = _realistic_engine_credits_per_second(engine)
+        billed_usd_per_unit = _billed_usd_per_unit_from_credits(credits_per_unit)
         usage = {}
         for plan in plans:
             plan_budget = _plan_credit_budget(plan)
@@ -516,8 +531,8 @@ def get_credit_comparison_sections() -> list[dict[str, Any]]:
             "kind": item["kind"],
             "unit": "second",
             "creditsPerUnit": credits_per_unit,
-            "usdPerUnit": round(usd_per_unit, 4),
-            "brlPerUnit": _usd_to_brl_amount(usd_per_unit),
+            "usdPerUnit": billed_usd_per_unit,
+            "brlPerUnit": _usd_to_brl_amount(billed_usd_per_unit),
             "featured": bool(item.get("featured")),
             "plans": usage,
         })
@@ -562,7 +577,7 @@ def _credits_from_provider_cost(provider_cost_usd: float, floor_credits: int = 1
     billed_cost_brl = provider_cost_brl * MARGIN_MULTIPLIER
     brl_per_credit = get_credit_value_brl(CREDIT_PACKAGES)
 
-    credits_exact = max(0.0, float(provider_cost_usd or 0.0)) * USD_CENTS_PER_USD
+    credits_exact = max(0.0, float(provider_cost_usd or 0.0)) * USD_CENTS_PER_USD * MARGIN_MULTIPLIER
     minimum_credits = max(0, int(floor_credits or 0))
     if provider_cost_usd > 0:
         minimum_credits = max(1, minimum_credits)
@@ -601,12 +616,15 @@ def estimate_realistic_credits(
 
     provider_cost_usd = video_usd + anchor_usd + music_usd + narration_usd + subtitles_usd
 
-    estimate = _credits_from_provider_cost(provider_cost_usd, floor_credits=1)
+    credits_per_second = _realistic_engine_credits_per_second(normalized_engine)
+    floor_credits = max(1, int(math.ceil((duration * credits_per_second) - 1e-9)))
+    estimate = _credits_from_provider_cost(provider_cost_usd, floor_credits=floor_credits)
     estimate.breakdown = {
         "mode": "realistic",
         "engine": normalized_engine,
         "duration_seconds": round(duration, 2),
-        "credits_per_second": _credits_from_usd_value(REALISTIC_ENGINE_USD_PER_SEC[normalized_engine], minimum=1),
+        "credits_per_second": credits_per_second,
+        "floor_credits": floor_credits,
         "components_usd": {
             "video_generation": round(video_usd, 6),
             "anchor_reference": round(anchor_usd, 6),

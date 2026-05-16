@@ -25119,7 +25119,7 @@ const _creditFaqItems = [
     },
     {
         question: "Quantas imagens ou vídeos consigo gerar?",
-        answer: "A tabela abaixo mostra exatamente quantas imagens ou segundos cada plano cobre em cada modelo da plataforma.",
+        answer: "A tabela acima mostra exatamente quantas imagens ou segundos cada plano cobre em cada modelo da plataforma.",
     },
 ];
 const _fallbackCreditPlans = [

@@ -65,9 +65,10 @@ class TestSimilarCreditPricing(unittest.TestCase):
         video_section = next(section for section in sections if section["key"] == "video-models")
         seedance_row = next(row for row in video_section["rows"] if row["key"] == "seedance-video")
 
-        self.assertEqual(seedance_row["creditsPerUnit"], 9)
-        self.assertEqual(seedance_row["plans"]["starter"]["includedUnits"], 177)
-        self.assertEqual(seedance_row["plans"]["free"]["includedUnits"], 11)
+        self.assertEqual(seedance_row["creditsPerUnit"], 15)
+        self.assertEqual(seedance_row["usdPerUnit"], 0.15)
+        self.assertEqual(seedance_row["plans"]["starter"]["includedUnits"], 106)
+        self.assertEqual(seedance_row["plans"]["free"]["includedUnits"], 6)
 
     def test_subscription_plan_catalog_exposes_annual_discount(self):
         plan = get_subscription_plan("professional")
