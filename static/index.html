@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260516-07">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260516-08">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 464;
+        var REQUIRED_VER = 465;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -115,7 +115,7 @@
         </section>
 
         <div id="app-shell" hidden>
-            <div id="app">
+            <div id="app" class="sidebar-collapsed">
                 <!-- Toggle button to reopen sidebar -->
                 <button id="sidebar-toggle" class="sidebar-toggle" type="button" title="Mostrar menu">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -1167,13 +1167,6 @@
                             <strong>Meu Roteiro</strong>
                             <small>Escreva ou cole seu próprio roteiro e envie fotos, áudios ou vídeos.</small>
                         </button>
-                        <button class="mode-selection-card" data-create-mode="series" onclick="_chooseCreateMode('series')" type="button">
-                            <div class="mode-selection-icon">
-                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8"/><path d="M8 13h6"/><path d="M15 2v4"/><path d="M9 2v4"/></svg>
-                            </div>
-                            <strong>Séries</strong>
-                            <small>Crie filmes completos, séries e dramas longos com personagens, storyboard e timeline.</small>
-                        </button>
                         <button class="mode-selection-card" data-create-mode="similar" onclick="_chooseCreateMode('similar')" type="button">
                             <div class="mode-selection-icon">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -1194,6 +1187,13 @@
                             </div>
                             <strong>Imagens</strong>
                             <small>Criar imagens primeiro, antes de gerar o vídeo.</small>
+                        </button>
+                        <button class="mode-selection-card" data-create-mode="series" onclick="_chooseCreateMode('series')" type="button">
+                            <div class="mode-selection-icon">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8"/><path d="M8 13h6"/><path d="M15 2v4"/><path d="M9 2v4"/></svg>
+                            </div>
+                            <strong>Séries</strong>
+                            <small>Crie filmes completos, séries e dramas longos com personagens, storyboard e timeline.</small>
                         </button>
                     </div>
                 </div>
@@ -4257,8 +4257,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260516-07"></script>
-    <script src="/video/static/pwa.js?v=20260516-07"></script>
+    <script src="/video/static/app.js?v=20260516-08"></script>
+    <script src="/video/static/pwa.js?v=20260516-08"></script>
 </body>
 </html>
 

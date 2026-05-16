@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v464 loaded");
+console.log("[CriaVideo] app.js v465 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -681,7 +681,42 @@ function showAuth(message = "") {
 function showApp() {
     document.getElementById("auth-shell").hidden = true;
     document.getElementById("app-shell").hidden = false;
+    _syncDesktopSidebarForViewport();
     renderSession();
+}
+
+function _isDesktopSidebarMode() {
+    return window.innerWidth > 768;
+}
+
+function _openDesktopSidebar() {
+    const appShell = document.getElementById("app");
+    if (!appShell || !_isDesktopSidebarMode()) {
+        return;
+    }
+    appShell.classList.add("sidebar-collapsed", "sidebar-open");
+}
+
+function _collapseDesktopSidebar() {
+    const appShell = document.getElementById("app");
+    if (!appShell || !_isDesktopSidebarMode()) {
+        return;
+    }
+    appShell.classList.add("sidebar-collapsed");
+    appShell.classList.remove("sidebar-open");
+}
+
+function _syncDesktopSidebarForViewport() {
+    const appShell = document.getElementById("app");
+    if (!appShell) {
+        return;
+    }
+    if (_isDesktopSidebarMode()) {
+        appShell.classList.add("sidebar-collapsed");
+        appShell.classList.remove("sidebar-open");
+        return;
+    }
+    appShell.classList.remove("sidebar-open");
 }
 
 function setAuthStatus(message = "") {
@@ -869,11 +904,16 @@ function navigateTo(pageName) {
         closeModal("modal-editor-drafts");
         _editorCloseSubtitleTextModal();
     }
+    _collapseDesktopSidebar();
     loadPageData(pageName);
     _trackPageView(normalizedPage);
 }
 
 function bindNavigation() {
+    const appShell = document.getElementById("app");
+    const sidebar = document.getElementById("sidebar");
+    const sidebarToggle = document.getElementById("sidebar-toggle");
+
     // Sidebar nav items
     document.querySelectorAll(".sidebar-nav .nav-item").forEach((link) => {
         link.addEventListener("click", (event) => {
@@ -885,16 +925,40 @@ function bindNavigation() {
     const logo = document.querySelector(".sidebar-header .logo");
     if (logo) {
         logo.addEventListener("click", () => {
-            document.getElementById("app").classList.toggle("sidebar-collapsed");
+            if (!_isDesktopSidebarMode()) {
+                return;
+            }
+            appShell?.classList.toggle("sidebar-open");
         });
     }
     // Toggle button reopens sidebar
-    const sidebarToggle = document.getElementById("sidebar-toggle");
     if (sidebarToggle) {
         sidebarToggle.addEventListener("click", () => {
-            document.getElementById("app").classList.remove("sidebar-collapsed");
+            _openDesktopSidebar();
         });
     }
+    if (sidebar) {
+        sidebar.addEventListener("mouseenter", () => {
+            _openDesktopSidebar();
+        });
+        sidebar.addEventListener("mouseleave", () => {
+            _collapseDesktopSidebar();
+        });
+        sidebar.addEventListener("focusin", () => {
+            _openDesktopSidebar();
+        });
+    }
+    document.addEventListener("click", (event) => {
+        if (!_isDesktopSidebarMode() || !sidebar) {
+            return;
+        }
+        if (sidebar.contains(event.target) || sidebarToggle?.contains(event.target)) {
+            return;
+        }
+        _collapseDesktopSidebar();
+    });
+    window.addEventListener("resize", _syncDesktopSidebarForViewport);
+    _syncDesktopSidebarForViewport();
     // Mobile bottom tabs
     document.querySelectorAll(".mobile-nav-tab").forEach((tab) => {
         tab.addEventListener("click", () => {

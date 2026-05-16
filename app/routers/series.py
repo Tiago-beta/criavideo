@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -7,8 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
-from app.database import get_db
+from app.database import engine, get_db
 from app.models import (
+    Base,
     VideoProject,
     VideoSeries,
     VideoSeriesChatMessage,
@@ -26,6 +28,30 @@ _SERIES_KIND_ALIASES = {
     "série": "series",
     "drama": "drama",
 }
+_SERIES_SCHEMA_READY = False
+_SERIES_SCHEMA_LOCK = asyncio.Lock()
+
+
+async def _ensure_series_workspace_schema() -> None:
+    global _SERIES_SCHEMA_READY
+    if _SERIES_SCHEMA_READY:
+        return
+    async with _SERIES_SCHEMA_LOCK:
+        if _SERIES_SCHEMA_READY:
+            return
+        async with engine.begin() as conn:
+            await conn.run_sync(
+                lambda sync_conn: Base.metadata.create_all(
+                    sync_conn,
+                    tables=[
+                        VideoSeries.__table__,
+                        VideoSeriesEpisode.__table__,
+                        VideoSeriesChatThread.__table__,
+                        VideoSeriesChatMessage.__table__,
+                    ],
+                )
+            )
+        _SERIES_SCHEMA_READY = True
 
 
 class CreateSeriesRequest(BaseModel):
@@ -171,6 +197,7 @@ def _serialize_message(message: VideoSeriesChatMessage) -> dict[str, Any]:
 
 
 async def _get_owned_series(series_id: int, user_id: int, db: AsyncSession) -> VideoSeries:
+    await _ensure_series_workspace_schema()
     series = await db.get(VideoSeries, series_id)
     if not series or int(series.user_id or 0) != int(user_id or 0):
         raise HTTPException(status_code=404, detail="Workspace de series nao encontrado.")
@@ -240,6 +267,7 @@ async def create_series_workspace(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await _ensure_series_workspace_schema()
     kind = _normalize_series_kind(req.kind)
     requested_count = _normalize_positive_int(req.episode_count, 1)
     episode_count = 1 if kind == "film" else requested_count
@@ -302,6 +330,7 @@ async def list_series_workspaces(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await _ensure_series_workspace_schema()
     result = await db.execute(
         select(VideoSeries)
         .where(VideoSeries.user_id == user["id"])
