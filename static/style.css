@@ -9667,6 +9667,207 @@ th,
     font-size: 0.84rem;
 }
 
+.series-project-summary-grid,
+.series-character-grid,
+.series-storyboard-grid,
+.series-scene-grid {
+    display: grid;
+    gap: 18px;
+}
+
+.series-project-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 18px;
+}
+
+.series-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.series-chip-list.compact {
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.series-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(233, 240, 249, 0.86);
+    font-size: 0.82rem;
+    line-height: 1.2;
+}
+
+.series-inline-note {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    color: rgba(223, 232, 244, 0.76);
+    line-height: 1.6;
+}
+
+.series-mini-card small {
+    display: block;
+    margin-top: 8px;
+    color: rgba(223, 232, 244, 0.68);
+    font-size: 0.82rem;
+}
+
+.series-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.series-section-head h3 {
+    margin: 6px 0 0;
+    font-size: 1.4rem;
+}
+
+.series-character-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.series-character-card,
+.series-scene-mini-card,
+.series-storyboard-bank {
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(19, 24, 31, 0.94), rgba(13, 17, 23, 0.96));
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
+}
+
+.series-character-card {
+    padding: 22px;
+}
+
+.series-character-card-top {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.series-character-avatar {
+    width: 82px;
+    height: 82px;
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(135deg, rgba(255, 213, 103, 0.18), rgba(126, 179, 255, 0.18));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    color: #fff3b0;
+    font-size: 1.7rem;
+    font-weight: 800;
+}
+
+.series-character-avatar img,
+.series-storyboard-thumb.has-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.series-field-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.series-field-label {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.series-field-label span {
+    color: rgba(223, 232, 244, 0.82);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.series-inline-input,
+.series-inline-select,
+.series-inline-textarea {
+    width: 100%;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    font: inherit;
+    padding: 0.85rem 0.95rem;
+}
+
+.series-inline-textarea {
+    min-height: 120px;
+    resize: vertical;
+    line-height: 1.6;
+}
+
+.series-inline-textarea.short {
+    min-height: 92px;
+}
+
+.series-card-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+}
+
+.series-scene-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 18px;
+}
+
+.series-scene-mini-card {
+    padding: 18px;
+}
+
+.series-scene-mini-card strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 1rem;
+}
+
+.series-scene-mini-card p {
+    margin: 10px 0 0;
+    color: rgba(223, 232, 244, 0.74);
+    line-height: 1.6;
+}
+
+.series-storyboard-bank {
+    padding: 22px;
+}
+
+.series-storyboard-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.series-storyboard-editor-card {
+    overflow: hidden;
+}
+
+.series-empty-card-actionable {
+    align-items: flex-start;
+}
+
 .series-chat-rail {
     display: flex;
     flex-direction: column;
@@ -9815,6 +10016,19 @@ th,
 
     .series-data-card-highlight {
         grid-column: span 1;
+    }
+
+    .series-project-summary-grid,
+    .series-character-grid,
+    .series-storyboard-grid,
+    .series-scene-grid,
+    .series-field-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .series-section-head {
+        flex-direction: column;
+        align-items: flex-start;
     }
 }
 

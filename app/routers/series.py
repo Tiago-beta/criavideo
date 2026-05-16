@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,6 +18,7 @@ from app.models import (
     VideoSeriesChatThread,
     VideoSeriesEpisode,
 )
+from app.services.series_planner import build_series_workspace_plan
 
 router = APIRouter(prefix="/api/series", tags=["series"])
 
@@ -122,9 +124,29 @@ class CreateSeriesMessageRequest(BaseModel):
     status: str = "completed"
 
 
+class GenerateSeriesPlanRequest(BaseModel):
+    message: str = ""
+    tab: str = "projeto"
+
+
 def _normalize_series_kind(kind: str) -> str:
     normalized = str(kind or "").strip().lower()
     return _SERIES_KIND_ALIASES.get(normalized, "series")
+
+
+def _normalize_series_tab(tab: str) -> str:
+    normalized = str(tab or "").strip().lower()
+    if normalized in {"tela", "projeto", "project"}:
+        return "projeto"
+    if normalized == "roteiro":
+        return "roteiro"
+    if normalized == "personagens":
+        return "personagens"
+    if normalized == "storyboard":
+        return "storyboard"
+    if normalized in {"timeline", "linha-do-tempo", "linha do tempo"}:
+        return "timeline"
+    return "projeto"
 
 
 def _normalize_positive_int(value: int, fallback: int = 1) -> int:
@@ -133,6 +155,165 @@ def _normalize_positive_int(value: int, fallback: int = 1) -> int:
     except Exception:
         parsed = 0
     return parsed if parsed > 0 else fallback
+
+
+def _workspace_name_key(value: Any) -> str:
+    lowered = str(value or "").strip().lower()
+    if not lowered:
+        return ""
+    return re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
+
+
+def _merge_named_workspace_items(
+    existing_items: Any,
+    incoming_items: Any,
+    *,
+    preserve_fields: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    existing_list = [item for item in (existing_items if isinstance(existing_items, list) else []) if isinstance(item, dict)]
+    incoming_list = [item for item in (incoming_items if isinstance(incoming_items, list) else []) if isinstance(item, dict)]
+
+    existing_by_key: dict[str, dict[str, Any]] = {}
+    for item in existing_list:
+        key = _workspace_name_key(item.get("name")) or _workspace_name_key(item.get("id"))
+        if key and key not in existing_by_key:
+            existing_by_key[key] = item
+
+    merged: list[dict[str, Any]] = []
+    used_keys: set[str] = set()
+    for index, item in enumerate(incoming_list, start=1):
+        key = _workspace_name_key(item.get("name")) or _workspace_name_key(item.get("id")) or f"item-{index}"
+        previous = existing_by_key.get(key)
+        next_item = dict(previous or {})
+        next_item.update(item)
+        for field in preserve_fields:
+            if previous and previous.get(field) and not next_item.get(field):
+                next_item[field] = previous.get(field)
+        next_item["id"] = str(next_item.get("id") or (previous or {}).get("id") or key)
+        merged.append(next_item)
+        used_keys.add(key)
+
+    for item in existing_list:
+        key = _workspace_name_key(item.get("name")) or _workspace_name_key(item.get("id"))
+        if key and key not in used_keys:
+            merged.append(item)
+    return merged
+
+
+def _build_episode_script_text(scenes: list[dict[str, Any]]) -> str:
+    if not scenes:
+        return "Nenhum roteiro gerado ainda para este episodio."
+    blocks: list[str] = []
+    for index, scene in enumerate(scenes, start=1):
+        title = str(scene.get("title") or f"Cena {index}").strip() or f"Cena {index}"
+        beat = str(scene.get("beat") or "").strip() or "Beat ainda nao definido."
+        location = str(scene.get("location") or "").strip() or "Local a definir"
+        characters = [str(item).strip() for item in (scene.get("characters") or []) if str(item).strip()]
+        objects = [str(item).strip() for item in (scene.get("objects") or []) if str(item).strip()]
+        duration_seconds = int(round(float(scene.get("duration_seconds") or 0))) if scene.get("duration_seconds") else 0
+        block_lines = [
+            f"Cena {index}: {title}",
+            f"Local: {location}",
+            f"Acao: {beat}",
+        ]
+        if duration_seconds > 0:
+            block_lines.append(f"Duracao estimada: {duration_seconds}s")
+        if characters:
+            block_lines.append(f"Personagens: {', '.join(characters)}")
+        if objects:
+            block_lines.append(f"Objetos: {', '.join(objects)}")
+        blocks.append("\n".join(block_lines))
+    return "\n\n".join(blocks)
+
+
+async def _apply_generated_series_plan(
+    *,
+    series: VideoSeries,
+    plan: dict[str, Any],
+    active_tab: str,
+    db: AsyncSession,
+) -> list[VideoSeriesEpisode]:
+    existing_workspace_state = series.workspace_state if isinstance(series.workspace_state, dict) else {}
+    existing_storyboard = existing_workspace_state.get("storyboard") if isinstance(existing_workspace_state.get("storyboard"), dict) else {}
+
+    series.title = str(plan.get("title") or series.title or "Nova serie").strip() or "Nova serie"
+    series.description = str(plan.get("project_overview") or series.description or "").strip()
+    series.aspect_ratio = str(plan.get("aspect_ratio") or series.aspect_ratio or "16:9").strip() or "16:9"
+    series.language = str(plan.get("language") or series.language or "pt-BR").strip() or "pt-BR"
+    series.target_duration_seconds = float(plan.get("target_duration_seconds") or series.target_duration_seconds or 0)
+
+    project_plan = {
+        "overview": str(plan.get("project_overview") or series.description or "").strip(),
+        "requirements": [str(item).strip() for item in (plan.get("build_requirements") or []) if str(item).strip()],
+        "last_generated_at": datetime.utcnow().isoformat(),
+        "last_generated_brief": str(plan.get("source_message") or "").strip(),
+    }
+
+    workspace_state = dict(existing_workspace_state)
+    workspace_state["active_tab"] = _normalize_series_tab(active_tab)
+    workspace_state["project_plan"] = project_plan
+    workspace_state["characters"] = _merge_named_workspace_items(
+        existing_workspace_state.get("characters"),
+        plan.get("characters"),
+        preserve_fields=("persona_profile_id", "voice_profile_id", "image_url", "image_path", "prompt_text"),
+    )
+    workspace_state["storyboard"] = {
+        "scenes": _merge_named_workspace_items(
+            existing_storyboard.get("scenes"),
+            plan.get("scenes"),
+            preserve_fields=("image_url", "image_path", "upload_id", "file_name"),
+        ),
+        "objects": _merge_named_workspace_items(
+            existing_storyboard.get("objects"),
+            plan.get("objects"),
+            preserve_fields=("image_url", "image_path", "upload_id", "file_name"),
+        ),
+    }
+    series.workspace_state = workspace_state
+
+    plan_episodes = [item for item in (plan.get("episodes") if isinstance(plan.get("episodes"), list) else []) if isinstance(item, dict)]
+    desired_episode_count = _normalize_positive_int(len(plan_episodes), 1)
+    if series.kind == "film":
+        desired_episode_count = 1
+        plan_episodes = plan_episodes[:1]
+    series.episode_count = desired_episode_count
+
+    existing_episodes = await _list_series_episodes(series.id, db)
+    touched: list[VideoSeriesEpisode] = []
+    for index in range(desired_episode_count):
+        episode_plan = plan_episodes[index] if index < len(plan_episodes) else {}
+        scenes = [item for item in (episode_plan.get("scenes") if isinstance(episode_plan.get("scenes"), list) else []) if isinstance(item, dict)]
+        if index < len(existing_episodes):
+            episode = existing_episodes[index]
+        else:
+            episode = VideoSeriesEpisode(
+                series_id=series.id,
+                season_number=1,
+                episode_number=index + 1,
+                title=f"Episodio {index + 1}",
+            )
+            db.add(episode)
+        episode.season_number = 1
+        episode.episode_number = int(episode_plan.get("episode_number") or (index + 1))
+        episode.title = str(episode_plan.get("title") or episode.title or f"Episodio {index + 1}").strip() or f"Episodio {index + 1}"
+        episode.synopsis = str(episode_plan.get("synopsis") or episode.synopsis or "").strip()
+        episode.script_text = _build_episode_script_text(scenes)
+        episode.storyboard = scenes
+        episode.timeline_data = {
+            "duration_seconds": int(round(float(episode_plan.get("duration_seconds") or 0))) if episode_plan.get("duration_seconds") else 0,
+            "scene_count": len(scenes),
+            "scene_titles": [str(scene.get("title") or "").strip() for scene in scenes if str(scene.get("title") or "").strip()],
+        }
+        if str(episode.status or "draft").strip().lower() in {"", "draft"}:
+            episode.status = "planned"
+        touched.append(episode)
+
+    for extra in existing_episodes[desired_episode_count:]:
+        await db.delete(extra)
+
+    await db.commit()
+    await db.refresh(series)
+    return await _list_series_episodes(series.id, db)
 
 
 def _serialize_series(series: VideoSeries) -> dict[str, Any]:
@@ -398,6 +579,36 @@ async def update_series_workspace(
     await db.commit()
     await db.refresh(series)
     return {"series": _serialize_series(series)}
+
+
+@router.post("/{series_id}/plan", response_model=dict)
+async def generate_series_workspace_plan(
+    series_id: int,
+    req: GenerateSeriesPlanRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    series = await _get_owned_series(series_id, user["id"], db)
+    message = str(req.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Envie uma descricao para estruturar o projeto.")
+
+    active_tab = _normalize_series_tab(req.tab)
+    plan = await build_series_workspace_plan(
+        kind=_normalize_series_kind(series.kind),
+        existing_title=str(series.title or "").strip(),
+        message=message,
+        language=str(series.language or "pt-BR").strip() or "pt-BR",
+        target_tab=active_tab,
+        existing_context=series.workspace_state if isinstance(series.workspace_state, dict) else {},
+    )
+    plan["source_message"] = message
+    episodes = await _apply_generated_series_plan(series=series, plan=plan, active_tab=active_tab, db=db)
+    return {
+        "series": _serialize_series(series),
+        "episodes": [_serialize_episode(item) for item in episodes],
+        "assistant_message": str(plan.get("assistant_reply") or "").strip(),
+    }
 
 
 @router.post("/{series_id}/episodes", response_model=dict)

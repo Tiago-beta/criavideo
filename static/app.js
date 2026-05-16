@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v465 loaded");
+console.log("[CriaVideo] app.js v466 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -100,13 +100,15 @@ let _seriesWorkspaceState = {
     initialized: false,
     creating: false,
     loading: false,
+    planning: false,
     activeSeriesId: 0,
-    activeTab: "tela",
+    activeTab: "projeto",
     series: null,
     episodes: [],
     threads: [],
     activeThreadId: 0,
     messages: [],
+    persistTimer: null,
 };
 
 const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
@@ -148,6 +150,7 @@ let _personaManagerMulti = false;
 let personaManagerReferenceImageFile = null;
 let _personaVoiceBuilderProfileId = 0;
 let _personaPromptEditorProfileId = 0;
+let _seriesPersonaCreateHook = null;
 const PERSONA_REFERENCE_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const PERSONA_REFERENCE_MAX_SIZE = 10 * 1024 * 1024;
 let _grokAnchorPreviewState = {
@@ -1443,6 +1446,15 @@ function _seriesKindLabel(kind) {
     return "Série";
 }
 
+function _seriesNormalizeTab(tab) {
+    const normalized = String(tab || "").trim().toLowerCase();
+    if (normalized === "tela") return "projeto";
+    if (["projeto", "roteiro", "personagens", "storyboard", "timeline"].includes(normalized)) {
+        return normalized;
+    }
+    return "projeto";
+}
+
 function _seriesDefaultCreatePayload(kind) {
     const normalized = String(kind || "series").trim().toLowerCase();
     if (normalized === "film") {
@@ -1455,7 +1467,7 @@ function _seriesDefaultCreatePayload(kind) {
             target_duration_seconds: 1800,
             episode_count: 1,
             default_settings: { mode: "long_form", pacing: "cinematic" },
-            workspace_state: { active_tab: "tela" },
+            workspace_state: { active_tab: "projeto" },
         };
     }
     if (normalized === "drama") {
@@ -1468,7 +1480,7 @@ function _seriesDefaultCreatePayload(kind) {
             target_duration_seconds: 1200,
             episode_count: 8,
             default_settings: { mode: "dramatic", pacing: "episodic" },
-            workspace_state: { active_tab: "tela" },
+            workspace_state: { active_tab: "projeto" },
         };
     }
     return {
@@ -1480,15 +1492,24 @@ function _seriesDefaultCreatePayload(kind) {
         target_duration_seconds: 900,
         episode_count: 5,
         default_settings: { mode: "episodic", pacing: "continuous" },
-        workspace_state: { active_tab: "tela" },
+        workspace_state: { active_tab: "projeto" },
     };
 }
 
+function _seriesClearPersistTimer() {
+    if (_seriesWorkspaceState.persistTimer) {
+        clearTimeout(_seriesWorkspaceState.persistTimer);
+        _seriesWorkspaceState.persistTimer = null;
+    }
+}
+
 function _seriesResetWorkspaceState() {
+    _seriesClearPersistTimer();
     _seriesWorkspaceState.creating = false;
     _seriesWorkspaceState.loading = false;
+    _seriesWorkspaceState.planning = false;
     _seriesWorkspaceState.activeSeriesId = 0;
-    _seriesWorkspaceState.activeTab = "tela";
+    _seriesWorkspaceState.activeTab = "projeto";
     _seriesWorkspaceState.series = null;
     _seriesWorkspaceState.episodes = [];
     _seriesWorkspaceState.threads = [];
@@ -1500,47 +1521,426 @@ function _seriesGetActiveThread() {
     return _seriesWorkspaceState.threads.find((thread) => Number(thread.id || 0) === Number(_seriesWorkspaceState.activeThreadId || 0)) || null;
 }
 
-function _seriesBuildWelcomeMessage() {
-    const kindLabel = _seriesKindLabel(_seriesWorkspaceState.series?.kind);
-    return `Workspace de ${kindLabel.toLowerCase()} pronto. Nesta primeira etapa eu já consigo registrar o contexto da conversa e organizar o fluxo por Tela, Roteiro, Personagens, Storyboard e Linha do tempo. Na próxima integração vou ligar este chat diretamente aos geradores existentes do CriaVideo.`;
+function _seriesGetWorkspaceState() {
+    if (!_seriesWorkspaceState.series) {
+        return { active_tab: _seriesWorkspaceState.activeTab };
+    }
+    const current = _seriesWorkspaceState.series.workspace_state;
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+        _seriesWorkspaceState.series.workspace_state = { active_tab: _seriesWorkspaceState.activeTab };
+    }
+    return _seriesWorkspaceState.series.workspace_state;
 }
 
-function _seriesBuildAssistantReply(userMessage) {
-    const content = String(userMessage || "").trim();
-    const snippet = content.length > 140 ? `${content.slice(0, 140)}...` : content;
-    const tab = _seriesWorkspaceState.activeTab;
-    if (tab === "tela") {
-        return `Recebi sua ideia na aba Tela: "${snippet}". Já posso persistir o briefing deste workspace; o próximo passo é conectar isso aos geradores de capa, estrutura geral e duração longa.`;
+function _seriesUpdateWorkspaceState(patch = {}) {
+    if (!_seriesWorkspaceState.series) {
+        return;
     }
-    if (tab === "roteiro") {
-        return `Mensagem registrada em Roteiro: "${snippet}". O chat desta fase já fica salvo na thread atual; em seguida vou conectar este ponto aos geradores de roteiro e expansão de duração que o app já possui.`;
+    const current = _seriesGetWorkspaceState();
+    const nextState = {
+        ...current,
+        ...patch,
+    };
+    _seriesWorkspaceState.series = {
+        ..._seriesWorkspaceState.series,
+        workspace_state: nextState,
+    };
+    _seriesWorkspaceState.activeTab = _seriesNormalizeTab(nextState.active_tab || _seriesWorkspaceState.activeTab);
+}
+
+function _seriesGetProjectPlan() {
+    const projectPlan = _seriesGetWorkspaceState().project_plan;
+    return {
+        overview: String(projectPlan?.overview || _seriesWorkspaceState.series?.description || "").trim(),
+        requirements: Array.isArray(projectPlan?.requirements)
+            ? projectPlan.requirements.map((item) => String(item || "").trim()).filter(Boolean)
+            : [],
+        lastGeneratedBrief: String(projectPlan?.last_generated_brief || "").trim(),
+    };
+}
+
+function _seriesGetCharacters() {
+    const characters = _seriesGetWorkspaceState().characters;
+    return Array.isArray(characters) ? characters : [];
+}
+
+function _seriesGetStoryboardBank() {
+    const storyboard = _seriesGetWorkspaceState().storyboard;
+    const safeStoryboard = storyboard && typeof storyboard === "object" && !Array.isArray(storyboard) ? storyboard : {};
+    return {
+        scenes: Array.isArray(safeStoryboard.scenes) ? safeStoryboard.scenes : [],
+        objects: Array.isArray(safeStoryboard.objects) ? safeStoryboard.objects : [],
+    };
+}
+
+function _seriesFindPersonaProfile(profileId, personaType = "") {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    if (!pid) return null;
+    const direct = _getPersonaProfileById(pid, personaType || "personalizado");
+    if (direct) return direct;
+    for (const type of REALISTIC_PERSONA_TYPES) {
+        const match = _getPersonaProfileById(pid, type);
+        if (match) return match;
     }
-    if (tab === "personagens") {
-        return `Contexto salvo em Personagens: "${snippet}". A persistência do bate-papo já está pronta para depois acoplar a criação de personas e vozes com os serviços existentes.`;
+    return null;
+}
+
+function _seriesMakeWorkspaceItemId(prefix) {
+    return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function _seriesFormatLongDuration(seconds) {
+    const total = Math.max(0, parseInt(seconds || "0", 10) || 0);
+    if (!total) return "--";
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    if (hours > 0) {
+        return `${hours}h ${String(minutes).padStart(2, "0")}m`;
     }
-    if (tab === "storyboard") {
-        return `Storyboard anotado: "${snippet}". A conversa já fica amarrada ao workspace; a próxima ligação será com as rotinas de cenas, continuidade visual e geração semelhante.`;
+    if (minutes > 0) {
+        return secs > 0 ? `${minutes}m ${String(secs).padStart(2, "0")}s` : `${minutes}m`;
     }
-    return `Linha do tempo atualizada com o seu pedido: "${snippet}". Esta thread já é persistida por workspace e vai servir de base para a ligação com episódios, timing e envio ao editor.`;
+    return `${secs}s`;
+}
+
+function _seriesGetEpisodeDuration(episode) {
+    return parseInt(episode?.timeline_data?.duration_seconds || "0", 10) || 0;
+}
+
+function _seriesCountEpisodeScenes() {
+    return (_seriesWorkspaceState.episodes || []).reduce((total, episode) => {
+        const scenes = Array.isArray(episode?.storyboard) ? episode.storyboard : [];
+        return total + scenes.length;
+    }, 0);
+}
+
+function _seriesBuildWelcomeMessage() {
+    const kindLabel = _seriesKindLabel(_seriesWorkspaceState.series?.kind);
+    return `Workspace de ${kindLabel.toLowerCase()} pronto. Descreva no chat o que voce quer criar e eu organizo automaticamente Projeto, Roteiro, Personagens, Storyboard e Linha do tempo dentro deste workspace.`;
 }
 
 function _seriesTabLabel(tab) {
+    if (tab === "projeto") return "Projeto";
     if (tab === "roteiro") return "Roteiro";
     if (tab === "personagens") return "Personagens";
     if (tab === "storyboard") return "Storyboard";
     if (tab === "timeline") return "Linha do tempo";
-    return "Tela";
+    return "Projeto";
 }
 
-function _seriesRenderTelaTab() {
+async function _seriesPersistWorkspaceState(options = {}) {
+    if (!_seriesWorkspaceState.series || !_seriesWorkspaceState.activeSeriesId) {
+        return;
+    }
+    try {
+        const payload = await api(`/series/${_seriesWorkspaceState.activeSeriesId}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+                workspace_state: _seriesGetWorkspaceState(),
+            }),
+        });
+        if (payload?.series) {
+            _seriesWorkspaceState.series = {
+                ..._seriesWorkspaceState.series,
+                ...payload.series,
+            };
+            _seriesWorkspaceState.activeTab = _seriesNormalizeTab(payload.series?.workspace_state?.active_tab || _seriesWorkspaceState.activeTab);
+        }
+        if (!options.silent) {
+            showToast("Projeto atualizado.", "success");
+        }
+    } catch (error) {
+        if (!options.silent) {
+            showToast(`Erro ao salvar o projeto: ${error.message}`, "error");
+        }
+    }
+}
+
+function _seriesQueueWorkspaceStatePersist(delay = 450) {
+    _seriesClearPersistTimer();
+    _seriesWorkspaceState.persistTimer = setTimeout(() => {
+        _seriesWorkspaceState.persistTimer = null;
+        void _seriesPersistWorkspaceState({ silent: true });
+    }, delay);
+}
+
+function _seriesGuessPersonaTypeForCharacter(character) {
+    const explicit = String(character?.persona_type || "").trim().toLowerCase();
+    if (REALISTIC_PERSONA_TYPES.includes(explicit)) {
+        return explicit;
+    }
+    const text = `${character?.role || ""} ${character?.summary || ""}`.toLowerCase();
+    if (text.includes("crianca") || text.includes("infantil")) return "crianca";
+    if (text.includes("mulher") || text.includes("feminina")) return "mulher";
+    if (text.includes("homem") || text.includes("masculino")) return "homem";
+    if (text.includes("familia")) return "familia";
+    if (text.includes("animal") || text.includes("natureza")) return "natureza";
+    if (text.includes("desenho") || text.includes("anime") || text.includes("cartoon")) return "desenho";
+    return "personalizado";
+}
+
+function _seriesApplyPersonaToCharacter(index, profile, createdProfileId = 0) {
+    const characters = [..._seriesGetCharacters()];
+    const current = characters[index];
+    if (!current) {
+        return;
+    }
+    const resolvedProfile = profile || {};
+    const profileId = parseInt(resolvedProfile.id || createdProfileId || current.persona_profile_id || "0", 10) || 0;
+    characters[index] = {
+        ...current,
+        persona_profile_id: profileId,
+        voice_profile_id: parseInt(resolvedProfile.voice_profile_id || current.voice_profile_id || "0", 10) || 0,
+        persona_type: String(resolvedProfile.persona_type || current.persona_type || _seriesGuessPersonaTypeForCharacter(current) || "personalizado").trim(),
+        name: String(current.name || resolvedProfile.name || `Personagem ${index + 1}`).trim(),
+        summary: String(current.summary || current.role || resolvedProfile.prompt_text || "").trim(),
+        image_url: String(resolvedProfile.image_url || current.image_url || "").trim(),
+        image_path: String(resolvedProfile.image_path || current.image_path || "").trim(),
+        prompt_text: String(resolvedProfile.prompt_text || current.prompt_text || "").trim(),
+    };
+    _seriesUpdateWorkspaceState({ characters });
+    _seriesRenderWorkspace();
+    _seriesQueueWorkspaceStatePersist(0);
+}
+
+window._seriesSyncCharacterVoiceFromPersona = function _seriesSyncCharacterVoiceFromPersona(profileId, voiceProfileId) {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    const vid = parseInt(voiceProfileId || "0", 10) || 0;
+    if (!pid || !vid) {
+        return;
+    }
+    const characters = [..._seriesGetCharacters()];
+    let changed = false;
+    characters.forEach((character, index) => {
+        if ((parseInt(character?.persona_profile_id || "0", 10) || 0) === pid) {
+            characters[index] = {
+                ...character,
+                voice_profile_id: vid,
+            };
+            changed = true;
+        }
+    });
+    if (!changed) {
+        return;
+    }
+    _seriesUpdateWorkspaceState({ characters });
+    _seriesRenderWorkspace();
+    _seriesQueueWorkspaceStatePersist(0);
+};
+
+function _seriesAddCharacterCard() {
+    const characters = [..._seriesGetCharacters()];
+    characters.push({
+        id: _seriesMakeWorkspaceItemId("character"),
+        name: `Personagem ${characters.length + 1}`,
+        role: "Funcao dramatica a definir.",
+        summary: "Descreva a historia, o visual e a personalidade deste personagem.",
+        persona_type: "personalizado",
+        persona_profile_id: 0,
+        voice_profile_id: 0,
+    });
+    _seriesUpdateWorkspaceState({ characters });
+    _seriesRenderWorkspace();
+    _seriesQueueWorkspaceStatePersist();
+}
+
+function _seriesRemoveCharacterCard(index) {
+    const characters = [..._seriesGetCharacters()];
+    if (!characters[index]) return;
+    characters.splice(index, 1);
+    _seriesUpdateWorkspaceState({ characters });
+    _seriesRenderWorkspace();
+    _seriesQueueWorkspaceStatePersist();
+}
+
+async function _seriesOpenCharacterPersonaBuilder(index) {
+    const characters = _seriesGetCharacters();
+    const character = characters[index];
+    if (!character) {
+        return;
+    }
+    _personaManagerContext = "script";
+    _personaManagerMulti = false;
+    _personaManagerType = _seriesGuessPersonaTypeForCharacter(character);
+    _seriesPersonaCreateHook = async (createdId, createdProfile) => {
+        _seriesApplyPersonaToCharacter(index, createdProfile, createdId);
+        showToast("Persona vinculada ao personagem.", "success");
+    };
+    await openPersonaCreateModal();
+    const nameInput = document.getElementById("persona-manager-name");
+    if (nameInput && !String(nameInput.value || "").trim()) {
+        nameInput.value = String(character.name || "").trim();
+    }
+    const customDesc = document.getElementById("persona-manager-custom-desc");
+    if (customDesc && !String(customDesc.value || "").trim()) {
+        customDesc.value = String(character.summary || character.role || "").trim();
+    }
+    const extraInput = document.getElementById("persona-manager-extra");
+    if (extraInput && !String(extraInput.value || "").trim()) {
+        extraInput.value = String(character.role || "").trim();
+    }
+}
+
+async function _seriesOpenCharacterVoiceBuilder(index) {
+    const character = _seriesGetCharacters()[index];
+    const profileId = parseInt(character?.persona_profile_id || "0", 10) || 0;
+    if (!profileId) {
+        showToast("Crie uma persona para este personagem antes de gerar a voz.", "info");
+        return;
+    }
+    const personaType = _seriesGuessPersonaTypeForCharacter(character);
+    _personaManagerType = personaType;
+    try {
+        await _loadPersonaProfiles(personaType, false);
+    } catch (error) {
+        console.warn("Failed to load persona profiles for voice builder:", error);
+    }
+    openPersonaVoiceBuilder(profileId);
+}
+
+function _seriesAddStoryboardItem(kind) {
+    const storyboard = _seriesGetStoryboardBank();
+    const list = kind === "objects" ? [...storyboard.objects] : [...storyboard.scenes];
+    const nextIndex = list.length + 1;
+    list.push({
+        id: _seriesMakeWorkspaceItemId(kind === "objects" ? "object" : "scene"),
+        name: kind === "objects" ? `Objeto ${nextIndex}` : `Cena ${nextIndex}`,
+        summary: kind === "objects"
+            ? "Descreva o objeto, adereco ou elemento visual importante para a historia."
+            : "Descreva a cena, o objetivo dramatica e o enquadramento visual.",
+        image_prompt: kind === "objects"
+            ? "Objeto cinematografico, fundo limpo, detalhes claros, iluminacao premium."
+            : "Cena cinematografica, composicao forte, luz definida, atmosfera coerente com a historia.",
+    });
+    _seriesUpdateWorkspaceState({
+        storyboard: {
+            ...storyboard,
+            [kind]: list,
+        },
+    });
+    _seriesRenderWorkspace();
+    _seriesQueueWorkspaceStatePersist();
+}
+
+function _seriesRemoveStoryboardItem(kind, index) {
+    const storyboard = _seriesGetStoryboardBank();
+    const key = kind === "objects" ? "objects" : "scenes";
+    const list = [...storyboard[key]];
+    if (!list[index]) return;
+    list.splice(index, 1);
+    _seriesUpdateWorkspaceState({
+        storyboard: {
+            ...storyboard,
+            [key]: list,
+        },
+    });
+    _seriesRenderWorkspace();
+    _seriesQueueWorkspaceStatePersist();
+}
+
+function _seriesOpenStoryboardItemImageCreator(kind, index) {
+    const storyboard = _seriesGetStoryboardBank();
+    const key = kind === "objects" ? "objects" : "scenes";
+    const item = storyboard[key][index];
+    if (!item) {
+        return;
+    }
+    resetScriptImageCreatorModalState();
+    _scriptImageCreatorLaunchSource = "script";
+    _scriptImageCreatorConsumer = async (generatedItem) => {
+        const refreshedStoryboard = _seriesGetStoryboardBank();
+        const nextList = [...refreshedStoryboard[key]];
+        const current = nextList[index];
+        if (!current) {
+            return;
+        }
+        nextList[index] = {
+            ...current,
+            image_url: String(generatedItem.image_url || current.image_url || "").trim(),
+            upload_id: String(generatedItem.upload_id || current.upload_id || "").trim(),
+            image_prompt: String(current.image_prompt || item.image_prompt || "").trim(),
+        };
+        _seriesUpdateWorkspaceState({
+            storyboard: {
+                ...refreshedStoryboard,
+                [key]: nextList,
+            },
+        });
+        _seriesRenderWorkspace();
+        _seriesQueueWorkspaceStatePersist(0);
+    };
+    _ensureScriptImageCreatorPromptCapacity(1);
+    _scriptImageCreatorState.promptValues[0] = String(item.image_prompt || item.summary || item.name || "").trim();
+    _scriptImageCreatorState.generatedImages = [];
+    _scriptImageCreatorState.activeResultIndex = 0;
+    _scriptImageCreatorState.referenceFiles = [];
+    const aspectSelect = document.getElementById("script-image-generator-aspect");
+    if (aspectSelect) {
+        aspectSelect.value = String(_seriesWorkspaceState.series?.aspect_ratio || "16:9").trim() || "16:9";
+    }
+    syncScriptImageCreatorControls();
+    renderScriptImageCreatorReferencePreview();
+    renderScriptImageCreatorResults();
+    scheduleScriptImageCreatorEstimate(0);
+    openModal("modal-script-image-creator");
+}
+
+function _seriesUpdateCharacterField(index, field, value) {
+    const characters = [..._seriesGetCharacters()];
+    const current = characters[index];
+    if (!current) {
+        return;
+    }
+    characters[index] = {
+        ...current,
+        [field]: value,
+    };
+    _seriesUpdateWorkspaceState({ characters });
+    _seriesQueueWorkspaceStatePersist();
+}
+
+function _seriesUpdateStoryboardField(kind, index, field, value) {
+    const storyboard = _seriesGetStoryboardBank();
+    const key = kind === "objects" ? "objects" : "scenes";
+    const list = [...storyboard[key]];
+    const current = list[index];
+    if (!current) {
+        return;
+    }
+    list[index] = {
+        ...current,
+        [field]: value,
+    };
+    _seriesUpdateWorkspaceState({
+        storyboard: {
+            ...storyboard,
+            [key]: list,
+        },
+    });
+    _seriesQueueWorkspaceStatePersist();
+}
+
+function _seriesRenderProjectTab() {
     const series = _seriesWorkspaceState.series;
     const episodes = _seriesWorkspaceState.episodes || [];
+    const projectPlan = _seriesGetProjectPlan();
+    const characters = _seriesGetCharacters();
+    const storyboard = _seriesGetStoryboardBank();
+    const requirementChips = projectPlan.requirements.length
+        ? `<div class="series-chip-list">${projectPlan.requirements.map((item) => `<span class="series-chip">${esc(item)}</span>`).join("")}</div>`
+        : '<div class="series-inline-note">Descreva no chat o tema, a duracao, o tom, os personagens e o visual. O painel ajusta automaticamente.</div>';
+    const totalVisualItems = storyboard.scenes.length + storyboard.objects.length;
+    const scopeCopy = series.kind === "film"
+        ? "bloco principal"
+        : (series.kind === "drama" ? "capitulo(s)" : "episodio(s)");
     return `
         <div class="series-tab-grid series-tab-grid-overview">
             <article class="series-data-card series-data-card-highlight">
-                <span class="series-card-label">Visão geral</span>
+                <span class="series-card-label">Projeto</span>
                 <h3>${esc(series.title || "Sem título")}</h3>
-                <p>${esc(series.description || "Use esta área para estruturar o filme, a série ou o drama antes de aprofundar roteiro, personagens, storyboard e timeline.")}</p>
+                <p>${esc(projectPlan.overview || series.description || "Use o chat para dizer o que voce quer criar. O projeto, o roteiro e os cards se organizam automaticamente a partir do briefing.")}</p>
+                ${requirementChips}
             </article>
             <article class="series-data-card">
                 <span class="series-card-label">Formato</span>
@@ -1549,15 +1949,30 @@ function _seriesRenderTelaTab() {
             </article>
             <article class="series-data-card">
                 <span class="series-card-label">Duração-alvo</span>
-                <strong>${Math.round(Number(series.target_duration_seconds || 0))}s</strong>
-                <p>${episodes.length} estrutura(s) de episódio criada(s).</p>
+                <strong>${esc(_seriesFormatLongDuration(series.target_duration_seconds))}</strong>
+                <p>Tempo total do projeto. Hoje existem ${episodes.length} ${scopeCopy}, ${characters.length} personagem(ns) e ${totalVisualItems} item(ns) visuais planejados.</p>
+            </article>
+        </div>
+        <div class="series-project-summary-grid">
+            <article class="series-mini-card">
+                <span>Roteiro</span>
+                <strong>${episodes.length ? `${episodes.length} bloco(s)` : "Aguardando briefing"}</strong>
+            </article>
+            <article class="series-mini-card">
+                <span>Personagens</span>
+                <strong>${characters.length || 0} card(s)</strong>
+            </article>
+            <article class="series-mini-card">
+                <span>Storyboard</span>
+                <strong>${_seriesCountEpisodeScenes()} cena(s) + ${storyboard.objects.length} objeto(s)</strong>
             </article>
         </div>
         <div class="series-episode-strip">
             ${episodes.map((episode) => `
                 <article class="series-mini-card">
-                    <span>${esc(`T${episode.season_number} · E${episode.episode_number}`)}</span>
+                    <span>${esc(series.kind === "film" ? "Bloco principal" : `T${episode.season_number} · E${episode.episode_number}`)}</span>
                     <strong>${esc(episode.title || `Episódio ${episode.episode_number}`)}</strong>
+                    <small>${esc(_seriesFormatLongDuration(_seriesGetEpisodeDuration(episode)))}</small>
                 </article>
             `).join("")}
         </div>
@@ -1566,6 +1981,14 @@ function _seriesRenderTelaTab() {
 
 function _seriesRenderRoteiroTab() {
     const episodes = _seriesWorkspaceState.episodes || [];
+    if (!episodes.length) {
+        return `
+            <div class="series-empty-card">
+                <strong>Nenhum roteiro gerado ainda.</strong>
+                <span>Escreva no chat o tema, a duração total, os episódios ou capítulos e o tipo de história. Eu monto a estrutura completa do projeto automaticamente.</span>
+            </div>
+        `;
+    }
     return `
         <div class="series-list-stack">
             ${episodes.map((episode) => `
@@ -1578,6 +2001,27 @@ function _seriesRenderRoteiroTab() {
                         <span class="series-status-pill">${esc(episode.status || "draft")}</span>
                     </div>
                     <p>${esc(episode.synopsis || "Sinopse ainda vazia. Use o chat ao lado para começar a estruturar o arco deste episódio.")}</p>
+                    <div class="series-meta-inline">
+                        <span>Duração: ${esc(_seriesFormatLongDuration(_seriesGetEpisodeDuration(episode)))}</span>
+                        <span>${Array.isArray(episode.storyboard) ? episode.storyboard.length : 0} cena(s)</span>
+                    </div>
+                    <div class="series-scene-grid">
+                        ${(Array.isArray(episode.storyboard) ? episode.storyboard : []).map((scene, sceneIndex) => `
+                            <article class="series-scene-mini-card">
+                                <span class="series-card-label">Cena ${esc(String(scene.scene_number || sceneIndex + 1))}</span>
+                                <strong>${esc(scene.title || `Cena ${sceneIndex + 1}`)}</strong>
+                                <p>${esc(scene.beat || "Beat ainda nao descrito.")}</p>
+                                <div class="series-meta-inline">
+                                    <span>${esc(scene.location || "Local a definir")}</span>
+                                    <span>${esc(_seriesFormatLongDuration(scene.duration_seconds))}</span>
+                                </div>
+                                <div class="series-chip-list compact">
+                                    ${(Array.isArray(scene.characters) ? scene.characters : []).slice(0, 4).map((item) => `<span class="series-chip">${esc(item)}</span>`).join("")}
+                                    ${(Array.isArray(scene.objects) ? scene.objects : []).slice(0, 3).map((item) => `<span class="series-chip">${esc(item)}</span>`).join("")}
+                                </div>
+                            </article>
+                        `).join("")}
+                    </div>
                     <div class="series-code-block">${esc(episode.script_text || "Nenhum roteiro gerado ainda para este episódio.")}</div>
                 </article>
             `).join("")}
@@ -1586,48 +2030,143 @@ function _seriesRenderRoteiroTab() {
 }
 
 function _seriesRenderPersonagensTab() {
-    const episodes = _seriesWorkspaceState.episodes || [];
-    const personaRows = episodes.filter((episode) => Array.isArray(episode.selected_persona_ids) && episode.selected_persona_ids.length > 0);
-    if (!personaRows.length) {
+    const characters = _seriesGetCharacters();
+    if (!characters.length) {
         return `
-            <div class="series-empty-card">
-                <strong>Nenhum personagem vinculado ainda.</strong>
-                <span>O workspace já está pronto para receber personas por episódio. Na próxima etapa, esse painel vai ligar diretamente às personas e vozes existentes do CriaVideo.</span>
+            <div class="series-empty-card series-empty-card-actionable">
+                <strong>Nenhum personagem criado ainda.</strong>
+                <span>Adicione personagens para definir persona, voz, visual e função dramatica dentro do projeto.</span>
+                <button class="btn btn-primary btn-sm" type="button" data-series-add-character>Adicionar personagem</button>
             </div>
         `;
     }
     return `
-        <div class="series-list-stack">
-            ${personaRows.map((episode) => `
-                <article class="series-story-card">
-                    <div class="series-story-card-head">
+        <div class="series-section-head">
+            <div>
+                <span class="series-card-label">Persona e voz</span>
+                <h3>Personagens do projeto</h3>
+            </div>
+            <button class="btn btn-primary btn-sm" type="button" data-series-add-character>Adicionar personagem</button>
+        </div>
+        <div class="series-character-grid">
+            ${characters.map((character, index) => {
+                const profileId = parseInt(character.persona_profile_id || "0", 10) || 0;
+                const personaType = _seriesGuessPersonaTypeForCharacter(character);
+                const profile = _seriesFindPersonaProfile(profileId, personaType);
+                const imageUrl = _editorResolveMediaUrl(character.image_url || character.image_path || profile?.image_url || profile?.image_path || "");
+                const voiceProfileId = parseInt(character.voice_profile_id || profile?.voice_profile_id || "0", 10) || 0;
+                return `
+                <article class="series-character-card">
+                    <div class="series-character-card-top">
+                        <div class="series-character-avatar${imageUrl ? " has-image" : ""}">
+                            ${imageUrl
+                                ? `<img src="${esc(imageUrl)}" alt="${esc(character.name || `Personagem ${index + 1}`)}">`
+                                : `<span>${esc(String(character.name || "?").trim().charAt(0) || "?")}</span>`}
+                        </div>
                         <div>
-                            <span class="series-card-label">${esc(`T${episode.season_number} · E${episode.episode_number}`)}</span>
-                            <h3>${esc(episode.title || `Episódio ${episode.episode_number}`)}</h3>
+                            <span class="series-card-label">Personagem</span>
+                            <h3>${esc(character.name || `Personagem ${index + 1}`)}</h3>
+                            <p>${esc(character.role || "Funcao dramatica a definir.")}</p>
                         </div>
                     </div>
-                    <p>Personas vinculadas: ${esc((episode.selected_persona_ids || []).join(", "))}</p>
+                    <div class="series-field-grid">
+                        <label class="series-field-label">
+                            <span>Nome</span>
+                            <input class="series-inline-input" type="text" value="${esc(character.name || "")}" data-series-character-index="${index}" data-series-character-field="name">
+                        </label>
+                        <label class="series-field-label">
+                            <span>Tipo</span>
+                            <select class="series-inline-select" data-series-character-index="${index}" data-series-character-field="persona_type">
+                                ${REALISTIC_PERSONA_TYPES.map((type) => `<option value="${type}"${type === personaType ? " selected" : ""}>${esc(REALISTIC_PERSONA_LABELS[type] || type)}</option>`).join("")}
+                            </select>
+                        </label>
+                    </div>
+                    <label class="series-field-label">
+                        <span>Papel na historia</span>
+                        <input class="series-inline-input" type="text" value="${esc(character.role || "")}" data-series-character-index="${index}" data-series-character-field="role">
+                    </label>
+                    <label class="series-field-label">
+                        <span>Resumo</span>
+                        <textarea class="series-inline-textarea" data-series-character-index="${index}" data-series-character-field="summary">${esc(character.summary || "")}</textarea>
+                    </label>
+                    <div class="series-chip-list compact">
+                        <span class="series-chip">${esc(profileId ? `Persona #${profileId}` : "Sem persona")}</span>
+                        <span class="series-chip">${esc(voiceProfileId ? `Voz #${voiceProfileId}` : "Sem voz")}</span>
+                    </div>
+                    <div class="series-card-actions">
+                        <button class="btn btn-primary btn-sm" type="button" data-series-character-persona="${index}">${profileId ? "Atualizar persona" : "Criar persona"}</button>
+                        <button class="btn btn-secondary btn-sm" type="button" data-series-character-voice="${index}" ${profileId ? "" : "disabled"}>Voz</button>
+                        <button class="btn btn-secondary btn-sm" type="button" data-series-remove-character="${index}">Remover</button>
+                    </div>
                 </article>
-            `).join("")}
+            `;
+            }).join("")}
         </div>
     `;
 }
 
-function _seriesRenderStoryboardTab() {
-    const episodes = _seriesWorkspaceState.episodes || [];
+function _seriesRenderStoryboardBank(kind, title, items, emptyText) {
+    const bankKind = kind === "objects" ? "objects" : "scenes";
+    const itemLabel = bankKind === "objects" ? "Objeto" : "Cena";
     return `
-        <div class="series-card-grid two-up">
-            ${episodes.map((episode) => `
-                <article class="series-storyboard-card">
-                    <div class="series-storyboard-thumb">
-                        <span>${esc(`Storyboard ${episode.episode_number}`)}</span>
-                    </div>
-                    <div class="series-storyboard-body">
-                        <strong>${esc(episode.title || `Episódio ${episode.episode_number}`)}</strong>
-                        <p>${esc(episode.storyboard?.length ? `${episode.storyboard.length} bloco(s) de storyboard armazenado(s).` : "Nenhum storyboard salvo ainda. Use o chat para começar a decompor as cenas.")}</p>
-                    </div>
-                </article>
-            `).join("")}
+        <section class="series-storyboard-bank">
+            <div class="series-section-head">
+                <div>
+                    <span class="series-card-label">${esc(itemLabel)}</span>
+                    <h3>${esc(title)}</h3>
+                </div>
+                <button class="btn btn-secondary btn-sm" type="button" data-series-add-storyboard="${bankKind}">Adicionar ${esc(itemLabel.toLowerCase())}</button>
+            </div>
+            ${items.length ? `
+                <div class="series-storyboard-grid">
+                    ${items.map((item, index) => {
+                        const imageUrl = _editorResolveMediaUrl(item.image_url || item.image_path || "");
+                        return `
+                            <article class="series-storyboard-card series-storyboard-editor-card">
+                                <div class="series-storyboard-thumb${imageUrl ? " has-image" : ""}">
+                                    ${imageUrl
+                                        ? `<img src="${esc(imageUrl)}" alt="${esc(item.name || `${itemLabel} ${index + 1}`)}">`
+                                        : `<span>${esc(item.name || `${itemLabel} ${index + 1}`)}</span>`}
+                                </div>
+                                <div class="series-storyboard-body">
+                                    <label class="series-field-label">
+                                        <span>Nome</span>
+                                        <input class="series-inline-input" type="text" value="${esc(item.name || "")}" data-series-storyboard-kind="${bankKind}" data-series-storyboard-index="${index}" data-series-storyboard-field="name">
+                                    </label>
+                                    <label class="series-field-label">
+                                        <span>Resumo</span>
+                                        <textarea class="series-inline-textarea" data-series-storyboard-kind="${bankKind}" data-series-storyboard-index="${index}" data-series-storyboard-field="summary">${esc(item.summary || "")}</textarea>
+                                    </label>
+                                    <label class="series-field-label">
+                                        <span>Prompt da imagem</span>
+                                        <textarea class="series-inline-textarea short" data-series-storyboard-kind="${bankKind}" data-series-storyboard-index="${index}" data-series-storyboard-field="image_prompt">${esc(item.image_prompt || "")}</textarea>
+                                    </label>
+                                    <div class="series-card-actions">
+                                        <button class="btn btn-primary btn-sm" type="button" data-series-storyboard-image="${bankKind}:${index}">${imageUrl ? "Gerar nova imagem" : "Criar imagem"}</button>
+                                        <button class="btn btn-secondary btn-sm" type="button" data-series-remove-storyboard="${bankKind}:${index}">Remover</button>
+                                    </div>
+                                </div>
+                            </article>
+                        `;
+                    }).join("")}
+                </div>
+            ` : `
+                <div class="series-empty-card series-empty-card-actionable">
+                    <strong>Nenhum ${esc(itemLabel.toLowerCase())} cadastrado.</strong>
+                    <span>${esc(emptyText)}</span>
+                    <button class="btn btn-secondary btn-sm" type="button" data-series-add-storyboard="${bankKind}">Adicionar ${esc(itemLabel.toLowerCase())}</button>
+                </div>
+            `}
+        </section>
+    `;
+}
+
+function _seriesRenderStoryboardTab() {
+    const storyboard = _seriesGetStoryboardBank();
+    return `
+        <div class="series-list-stack">
+            ${_seriesRenderStoryboardBank("scenes", "Cenas do projeto", storyboard.scenes, "Transforme as cenas principais em cards visuais e gere as imagens de cada uma usando o criador de imagens existente.")}
+            ${_seriesRenderStoryboardBank("objects", "Objetos e elementos de cena", storyboard.objects, "Cadastre objetos, props e elementos recorrentes para manter consistencia visual ao longo da historia.")}
         </div>
     `;
 }
@@ -1672,7 +2211,7 @@ function _seriesRenderTabPanel() {
     if (_seriesWorkspaceState.activeTab === "timeline") {
         return _seriesRenderTimelineTab();
     }
-    return _seriesRenderTelaTab();
+    return _seriesRenderProjectTab();
 }
 
 function _seriesRenderChat() {
@@ -1688,10 +2227,13 @@ function _seriesRenderChat() {
 
     const hasSeries = Boolean(_seriesWorkspaceState.series);
     const threads = _seriesWorkspaceState.threads || [];
-    threadSelect.disabled = !hasSeries || !threads.length;
-    inputEl.disabled = !hasSeries || !_seriesWorkspaceState.activeThreadId;
-    sendBtn.disabled = !hasSeries || !_seriesWorkspaceState.activeThreadId;
-    newChatBtn.disabled = !hasSeries;
+    threadSelect.disabled = !hasSeries || !threads.length || _seriesWorkspaceState.planning;
+    inputEl.disabled = !hasSeries || !_seriesWorkspaceState.activeThreadId || _seriesWorkspaceState.planning;
+    sendBtn.disabled = !hasSeries || !_seriesWorkspaceState.activeThreadId || _seriesWorkspaceState.planning;
+    newChatBtn.disabled = !hasSeries || _seriesWorkspaceState.planning;
+    inputEl.placeholder = hasSeries
+        ? "Descreva o projeto, a duracao, os episodios, os personagens e o visual que voce quer montar..."
+        : "Crie um workspace para começar";
 
     threadSelect.innerHTML = threads.length
         ? threads.map((thread) => `<option value="${thread.id}"${Number(thread.id) === Number(_seriesWorkspaceState.activeThreadId || 0) ? " selected" : ""}>${esc(thread.title || "Novo bate-papo")}</option>`).join("")
@@ -1707,7 +2249,7 @@ function _seriesRenderChat() {
     const messages = _seriesWorkspaceState.messages || [];
     emptyEl.hidden = messages.length > 0;
     if (!messages.length) {
-        emptyEl.innerHTML = `<strong>${esc(_seriesTabLabel(_seriesWorkspaceState.activeTab))}</strong><span>Esta conversa já é persistida por workspace. Envie uma mensagem para começar.</span>`;
+        emptyEl.innerHTML = `<strong>${esc(_seriesTabLabel(_seriesWorkspaceState.activeTab))}</strong><span>Esta conversa fica salva no workspace. Escreva o briefing e eu reorganizo o projeto automaticamente.</span>`;
     }
     messagesEl.querySelectorAll(".series-chat-bubble").forEach((node) => node.remove());
     if (messages.length) {
@@ -1794,7 +2336,7 @@ async function _seriesLoadWorkspace(seriesId, options = {}) {
         _seriesWorkspaceState.threads = Array.isArray(payload.threads) ? payload.threads : [];
         _seriesWorkspaceState.activeThreadId = Number(payload.active_thread?.id || _seriesWorkspaceState.threads[0]?.id || 0);
         _seriesWorkspaceState.messages = Array.isArray(payload.messages) ? payload.messages : [];
-        _seriesWorkspaceState.activeTab = String(_seriesWorkspaceState.series?.workspace_state?.active_tab || _seriesWorkspaceState.activeTab || "tela").toLowerCase();
+        _seriesWorkspaceState.activeTab = _seriesNormalizeTab(_seriesWorkspaceState.series?.workspace_state?.active_tab || _seriesWorkspaceState.activeTab || "projeto");
         _seriesRenderWorkspace();
         await _seriesEnsureWelcomeMessage();
         if (!options.silent) {
@@ -1823,7 +2365,7 @@ async function _seriesCreateWorkspace(kind) {
         _seriesWorkspaceState.threads = payload.active_thread ? [payload.active_thread] : [];
         _seriesWorkspaceState.activeThreadId = Number(payload.active_thread?.id || 0);
         _seriesWorkspaceState.messages = [];
-        _seriesWorkspaceState.activeTab = "tela";
+        _seriesWorkspaceState.activeTab = "projeto";
         _seriesRenderWorkspace();
         await _seriesEnsureWelcomeMessage();
         showToast(`${_seriesKindLabel(kind)} criado no novo workspace.`, "success");
@@ -1875,7 +2417,7 @@ async function _seriesCreateThread() {
 
 async function _seriesSendMessage() {
     const inputEl = document.getElementById("series-chat-input");
-    if (!inputEl || !_seriesWorkspaceState.activeSeriesId || !_seriesWorkspaceState.activeThreadId) {
+    if (!inputEl || !_seriesWorkspaceState.activeSeriesId || !_seriesWorkspaceState.activeThreadId || _seriesWorkspaceState.planning) {
         return;
     }
     const content = String(inputEl.value || "").trim();
@@ -1883,8 +2425,9 @@ async function _seriesSendMessage() {
         showToast("Escreva uma mensagem antes de enviar.", "error");
         return;
     }
-    const assistantReply = _seriesBuildAssistantReply(content);
     try {
+        _seriesWorkspaceState.planning = true;
+        _seriesRenderChat();
         inputEl.value = "";
         await api(`/series/${_seriesWorkspaceState.activeSeriesId}/threads/${_seriesWorkspaceState.activeThreadId}/messages`, {
             method: "POST",
@@ -1894,17 +2437,27 @@ async function _seriesSendMessage() {
                 actions: [{ type: "note", target_tab: _seriesWorkspaceState.activeTab }],
             }),
         });
+        const planPayload = await api(`/series/${_seriesWorkspaceState.activeSeriesId}/plan`, {
+            method: "POST",
+            body: JSON.stringify({
+                message: content,
+                tab: _seriesWorkspaceState.activeTab,
+            }),
+        });
         await api(`/series/${_seriesWorkspaceState.activeSeriesId}/threads/${_seriesWorkspaceState.activeThreadId}/messages`, {
             method: "POST",
             body: JSON.stringify({
                 role: "assistant",
-                content: assistantReply,
-                actions: [{ type: "placeholder_reply", target_tab: _seriesWorkspaceState.activeTab }],
+                content: String(planPayload?.assistant_message || "Projeto atualizado.").trim() || "Projeto atualizado.",
+                actions: [{ type: "series_plan_generated", target_tab: _seriesWorkspaceState.activeTab }],
             }),
         });
-        await _seriesLoadThreadMessages(_seriesWorkspaceState.activeThreadId, { silent: true });
+        await _seriesLoadWorkspace(_seriesWorkspaceState.activeSeriesId, { silent: true });
     } catch (error) {
         showToast(`Erro ao enviar mensagem: ${error.message}`, "error");
+    } finally {
+        _seriesWorkspaceState.planning = false;
+        _seriesRenderChat();
     }
 }
 
@@ -1972,14 +2525,117 @@ function initSeriesWorkspace() {
 
             const tabBtn = event.target.closest("[data-series-tab]");
             if (tabBtn && _seriesWorkspaceState.series) {
-                _seriesWorkspaceState.activeTab = String(tabBtn.dataset.seriesTab || "tela").toLowerCase();
+                const nextTab = _seriesNormalizeTab(tabBtn.dataset.seriesTab || "projeto");
+                _seriesUpdateWorkspaceState({ active_tab: nextTab });
                 _seriesRenderWorkspace();
+                _seriesQueueWorkspaceStatePersist(150);
+                return;
+            }
+
+            const addCharacterBtn = event.target.closest("[data-series-add-character]");
+            if (addCharacterBtn) {
+                _seriesAddCharacterCard();
+                return;
+            }
+
+            const characterPersonaBtn = event.target.closest("[data-series-character-persona]");
+            if (characterPersonaBtn) {
+                void _seriesOpenCharacterPersonaBuilder(parseInt(characterPersonaBtn.dataset.seriesCharacterPersona || "-1", 10));
+                return;
+            }
+
+            const characterVoiceBtn = event.target.closest("[data-series-character-voice]");
+            if (characterVoiceBtn) {
+                void _seriesOpenCharacterVoiceBuilder(parseInt(characterVoiceBtn.dataset.seriesCharacterVoice || "-1", 10));
+                return;
+            }
+
+            const removeCharacterBtn = event.target.closest("[data-series-remove-character]");
+            if (removeCharacterBtn) {
+                _seriesRemoveCharacterCard(parseInt(removeCharacterBtn.dataset.seriesRemoveCharacter || "-1", 10));
+                return;
+            }
+
+            const addStoryboardBtn = event.target.closest("[data-series-add-storyboard]");
+            if (addStoryboardBtn) {
+                _seriesAddStoryboardItem(addStoryboardBtn.dataset.seriesAddStoryboard || "scenes");
+                return;
+            }
+
+            const storyboardImageBtn = event.target.closest("[data-series-storyboard-image]");
+            if (storyboardImageBtn) {
+                const [kind, rawIndex] = String(storyboardImageBtn.dataset.seriesStoryboardImage || "").split(":");
+                _seriesOpenStoryboardItemImageCreator(kind || "scenes", parseInt(rawIndex || "-1", 10));
+                return;
+            }
+
+            const removeStoryboardBtn = event.target.closest("[data-series-remove-storyboard]");
+            if (removeStoryboardBtn) {
+                const [kind, rawIndex] = String(removeStoryboardBtn.dataset.seriesRemoveStoryboard || "").split(":");
+                _seriesRemoveStoryboardItem(kind || "scenes", parseInt(rawIndex || "-1", 10));
                 return;
             }
 
             const openEpisodeBtn = event.target.closest("[data-series-open-episode]");
             if (openEpisodeBtn) {
                 _seriesOpenEpisodeLinkedProject(openEpisodeBtn.dataset.seriesOpenEpisode);
+            }
+        });
+
+        page.addEventListener("input", (event) => {
+            const characterField = event.target.closest("[data-series-character-field]");
+            if (characterField) {
+                const index = parseInt(characterField.dataset.seriesCharacterIndex || "-1", 10);
+                const field = String(characterField.dataset.seriesCharacterField || "").trim();
+                if (index >= 0 && field) {
+                    _seriesUpdateCharacterField(index, field, characterField.value);
+                }
+                return;
+            }
+
+            const storyboardField = event.target.closest("[data-series-storyboard-field]");
+            if (storyboardField) {
+                const kind = storyboardField.dataset.seriesStoryboardKind || "scenes";
+                const index = parseInt(storyboardField.dataset.seriesStoryboardIndex || "-1", 10);
+                const field = String(storyboardField.dataset.seriesStoryboardField || "").trim();
+                if (index >= 0 && field) {
+                    _seriesUpdateStoryboardField(kind, index, field, storyboardField.value);
+                }
+            }
+        });
+
+        page.addEventListener("change", (event) => {
+            const textCharacterField = event.target.closest("input[data-series-character-field], textarea[data-series-character-field]");
+            if (textCharacterField) {
+                const index = parseInt(textCharacterField.dataset.seriesCharacterIndex || "-1", 10);
+                const field = String(textCharacterField.dataset.seriesCharacterField || "").trim();
+                if (index >= 0 && field) {
+                    _seriesUpdateCharacterField(index, field, textCharacterField.value);
+                    _seriesRenderWorkspace();
+                }
+                return;
+            }
+
+            const characterField = event.target.closest("select[data-series-character-field]");
+            if (characterField) {
+                const index = parseInt(characterField.dataset.seriesCharacterIndex || "-1", 10);
+                const field = String(characterField.dataset.seriesCharacterField || "").trim();
+                if (index >= 0 && field) {
+                    _seriesUpdateCharacterField(index, field, characterField.value);
+                    _seriesRenderWorkspace();
+                }
+                return;
+            }
+
+            const storyboardField = event.target.closest("input[data-series-storyboard-field], textarea[data-series-storyboard-field]");
+            if (storyboardField) {
+                const kind = storyboardField.dataset.seriesStoryboardKind || "scenes";
+                const index = parseInt(storyboardField.dataset.seriesStoryboardIndex || "-1", 10);
+                const field = String(storyboardField.dataset.seriesStoryboardField || "").trim();
+                if (index >= 0 && field) {
+                    _seriesUpdateStoryboardField(kind, index, field, storyboardField.value);
+                    _seriesRenderWorkspace();
+                }
             }
         });
     }
@@ -2706,6 +3362,10 @@ function closeModal(id) {
     if (id === "modal-script-image-creator") {
         closeScriptImageCreatorExpandedResult();
         resetScriptImageCreatorModalState();
+        _scriptImageCreatorConsumer = null;
+    }
+    if (id === "modal-persona-manager-create") {
+        _seriesPersonaCreateHook = null;
     }
     if (id === "modal-edit-project") {
         _renameProjectId = 0;
@@ -13577,6 +14237,7 @@ let _scriptImageCreatorState = {
     selectedEstimateCredits: null,
 };
 let _scriptImageCreatorLaunchSource = "script";
+let _scriptImageCreatorConsumer = null;
 
 function _clearScriptImageCreatorEstimateTimer() {
     if (_scriptImageCreatorState.estimateTimer) {
@@ -14583,6 +15244,7 @@ function renderScriptImageCreatorResults() {
             const isEditingActive = _scriptImageCreatorState.editingIndex === index;
             const editButtonTitle = isEditingActive ? "Cancelar edicao" : "Editar imagem";
             const editButtonAction = isEditingActive ? "cancelScriptImageCreatorEdit()" : `startScriptImageCreatorEdit(${index})`;
+            const primaryActionLabel = _scriptImageCreatorConsumer ? "Usar no projeto" : "Criar video";
             return `
                 <article class="script-image-generator-result-card${isActive ? " is-active" : ""}">
                     <div class="script-image-generator-card-frame">
@@ -14603,7 +15265,7 @@ function renderScriptImageCreatorResults() {
                             </button>
                         </div>
                     </div>
-                    <button class="btn btn-primary btn-sm script-image-generator-create-btn" type="button"${busyAttr} onclick="createVideoFromScriptImageCreatorResult(${index})">Criar video</button>
+                    <button class="btn btn-primary btn-sm script-image-generator-create-btn" type="button"${busyAttr} onclick="createVideoFromScriptImageCreatorResult(${index})">${primaryActionLabel}</button>
                 </article>
             `;
         }).join("")}
@@ -14727,6 +15389,17 @@ async function useScriptImageCreatorResult(index) {
 
 async function createVideoFromScriptImageCreatorResult(index) {
     try {
+        if (typeof _scriptImageCreatorConsumer === "function") {
+            const item = _scriptImageCreatorState.generatedImages[Number.parseInt(String(index), 10) || 0];
+            if (!item?.image_url) {
+                throw new Error("Imagem nao encontrada para vincular ao projeto.");
+            }
+            await _scriptImageCreatorConsumer(item, index);
+            closeScriptImageCreatorModal();
+            showToast("Imagem vinculada ao projeto.", "success");
+            return;
+        }
+
         const launchSource = _scriptImageCreatorLaunchSource;
         await _addScriptImageCreatorResultToProject(index);
         closeScriptImageCreatorModal();
@@ -17295,6 +17968,13 @@ async function createPersonaVoiceFromDescription() {
 
         closeModal("modal-persona-voice-builder");
         showToast("Voz criada e vinculada a persona.", "success");
+        if (typeof window._seriesSyncCharacterVoiceFromPersona === "function") {
+            try {
+                window._seriesSyncCharacterVoiceFromPersona(pid, voiceProfileId);
+            } catch (syncError) {
+                console.warn("Failed to sync series character voice after persona voice creation:", syncError);
+            }
+        }
         await previewVoice(voiceProfileId);
     } catch (error) {
         if (statusEl) {
@@ -17546,6 +18226,14 @@ async function createPersonaFromManager() {
                     });
                 } catch (voiceError) {
                     console.warn("Failed to link voice profile to persona:", voiceError);
+                }
+            }
+
+            if (typeof _seriesPersonaCreateHook === "function") {
+                try {
+                    await _seriesPersonaCreateHook(createdId, response?.profile || null);
+                } catch (hookError) {
+                    console.warn("Failed to consume created persona inside series workspace:", hookError);
                 }
             }
 
