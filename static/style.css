@@ -9667,6 +9667,39 @@ th,
     font-size: 0.84rem;
 }
 
+.series-project-hero-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.8fr) minmax(300px, 0.82fr);
+    gap: 18px;
+}
+
+.series-project-story-card {
+    min-height: 520px;
+}
+
+.series-project-story-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 14px;
+}
+
+.series-project-story-copy p {
+    margin: 0;
+    color: rgba(233, 240, 249, 0.9);
+    font-size: 1rem;
+    line-height: 1.8;
+}
+
+.series-project-side-stack {
+    display: grid;
+    gap: 18px;
+}
+
+.series-project-side-card {
+    min-height: 0;
+}
+
 .series-project-summary-grid,
 .series-character-grid,
 .series-storyboard-grid,
@@ -9951,6 +9984,11 @@ th,
     border-color: rgba(255, 230, 120, 0.18);
 }
 
+.series-chat-bubble.working {
+    background: rgba(115, 173, 255, 0.08);
+    border-color: rgba(115, 173, 255, 0.18);
+}
+
 .series-chat-bubble-role {
     font-size: 0.72rem;
     font-weight: 700;
@@ -9964,6 +10002,33 @@ th,
     color: rgba(233, 240, 249, 0.9);
     line-height: 1.65;
     white-space: pre-wrap;
+}
+
+.series-chat-thinking {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: rgba(233, 240, 249, 0.95);
+}
+
+.series-chat-thinking strong {
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.series-chat-thinking-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-top-color: #ffd567;
+    animation: series-chat-spin 0.9s linear infinite;
+}
+
+@keyframes series-chat-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .series-chat-compose {
@@ -9990,6 +10055,10 @@ th,
 @media (max-width: 1100px) {
     .mode-selection-grid-create {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .series-project-hero-layout {
+        grid-template-columns: 1fr;
     }
 
     .series-workspace-stage {
@@ -10024,6 +10093,10 @@ th,
     .series-scene-grid,
     .series-field-grid {
         grid-template-columns: 1fr;
+    }
+
+    .series-project-story-card {
+        min-height: 0;
     }
 
     .series-section-head {

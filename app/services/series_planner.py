@@ -3,6 +3,7 @@ import logging
 import re
 from math import ceil
 from typing import Any
+import unicodedata
 
 import openai
 
@@ -41,6 +42,74 @@ _PERSONA_TYPE_ALIASES = {
     "custom": "personalizado",
     "character": "personalizado",
 }
+_NUMBER_WORDS = {
+    "zero": 0,
+    "meio": 0.5,
+    "meia": 0.5,
+    "one": 1,
+    "um": 1,
+    "uma": 1,
+    "two": 2,
+    "dois": 2,
+    "duas": 2,
+    "three": 3,
+    "tres": 3,
+    "four": 4,
+    "quatro": 4,
+    "five": 5,
+    "cinco": 5,
+    "six": 6,
+    "seis": 6,
+    "seven": 7,
+    "sete": 7,
+    "eight": 8,
+    "oito": 8,
+    "nine": 9,
+    "nove": 9,
+    "ten": 10,
+    "dez": 10,
+    "eleven": 11,
+    "onze": 11,
+    "twelve": 12,
+    "doze": 12,
+    "thirteen": 13,
+    "treze": 13,
+    "fourteen": 14,
+    "quatorze": 14,
+    "catorze": 14,
+    "fifteen": 15,
+    "quinze": 15,
+    "sixteen": 16,
+    "dezesseis": 16,
+    "dezasseis": 16,
+    "seventeen": 17,
+    "dezessete": 17,
+    "eighteen": 18,
+    "dezoito": 18,
+    "nineteen": 19,
+    "dezenove": 19,
+    "twenty": 20,
+    "vinte": 20,
+    "thirty": 30,
+    "trinta": 30,
+    "forty": 40,
+    "quarenta": 40,
+    "fifty": 50,
+    "cinquenta": 50,
+    "sixty": 60,
+    "sessenta": 60,
+    "seventy": 70,
+    "setenta": 70,
+    "eighty": 80,
+    "oitenta": 80,
+    "ninety": 90,
+    "noventa": 90,
+    "hundred": 100,
+    "cem": 100,
+    "cento": 100,
+}
+_NUMBER_PATTERN = "|".join(sorted((re.escape(key) for key in _NUMBER_WORDS), key=len, reverse=True))
+_NUMBER_FRAGMENT_PATTERN = rf"(?:\d+(?:[\.,]\d+)?|(?:{_NUMBER_PATTERN})(?:\s+e\s+(?:{_NUMBER_PATTERN}))*)"
 
 
 def _pick_model() -> str:
@@ -63,8 +132,176 @@ def _clean_text(value: Any, fallback: str = "") -> str:
     return text or fallback
 
 
+def _normalize_search_text(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    return "".join(char for char in text if not unicodedata.combining(char)).lower()
+
+
+def _parse_number_fragment(fragment: str) -> float | None:
+    text = _normalize_search_text(fragment).strip()
+    if not text:
+        return None
+    direct_match = re.fullmatch(r"\d+(?:[\.,]\d+)?", text)
+    if direct_match:
+        return float(text.replace(",", "."))
+
+    total = 0.0
+    for token in [item.strip() for item in text.split(" e ") if item.strip()]:
+        if token not in _NUMBER_WORDS:
+            return None
+        total += float(_NUMBER_WORDS[token])
+    return total if total > 0 else None
+
+
+def _find_number_fragment(patterns: list[str], text: str) -> float | None:
+    normalized_text = _normalize_search_text(text)
+    for pattern in patterns:
+        match = re.search(pattern, normalized_text, flags=re.IGNORECASE)
+        if not match:
+            continue
+        parsed = _parse_number_fragment(match.group(1))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _build_story_treatment(
+    title: str,
+    kind: str,
+    project_overview: str,
+    message: str,
+    characters: list[dict[str, Any]],
+    episodes: list[dict[str, Any]],
+) -> str:
+    cleaned_title = _clean_text(title, _default_title(kind))
+    lead_character_names = [str(item.get("name") or "").strip() for item in characters if str(item.get("name") or "").strip()]
+    lead_block = ", ".join(lead_character_names[:3]) if lead_character_names else "os personagens principais"
+    intro = (
+        f"{cleaned_title} acompanha {lead_block} em uma historia continua que parte do ponto de partida descrito no briefing e avanca do começo ao fim com conflitos, viradas e consequencias claras. "
+        f"O eixo principal do projeto e este: {project_overview or _clean_text(message, 'A historia principal sera desenvolvida em etapas bem definidas.')}"
+    )
+    tension = (
+        "A estrutura precisa sustentar uma progressao emocional longa, com cada bloco ampliando o impacto do anterior. "
+        "Nada deve parecer solto: o que e apresentado no inicio vira conflito no meio e cobra resolucao no final, para que Projeto, Roteiro, Personagens e Storyboard apontem para a mesma direcao dramatica."
+    )
+    parts: list[str] = [intro, tension]
+    for episode in episodes:
+        episode_number = int(episode.get("episode_number") or 0)
+        episode_title = _clean_text(episode.get("title"), f"Bloco {episode_number or 1}")
+        synopsis = _clean_text(episode.get("synopsis"), "Sem sinopse definida ainda.")
+        scenes = [item for item in (episode.get("scenes") if isinstance(episode.get("scenes"), list) else []) if isinstance(item, dict)]
+        scene_lines = []
+        for scene in scenes[:6]:
+            scene_title = _clean_text(scene.get("title"), "Cena")
+            scene_beat = _clean_text(scene.get("beat"), "A cena ainda precisa ser detalhada.")
+            scene_lines.append(f"{scene_title}: {scene_beat}")
+        middle = " ".join(scene_lines)
+        parts.append(
+            f"{episode_title} apresenta esta etapa da historia: {synopsis} {middle}".strip()
+        )
+    ending = (
+        "Ao final, a obra precisa entregar sensacao de percurso completo: o protagonista nao apenas atravessa eventos, mas muda de posicao, encara o passado, redefine suas relacoes e fecha o arco principal com consequencia visual e emocional."
+    )
+    parts.append(ending)
+    return "\n\n".join(part for part in parts if part.strip())
+
+
+def _extract_briefing_constraints(message: str, kind: str) -> dict[str, Any]:
+    normalized_message = _normalize_search_text(message)
+    explicit_aspect_ratio = _extract_aspect_ratio(message, "")
+    total_minutes_value = _find_number_fragment(
+        [
+            rf"duracao\s+total[^\d\w]*({_NUMBER_FRAGMENT_PATTERN})\s*(?:minutos|minuto|min)",
+            rf"tempo\s+total[^\d\w]*({_NUMBER_FRAGMENT_PATTERN})\s*(?:minutos|minuto|min)",
+            rf"(?:serie|filme|drama|obra|video|historia)\s+(?:curta|curto|longa|longo)?[^\d\w]{{0,20}}({_NUMBER_FRAGMENT_PATTERN})\s*(?:minutos|minuto|min)",
+            rf"({_NUMBER_FRAGMENT_PATTERN})\s*(?:minutos|minuto|min)",
+        ],
+        normalized_message,
+    )
+    total_seconds_value = _find_number_fragment(
+        [
+            rf"duracao\s+total[^\d\w]*({_NUMBER_FRAGMENT_PATTERN})\s*(?:segundos|segundo|secs|sec|s)",
+            rf"tempo\s+total[^\d\w]*({_NUMBER_FRAGMENT_PATTERN})\s*(?:segundos|segundo|secs|sec|s)",
+            rf"({_NUMBER_FRAGMENT_PATTERN})\s*(?:segundos|segundo|secs|sec|s)",
+        ],
+        normalized_message,
+    )
+    episode_minutes_value = _find_number_fragment(
+        [
+            rf"episodios?\s+de\s+({_NUMBER_FRAGMENT_PATTERN})\s*(?:minutos|minuto|min)",
+            rf"capitulos?\s+de\s+({_NUMBER_FRAGMENT_PATTERN})\s*(?:minutos|minuto|min)",
+            rf"cada\s+episodio[^\d\w]*({_NUMBER_FRAGMENT_PATTERN})\s*(?:minutos|minuto|min)",
+            rf"cada\s+capitulo[^\d\w]*({_NUMBER_FRAGMENT_PATTERN})\s*(?:minutos|minuto|min)",
+        ],
+        normalized_message,
+    )
+    episode_seconds_value = _find_number_fragment(
+        [
+            rf"episodios?\s+de\s+({_NUMBER_FRAGMENT_PATTERN})\s*(?:segundos|segundo|secs|sec|s)",
+            rf"capitulos?\s+de\s+({_NUMBER_FRAGMENT_PATTERN})\s*(?:segundos|segundo|secs|sec|s)",
+            rf"cada\s+episodio[^\d\w]*({_NUMBER_FRAGMENT_PATTERN})\s*(?:segundos|segundo|secs|sec|s)",
+            rf"cada\s+capitulo[^\d\w]*({_NUMBER_FRAGMENT_PATTERN})\s*(?:segundos|segundo|secs|sec|s)",
+        ],
+        normalized_message,
+    )
+    episode_count_value = _find_number_fragment(
+        [
+            rf"({_NUMBER_FRAGMENT_PATTERN})\s*episodios?\b",
+            rf"({_NUMBER_FRAGMENT_PATTERN})\s*capitulos?\b",
+            rf"em\s+({_NUMBER_FRAGMENT_PATTERN})\s*partes\b",
+        ],
+        normalized_message,
+    )
+
+    total_duration_seconds = 0
+    if total_minutes_value is not None:
+        total_duration_seconds = int(round(total_minutes_value * 60))
+    elif total_seconds_value is not None:
+        total_duration_seconds = int(round(total_seconds_value))
+
+    episode_duration_seconds = 0
+    if kind != "film":
+        if episode_minutes_value is not None:
+            episode_duration_seconds = int(round(episode_minutes_value * 60))
+        elif episode_seconds_value is not None:
+            episode_duration_seconds = int(round(episode_seconds_value))
+
+    episode_count = int(round(episode_count_value)) if episode_count_value is not None else 0
+    if kind == "film":
+        episode_count = 1
+    elif not episode_count and total_duration_seconds and episode_duration_seconds:
+        episode_count = max(1, int(round(total_duration_seconds / max(episode_duration_seconds, 1))))
+
+    return {
+        "aspect_ratio": explicit_aspect_ratio,
+        "has_explicit_aspect_ratio": bool(explicit_aspect_ratio),
+        "target_duration_seconds": total_duration_seconds,
+        "has_explicit_target_duration": total_duration_seconds > 0,
+        "episode_duration_seconds": episode_duration_seconds,
+        "has_explicit_episode_duration": episode_duration_seconds > 0,
+        "episode_count": episode_count,
+        "has_explicit_episode_count": episode_count > 0,
+    }
+
+
+def _rebalance_scene_durations(scenes: list[dict[str, Any]], total_duration_seconds: int) -> list[dict[str, Any]]:
+    if not scenes:
+        return scenes
+    count = max(1, len(scenes))
+    base = max(5, int(total_duration_seconds // count))
+    remainder = max(0, int(total_duration_seconds - (base * count)))
+    balanced: list[dict[str, Any]] = []
+    for index, scene in enumerate(scenes):
+        extra = 1 if index < remainder else 0
+        next_scene = dict(scene)
+        next_scene["duration_seconds"] = base + extra
+        balanced.append(next_scene)
+    return balanced
+
+
 def _normalize_aspect_ratio(value: Any, fallback: str = "16:9") -> str:
-    raw = str(value or "").strip().lower().replace(" ", "")
+    raw = _normalize_search_text(value).replace(" ", "")
+    raw = raw.replace("x", ":").replace("/", ":").replace("×", ":")
     if raw in _ALLOWED_ASPECT_RATIOS:
         return raw
     return fallback if fallback in _ALLOWED_ASPECT_RATIOS else "16:9"
@@ -103,49 +340,40 @@ def _safe_positive_seconds(value: Any, fallback: int, minimum: int = 15, maximum
 
 
 def _extract_aspect_ratio(message: str, fallback: str = "16:9") -> str:
-    match = re.search(r"\b(1:1|16:9|9:16|4:3|3:4)\b", str(message or ""))
-    return _normalize_aspect_ratio(match.group(1) if match else fallback, fallback)
+    normalized = _normalize_search_text(message)
+    for width, height in re.findall(r"\b(1|3|4|9|16)\s*(?::|x|/|×|por)\s*(1|3|4|9|16)\b", normalized):
+        ratio = f"{width}:{height}"
+        if ratio in _ALLOWED_ASPECT_RATIOS:
+            return ratio
+    if any(token in normalized for token in ["vertical", "reels", "shorts", "tiktok", "retrato", "portrait"]):
+        return "9:16"
+    if any(token in normalized for token in ["quadrado", "square"]):
+        return "1:1"
+    if any(token in normalized for token in ["horizontal", "landscape", "youtube"]):
+        return "16:9"
+    return _normalize_aspect_ratio(fallback, fallback)
 
 
 def _extract_total_duration_seconds(message: str, fallback: int) -> int:
-    text = str(message or "")
-    minute_match = re.search(r"\b(\d+(?:[\.,]\d+)?)\s*(?:minutos|minuto|min)\b", text, flags=re.IGNORECASE)
-    if minute_match:
-        try:
-            return _safe_positive_seconds(float(minute_match.group(1).replace(",", ".")) * 60, fallback)
-        except Exception:
-            pass
-    second_match = re.search(r"\b(\d+(?:[\.,]\d+)?)\s*(?:segundos|segundo|secs|sec|s)\b", text, flags=re.IGNORECASE)
-    if second_match:
-        try:
-            return _safe_positive_seconds(float(second_match.group(1).replace(",", ".")), fallback)
-        except Exception:
-            pass
+    constraints = _extract_briefing_constraints(message, "series")
+    if constraints.get("has_explicit_target_duration"):
+        return _safe_positive_seconds(constraints.get("target_duration_seconds"), fallback)
     return _safe_positive_seconds(fallback, fallback)
 
 
 def _extract_episode_duration_seconds(message: str, total_duration_seconds: int, fallback: int = 60) -> int:
-    text = str(message or "")
-    episode_match = re.search(
-        r"epis(?:odio|odios|ódio|ódios|odio|odio)s?[^\d]{0,24}(\d+(?:[\.,]\d+)?)\s*(minutos|minuto|min|segundos|segundo|secs|sec|s)",
-        text,
-        flags=re.IGNORECASE,
-    )
-    if episode_match:
-        raw_value = float(episode_match.group(1).replace(",", "."))
-        unit = episode_match.group(2).lower()
-        seconds = raw_value * 60 if unit.startswith("min") else raw_value
-        return _safe_positive_seconds(seconds, fallback, minimum=15, maximum=max(15, total_duration_seconds))
+    constraints = _extract_briefing_constraints(message, "series")
+    if constraints.get("has_explicit_episode_duration"):
+        return _safe_positive_seconds(constraints.get("episode_duration_seconds"), fallback, minimum=15, maximum=max(15, total_duration_seconds))
     return _safe_positive_seconds(fallback, fallback, minimum=15, maximum=max(15, total_duration_seconds))
 
 
 def _extract_episode_count(message: str, kind: str, total_duration_seconds: int, episode_duration_seconds: int, fallback: int) -> int:
     if kind == "film":
         return 1
-    text = str(message or "")
-    explicit = re.search(r"\b(\d{1,2})\s*epis(?:odio|odios|ódio|ódios|odio|odio)s?\b", text, flags=re.IGNORECASE)
-    if explicit:
-        return _safe_positive_int(explicit.group(1), fallback, minimum=1, maximum=24)
+    constraints = _extract_briefing_constraints(message, kind)
+    if constraints.get("has_explicit_episode_count"):
+        return _safe_positive_int(constraints.get("episode_count"), fallback, minimum=1, maximum=24)
     if episode_duration_seconds > 0:
         inferred = max(1, int(round(total_duration_seconds / max(episode_duration_seconds, 1))))
         return _safe_positive_int(inferred, fallback, minimum=1, maximum=24)
@@ -208,8 +436,9 @@ def _build_scene_blueprint(base_label: str, summary: str, characters: list[dict[
 
 
 def _build_fallback_plan(kind: str, existing_title: str, message: str, language: str = "pt-BR") -> dict[str, Any]:
+    constraints = _extract_briefing_constraints(message, kind)
     default_total = 1800 if kind == "film" else (1200 if kind == "drama" else 900)
-    total_duration_seconds = _extract_total_duration_seconds(message, default_total)
+    total_duration_seconds = _safe_positive_seconds(constraints.get("target_duration_seconds") or _extract_total_duration_seconds(message, default_total), default_total)
     episode_duration_seconds = total_duration_seconds if kind == "film" else _extract_episode_duration_seconds(message, total_duration_seconds, 60)
     episode_count = _extract_episode_count(message, kind, total_duration_seconds, episode_duration_seconds, 1 if kind == "film" else 5)
     title = _infer_title(existing_title, message, kind)
@@ -288,12 +517,22 @@ def _build_fallback_plan(kind: str, existing_title: str, message: str, language:
             }
         )
 
+    story_treatment = _build_story_treatment(
+        title=title,
+        kind=kind,
+        project_overview=_clean_text(message, "Projeto longo estruturado para desenvolver historia, personagens, cenas recorrentes e material visual."),
+        message=message,
+        characters=characters,
+        episodes=episodes,
+    )
+
     return {
         "title": title,
         "project_overview": _clean_text(
             message,
             "Projeto longo estruturado para desenvolver historia, personagens, cenas recorrentes e material visual.",
         ),
+        "story_treatment": story_treatment,
         "build_requirements": [
             "Definir o arco principal e o objetivo dramático da obra.",
             "Organizar episodios, ganchos e progressao do conflito.",
@@ -312,6 +551,7 @@ def _build_fallback_plan(kind: str, existing_title: str, message: str, language:
             f"Estruturei o projeto em {episode_count} bloco(s) com duracao total de {total_duration_seconds}s. "
             "A aba Projeto agora concentra a visao geral, a duracao total e os episodios; em Roteiro deixei a decomposicao por cenas para voce seguir no proximo passo."
         ),
+        "_briefing_constraints": constraints,
     }
 
 
@@ -407,14 +647,20 @@ def _normalize_episode(item: Any, index: int, kind: str, total_duration_seconds:
 def _normalize_plan(raw_payload: Any, fallback_plan: dict[str, Any], kind: str, existing_title: str) -> dict[str, Any]:
     raw = raw_payload if isinstance(raw_payload, dict) else {}
     normalized = dict(fallback_plan)
+    constraints = fallback_plan.get("_briefing_constraints") if isinstance(fallback_plan.get("_briefing_constraints"), dict) else {}
     normalized["title"] = _clean_text(raw.get("title"), fallback_plan["title"])
     normalized["project_overview"] = _clean_text(raw.get("project_overview") or raw.get("overview") or raw.get("logline"), fallback_plan["project_overview"])
+    normalized["story_treatment"] = _clean_text(raw.get("story_treatment") or raw.get("story_summary") or raw.get("full_story"), fallback_plan.get("story_treatment", normalized["project_overview"]))
     normalized["build_requirements"] = [
         _clean_text(item) for item in (raw.get("build_requirements") if isinstance(raw.get("build_requirements"), list) else []) if _clean_text(item)
     ] or fallback_plan["build_requirements"]
     normalized["aspect_ratio"] = _normalize_aspect_ratio(raw.get("aspect_ratio"), fallback_plan["aspect_ratio"])
     normalized["language"] = _clean_text(raw.get("language"), fallback_plan["language"])
     normalized["target_duration_seconds"] = _safe_positive_seconds(raw.get("target_duration_seconds"), fallback_plan["target_duration_seconds"], minimum=30, maximum=14400)
+    if constraints.get("has_explicit_aspect_ratio"):
+        normalized["aspect_ratio"] = _normalize_aspect_ratio(constraints.get("aspect_ratio"), normalized["aspect_ratio"])
+    if constraints.get("has_explicit_target_duration"):
+        normalized["target_duration_seconds"] = _safe_positive_seconds(constraints.get("target_duration_seconds"), normalized["target_duration_seconds"], minimum=30, maximum=14400)
 
     characters = [
         _normalize_character(item, index)
@@ -434,6 +680,11 @@ def _normalize_plan(raw_payload: Any, fallback_plan: dict[str, Any], kind: str, 
 
     requested_episode_count = raw.get("episode_count") or raw.get("episodes_count") or len(raw.get("episodes") or []) or fallback_plan["episode_count"]
     normalized_episode_count = _safe_positive_int(requested_episode_count, fallback_plan["episode_count"], minimum=1, maximum=24)
+    if constraints.get("has_explicit_episode_count"):
+        normalized_episode_count = _safe_positive_int(constraints.get("episode_count"), normalized_episode_count, minimum=1, maximum=24)
+    elif kind != "film" and constraints.get("has_explicit_target_duration") and constraints.get("has_explicit_episode_duration"):
+        inferred_from_constraints = max(1, int(round(normalized["target_duration_seconds"] / max(int(constraints.get("episode_duration_seconds") or 1), 1))))
+        normalized_episode_count = _safe_positive_int(inferred_from_constraints, normalized_episode_count, minimum=1, maximum=24)
     if kind == "film":
         normalized_episode_count = 1
 
@@ -454,6 +705,17 @@ def _normalize_plan(raw_payload: Any, fallback_plan: dict[str, Any], kind: str, 
         elif kind != "film":
             duplicate["title"] = f"Episodio {duplicate['episode_number']}"
         episodes.append(duplicate)
+    if kind != "film":
+        explicit_episode_duration = int(constraints.get("episode_duration_seconds") or 0)
+        if explicit_episode_duration > 0:
+            for episode in episodes:
+                episode["duration_seconds"] = explicit_episode_duration
+                episode["scenes"] = _rebalance_scene_durations(episode.get("scenes") or [], explicit_episode_duration)
+        elif normalized_episode_count > 0 and constraints.get("has_explicit_target_duration"):
+            distributed_duration = max(15, int(round(normalized["target_duration_seconds"] / max(normalized_episode_count, 1))))
+            for episode in episodes:
+                episode["duration_seconds"] = distributed_duration
+                episode["scenes"] = _rebalance_scene_durations(episode.get("scenes") or [], distributed_duration)
     normalized["episodes"] = episodes[:normalized_episode_count]
     normalized["episode_count"] = len(normalized["episodes"])
 
@@ -490,18 +752,19 @@ async def _build_openai_plan(kind: str, existing_title: str, message: str, langu
         "Sua tarefa e transformar um briefing curto em um projeto longo pronto para pre-producao. "
         "Responda APENAS um JSON valido. Nao use markdown, nao use comentarios e nao envolva em crases. "
         "O JSON deve conter exatamente estas chaves principais: "
-        "title, project_overview, build_requirements, aspect_ratio, language, target_duration_seconds, episode_count, characters, scenes, objects, episodes, assistant_reply. "
+        "title, project_overview, story_treatment, build_requirements, aspect_ratio, language, target_duration_seconds, episode_count, characters, scenes, objects, episodes, assistant_reply. "
         "Regras: "
         "1) project_overview em PT-BR, direto e concreto. "
-        "2) build_requirements deve listar o que precisa existir para construir a obra. "
-        "3) characters deve trazer name, role, summary e persona_type. persona_type deve ser um destes valores: homem, mulher, crianca, familia, natureza, desenho, personalizado. "
-        "4) scenes e objects devem ser bancos reutilizaveis para storyboard, cada item com name, summary e image_prompt. "
-        "5) episodes deve ser uma lista de blocos prontos para a aba Roteiro. Cada episodio precisa de episode_number, title, synopsis, duration_seconds e scenes. "
-        "6) Cada scene interna precisa de scene_number, title, beat, location, duration_seconds, characters, objects e image_prompt. "
-        "7) A duracao total e a quantidade de episodios devem respeitar o briefing do usuario sempre que houver informacao explicita. "
-        "8) Se kind for film, gere apenas um episodio principal. "
-        "9) Use nomes e detalhes fortes, mas sem excesso de floreio. "
-        "10) assistant_reply deve resumir o que foi montado e orientar o usuario para o proximo passo."
+        "2) story_treatment deve ser um texto longo, completo e corrido, contando a historia do começo ao fim e explicando o que acontece em cada parte principal. "
+        "3) build_requirements deve listar o que precisa existir para construir a obra. "
+        "4) characters deve trazer name, role, summary e persona_type. persona_type deve ser um destes valores: homem, mulher, crianca, familia, natureza, desenho, personalizado. "
+        "5) scenes e objects devem ser bancos reutilizaveis para storyboard, cada item com name, summary e image_prompt. "
+        "6) episodes deve ser uma lista de blocos prontos para a aba Roteiro. Cada episodio precisa de episode_number, title, synopsis, duration_seconds e scenes. "
+        "7) Cada scene interna precisa de scene_number, title, beat, location, duration_seconds, characters, objects e image_prompt. "
+        "8) A duracao total, o formato e a quantidade de episodios devem respeitar o briefing do usuario sempre que houver informacao explicita. "
+        "9) Se kind for film, gere apenas um episodio principal. "
+        "10) Use nomes e detalhes fortes, mas sem excesso de floreio. "
+        "11) assistant_reply deve resumir o que foi montado e orientar o usuario para o proximo passo."
     )
     user_prompt = (
         f"kind={kind}\n"

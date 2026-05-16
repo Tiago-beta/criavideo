@@ -244,6 +244,7 @@ async def _apply_generated_series_plan(
 
     project_plan = {
         "overview": str(plan.get("project_overview") or series.description or "").strip(),
+        "story_treatment": str(plan.get("story_treatment") or plan.get("project_overview") or series.description or "").strip(),
         "requirements": [str(item).strip() for item in (plan.get("build_requirements") or []) if str(item).strip()],
         "last_generated_at": datetime.utcnow().isoformat(),
         "last_generated_brief": str(plan.get("source_message") or "").strip(),

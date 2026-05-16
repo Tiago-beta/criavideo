@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v466 loaded");
+console.log("[CriaVideo] app.js v467 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -101,6 +101,9 @@ let _seriesWorkspaceState = {
     creating: false,
     loading: false,
     planning: false,
+    planningStatusLabel: "",
+    planningStatusTimer: null,
+    pendingUserMessage: "",
     activeSeriesId: 0,
     activeTab: "projeto",
     series: null,
@@ -110,6 +113,13 @@ let _seriesWorkspaceState = {
     messages: [],
     persistTimer: null,
 };
+const SERIES_PLANNING_STATUS_STEPS = [
+    "Analisando o briefing...",
+    "Pensando na estrutura completa...",
+    "Ajustando formato, duracao e episodios...",
+    "Escrevendo a historia do começo ao fim...",
+    "Montando personagens, cenas e objetos...",
+];
 
 const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
 const REALISTIC_PERSONA_LABELS = {
@@ -1503,11 +1513,21 @@ function _seriesClearPersistTimer() {
     }
 }
 
+function _seriesClearPlanningStatusTimer() {
+    if (_seriesWorkspaceState.planningStatusTimer) {
+        clearInterval(_seriesWorkspaceState.planningStatusTimer);
+        _seriesWorkspaceState.planningStatusTimer = null;
+    }
+}
+
 function _seriesResetWorkspaceState() {
     _seriesClearPersistTimer();
+    _seriesClearPlanningStatusTimer();
     _seriesWorkspaceState.creating = false;
     _seriesWorkspaceState.loading = false;
     _seriesWorkspaceState.planning = false;
+    _seriesWorkspaceState.planningStatusLabel = "";
+    _seriesWorkspaceState.pendingUserMessage = "";
     _seriesWorkspaceState.activeSeriesId = 0;
     _seriesWorkspaceState.activeTab = "projeto";
     _seriesWorkspaceState.series = null;
@@ -1552,6 +1572,7 @@ function _seriesGetProjectPlan() {
     const projectPlan = _seriesGetWorkspaceState().project_plan;
     return {
         overview: String(projectPlan?.overview || _seriesWorkspaceState.series?.description || "").trim(),
+        storyTreatment: String(projectPlan?.story_treatment || projectPlan?.overview || _seriesWorkspaceState.series?.description || "").trim(),
         requirements: Array.isArray(projectPlan?.requirements)
             ? projectPlan.requirements.map((item) => String(item || "").trim()).filter(Boolean)
             : [],
@@ -1613,6 +1634,40 @@ function _seriesCountEpisodeScenes() {
         const scenes = Array.isArray(episode?.storyboard) ? episode.storyboard : [];
         return total + scenes.length;
     }, 0);
+}
+
+function _seriesRenderTextParagraphs(text, emptyCopy) {
+    const trimmed = String(text || "").trim();
+    if (!trimmed) {
+        return `<p>${esc(emptyCopy)}</p>`;
+    }
+    return trimmed
+        .split(/\n+/)
+        .map((paragraph) => paragraph.trim())
+        .filter(Boolean)
+        .map((paragraph) => `<p>${esc(paragraph)}</p>`)
+        .join("");
+}
+
+function _seriesStartPlanningFeedback() {
+    _seriesClearPlanningStatusTimer();
+    let currentIndex = 0;
+    _seriesWorkspaceState.planningStatusLabel = SERIES_PLANNING_STATUS_STEPS[currentIndex];
+    _seriesWorkspaceState.planningStatusTimer = setInterval(() => {
+        if (!_seriesWorkspaceState.planning) {
+            _seriesClearPlanningStatusTimer();
+            return;
+        }
+        currentIndex = (currentIndex + 1) % SERIES_PLANNING_STATUS_STEPS.length;
+        _seriesWorkspaceState.planningStatusLabel = SERIES_PLANNING_STATUS_STEPS[currentIndex];
+        _seriesRenderChat();
+    }, 1700);
+}
+
+function _seriesStopPlanningFeedback() {
+    _seriesClearPlanningStatusTimer();
+    _seriesWorkspaceState.planningStatusLabel = "";
+    _seriesWorkspaceState.pendingUserMessage = "";
 }
 
 function _seriesBuildWelcomeMessage() {
@@ -1927,6 +1982,10 @@ function _seriesRenderProjectTab() {
     const projectPlan = _seriesGetProjectPlan();
     const characters = _seriesGetCharacters();
     const storyboard = _seriesGetStoryboardBank();
+    const longStoryMarkup = _seriesRenderTextParagraphs(
+        projectPlan.storyTreatment,
+        "Use o chat para descrever a historia completa. Aqui vai aparecer o texto-base longo do projeto, com o começo, o desenvolvimento, as viradas e o final que as outras abas vao seguir.",
+    );
     const requirementChips = projectPlan.requirements.length
         ? `<div class="series-chip-list">${projectPlan.requirements.map((item) => `<span class="series-chip">${esc(item)}</span>`).join("")}</div>`
         : '<div class="series-inline-note">Descreva no chat o tema, a duracao, o tom, os personagens e o visual. O painel ajusta automaticamente.</div>';
@@ -1935,23 +1994,27 @@ function _seriesRenderProjectTab() {
         ? "bloco principal"
         : (series.kind === "drama" ? "capitulo(s)" : "episodio(s)");
     return `
-        <div class="series-tab-grid series-tab-grid-overview">
-            <article class="series-data-card series-data-card-highlight">
+        <div class="series-project-hero-layout">
+            <article class="series-data-card series-project-story-card">
                 <span class="series-card-label">Projeto</span>
                 <h3>${esc(series.title || "Sem título")}</h3>
-                <p>${esc(projectPlan.overview || series.description || "Use o chat para dizer o que voce quer criar. O projeto, o roteiro e os cards se organizam automaticamente a partir do briefing.")}</p>
+                <div class="series-project-story-copy">
+                    ${longStoryMarkup}
+                </div>
                 ${requirementChips}
             </article>
-            <article class="series-data-card">
-                <span class="series-card-label">Formato</span>
-                <strong>${esc(series.aspect_ratio || "16:9")}</strong>
-                <p>Idioma: ${esc(series.language || "pt-BR")}</p>
-            </article>
-            <article class="series-data-card">
-                <span class="series-card-label">Duração-alvo</span>
-                <strong>${esc(_seriesFormatLongDuration(series.target_duration_seconds))}</strong>
-                <p>Tempo total do projeto. Hoje existem ${episodes.length} ${scopeCopy}, ${characters.length} personagem(ns) e ${totalVisualItems} item(ns) visuais planejados.</p>
-            </article>
+            <div class="series-project-side-stack">
+                <article class="series-data-card series-project-side-card">
+                    <span class="series-card-label">Formato</span>
+                    <strong>${esc(series.aspect_ratio || "16:9")}</strong>
+                    <p>Idioma: ${esc(series.language || "pt-BR")}</p>
+                </article>
+                <article class="series-data-card series-project-side-card">
+                    <span class="series-card-label">Duração-alvo</span>
+                    <strong>${esc(_seriesFormatLongDuration(series.target_duration_seconds))}</strong>
+                    <p>Tempo total do projeto. Hoje existem ${episodes.length} ${scopeCopy}, ${characters.length} personagem(ns) e ${totalVisualItems} item(ns) visuais planejados.</p>
+                </article>
+            </div>
         </div>
         <div class="series-project-summary-grid">
             <article class="series-mini-card">
@@ -2231,6 +2294,7 @@ function _seriesRenderChat() {
     inputEl.disabled = !hasSeries || !_seriesWorkspaceState.activeThreadId || _seriesWorkspaceState.planning;
     sendBtn.disabled = !hasSeries || !_seriesWorkspaceState.activeThreadId || _seriesWorkspaceState.planning;
     newChatBtn.disabled = !hasSeries || _seriesWorkspaceState.planning;
+    sendBtn.textContent = _seriesWorkspaceState.planning ? "Pensando..." : "Enviar";
     inputEl.placeholder = hasSeries
         ? "Descreva o projeto, a duracao, os episodios, os personagens e o visual que voce quer montar..."
         : "Crie um workspace para começar";
@@ -2247,16 +2311,37 @@ function _seriesRenderChat() {
     }
 
     const messages = _seriesWorkspaceState.messages || [];
-    emptyEl.hidden = messages.length > 0;
-    if (!messages.length) {
+    const renderedMessages = [...messages];
+    if (_seriesWorkspaceState.pendingUserMessage) {
+        renderedMessages.push({
+            role: "user",
+            content: _seriesWorkspaceState.pendingUserMessage,
+            local_pending: true,
+        });
+    }
+    if (_seriesWorkspaceState.planning) {
+        renderedMessages.push({
+            role: "assistant",
+            content: _seriesWorkspaceState.planningStatusLabel || "Pensando na resposta...",
+            working: true,
+        });
+    }
+    emptyEl.hidden = renderedMessages.length > 0;
+    if (!renderedMessages.length) {
         emptyEl.innerHTML = `<strong>${esc(_seriesTabLabel(_seriesWorkspaceState.activeTab))}</strong><span>Esta conversa fica salva no workspace. Escreva o briefing e eu reorganizo o projeto automaticamente.</span>`;
     }
     messagesEl.querySelectorAll(".series-chat-bubble").forEach((node) => node.remove());
-    if (messages.length) {
-        messagesEl.insertAdjacentHTML("beforeend", messages.map((message) => `
-            <article class="series-chat-bubble ${message.role === "user" ? "user" : "assistant"}">
+    if (renderedMessages.length) {
+        messagesEl.insertAdjacentHTML("beforeend", renderedMessages.map((message) => `
+            <article class="series-chat-bubble ${message.role === "user" ? "user" : "assistant"}${message.working ? " working" : ""}">
                 <span class="series-chat-bubble-role">${esc(message.role === "user" ? "Você" : "Assistente")}</span>
-                <p>${esc(message.content || "")}</p>
+                ${message.working ? `
+                    <div class="series-chat-thinking" aria-live="polite">
+                        <span class="series-chat-thinking-spinner" aria-hidden="true"></span>
+                        <strong>${esc(message.content || "Pensando na resposta...")}</strong>
+                    </div>
+                ` : ""}
+                <p>${message.working ? "Estou montando o projeto, ajustando formato, tempo, personagens e a historia-base completa." : esc(message.content || "")}</p>
             </article>
         `).join(""));
         messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -2316,6 +2401,7 @@ async function _seriesLoadThreadMessages(threadId, options = {}) {
     const payload = await api(`/series/${_seriesWorkspaceState.activeSeriesId}/threads/${threadId}/messages`);
     _seriesWorkspaceState.activeThreadId = Number(payload.thread?.id || threadId || 0);
     _seriesWorkspaceState.messages = Array.isArray(payload.messages) ? payload.messages : [];
+    _seriesWorkspaceState.pendingUserMessage = "";
     _seriesRenderChat();
     if (!options.silent) {
         showToast("Bate-papo carregado.", "success");
@@ -2336,6 +2422,7 @@ async function _seriesLoadWorkspace(seriesId, options = {}) {
         _seriesWorkspaceState.threads = Array.isArray(payload.threads) ? payload.threads : [];
         _seriesWorkspaceState.activeThreadId = Number(payload.active_thread?.id || _seriesWorkspaceState.threads[0]?.id || 0);
         _seriesWorkspaceState.messages = Array.isArray(payload.messages) ? payload.messages : [];
+        _seriesWorkspaceState.pendingUserMessage = "";
         _seriesWorkspaceState.activeTab = _seriesNormalizeTab(_seriesWorkspaceState.series?.workspace_state?.active_tab || _seriesWorkspaceState.activeTab || "projeto");
         _seriesRenderWorkspace();
         await _seriesEnsureWelcomeMessage();
@@ -2427,6 +2514,8 @@ async function _seriesSendMessage() {
     }
     try {
         _seriesWorkspaceState.planning = true;
+        _seriesWorkspaceState.pendingUserMessage = content;
+        _seriesStartPlanningFeedback();
         _seriesRenderChat();
         inputEl.value = "";
         await api(`/series/${_seriesWorkspaceState.activeSeriesId}/threads/${_seriesWorkspaceState.activeThreadId}/messages`, {
@@ -2455,8 +2544,10 @@ async function _seriesSendMessage() {
         await _seriesLoadWorkspace(_seriesWorkspaceState.activeSeriesId, { silent: true });
     } catch (error) {
         showToast(`Erro ao enviar mensagem: ${error.message}`, "error");
+        await _seriesLoadThreadMessages(_seriesWorkspaceState.activeThreadId, { silent: true });
     } finally {
         _seriesWorkspaceState.planning = false;
+        _seriesStopPlanningFeedback();
         _seriesRenderChat();
     }
 }
