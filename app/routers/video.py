@@ -5405,7 +5405,7 @@ class GenerateRealisticPromptRequest(BaseModel):
     style: str = "cinematic"
     engine: str = "wan2"
     duration: int = 5
-    interaction_persona: str = "natureza"
+    interaction_persona: str = "nenhum"
     persona_profile_id: int = 0
     persona_profile_ids: list[int] = Field(default_factory=list)
     custom_image_ids: list[str] = Field(default_factory=list)
@@ -5625,17 +5625,18 @@ async def generate_realistic_prompt_endpoint(
         if resolved_custom:
             custom_image_paths.append(str(resolved_custom))
 
+    effective_interaction_persona = interaction_persona if selected_persona_profile_ids else ""
     has_reference_image = bool(req.has_reference_image)
     reference_mode = "face_identity_only" if selected_persona_profile_ids else ""
     prompt_for_optimizer = topic_for_optimizer
-    prompt_for_optimizer = _inject_interaction_persona_instruction(prompt_for_optimizer, interaction_persona)
+    prompt_for_optimizer = _inject_interaction_persona_instruction(prompt_for_optimizer, effective_interaction_persona)
 
     if selected_persona_profile_ids:
         try:
             resolved_personas, persona_image_paths = await resolve_persona_reference_images(
                 db=db,
                 user_id=user["id"],
-                persona_type=interaction_persona,
+                persona_type=effective_interaction_persona,
                 persona_profile_ids=selected_persona_profile_ids,
                 ensure_default=False,
             )
@@ -5744,7 +5745,7 @@ async def generate_realistic_prompt_endpoint(
         topic_seed=topic,
     )
 
-    final_prompt = _inject_interaction_persona_instruction(temporal_prompt, interaction_persona)
+    final_prompt = _inject_interaction_persona_instruction(temporal_prompt, effective_interaction_persona)
     if has_reference_image:
         final_prompt = _ensure_reference_image_instruction(final_prompt, reference_mode=reference_mode)
 
@@ -5779,7 +5780,7 @@ class GenerateRealisticRequest(BaseModel):
     clip_duration: float = 0  # Duration of the audio clip (0 = full)
     prompt_optimized: bool = False
     realistic_style: str = ""
-    interaction_persona: str = "natureza"
+    interaction_persona: str = "nenhum"
     persona_profile_id: int = 0
     persona_profile_ids: list[int] = Field(default_factory=list)
     disable_persona_reference: bool = False
@@ -5892,8 +5893,12 @@ async def generate_realistic_endpoint(
 
     use_last_image_as_final_frame = bool(req.use_last_image_as_final_frame) and engine == "seedance"
 
-    disable_persona_reference = bool(req.disable_persona_reference) and engine == "grok" and not bool(upload_ids)
+    disable_persona_reference = not bool(upload_ids) and (
+        bool(req.disable_persona_reference)
+        or not bool(selected_persona_profile_ids)
+    )
     if disable_persona_reference:
+        interaction_persona = ""
         selected_persona_profile_id = 0
         selected_persona_profile_ids = []
 
@@ -5982,8 +5987,8 @@ async def generate_realistic_endpoint(
     dialogue_duration = max(1, min(duration, int(req.dialogue_duration or duration))) if dialogue_enabled else 0
 
     has_reference_image = bool(image_path_str)
-    if not has_reference_image and not (engine == "grok" and disable_persona_reference):
-        raise HTTPException(status_code=400, detail="Vídeo realista exige imagem de referência.")
+    if engine == "avatar31" and not has_reference_image:
+        raise HTTPException(status_code=400, detail="Avatar 3.1 Plus exige uma imagem de referência válida.")
 
     if disable_persona_reference and not preserve_prompt_exactly:
         prompt = _inject_interaction_persona_instruction(prompt, interaction_persona)

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v467 loaded");
+console.log("[CriaVideo] app.js v468 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -11388,8 +11388,9 @@ async function workflowRunSeedance() {
         workflowFocusNode("prompt");
         return;
     }
-    if (!workflowHasImageReference()) {
-        alert("Adicione ou gere pelo menos uma imagem no workflow antes de criar o vídeo.");
+    const workflowEngine = document.getElementById("workflow-engine")?.value || "wan2";
+    if (workflowEngine === "avatar31" && !workflowHasImageReference()) {
+        alert("Avatar 3.1 Plus exige uma imagem no workflow.");
         workflowFocusNode("images");
         return;
     }
@@ -11417,17 +11418,24 @@ async function workflowRunSeedance() {
 
     try {
         const imageUploadIds = await workflowConnectedImageUploadIds(runTemplateKey);
-        if (!imageUploadIds.length) throw new Error("Conecte pelo menos uma imagem à entrada do Gerador de vídeo.");
         await workflowEnsureUploadedVideos(runTemplateKey);
         const workflowAudioUploadId = await workflowEnsureUploadedAudio(runTemplateKey);
-        workflowSetOutputProgress(16, "Enviando referências para o gerador...", runTemplateKey);
+        if (workflowEngine === "avatar31" && !imageUploadIds.length) {
+            throw new Error("Avatar 3.1 Plus exige uma imagem e um áudio no workflow.");
+        }
+        workflowSetOutputProgress(
+            16,
+            imageUploadIds.length
+                ? "Enviando referências para o gerador..."
+                : "Iniciando gerador sem referências visuais...",
+            runTemplateKey,
+        );
 
         workflowSyncEngineDurationOptions();
         const duration = parseInt(document.getElementById("workflow-duration")?.value || "10", 10) || 10;
         const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
         const resolution = document.getElementById("workflow-resolution")?.value || "720p";
-        const workflowEngine = document.getElementById("workflow-engine")?.value || "wan2";
         const useLastImageAsFinalFrame = workflowEngine === "seedance"
             && !!document.getElementById("workflow-seedance-last-frame")?.checked;
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
@@ -13103,9 +13111,6 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         const referencePhotosToUpload = engine === "avatar31"
             ? scriptPhotos.slice(-1)
             : scriptPhotos.slice(0, 6);
-        if (disablePersonaReference && engine !== "grok" && !shouldUploadReferenceImage) {
-            throw new Error("O modo Nenhum sem foto funciona no Cria 3.0 speed. Para outros motores, envie uma imagem de referência.");
-        }
         if (engine === "avatar31" && !selectedTevoxiSong && !hasAttachedAudio) {
             throw new Error("Avatar 3.1 Plus exige um áudio enviado ou um trecho do Tevoxi.");
         }
@@ -17135,7 +17140,7 @@ function _supportsInlineMultiPersona(context) {
 }
 
 function _supportsPersonaNoReference(context) {
-    return context === "wizard" || context === "script" || context === "ai" || context === "pilot";
+    return context === "wizard" || context === "script" || context === "ai" || context === "auto" || context === "pilot";
 }
 
 function _isPersonaNoReferenceEnabled(context, personaType) {
@@ -17144,7 +17149,10 @@ function _isPersonaNoReferenceEnabled(context, personaType) {
     }
     const type = _normalizeRealisticPersonaType(personaType);
     const ctx = _personaNoReferenceByContext[context] || {};
-    return !!ctx[type];
+    if (Object.prototype.hasOwnProperty.call(ctx, type)) {
+        return !!ctx[type];
+    }
+    return _getSelectedPersonaProfileIds(context, type).length === 0;
 }
 
 function _setPersonaNoReferenceEnabled(context, personaType, enabled) {
@@ -17350,13 +17358,13 @@ function _renderPersonaPreview(context) {
                     class="realistic-persona-option realistic-persona-option-none${noneSelectedClass}"
                     type="button"
                     onclick="selectNoPersonaReference('${context}')"
-                    title="Nenhum (IA escolhe a face pelo prompt)"
-                    aria-label="Nenhum (IA escolhe a face pelo prompt)"
+                    title="Nenhum (seguir só o prompt e referências opcionais)"
+                    aria-label="Nenhum (seguir só o prompt e referências opcionais)"
                     aria-pressed="${noReferenceEnabled ? "true" : "false"}">
                     <span class="realistic-persona-none-label">Nenhum</span>
                 </button>
             </div>
-            <div class="realistic-persona-empty">Sem persona fixa: a IA decide o rosto com base no prompt.</div>
+            <div class="realistic-persona-empty">Sem persona fixa: a IA segue apenas o prompt e as referências opcionais enviadas.</div>
         `;
         return;
     }
@@ -17383,8 +17391,8 @@ function _renderPersonaPreview(context) {
                     class="realistic-persona-option realistic-persona-option-none${noReferenceEnabled ? " selected" : ""}"
                     type="button"
                     onclick="selectNoPersonaReference('${context}')"
-                    title="Nenhum (IA escolhe a face pelo prompt)"
-                    aria-label="Nenhum (IA escolhe a face pelo prompt)"
+                    title="Nenhum (seguir só o prompt e referências opcionais)"
+                    aria-label="Nenhum (seguir só o prompt e referências opcionais)"
                     aria-pressed="${noReferenceEnabled ? "true" : "false"}">
                     <span class="realistic-persona-none-label">Nenhum</span>
                 </button>
@@ -21818,11 +21826,12 @@ function _renderAutoRealisticPersonaCompositionSummary() {
     container.innerHTML = selectedTypes.map((type) => {
         const label = REALISTIC_PERSONA_LABELS[type] || type;
         const ids = _getSelectedPersonaProfileIds("auto", type);
+        const noReferenceEnabled = _isPersonaNoReferenceEnabled("auto", type);
         const detail = ids.length > 1
             ? `${ids.length} personas`
             : ids.length === 1
                 ? "1 persona"
-                : "carregando";
+                : (noReferenceEnabled ? "Nenhum" : "carregando");
         return `
             <span class="auto-pilot-persona-chip">
                 ${esc(label)} • ${esc(detail)}
@@ -21874,10 +21883,20 @@ async function _collectAutoRealisticPersonaCandidatesForSave() {
     const candidates = [];
 
     for (const type of selectedTypes) {
+        const noReferenceEnabled = _isPersonaNoReferenceEnabled("auto", type);
         const personaProfileIds = await _ensurePersonaSelections("auto", type);
         if (!personaProfileIds.length) {
-            const label = REALISTIC_PERSONA_LABELS[type] || type;
-            throw new Error(`Crie uma ou mais personas para ${label} antes de salvar a composicao.`);
+            if (!noReferenceEnabled) {
+                const label = REALISTIC_PERSONA_LABELS[type] || type;
+                throw new Error(`Crie uma ou mais personas para ${label} antes de salvar a composicao.`);
+            }
+            candidates.push({
+                persona_type: type,
+                persona_profile_id: 0,
+                persona_profile_ids: [],
+                disable_persona_reference: true,
+            });
+            continue;
         }
         candidates.push({
             persona_type: type,

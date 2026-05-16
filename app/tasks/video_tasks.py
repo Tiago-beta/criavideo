@@ -2624,6 +2624,7 @@ async def run_realistic_video_pipeline(project_id: int):
             provider_has_audio = await _video_has_audio_stream(output_path)
             provider_generate_audio = bool(tags.get("provider_generate_audio", False))
             provider_missing_audio = engine in {"seedance", "avatar31"} and provider_generate_audio and not provider_has_audio
+            seedance_missing_audio = engine == "seedance" and provider_missing_audio
             if provider_missing_audio:
                 logger.warning(
                     "%s returned video without native audio for project %s.",
