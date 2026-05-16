@@ -9,7 +9,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-CREDIT_PRICING_RULES_VERSION = "v3.0"
+CREDIT_PRICING_RULES_VERSION = "v3.1"
 
 # Business rules
 USD_TO_BRL = 4.9756
@@ -17,6 +17,10 @@ USD_PER_CREDIT = 0.01
 USD_CENTS_PER_USD = 100
 MARGIN_MULTIPLIER = 1.0
 INITIAL_FREE_CREDITS = 100
+ANNUAL_PLAN_MONTHS = 12
+MONTHLY_PLAN_DAYS = 30
+ANNUAL_PLAN_DAYS = 365
+ANNUAL_PLAN_DISCOUNT_PERCENT = 20
 
 
 def _usd_to_brl_amount(value: float | int) -> float:
@@ -26,6 +30,56 @@ def _usd_to_brl_amount(value: float | int) -> float:
 def _credits_to_usd_amount(credits: int) -> float:
     return round(max(0, int(credits or 0)) * USD_PER_CREDIT, 2)
 
+
+def _normalize_billing_period(billing_period: str) -> str:
+    normalized = str(billing_period or "monthly").strip().lower() or "monthly"
+    return "annual" if normalized == "annual" else "monthly"
+
+
+def _annual_plan_price_usd(monthly_price_usd: float | int) -> float:
+    normalized_price = max(0.0, float(monthly_price_usd or 0.0))
+    discounted_total = normalized_price * ANNUAL_PLAN_MONTHS * (1 - (ANNUAL_PLAN_DISCOUNT_PERCENT / 100.0))
+    return round(discounted_total, 2)
+
+
+def _annotate_subscription_plan(plan: dict[str, Any]) -> None:
+    monthly_price_usd = round(max(0.0, float(plan.get("priceUsd") or 0.0)), 2)
+    monthly_credits = max(0, int(plan.get("monthlyCredits") or 0))
+    is_free_plan = str(plan.get("code") or "free") == "free"
+    annual_credits = 0 if is_free_plan else monthly_credits * ANNUAL_PLAN_MONTHS
+    annual_price_usd = 0.0 if is_free_plan else _annual_plan_price_usd(monthly_price_usd)
+    monthly_brl = _usd_to_brl_amount(monthly_price_usd)
+    annual_brl = _usd_to_brl_amount(annual_price_usd)
+    monthly_label = plan.get("billingLabel") or f"Ciclo mensal de {MONTHLY_PLAN_DAYS} dias"
+    annual_label = monthly_label if is_free_plan else f"Ciclo anual de {ANNUAL_PLAN_DAYS} dias"
+
+    plan["monthlyPriceUsd"] = monthly_price_usd
+    plan["monthlyPrice"] = monthly_brl
+    plan["annualPriceUsd"] = annual_price_usd
+    plan["annualPrice"] = annual_brl
+    plan["annualCredits"] = annual_credits
+    plan["annualDiscountPercent"] = ANNUAL_PLAN_DISCOUNT_PERCENT
+    plan["billing"] = {
+        "monthly": {
+            "period": "monthly",
+            "label": "Mensal",
+            "days": MONTHLY_PLAN_DAYS,
+            "credits": monthly_credits,
+            "priceUsd": monthly_price_usd,
+            "price": monthly_brl,
+            "billingLabel": monthly_label,
+        },
+        "annual": {
+            "period": "annual",
+            "label": "Anual",
+            "days": ANNUAL_PLAN_DAYS,
+            "credits": annual_credits,
+            "priceUsd": annual_price_usd,
+            "price": annual_brl,
+            "billingLabel": annual_label,
+        },
+    }
+
 # Public package catalog used by backend + frontend.
 CREDIT_PACKAGES = [
     {
@@ -34,7 +88,7 @@ CREDIT_PACKAGES = [
         "priceUsd": _credits_to_usd_amount(500),
         "price": _usd_to_brl_amount(_credits_to_usd_amount(500)),
         "label": "Recarga 500",
-        "description": "Complemento rapido para continuar gerando.",
+        "description": "Complemento rápido para continuar gerando.",
     },
     {
         "code": "topup-1500",
@@ -43,7 +97,7 @@ CREDIT_PACKAGES = [
         "price": _usd_to_brl_amount(_credits_to_usd_amount(1500)),
         "label": "Recarga 1.500",
         "badge": "Mais usada",
-        "description": "Ideal para reforcar o ciclo atual sem trocar de plano.",
+        "description": "Ideal para reforçar o ciclo atual sem trocar de plano.",
     },
     {
         "code": "topup-5000",
@@ -52,7 +106,7 @@ CREDIT_PACKAGES = [
         "price": _usd_to_brl_amount(_credits_to_usd_amount(5000)),
         "label": "Recarga 5.000",
         "badge": "Maior saldo",
-        "description": "Volume extra para lotes grandes de imagens e videos.",
+        "description": "Volume extra para lotes grandes de imagens e vídeos.",
     },
 ]
 
@@ -65,16 +119,16 @@ CREDIT_SUBSCRIPTION_PLANS = [
         "comparisonCredits": INITIAL_FREE_CREDITS,
         "priceUsd": 0.0,
         "price": 0.0,
-        "billingLabel": "100 creditos iniciais",
+        "billingLabel": "100 créditos iniciais",
         "accent": "free",
         "ctaLabel": "Pacote atual",
         "description": "Teste o fluxo completo e recarregue quando precisar.",
         "benefits": [
-            "100 creditos para comecar",
+            "100 créditos para começar",
             "Recarga extra a qualquer momento",
-            "Uso em modelos de imagem e video",
+            "Uso em modelos de imagem e vídeo",
             "Comparativo de custo por modelo",
-            "Editor, automacoes e similar inclusos",
+            "Editor, automações e similar incluídos",
         ],
     },
     {
@@ -87,32 +141,32 @@ CREDIT_SUBSCRIPTION_PLANS = [
         "price": _usd_to_brl_amount(16.0),
         "billingLabel": "Ciclo mensal de 30 dias",
         "accent": "starter",
-        "description": "Para validar campanhas, criativos e videos curtos toda semana.",
+        "description": "Para validar campanhas, criativos e vídeos curtos toda semana.",
         "benefits": [
-            "1600 creditos por ciclo",
-            "Use em imagens, videos e workflow",
+            "1600 créditos por ciclo",
+            "Use em imagens, vídeos e workflow",
             "Recarga extra sem trocar de plano",
-            "Custos por segundo e por imagem visiveis",
-            "Ideal para operacao leve e recorrente",
+            "Custos por segundo e por imagem visíveis",
+            "Ideal para operação leve e recorrente",
         ],
     },
     {
         "code": "basic",
-        "name": "Basico",
-        "shortName": "Basico",
+        "name": "Básico",
+        "shortName": "Básico",
         "monthlyCredits": 2900,
         "comparisonCredits": 2900,
         "priceUsd": 29.0,
         "price": _usd_to_brl_amount(29.0),
         "billingLabel": "Ciclo mensal de 30 dias",
         "accent": "basic",
-        "description": "Mais folga para rodar imagens, editor e videos realistas no mes.",
+        "description": "Mais folga para rodar imagens, editor e vídeos realistas no mês.",
         "benefits": [
-            "2900 creditos por ciclo",
+            "2900 créditos por ciclo",
             "Melhor margem para workflow e similar",
             "Recarga extra sem perder o plano",
             "Tabela comparativa com todos os modelos",
-            "Pensado para producao semanal consistente",
+            "Pensado para produção semanal consistente",
         ],
     },
     {
@@ -127,13 +181,13 @@ CREDIT_SUBSCRIPTION_PLANS = [
         "accent": "professional",
         "badge": "Mais popular",
         "recommended": True,
-        "description": "Volume ideal para operacao continua com video, imagem e automacao.",
+        "description": "Volume ideal para operação contínua com vídeo, imagem e automação.",
         "benefits": [
-            "6900 creditos por ciclo",
-            "Cobertura forte para imagem e video",
+            "6900 créditos por ciclo",
+            "Cobertura forte para imagem e vídeo",
             "Recargas extras quando o saldo apertar",
-            "Leitura rapida de custo por modelo",
-            "Feito para rotina pesada de producao",
+            "Leitura rápida de custo por modelo",
+            "Feito para rotina pesada de produção",
         ],
     },
     {
@@ -147,16 +201,20 @@ CREDIT_SUBSCRIPTION_PLANS = [
         "billingLabel": "Ciclo mensal de 30 dias",
         "accent": "supreme",
         "badge": "Melhor valor",
-        "description": "Para volume alto de geracao e lotes intensos no mesmo mes.",
+        "description": "Para volume alto de geração e lotes intensos no mesmo mês.",
         "benefits": [
-            "20500 creditos por ciclo",
-            "Maior cobertura mensal do catalogo",
+            "20500 créditos por ciclo",
+            "Maior cobertura mensal do catálogo",
             "Recargas extras para picos de demanda",
             "Comparativo completo por modelo",
-            "Indicado para operacao de alto volume",
+            "Indicado para operação de alto volume",
         ],
     },
 ]
+
+for _plan in CREDIT_SUBSCRIPTION_PLANS:
+    _annotate_subscription_plan(_plan)
+
 PAID_PLAN_CODES = {plan["code"] for plan in CREDIT_SUBSCRIPTION_PLANS if plan["code"] != "free"}
 
 # Realistic engine baseline (8 seconds)
@@ -367,6 +425,17 @@ def get_subscription_plan(plan_code: str) -> dict[str, Any]:
         if plan["code"] == normalized:
             return deepcopy(plan)
     return deepcopy(CREDIT_SUBSCRIPTION_PLANS[0])
+
+
+def get_subscription_plan_billing(plan_code: str, billing_period: str = "monthly") -> dict[str, Any]:
+    plan = get_subscription_plan(plan_code)
+    normalized_period = _normalize_billing_period(billing_period)
+    billing = deepcopy(plan.get("billing", {}).get(normalized_period) or plan.get("billing", {}).get("monthly") or {})
+    billing["period"] = normalized_period
+    billing["planCode"] = plan.get("code", "free")
+    billing["planName"] = plan.get("name", "Gratuito")
+    billing["accent"] = plan.get("accent", "free")
+    return billing
 
 
 def _plan_credit_budget(plan: dict[str, Any]) -> int:

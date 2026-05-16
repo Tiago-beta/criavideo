@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from app.routers.credits import build_insufficient_credits_message, deduct_credits
 from app.services.credit_pricing import (
     get_credit_comparison_sections,
+    get_subscription_plan,
     estimate_local_video_processing_credits,
     estimate_similar_analysis_credits,
     estimate_similar_previews_credits,
@@ -67,6 +68,14 @@ class TestSimilarCreditPricing(unittest.TestCase):
         self.assertEqual(seedance_row["creditsPerUnit"], 9)
         self.assertEqual(seedance_row["plans"]["starter"]["includedUnits"], 177)
         self.assertEqual(seedance_row["plans"]["free"]["includedUnits"], 11)
+
+    def test_subscription_plan_catalog_exposes_annual_discount(self):
+        plan = get_subscription_plan("professional")
+
+        self.assertEqual(plan["annualDiscountPercent"], 20)
+        self.assertEqual(plan["annualCredits"], 6900 * 12)
+        self.assertAlmostEqual(plan["annualPriceUsd"], 69.0 * 12 * 0.8, places=2)
+        self.assertEqual(plan["billing"]["annual"]["days"], 365)
 
     def test_similar_analysis_estimate_distinguishes_general_and_scene_modes(self):
         general = estimate_similar_analysis_credits(duration_seconds=15, analysis_mode="general")

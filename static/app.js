@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v461 loaded");
+console.log("[CriaVideo] app.js v462 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -24526,7 +24526,8 @@ let _creditPricingVersion = "";
 let _currentCreditPlan = "free";
 let _currentCreditPlanExpiresAt = "";
 let _creditDisplayCurrency = "usd";
-let _creditFaqOpenIndex = 0;
+let _creditBillingPeriod = "monthly";
+let _creditFaqOpenIndex = -1;
 let _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
 const _creditExpandedComparisonSections = {};
 const _creditFaqItems = [
@@ -24552,16 +24553,16 @@ const _creditFaqItems = [
     },
 ];
 const _fallbackCreditPlans = [
-    { code: "free", name: "Gratuito", shortName: "Gratuito", monthlyCredits: 0, comparisonCredits: 100, priceUsd: 0, price: 0, billingLabel: "100 creditos iniciais", accent: "free", ctaLabel: "Pacote atual", benefits: [] },
+    { code: "free", name: "Gratuito", shortName: "Gratuito", monthlyCredits: 0, comparisonCredits: 100, priceUsd: 0, price: 0, billingLabel: "100 créditos iniciais", accent: "free", ctaLabel: "Pacote atual", benefits: [] },
     { code: "starter", name: "Iniciante", shortName: "Iniciante", monthlyCredits: 1600, comparisonCredits: 1600, priceUsd: 16, price: 79.61, billingLabel: "Ciclo mensal de 30 dias", accent: "starter", benefits: [] },
-    { code: "basic", name: "Basico", shortName: "Basico", monthlyCredits: 2900, comparisonCredits: 2900, priceUsd: 29, price: 144.29, billingLabel: "Ciclo mensal de 30 dias", accent: "basic", benefits: [] },
+    { code: "basic", name: "Básico", shortName: "Básico", monthlyCredits: 2900, comparisonCredits: 2900, priceUsd: 29, price: 144.29, billingLabel: "Ciclo mensal de 30 dias", accent: "basic", benefits: [] },
     { code: "professional", name: "Profissional", shortName: "Profissional", monthlyCredits: 6900, comparisonCredits: 6900, priceUsd: 69, price: 343.32, billingLabel: "Ciclo mensal de 30 dias", accent: "professional", recommended: true, badge: "Mais popular", benefits: [] },
     { code: "supreme", name: "Supremo", shortName: "Supremo", monthlyCredits: 20500, comparisonCredits: 20500, priceUsd: 199, price: 990.14, billingLabel: "Ciclo mensal de 30 dias", accent: "supreme", badge: "Melhor valor", benefits: [] },
 ];
 const _fallbackCreditPackages = [
-    { code: "topup-500", credits: 500, priceUsd: 5, price: 24.88, label: "Recarga 500", description: "Complemento rapido para continuar gerando." },
-    { code: "topup-1500", credits: 1500, priceUsd: 15, price: 74.63, label: "Recarga 1.500", badge: "Mais usada", description: "Ideal para reforcar o ciclo atual sem trocar de plano." },
-    { code: "topup-5000", credits: 5000, priceUsd: 50, price: 248.78, label: "Recarga 5.000", badge: "Maior saldo", description: "Volume extra para lotes grandes de imagens e videos." },
+    { code: "topup-500", credits: 500, priceUsd: 5, price: 24.88, label: "Recarga 500", description: "Complemento rápido para continuar gerando." },
+    { code: "topup-1500", credits: 1500, priceUsd: 15, price: 74.63, label: "Recarga 1.500", badge: "Mais usada", description: "Ideal para reforçar o ciclo atual sem trocar de plano." },
+    { code: "topup-5000", credits: 5000, priceUsd: 50, price: 248.78, label: "Recarga 5.000", badge: "Maior saldo", description: "Volume extra para lotes grandes de imagens e vídeos." },
 ];
 
 function _renderGlobalBalance() {
@@ -24636,6 +24637,64 @@ function _getDisplayPrice(entry) {
     return _formatUsd(entry.priceUsd || 0, "USD");
 }
 
+function _normalizeCreditBillingPeriod(period) {
+    return String(period || "monthly").trim().toLowerCase() === "annual" ? "annual" : "monthly";
+}
+
+function _getPlanBillingDetails(plan, billingPeriod = _creditBillingPeriod) {
+    const normalizedPeriod = _normalizeCreditBillingPeriod(billingPeriod);
+    const isFreePlan = String(plan?.code || "").trim().toLowerCase() === "free";
+    const monthlyCredits = parseInt(plan?.monthlyCredits || 0, 10) || 0;
+    const annualDiscountPercent = Math.max(0, parseInt(plan?.annualDiscountPercent || 20, 10) || 20);
+    const monthlyPriceUsd = Number(plan?.monthlyPriceUsd ?? plan?.priceUsd ?? 0) || 0;
+    const monthlyPriceBrl = Number(plan?.monthlyPrice ?? plan?.price ?? 0) || 0;
+    const annualPriceUsd = Number(plan?.annualPriceUsd ?? (monthlyPriceUsd * 12 * (1 - (annualDiscountPercent / 100)))) || 0;
+    const annualPriceBrl = Number(plan?.annualPrice ?? (monthlyPriceBrl * 12 * (1 - (annualDiscountPercent / 100)))) || 0;
+    const annualCredits = parseInt(plan?.annualCredits || (monthlyCredits * 12), 10) || 0;
+    const configuredBilling = plan?.billing?.[normalizedPeriod] || null;
+
+    const details = normalizedPeriod === "annual" && !isFreePlan
+        ? {
+            period: "annual",
+            label: "Anual",
+            days: Number(configuredBilling?.days || 365) || 365,
+            credits: parseInt(configuredBilling?.credits || annualCredits, 10) || annualCredits,
+            priceUsd: Number(configuredBilling?.priceUsd ?? annualPriceUsd) || annualPriceUsd,
+            price: Number(configuredBilling?.price ?? annualPriceBrl) || annualPriceBrl,
+            billingLabel: configuredBilling?.billingLabel || `Ciclo anual de ${Number(configuredBilling?.days || 365) || 365} dias`,
+            pointsLabel: `${_formatCreditsInt(annualCredits)} pontos por ano`,
+            comparisonMultiplier: 12,
+            priceSuffix: "/ano",
+            comparisonMetaLabel: `${_formatCreditsInt(annualCredits)} créditos/ano`,
+            summaryLabel: `${_formatCreditsInt(annualCredits)} créditos por ciclo anual de ${Number(configuredBilling?.days || 365) || 365} dias`,
+            discountPercent: annualDiscountPercent,
+        }
+        : {
+            period: "monthly",
+            label: "Mensal",
+            days: Number(configuredBilling?.days || 30) || 30,
+            credits: parseInt(configuredBilling?.credits || monthlyCredits, 10) || monthlyCredits,
+            priceUsd: Number(configuredBilling?.priceUsd ?? monthlyPriceUsd) || monthlyPriceUsd,
+            price: Number(configuredBilling?.price ?? monthlyPriceBrl) || monthlyPriceBrl,
+            billingLabel: configuredBilling?.billingLabel || `Ciclo mensal de ${Number(configuredBilling?.days || 30) || 30} dias`,
+            pointsLabel: `${_formatCreditsInt(monthlyCredits)} pontos por mês`,
+            comparisonMultiplier: 1,
+            priceSuffix: "/mês",
+            comparisonMetaLabel: `${_formatCreditsInt(monthlyCredits)} créditos`,
+            summaryLabel: `${_formatCreditsInt(monthlyCredits)} créditos por ciclo de 30 dias`,
+            discountPercent: annualDiscountPercent,
+        };
+
+    details.priceLabel = _creditDisplayCurrency === "brl"
+        ? _formatBrl(details.price || 0)
+        : _formatUsd(details.priceUsd || 0, "USD");
+    details.headlinePrice = `${details.priceLabel}${details.priceSuffix}`;
+    details.equivalentMonthlyLabel = details.period === "annual"
+        ? `${_creditDisplayCurrency === "brl" ? _formatBrl((details.price || 0) / 12) : _formatUsd((details.priceUsd || 0) / 12, "USD")}/mês equivalente`
+        : "";
+    return details;
+}
+
 function _getDisplayUnitPrice(row) {
     const unitSuffix = row.unit === "second" ? "s" : "img";
     if (_creditDisplayCurrency === "brl") {
@@ -24652,26 +24711,17 @@ function _formatComparisonUnits(row, count) {
     return `${formatted} imagens`;
 }
 
-function _ensureCreditOfferSelection(preferredKind = "") {
+function _ensureCreditOfferSelection() {
     const packages = _creditPackagesCatalog();
     const paidPlans = _paidCreditPlans();
-    const currentPaidPlan = _currentCreditPlan && _currentCreditPlan !== "free"
-        ? paidPlans.find((plan) => String(plan.code || "").toLowerCase() === _currentCreditPlan)
-        : null;
-    const defaultPlan = currentPaidPlan || paidPlans[0] || null;
-
-    if (preferredKind === "package" && packages.length) {
-        _selectedCreditOffer = { kind: "package", code: "", packageIndex: 0 };
-        return;
-    }
-    if (preferredKind === "plan" && defaultPlan) {
-        _selectedCreditOffer = { kind: "plan", code: defaultPlan.code, packageIndex: 0 };
-        return;
-    }
 
     if (_selectedCreditOffer.kind === "plan") {
-        const hasPlan = paidPlans.some((plan) => String(plan.code || "") === String(_selectedCreditOffer.code || ""));
-        if (hasPlan) return;
+        const selectedPlanCode = String(_selectedCreditOffer.code || "").trim().toLowerCase();
+        const hasPlan = paidPlans.some((plan) => String(plan.code || "").trim().toLowerCase() === selectedPlanCode);
+        if (hasPlan) {
+            _selectedCreditOffer.code = selectedPlanCode;
+            return;
+        }
     }
     if (_selectedCreditOffer.kind === "package") {
         const idx = Number(_selectedCreditOffer.packageIndex || 0);
@@ -24681,17 +24731,7 @@ function _ensureCreditOfferSelection(preferredKind = "") {
         }
     }
 
-    if (_currentCreditPlan && _currentCreditPlan !== "free" && packages.length) {
-        _selectedCreditOffer = { kind: "package", code: "", packageIndex: 0 };
-        return;
-    }
-    if (defaultPlan) {
-        _selectedCreditOffer = { kind: "plan", code: defaultPlan.code, packageIndex: 0 };
-        return;
-    }
-    if (packages.length) {
-        _selectedCreditOffer = { kind: "package", code: "", packageIndex: 0 };
-    }
+    _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
 }
 
 function _getSelectedCreditOfferDetails() {
@@ -24711,12 +24751,13 @@ function _getSelectedCreditOfferDetails() {
 
     const plan = _getCreditPlanByCode(_selectedCreditOffer.code || "");
     if (!plan) return null;
+    const billing = _getPlanBillingDetails(plan);
     return {
         kind: "plan",
-        title: plan.name || plan.shortName || "Plano mensal",
-        subtitle: `${_formatCreditsInt(plan.monthlyCredits || 0)} créditos por ciclo de 30 dias`,
-        priceLabel: _getDisplayPrice(plan),
-        purchaseLabel: "Plano mensal",
+        title: `${plan.name || plan.shortName || "Plano"}${billing.period === "annual" ? " anual" : ""}`,
+        subtitle: billing.summaryLabel,
+        priceLabel: billing.priceLabel,
+        purchaseLabel: billing.period === "annual" ? "Plano anual" : "Plano mensal",
     };
 }
 
@@ -24725,24 +24766,30 @@ function _renderPricingPlanCards() {
     return _paidCreditPlans().map((plan) => {
         const planCode = String(plan.code || "");
         const isSelected = selectedPlanCode === planCode;
-        const isCurrent = planCode === _currentCreditPlan;
+        const billing = _getPlanBillingDetails(plan);
+        const isCurrent = _creditBillingPeriod === "monthly" && planCode === _currentCreditPlan;
         const badge = plan.badge ? `<span class="pricing-plan-badge">${plan.badge}</span>` : "";
         const ctaLabel = isCurrent ? "Plano atual" : "Selecionar plano";
-        const creditsLabel = `${_formatCreditsInt(plan.monthlyCredits || 0)} pontos por mês`;
+        const creditsLabel = billing.pointsLabel;
         const benefits = Array.isArray(plan.benefits) ? plan.benefits : [];
-        const detailLine = _creditDisplayCurrency === "brl"
-            ? `${_formatBrl(plan.price || 0)}/mês`
-            : `${_formatUsd(plan.priceUsd || 0, "USD")}/mês`;
+        const detailLine = billing.headlinePrice;
+        const cycleLabel = billing.period === "annual"
+            ? `Cobrança anual com ${billing.discountPercent}% OFF`
+            : (plan.billingLabel || billing.billingLabel || "Ciclo mensal de 30 dias");
+        const equivalentMonthly = billing.equivalentMonthlyLabel
+            ? `<div class="pricing-plan-subprice">${billing.equivalentMonthlyLabel}</div>`
+            : "";
         return `
-            <article class="pricing-plan-card ${isSelected ? "is-selected" : ""}" data-theme="${plan.accent || planCode}">
+            <article class="pricing-plan-card ${isSelected ? "is-selected" : ""}" data-theme="${plan.accent || planCode}" onclick="selectCreditPlan('${planCode}')">
                 ${badge}
                 <div class="pricing-plan-card-head">
                     <h3>${plan.name || plan.shortName || planCode}</h3>
                     <p>${plan.description || ""}</p>
                 </div>
                 <div class="pricing-plan-price">${detailLine}</div>
-                <div class="pricing-plan-cycle">${plan.billingLabel || "Ciclo mensal de 30 dias"}</div>
-                <button class="pricing-plan-select" type="button" onclick="selectCreditPlan('${planCode}')">${ctaLabel}</button>
+                ${equivalentMonthly}
+                <div class="pricing-plan-cycle">${cycleLabel}</div>
+                <button class="pricing-plan-select" type="button" onclick="event.stopPropagation(); selectCreditPlan('${planCode}')">${ctaLabel}</button>
                 <div class="pricing-plan-points">${creditsLabel}</div>
                 <ul class="pricing-plan-benefits">
                     ${benefits.map((item) => `<li>${item}</li>`).join("")}
@@ -24781,22 +24828,23 @@ function _renderPricingComparisonSections() {
 
     const comparisonHeader = plans.map((plan) => {
         const code = String(plan.code || "free");
-        const isCurrent = code === _currentCreditPlan;
+        const billing = _getPlanBillingDetails(plan);
+        const isCurrent = _creditBillingPeriod === "monthly" && code === _currentCreditPlan;
         const planBudget = parseInt(plan.comparisonCredits || plan.monthlyCredits || 0, 10) || 0;
         const priceLabel = code === "free"
             ? _formatUsd(0, "USD")
-            : _getDisplayPrice(plan);
+            : billing.priceLabel;
         const metaLine = code === "free"
             ? (plan.billingLabel || `${_formatCreditsInt(planBudget)} créditos iniciais`)
-            : `${_formatCreditsInt(planBudget)} créditos`;
+            : billing.comparisonMetaLabel;
         const actionLabel = isCurrent ? "Plano atual" : "Selecionar plano";
         return `
-            <th class="pricing-compare-plan ${isCurrent ? "is-current" : ""}">
+            <th class="pricing-compare-plan ${isCurrent ? "is-current" : ""}" data-theme="${plan.accent || code}">
                 <div class="pricing-compare-plan-name">${plan.shortName || plan.name || code}</div>
                 <div class="pricing-compare-plan-price">${priceLabel}</div>
                 <div class="pricing-compare-plan-meta">${metaLine}</div>
                 ${code === "free"
-                    ? `<button class="pricing-compare-plan-btn ${isCurrent ? "is-disabled" : ""}" type="button" onclick="selectCreditPlan('starter')">${isCurrent ? "Pacote atual" : "Ver planos"}</button>`
+                    ? `<button class="pricing-compare-plan-btn is-disabled" type="button" disabled>${isCurrent ? "Plano atual" : "Plano gratuito"}</button>`
                     : `<button class="pricing-compare-plan-btn ${isCurrent ? "is-disabled" : ""}" type="button" onclick="selectCreditPlan('${code}')">${actionLabel}</button>`}
             </th>
         `;
@@ -24817,9 +24865,13 @@ function _renderPricingComparisonSections() {
             `;
             const planCells = plans.map((plan) => {
                 const usage = row.plans?.[plan.code] || {};
-                const count = parseInt(usage.includedUnits || 0, 10) || 0;
+                const billing = _getPlanBillingDetails(plan);
+                const baseCount = parseInt(usage.includedUnits || 0, 10) || 0;
+                const count = String(plan.code || "free") === "free"
+                    ? baseCount
+                    : baseCount * (billing.comparisonMultiplier || 1);
                 return `
-                    <td class="pricing-model-value-cell">
+                    <td class="pricing-model-value-cell" data-theme="${plan.accent || plan.code || 'free'}">
                         <strong>${_formatComparisonUnits(row, count)}</strong>
                         <span>${_getDisplayUnitPrice(row)}</span>
                     </td>
@@ -24865,9 +24917,27 @@ function _renderCreditFaq() {
     }).join("");
 }
 
+function _renderCreditCheckoutPanel() {
+    const selectedOffer = _getSelectedCreditOfferDetails();
+    if (!selectedOffer) return "";
+
+    return `
+        <section class="pricing-checkout-panel">
+            <div class="pricing-checkout-copy">
+                <span>${selectedOffer.purchaseLabel}</span>
+                <strong>${selectedOffer.title}</strong>
+                <small>${selectedOffer.subtitle} • ${selectedOffer.priceLabel}</small>
+            </div>
+            <div class="pricing-checkout-actions">
+                <button class="credits-btn credits-btn-pix" type="button" onclick="purchaseCredits('pix')">Pagar com PIX</button>
+                <button class="credits-btn credits-btn-card" type="button" onclick="purchaseCredits('card')">Pagar com Cartão</button>
+            </div>
+        </section>
+    `;
+}
+
 function _renderCreditsPurchaseModalContent() {
     _ensureCreditOfferSelection();
-    const selectedOffer = _getSelectedCreditOfferDetails();
     const currentPlan = _getCurrentPlanLabel();
     const creditUnitText = _creditDisplayCurrency === "brl"
         ? _formatBrl(_creditValueBrl || 0)
@@ -24891,8 +24961,8 @@ function _renderCreditsPurchaseModalContent() {
                             <button type="button" class="${_creditDisplayCurrency === "brl" ? "is-active" : ""}" onclick="setCreditDisplayCurrency('brl')">BRL</button>
                         </div>
                         <div class="pricing-period-switch">
-                            <button type="button" class="is-active">Mensal</button>
-                            <button type="button" disabled>Anual <span>20% OFF</span></button>
+                            <button type="button" class="${_creditBillingPeriod === "monthly" ? "is-active" : ""}" onclick="setCreditBillingPeriod('monthly')">Mensal</button>
+                            <button type="button" class="${_creditBillingPeriod === "annual" ? "is-active" : ""}" onclick="setCreditBillingPeriod('annual')">Anual <span>20% OFF</span></button>
                         </div>
                         <button class="pricing-enterprise-btn" type="button" disabled>Empresa</button>
                     </div>
@@ -24908,6 +24978,7 @@ function _renderCreditsPurchaseModalContent() {
                 </div>
 
                 <div class="pricing-plan-grid">${_renderPricingPlanCards()}</div>
+                ${_selectedCreditOffer.kind === "plan" ? _renderCreditCheckoutPanel() : ""}
 
                 <section class="pricing-topup-section">
                     <div class="pricing-topup-section-head">
@@ -24916,6 +24987,7 @@ function _renderCreditsPurchaseModalContent() {
                     </div>
                     <div class="pricing-topup-grid">${_renderPricingPackages()}</div>
                 </section>
+                ${_selectedCreditOffer.kind === "package" ? _renderCreditCheckoutPanel() : ""}
 
                 <div class="pricing-comparison-stack">${_renderPricingComparisonSections()}</div>
 
@@ -24923,18 +24995,6 @@ function _renderCreditsPurchaseModalContent() {
                     <h3>Perguntas frequentes</h3>
                     <div class="pricing-faq-list">${_renderCreditFaq()}</div>
                 </section>
-
-                <div class="pricing-checkout-bar">
-                    <div class="pricing-checkout-copy">
-                        <span>${selectedOffer ? selectedOffer.purchaseLabel : "Compra"}</span>
-                        <strong>${selectedOffer ? selectedOffer.title : "Selecione um plano ou recarga"}</strong>
-                        <small>${selectedOffer ? `${selectedOffer.subtitle} • ${selectedOffer.priceLabel}` : "Escolha acima para continuar."}</small>
-                    </div>
-                    <div class="pricing-checkout-actions">
-                        <button class="credits-btn credits-btn-pix" type="button" onclick="purchaseCredits('pix')">Pagar com PIX</button>
-                        <button class="credits-btn credits-btn-card" type="button" onclick="purchaseCredits('card')">Pagar com Cartão</button>
-                    </div>
-                </div>
             </div>
         </div>
     `;
@@ -24943,7 +25003,13 @@ function _renderCreditsPurchaseModalContent() {
 function _rerenderCreditsPurchaseModal() {
     const overlay = document.getElementById("credits-modal-overlay");
     if (!overlay) return;
+    const currentShell = overlay.querySelector(".pricing-shell");
+    const scrollTop = currentShell ? currentShell.scrollTop : 0;
     overlay.innerHTML = _renderCreditsPurchaseModalContent();
+    const nextShell = overlay.querySelector(".pricing-shell");
+    if (nextShell) {
+        nextShell.scrollTop = scrollTop;
+    }
 }
 
 function showCreditsPurchaseModal(preferredKind = "") {
@@ -24960,7 +25026,8 @@ function showCreditsPurchaseModal(preferredKind = "") {
         document.body.appendChild(overlay);
     }
 
-    _ensureCreditOfferSelection(preferredKind);
+    _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
+    _ensureCreditOfferSelection();
     overlay.innerHTML = _renderCreditsPurchaseModalContent();
 }
 
@@ -24978,6 +25045,13 @@ function setCreditDisplayCurrency(currency) {
     const normalized = String(currency || "usd").trim().toLowerCase();
     if (!["usd", "brl"].includes(normalized)) return;
     _creditDisplayCurrency = normalized;
+    _rerenderCreditsPurchaseModal();
+}
+
+function setCreditBillingPeriod(period) {
+    const normalized = _normalizeCreditBillingPeriod(period);
+    if (_creditBillingPeriod === normalized) return;
+    _creditBillingPeriod = normalized;
     _rerenderCreditsPurchaseModal();
 }
 
@@ -25003,7 +25077,7 @@ async function purchaseCredits(method) {
         let payload = { packageIndex: 0 };
         if (_selectedCreditOffer.kind === "plan") {
             endpoint = method === "pix" ? "/credits/purchase/plan/pix" : "/credits/purchase/plan/card";
-            payload = { planCode: _selectedCreditOffer.code };
+            payload = { planCode: _selectedCreditOffer.code, billingPeriod: _creditBillingPeriod };
         } else {
             payload = { packageIndex: Number(_selectedCreditOffer.packageIndex || 0) || 0 };
         }
@@ -25031,11 +25105,12 @@ function showPixQrModal(data) {
     const existing = document.getElementById("pix-modal-overlay");
     if (existing) existing.remove();
 
+    const billingPeriod = _normalizeCreditBillingPeriod(data.billingPeriod || "monthly");
     const purchaseTitle = String(data.kind || "").toLowerCase() === "plan"
-        ? `Ative ${data.planName || "seu plano"} com PIX`
+        ? `Ative ${data.planName || "seu plano"}${billingPeriod === "annual" ? " anual" : ""} com PIX`
         : "Pague com PIX";
     const purchaseHint = String(data.kind || "").toLowerCase() === "plan"
-        ? `${_formatCreditsInt(data.credits || 0)} créditos entram assim que o pagamento confirmar.`
+        ? `${_formatCreditsInt(data.credits || 0)} créditos entram assim que o pagamento confirmar no ${billingPeriod === "annual" ? "ciclo anual" : "ciclo mensal"}.`
         : `${_formatCreditsInt(data.credits || 0)} créditos extras entram assim que o pagamento confirmar.`;
 
     const overlay = document.createElement("div");
@@ -25064,7 +25139,9 @@ async function pollCreditStatus(reference) {
                 const isPlan = String(data.kind || "").toLowerCase() === "plan";
                 const plan = isPlan ? _getCreditPlanByCode(data.planCode || "") : null;
                 if (isPlan && plan) {
-                    showToast(`${plan.name || "Plano"} ativado com ${_formatCreditsInt(data.credits || 0)} créditos.`, "success");
+                    const billingPeriod = _normalizeCreditBillingPeriod(data.billingPeriod || "monthly");
+                    const planLabel = `${plan.name || "Plano"}${billingPeriod === "annual" ? " anual" : ""}`;
+                    showToast(`${planLabel} ativado com ${_formatCreditsInt(data.credits || 0)} créditos.`, "success");
                 } else {
                     showToast(`${_formatCreditsInt(data.credits || 0)} créditos adicionados!`, "success");
                 }
@@ -25085,6 +25162,7 @@ document.querySelectorAll("[data-credits-trigger]").forEach((el) => {
 window.selectCreditPackage = selectCreditPackage;
 window.selectCreditPlan = selectCreditPlan;
 window.setCreditDisplayCurrency = setCreditDisplayCurrency;
+window.setCreditBillingPeriod = setCreditBillingPeriod;
 window.toggleCreditComparisonSection = toggleCreditComparisonSection;
 window.toggleCreditFaq = toggleCreditFaq;
 window.purchaseCredits = purchaseCredits;

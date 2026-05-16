@@ -25,6 +25,7 @@ from app.services.credit_pricing import (
     get_credit_packages,
     get_paid_plan_codes,
     get_subscription_plan,
+    get_subscription_plan_billing,
     get_subscription_plans,
     get_credit_value_brl,
 )
@@ -88,12 +89,18 @@ def _generate_reference() -> str:
     return _generate_purchase_reference()
 
 
-def _generate_purchase_reference(kind: str = "credits", plan_code: str = "") -> str:
+def _normalize_billing_period(billing_period: str) -> str:
+    normalized = str(billing_period or "monthly").strip().lower() or "monthly"
+    return "annual" if normalized == "annual" else "monthly"
+
+
+def _generate_purchase_reference(kind: str = "credits", plan_code: str = "", billing_period: str = "monthly") -> str:
     token = secrets.token_hex(6).upper()
     normalized_kind = str(kind or "credits").strip().lower()
     if normalized_kind == "plan":
         normalized_plan = "".join(ch for ch in str(plan_code or "").lower() if ch.isalnum()) or "starter"
-        return f"{PLAN_REFERENCE_PREFIX}-{normalized_plan.upper()}-{token}"
+        normalized_period = _normalize_billing_period(billing_period)
+        return f"{PLAN_REFERENCE_PREFIX}-{normalized_plan.upper()}-{normalized_period.upper()}-{token}"
     return f"{CREDIT_REFERENCE_PREFIX}-{token}"
 
 
@@ -101,10 +108,13 @@ def _parse_reference_metadata(reference: str) -> dict[str, str]:
     raw = str(reference or "").strip()
     upper = raw.upper()
     if upper.startswith(f"{PLAN_REFERENCE_PREFIX}-"):
-        parts = raw.split("-", 2)
+        parts = raw.split("-")
         plan_code = parts[1].strip().lower() if len(parts) >= 2 else ""
-        return {"kind": "plan", "plan_code": plan_code}
-    return {"kind": "credits", "plan_code": ""}
+        billing_period = "monthly"
+        if len(parts) >= 4 and parts[2].strip().lower() in {"monthly", "annual"}:
+            billing_period = parts[2].strip().lower()
+        return {"kind": "plan", "plan_code": plan_code, "billing_period": billing_period}
+    return {"kind": "credits", "plan_code": "", "billing_period": ""}
 
 
 def _normalize_plan_code(plan_code: str) -> str:
@@ -178,6 +188,7 @@ class PurchaseRequest(BaseModel):
 
 class PlanPurchaseRequest(BaseModel):
     planCode: str
+    billingPeriod: str = "monthly"
 
 
 @router.post("/purchase/pix")
@@ -316,9 +327,11 @@ async def purchase_plan_pix(
 ):
     plan = get_subscription_plan(req.planCode)
     if plan["code"] not in get_paid_plan_codes():
-        raise HTTPException(status_code=400, detail="Plano mensal invalido.")
+        raise HTTPException(status_code=400, detail="Plano mensal inválido.")
 
-    reference = _generate_purchase_reference(kind="plan", plan_code=plan["code"])
+    billing = get_subscription_plan_billing(plan["code"], req.billingPeriod)
+
+    reference = _generate_purchase_reference(kind="plan", plan_code=plan["code"], billing_period=billing["period"])
 
     row = await db.execute(
         text("SELECT email FROM auth_users WHERE id = :uid"),
@@ -335,16 +348,16 @@ async def purchase_plan_pix(
         ),
         {
             "uid": user["id"],
-            "credits": plan["monthlyCredits"],
-            "amount": plan["price"],
+            "credits": billing["credits"],
+            "amount": billing["price"],
             "ref": reference,
         },
     )
     await db.commit()
 
     payment_data = {
-        "transaction_amount": plan["price"],
-        "description": f"CriaVideo — Plano {plan['name']} ({plan['monthlyCredits']} creditos)",
+        "transaction_amount": billing["price"],
+        "description": f"CriaVideo — Plano {plan['name']} {billing['label'].lower()} ({billing['credits']} créditos)",
         "payment_method_id": "pix",
         "payer": {"email": email},
         "external_reference": reference,
@@ -364,10 +377,11 @@ async def purchase_plan_pix(
         return {
             "ok": True,
             "reference": reference,
-            "credits": plan["monthlyCredits"],
+            "credits": billing["credits"],
             "kind": "plan",
             "planCode": plan["code"],
             "planName": plan["name"],
+            "billingPeriod": billing["period"],
             "pixCopiaECola": pix_info.get("qr_code", ""),
             "qrBase64": pix_info.get("qr_code_base64", ""),
         }
@@ -388,9 +402,11 @@ async def purchase_plan_card(
 ):
     plan = get_subscription_plan(req.planCode)
     if plan["code"] not in get_paid_plan_codes():
-        raise HTTPException(status_code=400, detail="Plano mensal invalido.")
+        raise HTTPException(status_code=400, detail="Plano mensal inválido.")
 
-    reference = _generate_purchase_reference(kind="plan", plan_code=plan["code"])
+    billing = get_subscription_plan_billing(plan["code"], req.billingPeriod)
+
+    reference = _generate_purchase_reference(kind="plan", plan_code=plan["code"], billing_period=billing["period"])
 
     row = await db.execute(
         text("SELECT email FROM auth_users WHERE id = :uid"),
@@ -407,16 +423,16 @@ async def purchase_plan_card(
         ),
         {
             "uid": user["id"],
-            "credits": plan["monthlyCredits"],
-            "amount": plan["price"],
+            "credits": billing["credits"],
+            "amount": billing["price"],
             "ref": reference,
         },
     )
     await db.commit()
 
     payment_data = {
-        "transaction_amount": plan["price"],
-        "description": f"CriaVideo — Plano {plan['name']} ({plan['monthlyCredits']} creditos)",
+        "transaction_amount": billing["price"],
+        "description": f"CriaVideo — Plano {plan['name']} {billing['label'].lower()} ({billing['credits']} créditos)",
         "payment_method_id": "master",
         "payer": {"email": email},
         "external_reference": reference,
@@ -435,10 +451,11 @@ async def purchase_plan_card(
         return {
             "ok": True,
             "reference": reference,
-            "credits": plan["monthlyCredits"],
+            "credits": billing["credits"],
             "kind": "plan",
             "planCode": plan["code"],
             "planName": plan["name"],
+            "billingPeriod": billing["period"],
             "checkoutUrl": result.get("init_point", ""),
         }
 
@@ -476,6 +493,7 @@ async def check_status(
                 "credits": purchase["credits"],
                 "kind": purchase_meta["kind"],
                 "planCode": purchase_meta["plan_code"] or None,
+                "billingPeriod": purchase_meta["billing_period"] or None,
             }
 
     return {
@@ -483,6 +501,7 @@ async def check_status(
         "credits": purchase["credits"],
         "kind": purchase_meta["kind"],
         "planCode": purchase_meta["plan_code"] or None,
+        "billingPeriod": purchase_meta["billing_period"] or None,
     }
 
 
@@ -561,13 +580,14 @@ async def _confirm_credit_purchase(db: AsyncSession, reference: str, mp_payment_
     purchase_meta = _parse_reference_metadata(reference)
     if purchase_meta["kind"] == "plan" and purchase_meta["plan_code"] in get_paid_plan_codes():
         now = datetime.utcnow()
+        billing = get_subscription_plan_billing(purchase_meta["plan_code"], purchase_meta["billing_period"])
         expires_row = await db.execute(
             text("SELECT plan_expires_at FROM auth_users WHERE id = :uid"),
             {"uid": user_id},
         )
         current_expires_at = expires_row.scalar()
         base_date = current_expires_at if isinstance(current_expires_at, datetime) and current_expires_at > now else now
-        new_expires_at = base_date + timedelta(days=30)
+        new_expires_at = base_date + timedelta(days=int(billing.get("days") or 30))
         await db.execute(
             text(
                 """
