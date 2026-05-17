@@ -1893,6 +1893,11 @@ def _extract_similar_unified_boundary_frame_paths(raw_tags: object) -> tuple[str
     return start_path, end_path
 
 
+def _normalize_similar_unified_boundary_frame_kind(raw_value: object) -> str:
+    value = str(raw_value or "").strip().lower()
+    return "end" if value == "end" else "start"
+
+
 def _pick_similar_unified_boundary_reference_candidates(
     scenes: list[VideoScene],
     tags_data: dict[str, Any],
@@ -2731,6 +2736,10 @@ class SimilarSceneImageRequest(BaseModel):
     aspect_ratio: str = "16:9"
 
 
+class SimilarUnifiedBoundaryFrameRequest(SimilarSceneImageRequest):
+    frame_kind: str = "start"
+
+
 class SimilarGeneratePreviewsRequest(BaseModel):
     engine: str = "grok"
     aspect_ratio: str = "16:9"
@@ -3460,6 +3469,134 @@ async def upsert_similar_unified_image(
     return {
         "status": "unified_reference_image_ready",
         "reference_image_url": _to_media_url(str(target_file)),
+    }
+
+
+@router.post("/projects/{project_id}/similar/unified-boundary-frame")
+async def upsert_similar_unified_boundary_frame(
+    project_id: int,
+    req: SimilarUnifiedBoundaryFrameRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not _is_similar_project(project):
+        raise HTTPException(status_code=400, detail="Projeto nao esta no modo Semelhante")
+
+    frame_kind = _normalize_similar_unified_boundary_frame_kind(req.frame_kind)
+    tags_data = _safe_tags_dict(project.tags)
+    prompt_override = str(req.prompt_override or tags_data.get("similar_unified_prompt") or "").strip()
+    if not prompt_override:
+        raise HTTPException(status_code=400, detail="Gere o prompt unico antes de editar os frames usados no video")
+    if len(prompt_override) > 4000:
+        raise HTTPException(status_code=400, detail="Prompt unico muito longo (maximo 4000 caracteres)")
+
+    result = await db.execute(
+        select(VideoScene)
+        .where(VideoScene.project_id == project_id)
+        .order_by(VideoScene.scene_index.asc())
+    )
+    scenes = result.scalars().all()
+    start_frame_path, end_frame_path = await _ensure_similar_unified_boundary_frame_paths(project.id, scenes, tags_data)
+    current_frame_path = start_frame_path if frame_kind == "start" else end_frame_path
+    if not current_frame_path or not os.path.exists(current_frame_path):
+        raise HTTPException(status_code=400, detail="Frame solicitado nao esta disponivel para edicao")
+
+    upload_ids: list[str] = []
+    for raw_id in (req.image_upload_ids or []):
+        value = str(raw_id or "").strip()
+        if value and value not in upload_ids:
+            upload_ids.append(value)
+
+    single_upload_id = str(req.image_upload_id or "").strip()
+    if single_upload_id and single_upload_id not in upload_ids:
+        upload_ids.append(single_upload_id)
+
+    resolved_files: list[Path] = []
+    if upload_ids:
+        for upload_id in upload_ids:
+            source_file = _resolve_temp_file(user["id"], upload_id, IMAGE_EXTS)
+            if not source_file:
+                raise HTTPException(status_code=400, detail="Uma das imagens enviadas nao foi encontrada. Envie novamente")
+            resolved_files.append(source_file)
+
+    effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
+    image_dir = Path(settings.media_dir) / "images" / str(project.id)
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    prompt_seed = _build_similar_scene_prompt_for_image_generation(prompt_override, req.edit_instruction)
+    target_file: Path | None = None
+
+    if req.generate_from_prompt:
+        if not str(req.edit_instruction or "").strip() and not resolved_files:
+            raise HTTPException(status_code=400, detail="Descreva um ajuste ou envie uma nova foto antes de editar o frame")
+
+        target_path, _reference_count = await _generate_similar_wan_image(
+            prompt_text=prompt_seed[:1200],
+            aspect_ratio=effective_aspect_ratio,
+            output_stem=str(image_dir / f"similar_unified_{frame_kind}_frame_{uuid.uuid4().hex[:8]}"),
+            base_reference_image=current_frame_path,
+            reference_paths=[str(item) for item in resolved_files],
+        )
+        target_file = Path(target_path)
+    elif resolved_files:
+        if len(resolved_files) == 1:
+            source_file = resolved_files[0]
+            ext = source_file.suffix.lower() or ".png"
+            target_file = image_dir / f"similar_unified_{frame_kind}_frame_{uuid.uuid4().hex[:8]}{ext}"
+            shutil.copyfile(source_file, target_file)
+        else:
+            from app.services.scene_generator import merge_reference_images_with_nano_banana
+
+            target_file = image_dir / f"similar_unified_{frame_kind}_frame_{uuid.uuid4().hex[:8]}.png"
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                merge_reference_images_with_nano_banana,
+                [str(item) for item in resolved_files],
+                prompt_seed[:1200],
+                effective_aspect_ratio,
+                str(target_file),
+            )
+    else:
+        raise HTTPException(status_code=400, detail="Informe image_upload_id/image_upload_ids ou generate_from_prompt=true")
+
+    if not target_file or not target_file.exists() or target_file.stat().st_size <= 0:
+        raise HTTPException(status_code=500, detail="Falha ao atualizar o frame selecionado")
+
+    next_frame_path = str(target_file)
+    if frame_kind == "start":
+        start_frame_path = next_frame_path
+        tags_data["similar_unified_start_frame_path"] = next_frame_path
+    else:
+        end_frame_path = next_frame_path
+        tags_data["similar_unified_end_frame_path"] = next_frame_path
+
+    tags_data["similar_unified_prompt"] = prompt_override
+    tags_data["similar_unified_reference_frame_count"] = len({path for path in (start_frame_path, end_frame_path) if path})
+    tags_data.update({"type": "similar", "similar_stage": "unified_reference_image_ready"})
+    for stale_key in (
+        "similar_unified_clip_path",
+        "similar_unified_clip_engine",
+        "similar_unified_clip_duration",
+        "similar_unified_clip_generated_at",
+    ):
+        tags_data.pop(stale_key, None)
+
+    project.aspect_ratio = effective_aspect_ratio
+    project.tags = tags_data
+    project.status = VideoStatus.PENDING
+    project.progress = 0
+    project.error_message = None
+    await db.commit()
+
+    return {
+        "status": "unified_boundary_frame_ready",
+        "frame_kind": frame_kind,
+        "frame_url": _to_media_url(next_frame_path),
+        "reference_frame_count": tags_data["similar_unified_reference_frame_count"],
     }
 
 

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v471 loaded");
+console.log("[CriaVideo] app.js v472 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4008,6 +4008,8 @@ let similarState = {
     unifiedFrameBusy: false,
     unifiedFrameBusyLabel: "",
     unifiedFrameInstruction: "",
+    unifiedFrameTarget: "",
+    unifiedFramePendingImageUploads: [],
     unifiedAutoImageKey: "",
     unifiedAutoImageStatus: "idle",
 };
@@ -5483,6 +5485,11 @@ function initCreateWizard() {
         similarUnifiedUploadInput.addEventListener("change", _handleSimilarUnifiedImageInput);
     }
 
+    const similarUnifiedFrameUploadInput = document.getElementById("similar-unified-frame-image-input");
+    if (similarUnifiedFrameUploadInput) {
+        similarUnifiedFrameUploadInput.addEventListener("change", _handleSimilarUnifiedFrameImageInput);
+    }
+
     const similarUnifiedUploadTrigger = document.getElementById("similar-unified-upload-trigger");
     if (similarUnifiedUploadTrigger) {
         similarUnifiedUploadTrigger.addEventListener("click", similarUploadUnifiedImages);
@@ -6169,6 +6176,8 @@ function _clearSimilarUnifiedPrompt() {
     similarState.unifiedFrameBusy = false;
     similarState.unifiedFrameBusyLabel = "";
     similarState.unifiedFrameInstruction = "";
+    similarState.unifiedFrameTarget = "";
+    _clearSimilarUnifiedFramePendingUploads();
     similarState.unifiedAutoImageKey = "";
     similarState.unifiedAutoImageStatus = "idle";
     _setSimilarUnifiedUploadStatus("");
@@ -6203,6 +6212,27 @@ function _getSimilarUnifiedPendingUploads() {
 function _clearSimilarUnifiedPendingUploads() {
     _getSimilarUnifiedPendingUploads().forEach((item) => _revokeSimilarPreviewUrl(item?.preview_url));
     similarState.unifiedPendingImageUploads = [];
+}
+
+function _normalizeSimilarUnifiedFrameKind(rawValue) {
+    return String(rawValue || "").trim().toLowerCase() === "end" ? "end" : "start";
+}
+
+function _getSimilarUnifiedFrameLabel(frameKind, { lower = false } = {}) {
+    const label = _normalizeSimilarUnifiedFrameKind(frameKind) === "end" ? "Frame final" : "Frame inicial";
+    return lower ? label.toLowerCase() : label;
+}
+
+function _getSimilarUnifiedFramePendingUploads() {
+    if (!Array.isArray(similarState.unifiedFramePendingImageUploads)) {
+        similarState.unifiedFramePendingImageUploads = [];
+    }
+    return similarState.unifiedFramePendingImageUploads;
+}
+
+function _clearSimilarUnifiedFramePendingUploads() {
+    _getSimilarUnifiedFramePendingUploads().forEach((item) => _revokeSimilarPreviewUrl(item?.preview_url));
+    similarState.unifiedFramePendingImageUploads = [];
 }
 
 function _syncSimilarUnifiedFrameDraftFromDom() {
@@ -6313,6 +6343,7 @@ function _renderSimilarUnifiedReferencePanel(project) {
     const frameEntries = [
         startFrameUrl
             ? {
+                kind: "start",
                 url: startFrameUrl,
                 badge: "Início",
                 alt: "Primeiro frame do vídeo analisado",
@@ -6321,6 +6352,7 @@ function _renderSimilarUnifiedReferencePanel(project) {
             : null,
         endFrameUrl
             ? {
+                kind: "end",
                 url: endFrameUrl,
                 badge: "Fim",
                 alt: "Último frame do vídeo analisado",
@@ -6338,21 +6370,79 @@ function _renderSimilarUnifiedReferencePanel(project) {
     const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
     const pendingUploads = _getSimilarUnifiedPendingUploads();
     const pendingCount = pendingUploads.length;
-    const downloadActionIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+    const activeFrameKind = frameEntries.some((entry) => entry.kind === similarState.unifiedFrameTarget)
+        ? similarState.unifiedFrameTarget
+        : frameEntries[0].kind;
+    similarState.unifiedFrameTarget = activeFrameKind;
+    const activeFrameEntry = frameEntries.find((entry) => entry.kind === activeFrameKind) || frameEntries[0];
+    const framePendingUploads = _getSimilarUnifiedFramePendingUploads();
+    const framePendingCount = framePendingUploads.length;
+    const frameBusy = !!similarState.unifiedFrameBusy;
+    const frameBusyDisabledAttr = (frameBusy || similarState.controlsLocked) ? "disabled" : "";
+    const activeFrameLabel = _getSimilarUnifiedFrameLabel(activeFrameKind);
+    const activeFrameLabelLower = _getSimilarUnifiedFrameLabel(activeFrameKind, { lower: true });
     const summary = pendingCount
         ? `O vídeo será gerado com o primeiro frame, o último frame e mais ${pendingCount} imagem(ns) extra(s) enviada(s) por você.`
         : "O vídeo será gerado com o primeiro frame, o último frame e o prompt único atual.";
     const galleryMarkup = frameEntries.map((entry) => `
-        <article class="similar-frame-gallery-item is-base">
+        <article class="similar-frame-gallery-item is-base${similarState.unifiedFrameEditorOpen && activeFrameKind === entry.kind ? " is-active" : ""}">
             <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}">
                 <img src="${esc(entry.url)}" alt="${esc(entry.alt)}" loading="lazy">
                 <div class="similar-frame-image-actions">
-                    <a class="similar-frame-image-action" href="${esc(entry.url)}" download="${entry.downloadName}" title="Baixar ${entry.badge.toLowerCase()}" aria-label="Baixar ${entry.badge.toLowerCase()}">${downloadActionIcon}</a>
+                    <a class="similar-frame-image-action" href="${esc(entry.url)}" download="${entry.downloadName}" title="Baixar ${entry.badge.toLowerCase()}" aria-label="Baixar ${entry.badge.toLowerCase()}">${similarActionIcons.download}</a>
+                    <button class="similar-frame-image-action" type="button" onclick="similarOpenUnifiedFrameEdit('${entry.kind}')" title="Editar ${entry.badge.toLowerCase()}" aria-label="Editar ${entry.badge.toLowerCase()}" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
                 </div>
                 <span class="similar-frame-gallery-badge">${entry.badge}</span>
             </div>
         </article>
     `).join("");
+    const frameUploadsMarkup = framePendingCount
+        ? `
+            <div class="similar-reference-frame-upload-list">
+                <span class="similar-reference-frame-upload-title">Novas fotos enviadas para o ${activeFrameLabelLower}</span>
+                <div class="similar-reference-frame-upload-grid">
+                    ${framePendingUploads.map((item, uploadIdx) => {
+                        const previewUrl = esc(item?.preview_url || "");
+                        const fileName = esc(_formatSimilarUploadFileName(item?.file_name || `imagem-${uploadIdx + 1}`));
+                        return `
+                            <figure class="similar-upload-thumb">
+                                <img src="${previewUrl}" alt="${activeFrameLabel} upload ${uploadIdx + 1}" loading="lazy">
+                                <figcaption>${fileName}</figcaption>
+                            </figure>
+                        `;
+                    }).join("")}
+                </div>
+            </div>
+        `
+        : "";
+    const frameBusyMarkup = frameBusy
+        ? `
+            <div class="similar-reference-frame-progress" role="status" aria-live="polite">
+                <span class="similar-reference-frame-progress-label">${similarState.unifiedFrameBusyLabel || `Atualizando ${activeFrameLabelLower}...`}</span>
+                <div class="similar-reference-frame-progress-bar"><span></span></div>
+            </div>
+        `
+        : "";
+    const frameEditorMarkup = similarState.unifiedFrameEditorOpen && activeFrameEntry
+        ? `
+            <div class="similar-reference-frame-editor is-open">
+                <label for="similar-unified-frame-instruction">O que a IA deve mudar no ${activeFrameLabelLower}? (opcional)</label>
+                <textarea id="similar-unified-frame-instruction" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar a roupa, manter o mesmo enquadramento, a mesma luz e a mesma expressao." ${frameBusyDisabledAttr}>${esc(similarState.unifiedFrameInstruction || "")}</textarea>
+                <p class="field-hint">Envie uma nova foto ou descreva um ajuste. O vídeo final passa a usar a nova versão desse frame.</p>
+                <div class="similar-reference-frame-editor-tools">
+                    <button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarUploadUnifiedFrameReference('${activeFrameKind}')" title="Enviar nova foto" aria-label="Enviar nova foto" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
+                    ${framePendingCount ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarClearUnifiedFrameUploads()" title="Limpar fotos enviadas" aria-label="Limpar fotos enviadas" ${frameBusyDisabledAttr}>${similarActionIcons.close}</button>` : ""}
+                    <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarApplyUnifiedFrameEdit()" title="Aplicar ajuste no ${activeFrameLabelLower}" aria-label="Aplicar ajuste no ${activeFrameLabelLower}" ${frameBusyDisabledAttr}>${framePendingCount ? similarActionIcons.reroll : similarActionIcons.wand}</button>
+                </div>
+                ${frameUploadsMarkup}
+                <div class="similar-reference-frame-editor-actions">
+                    <button class="btn btn-primary similar-reference-frame-submit-btn" type="button" onclick="similarApplyUnifiedFrameEdit()" ${frameBusyDisabledAttr}>Aplicar ao ${activeFrameLabelLower}</button>
+                    <button class="btn btn-secondary" type="button" onclick="similarCloseUnifiedFrameEdit()" ${frameBusyDisabledAttr}>Fechar</button>
+                </div>
+                ${frameBusyMarkup}
+            </div>
+        `
+        : "";
 
     wrapEl.innerHTML = `
         <section class="similar-reference-frame-panel">
@@ -6369,6 +6459,7 @@ function _renderSimilarUnifiedReferencePanel(project) {
                     </div>
                 </div>
             </div>
+            ${frameEditorMarkup}
         </section>
     `;
     wrapEl.hidden = false;
@@ -12277,21 +12368,101 @@ function similarClearUnifiedUploads() {
     showToast("Imagens da cena unica removidas.", "success");
 }
 
-function similarToggleUnifiedFrameEdit() {
-    _syncSimilarUnifiedFrameDraftFromDom();
-    similarState.unifiedFrameEditorOpen = !similarState.unifiedFrameEditorOpen;
-    _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
-    if (similarState.unifiedFrameEditorOpen) {
-        setTimeout(() => {
-            document.getElementById("similar-unified-frame-instruction")?.focus();
-        }, 0);
+function similarUploadUnifiedFrameReference(frameKind = "") {
+    const input = document.getElementById("similar-unified-frame-image-input");
+    if (!input) return;
+
+    similarOpenUnifiedFrameEdit(frameKind || similarState.unifiedFrameTarget || "start");
+    input.value = "";
+    input.click();
+}
+
+async function _handleSimilarUnifiedFrameImageInput(event) {
+    const projectId = Number(similarState.projectId || 0);
+    const frameKind = _normalizeSimilarUnifiedFrameKind(similarState.unifiedFrameTarget || "start");
+    const files = Array.from(event.target?.files || []);
+    event.target.value = "";
+
+    if (!projectId || !files.length) {
+        return;
+    }
+
+    const frameLabelLower = _getSimilarUnifiedFrameLabel(frameKind, { lower: true });
+
+    try {
+        const existingUploads = _getSimilarUnifiedFramePendingUploads();
+        const remainingSlots = Math.max(0, 6 - existingUploads.length);
+        if (!remainingSlots) {
+            showToast(`Este ${frameLabelLower} ja possui 6 imagens enviadas. Limpe antes de enviar novas.`, "error");
+            return;
+        }
+
+        const selectedFiles = files.slice(0, remainingSlots);
+        if (files.length > selectedFiles.length) {
+            showToast(`Limite de 6 imagens por frame. So ${selectedFiles.length} nova(s) imagem(ns) foi(ram) adicionada(s).`, "error");
+        }
+
+        for (let index = 0; index < selectedFiles.length; index += 1) {
+            const file = selectedFiles[index];
+            if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+                throw new Error("Use somente imagens JPG, PNG ou WebP.");
+            }
+            _setSimilarStatus(`Enviando imagem ${index + 1}/${selectedFiles.length} do ${frameLabelLower}...`, "running");
+            const uploaded = await uploadTempFileWithRetry(file, "image", frameLabelLower, { showProgress: false });
+            const uploadId = String(uploaded?.upload_id || "").trim();
+            if (!uploadId) {
+                throw new Error("Upload da imagem retornou sem identificador. Tente novamente.");
+            }
+
+            existingUploads.push({
+                upload_id: uploadId,
+                file_name: String(file.name || `imagem-${existingUploads.length + 1}`),
+                preview_url: URL.createObjectURL(file),
+            });
+        }
+
+        _setSimilarStatus("", "running");
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
+        }
+        showToast(`Imagem(ns) enviada(s) para o ${frameLabelLower}. Agora voce pode aplicar o ajuste.`, "success");
+    } catch (error) {
+        _setSimilarStatus(`Erro ao enviar imagem: ${error.message}`, "error");
+        showToast(`Erro ao enviar imagem: ${error.message}`, "error");
     }
 }
 
-function similarOpenUnifiedFrameEdit() {
+function similarClearUnifiedFrameUploads() {
+    const pendingUploads = _getSimilarUnifiedFramePendingUploads();
+    if (!pendingUploads.length) return;
+
+    _clearSimilarUnifiedFramePendingUploads();
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
+    }
+    showToast("Imagens enviadas para o frame foram limpas.", "success");
+}
+
+function similarToggleUnifiedFrameEdit(frameKind = "") {
+    const normalizedFrameKind = _normalizeSimilarUnifiedFrameKind(frameKind || similarState.unifiedFrameTarget || "start");
+    if (similarState.unifiedFrameEditorOpen && normalizedFrameKind === _normalizeSimilarUnifiedFrameKind(similarState.unifiedFrameTarget || "start")) {
+        similarCloseUnifiedFrameEdit();
+        return;
+    }
+    similarOpenUnifiedFrameEdit(normalizedFrameKind);
+}
+
+function similarOpenUnifiedFrameEdit(frameKind = "") {
     _syncSimilarUnifiedFrameDraftFromDom();
-    if (!similarState.unifiedFrameEditorOpen) {
-        similarState.unifiedFrameEditorOpen = true;
+    const previousFrameKind = _normalizeSimilarUnifiedFrameKind(similarState.unifiedFrameTarget || "start");
+    const nextFrameKind = _normalizeSimilarUnifiedFrameKind(frameKind || previousFrameKind || "start");
+    if (similarState.unifiedFrameTarget && previousFrameKind !== nextFrameKind) {
+        _clearSimilarUnifiedFramePendingUploads();
+        similarState.unifiedFrameInstruction = "";
+    }
+    similarState.unifiedFrameTarget = nextFrameKind;
+    similarState.unifiedFrameEditorOpen = true;
+    if (similarState.lastProjectSnapshot) {
         _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
     }
     setTimeout(() => {
@@ -12405,7 +12576,82 @@ async function similarGenerateUnifiedReferenceImage(options = {}) {
 }
 
 async function similarApplyUnifiedFrameEdit() {
-    await similarGenerateUnifiedReferenceImage({ requireInstruction: true });
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Analise o video antes de editar um frame do prompt unico.");
+        return;
+    }
+
+    _syncSimilarUnifiedFrameDraftFromDom();
+    const frameKind = _normalizeSimilarUnifiedFrameKind(similarState.unifiedFrameTarget || "start");
+    const frameLabel = _getSimilarUnifiedFrameLabel(frameKind);
+    const frameLabelLower = _getSimilarUnifiedFrameLabel(frameKind, { lower: true });
+    const project = similarState.lastProjectSnapshot;
+    const tags = _safeSimilarTags(project?.tags);
+    const currentFrameUrl = frameKind === "end"
+        ? String(tags.similar_unified_end_frame_url || "").trim()
+        : String(tags.similar_unified_start_frame_url || "").trim();
+    if (!currentFrameUrl) {
+        showToast("Esse frame ainda nao esta disponivel para edicao.", "error");
+        return;
+    }
+
+    const promptEl = document.getElementById("similar-unified-prompt-text");
+    const promptOverride = String(promptEl?.value || project?.tags?.similar_unified_prompt || "").trim();
+    const editInstruction = String(similarState.unifiedFrameInstruction || "").trim();
+    const uploadIds = [];
+    _getSimilarUnifiedFramePendingUploads().forEach((item) => {
+        const uploadId = String(item?.upload_id || "").trim();
+        if (uploadId && !uploadIds.includes(uploadId)) {
+            uploadIds.push(uploadId);
+        }
+    });
+
+    if (!editInstruction && !uploadIds.length) {
+        showToast("Escreva um ajuste ou envie uma nova foto antes de editar esse frame.", "error");
+        document.getElementById("similar-unified-frame-instruction")?.focus();
+        return;
+    }
+
+    try {
+        similarState.unifiedFrameBusy = true;
+        similarState.unifiedFrameBusyLabel = uploadIds.length
+            ? `Trocando elementos no ${frameLabelLower} com as imagens enviadas...`
+            : `Criando uma nova versao do ${frameLabelLower}...`;
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
+        }
+        _setSimilarStatus(`Atualizando ${frameLabelLower} do prompt unico...`, "running");
+        _queueSimilarScroll({ preferUnified: true, preferStatus: true });
+
+        await api(`/video/projects/${projectId}/similar/unified-boundary-frame`, {
+            method: "POST",
+            body: JSON.stringify({
+                frame_kind: frameKind,
+                generate_from_prompt: true,
+                prompt_override: promptOverride,
+                edit_instruction: editInstruction,
+                image_upload_ids: uploadIds,
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+
+        _clearSimilarUnifiedFramePendingUploads();
+        similarState.unifiedFrameInstruction = "";
+        similarState.unifiedFrameEditorOpen = false;
+        await _refreshSimilarProject({ silent: true });
+        _setSimilarStatus("", "running");
+        showToast(`${frameLabel} atualizado.`, "success");
+    } catch (error) {
+        _setSimilarStatus(`Erro ao atualizar ${frameLabelLower}: ${error.message}`, "error");
+        showToast(`Erro ao atualizar ${frameLabelLower}: ${error.message}`, "error");
+    } finally {
+        similarState.unifiedFrameBusy = false;
+        similarState.unifiedFrameBusyLabel = "";
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
+        }
+    }
 }
 
 function _readSimilarScenePromptForRequest(sceneId, options = {}) {
@@ -26082,14 +26328,17 @@ window.similarSaveScene = similarSaveScene;
 window.similarUploadSceneImage = similarUploadSceneImage;
 window.similarUploadFrameReference = similarUploadFrameReference;
 window.similarUploadUnifiedImages = similarUploadUnifiedImages;
+window.similarUploadUnifiedFrameReference = similarUploadUnifiedFrameReference;
 window.similarToggleNarrationEdit = similarToggleNarrationEdit;
 window.similarCloseNarrationEdit = similarCloseNarrationEdit;
 window.similarApplySceneNarration = similarApplySceneNarration;
 window.similarApplyUploadedSceneImages = similarApplyUploadedSceneImages;
 window.similarClearSceneUploads = similarClearSceneUploads;
 window.similarClearUnifiedUploads = similarClearUnifiedUploads;
+window.similarClearUnifiedFrameUploads = similarClearUnifiedFrameUploads;
 window.similarGenerateSceneImage = similarGenerateSceneImage;
 window.similarToggleUnifiedFrameEdit = similarToggleUnifiedFrameEdit;
+window.similarOpenUnifiedFrameEdit = similarOpenUnifiedFrameEdit;
 window.similarCloseUnifiedFrameEdit = similarCloseUnifiedFrameEdit;
 window.similarGenerateUnifiedReferenceImage = similarGenerateUnifiedReferenceImage;
 window.similarApplyUnifiedFrameEdit = similarApplyUnifiedFrameEdit;
