@@ -4395,6 +4395,9 @@ function _buildAutoEstimatePayload() {
 function _clearScriptManualAudioInputUi() {
     const userAudioInput = document.getElementById("script-user-audio-input");
     if (userAudioInput) userAudioInput.value = "";
+    const userAudioVideoInput = document.getElementById("script-user-audio-video-input");
+    if (userAudioVideoInput) userAudioVideoInput.value = "";
+    scriptUserAudioSourceKind = "";
     const userAudioName = document.getElementById("script-user-audio-name");
     if (userAudioName) {
         userAudioName.hidden = true;
@@ -14641,6 +14644,8 @@ async function uploadTempFileWithRetry(file, kind, label, options = {}) {
 let scriptPhotos = []; // array of File objects
 let scriptUserAudioFile = null;
 let scriptUserAudioDurationSeconds = 0;
+let scriptUserAudioSourceKind = "";
+let scriptUserAudioVideoExtracting = false;
 let scriptUserVideoFile = null; // single File object for custom video
 let scriptGeneratedAudioUploadId = "";
 let scriptGeneratedAudioPreviewUrl = "";
@@ -16862,6 +16867,7 @@ function updateScriptVideoAreaVisibility() {
     const audioClearBtn = document.getElementById("script-user-audio-clear-btn");
     const audioMusicChoice = document.getElementById("script-audio-music-choice");
     const audioUploadTrigger = document.getElementById("script-user-audio-upload-trigger");
+    const audioVideoTrigger = document.getElementById("script-user-audio-video-trigger");
     const builderHeading = document.getElementById("script-audio-builder-heading");
     const builderSubheading = document.getElementById("script-audio-builder-subheading");
     const videoEnabled = !!document.getElementById("script-use-video")?.checked;
@@ -16887,7 +16893,11 @@ function updateScriptVideoAreaVisibility() {
     if (audioSelectionRow) audioSelectionRow.hidden = !hasManualAudio;
     if (audioClearBtn) audioClearBtn.hidden = !hasManualAudio;
     if (audioMusicChoice) audioMusicChoice.hidden = !hasManualAudio;
-    if (audioUploadTrigger) audioUploadTrigger.classList.toggle("has-file", hasManualAudio);
+    if (audioUploadTrigger) audioUploadTrigger.classList.toggle("has-file", hasManualAudio && scriptUserAudioSourceKind !== "video");
+    if (audioVideoTrigger) {
+        audioVideoTrigger.classList.toggle("has-file", hasManualAudio && scriptUserAudioSourceKind === "video");
+        audioVideoTrigger.disabled = scriptUserAudioVideoExtracting;
+    }
     if (builderHeading) {
         builderHeading.textContent = hasVideo ? "Criar áudio para este vídeo" : "Criar áudio com voz IA";
     }
@@ -16904,6 +16914,105 @@ function openScriptVideoPicker() {
 
 function openScriptUserAudioPicker() {
     document.getElementById("script-user-audio-input")?.click();
+}
+
+function openScriptUserAudioVideoPicker() {
+    if (scriptUserAudioVideoExtracting) {
+        return;
+    }
+    document.getElementById("script-user-audio-video-input")?.click();
+}
+
+function _setScriptManualAudioSelectionUi(labelText) {
+    const nameEl = document.getElementById("script-user-audio-name");
+    const selectionRow = document.getElementById("script-user-audio-selection-row");
+    const clearBtn = document.getElementById("script-user-audio-clear-btn");
+    if (nameEl) {
+        nameEl.hidden = false;
+        nameEl.textContent = labelText;
+    }
+    if (selectionRow) selectionRow.hidden = false;
+    if (clearBtn) clearBtn.hidden = false;
+}
+
+async function _applyScriptManualAudioFile(file, options = {}) {
+    if (!file) {
+        return;
+    }
+
+    const sourceKind = String(options.sourceKind || "upload").trim().toLowerCase() || "upload";
+    const labelText = String(options.labelText || `Áudio selecionado: ${file.name || "audio.mp3"}`).trim();
+    const audioCb = document.getElementById("script-use-user-audio");
+    if (audioCb) audioCb.checked = true;
+    scriptUserAudioFile = file;
+    scriptUserAudioSourceKind = sourceKind;
+    clearScriptGeneratedAudio(true);
+    scriptUserAudioDurationSeconds = 0;
+    _setScriptManualAudioSelectionUi(labelText);
+    updateScriptVideoAreaVisibility();
+    _syncCreateRealisticDurationOptions("script");
+    toggleAudioMusicOptions();
+    scheduleScriptCreditEstimate();
+
+    try {
+        const resolvedDuration = await _resolveLocalAudioFileDurationSeconds(file);
+        if (scriptUserAudioFile === file) {
+            scriptUserAudioDurationSeconds = resolvedDuration;
+            _syncCreateRealisticDurationOptions("script");
+            scheduleScriptCreditEstimate();
+        }
+    } catch {
+        // Keep the cached duration at zero so Avatar can ask for a fresh file if needed.
+    }
+}
+
+function _resolveExtractedScriptAudioFileName(payload, fallbackName = "") {
+    const candidates = [payload?.path, payload?.media_url, fallbackName]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean);
+
+    for (const candidate of candidates) {
+        const withoutQuery = candidate.split("?")[0];
+        const normalized = withoutQuery.replace(/\\/g, "/");
+        const baseName = normalized.split("/").pop() || "";
+        if (!baseName) {
+            continue;
+        }
+        if (/\.[a-z0-9]+$/i.test(baseName)) {
+            return baseName;
+        }
+        return `${baseName}.m4a`;
+    }
+
+    return `audio-extraido-${Date.now()}.m4a`;
+}
+
+async function _downloadExtractedScriptAudioFile(payload, fallbackName = "") {
+    const mediaUrl = String(payload?.media_url || "").trim();
+    if (!mediaUrl) {
+        throw new Error("O servidor não retornou o áudio extraído.");
+    }
+
+    const response = await fetch(mediaUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        cache: "no-store",
+    });
+
+    if (response.status === 401) {
+        clearSession();
+        showAuth("Sua sessao expirou. Entre novamente.");
+        throw new Error("Unauthorized");
+    }
+    if (!response.ok) {
+        throw new Error("Não foi possível carregar o áudio extraído do vídeo.");
+    }
+
+    const blob = await response.blob();
+    const fileName = _resolveExtractedScriptAudioFileName(payload, fallbackName);
+    return new File([blob], fileName, {
+        type: String(blob.type || "").trim() || "audio/mp4",
+        lastModified: Date.now(),
+    });
 }
 
 function clearScriptGeneratedAudio(preserveBuilderText = true) {
@@ -17465,34 +17574,51 @@ async function handleUserAudioSelect(event) {
         return;
     }
 
-    const audioCb = document.getElementById("script-use-user-audio");
-    if (audioCb) audioCb.checked = true;
-    scriptUserAudioFile = file;
-    clearScriptGeneratedAudio(true);
-    scriptUserAudioDurationSeconds = 0;
-    const nameEl = document.getElementById("script-user-audio-name");
-    const selectionRow = document.getElementById("script-user-audio-selection-row");
-    const clearBtn = document.getElementById("script-user-audio-clear-btn");
-    if (nameEl) {
-        nameEl.hidden = false;
-        nameEl.textContent = `Áudio selecionado: ${file.name}`;
+    await _applyScriptManualAudioFile(file, {
+        sourceKind: "upload",
+        labelText: `Áudio selecionado: ${file.name}`,
+    });
+}
+
+async function handleUserAudioVideoSelect(event) {
+    const file = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+    if (!file) return;
+
+    const validTypes = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/webm", "video/x-matroska"];
+    if (!file.type.startsWith("video/") && !validTypes.includes(file.type)) {
+        alert("Formato não suportado. Envie um vídeo MP4, MOV, AVI ou WEBM.");
+        event.target.value = "";
+        return;
     }
-    if (selectionRow) selectionRow.hidden = false;
-    if (clearBtn) clearBtn.hidden = false;
+    if (file.size > MAX_VIDEO_SIZE) {
+        alert("Vídeo excede 500MB. Reduza o tamanho e tente novamente.");
+        event.target.value = "";
+        return;
+    }
+
+    const videoTrigger = document.getElementById("script-user-audio-video-trigger");
+    scriptUserAudioVideoExtracting = true;
+    if (videoTrigger) videoTrigger.disabled = true;
     updateScriptVideoAreaVisibility();
-    _syncCreateRealisticDurationOptions("script");
-    toggleAudioMusicOptions();
-    scheduleScriptCreditEstimate();
+    showToast("Extraindo o áudio do vídeo...", "info");
 
     try {
-        const resolvedDuration = await _resolveLocalAudioFileDurationSeconds(file);
-        if (scriptUserAudioFile === file) {
-            scriptUserAudioDurationSeconds = resolvedDuration;
-            _syncCreateRealisticDurationOptions("script");
-            scheduleScriptCreditEstimate();
-        }
-    } catch {
-        // Keep the cached duration at zero so Avatar can ask for a fresh file if needed.
+        const formData = new FormData();
+        formData.append("file", file, file.name || "video.mp4");
+        const payload = await apiForm("/video/editor/upload-video-audio", formData, { method: "POST" });
+        const extractedFile = await _downloadExtractedScriptAudioFile(payload, file.name);
+        await _applyScriptManualAudioFile(extractedFile, {
+            sourceKind: "video",
+            labelText: `Áudio extraído do vídeo: ${file.name}`,
+        });
+        showToast("Áudio extraído do vídeo e anexado ao projeto.", "success");
+    } catch (error) {
+        showToast(`Erro ao extrair o áudio: ${error.message}`, "error");
+    } finally {
+        scriptUserAudioVideoExtracting = false;
+        if (videoTrigger) videoTrigger.disabled = false;
+        event.target.value = "";
+        updateScriptVideoAreaVisibility();
     }
 }
 

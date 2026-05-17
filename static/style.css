@@ -7305,6 +7305,13 @@ svg.spin {
     box-shadow: 0 12px 26px rgba(0, 0, 0, 0.2), 0 0 0 2px rgba(var(--accent-rgb), 0.12);
 }
 
+.script-video-icon-btn[disabled],
+.script-video-audio-btn[disabled] {
+    opacity: 0.58;
+    cursor: progress;
+    pointer-events: none;
+}
+
 .script-video-icon-btn {
     width: 44px;
     height: 44px;
