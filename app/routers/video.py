@@ -3226,6 +3226,9 @@ async def build_similar_unified_prompt(
         "prompt": prompt_text,
         "source": prompt_source,
         "generated_at": generated_at,
+        "start_frame_url": _to_media_url(start_frame_path) if start_frame_path and os.path.exists(start_frame_path) else None,
+        "end_frame_url": _to_media_url(end_frame_path) if end_frame_path and os.path.exists(end_frame_path) else None,
+        "reference_frame_count": reference_frame_count,
     }
 
 

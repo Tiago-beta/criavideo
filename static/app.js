@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v470 loaded");
+console.log("[CriaVideo] app.js v471 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -6374,6 +6374,103 @@ function _renderSimilarUnifiedReferencePanel(project) {
     wrapEl.hidden = false;
 }
 
+function _buildSimilarUnifiedPromptTags(baseTags, response) {
+    const promptText = String(response?.prompt || "").trim();
+    const promptSource = String(response?.source || "").trim();
+    const generatedAt = String(response?.generated_at || "").trim();
+    const startFrameUrl = String(response?.start_frame_url || "").trim();
+    const endFrameUrl = String(response?.end_frame_url || "").trim();
+    const referenceFrameCount = Number(response?.reference_frame_count || 0) || 0;
+    const nextTags = {
+        ..._safeSimilarTags(baseTags),
+        similar_unified_prompt: promptText,
+        similar_unified_prompt_source: promptSource,
+        similar_unified_prompt_generated_at: generatedAt,
+    };
+
+    [
+        "similar_unified_clip_path",
+        "similar_unified_clip_url",
+        "similar_unified_clip_engine",
+        "similar_unified_clip_duration",
+        "similar_unified_clip_generated_at",
+        "similar_unified_reference_image_path",
+        "similar_unified_reference_image_url",
+    ].forEach((key) => {
+        delete nextTags[key];
+    });
+
+    if (startFrameUrl) {
+        nextTags.similar_unified_start_frame_url = startFrameUrl;
+    } else {
+        delete nextTags.similar_unified_start_frame_url;
+    }
+
+    if (endFrameUrl) {
+        nextTags.similar_unified_end_frame_url = endFrameUrl;
+    } else {
+        delete nextTags.similar_unified_end_frame_url;
+    }
+
+    if (referenceFrameCount > 0) {
+        nextTags.similar_unified_reference_frame_count = referenceFrameCount;
+    } else {
+        delete nextTags.similar_unified_reference_frame_count;
+    }
+
+    return nextTags;
+}
+
+function _mergeSimilarUnifiedPromptTags(rawTags, fallbackTags) {
+    const nextTags = _safeSimilarTags(rawTags);
+    const fallback = _safeSimilarTags(fallbackTags);
+    const fallbackPrompt = String(fallback.similar_unified_prompt || "").trim();
+    if (!fallbackPrompt) {
+        return nextTags;
+    }
+
+    const currentPrompt = String(nextTags.similar_unified_prompt || "").trim();
+    const currentGeneratedAt = String(nextTags.similar_unified_prompt_generated_at || "").trim();
+    const fallbackGeneratedAt = String(fallback.similar_unified_prompt_generated_at || "").trim();
+    const canMergePrompt = !currentPrompt;
+    const canMergeFrames = canMergePrompt
+        || (currentPrompt && currentPrompt === fallbackPrompt)
+        || (currentGeneratedAt && fallbackGeneratedAt && currentGeneratedAt === fallbackGeneratedAt);
+
+    if (canMergePrompt) {
+        nextTags.similar_unified_prompt = fallbackPrompt;
+    }
+
+    if ((canMergePrompt || currentPrompt === fallbackPrompt) && !String(nextTags.similar_unified_prompt_source || "").trim()) {
+        const fallbackSource = String(fallback.similar_unified_prompt_source || "").trim();
+        if (fallbackSource) {
+            nextTags.similar_unified_prompt_source = fallbackSource;
+        }
+    }
+
+    if ((canMergePrompt || currentPrompt === fallbackPrompt) && !String(nextTags.similar_unified_prompt_generated_at || "").trim() && fallbackGeneratedAt) {
+        nextTags.similar_unified_prompt_generated_at = fallbackGeneratedAt;
+    }
+
+    if (canMergeFrames) {
+        const fallbackStartFrameUrl = String(fallback.similar_unified_start_frame_url || "").trim();
+        const fallbackEndFrameUrl = String(fallback.similar_unified_end_frame_url || "").trim();
+        const fallbackReferenceFrameCount = Number(fallback.similar_unified_reference_frame_count || 0) || 0;
+
+        if (!String(nextTags.similar_unified_start_frame_url || "").trim() && fallbackStartFrameUrl) {
+            nextTags.similar_unified_start_frame_url = fallbackStartFrameUrl;
+        }
+        if (!String(nextTags.similar_unified_end_frame_url || "").trim() && fallbackEndFrameUrl) {
+            nextTags.similar_unified_end_frame_url = fallbackEndFrameUrl;
+        }
+        if (!(Number(nextTags.similar_unified_reference_frame_count || 0) > 0) && fallbackReferenceFrameCount > 0) {
+            nextTags.similar_unified_reference_frame_count = fallbackReferenceFrameCount;
+        }
+    }
+
+    return nextTags;
+}
+
 function _renderSimilarUnifiedPrompt(project) {
     const wrapEl = document.getElementById("similar-unified-prompt-wrap");
     const textEl = document.getElementById("similar-unified-prompt-text");
@@ -11603,12 +11700,15 @@ async function workflowRenderCompletedVideo(projectId, templateKey = "") {
     }
 }
 
-async function _refreshSimilarProject({ silent = false } = {}) {
+async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = null } = {}) {
     const projectId = Number(similarState.projectId || 0);
     if (!projectId) return;
 
     try {
         const project = await api(`/video/projects/${projectId}`);
+        if (preserveUnifiedTags) {
+            project.tags = _mergeSimilarUnifiedPromptTags(project.tags, preserveUnifiedTags);
+        }
         const tags = _safeSimilarTags(project.tags);
         const status = String(project.status || "").toLowerCase();
         const progress = Number(project.progress || 0);
@@ -12000,28 +12100,7 @@ async function similarBuildUnifiedPrompt() {
             throw new Error("Resposta invalida ao criar prompt unico");
         }
 
-        const nextTags = {
-            ..._safeSimilarTags(project?.tags),
-            similar_unified_prompt: promptText,
-            similar_unified_prompt_source: String(response?.source || "").trim(),
-            similar_unified_prompt_generated_at: String(response?.generated_at || "").trim(),
-        };
-        [
-            "similar_unified_clip_path",
-            "similar_unified_clip_url",
-            "similar_unified_clip_engine",
-            "similar_unified_clip_duration",
-            "similar_unified_clip_generated_at",
-            "similar_unified_reference_image_path",
-            "similar_unified_reference_image_url",
-            "similar_unified_start_frame_path",
-            "similar_unified_start_frame_url",
-            "similar_unified_end_frame_path",
-            "similar_unified_end_frame_url",
-            "similar_unified_reference_frame_count",
-        ].forEach((key) => {
-            delete nextTags[key];
-        });
+        const nextTags = _buildSimilarUnifiedPromptTags(project?.tags, response);
         const nextProject = {
             ...(project || {}),
             tags: nextTags,
@@ -12029,7 +12108,7 @@ async function similarBuildUnifiedPrompt() {
 
         similarState.lastProjectSnapshot = nextProject;
         _renderSimilarUnifiedPrompt(nextProject);
-        await _refreshSimilarProject({ silent: true });
+        await _refreshSimilarProject({ silent: true, preserveUnifiedTags: nextTags });
         _setSimilarStatus("", "running");
         showToast("Prompt unico criado.", "success");
     } catch (error) {
