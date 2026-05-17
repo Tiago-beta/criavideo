@@ -110,7 +110,7 @@ _REFERENCE_IMAGE_HINT_MARKERS = (
     "regra obrigatoria de imagem de referencia",
     "foto enviada",
 )
-_INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"}
+_INTERACTION_PERSONAS = {"homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado", "local"}
 _NON_VISUAL_BRIEFING_MARKERS = (
     "regra obrigatoria",
     "imagem de referencia",
@@ -254,6 +254,8 @@ def _normalize_interaction_persona(value: str) -> str:
         "familia": "familia",
         "personalizada": "personalizado",
         "custom": "personalizado",
+        "locacao": "local",
+        "localizacao": "local",
     }
     normalized = mapping.get(raw, raw)
     if normalized in {"nenhum", "none", "no_reference", "no-reference", "sem_persona", "sem-persona"}:
@@ -3069,6 +3071,57 @@ async def get_project(
             }
             for r in renders
         ],
+    }
+
+
+@router.post("/projects/{project_id}/extract-last-frame")
+async def extract_project_last_frame(
+    project_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if str(project.status.value or "").lower() != "completed":
+        raise HTTPException(status_code=409, detail="O projeto ainda não terminou de gerar o vídeo.")
+
+    result_renders = await db.execute(
+        select(VideoRender)
+        .where(VideoRender.project_id == project_id)
+        .order_by(VideoRender.created_at.desc(), VideoRender.id.desc())
+    )
+    renders = result_renders.scalars().all()
+
+    selected_render = None
+    selected_video_path = ""
+    for render in renders:
+        candidate_path = str(render.file_path or "").strip()
+        if candidate_path and os.path.exists(candidate_path):
+            selected_render = render
+            selected_video_path = candidate_path
+            break
+
+    if not selected_render or not selected_video_path:
+        raise HTTPException(status_code=404, detail="Nenhum vídeo final disponível para extrair o último frame.")
+
+    upload_id = f"last-frame-{project_id}-{selected_render.id}.png"
+    target_path = _temp_user_dir(user["id"]) / upload_id
+    if not target_path.exists() or target_path.stat().st_size <= 0:
+        from app.services.multi_clip import extract_last_frame
+
+        try:
+            await extract_last_frame(selected_video_path, str(target_path))
+        except Exception as exc:
+            logger.exception("Failed to extract last frame for project %s", project_id)
+            raise HTTPException(status_code=500, detail=f"Falha ao extrair o último frame: {exc}")
+
+    return {
+        "project_id": project_id,
+        "render_id": selected_render.id,
+        "upload_id": upload_id,
+        "image_url": _to_media_url(str(target_path)),
     }
 
 

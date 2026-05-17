@@ -327,7 +327,7 @@ class PersonaProfile(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, nullable=False, index=True)
-    persona_type = Column(String(20), nullable=False, index=True)  # homem|mulher|crianca|familia|natureza
+    persona_type = Column(String(20), nullable=False, index=True)  # homem|mulher|crianca|familia|natureza|desenho|personalizado|local
     name = Column(String(255), nullable=False)
     attributes = Column(JSON, default=dict)
     prompt_text = Column(Text, default="")

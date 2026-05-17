@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v468 loaded");
+console.log("[CriaVideo] app.js v469 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -121,7 +121,7 @@ const SERIES_PLANNING_STATUS_STEPS = [
     "Montando personagens, cenas e objetos...",
 ];
 
-const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado"];
+const REALISTIC_PERSONA_TYPES = ["homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado", "local"];
 const REALISTIC_PERSONA_LABELS = {
     homem: "Homem",
     mulher: "Mulher",
@@ -130,7 +130,11 @@ const REALISTIC_PERSONA_LABELS = {
     natureza: "Natureza",
     desenho: "Desenho",
     personalizado: "Personalizado",
+    local: "Local",
 };
+const IMAGE_CREATOR_PERSONA_CONTEXT = "image-persona";
+const IMAGE_CREATOR_LOCATION_CONTEXT = "image-location";
+const PERSONA_CONTEXTS = ["wizard", "script", "ai", "auto", "pilot", IMAGE_CREATOR_PERSONA_CONTEXT, IMAGE_CREATOR_LOCATION_CONTEXT];
 const PUBLISH_ANALYSIS_MAX_SECONDS = 60;
 let _personaProfilesByType = {};
 let _personaSelectionByContext = {
@@ -139,6 +143,8 @@ let _personaSelectionByContext = {
     ai: {},
     auto: {},
     pilot: {},
+    [IMAGE_CREATOR_PERSONA_CONTEXT]: {},
+    [IMAGE_CREATOR_LOCATION_CONTEXT]: {},
 };
 let _personaMultiSelectionByContext = {
     wizard: {},
@@ -146,6 +152,8 @@ let _personaMultiSelectionByContext = {
     ai: {},
     auto: {},
     pilot: {},
+    [IMAGE_CREATOR_PERSONA_CONTEXT]: {},
+    [IMAGE_CREATOR_LOCATION_CONTEXT]: {},
 };
 let _personaNoReferenceByContext = {
     wizard: {},
@@ -153,6 +161,8 @@ let _personaNoReferenceByContext = {
     ai: {},
     auto: {},
     pilot: {},
+    [IMAGE_CREATOR_PERSONA_CONTEXT]: {},
+    [IMAGE_CREATOR_LOCATION_CONTEXT]: {},
 };
 let _personaManagerContext = "script";
 let _personaManagerType = "natureza";
@@ -5790,6 +5800,26 @@ function initCreateWizard() {
             vbtn.closest(".realistic-voice-grid").querySelectorAll(".voice-btn").forEach((d) => d.classList.remove("selected"));
             vbtn.classList.add("selected");
         }
+    });
+
+    document.getElementById("modal-script-image-creator")?.addEventListener("click", (e) => {
+        const personaTag = e.target.closest("#script-image-generator-persona-tags .style-tag");
+        if (!personaTag) {
+            return;
+        }
+
+        const group = personaTag.closest(".realistic-inspiration-tags");
+        if (!group) {
+            return;
+        }
+
+        group.querySelectorAll(".style-tag").forEach((tag) => tag.classList.remove("selected"));
+        personaTag.classList.add("selected");
+        const selectedPersona = _normalizeRealisticPersonaType(personaTag.dataset.persona || "homem");
+        _setSelectedPersonaProfileIds(IMAGE_CREATOR_PERSONA_CONTEXT, selectedPersona, []);
+        _setPersonaNoReferenceEnabled(IMAGE_CREATOR_PERSONA_CONTEXT, selectedPersona, true);
+        _refreshPersonaContext(IMAGE_CREATOR_PERSONA_CONTEXT, selectedPersona);
+        scheduleScriptImageCreatorEstimate(0);
     });
 
     // Narration checkbox toggles
@@ -13206,14 +13236,49 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             }),
         });
 
+        const imageCreatorLaunch = prefix === "script"
+            && _scriptImageCreatorVideoLaunch.active
+            && !!String(_scriptImageCreatorVideoLaunch.sourceUploadId || "").trim();
+        const imageCreatorSourceUploadId = imageCreatorLaunch
+            ? String(_scriptImageCreatorVideoLaunch.sourceUploadId || "").trim()
+            : "";
+        if (imageCreatorLaunch) {
+            _updateScriptImageCreatorVideoState(imageCreatorSourceUploadId, {
+                project_id: Number(resp?.id || 0) || 0,
+                status: "generating_scenes",
+                progress: 25,
+                message: `${engineLabel} está criando seu vídeo...`,
+                engine_label: engineLabel,
+                error_message: "",
+                video_url: "",
+                thumbnail_url: "",
+                last_frame_upload_id: "",
+                last_frame_image_url: "",
+            });
+        }
+
         _stopSmoothProgress();
         closeModal("modal-new-project");
-        resetCreateWizard();
+        resetCreateWizard({ preserveScriptImageCreatorState: imageCreatorLaunch });
         await loadProjects();
-        showToast(`${engineLabel} começou a criar seu vídeo. A miniatura vai piscar na lista enquanto renderiza.`, "success");
+        if (imageCreatorLaunch) {
+            openScriptImageCreatorModal();
+            _startScriptImageCreatorVideoProjectTracking(imageCreatorSourceUploadId, Number(resp?.id || 0) || 0, engineLabel);
+            showToast(`${engineLabel} começou a criar seu vídeo. Ele já está piscando na tela de imagens.`, "success");
+        } else {
+            showToast(`${engineLabel} começou a criar seu vídeo. A miniatura vai piscar na lista enquanto renderiza.`, "success");
+        }
+        _scriptImageCreatorVideoLaunch = {
+            active: false,
+            sourceUploadId: "",
+        };
 
     } catch (e) {
         _stopSmoothProgress();
+        _scriptImageCreatorVideoLaunch = {
+            active: false,
+            sourceUploadId: "",
+        };
         let msg = e.message || "Erro ao gerar vídeo realista.";
         if (msg.includes("flagged as sensitive") || msg.includes("E005")) {
             msg = "O conteudo do prompt foi considerado sensivel pelo modelo de IA. Tente reformular seu texto evitando temas violentos, sexuais ou controversos.";
@@ -13269,7 +13334,8 @@ async function pollRealisticProgress(projectId, engineLabel) {
     throw new Error("Tempo limite excedido. O vídeo pode ainda estar sendo gerado — verifique seus projetos.");
 }
 
-function resetCreateWizard() {
+function resetCreateWizard(options = {}) {
+    const preserveScriptImageCreatorState = !!options.preserveScriptImageCreatorState;
     stopKaraokeProgressPolling();
     createMode = "wizard";
     _setNewProjectModalWorkflowLayout(false);
@@ -13376,7 +13442,9 @@ function resetCreateWizard() {
     // Reset photo upload
     scriptPhotos = [];
     resetAiSuggestCustomImages();
-    resetScriptImageCreatorModalState();
+    if (!preserveScriptImageCreatorState) {
+        resetScriptImageCreatorModalState();
+    }
     const photoCb = document.getElementById("script-use-photos");
     if (photoCb) photoCb.checked = false;
     const photoArea = document.getElementById("script-photo-area");
@@ -13519,7 +13587,12 @@ function resetCreateWizard() {
         d.classList.toggle("selected", d.dataset.value === "60");
     });
     // Reset style tags
-    document.querySelectorAll(".style-tag.selected").forEach((t) => t.classList.remove("selected"));
+    document.querySelectorAll(".style-tag.selected").forEach((tag) => {
+        if (preserveScriptImageCreatorState && tag.closest("#script-image-generator-persona-tags")) {
+            return;
+        }
+        tag.classList.remove("selected");
+    });
     const defWizardPersona = document.querySelector('#wizard-realistic-persona-tags [data-persona="natureza"]');
     if (defWizardPersona) defWizardPersona.classList.add("selected");
     const defScriptPersona = document.querySelector('#script-realistic-persona-tags [data-persona="natureza"]');
@@ -13528,6 +13601,13 @@ function resetCreateWizard() {
     if (defAiPersona) {
         document.querySelectorAll("#ai-suggest-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
         defAiPersona.classList.add("selected");
+    }
+    if (!preserveScriptImageCreatorState) {
+        const defImageCreatorPersona = document.querySelector('#script-image-generator-persona-tags [data-persona="homem"]');
+        if (defImageCreatorPersona) {
+            document.querySelectorAll("#script-image-generator-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
+            defImageCreatorPersona.classList.add("selected");
+        }
     }
 
     [
@@ -13552,6 +13632,17 @@ function resetCreateWizard() {
     _refreshPersonaContext("wizard", "natureza");
     _refreshPersonaContext("script", "natureza");
     _refreshPersonaContext("ai", "natureza");
+    if (!preserveScriptImageCreatorState) {
+        _personaSelectionByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
+        _personaSelectionByContext[IMAGE_CREATOR_LOCATION_CONTEXT] = {};
+        _personaMultiSelectionByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
+        _personaMultiSelectionByContext[IMAGE_CREATOR_LOCATION_CONTEXT] = {};
+        _personaNoReferenceByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
+        _personaNoReferenceByContext[IMAGE_CREATOR_LOCATION_CONTEXT] = {};
+        _resetScriptImageCreatorPersonaContexts();
+        _refreshPersonaContext(IMAGE_CREATOR_PERSONA_CONTEXT, "homem");
+        _refreshPersonaContext(IMAGE_CREATOR_LOCATION_CONTEXT, "local");
+    }
 
     // Load voice profiles into selectors
     loadVoiceProfiles();
@@ -14331,9 +14422,14 @@ let _scriptImageCreatorState = {
     countBackup: "1",
     selectedEstimateModelId: "",
     selectedEstimateCredits: null,
+    profileReferenceUploads: {},
 };
 let _scriptImageCreatorLaunchSource = "script";
 let _scriptImageCreatorConsumer = null;
+let _scriptImageCreatorVideoLaunch = {
+    active: false,
+    sourceUploadId: "",
+};
 
 function _clearScriptImageCreatorEstimateTimer() {
     if (_scriptImageCreatorState.estimateTimer) {
@@ -14344,6 +14440,125 @@ function _clearScriptImageCreatorEstimateTimer() {
 
 function _isScriptImageCreatorEditMode() {
     return Number.isInteger(_scriptImageCreatorState.editingIndex) && _scriptImageCreatorState.editingIndex >= 0;
+}
+
+function _normalizePersonaContext(context) {
+    return PERSONA_CONTEXTS.includes(context) ? context : "script";
+}
+
+function _getScriptImageCreatorSelectedReferenceProfiles() {
+    const selectedProfiles = [];
+    const personaType = _getRealisticPersonaTypeByContext(IMAGE_CREATOR_PERSONA_CONTEXT);
+    const personaIds = _isPersonaNoReferenceEnabled(IMAGE_CREATOR_PERSONA_CONTEXT, personaType)
+        ? []
+        : _getSelectedPersonaProfileIds(IMAGE_CREATOR_PERSONA_CONTEXT, personaType);
+    const personaProfiles = _getPersonaProfiles(personaType);
+    personaIds.forEach((profileId) => {
+        const profile = personaProfiles.find((item) => (parseInt(item?.id || "0", 10) || 0) === profileId);
+        if (profile) {
+            selectedProfiles.push(profile);
+        }
+    });
+
+    const locationIds = _isPersonaNoReferenceEnabled(IMAGE_CREATOR_LOCATION_CONTEXT, "local")
+        ? []
+        : _getSelectedPersonaProfileIds(IMAGE_CREATOR_LOCATION_CONTEXT, "local");
+    const locationProfiles = _getPersonaProfiles("local");
+    locationIds.forEach((profileId) => {
+        const profile = locationProfiles.find((item) => (parseInt(item?.id || "0", 10) || 0) === profileId);
+        if (profile) {
+            selectedProfiles.push(profile);
+        }
+    });
+
+    return selectedProfiles;
+}
+
+function _getScriptImageCreatorSelectedReferenceCount() {
+    return _getScriptImageCreatorSelectedReferenceProfiles().length;
+}
+
+function _hasScriptImageCreatorAnyReference() {
+    return (_scriptImageCreatorState.referenceFiles.length + _getScriptImageCreatorSelectedReferenceCount()) > 0;
+}
+
+function _ensureScriptImageCreatorPersonaTagSelection() {
+    const container = document.getElementById("script-image-generator-persona-tags");
+    if (!container || container.querySelector(".style-tag.selected")) {
+        return;
+    }
+    container.querySelector('[data-persona="homem"]')?.classList.add("selected");
+}
+
+function _resetScriptImageCreatorPersonaContexts() {
+    _ensureScriptImageCreatorPersonaTagSelection();
+    const selectedPersonaType = _getRealisticPersonaTypeByContext(IMAGE_CREATOR_PERSONA_CONTEXT);
+    _setSelectedPersonaProfileIds(IMAGE_CREATOR_PERSONA_CONTEXT, selectedPersonaType, []);
+    _setPersonaNoReferenceEnabled(IMAGE_CREATOR_PERSONA_CONTEXT, selectedPersonaType, true);
+    _setSelectedPersonaProfileIds(IMAGE_CREATOR_LOCATION_CONTEXT, "local", []);
+    _setPersonaNoReferenceEnabled(IMAGE_CREATOR_LOCATION_CONTEXT, "local", true);
+}
+
+async function _refreshScriptImageCreatorReferenceContexts() {
+    _ensureScriptImageCreatorPersonaTagSelection();
+    await _refreshPersonaContext(IMAGE_CREATOR_PERSONA_CONTEXT, _getRealisticPersonaTypeByContext(IMAGE_CREATOR_PERSONA_CONTEXT));
+    await _refreshPersonaContext(IMAGE_CREATOR_LOCATION_CONTEXT, "local");
+}
+
+async function _prepareScriptImageCreatorProfileReferenceUploadIds(maxReferences = 5) {
+    const uploadIds = [];
+    const selectedProfiles = _getScriptImageCreatorSelectedReferenceProfiles();
+    for (let index = 0; index < selectedProfiles.length; index += 1) {
+        if (uploadIds.length >= maxReferences) {
+            break;
+        }
+
+        const profile = selectedProfiles[index];
+        const profileType = _normalizeRealisticPersonaType(profile?.persona_type || "natureza");
+        const profileId = parseInt(profile?.id || "0", 10) || 0;
+        const imageUrl = String(profile?.image_url || "").trim();
+        if (!profileId || !imageUrl) {
+            continue;
+        }
+
+        const cacheKey = `${profileType}:${profileId}:${imageUrl}`;
+        const cachedUpload = _scriptImageCreatorState.profileReferenceUploads?.[cacheKey];
+        const cachedUploadId = String(cachedUpload?.upload_id || "").trim();
+        if (cachedUploadId) {
+            uploadIds.push(cachedUploadId);
+            continue;
+        }
+
+        const response = await fetch(imageUrl, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) {
+            throw new Error(`Nao foi possivel carregar a imagem de ${profileType === "local" ? "local" : "persona"}.`);
+        }
+
+        const blob = await response.blob();
+        const mimeType = String(blob.type || "image/png").toLowerCase();
+        const extension = mimeType.includes("jpeg") ? "jpg" : (mimeType.includes("webp") ? "webp" : "png");
+        const fileLabel = profileType === "local" ? `local ${index + 1}` : `persona ${index + 1}`;
+        const file = new File([blob], `${fileLabel.replace(/\s+/g, "-")}-${profileId}.${extension}`, {
+            type: blob.type || "image/png",
+            lastModified: Date.now(),
+        });
+
+        const uploaded = await uploadTempFileWithRetry(file, "image", fileLabel, { showProgress: false });
+        const uploadId = String(uploaded?.upload_id || "").trim();
+        if (!uploadId) {
+            throw new Error(`Falha ao enviar a referencia de ${profileType === "local" ? "local" : "persona"}.`);
+        }
+
+        _scriptImageCreatorState.profileReferenceUploads[cacheKey] = {
+            upload_id: uploadId,
+            image_url: imageUrl,
+        };
+        uploadIds.push(uploadId);
+    }
+
+    return uploadIds;
 }
 
 function _cloneScriptImageCreatorReferenceFiles(items) {
@@ -14873,6 +15088,10 @@ function _syncScriptImageCreatorChoiceButtons() {
 function resetScriptImageCreatorModalState() {
     _clearScriptImageCreatorEstimateTimer();
     _scriptImageCreatorLaunchSource = "script";
+    _scriptImageCreatorVideoLaunch = {
+        active: false,
+        sourceUploadId: "",
+    };
     _scriptImageCreatorState = {
         referenceFiles: [],
         generatedImages: [],
@@ -14890,6 +15109,7 @@ function resetScriptImageCreatorModalState() {
         countBackup: "1",
         selectedEstimateModelId: "",
         selectedEstimateCredits: null,
+        profileReferenceUploads: {},
     };
 
     const modelSelect = document.getElementById("script-image-generator-model");
@@ -14909,10 +15129,15 @@ function resetScriptImageCreatorModalState() {
     const refInput = document.getElementById("script-image-generator-reference-input");
     if (refInput) refInput.value = "";
 
+    _resetScriptImageCreatorPersonaContexts();
+
     setScriptImageCreatorStatus("", "info");
     syncScriptImageCreatorControls();
     renderScriptImageCreatorReferencePreview();
     renderScriptImageCreatorResults();
+    _refreshScriptImageCreatorReferenceContexts().catch((error) => {
+        console.warn("Failed to refresh script image creator persona contexts:", error);
+    });
     scheduleScriptImageCreatorEstimate(0);
 }
 
@@ -14926,6 +15151,9 @@ function openScriptImageCreatorModal() {
     syncScriptImageCreatorControls();
     renderScriptImageCreatorReferencePreview();
     renderScriptImageCreatorResults();
+    _refreshScriptImageCreatorReferenceContexts().catch((error) => {
+        console.warn("Failed to refresh script image creator persona contexts:", error);
+    });
     scheduleScriptImageCreatorEstimate(0);
     openModal("modal-script-image-creator");
 }
@@ -14935,6 +15163,9 @@ function openScriptImageCreatorFromCreateMode() {
     syncScriptImageCreatorControls();
     renderScriptImageCreatorReferencePreview();
     renderScriptImageCreatorResults();
+    _refreshScriptImageCreatorReferenceContexts().catch((error) => {
+        console.warn("Failed to refresh script image creator persona contexts:", error);
+    });
     scheduleScriptImageCreatorEstimate(0);
     openModal("modal-script-image-creator");
 }
@@ -15000,6 +15231,7 @@ function syncScriptImageCreatorControls() {
     const sequenceSelect = document.getElementById("script-image-generator-sequence-mode");
     const thinkingGroup = document.getElementById("script-image-generator-thinking-group");
     const referenceGroup = document.getElementById("script-image-generator-reference-group");
+    const contextGroup = document.getElementById("script-image-generator-context-group");
     const sizeSelect = document.getElementById("script-image-generator-size");
     const countSelect = document.getElementById("script-image-generator-count");
     const seedInput = document.getElementById("script-image-generator-seed");
@@ -15043,6 +15275,7 @@ function syncScriptImageCreatorControls() {
     }
     if (sequenceGroup) sequenceGroup.hidden = isEditing || selectedCount <= 1;
     if (referenceGroup) referenceGroup.hidden = (meta.maxReferences || 0) <= 0;
+    if (contextGroup) contextGroup.hidden = (meta.maxReferences || 0) <= 0;
     if (sizeGroup) sizeGroup.classList.toggle("is-disabled", !meta.supportsSize);
     if (sizeSelect) sizeSelect.disabled = !meta.supportsSize;
     if (seedGroup) seedGroup.classList.toggle("is-disabled", !meta.supportsThinkingMode);
@@ -15203,7 +15436,7 @@ function renderScriptImageCreatorReferencePreview() {
 
     const meta = _getScriptImageCreatorModelMeta();
     const maxRefs = meta.maxReferences || 5;
-    count.textContent = `${_scriptImageCreatorState.referenceFiles.length}/${maxRefs}`;
+    count.textContent = `${Math.min(_scriptImageCreatorState.referenceFiles.length + _getScriptImageCreatorSelectedReferenceCount(), maxRefs)}/${maxRefs}`;
     preview.innerHTML = "";
 
     _scriptImageCreatorState.referenceFiles.forEach((item, index) => {
@@ -15262,7 +15495,7 @@ async function updateScriptImageCreatorEstimate() {
     const imageCount = Number.parseInt(document.getElementById("script-image-generator-count")?.value || "1", 10) || 1;
     const size = String(document.getElementById("script-image-generator-size")?.value || "2K").trim();
     const thinkingMode = !!document.getElementById("script-image-generator-thinking")?.checked;
-    const referenceCount = _scriptImageCreatorState.referenceFiles.length;
+    const referenceCount = _scriptImageCreatorState.referenceFiles.length + _getScriptImageCreatorSelectedReferenceCount();
     const seq = (_scriptImageCreatorState.estimateSeq || 0) + 1;
     _scriptImageCreatorState.estimateSeq = seq;
 
@@ -15289,6 +15522,249 @@ async function updateScriptImageCreatorEstimate() {
             _setScriptImageCreatorEstimate(meta.id, null);
         }
     }
+}
+
+function _findScriptImageCreatorResultIndexByUploadId(uploadId) {
+    const normalizedUploadId = String(uploadId || "").trim();
+    if (!normalizedUploadId) {
+        return -1;
+    }
+    return _scriptImageCreatorState.generatedImages.findIndex((item) => String(item?.upload_id || "").trim() === normalizedUploadId);
+}
+
+function _isScriptImageCreatorVideoPendingStatus(status) {
+    return ["pending", "generating_scenes", "generating_clips", "rendering"].includes(String(status || "").trim().toLowerCase());
+}
+
+function _updateScriptImageCreatorVideoState(sourceUploadId, patch = {}) {
+    const index = _findScriptImageCreatorResultIndexByUploadId(sourceUploadId);
+    if (index < 0) {
+        return null;
+    }
+
+    const item = _scriptImageCreatorState.generatedImages[index];
+    item.video_state = {
+        ...(item.video_state || {}),
+        ...patch,
+    };
+    renderScriptImageCreatorResults();
+    return item.video_state;
+}
+
+function _buildScriptImageCreatorVideoSlot(item) {
+    const videoState = item?.video_state;
+    if (!videoState) {
+        return "";
+    }
+
+    const status = String(videoState.status || "").trim().toLowerCase();
+    const progress = Math.max(0, Math.min(100, Number(videoState.progress || 0)));
+    const engineLabel = workflowEscapeHtml(String(videoState.engine_label || "IA").trim() || "IA");
+    const errorMessage = workflowEscapeHtml(String(videoState.error_message || "").trim());
+    const message = workflowEscapeHtml(String(videoState.message || "").trim());
+    const videoUrl = String(videoState.video_url || "").trim();
+    const thumbnailUrl = String(videoState.thumbnail_url || "").trim();
+    const continuationReady = !!String(videoState.last_frame_upload_id || "").trim();
+
+    if (status === "failed") {
+        return `
+            <div class="script-image-generator-video-slot is-error">
+                <div class="script-image-generator-video-copy">
+                    <strong>Falha ao criar o vídeo</strong>
+                    <small>${errorMessage || message || "Tente gerar novamente com outro prompt ou motor."}</small>
+                </div>
+            </div>
+        `;
+    }
+
+    if (_isScriptImageCreatorVideoPendingStatus(status)) {
+        return `
+            <div class="script-image-generator-video-slot is-pending" aria-live="polite">
+                <div class="script-image-generator-video-copy">
+                    <strong>${engineLabel} está criando o vídeo</strong>
+                    <small>${message || "A cena voltou para a tela de imagens enquanto o vídeo renderiza."}</small>
+                </div>
+                <div class="script-image-generator-video-progress"><span style="width:${progress}%"></span></div>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="script-image-generator-video-slot is-complete">
+            ${videoUrl ? `<video class="script-image-generator-video-preview" src="${workflowEscapeHtml(videoUrl)}" ${thumbnailUrl ? `poster="${workflowEscapeHtml(thumbnailUrl)}"` : ""} controls playsinline preload="metadata"></video>` : ""}
+            <div class="script-image-generator-video-copy">
+                <strong>Vídeo pronto</strong>
+                <small>${continuationReady ? "Último frame já foi carregado para a próxima cena." : "Resultado disponível para continuar desta imagem."}</small>
+            </div>
+        </div>
+    `;
+}
+
+function removeScriptImageCreatorResult(index) {
+    const parsed = Number.parseInt(String(index), 10);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed >= _scriptImageCreatorState.generatedImages.length) {
+        return;
+    }
+
+    const item = _scriptImageCreatorState.generatedImages[parsed];
+    if (_isScriptImageCreatorVideoPendingStatus(item?.video_state?.status)) {
+        showToast("Aguarde esse vídeo terminar antes de remover a imagem.", "info");
+        return;
+    }
+
+    _scriptImageCreatorState.generatedImages.splice(parsed, 1);
+    if (_scriptImageCreatorState.generatedImages.length === 0) {
+        _scriptImageCreatorState.activeResultIndex = 0;
+    } else {
+        _scriptImageCreatorState.activeResultIndex = Math.max(0, Math.min(_scriptImageCreatorState.activeResultIndex, _scriptImageCreatorState.generatedImages.length - 1));
+    }
+    renderScriptImageCreatorResults();
+}
+window.removeScriptImageCreatorResult = removeScriptImageCreatorResult;
+
+function _upsertScriptImageCreatorContinuationResult(sourceUploadId, payload) {
+    const sourceIndex = _findScriptImageCreatorResultIndexByUploadId(sourceUploadId);
+    const sourceItem = sourceIndex >= 0 ? _scriptImageCreatorState.generatedImages[sourceIndex] : null;
+    const uploadId = String(payload?.upload_id || "").trim();
+    const imageUrl = String(payload?.image_url || "").trim();
+    if (!uploadId || !imageUrl) {
+        return;
+    }
+
+    const continuationItem = {
+        upload_id: uploadId,
+        image_url: imageUrl,
+        mime_type: "image/png",
+        file_name: `ultimo-frame-${Date.now()}.png`,
+        label: sourceItem?.label ? `${sourceItem.label} - último frame` : "Último frame",
+        model: String(sourceItem?.model || "video-last-frame").trim(),
+        prompt_text: String(sourceItem?.prompt_text || "").trim(),
+        scene_index: Number.isInteger(sourceItem?.scene_index) ? sourceItem.scene_index : 0,
+        derived_from_upload_id: sourceUploadId,
+        derived_from_project_id: Number(payload?.project_id || 0) || 0,
+    };
+
+    const existingIndex = _findScriptImageCreatorResultIndexByUploadId(uploadId);
+    if (existingIndex >= 0) {
+        _scriptImageCreatorState.generatedImages.splice(existingIndex, 1, {
+            ..._scriptImageCreatorState.generatedImages[existingIndex],
+            ...continuationItem,
+        });
+        _scriptImageCreatorState.activeResultIndex = existingIndex;
+    } else {
+        const insertIndex = sourceIndex >= 0 ? sourceIndex + 1 : _scriptImageCreatorState.generatedImages.length;
+        _scriptImageCreatorState.generatedImages.splice(insertIndex, 0, continuationItem);
+        _scriptImageCreatorState.activeResultIndex = insertIndex;
+    }
+
+    renderScriptImageCreatorResults();
+}
+
+async function _handleScriptImageCreatorVideoCompleted(sourceUploadId, projectId, detail, engineLabel) {
+    const render = _pickLatestAvailableRender(detail?.renders || []);
+    _updateScriptImageCreatorVideoState(sourceUploadId, {
+        status: "completed",
+        progress: 100,
+        message: "Vídeo pronto.",
+        engine_label: engineLabel,
+        video_url: String(render?.video_url || "").trim(),
+        thumbnail_url: String(render?.thumbnail_url || "").trim(),
+    });
+
+    await loadProjects();
+
+    try {
+        const lastFrame = await api(`/video/projects/${projectId}/extract-last-frame`, {
+            method: "POST",
+        });
+        if (lastFrame?.upload_id && lastFrame?.image_url) {
+            _updateScriptImageCreatorVideoState(sourceUploadId, {
+                last_frame_upload_id: String(lastFrame.upload_id || "").trim(),
+                last_frame_image_url: String(lastFrame.image_url || "").trim(),
+            });
+            _upsertScriptImageCreatorContinuationResult(sourceUploadId, lastFrame);
+            showToast("Vídeo pronto. O último frame já está carregado para a próxima cena.", "success");
+            return;
+        }
+    } catch (error) {
+        showToast(`Vídeo pronto, mas não foi possível preparar o último frame: ${error.message}`, "error");
+        return;
+    }
+
+    showToast("Vídeo pronto.", "success");
+}
+
+async function _pollScriptImageCreatorVideoProject(sourceUploadId, projectId, engineLabel) {
+    const maxWait = 12 * 60 * 1000;
+    const pollInterval = 4000;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < maxWait) {
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+
+        try {
+            const response = await fetch(`${API}/video/projects/${projectId}`, {
+                headers: getHeaders(),
+            });
+            if (!response.ok) {
+                continue;
+            }
+
+            const detail = await response.json();
+            const progress = Math.max(0, Math.min(100, Number(detail.progress || 0)));
+            const status = String(detail.status || "").trim().toLowerCase();
+            const message = status === "failed"
+                ? String(detail.error_message || "Falha na geração do vídeo.").trim()
+                : progress < 15
+                    ? "Preparando a cena..."
+                    : progress < 80
+                        ? `${engineLabel} está criando seu vídeo...`
+                        : progress < 95
+                            ? "Finalizando vídeo..."
+                            : "Preparando continuidade...";
+
+            _updateScriptImageCreatorVideoState(sourceUploadId, {
+                project_id: projectId,
+                status,
+                progress,
+                message,
+                engine_label: engineLabel,
+                error_message: String(detail.error_message || "").trim(),
+            });
+
+            if (status === "completed") {
+                await _handleScriptImageCreatorVideoCompleted(sourceUploadId, projectId, detail, engineLabel);
+                return;
+            }
+
+            if (status === "failed") {
+                showToast(detail.error_message || "Falha na geração do vídeo.", "error");
+                return;
+            }
+        } catch (error) {
+            if (error?.message && !String(error.message).toLowerCase().includes("fetch")) {
+                _updateScriptImageCreatorVideoState(sourceUploadId, {
+                    status: "failed",
+                    error_message: error.message,
+                });
+                showToast(`Falha ao acompanhar o vídeo: ${error.message}`, "error");
+                return;
+            }
+        }
+    }
+
+    _updateScriptImageCreatorVideoState(sourceUploadId, {
+        status: "failed",
+        error_message: "Tempo limite excedido. Confira o projeto na lista principal.",
+    });
+    showToast("O vídeo continua na lista de projetos, mas o acompanhamento desta tela expirou.", "info");
+}
+
+function _startScriptImageCreatorVideoProjectTracking(sourceUploadId, projectId, engineLabel) {
+    if (!sourceUploadId || !projectId) {
+        return;
+    }
+    void _pollScriptImageCreatorVideoProject(sourceUploadId, projectId, engineLabel);
 }
 
 function renderScriptImageCreatorResults() {
@@ -15338,9 +15814,12 @@ function renderScriptImageCreatorResults() {
         ${items.map((item, index) => {
             const isActive = index === activeIndex;
             const isEditingActive = _scriptImageCreatorState.editingIndex === index;
+            const isVideoPending = _isScriptImageCreatorVideoPendingStatus(item?.video_state?.status);
             const editButtonTitle = isEditingActive ? "Cancelar edicao" : "Editar imagem";
             const editButtonAction = isEditingActive ? "cancelScriptImageCreatorEdit()" : `startScriptImageCreatorEdit(${index})`;
             const primaryActionLabel = _scriptImageCreatorConsumer ? "Usar no projeto" : "Criar video";
+            const actionBusyAttr = (_scriptImageCreatorState.busy || isVideoPending) ? " disabled" : "";
+            const videoSlotHtml = _buildScriptImageCreatorVideoSlot(item);
             return `
                 <article class="script-image-generator-result-card${isActive ? " is-active" : ""}">
                     <div class="script-image-generator-card-frame">
@@ -15353,15 +15832,19 @@ function renderScriptImageCreatorResults() {
                             <img src="${workflowEscapeHtml(item.image_url)}" alt="${workflowEscapeHtml(item.label || `Imagem gerada ${index + 1}`)}">
                         </button>
                         <div class="script-image-generator-result-actions">
-                            <button class="btn-icon-sm script-image-generator-card-icon${isEditingActive ? " is-active" : ""}" type="button" title="${editButtonTitle}" aria-label="${editButtonTitle}"${busyAttr} onclick="${editButtonAction}">
+                            <button class="btn-icon-sm script-image-generator-card-icon${isEditingActive ? " is-active" : ""}" type="button" title="${editButtonTitle}" aria-label="${editButtonTitle}"${actionBusyAttr} onclick="${editButtonAction}">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 20 9-9-3-3-9 9-1 4Z"/><path d="M16 7 19 10"/></svg>
                             </button>
                             <button class="btn-icon-sm script-image-generator-card-icon" type="button" title="Baixar imagem" aria-label="Baixar imagem"${busyAttr} onclick="downloadScriptImageCreatorResult(${index})">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
                             </button>
+                            <button class="btn-icon-sm script-image-generator-card-icon" type="button" title="Remover imagem" aria-label="Remover imagem"${actionBusyAttr} onclick="removeScriptImageCreatorResult(${index})">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                            </button>
                         </div>
                     </div>
-                    <button class="btn btn-primary btn-sm script-image-generator-create-btn" type="button"${busyAttr} onclick="createVideoFromScriptImageCreatorResult(${index})">${primaryActionLabel}</button>
+                    ${videoSlotHtml}
+                    <button class="btn btn-primary btn-sm script-image-generator-create-btn" type="button"${actionBusyAttr} onclick="createVideoFromScriptImageCreatorResult(${index})">${primaryActionLabel}</button>
                 </article>
             `;
         }).join("")}
@@ -15445,9 +15928,12 @@ async function _addScriptImageCreatorResultToProject(index) {
 }
 
 function _prepareScriptImageCreatorVideoDraftState() {
-    scriptData.videoType = "imagens_proprias";
+    scriptData.videoType = "realista";
     scriptData.useCustomImages = scriptPhotos.length > 0;
-    scriptData.createNarration = true;
+    scriptData.useCustomVideo = false;
+    scriptData.useCustomAudio = false;
+    scriptData.createNarration = false;
+    scriptData.aspect = document.getElementById("script-image-generator-aspect")?.value || scriptData.aspect || "16:9";
 
     const photoCb = document.getElementById("script-use-photos");
     if (photoCb) {
@@ -15485,29 +15971,37 @@ async function useScriptImageCreatorResult(index) {
 
 async function createVideoFromScriptImageCreatorResult(index) {
     try {
+        const parsedIndex = Number.parseInt(String(index), 10) || 0;
+        const item = _scriptImageCreatorState.generatedImages[parsedIndex];
+        if (!item?.image_url) {
+            throw new Error("Imagem nao encontrada para criar o video.");
+        }
         if (typeof _scriptImageCreatorConsumer === "function") {
-            const item = _scriptImageCreatorState.generatedImages[Number.parseInt(String(index), 10) || 0];
             if (!item?.image_url) {
                 throw new Error("Imagem nao encontrada para vincular ao projeto.");
             }
-            await _scriptImageCreatorConsumer(item, index);
+            await _scriptImageCreatorConsumer(item, parsedIndex);
             closeScriptImageCreatorModal();
             showToast("Imagem vinculada ao projeto.", "success");
             return;
         }
 
         const launchSource = _scriptImageCreatorLaunchSource;
-        await _addScriptImageCreatorResultToProject(index);
+        await _addScriptImageCreatorResultToProject(parsedIndex);
+        _scriptImageCreatorVideoLaunch = {
+            active: launchSource === "create-mode",
+            sourceUploadId: String(item.upload_id || "").trim(),
+        };
         closeScriptImageCreatorModal();
 
         if (launchSource === "create-mode") {
             _prepareScriptImageCreatorVideoDraftState();
-            adaptScriptStepForVideoType("imagens_proprias");
+            adaptScriptStepForVideoType("realista");
 
             const scriptTypeGrid = document.getElementById("script-video-type-grid");
             if (scriptTypeGrid) {
                 scriptTypeGrid.querySelectorAll(".video-type-card").forEach((card) => {
-                    card.classList.toggle("selected", card.dataset.type === "imagens_proprias");
+                    card.classList.toggle("selected", card.dataset.type === "realista");
                 });
             }
 
@@ -15515,6 +16009,11 @@ async function createVideoFromScriptImageCreatorResult(index) {
             switchCreateMode("script");
             updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
             _prepareScriptImageCreatorVideoDraftState();
+
+            const promptField = document.getElementById("script-text");
+            if (promptField && !String(promptField.value || "").trim()) {
+                promptField.value = String(item.prompt_text || "").trim();
+            }
 
             window.requestAnimationFrame(() => {
                 const promptField = document.getElementById("script-text");
@@ -15533,6 +16032,10 @@ async function createVideoFromScriptImageCreatorResult(index) {
         });
         showToast("Imagem adicionada. Agora você pode criar o vídeo.", "success");
     } catch (error) {
+        _scriptImageCreatorVideoLaunch = {
+            active: false,
+            sourceUploadId: "",
+        };
         alert(`Não foi possível preparar a imagem para o vídeo: ${error.message}`);
     }
 }
@@ -15742,7 +16245,7 @@ async function generateScriptImageFromModal() {
             : "Descreva a imagem antes de gerar.");
         return;
     }
-    if (meta.requiresReference && !_scriptImageCreatorState.referenceFiles.length) {
+    if (meta.requiresReference && !_hasScriptImageCreatorAnyReference()) {
         alert("Envie ao menos uma imagem de referência para esse modelo.");
         return;
     }
@@ -15763,9 +16266,13 @@ async function generateScriptImageFromModal() {
 
     let lastSceneIndex = 0;
     try {
-        const baseReferenceUploadIds = _scriptImageCreatorState.referenceFiles.length
+        const manualReferenceUploadIds = _scriptImageCreatorState.referenceFiles.length
             ? await _prepareScriptImageCreatorReferenceUploadIds()
             : [];
+        const profileReferenceUploadIds = await _prepareScriptImageCreatorProfileReferenceUploadIds(meta.maxReferences || 5);
+        const baseReferenceUploadIds = [...manualReferenceUploadIds, ...profileReferenceUploadIds]
+            .filter(Boolean)
+            .slice(0, Math.max(0, meta.maxReferences || 5));
         const sequenceMode = isEditing ? "none" : _getScriptImageCreatorSequenceMode();
         const aspectRatio = document.getElementById("script-image-generator-aspect")?.value || "1:1";
         const size = document.getElementById("script-image-generator-size")?.value || "2K";
@@ -17100,6 +17607,8 @@ function _normalizeRealisticPersonaType(value) {
         familia: "familia",
         personalizada: "personalizado",
         custom: "personalizado",
+        locacao: "local",
+        localizacao: "local",
     };
     const normalized = mapping[raw] || raw;
     return REALISTIC_PERSONA_TYPES.includes(normalized) ? normalized : "natureza";
@@ -17107,13 +17616,18 @@ function _normalizeRealisticPersonaType(value) {
 
 function _getRealisticPersonaTypeByContext(context) {
     const key = String(context || "script").toLowerCase();
+    if (key === IMAGE_CREATOR_LOCATION_CONTEXT) {
+        return "local";
+    }
     let selector = "#script-realistic-persona-tags .style-tag.selected";
     if (key === "wizard") selector = "#wizard-realistic-persona-tags .style-tag.selected";
     if (key === "ai") selector = "#ai-suggest-persona-tags .style-tag.selected";
     if (key === "auto") selector = "#auto-realistic-persona-tags .style-tag.selected";
     if (key === "pilot") selector = "#pilot-realistic-persona-tags .style-tag.selected";
+    if (key === IMAGE_CREATOR_PERSONA_CONTEXT) selector = "#script-image-generator-persona-tags .style-tag.selected";
     const selected = document.querySelector(selector);
-    return _normalizeRealisticPersonaType(selected ? selected.dataset.persona : "natureza");
+    const fallbackType = key === IMAGE_CREATOR_PERSONA_CONTEXT ? "homem" : "natureza";
+    return _normalizeRealisticPersonaType(selected ? selected.dataset.persona : fallbackType);
 }
 
 function _getRealisticPersonaPreviewElement(context) {
@@ -17121,6 +17635,8 @@ function _getRealisticPersonaPreviewElement(context) {
     if (context === "ai") return document.getElementById("ai-suggest-persona-preview");
     if (context === "auto") return document.getElementById("auto-realistic-persona-preview");
     if (context === "pilot") return document.getElementById("pilot-realistic-persona-preview");
+    if (context === IMAGE_CREATOR_PERSONA_CONTEXT) return document.getElementById("script-image-generator-persona-preview");
+    if (context === IMAGE_CREATOR_LOCATION_CONTEXT) return document.getElementById("script-image-generator-location-preview");
     return document.getElementById("script-realistic-persona-preview");
 }
 
@@ -17136,11 +17652,17 @@ function _getMultiPersonaCheckbox(context) {
 }
 
 function _supportsInlineMultiPersona(context) {
-    return context === "wizard" || context === "script" || context === "ai" || context === "auto" || context === "pilot";
+    return context === "wizard"
+        || context === "script"
+        || context === "ai"
+        || context === "auto"
+        || context === "pilot"
+        || context === IMAGE_CREATOR_PERSONA_CONTEXT
+        || context === IMAGE_CREATOR_LOCATION_CONTEXT;
 }
 
 function _supportsPersonaNoReference(context) {
-    return context === "wizard" || context === "script" || context === "ai" || context === "auto" || context === "pilot";
+    return _supportsInlineMultiPersona(context);
 }
 
 function _isPersonaNoReferenceEnabled(context, personaType) {
@@ -17175,7 +17697,7 @@ function _isMultiPersonaEnabled(context) {
 }
 
 function toggleMultiPersona(context, enabled) {
-    const ctx = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
+    const ctx = _normalizePersonaContext(context);
     const type = _getRealisticPersonaTypeByContext(ctx);
     const selectedIds = _getSelectedPersonaProfileIds(ctx, type);
     const isEnabled = !!enabled;
@@ -17188,7 +17710,7 @@ function toggleMultiPersona(context, enabled) {
 window.toggleMultiPersona = toggleMultiPersona;
 
 function togglePersonaSelectionFromPreview(context, profileId) {
-    const ctx = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
+    const ctx = _normalizePersonaContext(context);
     const pid = parseInt(profileId || "0", 10) || 0;
     if (!pid) return;
 
@@ -17219,11 +17741,14 @@ function togglePersonaSelectionFromPreview(context, profileId) {
     if (ctx === "pilot") {
         _renderAutoPilotPersonaEditorSelectedTypes();
     }
+    if (ctx === IMAGE_CREATOR_PERSONA_CONTEXT || ctx === IMAGE_CREATOR_LOCATION_CONTEXT) {
+        scheduleScriptImageCreatorEstimate(0);
+    }
 }
 window.togglePersonaSelectionFromPreview = togglePersonaSelectionFromPreview;
 
 function selectNoPersonaReference(context) {
-    const ctx = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
+    const ctx = _normalizePersonaContext(context);
     const type = _getRealisticPersonaTypeByContext(ctx);
     if (!_supportsPersonaNoReference(ctx)) {
         return;
@@ -17236,6 +17761,9 @@ function selectNoPersonaReference(context) {
     _renderPersonaPreview(ctx);
     if (ctx === "pilot") {
         _renderAutoPilotPersonaEditorSelectedTypes();
+    }
+    if (ctx === IMAGE_CREATOR_PERSONA_CONTEXT || ctx === IMAGE_CREATOR_LOCATION_CONTEXT) {
+        scheduleScriptImageCreatorEstimate(0);
     }
 }
 window.selectNoPersonaReference = selectNoPersonaReference;
@@ -17511,6 +18039,10 @@ async function _refreshPersonaContext(context, forcedPersonaType = "") {
     if (context === "auto") {
         _renderAutoRealisticPersonaCompositionSummary();
     }
+    if (context === IMAGE_CREATOR_PERSONA_CONTEXT || context === IMAGE_CREATOR_LOCATION_CONTEXT) {
+        renderScriptImageCreatorReferencePreview();
+        scheduleScriptImageCreatorEstimate(0);
+    }
 }
 
 function _refreshAllPersonaPreviews() {
@@ -17519,8 +18051,11 @@ function _refreshAllPersonaPreviews() {
     _renderPersonaPreview("ai");
     _renderPersonaPreview("auto");
     _renderPersonaPreview("pilot");
+    _renderPersonaPreview(IMAGE_CREATOR_PERSONA_CONTEXT);
+    _renderPersonaPreview(IMAGE_CREATOR_LOCATION_CONTEXT);
     _renderAutoRealisticPersonaCompositionSummary();
     _renderAutoPilotPersonaEditorSelectedTypes();
+    scheduleScriptImageCreatorEstimate(0);
 }
 
 async function _ensurePersonaSelection(context, personaType) {
@@ -17564,7 +18099,8 @@ function _updatePersonaManagerFormByType() {
     const isNature = _personaManagerType === "natureza";
     const isDrawing = _personaManagerType === "desenho";
     const isCustom = _personaManagerType === "personalizado";
-    const isHuman = !isNature && !isDrawing && !isCustom;
+    const isLocation = _personaManagerType === "local";
+    const isHuman = !isNature && !isDrawing && !isCustom && !isLocation;
     const humanFields = document.getElementById("persona-manager-human-fields");
     const natureSubtypeGroup = document.getElementById("persona-manager-nature-subtype-group");
     const natureOtherGroup = document.getElementById("persona-manager-nature-other-group");
@@ -17573,6 +18109,12 @@ function _updatePersonaManagerFormByType() {
     const drawingOtherGroup = document.getElementById("persona-manager-drawing-other-group");
     const drawingStyleEl = document.getElementById("persona-manager-drawing-style");
     const customDescGroup = document.getElementById("persona-manager-custom-desc-group");
+    const locationFields = document.getElementById("persona-manager-location-fields");
+    const voiceField = document.querySelector(".persona-manager-field-voice");
+    const createTitle = document.getElementById("persona-manager-create-title");
+    const createKicker = document.getElementById("persona-manager-create-kicker");
+    const createHeading = document.getElementById("persona-manager-create-heading");
+    const createButton = document.getElementById("persona-manager-create-btn");
 
     if (humanFields) humanFields.hidden = !isHuman;
     if (natureSubtypeGroup) natureSubtypeGroup.hidden = !isNature;
@@ -17586,6 +18128,12 @@ function _updatePersonaManagerFormByType() {
         drawingOtherGroup.hidden = !isDrawingOther;
     }
     if (customDescGroup) customDescGroup.hidden = !isCustom;
+    if (locationFields) locationFields.hidden = !isLocation;
+    if (voiceField) voiceField.hidden = isLocation;
+    if (createTitle) createTitle.textContent = isLocation ? "Criar novo local" : "Criar nova persona";
+    if (createKicker) createKicker.textContent = isLocation ? "Novo local" : "Nova persona";
+    if (createHeading) createHeading.textContent = isLocation ? "Criar novo local" : "Criar nova persona";
+    if (createButton) createButton.textContent = isLocation ? "Gerar novo local" : "Gerar nova persona";
 }
 
 function _formatDrawingStyleLabel(styleValue, customStyleValue) {
@@ -17644,6 +18192,7 @@ function _buildPersonaVoiceDescriptionSeed(profile) {
     else if (type === "natureza") hints.push(`personagem natureza ${attrs.subtipo || ""}`.trim());
     else if (type === "desenho") hints.push(`personagem desenho ${_formatDrawingStyleLabel(attrs.estilo_desenho, attrs.estilo_desenho_custom)}`.trim());
     else if (type === "personalizado") hints.push("personagem personalizado");
+    else if (type === "local") hints.push(`local ${attrs.tipo_local || "cinematografico"}`.trim());
 
     [attrs.idade_aparente, attrs.expressao, attrs.descricao_persona, attrs.descricao_extra]
         .map((value) => String(value || "").trim())
@@ -17701,15 +18250,22 @@ function _buildPersonaManagerMeta(profile) {
     if (_personaManagerType === "desenho") {
         const styleLabel = _formatDrawingStyleLabel(attrs.estilo_desenho, attrs.estilo_desenho_custom);
         parts.push(`Estilo: ${styleLabel}`);
+    } else if (_personaManagerType === "local") {
+        const locationType = String(attrs.tipo_local || "").trim();
+        const locationStyle = String(attrs.estilo_arquitetura || "").trim();
+        if (locationType) parts.push(locationType);
+        if (locationStyle) parts.push(locationStyle);
     }
 
     if (profile?.is_default) {
         parts.push("Padrao");
     }
 
-    const voiceProfileId = _getPersonaVoiceProfileId(profile);
-    if (voiceProfileId > 0) {
-        parts.push(`Voz: ${_getVoiceProfileNameById(voiceProfileId)}`);
+    if (_personaManagerType !== "local") {
+        const voiceProfileId = _getPersonaVoiceProfileId(profile);
+        if (voiceProfileId > 0) {
+            parts.push(`Voz: ${_getVoiceProfileNameById(voiceProfileId)}`);
+        }
     }
 
     return parts.join(" - ");
@@ -17726,6 +18282,7 @@ function _renderPersonaManagerList() {
     }
 
     const selectedIds = _getSelectedPersonaProfileIds(_personaManagerContext, _personaManagerType);
+    const supportsVoice = _personaManagerType !== "local";
     listEl.innerHTML = profiles.map((profile) => {
         const pid = parseInt(profile.id, 10) || 0;
         const isSelected = selectedIds.includes(pid);
@@ -17756,6 +18313,23 @@ function _renderPersonaManagerList() {
             `
             : '<div class="persona-manager-photo-wrap"><div class="persona-manager-photo"></div></div>';
 
+        const voiceRow = supportsVoice ? `
+                <div class="persona-manager-voice-row">
+                    <select class="input persona-manager-voice-select" onchange="setPersonaVoiceFromManager(${pid}, this.value)">
+                        ${voiceOptions}
+                    </select>
+                    <button
+                        class="btn btn-secondary btn-sm persona-manager-voice-play${voicePlayDisabled ? " disabled" : ""}"
+                        type="button"
+                        onclick="previewPersonaVoiceFromManager(${pid})"
+                        title="Ouvir prévia da voz"
+                        ${voicePlayDisabled ? "disabled" : ""}>▶</button>
+                </div>
+            ` : "";
+        const voiceLinkRow = supportsVoice
+            ? `<div class="persona-manager-voice-link-row"><button class="btn btn-secondary btn-sm persona-manager-voice-link" type="button" onclick="openPersonaVoiceBuilder(${pid})">Vincular voz por descrição</button></div>`
+            : "";
+
         return `
             <div
                 class="persona-manager-card${selectedClass}"
@@ -17768,20 +18342,8 @@ function _renderPersonaManagerList() {
                     <div class="persona-manager-name">${esc(profile.name || `Persona ${pid}`)}</div>
                     <div class="persona-manager-meta">${esc(metaText)}</div>
                 </div>
-                <div class="persona-manager-voice-row">
-                    <select class="input persona-manager-voice-select" onchange="setPersonaVoiceFromManager(${pid}, this.value)">
-                        ${voiceOptions}
-                    </select>
-                    <button
-                        class="btn btn-secondary btn-sm persona-manager-voice-play${voicePlayDisabled ? " disabled" : ""}"
-                        type="button"
-                        onclick="previewPersonaVoiceFromManager(${pid})"
-                        title="Ouvir prévia da voz"
-                        ${voicePlayDisabled ? "disabled" : ""}>▶</button>
-                </div>
-                <div class="persona-manager-voice-link-row">
-                    <button class="btn btn-secondary btn-sm persona-manager-voice-link" type="button" onclick="openPersonaVoiceBuilder(${pid})">Vincular voz por descrição</button>
-                </div>
+                ${voiceRow}
+                ${voiceLinkRow}
                 <div class="persona-manager-actions">
                     <button
                         class="btn btn-secondary btn-sm persona-manager-action-icon"
@@ -18199,6 +18761,14 @@ function _resetPersonaManagerCreateForm() {
     if (drawingOtherEl) drawingOtherEl.value = "";
     const customDescEl = document.getElementById("persona-manager-custom-desc");
     if (customDescEl) customDescEl.value = "";
+    const locationTypeEl = document.getElementById("persona-manager-location-type");
+    if (locationTypeEl) locationTypeEl.value = "";
+    const locationStyleEl = document.getElementById("persona-manager-location-style");
+    if (locationStyleEl) locationStyleEl.value = "";
+    const locationLightingEl = document.getElementById("persona-manager-location-lighting");
+    if (locationLightingEl) locationLightingEl.value = "";
+    const locationElementsEl = document.getElementById("persona-manager-location-elements");
+    if (locationElementsEl) locationElementsEl.value = "";
     removePersonaReferenceImage();
 }
 
@@ -18211,18 +18781,22 @@ async function openPersonaCreateModal() {
 }
 
 async function openPersonaManager(context = "script") {
-    _personaManagerContext = ["wizard", "script", "ai", "auto", "pilot"].includes(context) ? context : "script";
+    _personaManagerContext = _normalizePersonaContext(context);
     _personaManagerType = _getRealisticPersonaTypeByContext(_personaManagerContext);
     _personaManagerMulti = _isMultiPersonaEnabled(_personaManagerContext);
 
     const titleEl = document.getElementById("persona-manager-title");
-    if (titleEl) titleEl.textContent = "Adicionar";
+    if (titleEl) titleEl.textContent = _personaManagerType === "local" ? "Locais de interação" : "Personas de interação";
 
     const subtitleEl = document.getElementById("persona-manager-subtitle");
     if (subtitleEl) {
-        subtitleEl.textContent = _personaManagerMulti
-            ? "Selecione varias personas para compor cenas com casal, amigos ou grupos."
-            : "Escolha ou gere personas para manter o mesmo personagem nos videos realistas.";
+        if (_personaManagerType === "local") {
+            subtitleEl.textContent = "Escolha ou gere locais para usar como referência visual nas imagens e cenas.";
+        } else {
+            subtitleEl.textContent = _personaManagerMulti
+                ? "Selecione varias personas para compor cenas com casal, amigos ou grupos."
+                : "Escolha ou gere personas para manter o mesmo personagem nos vídeos realistas.";
+        }
     }
 
     closeModal("modal-persona-manager-create");
@@ -18251,6 +18825,10 @@ async function createPersonaFromManager() {
         const drawingStyle = (document.getElementById("persona-manager-drawing-style")?.value || "cartoon").trim();
         const drawingOther = (document.getElementById("persona-manager-drawing-other")?.value || "").trim();
         const customDesc = (document.getElementById("persona-manager-custom-desc")?.value || "").trim();
+        const locationType = (document.getElementById("persona-manager-location-type")?.value || "").trim();
+        const locationStyle = (document.getElementById("persona-manager-location-style")?.value || "").trim();
+        const locationLighting = (document.getElementById("persona-manager-location-lighting")?.value || "").trim();
+        const locationElements = (document.getElementById("persona-manager-location-elements")?.value || "").trim();
         const extra = (document.getElementById("persona-manager-extra")?.value || "").trim();
         const selectedVoiceProfileId = parseInt(document.getElementById("persona-manager-voice-profile")?.value || "0", 10) || 0;
 
@@ -18277,6 +18855,15 @@ async function createPersonaFromManager() {
                 return;
             }
             attributes.descricao_persona = customDesc;
+        } else if (_personaManagerType === "local") {
+            if (!locationType || !locationElements) {
+                alert("Preencha o tipo do local e os elementos principais antes de gerar o local de interação.");
+                return;
+            }
+            attributes.tipo_local = locationType;
+            attributes.elementos_principais = locationElements;
+            if (locationStyle) attributes.estilo_arquitetura = locationStyle;
+            if (locationLighting) attributes.iluminacao = locationLighting;
         } else {
             if (!age || !skin || !hair) {
                 alert("Preencha idade, cor da pele e cor do cabelo antes de gerar a persona.");
@@ -18317,7 +18904,7 @@ async function createPersonaFromManager() {
 
         const createdId = parseInt(response?.profile?.id || "0", 10) || 0;
         if (createdId) {
-            if (selectedVoiceProfileId > 0) {
+            if (_personaManagerType !== "local" && selectedVoiceProfileId > 0) {
                 try {
                     await api(`/persona/profiles/${createdId}/voice`, {
                         method: "PUT",
@@ -18519,7 +19106,7 @@ async function deletePersonaFromManager(profileId) {
     try {
         await api(`/persona/profiles/${pid}`, { method: "DELETE" });
 
-        ["wizard", "script", "ai", "auto", "pilot"].forEach((ctx) => {
+        PERSONA_CONTEXTS.forEach((ctx) => {
             const selectedIds = _getSelectedPersonaProfileIds(ctx, _personaManagerType);
             if (selectedIds.includes(pid)) {
                 _setSelectedPersonaProfileIds(

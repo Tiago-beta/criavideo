@@ -26,7 +26,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-PERSONA_TYPES = ("homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado")
+PERSONA_TYPES = ("homem", "mulher", "crianca", "familia", "natureza", "desenho", "personalizado", "local")
 PERSONA_LABELS = {
     "homem": "Homem",
     "mulher": "Mulher",
@@ -35,6 +35,7 @@ PERSONA_LABELS = {
     "natureza": "Natureza",
     "desenho": "Desenho",
     "personalizado": "Personalizado",
+    "local": "Local",
 }
 NATURE_SUBTYPES = {"gato", "cachorro", "papagaio", "outros"}
 DRAWING_STYLES = {
@@ -94,6 +95,9 @@ def normalize_persona_type(value: str) -> str:
         "personalizado": "personalizado",
         "personalizada": "personalizado",
         "custom": "personalizado",
+        "local": "local",
+        "locacao": "local",
+        "localizacao": "local",
         "crianca": "crianca",
         "familia": "familia",
     }
@@ -203,6 +207,14 @@ def default_persona_attributes(persona_type: str) -> dict:
             "expressao": "natural e cativante",
             "cenario": "fundo neutro com luz suave",
         }
+    if persona_type == "local":
+        return {
+            "tipo_local": "sala moderna e acolhedora",
+            "estilo_arquitetura": "contemporanea realista",
+            "elementos_principais": "mobiliario funcional, profundidade, texturas reais",
+            "iluminacao": "luz natural suave",
+            "cenario": "ambiente pronto para filmagem, sem pessoas",
+        }
     return {
         "subtipo": "gato",
         "raca_ou_tipo": "domestico",
@@ -258,6 +270,15 @@ def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> 
             "cenario",
             "descricao_extra",
         ]
+    elif persona_type == "local":
+        keys = [
+            "tipo_local",
+            "estilo_arquitetura",
+            "elementos_principais",
+            "iluminacao",
+            "cenario",
+            "descricao_extra",
+        ]
     else:
         keys = [
             "subtipo",
@@ -310,6 +331,9 @@ def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> 
     elif persona_type == "personalizado":
         if not normalized.get("descricao_persona"):
             normalized["descricao_persona"] = "personagem autoral com identidade visual unica"
+    elif persona_type == "local":
+        if not normalized.get("tipo_local"):
+            normalized["tipo_local"] = "ambiente cinematografico coerente"
 
     if not normalized:
         normalized = default_persona_attributes(persona_type)
@@ -345,6 +369,12 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
             "Create one high-quality illustrated character reference image for video continuity. "
             "No text, no watermark, no logo, no collage. Keep one clear subject centered, "
             f"{framing_rule}. Maintain consistent facial traits, body proportions, and outfit details."
+        )
+    elif persona_type == "local":
+        base_rules = (
+            "Create one high-quality cinematic location reference image for video continuity. "
+            "No text, no watermark, no logo, no collage, and no people in frame. "
+            "Keep the environment readable, realistic, production-ready, and consistent in architecture, materials, depth, and lighting."
         )
     elif persona_type == "personalizado":
         base_rules = (
@@ -429,6 +459,14 @@ def _build_persona_prompt(persona_type: str, attributes: dict) -> str:
                 f"Expression: {attributes.get('expressao', 'confiante e amigavel')}. "
                 f"Environment mood: {attributes.get('cenario', 'fundo simples com profundidade')}."
             )
+    elif persona_type == "local":
+        details = (
+            f"Location concept: {attributes.get('tipo_local', 'ambiente cinematografico coerente')}. "
+            f"Architecture or decor style: {attributes.get('estilo_arquitetura', 'contemporanea realista')}. "
+            f"Main visual anchors: {attributes.get('elementos_principais', 'materiais reais, profundidade e composicao clara')}. "
+            f"Lighting: {attributes.get('iluminacao', 'luz natural suave')}. "
+            f"Scene mood: {attributes.get('cenario', 'ambiente pronto para filmagem, sem pessoas')}."
+        )
     else:
         details = (
             f"Subject concept: {attributes.get('descricao_persona', 'personagem autoral com identidade visual unica')}. "

@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260516-11">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260517-01">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 468;
+        var REQUIRED_VER = 469;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -3780,8 +3780,8 @@
             <div class="modal-body">
                 <section class="persona-manager-create-shell" aria-labelledby="persona-manager-create-title">
                     <div class="persona-manager-create-header">
-                        <div class="persona-manager-create-kicker">Nova persona</div>
-                        <h4>Criar nova persona</h4>
+                        <div id="persona-manager-create-kicker" class="persona-manager-create-kicker">Nova persona</div>
+                        <h4 id="persona-manager-create-heading">Criar nova persona</h4>
                     </div>
                     <div class="persona-manager-create-grid">
                         <div class="form-group persona-manager-field persona-manager-field-name">
@@ -3838,6 +3838,24 @@
                         <div class="form-group persona-manager-field persona-manager-field-description" id="persona-manager-custom-desc-group" hidden>
                             <label>Descrição da persona personalizada *</label>
                             <textarea id="persona-manager-custom-desc" class="input" rows="4" placeholder="Ex: guerreira futurista afro-brasileira com armadura leve dourada e capa azul, olhar determinado"></textarea>
+                        </div>
+                        <div id="persona-manager-location-fields" class="persona-manager-location-fields" hidden>
+                            <div class="form-group persona-manager-field persona-manager-field-inline">
+                                <label>Tipo de local *</label>
+                                <input id="persona-manager-location-type" class="input" type="text" maxlength="80" placeholder="Ex: cafeteria intimista, sala premium, cobertura moderna">
+                            </div>
+                            <div class="form-group persona-manager-field persona-manager-field-inline">
+                                <label>Estilo / arquitetura</label>
+                                <input id="persona-manager-location-style" class="input" type="text" maxlength="80" placeholder="Ex: contemporâneo minimalista com madeira natural">
+                            </div>
+                            <div class="form-group persona-manager-field persona-manager-field-inline">
+                                <label>Iluminação</label>
+                                <input id="persona-manager-location-lighting" class="input" type="text" maxlength="80" placeholder="Ex: luz natural lateral suave">
+                            </div>
+                            <div class="form-group persona-manager-field persona-manager-field-description">
+                                <label>Elementos principais *</label>
+                                <textarea id="persona-manager-location-elements" class="input" rows="4" placeholder="Ex: janelas amplas, bancada de pedra, cadeiras de couro, profundidade cinematográfica"></textarea>
+                            </div>
                         </div>
 
                         <div class="form-group persona-manager-field persona-manager-field-description">
@@ -4143,6 +4161,37 @@
                             <input id="script-image-generator-reference-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handleScriptImageCreatorReferenceSelect(event)">
                         </div>
 
+                        <div id="script-image-generator-context-group" class="script-image-generator-context-group">
+                            <section class="script-image-generator-context-card">
+                                <div class="script-image-generator-section-head">
+                                    <label>Persona de interação</label>
+                                </div>
+                                <div id="script-image-generator-persona-tags" class="realistic-inspiration-tags">
+                                    <button type="button" class="style-tag selected" data-persona="homem">Homem</button>
+                                    <button type="button" class="style-tag" data-persona="mulher">Mulher</button>
+                                    <button type="button" class="style-tag" data-persona="crianca">Criança</button>
+                                    <button type="button" class="style-tag" data-persona="familia">Família</button>
+                                    <button type="button" class="style-tag" data-persona="natureza">Natureza</button>
+                                    <button type="button" class="style-tag" data-persona="desenho">Desenho</button>
+                                    <button type="button" class="style-tag" data-persona="personalizado">Personalizado</button>
+                                </div>
+                                <div id="script-image-generator-persona-preview" class="realistic-persona-preview"></div>
+                                <div class="realistic-persona-actions">
+                                    <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaManager('image-persona')">Gerenciar personas</button>
+                                </div>
+                            </section>
+
+                            <section class="script-image-generator-context-card">
+                                <div class="script-image-generator-section-head">
+                                    <label>Local de interação</label>
+                                </div>
+                                <div id="script-image-generator-location-preview" class="realistic-persona-preview"></div>
+                                <div class="realistic-persona-actions">
+                                    <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaManager('image-location')">Gerenciar locais</button>
+                                </div>
+                            </section>
+                        </div>
+
                         <div class="script-image-generator-settings">
                             <div id="script-image-generator-aspect-group" class="form-group">
                                 <div class="script-image-generator-section-head">
@@ -4257,8 +4306,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260516-11"></script>
-    <script src="/video/static/pwa.js?v=20260516-11"></script>
+    <script src="/video/static/app.js?v=20260517-01"></script>
+    <script src="/video/static/pwa.js?v=20260517-01"></script>
 </body>
 </html>
 

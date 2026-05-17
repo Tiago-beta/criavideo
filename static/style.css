@@ -5993,6 +5993,29 @@ svg.spin {
     margin-top: 4px;
 }
 
+.script-image-generator-context-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.script-image-generator-context-card {
+    padding: 14px;
+    border: 1px solid rgba(96, 129, 162, 0.24);
+    border-radius: 18px;
+    background: rgba(6, 24, 42, 0.5);
+}
+
+.script-image-generator-context-card .realistic-inspiration-tags {
+    margin-top: 0;
+}
+
+@media (max-width: 900px) {
+    .script-image-generator-context-group {
+        grid-template-columns: 1fr;
+    }
+}
+
 .script-image-generator-reference-add {
     width: 74px;
     height: 74px;
@@ -6643,6 +6666,66 @@ svg.spin {
     min-width: 0;
 }
 
+.script-image-generator-video-slot {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(96, 129, 162, 0.24);
+    background: rgba(8, 24, 40, 0.82);
+}
+
+.script-image-generator-video-slot.is-pending {
+    border-color: rgba(255, 193, 92, 0.42);
+    background: linear-gradient(145deg, rgba(40, 30, 12, 0.92), rgba(10, 23, 38, 0.92));
+    animation: scriptImageVideoPulse 1.2s ease-in-out infinite;
+}
+
+.script-image-generator-video-slot.is-error {
+    border-color: rgba(255, 122, 108, 0.38);
+    background: rgba(45, 16, 16, 0.72);
+}
+
+.script-image-generator-video-slot.is-complete {
+    background: rgba(7, 24, 41, 0.88);
+}
+
+.script-image-generator-video-copy {
+    display: grid;
+    gap: 4px;
+}
+
+.script-image-generator-video-copy strong {
+    font-size: 0.8rem;
+    color: var(--text);
+}
+
+.script-image-generator-video-copy small {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    line-height: 1.35;
+}
+
+.script-image-generator-video-progress {
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+
+.script-image-generator-video-progress span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #ffd37b, #ff8f5b);
+}
+
+.script-image-generator-video-preview {
+    width: 100%;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.38);
+}
+
 @keyframes scriptImageCardPulse {
     0%,
     100% {
@@ -6661,6 +6744,18 @@ svg.spin {
     }
     to {
         transform: translateX(42%);
+    }
+}
+
+@keyframes scriptImageVideoPulse {
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 193, 92, 0.04);
+        transform: translateY(0);
+    }
+    50% {
+        box-shadow: 0 0 0 1px rgba(255, 193, 92, 0.16), 0 10px 24px rgba(255, 193, 92, 0.08);
+        transform: translateY(-1px);
     }
 }
 
@@ -14046,6 +14141,10 @@ th,
 }
 
 .persona-manager-human-fields {
+    display: contents;
+}
+
+.persona-manager-location-fields {
     display: contents;
 }
 
