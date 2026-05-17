@@ -167,6 +167,7 @@ let _personaNoReferenceByContext = {
 let _personaManagerContext = "script";
 let _personaManagerType = "natureza";
 let _personaManagerMulti = false;
+let _personaManagerCreateMode = "full";
 let personaManagerReferenceImageFile = null;
 let _personaVoiceBuilderProfileId = 0;
 let _personaPromptEditorProfileId = 0;
@@ -3437,9 +3438,7 @@ function openModal(id) {
         return;
     }
     // Move modal to <body> so it escapes any ancestor stacking context or flex container.
-    if (modal.parentElement !== document.body) {
-        document.body.appendChild(modal);
-    }
+    document.body.appendChild(modal);
     modal.classList.add("open");
     modal.style.display = "flex";
 }
@@ -4095,6 +4094,19 @@ const SIMILAR_MODE_ENGINE_DEFAULT = {
     static_narrated: "wan2",
     realistic: "wan2",
     unknown: "wan2",
+};
+const SIMILAR_ACTION_ICONS = {
+    save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
+    upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+    apply: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+    image: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
+    preview: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
+    download: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+    edit: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"/></svg>',
+    wand: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 4 1.5 3L20 8.5l-3.5 1.5L15 13l-1.5-3L10 8.5 13.5 7 15 4Z"/><path d="m6 15 1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z"/><path d="m3 21 9-9"/></svg>',
+    narration: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z"/><path d="M19 10a7 7 0 0 1-14 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>',
+    reroll: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/></svg>',
+    close: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
 };
 const _creditEstimateTimers = {};
 const _creditEstimateSeq = { wizard: 0, script: 0, auto: 0, workflow: 0, "publish-analysis-scene": 0 };
@@ -6394,8 +6406,8 @@ function _renderSimilarUnifiedReferencePanel(project) {
             <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}">
                 <img src="${esc(entry.url)}" alt="${esc(entry.alt)}" loading="lazy">
                 <div class="similar-frame-image-actions">
-                    <a class="similar-frame-image-action" href="${esc(entry.url)}" download="${entry.downloadName}" title="Baixar ${entry.badge.toLowerCase()}" aria-label="Baixar ${entry.badge.toLowerCase()}">${similarActionIcons.download}</a>
-                    <button class="similar-frame-image-action" type="button" onclick="similarOpenUnifiedFrameEdit('${entry.kind}')" title="Editar ${entry.badge.toLowerCase()}" aria-label="Editar ${entry.badge.toLowerCase()}" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
+                    <a class="similar-frame-image-action" href="${esc(entry.url)}" download="${entry.downloadName}" title="Baixar ${entry.badge.toLowerCase()}" aria-label="Baixar ${entry.badge.toLowerCase()}">${SIMILAR_ACTION_ICONS.download}</a>
+                    <button class="similar-frame-image-action" type="button" onclick="similarOpenUnifiedFrameEdit('${entry.kind}')" title="Editar ${entry.badge.toLowerCase()}" aria-label="Editar ${entry.badge.toLowerCase()}" ${frameBusyDisabledAttr}>${SIMILAR_ACTION_ICONS.edit}</button>
                 </div>
                 <span class="similar-frame-gallery-badge">${entry.badge}</span>
             </div>
@@ -6435,9 +6447,9 @@ function _renderSimilarUnifiedReferencePanel(project) {
                 <textarea id="similar-unified-frame-instruction" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar a roupa, manter o mesmo enquadramento, a mesma luz e a mesma expressao." ${frameBusyDisabledAttr}>${esc(similarState.unifiedFrameInstruction || "")}</textarea>
                 <p class="field-hint">Envie uma nova foto ou descreva um ajuste. O vídeo final passa a usar a nova versão desse frame.</p>
                 <div class="similar-reference-frame-editor-tools">
-                    <button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarUploadUnifiedFrameReference('${activeFrameKind}')" title="Enviar nova foto" aria-label="Enviar nova foto" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
-                    ${framePendingCount ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarClearUnifiedFrameUploads()" title="Limpar fotos enviadas" aria-label="Limpar fotos enviadas" ${frameBusyDisabledAttr}>${similarActionIcons.close}</button>` : ""}
-                    <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarApplyUnifiedFrameEdit()" title="Aplicar ajuste no ${activeFrameLabelLower}" aria-label="Aplicar ajuste no ${activeFrameLabelLower}" ${frameBusyDisabledAttr}>${framePendingCount ? similarActionIcons.reroll : similarActionIcons.wand}</button>
+                    <button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarUploadUnifiedFrameReference('${activeFrameKind}')" title="Enviar nova foto" aria-label="Enviar nova foto" ${frameBusyDisabledAttr}>${SIMILAR_ACTION_ICONS.upload}</button>
+                    ${framePendingCount ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarClearUnifiedFrameUploads()" title="Limpar fotos enviadas" aria-label="Limpar fotos enviadas" ${frameBusyDisabledAttr}>${SIMILAR_ACTION_ICONS.close}</button>` : ""}
+                    <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarApplyUnifiedFrameEdit()" title="Gerar nova imagem para o ${activeFrameLabelLower}" aria-label="Gerar nova imagem para o ${activeFrameLabelLower}" ${frameBusyDisabledAttr}>${SIMILAR_ACTION_ICONS.image}</button>
                 </div>
                 ${frameUploadsMarkup}
                 <div class="similar-reference-frame-editor-actions">
@@ -8435,7 +8447,7 @@ function _renderSimilarScenes(project, options = {}) {
                             <button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarUploadFrameReference(${sceneId})" title="Enviar nova foto" aria-label="Enviar nova foto" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
                             ${pendingCount ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarClearSceneUploads(${sceneId})" title="Limpar fotos enviadas" aria-label="Limpar fotos enviadas" ${frameBusyDisabledAttr}>${similarActionIcons.close}</button>` : ""}
                             <button class="similar-frame-tool-btn similar-frame-tool-btn-icon${narrationEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleNarrationEdit(${sceneId})" title="${narrationTitle}" aria-label="${narrationTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.narration}</button>
-                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${generatedImageVariants.length ? similarActionIcons.reroll : similarActionIcons.wand}</button>
+                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.image}</button>
                         </div>
                         ${frameUploadsMarkup}
                         ${frameBusyMarkup}
@@ -18727,6 +18739,7 @@ async function _ensurePersonaSelections(context, personaType) {
 }
 
 function _updatePersonaManagerFormByType() {
+    const isQuickAdd = _personaManagerCreateMode === "quick";
     const isNature = _personaManagerType === "natureza";
     const isDrawing = _personaManagerType === "desenho";
     const isCustom = _personaManagerType === "personalizado";
@@ -18742,29 +18755,48 @@ function _updatePersonaManagerFormByType() {
     const customDescGroup = document.getElementById("persona-manager-custom-desc-group");
     const locationFields = document.getElementById("persona-manager-location-fields");
     const voiceField = document.querySelector(".persona-manager-field-voice");
+    const extraGroup = document.getElementById("persona-manager-extra")?.closest(".form-group");
+    const nameLabel = document.querySelector(".persona-manager-field-name label");
+    const nameInput = document.getElementById("persona-manager-name");
+    const referenceField = document.querySelector(".persona-manager-field-reference");
+    const referenceLabel = referenceField?.querySelector("label");
+    const referenceButton = referenceField?.querySelector(".persona-reference-upload > button");
     const createTitle = document.getElementById("persona-manager-create-title");
     const createKicker = document.getElementById("persona-manager-create-kicker");
     const createHeading = document.getElementById("persona-manager-create-heading");
     const createButton = document.getElementById("persona-manager-create-btn");
+    const entityBase = isLocation ? "local" : "persona";
+    const entityLabel = isQuickAdd ? `Adicionar ${entityBase} pela foto` : (isLocation ? "Criar novo local" : "Criar nova persona");
+    const entityKicker = isQuickAdd ? "Upload rapido" : (isLocation ? "Novo local" : "Nova persona");
+    const actionLabel = isQuickAdd ? `Salvar ${entityBase}` : (isLocation ? "Gerar novo local" : "Gerar nova persona");
 
-    if (humanFields) humanFields.hidden = !isHuman;
-    if (natureSubtypeGroup) natureSubtypeGroup.hidden = !isNature;
+    if (humanFields) humanFields.hidden = isQuickAdd || !isHuman;
+    if (natureSubtypeGroup) natureSubtypeGroup.hidden = isQuickAdd || !isNature;
     if (natureOtherGroup) {
         const isNatureOther = isNature && natureSubtypeEl && natureSubtypeEl.value === "outros";
-        natureOtherGroup.hidden = !isNatureOther;
+        natureOtherGroup.hidden = isQuickAdd || !isNatureOther;
     }
-    if (drawingStyleGroup) drawingStyleGroup.hidden = !isDrawing;
+    if (drawingStyleGroup) drawingStyleGroup.hidden = isQuickAdd || !isDrawing;
     if (drawingOtherGroup) {
         const isDrawingOther = isDrawing && drawingStyleEl && drawingStyleEl.value === "outros";
-        drawingOtherGroup.hidden = !isDrawingOther;
+        drawingOtherGroup.hidden = isQuickAdd || !isDrawingOther;
     }
-    if (customDescGroup) customDescGroup.hidden = !isCustom;
-    if (locationFields) locationFields.hidden = !isLocation;
-    if (voiceField) voiceField.hidden = isLocation;
-    if (createTitle) createTitle.textContent = isLocation ? "Criar novo local" : "Criar nova persona";
-    if (createKicker) createKicker.textContent = isLocation ? "Novo local" : "Nova persona";
-    if (createHeading) createHeading.textContent = isLocation ? "Criar novo local" : "Criar nova persona";
-    if (createButton) createButton.textContent = isLocation ? "Gerar novo local" : "Gerar nova persona";
+    if (customDescGroup) customDescGroup.hidden = isQuickAdd || !isCustom;
+    if (locationFields) locationFields.hidden = isQuickAdd || !isLocation;
+    if (voiceField) voiceField.hidden = isQuickAdd || isLocation;
+    if (extraGroup) extraGroup.hidden = isQuickAdd;
+    if (nameLabel) nameLabel.textContent = isQuickAdd ? `${isLocation ? "Nome do local" : "Nome da persona"} *` : "Nome (opcional)";
+    if (nameInput) {
+        nameInput.placeholder = isQuickAdd
+            ? (isLocation ? "Ex: Sala premium, Studio principal" : "Ex: Lia, Mascote da marca, Menina principal")
+            : "Ex: Minha personagem principal";
+    }
+    if (referenceLabel) referenceLabel.textContent = isQuickAdd ? `${isLocation ? "Foto do local" : "Foto da persona"} *` : "Imagem de referência (opcional)";
+    if (referenceButton) referenceButton.textContent = isQuickAdd ? "Enviar foto" : "Enviar imagem";
+    if (createTitle) createTitle.textContent = entityLabel;
+    if (createKicker) createKicker.textContent = entityKicker;
+    if (createHeading) createHeading.textContent = entityLabel;
+    if (createButton) createButton.textContent = actionLabel;
 }
 
 function _formatDrawingStyleLabel(styleValue, customStyleValue) {
@@ -19411,11 +19443,30 @@ function _preparePersonaManagerContext(context = "script") {
 }
 
 async function openPersonaCreateModal() {
+    _personaManagerCreateMode = "full";
     _resetPersonaManagerCreateForm();
     await loadVoiceProfiles();
     _renderPersonaManagerCreateVoiceSelect();
     _updatePersonaManagerFormByType();
     openModal("modal-persona-manager-create");
+}
+
+async function openPersonaQuickAdd(context = "") {
+    _preparePersonaManagerContext(context || _personaManagerContext || "script");
+    _personaManagerCreateMode = "quick";
+    _resetPersonaManagerCreateForm();
+    _updatePersonaManagerFormByType();
+    openModal("modal-persona-manager-create");
+
+    const inputEl = document.getElementById("persona-manager-reference-image");
+    if (!inputEl) return;
+
+    const openPicker = () => inputEl.click();
+    if (typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(openPicker);
+    } else {
+        setTimeout(openPicker, 0);
+    }
 }
 
 async function openScriptImagePersonaUpload(context = IMAGE_CREATOR_PERSONA_CONTEXT) {
@@ -19435,6 +19486,7 @@ async function openScriptImagePersonaUpload(context = IMAGE_CREATOR_PERSONA_CONT
 
 async function openPersonaManager(context = "script") {
     _preparePersonaManagerContext(context);
+    _personaManagerCreateMode = "full";
 
     const titleEl = document.getElementById("persona-manager-title");
     if (titleEl) titleEl.textContent = _personaManagerType === "local" ? "Locais de interação" : "Personas de interação";
@@ -19462,10 +19514,13 @@ async function openPersonaManager(context = "script") {
 }
 
 async function createPersonaFromManager() {
+    const isQuickAdd = _personaManagerCreateMode === "quick";
     const button = document.getElementById("persona-manager-create-btn");
     if (button) {
         button.disabled = true;
-        button.textContent = "Gerando...";
+        button.textContent = isQuickAdd
+            ? (_personaManagerType === "local" ? "Salvando local..." : "Salvando persona...")
+            : "Gerando...";
     }
 
     try {
@@ -19481,11 +19536,30 @@ async function createPersonaFromManager() {
         const locationLighting = (document.getElementById("persona-manager-location-lighting")?.value || "").trim();
         const locationElements = (document.getElementById("persona-manager-location-elements")?.value || "").trim();
         const extra = (document.getElementById("persona-manager-extra")?.value || "").trim();
-        const selectedVoiceProfileId = parseInt(document.getElementById("persona-manager-voice-profile")?.value || "0", 10) || 0;
+        const selectedVoiceProfileId = isQuickAdd
+            ? 0
+            : (parseInt(document.getElementById("persona-manager-voice-profile")?.value || "0", 10) || 0);
         const hasReferenceImage = !!personaManagerReferenceImageFile;
 
+        if (isQuickAdd) {
+            if (!hasReferenceImage) {
+                alert(_personaManagerType === "local"
+                    ? "Envie a foto do local antes de salvar."
+                    : "Envie a foto da persona antes de salvar.");
+                return;
+            }
+            if (!name) {
+                alert(_personaManagerType === "local"
+                    ? "Digite o nome do local."
+                    : "Digite o nome da persona.");
+                return;
+            }
+        }
+
         const attributes = {};
-        if (_personaManagerType === "natureza") {
+        if (isQuickAdd) {
+            // Quick add relies on the uploaded photo as the main visual reference.
+        } else if (_personaManagerType === "natureza") {
             const subtype = document.getElementById("persona-manager-nature-subtype")?.value || "gato";
             attributes.subtipo = subtype;
             if (subtype === "outros") {
@@ -19595,7 +19669,11 @@ async function createPersonaFromManager() {
     } finally {
         if (button) {
             button.disabled = false;
-            button.textContent = _personaManagerType === "local" ? "Gerar novo local" : "Gerar nova persona";
+            if (isQuickAdd) {
+                button.textContent = _personaManagerType === "local" ? "Salvar local" : "Salvar persona";
+            } else {
+                button.textContent = _personaManagerType === "local" ? "Gerar novo local" : "Gerar nova persona";
+            }
         }
     }
 }

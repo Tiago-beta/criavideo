@@ -2123,6 +2123,56 @@ async def _generate_similar_wan_image(
     return output_path, len(atlas_references)
 
 
+async def _generate_similar_qwen_edit_image(
+    *,
+    prompt_text: str,
+    aspect_ratio: str,
+    output_stem: str,
+    base_reference_image: str,
+    reference_paths: list[str] | None = None,
+) -> tuple[str, int]:
+    from app.services.atlas_image import generate_atlas_images
+
+    prompt = str(prompt_text or "").strip()
+    if not prompt:
+        raise RuntimeError("Prompt vazio para editar frame")
+
+    atlas_references: list[str] = []
+    for candidate in [base_reference_image, *(reference_paths or [])]:
+        path = str(candidate or "").strip()
+        if path and os.path.exists(path) and path not in atlas_references:
+            atlas_references.append(path)
+
+    if not atlas_references:
+        raise RuntimeError("Qwen Image 2.0 Edit precisa de ao menos uma imagem de referencia")
+
+    atlas_references = atlas_references[:3]
+    results = await generate_atlas_images(
+        prompt=prompt[:800],
+        model="qwen/qwen-image-2.0/edit",
+        aspect_ratio=aspect_ratio,
+        size="1K",
+        count=1,
+        reference_paths=atlas_references,
+        timeout_seconds=240,
+    )
+    if not results:
+        raise RuntimeError("Qwen nao retornou imagem utilizavel")
+
+    first_result = results[0] if isinstance(results[0], dict) else {}
+    raw_bytes = first_result.get("bytes")
+    if not isinstance(raw_bytes, (bytes, bytearray)) or not raw_bytes:
+        raise RuntimeError("Qwen retornou imagem invalida")
+
+    output_path = f"{output_stem}{_image_extension_from_mime_type(first_result.get('mime_type'))}"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(output_path).write_bytes(bytes(raw_bytes))
+    if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
+        raise RuntimeError("Qwen falhou ao salvar a imagem gerada")
+
+    return output_path, len(atlas_references)
+
+
 def _extract_similar_generated_frame_variant_map(raw_tags: object) -> dict[str, list[str]]:
     tags = _safe_tags_dict(raw_tags)
     raw_map = tags.get("similar_generated_frame_variants") if isinstance(tags.get("similar_generated_frame_variants"), dict) else {}
@@ -3533,7 +3583,7 @@ async def upsert_similar_unified_boundary_frame(
         if not str(req.edit_instruction or "").strip() and not resolved_files:
             raise HTTPException(status_code=400, detail="Descreva um ajuste ou envie uma nova foto antes de editar o frame")
 
-        target_path, _reference_count = await _generate_similar_wan_image(
+        target_path, _reference_count = await _generate_similar_qwen_edit_image(
             prompt_text=prompt_seed[:1200],
             aspect_ratio=effective_aspect_ratio,
             output_stem=str(image_dir / f"similar_unified_{frame_kind}_frame_{uuid.uuid4().hex[:8]}"),
@@ -3791,7 +3841,8 @@ async def upsert_similar_scene_image(
         if str(req.edit_instruction or "").strip() and not source_reference_image:
             raise HTTPException(status_code=400, detail="Frame base nao encontrado para editar esta cena")
 
-        generated_path, _reference_count = await _generate_similar_wan_image(
+        generator = _generate_similar_qwen_edit_image if track_generated_variant else _generate_similar_wan_image
+        generated_path, _reference_count = await generator(
             prompt_text=continuity_prompt[:1200],
             aspect_ratio=effective_aspect_ratio,
             output_stem=output_stem,
