@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v473 loaded");
+console.log("[CriaVideo] app.js v474 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -167,6 +167,7 @@ let _personaNoReferenceByContext = {
 let _personaManagerContext = "script";
 let _personaManagerType = "natureza";
 let _personaManagerMulti = false;
+let _personaManagerCreateMode = "full";
 let personaManagerReferenceImageFile = null;
 let _personaVoiceBuilderProfileId = 0;
 let _personaPromptEditorProfileId = 0;
@@ -3437,9 +3438,7 @@ function openModal(id) {
         return;
     }
     // Move modal to <body> so it escapes any ancestor stacking context or flex container.
-    if (modal.parentElement !== document.body) {
-        document.body.appendChild(modal);
-    }
+    document.body.appendChild(modal);
     modal.classList.add("open");
     modal.style.display = "flex";
 }
@@ -18575,6 +18574,7 @@ async function _ensurePersonaSelections(context, personaType) {
 }
 
 function _updatePersonaManagerFormByType() {
+    const isQuickAdd = _personaManagerCreateMode === "quick";
     const isNature = _personaManagerType === "natureza";
     const isDrawing = _personaManagerType === "desenho";
     const isCustom = _personaManagerType === "personalizado";
@@ -18590,29 +18590,48 @@ function _updatePersonaManagerFormByType() {
     const customDescGroup = document.getElementById("persona-manager-custom-desc-group");
     const locationFields = document.getElementById("persona-manager-location-fields");
     const voiceField = document.querySelector(".persona-manager-field-voice");
+    const extraGroup = document.getElementById("persona-manager-extra")?.closest(".form-group");
+    const nameLabel = document.querySelector(".persona-manager-field-name label");
+    const nameInput = document.getElementById("persona-manager-name");
+    const referenceField = document.querySelector(".persona-manager-field-reference");
+    const referenceLabel = referenceField?.querySelector("label");
+    const referenceButton = referenceField?.querySelector(".persona-reference-upload > button");
     const createTitle = document.getElementById("persona-manager-create-title");
     const createKicker = document.getElementById("persona-manager-create-kicker");
     const createHeading = document.getElementById("persona-manager-create-heading");
     const createButton = document.getElementById("persona-manager-create-btn");
+    const entityBase = isLocation ? "local" : "persona";
+    const entityLabel = isQuickAdd ? `Adicionar ${entityBase} pela foto` : (isLocation ? "Criar novo local" : "Criar nova persona");
+    const entityKicker = isQuickAdd ? "Upload rapido" : (isLocation ? "Novo local" : "Nova persona");
+    const actionLabel = isQuickAdd ? `Salvar ${entityBase}` : (isLocation ? "Gerar novo local" : "Gerar nova persona");
 
-    if (humanFields) humanFields.hidden = !isHuman;
-    if (natureSubtypeGroup) natureSubtypeGroup.hidden = !isNature;
+    if (humanFields) humanFields.hidden = isQuickAdd || !isHuman;
+    if (natureSubtypeGroup) natureSubtypeGroup.hidden = isQuickAdd || !isNature;
     if (natureOtherGroup) {
         const isNatureOther = isNature && natureSubtypeEl && natureSubtypeEl.value === "outros";
-        natureOtherGroup.hidden = !isNatureOther;
+        natureOtherGroup.hidden = isQuickAdd || !isNatureOther;
     }
-    if (drawingStyleGroup) drawingStyleGroup.hidden = !isDrawing;
+    if (drawingStyleGroup) drawingStyleGroup.hidden = isQuickAdd || !isDrawing;
     if (drawingOtherGroup) {
         const isDrawingOther = isDrawing && drawingStyleEl && drawingStyleEl.value === "outros";
-        drawingOtherGroup.hidden = !isDrawingOther;
+        drawingOtherGroup.hidden = isQuickAdd || !isDrawingOther;
     }
-    if (customDescGroup) customDescGroup.hidden = !isCustom;
-    if (locationFields) locationFields.hidden = !isLocation;
-    if (voiceField) voiceField.hidden = isLocation;
-    if (createTitle) createTitle.textContent = isLocation ? "Criar novo local" : "Criar nova persona";
-    if (createKicker) createKicker.textContent = isLocation ? "Novo local" : "Nova persona";
-    if (createHeading) createHeading.textContent = isLocation ? "Criar novo local" : "Criar nova persona";
-    if (createButton) createButton.textContent = isLocation ? "Gerar novo local" : "Gerar nova persona";
+    if (customDescGroup) customDescGroup.hidden = isQuickAdd || !isCustom;
+    if (locationFields) locationFields.hidden = isQuickAdd || !isLocation;
+    if (voiceField) voiceField.hidden = isQuickAdd || isLocation;
+    if (extraGroup) extraGroup.hidden = isQuickAdd;
+    if (nameLabel) nameLabel.textContent = isQuickAdd ? `${isLocation ? "Nome do local" : "Nome da persona"} *` : "Nome (opcional)";
+    if (nameInput) {
+        nameInput.placeholder = isQuickAdd
+            ? (isLocation ? "Ex: Sala premium, Studio principal" : "Ex: Lia, Mascote da marca, Menina principal")
+            : "Ex: Minha personagem principal";
+    }
+    if (referenceLabel) referenceLabel.textContent = isQuickAdd ? `${isLocation ? "Foto do local" : "Foto da persona"} *` : "Imagem de referência (opcional)";
+    if (referenceButton) referenceButton.textContent = isQuickAdd ? "Enviar foto" : "Enviar imagem";
+    if (createTitle) createTitle.textContent = entityLabel;
+    if (createKicker) createKicker.textContent = entityKicker;
+    if (createHeading) createHeading.textContent = entityLabel;
+    if (createButton) createButton.textContent = actionLabel;
 }
 
 function _formatDrawingStyleLabel(styleValue, customStyleValue) {
@@ -19259,11 +19278,30 @@ function _preparePersonaManagerContext(context = "script") {
 }
 
 async function openPersonaCreateModal() {
+    _personaManagerCreateMode = "full";
     _resetPersonaManagerCreateForm();
     await loadVoiceProfiles();
     _renderPersonaManagerCreateVoiceSelect();
     _updatePersonaManagerFormByType();
     openModal("modal-persona-manager-create");
+}
+
+async function openPersonaQuickAdd(context = "") {
+    _preparePersonaManagerContext(context || _personaManagerContext || "script");
+    _personaManagerCreateMode = "quick";
+    _resetPersonaManagerCreateForm();
+    _updatePersonaManagerFormByType();
+    openModal("modal-persona-manager-create");
+
+    const inputEl = document.getElementById("persona-manager-reference-image");
+    if (!inputEl) return;
+
+    const openPicker = () => inputEl.click();
+    if (typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(openPicker);
+    } else {
+        setTimeout(openPicker, 0);
+    }
 }
 
 async function openScriptImagePersonaUpload(context = IMAGE_CREATOR_PERSONA_CONTEXT) {
@@ -19283,6 +19321,7 @@ async function openScriptImagePersonaUpload(context = IMAGE_CREATOR_PERSONA_CONT
 
 async function openPersonaManager(context = "script") {
     _preparePersonaManagerContext(context);
+    _personaManagerCreateMode = "full";
 
     const titleEl = document.getElementById("persona-manager-title");
     if (titleEl) titleEl.textContent = _personaManagerType === "local" ? "Locais de interação" : "Personas de interação";
@@ -19310,10 +19349,13 @@ async function openPersonaManager(context = "script") {
 }
 
 async function createPersonaFromManager() {
+    const isQuickAdd = _personaManagerCreateMode === "quick";
     const button = document.getElementById("persona-manager-create-btn");
     if (button) {
         button.disabled = true;
-        button.textContent = "Gerando...";
+        button.textContent = isQuickAdd
+            ? (_personaManagerType === "local" ? "Salvando local..." : "Salvando persona...")
+            : "Gerando...";
     }
 
     try {
@@ -19329,11 +19371,30 @@ async function createPersonaFromManager() {
         const locationLighting = (document.getElementById("persona-manager-location-lighting")?.value || "").trim();
         const locationElements = (document.getElementById("persona-manager-location-elements")?.value || "").trim();
         const extra = (document.getElementById("persona-manager-extra")?.value || "").trim();
-        const selectedVoiceProfileId = parseInt(document.getElementById("persona-manager-voice-profile")?.value || "0", 10) || 0;
+        const selectedVoiceProfileId = isQuickAdd
+            ? 0
+            : (parseInt(document.getElementById("persona-manager-voice-profile")?.value || "0", 10) || 0);
         const hasReferenceImage = !!personaManagerReferenceImageFile;
 
+        if (isQuickAdd) {
+            if (!hasReferenceImage) {
+                alert(_personaManagerType === "local"
+                    ? "Envie a foto do local antes de salvar."
+                    : "Envie a foto da persona antes de salvar.");
+                return;
+            }
+            if (!name) {
+                alert(_personaManagerType === "local"
+                    ? "Digite o nome do local."
+                    : "Digite o nome da persona.");
+                return;
+            }
+        }
+
         const attributes = {};
-        if (_personaManagerType === "natureza") {
+        if (isQuickAdd) {
+            // Quick add relies on the uploaded photo as the main visual reference.
+        } else if (_personaManagerType === "natureza") {
             const subtype = document.getElementById("persona-manager-nature-subtype")?.value || "gato";
             attributes.subtipo = subtype;
             if (subtype === "outros") {
@@ -19443,7 +19504,11 @@ async function createPersonaFromManager() {
     } finally {
         if (button) {
             button.disabled = false;
-            button.textContent = _personaManagerType === "local" ? "Gerar novo local" : "Gerar nova persona";
+            if (isQuickAdd) {
+                button.textContent = _personaManagerType === "local" ? "Salvar local" : "Salvar persona";
+            } else {
+                button.textContent = _personaManagerType === "local" ? "Gerar novo local" : "Gerar nova persona";
+            }
         }
     }
 }
