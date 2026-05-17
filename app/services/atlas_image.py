@@ -160,6 +160,16 @@ _SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "max_outputs": 4,
         "max_references": 9,
     },
+    "qwen/qwen-image-2.0/edit": {
+        "label": "Qwen Image 2.0 Edit",
+        "kind": "edit",
+        "supports_aspect_ratio": False,
+        "supports_size": True,
+        "supports_thinking_mode": False,
+        "supports_batch_request": False,
+        "max_outputs": 4,
+        "max_references": 3,
+    },
 }
 _SCRIPT_IMAGE_MODEL_ALIASES: dict[str, dict[str, Any]] = {
     "ultra-high-3.0": {
@@ -218,6 +228,7 @@ _WAN_26_MODELS = {
     "alibaba/wan-2.6/image-edit",
     "alibaba/wan-2.7/text-to-image",
     "alibaba/wan-2.7/image-edit",
+    "qwen/qwen-image-2.0/edit",
 }
 _WAN_26_SIZE_PRESETS = {
     "1K": {

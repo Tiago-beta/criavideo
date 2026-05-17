@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v472 loaded");
+console.log("[CriaVideo] app.js v473 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4094,6 +4094,19 @@ const SIMILAR_MODE_ENGINE_DEFAULT = {
     realistic: "wan2",
     unknown: "wan2",
 };
+const SIMILAR_ACTION_ICONS = {
+    save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
+    upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+    apply: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+    image: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
+    preview: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
+    download: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+    edit: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"/></svg>',
+    wand: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 4 1.5 3L20 8.5l-3.5 1.5L15 13l-1.5-3L10 8.5 13.5 7 15 4Z"/><path d="m6 15 1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z"/><path d="m3 21 9-9"/></svg>',
+    narration: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z"/><path d="M19 10a7 7 0 0 1-14 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>',
+    reroll: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"/></svg>',
+    close: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+};
 const _creditEstimateTimers = {};
 const _creditEstimateSeq = { wizard: 0, script: 0, auto: 0, workflow: 0, "publish-analysis-scene": 0 };
 let _latestCreditEstimate = { wizard: null, script: null, auto: null, workflow: null, "publish-analysis-scene": null };
@@ -6389,8 +6402,8 @@ function _renderSimilarUnifiedReferencePanel(project) {
             <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}">
                 <img src="${esc(entry.url)}" alt="${esc(entry.alt)}" loading="lazy">
                 <div class="similar-frame-image-actions">
-                    <a class="similar-frame-image-action" href="${esc(entry.url)}" download="${entry.downloadName}" title="Baixar ${entry.badge.toLowerCase()}" aria-label="Baixar ${entry.badge.toLowerCase()}">${similarActionIcons.download}</a>
-                    <button class="similar-frame-image-action" type="button" onclick="similarOpenUnifiedFrameEdit('${entry.kind}')" title="Editar ${entry.badge.toLowerCase()}" aria-label="Editar ${entry.badge.toLowerCase()}" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
+                    <a class="similar-frame-image-action" href="${esc(entry.url)}" download="${entry.downloadName}" title="Baixar ${entry.badge.toLowerCase()}" aria-label="Baixar ${entry.badge.toLowerCase()}">${SIMILAR_ACTION_ICONS.download}</a>
+                    <button class="similar-frame-image-action" type="button" onclick="similarOpenUnifiedFrameEdit('${entry.kind}')" title="Editar ${entry.badge.toLowerCase()}" aria-label="Editar ${entry.badge.toLowerCase()}" ${frameBusyDisabledAttr}>${SIMILAR_ACTION_ICONS.edit}</button>
                 </div>
                 <span class="similar-frame-gallery-badge">${entry.badge}</span>
             </div>
@@ -6430,9 +6443,9 @@ function _renderSimilarUnifiedReferencePanel(project) {
                 <textarea id="similar-unified-frame-instruction" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar a roupa, manter o mesmo enquadramento, a mesma luz e a mesma expressao." ${frameBusyDisabledAttr}>${esc(similarState.unifiedFrameInstruction || "")}</textarea>
                 <p class="field-hint">Envie uma nova foto ou descreva um ajuste. O vídeo final passa a usar a nova versão desse frame.</p>
                 <div class="similar-reference-frame-editor-tools">
-                    <button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarUploadUnifiedFrameReference('${activeFrameKind}')" title="Enviar nova foto" aria-label="Enviar nova foto" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
-                    ${framePendingCount ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarClearUnifiedFrameUploads()" title="Limpar fotos enviadas" aria-label="Limpar fotos enviadas" ${frameBusyDisabledAttr}>${similarActionIcons.close}</button>` : ""}
-                    <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarApplyUnifiedFrameEdit()" title="Aplicar ajuste no ${activeFrameLabelLower}" aria-label="Aplicar ajuste no ${activeFrameLabelLower}" ${frameBusyDisabledAttr}>${framePendingCount ? similarActionIcons.reroll : similarActionIcons.wand}</button>
+                    <button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarUploadUnifiedFrameReference('${activeFrameKind}')" title="Enviar nova foto" aria-label="Enviar nova foto" ${frameBusyDisabledAttr}>${SIMILAR_ACTION_ICONS.upload}</button>
+                    ${framePendingCount ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarClearUnifiedFrameUploads()" title="Limpar fotos enviadas" aria-label="Limpar fotos enviadas" ${frameBusyDisabledAttr}>${SIMILAR_ACTION_ICONS.close}</button>` : ""}
+                    <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarApplyUnifiedFrameEdit()" title="Gerar nova imagem para o ${activeFrameLabelLower}" aria-label="Gerar nova imagem para o ${activeFrameLabelLower}" ${frameBusyDisabledAttr}>${SIMILAR_ACTION_ICONS.image}</button>
                 </div>
                 ${frameUploadsMarkup}
                 <div class="similar-reference-frame-editor-actions">
@@ -8430,7 +8443,7 @@ function _renderSimilarScenes(project, options = {}) {
                             <button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarUploadFrameReference(${sceneId})" title="Enviar nova foto" aria-label="Enviar nova foto" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
                             ${pendingCount ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarClearSceneUploads(${sceneId})" title="Limpar fotos enviadas" aria-label="Limpar fotos enviadas" ${frameBusyDisabledAttr}>${similarActionIcons.close}</button>` : ""}
                             <button class="similar-frame-tool-btn similar-frame-tool-btn-icon${narrationEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleNarrationEdit(${sceneId})" title="${narrationTitle}" aria-label="${narrationTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.narration}</button>
-                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${generatedImageVariants.length ? similarActionIcons.reroll : similarActionIcons.wand}</button>
+                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.image}</button>
                         </div>
                         ${frameUploadsMarkup}
                         ${frameBusyMarkup}
