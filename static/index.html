@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260517-01">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260517-02">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 469;
+        var REQUIRED_VER = 470;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -4161,35 +4161,48 @@
                             <input id="script-image-generator-reference-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handleScriptImageCreatorReferenceSelect(event)">
                         </div>
 
-                        <div id="script-image-generator-context-group" class="script-image-generator-context-group">
-                            <section class="script-image-generator-context-card">
-                                <div class="script-image-generator-section-head">
-                                    <label>Persona de interação</label>
-                                </div>
-                                <div id="script-image-generator-persona-tags" class="realistic-inspiration-tags">
-                                    <button type="button" class="style-tag selected" data-persona="homem">Homem</button>
-                                    <button type="button" class="style-tag" data-persona="mulher">Mulher</button>
-                                    <button type="button" class="style-tag" data-persona="crianca">Criança</button>
-                                    <button type="button" class="style-tag" data-persona="familia">Família</button>
-                                    <button type="button" class="style-tag" data-persona="natureza">Natureza</button>
-                                    <button type="button" class="style-tag" data-persona="desenho">Desenho</button>
-                                    <button type="button" class="style-tag" data-persona="personalizado">Personalizado</button>
-                                </div>
-                                <div id="script-image-generator-persona-preview" class="realistic-persona-preview"></div>
-                                <div class="realistic-persona-actions">
-                                    <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaManager('image-persona')">Gerenciar personas</button>
-                                </div>
-                            </section>
+                        <div id="script-image-generator-context-group" class="script-image-generator-context-shell collapsible-section">
+                            <button class="collapsible-toggle script-image-generator-context-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
+                                <h3 class="section-title">Persona e local de interação</h3>
+                                <span class="collapsible-arrow">&#9660;</span>
+                            </button>
+                            <div class="collapsible-body" hidden>
+                                <div class="script-image-generator-context-grid">
+                                    <section class="script-image-generator-context-card">
+                                        <div class="script-image-generator-section-head">
+                                            <label>Persona de interação</label>
+                                        </div>
+                                        <div id="script-image-generator-persona-tags" class="realistic-inspiration-tags">
+                                            <button type="button" class="style-tag selected" data-persona="homem">Homem</button>
+                                            <button type="button" class="style-tag" data-persona="mulher">Mulher</button>
+                                            <button type="button" class="style-tag" data-persona="crianca">Criança</button>
+                                            <button type="button" class="style-tag" data-persona="familia">Família</button>
+                                            <button type="button" class="style-tag" data-persona="natureza">Natureza</button>
+                                            <button type="button" class="style-tag" data-persona="desenho">Desenho</button>
+                                            <button type="button" class="style-tag" data-persona="personalizado">Personalizado</button>
+                                        </div>
+                                        <div id="script-image-generator-persona-preview" class="realistic-persona-preview"></div>
+                                        <div class="realistic-persona-actions script-image-generator-context-actions">
+                                            <button class="btn-icon-sm script-image-generator-context-action" type="button" onclick="openScriptImagePersonaUpload('image-persona')" title="Adicionar persona por foto" aria-label="Adicionar persona por foto">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                            </button>
+                                            <button class="btn-icon-sm realistic-persona-gear script-image-generator-context-action" type="button" onclick="openPersonaManager('image-persona')" title="Criar ou gerenciar personas" aria-label="Criar ou gerenciar personas">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                            </button>
+                                        </div>
+                                    </section>
 
-                            <section class="script-image-generator-context-card">
-                                <div class="script-image-generator-section-head">
-                                    <label>Local de interação</label>
+                                    <section class="script-image-generator-context-card">
+                                        <div class="script-image-generator-section-head">
+                                            <label>Local de interação</label>
+                                        </div>
+                                        <div id="script-image-generator-location-preview" class="realistic-persona-preview"></div>
+                                        <div class="realistic-persona-actions">
+                                            <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaManager('image-location')">Gerenciar locais</button>
+                                        </div>
+                                    </section>
                                 </div>
-                                <div id="script-image-generator-location-preview" class="realistic-persona-preview"></div>
-                                <div class="realistic-persona-actions">
-                                    <button class="btn btn-secondary btn-sm" type="button" onclick="openPersonaManager('image-location')">Gerenciar locais</button>
-                                </div>
-                            </section>
+                            </div>
                         </div>
 
                         <div class="script-image-generator-settings">
@@ -4306,8 +4319,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260517-01"></script>
-    <script src="/video/static/pwa.js?v=20260517-01"></script>
+    <script src="/video/static/app.js?v=20260517-02"></script>
+    <script src="/video/static/pwa.js?v=20260517-02"></script>
 </body>
 </html>
 

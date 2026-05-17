@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v469 loaded");
+console.log("[CriaVideo] app.js v470 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -15128,6 +15128,7 @@ function resetScriptImageCreatorModalState() {
     if (thinkingToggle) thinkingToggle.checked = false;
     const refInput = document.getElementById("script-image-generator-reference-input");
     if (refInput) refInput.value = "";
+    setScriptImageCreatorContextCollapsed(true);
 
     _resetScriptImageCreatorPersonaContexts();
 
@@ -15327,6 +15328,20 @@ function handleScriptImageCreatorReferenceSelect(event) {
     const files = Array.from(event?.target?.files || []);
     addScriptImageCreatorReferences(files);
     if (event?.target) event.target.value = "";
+}
+
+function setScriptImageCreatorContextCollapsed(collapsed = true) {
+    const contextShell = document.getElementById("script-image-generator-context-group");
+    if (!contextShell) return;
+
+    const toggleBtn = contextShell.querySelector(".script-image-generator-context-toggle");
+    const body = contextShell.querySelector(".collapsible-body");
+    if (toggleBtn) {
+        toggleBtn.setAttribute("aria-expanded", String(!collapsed));
+    }
+    if (body) {
+        body.hidden = !!collapsed;
+    }
 }
 
 function _normalizeScriptImageCreatorClipboardImage(file, index = 0) {
@@ -18772,6 +18787,13 @@ function _resetPersonaManagerCreateForm() {
     removePersonaReferenceImage();
 }
 
+function _preparePersonaManagerContext(context = "script") {
+    _personaManagerContext = _normalizePersonaContext(context);
+    _personaManagerType = _getRealisticPersonaTypeByContext(_personaManagerContext);
+    _personaManagerMulti = _isMultiPersonaEnabled(_personaManagerContext);
+    _seriesPersonaCreateHook = null;
+}
+
 async function openPersonaCreateModal() {
     _resetPersonaManagerCreateForm();
     await loadVoiceProfiles();
@@ -18780,10 +18802,23 @@ async function openPersonaCreateModal() {
     openModal("modal-persona-manager-create");
 }
 
+async function openScriptImagePersonaUpload(context = IMAGE_CREATOR_PERSONA_CONTEXT) {
+    _preparePersonaManagerContext(context);
+    await openPersonaCreateModal();
+
+    const inputEl = document.getElementById("persona-manager-reference-image");
+    if (!inputEl) return;
+
+    const openPicker = () => inputEl.click();
+    if (typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(openPicker);
+    } else {
+        setTimeout(openPicker, 0);
+    }
+}
+
 async function openPersonaManager(context = "script") {
-    _personaManagerContext = _normalizePersonaContext(context);
-    _personaManagerType = _getRealisticPersonaTypeByContext(_personaManagerContext);
-    _personaManagerMulti = _isMultiPersonaEnabled(_personaManagerContext);
+    _preparePersonaManagerContext(context);
 
     const titleEl = document.getElementById("persona-manager-title");
     if (titleEl) titleEl.textContent = _personaManagerType === "local" ? "Locais de interação" : "Personas de interação";
@@ -18831,6 +18866,7 @@ async function createPersonaFromManager() {
         const locationElements = (document.getElementById("persona-manager-location-elements")?.value || "").trim();
         const extra = (document.getElementById("persona-manager-extra")?.value || "").trim();
         const selectedVoiceProfileId = parseInt(document.getElementById("persona-manager-voice-profile")?.value || "0", 10) || 0;
+        const hasReferenceImage = !!personaManagerReferenceImageFile;
 
         const attributes = {};
         if (_personaManagerType === "natureza") {
@@ -18843,40 +18879,44 @@ async function createPersonaFromManager() {
         } else if (_personaManagerType === "desenho") {
             attributes.estilo_desenho = drawingStyle || "cartoon";
             if (attributes.estilo_desenho === "outros") {
-                if (!drawingOther) {
+                if (!drawingOther && !hasReferenceImage) {
                     alert("Descreva o estilo personalizado antes de gerar a persona de desenho.");
                     return;
                 }
-                attributes.estilo_desenho_custom = drawingOther;
+                if (drawingOther) {
+                    attributes.estilo_desenho_custom = drawingOther;
+                }
             }
         } else if (_personaManagerType === "personalizado") {
-            if (!customDesc) {
+            if (!customDesc && !hasReferenceImage) {
                 alert("Descreva sua persona personalizada antes de gerar.");
                 return;
             }
-            attributes.descricao_persona = customDesc;
+            if (customDesc) {
+                attributes.descricao_persona = customDesc;
+            }
         } else if (_personaManagerType === "local") {
-            if (!locationType || !locationElements) {
+            if ((!locationType || !locationElements) && !hasReferenceImage) {
                 alert("Preencha o tipo do local e os elementos principais antes de gerar o local de interação.");
                 return;
             }
-            attributes.tipo_local = locationType;
-            attributes.elementos_principais = locationElements;
+            if (locationType) attributes.tipo_local = locationType;
+            if (locationElements) attributes.elementos_principais = locationElements;
             if (locationStyle) attributes.estilo_arquitetura = locationStyle;
             if (locationLighting) attributes.iluminacao = locationLighting;
         } else {
-            if (!age || !skin || !hair) {
+            if ((!age || !skin || !hair) && !hasReferenceImage) {
                 alert("Preencha idade, cor da pele e cor do cabelo antes de gerar a persona.");
                 return;
             }
             if (_personaManagerType === "familia") {
-                attributes.faixa_etaria = age;
-                attributes.cor_pele = skin;
-                attributes.cabelo = hair;
+                if (age) attributes.faixa_etaria = age;
+                if (skin) attributes.cor_pele = skin;
+                if (hair) attributes.cabelo = hair;
             } else {
-                attributes.idade_aparente = age;
-                attributes.cor_pele = skin;
-                attributes.cabelo = hair;
+                if (age) attributes.idade_aparente = age;
+                if (skin) attributes.cor_pele = skin;
+                if (hair) attributes.cabelo = hair;
             }
         }
         if (extra) {
@@ -18939,7 +18979,7 @@ async function createPersonaFromManager() {
     } finally {
         if (button) {
             button.disabled = false;
-            button.textContent = "Gerar nova persona";
+            button.textContent = _personaManagerType === "local" ? "Gerar novo local" : "Gerar nova persona";
         }
     }
 }
