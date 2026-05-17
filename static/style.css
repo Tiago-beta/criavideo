@@ -11373,6 +11373,120 @@ th,
     color: #fda4af;
 }
 
+.script-audio-source-modal {
+    max-width: 760px;
+}
+
+.script-audio-source-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.script-audio-source-card {
+    appearance: none;
+    width: 100%;
+    min-height: 210px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 22px;
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        radial-gradient(circle at top right, rgba(var(--accent-rgb), 0.16), transparent 54%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+    color: var(--text);
+    cursor: pointer;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.script-audio-source-card:hover,
+.script-audio-source-card:focus-visible {
+    outline: none;
+    transform: translateY(-1px);
+    border-color: rgba(var(--accent-rgb), 0.58);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.2);
+}
+
+.script-audio-source-card-icon {
+    width: 54px;
+    height: 54px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    background: rgba(var(--accent-rgb), 0.15);
+    color: var(--accent);
+}
+
+.script-audio-source-card-label {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.script-audio-source-card-label small {
+    color: var(--text-muted);
+    line-height: 1.45;
+}
+
+.script-audio-video-url-modal {
+    max-width: 640px;
+}
+
+.script-audio-video-link-shell {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 62px;
+    padding: 0 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(6, 17, 34, 0.82);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.script-audio-video-link-shell svg {
+    flex: 0 0 auto;
+    color: var(--accent);
+}
+
+.script-audio-video-link-shell .input {
+    min-height: 62px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.script-audio-video-link-shell .input:focus {
+    box-shadow: none;
+}
+
+.script-audio-video-url-status {
+    margin: 14px 2px 0;
+    color: var(--text-muted);
+    font-size: 0.92rem;
+}
+
+.script-audio-video-url-status.error {
+    color: #fda4af;
+}
+
+@media (max-width: 720px) {
+    .script-audio-source-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .script-audio-source-card {
+        min-height: 160px;
+    }
+}
+
 .editor-recorder-modal {
     max-width: 980px;
 }

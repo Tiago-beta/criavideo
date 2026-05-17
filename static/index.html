@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260517-05">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260517-06">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 473;
+        var REQUIRED_VER = 474;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1095,6 +1095,57 @@
             <div class="modal-footer modal-footer-space">
                 <button class="btn btn-secondary" type="button" onclick="_editorCloseAudioVideoSourceModal()">Cancelar</button>
                 <button id="editor-audio-video-modal-submit" class="btn btn-primary" type="button" onclick="_editorSubmitAudioVideoSourceModal()">Selecionar vídeo</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-script-audio-video-source" class="modal">
+        <div class="modal-content modal-content-wide script-audio-source-modal">
+            <div class="modal-header">
+                <h3>Extrair áudio do vídeo</h3>
+                <button class="modal-close" onclick="closeScriptAudioVideoSourceModal()" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="script-audio-source-grid">
+                    <button class="script-audio-source-card" type="button" onclick="chooseScriptUserAudioVideoLocal()">
+                        <span class="script-audio-source-card-icon" aria-hidden="true">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        </span>
+                        <span class="script-audio-source-card-label">
+                            <strong>Enviar do computador</strong>
+                            <small>Escolha um vídeo local para extrair só o áudio.</small>
+                        </span>
+                    </button>
+                    <button class="script-audio-source-card" type="button" onclick="openScriptAudioVideoUrlModal()">
+                        <span class="script-audio-source-card-icon" aria-hidden="true">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l1.41-1.41a5 5 0 0 0-7.07-7.07L10 5"/><path d="M14 11a5 5 0 0 0-7.07 0L5.52 12.41a5 5 0 1 0 7.07 7.07L14 19"/></svg>
+                        </span>
+                        <span class="script-audio-source-card-label">
+                            <strong>Buscar da internet</strong>
+                            <small>Cole o link e use o Baixa Tudo para baixar e extrair.</small>
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-script-audio-video-url" class="modal">
+        <div class="modal-content script-audio-video-url-modal">
+            <div class="modal-header">
+                <h3>Buscar vídeo da internet</h3>
+                <button id="script-audio-video-url-close" class="modal-close" onclick="closeScriptAudioVideoUrlModal()" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="script-audio-video-link-shell">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l1.41-1.41a5 5 0 0 0-7.07-7.07L10 5"/><path d="M14 11a5 5 0 0 0-7.07 0L5.52 12.41a5 5 0 1 0 7.07 7.07L14 19"/></svg>
+                    <input id="script-audio-video-url-input" class="input" type="url" placeholder="Cole o link do vídeo" oninput="handleScriptAudioVideoUrlInput(this.value)" onkeydown="handleScriptAudioVideoUrlKeydown(event)">
+                </div>
+                <p id="script-audio-video-url-status" class="script-audio-video-url-status" hidden></p>
+            </div>
+            <div class="modal-footer modal-footer-space">
+                <button id="script-audio-video-url-cancel" class="btn btn-secondary" type="button" onclick="closeScriptAudioVideoUrlModal()">Cancelar</button>
+                <button id="script-audio-video-url-submit" class="btn btn-primary" type="button" onclick="submitScriptAudioVideoUrlModal()">Baixar e extrair</button>
             </div>
         </div>
     </div>
@@ -4324,8 +4375,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260517-05"></script>
-    <script src="/video/static/pwa.js?v=20260517-05"></script>
+    <script src="/video/static/app.js?v=20260517-06"></script>
+    <script src="/video/static/pwa.js?v=20260517-06"></script>
 </body>
 </html>
 

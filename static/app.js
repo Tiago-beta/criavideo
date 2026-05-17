@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v473 loaded");
+console.log("[CriaVideo] app.js v474 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -3457,6 +3457,8 @@ function closeModal(id) {
     if (id === "modal-new-project") {
         stopKaraokeProgressPolling();
         _stopSimilarPolling();
+        closeScriptAudioVideoSourceModal();
+        closeScriptAudioVideoUrlModal(true);
         closeModal("modal-script-image-creator");
         _setNewProjectModalWorkflowLayout(false);
     }
@@ -14633,6 +14635,11 @@ let scriptUserAudioFile = null;
 let scriptUserAudioDurationSeconds = 0;
 let scriptUserAudioSourceKind = "";
 let scriptUserAudioVideoExtracting = false;
+const scriptAudioVideoUrlModalState = {
+    loading: false,
+    status: "",
+    error: "",
+};
 let scriptUserVideoFile = null; // single File object for custom video
 let scriptGeneratedAudioUploadId = "";
 let scriptGeneratedAudioPreviewUrl = "";
@@ -16907,7 +16914,90 @@ function openScriptUserAudioVideoPicker() {
     if (scriptUserAudioVideoExtracting) {
         return;
     }
+    _resetScriptAudioVideoUrlModalState(true);
+    openModal("modal-script-audio-video-source");
+}
+
+function closeScriptAudioVideoSourceModal() {
+    closeModal("modal-script-audio-video-source");
+}
+
+function chooseScriptUserAudioVideoLocal() {
+    if (scriptUserAudioVideoExtracting) {
+        return;
+    }
+    closeScriptAudioVideoSourceModal();
     document.getElementById("script-user-audio-video-input")?.click();
+}
+
+function openScriptAudioVideoUrlModal() {
+    if (scriptUserAudioVideoExtracting) {
+        return;
+    }
+    closeScriptAudioVideoSourceModal();
+    _resetScriptAudioVideoUrlModalState(true);
+    openModal("modal-script-audio-video-url");
+    window.setTimeout(() => {
+        document.getElementById("script-audio-video-url-input")?.focus();
+    }, 0);
+}
+
+function closeScriptAudioVideoUrlModal(force = false) {
+    if (scriptAudioVideoUrlModalState.loading && !force) {
+        return;
+    }
+    closeModal("modal-script-audio-video-url");
+    _resetScriptAudioVideoUrlModalState(true);
+}
+
+function _renderScriptAudioVideoUrlModal() {
+    const message = scriptAudioVideoUrlModalState.error || scriptAudioVideoUrlModalState.status;
+    const statusEl = document.getElementById("script-audio-video-url-status");
+    const input = document.getElementById("script-audio-video-url-input");
+    const submitBtn = document.getElementById("script-audio-video-url-submit");
+    const closeBtn = document.getElementById("script-audio-video-url-close");
+    const cancelBtn = document.getElementById("script-audio-video-url-cancel");
+
+    if (statusEl) {
+        statusEl.hidden = !message;
+        statusEl.textContent = message;
+        statusEl.classList.toggle("error", !!scriptAudioVideoUrlModalState.error);
+    }
+    if (input) input.disabled = scriptAudioVideoUrlModalState.loading;
+    if (submitBtn) {
+        submitBtn.disabled = scriptAudioVideoUrlModalState.loading;
+        submitBtn.textContent = scriptAudioVideoUrlModalState.loading ? "Baixando..." : "Baixar e extrair";
+    }
+    if (closeBtn) closeBtn.disabled = scriptAudioVideoUrlModalState.loading;
+    if (cancelBtn) cancelBtn.disabled = scriptAudioVideoUrlModalState.loading;
+}
+
+function _resetScriptAudioVideoUrlModalState(clearInput = false) {
+    scriptAudioVideoUrlModalState.loading = false;
+    scriptAudioVideoUrlModalState.status = "";
+    scriptAudioVideoUrlModalState.error = "";
+    const input = document.getElementById("script-audio-video-url-input");
+    if (clearInput && input) {
+        input.value = "";
+    }
+    _renderScriptAudioVideoUrlModal();
+}
+
+function handleScriptAudioVideoUrlInput() {
+    if (!scriptAudioVideoUrlModalState.status && !scriptAudioVideoUrlModalState.error) {
+        return;
+    }
+    scriptAudioVideoUrlModalState.status = "";
+    scriptAudioVideoUrlModalState.error = "";
+    _renderScriptAudioVideoUrlModal();
+}
+
+function handleScriptAudioVideoUrlKeydown(event) {
+    if (event.key !== "Enter") {
+        return;
+    }
+    event.preventDefault();
+    submitScriptAudioVideoUrlModal();
 }
 
 function _setScriptManualAudioSelectionUi(labelText) {
@@ -17000,6 +17090,85 @@ async function _downloadExtractedScriptAudioFile(payload, fallbackName = "") {
         type: String(blob.type || "").trim() || "audio/mp4",
         lastModified: Date.now(),
     });
+}
+
+async function _applyScriptExtractedAudioPayload(payload, fallbackName = "", labelText = "") {
+    if (!payload?.media_url) {
+        throw new Error("O servidor não retornou o áudio extraído.");
+    }
+
+    const extractedFile = await _downloadExtractedScriptAudioFile(payload, fallbackName);
+    await _applyScriptManualAudioFile(extractedFile, {
+        sourceKind: "video",
+        labelText: labelText || `Áudio extraído do vídeo: ${fallbackName || extractedFile.name}`,
+    });
+}
+
+function _describeScriptAudioVideoInternetSource(rawUrl, payload = null) {
+    const fileName = String(payload?.file_name || "").trim();
+    if (fileName) {
+        return fileName;
+    }
+
+    const candidateUrl = String(payload?.normalized_url || payload?.source_url || rawUrl || "").trim();
+    if (!candidateUrl) {
+        return "vídeo da internet";
+    }
+
+    try {
+        return new URL(candidateUrl).hostname.replace(/^www\./i, "") || candidateUrl;
+    } catch {
+        return candidateUrl;
+    }
+}
+
+async function submitScriptAudioVideoUrlModal() {
+    if (scriptAudioVideoUrlModalState.loading || scriptUserAudioVideoExtracting) {
+        return;
+    }
+
+    const input = document.getElementById("script-audio-video-url-input");
+    const rawUrl = String(input?.value || "").trim();
+    if (!rawUrl) {
+        scriptAudioVideoUrlModalState.error = "Cole o link do vídeo.";
+        _renderScriptAudioVideoUrlModal();
+        input?.focus();
+        return;
+    }
+    if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
+        scriptAudioVideoUrlModalState.error = "Informe um link válido.";
+        _renderScriptAudioVideoUrlModal();
+        input?.focus();
+        return;
+    }
+
+    scriptAudioVideoUrlModalState.loading = true;
+    scriptAudioVideoUrlModalState.status = "Baixando o vídeo e extraindo o áudio...";
+    scriptAudioVideoUrlModalState.error = "";
+    scriptUserAudioVideoExtracting = true;
+    _renderScriptAudioVideoUrlModal();
+    updateScriptVideoAreaVisibility();
+
+    try {
+        const payload = await api("/video/editor/upload-video-audio-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ source_url: rawUrl }),
+        });
+        const sourceLabel = _describeScriptAudioVideoInternetSource(rawUrl, payload);
+        await _applyScriptExtractedAudioPayload(payload, sourceLabel, `Áudio extraído do vídeo: ${sourceLabel}`);
+        closeScriptAudioVideoUrlModal(true);
+        showToast("Áudio extraído do vídeo e anexado ao projeto.", "success");
+    } catch (error) {
+        scriptAudioVideoUrlModalState.error = error.message || "Erro ao buscar o vídeo.";
+        scriptAudioVideoUrlModalState.status = "";
+        _renderScriptAudioVideoUrlModal();
+    } finally {
+        scriptAudioVideoUrlModalState.loading = false;
+        scriptUserAudioVideoExtracting = false;
+        _renderScriptAudioVideoUrlModal();
+        updateScriptVideoAreaVisibility();
+    }
 }
 
 function clearScriptGeneratedAudio(preserveBuilderText = true) {
@@ -17593,11 +17762,7 @@ async function handleUserAudioVideoSelect(event) {
         const formData = new FormData();
         formData.append("file", file, file.name || "video.mp4");
         const payload = await apiForm("/video/editor/upload-video-audio", formData, { method: "POST" });
-        const extractedFile = await _downloadExtractedScriptAudioFile(payload, file.name);
-        await _applyScriptManualAudioFile(extractedFile, {
-            sourceKind: "video",
-            labelText: `Áudio extraído do vídeo: ${file.name}`,
-        });
+        await _applyScriptExtractedAudioPayload(payload, file.name, `Áudio extraído do vídeo: ${file.name}`);
         showToast("Áudio extraído do vídeo e anexado ao projeto.", "success");
     } catch (error) {
         showToast(`Erro ao extrair o áudio: ${error.message}`, "error");
