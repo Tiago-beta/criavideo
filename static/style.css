@@ -7627,7 +7627,7 @@ svg.spin {
 
 .script-audio-builder-voice-selector {
     max-width: none;
-    margin: 0;
+    margin: 0 0 14px;
 }
 
 .script-audio-builder-voice-selector .minha-voz-btn {

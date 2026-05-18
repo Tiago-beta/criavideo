@@ -6016,12 +6016,22 @@ function _chooseCreateMode(mode) {
         openScriptImageCreatorFromCreateMode();
         return;
     }
-    if (normalizedMode === "series") {
-        openSeriesWorkspaceStart({ fromCreateModal: true });
+    if (normalizedMode === "audio") {
+        _openCreateAudioBuilderMode();
         return;
     }
     document.getElementById("create-mode-selection").hidden = true;
     switchCreateMode(normalizedMode);
+}
+
+function _openCreateAudioBuilderMode() {
+    switchCreateMode("script");
+    toggleScriptAudioBuilder(true);
+    toggleMinhaVoz("script-audio-builder", true);
+    const modalBody = document.querySelector("#modal-new-project .modal-body");
+    if (modalBody) {
+        modalBody.scrollTop = 0;
+    }
 }
 
 function switchCreateMode(mode) {
@@ -13949,6 +13959,7 @@ function resetCreateWizard(options = {}) {
     if (audioBuilder) audioBuilder.hidden = true;
     const audioBuilderTrigger = document.getElementById("script-video-audio-builder-trigger");
     if (audioBuilderTrigger) audioBuilderTrigger.classList.remove("active", "is-ready");
+    toggleMinhaVoz("script-audio-builder", false);
     const audioBuilderText = document.getElementById("script-audio-builder-text");
     if (audioBuilderText) audioBuilderText.value = "";
     const audioBuilderCharCount = document.getElementById("script-audio-builder-char-count");
@@ -27021,17 +27032,18 @@ function selectPersona(el, prefix) {
     }
 }
 
-function toggleMinhaVoz(prefix) {
+function toggleMinhaVoz(prefix, forceOpen = null) {
     const btn = document.getElementById(`${prefix}-minha-voz-btn`);
     const panel = document.getElementById(`${prefix}-persona-panel`);
-    const isOpen = !panel.classList.contains('hidden');
-    
-    if (isOpen) {
-        panel.classList.add('hidden');
-        btn.classList.remove('active');
-    } else {
-        panel.classList.remove('hidden');
-        btn.classList.add('active');
+    if (!btn || !panel) return;
+
+    const shouldOpen = typeof forceOpen === "boolean"
+        ? forceOpen
+        : panel.classList.contains("hidden");
+
+    panel.classList.toggle("hidden", !shouldOpen);
+    btn.classList.toggle("active", shouldOpen);
+    if (shouldOpen) {
         loadVoiceProfiles();
     }
 }
