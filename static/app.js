@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v475 loaded");
+console.log("[CriaVideo] app.js v476 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -186,6 +186,7 @@ let _grokAnchorPreviewState = {
 
 // Simple toast notification
 function showToast(msg, type = "info") {
+    if (type === "success") return;
     const existing = document.getElementById("_app_toast");
     if (existing) existing.remove();
     const el = document.createElement("div");
@@ -3699,6 +3700,13 @@ async function loadProjects() {
         const data = await api("/video/projects");
         _projectsCache = data;
         const visibleData = data.filter(_projectVisibleInCreateList);
+        const activeProjects = visibleData.filter((project) => _isProjectProcessingStatus(project.status));
+        if (!activeProjects.length) {
+            _stopProjectVisualProgress();
+        } else {
+            activeProjects.forEach(_seedProjectVisualProgress);
+            _startProjectVisualProgress();
+        }
         if (!visibleData.length) {
             container.innerHTML = "<p class='loading'>Nenhum vídeo criado ainda. Crie o primeiro.</p>";
             return;
@@ -3724,7 +3732,7 @@ async function loadProjects() {
                     <div class="card-body">
                         <h4 class="card-title">${esc(project.title)}</h4>
                         ${project.status !== "completed" ? `<span class="badge badge-${badgeClass(project.status)}">${esc(statusPt)}</span>` : ""}
-                        ${project.progress != null && project.status !== "completed" && project.status !== "failed" && project.status !== "pending" ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${project.progress}%"></div></div>` : ""}
+                        ${isGenerating ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${_getProjectDisplayProgress(project) || 12}%"></div></div>` : ""}
                         ${project.error_message ? `<p class="card-error">${esc(project.error_message)}</p>` : ""}
                     </div>
                     <div class="card-footer">
@@ -3764,12 +3772,91 @@ function handleProjectThumbError(imgElement, projectId, canWatch) {
     imgElement.replaceWith(placeholder);
 }
 
+const _projectVisualProgress = new Map();
+let _projectVisualProgressTimer = null;
+
+function _projectProgressCap(status) {
+    const normalizedStatus = String(status || "").trim().toLowerCase();
+    if (normalizedStatus === "generating_scenes") return 48;
+    if (normalizedStatus === "generating_clips") return 78;
+    if (normalizedStatus === "rendering") return 94;
+    return 88;
+}
+
+function _seedProjectVisualProgress(project) {
+    const normalizedStatus = String(project?.status || "").trim().toLowerCase();
+    const isActive = normalizedStatus !== "completed" && normalizedStatus !== "failed" && normalizedStatus !== "pending";
+    if (!isActive) {
+        _projectVisualProgress.delete(project?.id);
+        return;
+    }
+    const serverProgress = Number(project?.progress);
+    const safeServerProgress = Number.isFinite(serverProgress) ? Math.max(6, Math.min(99, serverProgress)) : 0;
+    const tracked = _projectVisualProgress.get(project.id);
+    if (!tracked) {
+        _projectVisualProgress.set(project.id, {
+            value: safeServerProgress > 0 ? safeServerProgress : 12,
+            status: normalizedStatus,
+            updatedAt: Date.now(),
+        });
+        return;
+    }
+    tracked.status = normalizedStatus;
+    tracked.updatedAt = Date.now();
+    if (safeServerProgress > tracked.value) {
+        tracked.value = safeServerProgress;
+    }
+}
+
+function _getProjectDisplayProgress(project) {
+    _seedProjectVisualProgress(project);
+    const tracked = _projectVisualProgress.get(project?.id);
+    if (!tracked) return null;
+    return Math.round(Math.max(6, Math.min(99, tracked.value)));
+}
+
+function _refreshProjectProgressBars() {
+    const container = document.getElementById("projects-list");
+    if (!container) return;
+    for (const project of _projectsCache) {
+        const normalizedStatus = String(project?.status || "").trim().toLowerCase();
+        const isActive = normalizedStatus !== "completed" && normalizedStatus !== "failed" && normalizedStatus !== "pending";
+        if (!isActive) continue;
+        const tracked = _projectVisualProgress.get(project.id);
+        if (!tracked) continue;
+        const cap = _projectProgressCap(tracked.status);
+        if (tracked.value < cap) {
+            const remaining = cap - tracked.value;
+            const step = Math.max(0.35, remaining * 0.04);
+            tracked.value = Math.min(cap, tracked.value + step);
+        }
+        const card = container.querySelector(`.card[data-project-id="${project.id}"]`);
+        const fill = card?.querySelector(".progress-bar-fill");
+        if (fill) {
+            fill.style.width = `${Math.round(tracked.value)}%`;
+        }
+    }
+}
+
+function _startProjectVisualProgress() {
+    if (_projectVisualProgressTimer) return;
+    _projectVisualProgressTimer = setInterval(_refreshProjectProgressBars, 900);
+}
+
+function _stopProjectVisualProgress() {
+    if (_projectVisualProgressTimer) {
+        clearInterval(_projectVisualProgressTimer);
+        _projectVisualProgressTimer = null;
+    }
+    _projectVisualProgress.clear();
+}
+
 function _statusPt(status) {
     const map = {
         "pending": "Pendente",
         "generating_scenes": "Gerando cenas...",
         "generating_clips": "Gerando clipes...",
-        "rendering": "Renderizando...",
+        "rendering": "Gerando vídeo...",
         "completed": "Concluído",
         "failed": "Falhou",
         "published": "Publicado",
@@ -3834,7 +3921,12 @@ function _pollInProgress(projects) {
     const active = projects.filter(p =>
         p.status !== "completed" && p.status !== "failed" && p.status !== "pending"
     );
-    if (!active.length) return;
+    if (!active.length) {
+        _stopProjectVisualProgress();
+        return;
+    }
+    active.forEach(_seedProjectVisualProgress);
+    _startProjectVisualProgress();
     _prevActiveIds = new Set(active.map(p => p.id));
     _pollTimer = setInterval(async () => {
         try {
@@ -3848,6 +3940,9 @@ function _pollInProgress(projects) {
                 p.status === "completed" && _prevActiveIds.has(p.id)
             );
             _prevActiveIds = new Set(stillActive.map(p => p.id));
+            if (stillActive.length) {
+                stillActive.forEach(_seedProjectVisualProgress);
+            }
             // Update cards in-place instead of full re-render
             for (const p of data) {
                 _updateCardInPlace(p);
@@ -3855,6 +3950,7 @@ function _pollInProgress(projects) {
             if (!stillActive.length) {
                 clearInterval(_pollTimer);
                 _pollTimer = null;
+                _stopProjectVisualProgress();
                 loadProjects(); // Full refresh to get thumbnails
                 // Show expiry warning and auto-download newly completed videos
                 if (newlyCompleted.length) {
@@ -3865,6 +3961,7 @@ function _pollInProgress(projects) {
         } catch (_) {
             clearInterval(_pollTimer);
             _pollTimer = null;
+            _stopProjectVisualProgress();
         }
     }, 3000);
 }
@@ -3919,16 +4016,18 @@ function _updateCardInPlace(project) {
         badge.remove();
     }
     let barWrap = card.querySelector(".progress-bar");
-    if (isActive && project.progress != null) {
+    if (isActive) {
         if (!barWrap) {
             barWrap = document.createElement("div");
             barWrap.className = "progress-bar";
             barWrap.innerHTML = '<div class="progress-bar-fill"></div>';
             body.appendChild(barWrap);
         }
-        barWrap.querySelector(".progress-bar-fill").style.width = project.progress + "%";
+        const displayProgress = _getProjectDisplayProgress(project) || 12;
+        barWrap.querySelector(".progress-bar-fill").style.width = displayProgress + "%";
     } else if (barWrap) {
         barWrap.remove();
+        _projectVisualProgress.delete(project.id);
     }
 }
 
@@ -13606,9 +13705,6 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         if (imageCreatorLaunch) {
             openScriptImageCreatorModal();
             _startScriptImageCreatorVideoProjectTracking(imageCreatorSourceUploadId, Number(resp?.id || 0) || 0, engineLabel);
-            showToast(`${engineLabel} começou a criar seu vídeo. Ele já está piscando na tela de imagens.`, "success");
-        } else {
-            showToast(`${engineLabel} começou a criar seu vídeo. A miniatura vai piscar na lista enquanto renderiza.`, "success");
         }
         _scriptImageCreatorVideoLaunch = {
             active: false,
@@ -26646,7 +26742,7 @@ function pollProject(projectId) {
             const labels = {
                 generating_scenes: "Gerando cenas com IA...",
                 generating_clips: "Criando clipes...",
-                rendering: "Renderizando vídeo final...",
+                rendering: "Gerando vídeo...",
                 completed: "Vídeo pronto.",
                 failed: "Erro na geracao.",
             };
