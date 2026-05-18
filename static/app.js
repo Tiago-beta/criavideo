@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v476 loaded");
+console.log("[CriaVideo] app.js v477 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -716,19 +716,18 @@ function _isDesktopSidebarMode() {
 
 function _openDesktopSidebar() {
     const appShell = document.getElementById("app");
-    if (!appShell || !_isDesktopSidebarMode()) {
+    if (!appShell) {
         return;
     }
-    appShell.classList.add("sidebar-collapsed", "sidebar-open");
+    appShell.classList.remove("sidebar-collapsed", "sidebar-open");
 }
 
 function _collapseDesktopSidebar() {
     const appShell = document.getElementById("app");
-    if (!appShell || !_isDesktopSidebarMode()) {
+    if (!appShell) {
         return;
     }
-    appShell.classList.add("sidebar-collapsed");
-    appShell.classList.remove("sidebar-open");
+    appShell.classList.remove("sidebar-collapsed", "sidebar-open");
 }
 
 function _syncDesktopSidebarForViewport() {
@@ -736,12 +735,7 @@ function _syncDesktopSidebarForViewport() {
     if (!appShell) {
         return;
     }
-    if (_isDesktopSidebarMode()) {
-        appShell.classList.add("sidebar-collapsed");
-        appShell.classList.remove("sidebar-open");
-        return;
-    }
-    appShell.classList.remove("sidebar-open");
+    appShell.classList.remove("sidebar-collapsed", "sidebar-open");
 }
 
 function setAuthStatus(message = "") {
