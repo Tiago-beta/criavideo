@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v477 loaded");
+console.log("[CriaVideo] app.js v478 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -6033,6 +6033,41 @@ function _openCreateAudioBuilderMode() {
         modalBody.scrollTop = 0;
     }
 }
+
+function handleNewProjectModalClose() {
+    const aiSuggestPanel = document.getElementById("ai-suggest-panel");
+    if (aiSuggestPanel && !aiSuggestPanel.hidden) {
+        hideAiSuggestPanel();
+        return;
+    }
+
+    const workflowPanel = document.getElementById("create-panel-workflow");
+    if (workflowPanel && !workflowPanel.hidden) {
+        document.getElementById("workflow-back")?.click();
+        return;
+    }
+
+    const similarPanel = document.getElementById("create-panel-similar");
+    if (similarPanel && !similarPanel.hidden) {
+        document.getElementById("similar-back")?.click();
+        return;
+    }
+
+    const scriptPanel = document.getElementById("create-panel-script");
+    if (scriptPanel && !scriptPanel.hidden) {
+        scriptBack();
+        return;
+    }
+
+    const wizardPanel = document.getElementById("create-panel-wizard");
+    if (wizardPanel && !wizardPanel.hidden) {
+        wizardBack();
+        return;
+    }
+
+    closeModal("modal-new-project");
+}
+window.handleNewProjectModalClose = handleNewProjectModalClose;
 
 function switchCreateMode(mode) {
     if (!mode) return;

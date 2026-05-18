@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260518-02">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260518-03">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 477;
+        var REQUIRED_VER = 478;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1196,7 +1196,7 @@
             </div>
             <div class="modal-header">
                 <h3 id="create-modal-title">Novo projeto de vídeo</h3>
-                <button class="modal-close" onclick="closeModal('modal-new-project')" type="button">&times;</button>
+                <button class="modal-close" onclick="handleNewProjectModalClose()" type="button">&times;</button>
             </div>
             <div class="modal-body">
 
@@ -1726,7 +1726,6 @@
                                             <strong id="script-audio-builder-heading">Criar áudio com voz IA</strong>
                                             <small id="script-audio-builder-subheading">Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.</small>
                                         </div>
-                                        <button class="btn-icon-sm" type="button" onclick="toggleScriptAudioBuilder(false)" title="Fechar" aria-label="Fechar">&times;</button>
                                     </div>
 
                                     <div id="script-audio-builder-voice-selector" class="voice-selector script-audio-builder-voice-selector">
@@ -4390,8 +4389,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260518-02"></script>
-    <script src="/video/static/pwa.js?v=20260518-02"></script>
+    <script src="/video/static/app.js?v=20260518-03"></script>
+    <script src="/video/static/pwa.js?v=20260518-03"></script>
 </body>
 </html>
 
