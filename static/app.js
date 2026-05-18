@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v476 loaded");
+console.log("[CriaVideo] app.js v477 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -14796,7 +14796,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "google/nano-banana/text-to-image",
         label: "Nano Banana",
-        defaultCostLabel: "6 créditos",
+        defaultCostLabel: "3 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14806,7 +14806,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "google/nano-banana-pro/text-to-image",
         label: "Nano Banana Pro",
-        defaultCostLabel: "8 créditos",
+        defaultCostLabel: "5 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14816,7 +14816,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "bytedance/seedream-v5.0-lite/sequential",
         label: "Mega 5.0 Anime",
-        defaultCostLabel: "8 créditos",
+        defaultCostLabel: "7 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14826,7 +14826,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "bytedance/seedream-v4.5",
         label: "Mega 5.0 Real",
-        defaultCostLabel: "9 créditos",
+        defaultCostLabel: "8 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14836,7 +14836,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "openai/gpt-image-1/text-to-image",
         label: "GPT Image",
-        defaultCostLabel: "11 créditos",
+        defaultCostLabel: "7 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -17000,13 +17000,13 @@ function updateScriptVideoAreaVisibility() {
         audioVideoTrigger.classList.toggle("has-file", hasManualAudio && scriptUserAudioSourceKind === "video");
         audioVideoTrigger.disabled = scriptUserAudioVideoExtracting;
     }
-    if (builderHeading) {
-        builderHeading.textContent = hasVideo ? "Criar áudio para este vídeo" : "Criar áudio com voz IA";
+    const builderCopy = document.getElementById("script-audio-builder-copy");
+    if (builderCopy) builderCopy.hidden = !hasVideo;
+    if (builderHeading && hasVideo) {
+        builderHeading.textContent = "Criar áudio para este vídeo";
     }
-    if (builderSubheading) {
-        builderSubheading.textContent = hasVideo
-            ? "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar."
-            : "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio para usar neste projeto.";
+    if (builderSubheading && hasVideo) {
+        builderSubheading.textContent = "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.";
     }
 }
 
@@ -27587,6 +27587,9 @@ function _getPlanBillingDetails(plan, billingPeriod = _creditBillingPeriod) {
 
 function _getDisplayUnitPrice(row) {
     const unitSuffix = row.unit === "second" ? "s" : "img";
+    if (Number(row.usdPerUnit || 0) <= 0) {
+        return `Grátis/${unitSuffix}`;
+    }
     if (_creditDisplayCurrency === "brl") {
         return `${_formatBrl(row.brlPerUnit || 0)}/${unitSuffix}`;
     }
@@ -27756,13 +27759,16 @@ function _renderPricingComparisonSections() {
             const planCells = plans.map((plan) => {
                 const usage = row.plans?.[plan.code] || {};
                 const billing = _getPlanBillingDetails(plan);
+                const isUnlimited = !!usage.unlimited;
                 const baseCount = parseInt(usage.includedUnits || 0, 10) || 0;
-                const count = String(plan.code || "free") === "free"
+                const count = isUnlimited
+                    ? null
+                    : String(plan.code || "free") === "free"
                     ? baseCount
                     : baseCount * (billing.comparisonMultiplier || 1);
                 return `
                     <td class="pricing-model-value-cell" data-theme="${plan.accent || plan.code || 'free'}">
-                        <strong>${_formatComparisonUnits(row, count)}</strong>
+                        <strong>${isUnlimited ? "Ilimitado" : _formatComparisonUnits(row, count)}</strong>
                         <span>${_getDisplayUnitPrice(row)}</span>
                     </td>
                 `;
