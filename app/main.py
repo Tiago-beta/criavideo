@@ -137,6 +137,7 @@ from app.routers.editor import router as editor_router
 from app.routers.persona import router as persona_router
 from app.routers.analyze import router as analyze_router
 from app.routers.admin import router as admin_router
+from app.routers.playstore import router as playstore_router
 from app.routers.series import router as series_router
 
 app.include_router(auth_router)
@@ -152,6 +153,7 @@ app.include_router(editor_router)
 app.include_router(persona_router)
 app.include_router(analyze_router)
 app.include_router(admin_router)
+app.include_router(playstore_router)
 app.include_router(series_router)
 
 # ── Serve rendered media files ──
@@ -187,6 +189,12 @@ async def assetlinks_json():
 async def dashboard():
     """Serve the web dashboard."""
     return static_file_response("index.html")
+
+
+@app.get("/video/playstore")
+async def playstore_preview():
+    """Serve the dedicated preview shell for the Android Play Store app."""
+    return static_file_response("playstore.html")
 
 
 @app.get("/privacy")

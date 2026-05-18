@@ -40,6 +40,25 @@ CREDIT_REFERENCE_PREFIX = "CVCR"
 PLAN_REFERENCE_PREFIX = "CVPLN"
 
 
+async def _table_exists(db: AsyncSession, table_name: str) -> bool:
+    result = await db.execute(text("SELECT to_regclass(:table_name)"), {"table_name": table_name})
+    return bool(result.scalar())
+
+
+async def _get_columns(db: AsyncSession, table_name: str) -> set[str]:
+    result = await db.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = :table_name
+            """
+        ),
+        {"table_name": table_name},
+    )
+    return {str(row[0]).strip().lower() for row in result.fetchall()}
+
+
 def _extract_error_detail_message(detail) -> str:
     if isinstance(detail, str):
         return detail.strip()
@@ -179,6 +198,74 @@ async def get_credits(
         "currentPlan": current_plan,
         "planExpiresAt": plan_expires_at,
     }
+
+
+@router.get("/history")
+async def get_credit_history(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not await _table_exists(db, "credit_purchases"):
+        return {"items": []}
+
+    columns = await _get_columns(db, "credit_purchases")
+    select_columns = ["reference"]
+    for column_name in ["credits", "amount", "type", "status", "created_at", "id"]:
+        if column_name in columns:
+            select_columns.append(column_name)
+
+    order_by = "created_at DESC NULLS LAST" if "created_at" in columns else "reference DESC"
+    if "id" in columns:
+        order_by = f"{order_by}, id DESC"
+
+    result = await db.execute(
+        text(
+            f"""
+            SELECT {", ".join(select_columns)}
+            FROM credit_purchases
+            WHERE user_id = :uid
+            ORDER BY {order_by}
+            LIMIT 20
+            """
+        ),
+        {"uid": user["id"]},
+    )
+    rows = result.mappings().all()
+
+    items = []
+    for row in rows:
+        reference = str(row.get("reference") or "").strip()
+        metadata = _parse_reference_metadata(reference)
+        credits = int(row.get("credits") or 0)
+        amount = float(row.get("amount") or 0)
+        purchase_type = str(row.get("type") or "").strip().lower() or None
+        status = str(row.get("status") or "confirmed").strip().lower() or "confirmed"
+        created_at = row.get("created_at")
+
+        if metadata["kind"] == "plan":
+            plan = get_subscription_plan(metadata["plan_code"])
+            plan_name = str(plan.get("name") or metadata["plan_code"] or "Plano").strip()
+            title = plan_name
+            subtitle = f"Assinatura {metadata['billing_period'] or 'monthly'}"
+        else:
+            title = f"{credits} creditos"
+            subtitle = "Recarga avulsa"
+
+        items.append(
+            {
+                "reference": reference,
+                "kind": metadata["kind"],
+                "title": title,
+                "subtitle": subtitle,
+                "status": status,
+                "type": purchase_type,
+                "credits": credits,
+                "amount": amount,
+                "createdAt": created_at.isoformat() if isinstance(created_at, datetime) else None,
+            }
+        )
+
+    return {"items": items}
 
 
 # ── POST /api/credits/purchase/pix ──
