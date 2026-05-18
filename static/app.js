@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v478 loaded");
+console.log("[CriaVideo] app.js v476 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -6016,58 +6016,13 @@ function _chooseCreateMode(mode) {
         openScriptImageCreatorFromCreateMode();
         return;
     }
-    if (normalizedMode === "audio") {
-        _openCreateAudioBuilderMode();
+    if (normalizedMode === "series") {
+        openSeriesWorkspaceStart({ fromCreateModal: true });
         return;
     }
     document.getElementById("create-mode-selection").hidden = true;
     switchCreateMode(normalizedMode);
 }
-
-function _openCreateAudioBuilderMode() {
-    switchCreateMode("script");
-    toggleScriptAudioBuilder(true);
-    toggleMinhaVoz("script-audio-builder", true);
-    const modalBody = document.querySelector("#modal-new-project .modal-body");
-    if (modalBody) {
-        modalBody.scrollTop = 0;
-    }
-}
-
-function handleNewProjectModalClose() {
-    const aiSuggestPanel = document.getElementById("ai-suggest-panel");
-    if (aiSuggestPanel && !aiSuggestPanel.hidden) {
-        hideAiSuggestPanel();
-        return;
-    }
-
-    const workflowPanel = document.getElementById("create-panel-workflow");
-    if (workflowPanel && !workflowPanel.hidden) {
-        document.getElementById("workflow-back")?.click();
-        return;
-    }
-
-    const similarPanel = document.getElementById("create-panel-similar");
-    if (similarPanel && !similarPanel.hidden) {
-        document.getElementById("similar-back")?.click();
-        return;
-    }
-
-    const scriptPanel = document.getElementById("create-panel-script");
-    if (scriptPanel && !scriptPanel.hidden) {
-        scriptBack();
-        return;
-    }
-
-    const wizardPanel = document.getElementById("create-panel-wizard");
-    if (wizardPanel && !wizardPanel.hidden) {
-        wizardBack();
-        return;
-    }
-
-    closeModal("modal-new-project");
-}
-window.handleNewProjectModalClose = handleNewProjectModalClose;
 
 function switchCreateMode(mode) {
     if (!mode) return;
@@ -13994,7 +13949,6 @@ function resetCreateWizard(options = {}) {
     if (audioBuilder) audioBuilder.hidden = true;
     const audioBuilderTrigger = document.getElementById("script-video-audio-builder-trigger");
     if (audioBuilderTrigger) audioBuilderTrigger.classList.remove("active", "is-ready");
-    toggleMinhaVoz("script-audio-builder", false);
     const audioBuilderText = document.getElementById("script-audio-builder-text");
     if (audioBuilderText) audioBuilderText.value = "";
     const audioBuilderCharCount = document.getElementById("script-audio-builder-char-count");
@@ -14842,7 +14796,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "google/nano-banana/text-to-image",
         label: "Nano Banana",
-        defaultCostLabel: "3 créditos",
+        defaultCostLabel: "6 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14852,7 +14806,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "google/nano-banana-pro/text-to-image",
         label: "Nano Banana Pro",
-        defaultCostLabel: "5 créditos",
+        defaultCostLabel: "8 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14862,7 +14816,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "bytedance/seedream-v5.0-lite/sequential",
         label: "Mega 5.0 Anime",
-        defaultCostLabel: "7 créditos",
+        defaultCostLabel: "8 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14872,7 +14826,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "bytedance/seedream-v4.5",
         label: "Mega 5.0 Real",
-        defaultCostLabel: "8 créditos",
+        defaultCostLabel: "9 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14882,7 +14836,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "openai/gpt-image-1/text-to-image",
         label: "GPT Image",
-        defaultCostLabel: "7 créditos",
+        defaultCostLabel: "11 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -17046,13 +17000,13 @@ function updateScriptVideoAreaVisibility() {
         audioVideoTrigger.classList.toggle("has-file", hasManualAudio && scriptUserAudioSourceKind === "video");
         audioVideoTrigger.disabled = scriptUserAudioVideoExtracting;
     }
-    const builderCopy = document.getElementById("script-audio-builder-copy");
-    if (builderCopy) builderCopy.hidden = !hasVideo;
-    if (builderHeading && hasVideo) {
-        builderHeading.textContent = "Criar áudio para este vídeo";
+    if (builderHeading) {
+        builderHeading.textContent = hasVideo ? "Criar áudio para este vídeo" : "Criar áudio com voz IA";
     }
-    if (builderSubheading && hasVideo) {
-        builderSubheading.textContent = "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.";
+    if (builderSubheading) {
+        builderSubheading.textContent = hasVideo
+            ? "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar."
+            : "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio para usar neste projeto.";
     }
 }
 
@@ -27067,18 +27021,17 @@ function selectPersona(el, prefix) {
     }
 }
 
-function toggleMinhaVoz(prefix, forceOpen = null) {
+function toggleMinhaVoz(prefix) {
     const btn = document.getElementById(`${prefix}-minha-voz-btn`);
     const panel = document.getElementById(`${prefix}-persona-panel`);
-    if (!btn || !panel) return;
-
-    const shouldOpen = typeof forceOpen === "boolean"
-        ? forceOpen
-        : panel.classList.contains("hidden");
-
-    panel.classList.toggle("hidden", !shouldOpen);
-    btn.classList.toggle("active", shouldOpen);
-    if (shouldOpen) {
+    const isOpen = !panel.classList.contains('hidden');
+    
+    if (isOpen) {
+        panel.classList.add('hidden');
+        btn.classList.remove('active');
+    } else {
+        panel.classList.remove('hidden');
+        btn.classList.add('active');
         loadVoiceProfiles();
     }
 }
@@ -27634,9 +27587,6 @@ function _getPlanBillingDetails(plan, billingPeriod = _creditBillingPeriod) {
 
 function _getDisplayUnitPrice(row) {
     const unitSuffix = row.unit === "second" ? "s" : "img";
-    if (Number(row.usdPerUnit || 0) <= 0) {
-        return `Grátis/${unitSuffix}`;
-    }
     if (_creditDisplayCurrency === "brl") {
         return `${_formatBrl(row.brlPerUnit || 0)}/${unitSuffix}`;
     }
@@ -27806,16 +27756,13 @@ function _renderPricingComparisonSections() {
             const planCells = plans.map((plan) => {
                 const usage = row.plans?.[plan.code] || {};
                 const billing = _getPlanBillingDetails(plan);
-                const isUnlimited = !!usage.unlimited;
                 const baseCount = parseInt(usage.includedUnits || 0, 10) || 0;
-                const count = isUnlimited
-                    ? null
-                    : String(plan.code || "free") === "free"
+                const count = String(plan.code || "free") === "free"
                     ? baseCount
                     : baseCount * (billing.comparisonMultiplier || 1);
                 return `
                     <td class="pricing-model-value-cell" data-theme="${plan.accent || plan.code || 'free'}">
-                        <strong>${isUnlimited ? "Ilimitado" : _formatComparisonUnits(row, count)}</strong>
+                        <strong>${_formatComparisonUnits(row, count)}</strong>
                         <span>${_getDisplayUnitPrice(row)}</span>
                     </td>
                 `;
