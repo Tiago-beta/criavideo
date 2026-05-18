@@ -170,7 +170,7 @@ _DIALOGUE_TIMING_LINE_RE = re.compile(
 
 def _similar_scene_duration_seconds(scene: VideoScene | None) -> float:
     if not scene:
-        return float(max(1, int(settings.similar_scene_default_seconds or 3)))
+        return float(max(5, int(settings.similar_scene_default_seconds or 5)))
 
     try:
         start_time = float(scene.start_time or 0)
@@ -184,7 +184,7 @@ def _similar_scene_duration_seconds(scene: VideoScene | None) -> float:
     duration = end_time - start_time
     if duration > 0.1:
         return max(1.0, duration)
-    return float(max(1, int(settings.similar_scene_default_seconds or 3)))
+    return float(max(5, int(settings.similar_scene_default_seconds or 5)))
 
 
 def _ensure_reference_image_instruction(prompt: str, reference_mode: str = "") -> str:
@@ -1847,6 +1847,20 @@ def _extract_similar_reference_frame_map(raw_tags: object) -> dict[str, str]:
     return resolved
 
 
+def _extract_similar_reference_end_frame_map(raw_tags: object) -> dict[str, str]:
+    tags = _safe_tags_dict(raw_tags)
+    raw_map = tags.get("similar_reference_end_frames") if isinstance(tags.get("similar_reference_end_frames"), dict) else {}
+    if not isinstance(raw_map, dict):
+        return {}
+
+    resolved: dict[str, str] = {}
+    for key, raw_path in raw_map.items():
+        path = str(raw_path or "").strip()
+        if path and os.path.exists(path):
+            resolved[str(key)] = path
+    return resolved
+
+
 def _collect_similar_unified_video_reference_paths(
     scenes: list[VideoScene],
     tags_data: dict[str, Any],
@@ -2240,15 +2254,27 @@ def _clear_similar_generated_frame_variants(tags_data: dict[str, Any], scene_id:
 def _serialize_project_scene(
     scene: VideoScene,
     reference_frame_map: dict[str, str] | None = None,
+    reference_frame_end_map: dict[str, str] | None = None,
     generated_frame_variant_map: dict[str, list[str]] | None = None,
     detected_scene_duration_map: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     reference_frame_path = ""
+    reference_frame_end_path = ""
     scene_key = str(int(scene.scene_index or 0))
     if isinstance(reference_frame_map, dict):
         reference_frame_path = str(reference_frame_map.get(scene_key) or "").strip()
         if reference_frame_path and not os.path.exists(reference_frame_path):
             reference_frame_path = ""
+    if isinstance(reference_frame_end_map, dict):
+        reference_frame_end_path = str(reference_frame_end_map.get(scene_key) or "").strip()
+        if reference_frame_end_path and not os.path.exists(reference_frame_end_path):
+            reference_frame_end_path = ""
+
+    reference_frame_paths: list[str] = []
+    for candidate in (reference_frame_path, reference_frame_end_path):
+        if candidate and candidate not in reference_frame_paths:
+            reference_frame_paths.append(candidate)
+    reference_frame_urls = [url for url in (_to_media_url(path) for path in reference_frame_paths) if url]
 
     generated_frame_variants: list[dict[str, Any]] = []
     variant_scene_key = str(int(scene.id or 0))
@@ -2279,8 +2305,14 @@ def _serialize_project_scene(
         "image_url": _to_media_url(scene.image_path),
         "clip_path": scene.clip_path,
         "clip_url": _to_media_url(scene.clip_path),
+        "reference_frame_start_path": reference_frame_path,
+        "reference_frame_start_url": _to_media_url(reference_frame_path),
         "reference_frame_path": reference_frame_path,
         "reference_frame_url": _to_media_url(reference_frame_path),
+        "reference_frame_end_path": reference_frame_end_path,
+        "reference_frame_end_url": _to_media_url(reference_frame_end_path),
+        "reference_frame_paths": reference_frame_paths,
+        "reference_frame_urls": reference_frame_urls,
         "start_time": scene.start_time,
         "end_time": scene.end_time,
         "detected_duration_seconds": detected_duration_seconds,
@@ -2922,7 +2954,7 @@ async def start_similar_analysis(
         "similar_source_upload_name": source_upload_name,
         "similar_analysis_mode": analysis_mode,
         "similar_analysis_limit_seconds": analysis_limit_seconds,
-        "similar_scene_seconds": max(int(settings.similar_scene_default_seconds or 3), 1),
+        "similar_scene_seconds": max(int(settings.similar_scene_default_seconds or 5), 5),
     }
 
     project = VideoProject(
@@ -3076,6 +3108,7 @@ async def get_project(
 
     response_tags = project.tags
     reference_frame_map: dict[str, str] = {}
+    reference_frame_end_map: dict[str, str] = {}
     generated_frame_variant_map: dict[str, list[str]] = {}
     detected_scene_duration_map: dict[str, float] = {}
     if _is_similar_project(project):
@@ -3096,6 +3129,7 @@ async def get_project(
         if unified_end_frame_path and os.path.exists(unified_end_frame_path):
             response_tags["similar_unified_end_frame_url"] = _to_media_url(unified_end_frame_path)
         reference_frame_map = _extract_similar_reference_frame_map(response_tags)
+        reference_frame_end_map = _extract_similar_reference_end_frame_map(response_tags)
         generated_frame_variant_map = _extract_similar_generated_frame_variant_map(response_tags)
         detected_scene_duration_map = _extract_similar_detected_scene_duration_map(response_tags)
 
@@ -3113,7 +3147,7 @@ async def get_project(
         "error_message": project.error_message,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "scenes": [
-            _serialize_project_scene(s, reference_frame_map, generated_frame_variant_map, detected_scene_duration_map)
+            _serialize_project_scene(s, reference_frame_map, reference_frame_end_map, generated_frame_variant_map, detected_scene_duration_map)
             for s in scenes
         ],
         "renders": [
@@ -3747,8 +3781,9 @@ async def update_similar_scene(
         await db.commit()
 
     reference_frame_map = _extract_similar_reference_frame_map(project.tags)
+    reference_frame_end_map = _extract_similar_reference_end_frame_map(project.tags)
     detected_scene_duration_map = _extract_similar_detected_scene_duration_map(project.tags)
-    return {"scene": _serialize_project_scene(scene, reference_frame_map, None, detected_scene_duration_map)}
+    return {"scene": _serialize_project_scene(scene, reference_frame_map, reference_frame_end_map, None, detected_scene_duration_map)}
 
 
 @router.post("/projects/{project_id}/similar/scenes/{scene_id}/image")
@@ -3905,9 +3940,10 @@ async def upsert_similar_scene_image(
     await db.commit()
 
     reference_frame_map = _extract_similar_reference_frame_map(project.tags)
+    reference_frame_end_map = _extract_similar_reference_end_frame_map(project.tags)
     generated_frame_variant_map = _extract_similar_generated_frame_variant_map(project.tags)
     detected_scene_duration_map = _extract_similar_detected_scene_duration_map(project.tags)
-    return {"scene": _serialize_project_scene(scene, reference_frame_map, generated_frame_variant_map, detected_scene_duration_map)}
+    return {"scene": _serialize_project_scene(scene, reference_frame_map, reference_frame_end_map, generated_frame_variant_map, detected_scene_duration_map)}
 
 
 @router.post("/projects/{project_id}/similar/generate-previews")
@@ -5649,7 +5685,7 @@ class GenerateRealisticPromptRequest(BaseModel):
     style: str = "cinematic"
     engine: str = "wan2"
     duration: int = 5
-    interaction_persona: str = "nenhum"
+    interaction_persona: str = "natureza"
     persona_profile_id: int = 0
     persona_profile_ids: list[int] = Field(default_factory=list)
     custom_image_ids: list[str] = Field(default_factory=list)
@@ -5869,18 +5905,17 @@ async def generate_realistic_prompt_endpoint(
         if resolved_custom:
             custom_image_paths.append(str(resolved_custom))
 
-    effective_interaction_persona = interaction_persona if selected_persona_profile_ids else ""
     has_reference_image = bool(req.has_reference_image)
     reference_mode = "face_identity_only" if selected_persona_profile_ids else ""
     prompt_for_optimizer = topic_for_optimizer
-    prompt_for_optimizer = _inject_interaction_persona_instruction(prompt_for_optimizer, effective_interaction_persona)
+    prompt_for_optimizer = _inject_interaction_persona_instruction(prompt_for_optimizer, interaction_persona)
 
     if selected_persona_profile_ids:
         try:
             resolved_personas, persona_image_paths = await resolve_persona_reference_images(
                 db=db,
                 user_id=user["id"],
-                persona_type=effective_interaction_persona,
+                persona_type=interaction_persona,
                 persona_profile_ids=selected_persona_profile_ids,
                 ensure_default=False,
             )
@@ -5989,7 +6024,7 @@ async def generate_realistic_prompt_endpoint(
         topic_seed=topic,
     )
 
-    final_prompt = _inject_interaction_persona_instruction(temporal_prompt, effective_interaction_persona)
+    final_prompt = _inject_interaction_persona_instruction(temporal_prompt, interaction_persona)
     if has_reference_image:
         final_prompt = _ensure_reference_image_instruction(final_prompt, reference_mode=reference_mode)
 
@@ -6024,7 +6059,7 @@ class GenerateRealisticRequest(BaseModel):
     clip_duration: float = 0  # Duration of the audio clip (0 = full)
     prompt_optimized: bool = False
     realistic_style: str = ""
-    interaction_persona: str = "nenhum"
+    interaction_persona: str = "natureza"
     persona_profile_id: int = 0
     persona_profile_ids: list[int] = Field(default_factory=list)
     disable_persona_reference: bool = False
@@ -6137,12 +6172,8 @@ async def generate_realistic_endpoint(
 
     use_last_image_as_final_frame = bool(req.use_last_image_as_final_frame) and engine == "seedance"
 
-    disable_persona_reference = not bool(upload_ids) and (
-        bool(req.disable_persona_reference)
-        or not bool(selected_persona_profile_ids)
-    )
+    disable_persona_reference = bool(req.disable_persona_reference) and engine == "grok" and not bool(upload_ids)
     if disable_persona_reference:
-        interaction_persona = ""
         selected_persona_profile_id = 0
         selected_persona_profile_ids = []
 
@@ -6231,8 +6262,8 @@ async def generate_realistic_endpoint(
     dialogue_duration = max(1, min(duration, int(req.dialogue_duration or duration))) if dialogue_enabled else 0
 
     has_reference_image = bool(image_path_str)
-    if engine == "avatar31" and not has_reference_image:
-        raise HTTPException(status_code=400, detail="Avatar 3.1 Plus exige uma imagem de referência válida.")
+    if not has_reference_image and not (engine == "grok" and disable_persona_reference):
+        raise HTTPException(status_code=400, detail="Vídeo realista exige imagem de referência.")
 
     if disable_persona_reference and not preserve_prompt_exactly:
         prompt = _inject_interaction_persona_instruction(prompt, interaction_persona)

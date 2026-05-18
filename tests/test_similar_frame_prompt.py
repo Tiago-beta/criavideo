@@ -75,6 +75,18 @@ class TestSimilarFramePrompt(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Falas, narração ou áudio", instruction)
         self.assertIn("câmera parece fixa/travada", instruction)
 
+    def test_build_scene_analysis_instruction_uses_two_frame_timeline_and_no_text_rule(self):
+        instruction = _build_scene_analysis_instruction(
+            0.0,
+            5.0,
+            19.0,
+            frame_count=2,
+        )
+
+        self.assertIn("frames inicial e final", instruction)
+        self.assertIn("frame inicial", instruction)
+        self.assertIn("nada escrito na tela", instruction)
+
     def test_infer_similar_camera_profile_detects_fixed_camera(self):
         profile = _infer_similar_camera_profile(
             [
@@ -155,6 +167,30 @@ class TestSimilarFramePrompt(unittest.IsolatedAsyncioTestCase):
         self.assertIn("mulher", prompt)
         self.assertIn("avenida", prompt)
         self.assertEqual(create_mock.await_count, 1)
+
+    async def test_analyze_frame_prompt_sends_two_reference_images_when_available(self):
+        create_mock = AsyncMock(
+            return_value=_fake_openai_response(
+                "Uma mulher monta uma estante de madeira sobre bancada escura, indo da primeira peca ao encaixe final em cinco segundos."
+            )
+        )
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create_mock)))
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_start, tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_end:
+            tmp_start.write(b"fake-image")
+            tmp_end.write(b"fake-image")
+            tmp_start_path = tmp_start.name
+            tmp_end_path = tmp_end.name
+
+        try:
+            await _analyze_frame_prompt(client, [tmp_start_path, tmp_end_path], 0.0, 5.0, 19.0)
+        finally:
+            os.unlink(tmp_start_path)
+            os.unlink(tmp_end_path)
+
+        user_content = create_mock.await_args.kwargs["messages"][1]["content"]
+        image_parts = [part for part in user_content if part.get("type") == "image_url"]
+        self.assertEqual(len(image_parts), 2)
 
     async def test_analyze_frame_prompt_retries_after_structured_failure(self):
         create_mock = AsyncMock(

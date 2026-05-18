@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock, patch
 
 import app.tasks.similar_tasks as similar_tasks
 from app.routers.video import (
+    _extract_similar_reference_end_frame_map,
     _ensure_similar_unified_boundary_frame_paths,
     _extract_similar_unified_boundary_frame_paths,
+    _serialize_project_scene,
 )
 from app.tasks.similar_tasks import (
     _compose_similar_unified_scene_reference_paths,
@@ -62,6 +64,45 @@ class TestSimilarUnifiedReferenceFrames(unittest.TestCase):
             ordered_paths,
             [self.start_path, self.upload_path, self.fallback_path, self.end_path],
         )
+
+    def test_extract_end_frame_map_ignores_missing_files(self):
+        end_frame_map = _extract_similar_reference_end_frame_map(
+            {
+                "similar_reference_end_frames": {
+                    "0": self.end_path,
+                    "1": str(Path(self.temp_dir.name) / "missing.jpg"),
+                }
+            }
+        )
+
+        self.assertEqual(end_frame_map, {"0": self.end_path})
+
+    def test_serialize_project_scene_exposes_boundary_frame_urls(self):
+        scene = SimpleNamespace(
+            id=10,
+            scene_index=0,
+            scene_type="image",
+            prompt="Prompt",
+            image_path="",
+            clip_path="",
+            start_time=0.0,
+            end_time=5.0,
+            lyrics_segment="",
+            is_user_uploaded=False,
+        )
+
+        with patch("app.routers.video._to_media_url", side_effect=lambda path: f"/media/{Path(path).name}" if path else None):
+            payload = _serialize_project_scene(
+                scene,
+                {"0": self.start_path},
+                {"0": self.end_path},
+                {},
+                {"0": 5.0},
+            )
+
+        self.assertEqual(payload["reference_frame_start_path"], self.start_path)
+        self.assertEqual(payload["reference_frame_end_path"], self.end_path)
+        self.assertEqual(payload["reference_frame_urls"], ["/media/start.jpg", "/media/end.jpg"])
 
 
 class TestSimilarUnifiedBoundaryFallbacks(unittest.IsolatedAsyncioTestCase):
@@ -139,6 +180,27 @@ class TestSimilarSceneBoundaryReferences(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(ordered_paths, [self.frame_paths[0], self.frame_paths[1]])
+
+    async def test_scene_boundary_prefers_explicit_end_frame_from_tags(self):
+        explicit_end_path = str(Path(self.temp_dir.name) / "scene-0-end.jpg")
+        Path(explicit_end_path).write_bytes(b"end-frame")
+
+        ordered_paths = await _resolve_similar_scene_boundary_reference_paths(
+            77,
+            self.scenes[0],
+            self.scenes,
+            {
+                "similar_local_video_path": self.video_path,
+                "similar_reference_end_frames": {"0": explicit_end_path},
+            },
+            {
+                "0": self.frame_paths[0],
+                "1": self.frame_paths[1],
+                "2": self.frame_paths[2],
+            },
+        )
+
+        self.assertEqual(ordered_paths, [self.frame_paths[0], explicit_end_path])
 
     async def test_last_scene_boundary_extracts_terminal_frame(self):
         async def fake_extract_frame(_video_path, _timestamp_seconds, output_path):

@@ -112,6 +112,17 @@ _SIMILAR_MOVING_CAMERA_TERMS = (
     "micro shake",
     "shaky",
 )
+_SIMILAR_NO_TEXT_MARKERS = (
+    "sem texto na tela",
+    "sem nada escrito na tela",
+    "sem legenda embutida",
+    "sem legendas embutidas",
+    "sem logotipos",
+    "sem marcas d'agua",
+    "sem marcas d\'agua",
+    "no text on screen",
+    "no text, no logos, no captions",
+)
 
 
 def _safe_tags_dict(raw: object) -> dict:
@@ -894,52 +905,16 @@ def _build_similar_scene_ranges(
     max_count: int = _SIMILAR_SCENE_MAX_COUNT,
 ) -> list[tuple[float, float]]:
     total_duration = max(float(duration_seconds or 0), 0.1)
-    safe_chunk = max(float(target_chunk_seconds or 5.0), min_seconds)
-    normalized_cuts: list[float] = []
-    for raw_cut in sorted(float(value) for value in (cut_times or [])):
-        if raw_cut <= min_seconds * 0.35 or raw_cut >= total_duration - (min_seconds * 0.35):
-            continue
-        if normalized_cuts and raw_cut - normalized_cuts[-1] < min_seconds * 0.55:
-            continue
-        normalized_cuts.append(round(raw_cut, 3))
-
-    boundaries = [0.0, *normalized_cuts, total_duration]
-    raw_ranges: list[tuple[float, float]] = []
-    for idx in range(len(boundaries) - 1):
-        start = float(boundaries[idx])
-        end = float(boundaries[idx + 1])
-        if end - start > 0.05:
-            raw_ranges.append((start, end))
-
-    merged_ranges: list[tuple[float, float]] = []
-    for start, end in raw_ranges:
-        if end - start < min_seconds and merged_ranges:
-            prev_start, _ = merged_ranges[-1]
-            merged_ranges[-1] = (prev_start, end)
-        else:
-            merged_ranges.append((start, end))
-
-    if len(merged_ranges) > 1 and (merged_ranges[0][1] - merged_ranges[0][0]) < min_seconds:
-        first_start, _ = merged_ranges[0]
-        _, second_end = merged_ranges[1]
-        merged_ranges = [(first_start, second_end), *merged_ranges[2:]]
-
     final_ranges: list[tuple[float, float]] = []
-    for start, end in merged_ranges or [(0.0, total_duration)]:
-        segment_duration = end - start
-        if segment_duration <= safe_chunk + 0.05:
+    safe_chunk = max(5.0, float(target_chunk_seconds or 5.0), min_seconds)
+    start = 0.0
+    while start < total_duration - 0.05:
+        end = min(total_duration, start + safe_chunk)
+        if total_duration - end < 0.05:
+            end = total_duration
+        if end - start > 0.05:
             final_ranges.append((start, end))
-            continue
-
-        segment_count = max(2, int(math.ceil(segment_duration / safe_chunk)))
-        while segment_count > 1 and (segment_duration / segment_count) < min_seconds:
-            segment_count -= 1
-
-        for idx in range(segment_count):
-            part_start = start + ((segment_duration * idx) / segment_count)
-            part_end = end if idx == segment_count - 1 else start + ((segment_duration * (idx + 1)) / segment_count)
-            if part_end - part_start > 0.05:
-                final_ranges.append((part_start, part_end))
+        start = end
 
     if not final_ranges:
         final_ranges = [(0.0, total_duration)]
@@ -953,8 +928,69 @@ def _resolve_similar_reference_frame_timestamp(start_time: float, duration_secon
     return round(min(max_timestamp, max(0.0, float(start_time or 0.0))), 3)
 
 
+def _resolve_similar_reference_end_frame_timestamp(
+    start_time: float,
+    end_time: float,
+    duration_seconds: float,
+) -> float:
+    safe_start = max(0.0, float(start_time or 0.0))
+    safe_end = max(safe_start, float(end_time or safe_start))
+    safe_duration = max(float(duration_seconds or 0.0), 0.0)
+    max_timestamp = max(0.0, safe_duration - 0.05)
+    target_timestamp = safe_end - 0.05 if safe_end > 0.05 else safe_end
+    target_timestamp = min(max_timestamp, target_timestamp)
+    target_timestamp = max(safe_start, target_timestamp)
+    return round(target_timestamp, 3)
+
+
+def _extract_existing_similar_paths(paths: list[str] | tuple[str, ...] | str | None) -> list[str]:
+    ordered_paths: list[str] = []
+    if isinstance(paths, str):
+        candidates = [paths]
+    else:
+        candidates = list(paths or [])
+
+    for candidate in candidates:
+        path = str(candidate or "").strip()
+        if not (path and os.path.exists(path)):
+            continue
+        if path in ordered_paths:
+            continue
+        ordered_paths.append(path)
+    return ordered_paths
+
+
+def _ensure_similar_no_text_instruction(prompt_text: str) -> str:
+    base_prompt = str(prompt_text or "").strip()
+    if not base_prompt:
+        return base_prompt
+
+    lowered = base_prompt.lower()
+    if any(marker in lowered for marker in _SIMILAR_NO_TEXT_MARKERS):
+        return base_prompt
+
+    instruction = (
+        "SEM TEXTO NA TELA (OBRIGATORIO): remova qualquer texto, legenda, logotipo, marca d'agua, letreiro, rotulo, "
+        "embalagem com escrita ou palavra visivel que apareca nas referencias. O video final deve sair sem nada escrito na tela."
+    )
+    return f"{base_prompt}\n\n{instruction}".strip()
+
+
 def _extract_similar_reference_frames(tags: dict | None) -> dict[str, str]:
     raw_map = tags.get("similar_reference_frames") if isinstance(tags, dict) else {}
+    if not isinstance(raw_map, dict):
+        return {}
+
+    reference_frames: dict[str, str] = {}
+    for key, raw_path in raw_map.items():
+        path = str(raw_path or "").strip()
+        if path and os.path.exists(path):
+            reference_frames[str(key)] = path
+    return reference_frames
+
+
+def _extract_similar_reference_end_frames(tags: dict | None) -> dict[str, str]:
+    raw_map = tags.get("similar_reference_end_frames") if isinstance(tags, dict) else {}
     if not isinstance(raw_map, dict):
         return {}
 
@@ -1037,15 +1073,20 @@ async def _resolve_similar_scene_boundary_reference_paths(
         start_path = _get_similar_scene_reference_frame_path(scene, reference_frames_by_scene_index)
 
     current_scene_index = int(getattr(scene, "scene_index", 0) or 0)
-    end_path = ""
-    for candidate_scene in sorted(scenes or [], key=lambda item: int(getattr(item, "scene_index", 0) or 0)):
-        candidate_index = int(getattr(candidate_scene, "scene_index", 0) or 0)
-        if candidate_index <= current_scene_index:
-            continue
-        candidate = _get_similar_scene_reference_frame_path(candidate_scene, reference_frames_by_scene_index)
-        if candidate:
-            end_path = candidate
-            break
+    end_frame_map = _extract_similar_reference_end_frames(tags)
+    end_path = str(end_frame_map.get(str(current_scene_index)) or "").strip()
+    if end_path and not os.path.exists(end_path):
+        end_path = ""
+
+    if not end_path:
+        for candidate_scene in sorted(scenes or [], key=lambda item: int(getattr(item, "scene_index", 0) or 0)):
+            candidate_index = int(getattr(candidate_scene, "scene_index", 0) or 0)
+            if candidate_index <= current_scene_index:
+                continue
+            candidate = _get_similar_scene_reference_frame_path(candidate_scene, reference_frames_by_scene_index)
+            if candidate:
+                end_path = candidate
+                break
 
     if not end_path:
         end_path = await _extract_similar_scene_terminal_reference_frame(project_id, scene, tags)
@@ -1241,18 +1282,22 @@ def _build_scene_analysis_instruction(
     global_context: str = "",
     spoken_context: str = "",
     spoken_language: str = "",
+    frame_count: int = 1,
 ) -> str:
     global_excerpt = _normalize_similar_context_text(global_context, limit=1200)
     spoken_excerpt = _normalize_similar_context_text(spoken_context, limit=_SIMILAR_SCENE_DIALOGUE_LIMIT)
     spoken_language_label = _format_similar_language_label_pt(spoken_language)
+    frame_subject = "os frames inicial e final" if int(frame_count or 1) > 1 else "este frame"
 
     lines = [
-        "Analise este frame e crie um prompt cinematográfico em português do Brasil.",
+        f"Analise {frame_subject} deste trecho de video e crie um prompt cinematográfico em português do Brasil.",
         "Escreva com ortografia, acentuação e pontuação corretas do pt-BR.",
-        "Descreva com riqueza de detalhes o sujeito principal, a ação visível, o enquadramento, o ambiente, a luz, as cores, a textura e o comportamento da câmera.",
+        "Descreva com riqueza de detalhes o sujeito principal, a acao visivel, o enquadramento, o ambiente, a luz, as cores, a textura e o comportamento da camera.",
         "Diga de forma objetiva se a câmera parece fixa/travada ou se há movimento real de câmera, sem inventar pan, tilt, zoom ou travelling quando isso não estiver evidente.",
         "Evite frases genéricas como 'cena cinematográfica' sem contexto visual real.",
         f"A cena representa o trecho de {start_time:.1f}s até {end_time:.1f}s de um vídeo de {duration_seconds:.1f}s.",
+        "O prompt final deve recriar todo esse trecho temporal: comecar exatamente no estado do frame inicial e terminar exatamente no estado do frame final, descrevendo a evolucao visual que acontece nesse intervalo.",
+        "Se qualquer frame tiver texto, legenda, logotipo, marca d'agua, letreiro, rotulo ou palavra visivel, trate isso como algo a remover na recriacao. Nunca gere video com nada escrito na tela.",
     ]
 
     if global_excerpt:
@@ -1265,6 +1310,7 @@ def _build_scene_analysis_instruction(
     lines.extend(
         [
             "Use o contexto geral e o áudio apenas como apoio narrativo, sem inventar elementos que contradigam o frame.",
+            "Quando houver dois frames, use a diferenca entre o inicio e o fim para inferir apenas a transformacao natural do trecho, sem inventar saltos ou cortes fora desse intervalo.",
             "Se houver conversa ou narração, reflita isso nas expressões, gestos, intenção dramática e situação da cena quando fizer sentido visualmente.",
             "Se a fala estiver clara, mencione explicitamente no prompt quem parece estar falando no frame, qual é o idioma ou variante da fala e o conteúdo essencial do que é dito.",
             "Quando houver transcrição inteligível, preserve a fala principal entre aspas dentro do próprio prompt.",
@@ -1560,7 +1606,7 @@ def _is_quota_exhausted_error(exc: Exception) -> bool:
 
 
 def _request_scene_prompt_from_google_sync(
-    frame_path: str,
+    frame_paths: list[str],
     start_time: float,
     end_time: float,
     duration_seconds: float,
@@ -1571,9 +1617,8 @@ def _request_scene_prompt_from_google_sync(
     if _google_scene_analysis_client is None or genai_types is None:
         raise RuntimeError("Google scene-analysis client indisponível")
 
-    mime_type = mimetypes.guess_type(frame_path)[0] or "image/jpeg"
-    image_bytes = Path(frame_path).read_bytes()
-    if not image_bytes:
+    valid_frame_paths = _extract_existing_similar_paths(frame_paths)
+    if not valid_frame_paths:
         raise RuntimeError("Frame image is empty")
 
     instruction_text = _build_scene_analysis_instruction(
@@ -1583,14 +1628,23 @@ def _request_scene_prompt_from_google_sync(
         global_context=global_context,
         spoken_context=spoken_context,
         spoken_language=spoken_language,
+        frame_count=len(valid_frame_paths),
     )
+
+    contents: list[object] = [instruction_text]
+    for frame_path in valid_frame_paths:
+        mime_type = mimetypes.guess_type(frame_path)[0] or "image/jpeg"
+        image_bytes = Path(frame_path).read_bytes()
+        if not image_bytes:
+            continue
+        contents.append(genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
+
+    if len(contents) <= 1:
+        raise RuntimeError("Frame image is empty")
 
     response = _google_scene_analysis_client.models.generate_content(
         model=_SIMILAR_GOOGLE_ANALYSIS_MODEL,
-        contents=[
-            genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-            instruction_text,
-        ],
+        contents=contents,
         config=genai_types.GenerateContentConfig(
             temperature=0.2,
             max_output_tokens=450,
@@ -1600,7 +1654,7 @@ def _request_scene_prompt_from_google_sync(
 
 
 async def _request_scene_prompt_from_google(
-    frame_path: str,
+    frame_paths: list[str],
     start_time: float,
     end_time: float,
     duration_seconds: float,
@@ -1610,7 +1664,7 @@ async def _request_scene_prompt_from_google(
 ) -> str:
     return await asyncio.to_thread(
         _request_scene_prompt_from_google_sync,
-        frame_path,
+        frame_paths,
         start_time,
         end_time,
         duration_seconds,
@@ -1623,7 +1677,7 @@ async def _request_scene_prompt_from_google(
 async def _request_scene_prompt_from_model(
     client: openai.AsyncOpenAI,
     model_name: str,
-    image_data_url: str,
+    image_data_urls: list[str],
     start_time: float,
     end_time: float,
     duration_seconds: float,
@@ -1640,7 +1694,22 @@ async def _request_scene_prompt_from_model(
         global_context=global_context,
         spoken_context=spoken_context,
         spoken_language=spoken_language,
+        frame_count=len(image_data_urls or []),
     )
+    content_parts = [
+        {
+            "type": "text",
+            "text": instruction_text,
+        }
+    ]
+    for image_data_url in image_data_urls or []:
+        content_parts.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": image_data_url},
+            }
+        )
+
     messages = [
         {
             "role": "system",
@@ -1648,22 +1717,15 @@ async def _request_scene_prompt_from_model(
                 "Você analisa frames de vídeo e escreve prompts cinematográficos em português do Brasil. "
                 "Use ortografia, acentuação e pontuação corretas do pt-BR. "
                 "Descreva a cena de forma concreta, citando sujeito, ação, ambiente, objetos, enquadramento, luz e movimento de câmera. "
+                "Se houver dois frames, trate o primeiro como estado inicial obrigatório e o último como estado final obrigatório do mesmo trecho. "
+                "Nunca mantenha texto, logotipos, marcas d'água, letreiros ou legendas visíveis na recriação do vídeo. "
                 "Se houver fala inteligível no trecho, mencione explicitamente quem está falando, o idioma ou variante percebida e a fala principal entre aspas. "
                 + ("Retorne JSON com chave 'scene_prompt'." if structured else "Retorne apenas o prompt final em um único parágrafo, sem JSON e sem marcadores.")
             ),
         },
         {
             "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": instruction_text,
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {"url": image_data_url},
-                },
-            ],
+            "content": content_parts,
         },
     ]
 
@@ -1683,7 +1745,7 @@ async def _request_scene_prompt_from_model(
 
 async def _analyze_frame_prompt(
     client: openai.AsyncOpenAI,
-    frame_path: str,
+    frame_paths: list[str],
     start_time: float,
     end_time: float,
     duration_seconds: float,
@@ -1691,7 +1753,11 @@ async def _analyze_frame_prompt(
     spoken_context: str = "",
     spoken_language: str = "",
 ) -> str:
-    image_data_url = _image_file_to_data_url(frame_path)
+    valid_frame_paths = _extract_existing_similar_paths(frame_paths)
+    if not valid_frame_paths:
+        raise RuntimeError("Nenhum frame valido foi encontrado para a analise da cena")
+
+    image_data_urls = [_image_file_to_data_url(path) for path in valid_frame_paths]
     preferred_model = (settings.similar_analysis_model or "gpt-4o").strip() or "gpt-4o"
     attempts: list[tuple[str, bool]] = [
         (preferred_model, True),
@@ -1705,7 +1771,7 @@ async def _analyze_frame_prompt(
             prompt = await _request_scene_prompt_from_model(
                 client,
                 attempt_model,
-                image_data_url,
+                image_data_urls,
                 start_time,
                 end_time,
                 duration_seconds,
@@ -1715,7 +1781,7 @@ async def _analyze_frame_prompt(
                 spoken_language=spoken_language,
             )
             if prompt:
-                return prompt[:1600]
+                return _ensure_similar_no_text_instruction(prompt[:1600])
         except Exception as exc:
             logger.warning(
                 "Frame analysis retry activated for model=%s structured=%s: %s",
@@ -1732,7 +1798,7 @@ async def _analyze_frame_prompt(
 
     try:
         prompt = await _request_scene_prompt_from_google(
-            frame_path,
+            valid_frame_paths,
             start_time,
             end_time,
             duration_seconds,
@@ -1742,11 +1808,11 @@ async def _analyze_frame_prompt(
         )
         if prompt:
             logger.info("Frame analysis fallback succeeded with Google model=%s", _SIMILAR_GOOGLE_ANALYSIS_MODEL)
-            return prompt[:1600]
+            return _ensure_similar_no_text_instruction(prompt[:1600])
     except Exception as exc:
         logger.warning("Frame analysis Google fallback failed: %s", exc)
 
-    return (
+    return _ensure_similar_no_text_instruction(
         "Cena cinematografica ultra detalhada com composicao fiel ao frame de referencia, "
         "movimento de camera suave, iluminacao natural e continuidade visual consistente."
     )
@@ -1997,6 +2063,7 @@ def _build_similar_scene_generation_context(
         current_scene_index=current_scene_index,
         anchor_scene_index=anchor_scene_index,
     )
+    prompt = _ensure_similar_no_text_instruction(prompt)
     prompt = _build_similar_scene_speech_lock(prompt, scene.lyrics_segment)
 
     reference_image_path = _get_similar_scene_reference_frame_path(scene, reference_frames_by_scene_index)
@@ -2461,14 +2528,10 @@ async def run_similar_reference_analysis(
             if requested_analysis_limit > 0.05:
                 duration_seconds = min(source_duration_seconds, max(1.0, requested_analysis_limit))
             analysis_truncated = duration_seconds + 0.05 < source_duration_seconds
-            scene_seconds = max(1.0, float(settings.similar_scene_default_seconds or 3))
-            detected_cut_times = await _detect_scene_change_timestamps(
-                resolved_video_path,
-                max_duration_seconds=duration_seconds,
-            )
+            scene_seconds = max(5.0, float(settings.similar_scene_default_seconds or 5))
             scene_ranges = _build_similar_scene_ranges(
                 duration_seconds,
-                detected_cut_times,
+                [],
                 target_chunk_seconds=scene_seconds,
             )
             scene_count = len(scene_ranges)
@@ -2477,38 +2540,57 @@ async def run_similar_reference_analysis(
             scene_payloads: list[dict] = []
             scene_frame_payloads: list[dict] = []
             reference_frames_by_scene_index: dict[str, str] = {}
+            reference_end_frames_by_scene_index: dict[str, str] = {}
 
             for idx, (start, end) in enumerate(scene_ranges):
-                frame_timestamp = _resolve_similar_reference_frame_timestamp(start, duration_seconds)
+                start_frame_timestamp = _resolve_similar_reference_frame_timestamp(start, duration_seconds)
+                end_frame_timestamp = _resolve_similar_reference_end_frame_timestamp(start, end, duration_seconds)
 
-                frame_path = str(frames_dir / f"frame_{idx:03d}.jpg")
-                await _extract_frame(resolved_video_path, frame_timestamp, frame_path)
+                start_frame_path = str(frames_dir / f"frame_{idx:03d}_start.jpg")
+                await _extract_frame(resolved_video_path, start_frame_timestamp, start_frame_path)
+
+                if abs(end_frame_timestamp - start_frame_timestamp) < 0.02:
+                    end_frame_path = start_frame_path
+                else:
+                    end_frame_path = str(frames_dir / f"frame_{idx:03d}_end.jpg")
+                    await _extract_frame(resolved_video_path, end_frame_timestamp, end_frame_path)
+
+                reference_frame_paths = _extract_existing_similar_paths([start_frame_path, end_frame_path])
 
                 scene_frame_payloads.append(
                     {
                         "scene_index": idx,
                         "start_time": start,
                         "end_time": end,
-                        "frame_path": frame_path,
+                        "start_frame_path": start_frame_path,
+                        "end_frame_path": end_frame_path,
+                        "reference_frame_paths": reference_frame_paths,
                     }
                 )
-                reference_frames_by_scene_index[str(idx)] = frame_path
+                reference_frames_by_scene_index[str(idx)] = start_frame_path
+                reference_end_frames_by_scene_index[str(idx)] = end_frame_path
 
             context_summary, transcript_text, transcript_words, transcript_language = await _build_similar_video_context(
                 resolved_video_path,
                 duration_seconds,
-                [payload.get("frame_path", "") for payload in scene_frame_payloads],
+                [
+                    frame_path
+                    for payload in scene_frame_payloads
+                    for frame_path in payload.get("reference_frame_paths", [])
+                ],
                 max_duration_seconds=duration_seconds,
             )
 
             for idx, payload in enumerate(scene_frame_payloads):
                 start = float(payload.get("start_time", 0.0) or 0.0)
                 end = float(payload.get("end_time", start) or start)
-                frame_path = str(payload.get("frame_path") or "").strip()
+                start_frame_path = str(payload.get("start_frame_path") or "").strip()
+                end_frame_path = str(payload.get("end_frame_path") or "").strip()
+                reference_frame_paths = _extract_existing_similar_paths(payload.get("reference_frame_paths") or [])
                 spoken_excerpt = _extract_scene_transcript_excerpt(transcript_words, start, end)
                 prompt = await _analyze_frame_prompt(
                     client=openai_client,
-                    frame_path=frame_path,
+                    frame_paths=reference_frame_paths,
                     start_time=start,
                     end_time=end,
                     duration_seconds=duration_seconds,
@@ -2523,7 +2605,9 @@ async def run_similar_reference_analysis(
                         "start_time": start,
                         "end_time": end,
                         "prompt": prompt,
-                        "reference_frame_path": frame_path,
+                        "reference_frame_path": start_frame_path,
+                        "reference_frame_end_path": end_frame_path,
+                        "reference_frame_paths": reference_frame_paths,
                         "spoken_context": spoken_excerpt,
                         "spoken_language": transcript_language,
                     }
@@ -2587,10 +2671,11 @@ async def run_similar_reference_analysis(
                     "similar_analysis_mode": normalized_analysis_mode,
                     "similar_scene_seconds": scene_seconds,
                     "similar_scene_count": len(scene_payloads),
-                    "similar_scene_strategy": "shot_detect",
-                    "similar_scene_detect_threshold": _SIMILAR_SCENE_DETECT_THRESHOLD,
+                    "similar_scene_strategy": "time_window",
+                    "similar_scene_detect_threshold": 0.0,
                     "similar_detected_scene_durations": detected_scene_durations,
                     "similar_reference_frames": reference_frames_by_scene_index,
+                    "similar_reference_end_frames": reference_end_frames_by_scene_index,
                     "similar_total_duration": duration_seconds,
                     "similar_source_total_duration": source_duration_seconds,
                     "similar_analysis_duration": duration_seconds,
@@ -3071,7 +3156,7 @@ async def run_similar_merge(project_id: int, aspect_ratio: str, scene_ids: list[
             render_dir.mkdir(parents=True, exist_ok=True)
             output_path = str(render_dir / f"video_{aspect_ratio.replace(':', 'x')}_similar.mp4")
 
-            use_hard_cuts = str(tags.get("similar_scene_strategy") or "").strip().lower() == "shot_detect"
+            use_hard_cuts = str(tags.get("similar_scene_strategy") or "").strip().lower() in {"shot_detect", "time_window"}
             await concatenate_clips(clip_paths, output_path, crossfade_dur=0.0 if use_hard_cuts else 0.5)
 
             if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
