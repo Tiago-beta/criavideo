@@ -9,6 +9,7 @@ from app.tasks.similar_tasks import (
     _analyze_frame_prompt,
     _build_scene_analysis_instruction,
     _build_similar_general_prompt_fallback,
+    _build_similar_scene_generation_context,
     _build_similar_scene_speech_lock,
     _extract_scene_prompt_from_content,
     _extract_scene_transcript_excerpt,
@@ -72,8 +73,10 @@ class TestSimilarFramePrompt(unittest.IsolatedAsyncioTestCase):
         self.assertIn("português do Brasil", instruction)
         self.assertIn("acentuação", instruction)
         self.assertIn("Contexto geral do vídeo", instruction)
-        self.assertIn("Falas, narração ou áudio", instruction)
+        self.assertIn("Audio de referencia", instruction)
         self.assertIn("câmera parece fixa/travada", instruction)
+        self.assertIn("som ambiente natural e diegetico", instruction)
+        self.assertNotIn("fala principal entre aspas", instruction)
 
     def test_build_scene_analysis_instruction_uses_two_frame_timeline_and_no_text_rule(self):
         instruction = _build_scene_analysis_instruction(
@@ -117,7 +120,32 @@ class TestSimilarFramePrompt(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIn("Camera fixa/travada", prompt)
+        self.assertIn("Som ambiente natural e diegetico", prompt)
+        self.assertIn("Nunca gerar fala", prompt)
         self.assertNotIn("camera entrando suavemente na acao", prompt)
+
+    def test_build_scene_generation_context_sanitizes_prompt_to_natural_audio(self):
+        scene = SimpleNamespace(
+            id=7,
+            scene_index=0,
+            prompt=(
+                "Mulher instala o painel ripado com as duas maos em close na parede iluminada.\n\n"
+                "SEM TEXTO NA TELA (OBRIGATORIO): remova qualquer texto, legenda, logotipo, marca d'agua, letreiro, rotulo ou palavra visivel.\n\n"
+                "FALA OBRIGATORIA EM PT-BR: use exatamente esta fala no audio da cena, sem resumir: \"Chegou o painel que eu estava esperando.\""
+            ),
+            lyrics_segment="Chegou o painel que eu estava esperando.",
+            image_path="",
+        )
+
+        prompt, reference_image_path = _build_similar_scene_generation_context(scene)
+
+        self.assertEqual(reference_image_path, "")
+        self.assertIn("AUDIO NATURAL (OBRIGATORIO)", prompt)
+        self.assertIn("Som ambiente natural e diegetico", prompt)
+        self.assertIn("sem qualquer texto visivel", prompt)
+        self.assertNotIn("SEM TEXTO NA TELA (OBRIGATORIO)", prompt)
+        self.assertNotIn("FALA OBRIGATORIA EM PT-BR", prompt)
+        self.assertNotIn("Chegou o painel que eu estava esperando", prompt)
 
     def test_extract_scene_transcript_excerpt_uses_scene_window(self):
         excerpt = _extract_scene_transcript_excerpt(

@@ -123,6 +123,24 @@ _SIMILAR_NO_TEXT_MARKERS = (
     "no text on screen",
     "no text, no logos, no captions",
 )
+_SIMILAR_NO_SPEECH_MARKERS = (
+    "audio natural (obrigatorio)",
+    "áudio natural (obrigatório)",
+    "som ambiente natural",
+    "som ambiente diegetico",
+    "som ambiente diegético",
+    "sem fala",
+    "sem narracao",
+    "sem narração",
+    "sem locucao",
+    "sem locução",
+    "no speech",
+    "no narration",
+)
+_SIMILAR_STRUCTURED_AUDIO_SECTION_RE = re.compile(
+    r"(^|\n)Audio:\s*\n.*?(?=\n(?:💡 Lighting:|🎭 Main Character:|👕 Outfit \(STRICT LOCK\):|🕶️ Accessories:|⚠️ Rules:|🎬 SCENE))",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _safe_tags_dict(raw: object) -> dict:
@@ -190,6 +208,77 @@ def _normalize_similar_general_prompt_text(raw: object, limit: int = 3200) -> st
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()[:limit].strip()
+
+
+def _normalize_similar_prompt_text(raw: object) -> str:
+    text = str(raw or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _build_similar_natural_audio_guidance() -> str:
+    return (
+        "Som ambiente natural e diegetico coerente com a acao e o local do video de referencia, "
+        "preservando ruidos reais de objetos, passos, ferramentas, impacto e ambiencia. "
+        "Nunca gerar fala, narracao, locucao, voz em off, canto, dialogo ou qualquer palavra falada."
+    )
+
+
+def _build_similar_generation_no_text_clause() -> str:
+    return (
+        "Toda a cena deve permanecer sem qualquer texto visivel, legenda, logotipo, marca d'agua, "
+        "rotulo, letreiro, numero ou palavra em nenhum frame."
+    )
+
+
+def _strip_similar_generation_artifacts(prompt_text: object) -> str:
+    cleaned = _normalize_similar_prompt_text(prompt_text)
+    block_patterns = (
+        r"\s*SEM TEXTO NA TELA \(OBRIGATORIO\):.*?(?=(?:\s+FALA OBRIGAT[OÓ]RIA EM PT-BR:)|$)",
+        r"\s*FALA OBRIGAT[OÓ]RIA EM PT-BR:.*$",
+        r"\s*Fala em PT-BR:\s*\{.*?\}$",
+    )
+    for pattern in block_patterns:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    return _normalize_similar_prompt_text(cleaned)
+
+
+def _ensure_similar_generation_no_text_instruction(prompt_text: object) -> str:
+    cleaned = _normalize_similar_prompt_text(prompt_text)
+    clause = _build_similar_generation_no_text_clause()
+    if not cleaned:
+        return clause
+    if clause.lower() in cleaned.lower() or any(marker in cleaned.lower() for marker in _SIMILAR_NO_TEXT_MARKERS):
+        return cleaned
+    return f"{cleaned}\n\n{clause}".strip()
+
+
+def _ensure_similar_natural_audio_instruction(prompt_text: object) -> str:
+    cleaned = _normalize_similar_prompt_text(prompt_text)
+    audio_guidance = _build_similar_natural_audio_guidance()
+    if not cleaned:
+        return f"AUDIO NATURAL (OBRIGATORIO): {audio_guidance}"
+
+    if _SIMILAR_STRUCTURED_AUDIO_SECTION_RE.search(cleaned):
+        replaced = _SIMILAR_STRUCTURED_AUDIO_SECTION_RE.sub(
+            lambda match: f"{match.group(1)}Audio:\n{audio_guidance}",
+            cleaned,
+            count=1,
+        )
+        return _normalize_similar_prompt_text(replaced)
+
+    if any(marker in cleaned.lower() for marker in _SIMILAR_NO_SPEECH_MARKERS):
+        return cleaned
+
+    return f"{cleaned}\n\nAUDIO NATURAL (OBRIGATORIO): {audio_guidance}".strip()
+
+
+def _sanitize_similar_generation_prompt(prompt_text: object) -> str:
+    cleaned = _strip_similar_generation_artifacts(prompt_text)
+    cleaned = _ensure_similar_generation_no_text_instruction(cleaned)
+    cleaned = _ensure_similar_natural_audio_instruction(cleaned)
+    return _normalize_similar_prompt_text(cleaned)
 
 
 def _normalize_similar_language_code(raw: object) -> str:
@@ -381,20 +470,18 @@ def _build_similar_general_prompt_context(
         lines.extend(["Orientacao de camera:", camera_guidance_pt])
     if normalized_context:
         lines.extend(["", "Resumo visual global:", normalized_context])
+    lines.extend(["", "Regra de audio da recriacao:", _build_similar_natural_audio_guidance()])
     if normalized_transcript:
-        lines.extend(["", "Audio/transcricao:", normalized_transcript])
+        lines.append("O audio original tem fala ou transcricao inteligivel, mas isso nao deve aparecer no video recriado.")
 
     lines.extend(["", "Cenas analisadas:"])
     for idx, payload in enumerate(scene_payloads, start=1):
         start = float(payload.get("start_time", 0.0) or 0.0)
         end = float(payload.get("end_time", start) or start)
         prompt = _normalize_similar_general_prompt_text(payload.get("prompt"), limit=420)
-        spoken = _normalize_similar_general_prompt_text(payload.get("spoken_context"), limit=200)
         lines.append(f"Cena {idx} | {start:.1f}s - {end:.1f}s")
         if prompt:
             lines.append(f"Visual: {prompt}")
-        if spoken:
-            lines.append(f"Audio: {spoken}")
         lines.append("")
 
     return "\n".join(lines).strip()
@@ -414,7 +501,6 @@ def _build_similar_general_prompt_fallback(
         for payload in (scene_payloads or [])
     ]
     prompts = [prompt for prompt in prompts if prompt]
-    transcript_excerpt = _normalize_similar_general_prompt_text(transcript_text, limit=260)
     context_excerpt = _normalize_similar_general_prompt_text(context_summary, limit=360)
 
     first_prompt = prompts[0] if prompts else context_excerpt
@@ -423,7 +509,7 @@ def _build_similar_general_prompt_fallback(
     closing_prompt = prompts[-1] if prompts else context_excerpt
     penultimate_prompt = prompts[-2] if len(prompts) > 1 else closing_prompt
 
-    audio = transcript_excerpt or "Sons ambientes coerentes com o video de referencia, preservando ambiencia, passos, objetos e reacoes naturais."
+    audio = _build_similar_natural_audio_guidance()
     lighting = "Iluminacao coerente com o video original, mantendo sombras, contraste, temperatura de cor e relevo visual do ambiente."
     main_character = "Mesmo personagem principal do video de referencia, mantendo identidade facial, idade aparente, postura corporal e expressao predominante."
     outfit = "Mesmas roupas, tecidos, modelagens e cores vistos no video de referencia, sem trocar nenhuma peca durante toda a cena."
@@ -1305,15 +1391,15 @@ def _build_scene_analysis_instruction(
     if spoken_excerpt:
         if spoken_language_label:
             lines.append(f"Idioma predominante da fala neste trecho: {spoken_language_label}")
-        lines.append(f"Falas, narração ou áudio neste trecho: {spoken_excerpt}")
+        lines.append(f"Audio de referencia neste trecho: {spoken_excerpt}")
 
     lines.extend(
         [
             "Use o contexto geral e o áudio apenas como apoio narrativo, sem inventar elementos que contradigam o frame.",
             "Quando houver dois frames, use a diferenca entre o inicio e o fim para inferir apenas a transformacao natural do trecho, sem inventar saltos ou cortes fora desse intervalo.",
-            "Se houver conversa ou narração, reflita isso nas expressões, gestos, intenção dramática e situação da cena quando fizer sentido visualmente.",
-            "Se a fala estiver clara, mencione explicitamente no prompt quem parece estar falando no frame, qual é o idioma ou variante da fala e o conteúdo essencial do que é dito.",
-            "Quando houver transcrição inteligível, preserve a fala principal entre aspas dentro do próprio prompt.",
+            "Se houver conversa ou narracao no original, use isso somente para inferir intencao, emocao, ritmo e sincronia visual da acao quando fizer sentido visualmente.",
+            "Nao inclua fala entre aspas, legenda embutida, texto falado, narracao, locucao ou qualquer frase que possa ser lida em voz alta no prompt final.",
+            "O video recriado deve manter somente som ambiente natural e diegetico, sem narracao, locucao, voz em off ou palavras faladas.",
             "Retorne somente o prompt final em um único parágrafo, sem marcadores e sem JSON.",
         ]
     )
@@ -1719,7 +1805,8 @@ async def _request_scene_prompt_from_model(
                 "Descreva a cena de forma concreta, citando sujeito, ação, ambiente, objetos, enquadramento, luz e movimento de câmera. "
                 "Se houver dois frames, trate o primeiro como estado inicial obrigatório e o último como estado final obrigatório do mesmo trecho. "
                 "Nunca mantenha texto, logotipos, marcas d'água, letreiros ou legendas visíveis na recriação do vídeo. "
-                "Se houver fala inteligível no trecho, mencione explicitamente quem está falando, o idioma ou variante percebida e a fala principal entre aspas. "
+                "Se houver fala inteligivel no trecho, use isso apenas para inferir intencao, emocao e timing visual da acao, sem incluir dialogo, falas entre aspas, legendas ou texto narrado no prompt final. "
+                "O audio da recriacao deve ficar restrito a som ambiente natural e diegetico, sem narracao, locucao, voz em off ou palavras faladas. "
                 + ("Retorne JSON com chave 'scene_prompt'." if structured else "Retorne apenas o prompt final em um único parágrafo, sem JSON e sem marcadores.")
             ),
         },
@@ -2063,8 +2150,7 @@ def _build_similar_scene_generation_context(
         current_scene_index=current_scene_index,
         anchor_scene_index=anchor_scene_index,
     )
-    prompt = _ensure_similar_no_text_instruction(prompt)
-    prompt = _build_similar_scene_speech_lock(prompt, scene.lyrics_segment)
+    prompt = _sanitize_similar_generation_prompt(prompt)
 
     reference_image_path = _get_similar_scene_reference_frame_path(scene, reference_frames_by_scene_index)
     if not reference_image_path and anchor_scene and current_scene_index > anchor_scene_index:
@@ -2650,7 +2736,7 @@ async def run_similar_reference_analysis(
                             clip_path="",
                             start_time=float(payload["start_time"]),
                             end_time=float(payload["end_time"]),
-                            lyrics_segment=str(payload.get("spoken_context") or ""),
+                            lyrics_segment="",
                             is_user_uploaded=False,
                         )
                     )
@@ -2961,7 +3047,7 @@ async def run_similar_generate_unified_scene(
             if not scenes and analysis_mode != "general":
                 raise RuntimeError("Projeto nao possui cenas analisadas para gerar a cena unica")
 
-            unified_prompt = str(tags.get("similar_unified_prompt") or "").strip()
+            unified_prompt = _sanitize_similar_generation_prompt(tags.get("similar_unified_prompt") or "")
             if not unified_prompt:
                 raise RuntimeError("Gere o prompt unico antes de criar a cena")
 
