@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v482 loaded");
+console.log("[CriaVideo] app.js v483 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4092,6 +4092,7 @@ let similarState = {
     sceneEngineSelectionBySceneId: {},
     pendingBusyStage: "",
     pendingBusySceneId: 0,
+    pendingBusySceneIds: [],
     busyProgressStage: "",
     busyProgressCurrent: 0,
     busyProgressTarget: 0,
@@ -7460,14 +7461,106 @@ function _similarPreviewAspectClass(aspectRatio) {
     return "similar-preview-box-horizontal";
 }
 
-function _setSimilarBusyIntent(stage = "", sceneId = 0) {
-    similarState.pendingBusyStage = String(stage || "").trim();
-    similarState.pendingBusySceneId = Number(sceneId || 0);
+function _normalizeSimilarBusySceneIds(rawSceneIds) {
+    const source = Array.isArray(rawSceneIds) ? rawSceneIds : [rawSceneIds];
+    const resolved = [];
+    source.forEach((rawValue) => {
+        const sceneId = Number(rawValue || 0);
+        if (sceneId > 0 && !resolved.includes(sceneId)) {
+            resolved.push(sceneId);
+        }
+    });
+    return resolved;
 }
 
-function _clearSimilarBusyIntent() {
+function _getSimilarPendingBusySceneIds() {
+    return _normalizeSimilarBusySceneIds(similarState.pendingBusySceneIds);
+}
+
+function _setSimilarPendingBusySceneIds(sceneIds) {
+    const normalized = _normalizeSimilarBusySceneIds(sceneIds);
+    similarState.pendingBusySceneIds = normalized;
+    similarState.pendingBusySceneId = normalized[normalized.length - 1] || 0;
+    return normalized;
+}
+
+function _addSimilarPendingBusySceneId(sceneId) {
+    const normalizedSceneId = Number(sceneId || 0);
+    if (normalizedSceneId <= 0) {
+        return _getSimilarPendingBusySceneIds();
+    }
+
+    const nextIds = _getSimilarPendingBusySceneIds();
+    if (!nextIds.includes(normalizedSceneId)) {
+        nextIds.push(normalizedSceneId);
+    }
+    return _setSimilarPendingBusySceneIds(nextIds);
+}
+
+function _removeSimilarPendingBusySceneId(sceneId) {
+    const normalizedSceneId = Number(sceneId || 0);
+    if (normalizedSceneId <= 0) {
+        return _getSimilarPendingBusySceneIds();
+    }
+    return _setSimilarPendingBusySceneIds(
+        _getSimilarPendingBusySceneIds().filter((value) => value !== normalizedSceneId)
+    );
+}
+
+function _extractSimilarActiveSceneGenerationIds(tags = {}) {
+    const resolved = _normalizeSimilarBusySceneIds(tags?.similar_active_scene_generation_ids || []);
+    const fallbackSceneId = Number(tags?.similar_regenerating_scene_id || 0);
+    const previewSceneId = Number(tags?.similar_current_scene_id || 0);
+    const stage = String(tags?.similar_stage || "").trim();
+
+    if (fallbackSceneId > 0 && !resolved.includes(fallbackSceneId)) {
+        resolved.push(fallbackSceneId);
+    }
+    if (stage === "generating_previews" && previewSceneId > 0 && !resolved.includes(previewSceneId)) {
+        resolved.push(previewSceneId);
+    }
+
+    return resolved;
+}
+
+function _reconcileSimilarPendingBusySceneIds(project, tags = {}) {
+    const activeSceneIds = _extractSimilarActiveSceneGenerationIds(tags);
+    const status = String(project?.status || "").trim().toLowerCase();
+
+    if (!activeSceneIds.length && !_isSimilarBusyProcessingStatus(status)) {
+        _setSimilarPendingBusySceneIds([]);
+        return activeSceneIds;
+    }
+
+    const nextPendingIds = _getSimilarPendingBusySceneIds().filter((sceneId) => !activeSceneIds.includes(sceneId));
+    _setSimilarPendingBusySceneIds(nextPendingIds);
+    return activeSceneIds;
+}
+
+function _setSimilarBusyIntent(stage = "", sceneId = 0) {
+    similarState.pendingBusyStage = String(stage || "").trim();
+    const normalizedSceneId = Number(sceneId || 0);
+    if (["generating_scene", "regenerating_scene"].includes(similarState.pendingBusyStage) && normalizedSceneId > 0) {
+        _addSimilarPendingBusySceneId(normalizedSceneId);
+        return;
+    }
+    similarState.pendingBusySceneId = normalizedSceneId;
+}
+
+function _clearSimilarBusyIntent(sceneId = 0) {
+    const normalizedSceneId = Number(sceneId || 0);
+    if (normalizedSceneId > 0) {
+        const remainingSceneIds = _removeSimilarPendingBusySceneId(normalizedSceneId);
+        if (!remainingSceneIds.length && ["generating_scene", "regenerating_scene"].includes(String(similarState.pendingBusyStage || "").trim())) {
+            similarState.pendingBusyStage = "";
+            similarState.pendingBusySceneId = 0;
+        }
+        return;
+    }
+
     similarState.pendingBusyStage = "";
     similarState.pendingBusySceneId = 0;
+    _setSimilarPendingBusySceneIds([]);
 }
 
 function _isSimilarBusyProcessingStatus(status) {
@@ -7475,16 +7568,19 @@ function _isSimilarBusyProcessingStatus(status) {
     return ["generating_scenes", "generating_clips", "rendering"].includes(normalizedStatus);
 }
 
-function _hideSimilarBusyOverlay() {
+function _hideSimilarBusyOverlay(options = {}) {
+    const preserveProgress = !!options.preserveProgress;
     const overlayEl = document.getElementById("similar-busy-overlay");
     const modalEl = document.getElementById("modal-new-project");
-    if (similarState.busyProgressTimer) {
+    if (!preserveProgress && similarState.busyProgressTimer) {
         clearInterval(similarState.busyProgressTimer);
         similarState.busyProgressTimer = null;
     }
-    similarState.busyProgressStage = "";
-    similarState.busyProgressCurrent = 0;
-    similarState.busyProgressTarget = 0;
+    if (!preserveProgress) {
+        similarState.busyProgressStage = "";
+        similarState.busyProgressCurrent = 0;
+        similarState.busyProgressTarget = 0;
+    }
     if (overlayEl) {
         overlayEl.hidden = true;
     }
@@ -7591,7 +7687,14 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
     }
 
     const scenes = Array.isArray(project?.scenes) ? project.scenes : [];
-    const requestedSceneId = Number(options.sceneId || tags?.similar_regenerating_scene_id || similarState.pendingBusySceneId || 0);
+    const requestedSceneId = Number(
+        options.sceneId
+        || _extractSimilarActiveSceneGenerationIds(tags)[0]
+        || tags?.similar_regenerating_scene_id
+        || similarState.pendingBusySceneId
+        || _getSimilarPendingBusySceneIds()[0]
+        || 0
+    );
     const targetScene = requestedSceneId
         ? scenes.find((scene) => Number(scene?.id || 0) === requestedSceneId) || _getSimilarProjectScene(requestedSceneId)
         : null;
@@ -8370,13 +8473,10 @@ function _renderSimilarScenes(project, options = {}) {
     const projectTags = _safeSimilarTags(project?.tags);
     const activeBusyStage = _resolveSimilarBusyStage(String(projectTags.similar_stage || "").trim(), String(project?.status || "").trim().toLowerCase())
         || String(similarState.pendingBusyStage || "").trim();
-    const activeBusySceneId = Number(
-        (activeBusyStage === "generating_previews"
-            ? projectTags.similar_current_scene_id
-            : (projectTags.similar_regenerating_scene_id || projectTags.similar_current_scene_id))
-        || similarState.pendingBusySceneId
-        || 0
-    );
+    const activeBusySceneIds = new Set([
+        ..._extractSimilarActiveSceneGenerationIds(projectTags),
+        ..._getSimilarPendingBusySceneIds(),
+    ]);
     const similarActionIcons = {
         save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
         upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
@@ -8417,7 +8517,10 @@ function _renderSimilarScenes(project, options = {}) {
         const clipUrlSafe = esc(clipUrlRaw);
         const hasClipPreview = !!clipUrlRaw.trim();
         const hasReferenceFrame = !!String(scene.reference_frame_url || "").trim();
-        const isGeneratingSceneClip = activeBusySceneId === sceneId && ["generating_scene", "regenerating_scene", "generating_previews"].includes(activeBusyStage);
+        const isGeneratingSceneClip = activeBusySceneIds.has(sceneId) && (
+            ["generating_scene", "regenerating_scene", "generating_previews"].includes(activeBusyStage)
+            || activeBusySceneIds.size > 0
+        );
         const frameEditorOpen = !!draft.frameEditorOpen;
         const narrationEditorOpen = !!draft.narrationEditorOpen;
         const frameBusy = !!draft.frameBusy;
@@ -12021,6 +12124,7 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
         const isProcessing = ["generating_scenes", "generating_clips", "rendering"].includes(status);
         const rawStage = String(tags.similar_stage || "").trim();
         const stage = _resolveSimilarBusyStage(rawStage, status) || rawStage;
+        const activeSceneGenerationIds = _reconcileSimilarPendingBusySceneIds(project, tags);
         const lockGlobalUi = isProcessing && !["generating_scene", "regenerating_scene", "generating_previews"].includes(stage);
         const suppressGlobalStatus = status !== "failed" && (
             (isProcessing && ["generating_scene", "regenerating_scene", "generating_previews"].includes(stage))
@@ -12054,12 +12158,12 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
             message = `${stageLabel} (${progress}%)`;
         }
 
-        if (!isProcessing) {
+        if (!isProcessing && !activeSceneGenerationIds.length) {
             _clearSimilarBusyIntent();
             _hideSimilarBusyOverlay();
         }
 
-        const showGlobalStatus = status === "failed" || isProcessing;
+        const showGlobalStatus = status === "failed" || isProcessing || activeSceneGenerationIds.length > 0;
         _setSimilarStatus(showGlobalStatus && !suppressGlobalStatus ? message : "", kind);
         similarState.lastProjectSnapshot = project;
         _syncSimilarSourcePreview(project);
@@ -12071,11 +12175,11 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
             stage,
             status,
             progress,
-            sceneId: Number(tags.similar_regenerating_scene_id || 0) || similarState.pendingBusySceneId,
+            sceneId: activeSceneGenerationIds[0] || Number(tags.similar_regenerating_scene_id || 0) || similarState.pendingBusySceneId,
         });
         _refreshSimilarButtonsDisabled(lockGlobalUi);
 
-        if (!isProcessing) {
+        if (!isProcessing && !activeSceneGenerationIds.length) {
             _stopSimilarPolling();
             _refreshSimilarButtonsDisabled(false);
         }
@@ -13357,12 +13461,18 @@ async function similarRegenerateScene(sceneId, generationMode = "image") {
         const promptOverride = _readSimilarScenePromptForRequest(sceneId, { applyNarration: true }).trim();
         const hasExistingClip = !!String(scene?.clip_url || scene?.clip_path || "").trim();
         const busyStage = hasExistingClip ? "regenerating_scene" : "generating_scene";
+        const hasActiveSceneGeneration = _extractSimilarActiveSceneGenerationIds(_safeSimilarTags(similarState.lastProjectSnapshot?.tags)).length > 0
+            || _getSimilarPendingBusySceneIds().length > 0;
         _setSimilarBusyIntent(busyStage, sceneId);
-        similarState.busyProgressStage = busyStage;
-        similarState.busyProgressCurrent = 4;
-        similarState.busyProgressTarget = 4;
+        if (!hasActiveSceneGeneration) {
+            similarState.busyProgressStage = busyStage;
+            similarState.busyProgressCurrent = 4;
+            similarState.busyProgressTarget = 4;
+        } else if (!String(similarState.busyProgressStage || "").trim()) {
+            similarState.busyProgressStage = busyStage;
+        }
         _ensureSimilarBusyProgressTimer();
-        _hideSimilarBusyOverlay();
+        _hideSimilarBusyOverlay({ preserveProgress: true });
         if (similarState.lastProjectSnapshot) {
             _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
         }
@@ -13388,9 +13498,15 @@ async function similarRegenerateScene(sceneId, generationMode = "image") {
         await _refreshSimilarProject();
     } catch (error) {
         showToast(`Erro ao regenerar cena: ${error.message}`, "error");
-        _clearSimilarBusyIntent();
-        _hideSimilarBusyOverlay();
+        _clearSimilarBusyIntent(sceneId);
+        _hideSimilarBusyOverlay({
+            preserveProgress: _extractSimilarActiveSceneGenerationIds(_safeSimilarTags(similarState.lastProjectSnapshot?.tags)).length > 0
+                || _getSimilarPendingBusySceneIds().length > 0,
+        });
         _refreshSimilarButtonsDisabled(false);
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
     }
 }
 

@@ -156,6 +156,126 @@ def _safe_tags_dict(raw: object) -> dict:
     return {}
 
 
+def _extract_similar_active_scene_generation_ids(raw_tags: object) -> list[int]:
+    tags = _safe_tags_dict(raw_tags)
+    raw_ids = tags.get("similar_active_scene_generation_ids")
+    candidates = raw_ids if isinstance(raw_ids, list) else [raw_ids]
+
+    resolved: list[int] = []
+    for raw_value in candidates:
+        try:
+            scene_id = int(raw_value or 0)
+        except (TypeError, ValueError):
+            continue
+        if scene_id > 0 and scene_id not in resolved:
+            resolved.append(scene_id)
+
+    try:
+        fallback_scene_id = int(tags.get("similar_regenerating_scene_id") or 0)
+    except (TypeError, ValueError):
+        fallback_scene_id = 0
+    if fallback_scene_id > 0 and fallback_scene_id not in resolved:
+        resolved.append(fallback_scene_id)
+
+    return resolved
+
+
+def _set_similar_active_scene_generation_ids(tags: dict, scene_ids: list[int] | tuple[int, ...] | set[int]) -> list[int]:
+    normalized: list[int] = []
+    for raw_value in list(scene_ids or []):
+        try:
+            scene_id = int(raw_value or 0)
+        except (TypeError, ValueError):
+            continue
+        if scene_id > 0 and scene_id not in normalized:
+            normalized.append(scene_id)
+
+    if normalized:
+        tags["similar_active_scene_generation_ids"] = normalized
+    else:
+        tags.pop("similar_active_scene_generation_ids", None)
+
+    return normalized
+
+
+async def _sync_similar_scene_generation_tracking(
+    db: AsyncSession,
+    project_id: int,
+    *,
+    scene_id: int,
+    stage: str = "",
+    scene_index: int = 0,
+    engine: str = "",
+    generation_mode: str = "",
+    aspect_ratio: str = "",
+    complete: bool = False,
+    failed_message: str = "",
+) -> VideoProject | None:
+    locked_result = await db.execute(
+        select(VideoProject)
+        .where(VideoProject.id == project_id)
+        .with_for_update()
+    )
+    project = locked_result.scalars().first()
+    if not project:
+        return None
+
+    tags = _safe_tags_dict(project.tags)
+    active_scene_ids = _extract_similar_active_scene_generation_ids(tags)
+    normalized_scene_id = int(scene_id or 0)
+
+    if complete or failed_message:
+        active_scene_ids = [value for value in active_scene_ids if value != normalized_scene_id]
+    elif normalized_scene_id > 0 and normalized_scene_id not in active_scene_ids:
+        active_scene_ids.append(normalized_scene_id)
+
+    active_scene_ids = _set_similar_active_scene_generation_ids(tags, active_scene_ids)
+
+    if active_scene_ids:
+        primary_scene_id = int(active_scene_ids[-1] or 0)
+        next_stage = str(stage or tags.get("similar_stage") or "regenerating_scene").strip() or "regenerating_scene"
+        tags.update(
+            {
+                "type": "similar",
+                "similar_stage": next_stage,
+                "similar_regenerating_scene_id": primary_scene_id,
+                "similar_current_scene_id": primary_scene_id,
+            }
+        )
+        if scene_index > 0 and primary_scene_id == normalized_scene_id:
+            tags["similar_current_scene_index"] = int(scene_index)
+        else:
+            tags.pop("similar_current_scene_index", None)
+        if engine:
+            tags["similar_engine"] = _normalize_engine(engine)
+        if generation_mode:
+            tags["similar_generation_mode"] = "text" if str(generation_mode).strip().lower() == "text" else "image"
+        if aspect_ratio:
+            tags["similar_aspect_ratio"] = aspect_ratio
+        project.status = VideoStatus.GENERATING_CLIPS
+        project.progress = max(20, int(project.progress or 0) or 20)
+        project.error_message = None
+    else:
+        tags.pop("similar_regenerating_scene_id", None)
+        tags.pop("similar_current_scene_id", None)
+        tags.pop("similar_current_scene_index", None)
+        tags.pop("similar_generation_mode", None)
+        if failed_message:
+            tags.update({"type": "similar", "similar_stage": "regenerate_failed"})
+            project.status = VideoStatus.FAILED
+            project.progress = 0
+            project.error_message = failed_message[:1000]
+        else:
+            tags.update({"type": "similar", "similar_stage": "preview_ready"})
+            project.status = VideoStatus.PENDING
+            project.progress = 0
+            project.error_message = None
+
+    project.tags = tags
+    await db.commit()
+    return project
+
+
 def _safe_error_message(err: Exception, fallback: str) -> str:
     detail = getattr(err, "detail", None)
     if isinstance(detail, str) and detail.strip():
@@ -3151,23 +3271,19 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
             has_existing_clip = bool(str(scene.clip_path or "").strip() and os.path.exists(str(scene.clip_path or "").strip()))
             scene_stage = "regenerating_scene" if has_existing_clip else "generating_scene"
 
-            tags = _safe_tags_dict(project.tags)
-            tags.update(
-                {
-                    "type": "similar",
-                    "similar_stage": scene_stage,
-                    "similar_regenerating_scene_id": scene_id,
-                    "similar_current_scene_id": int(scene.id or 0),
-                    "similar_current_scene_index": int(scene.scene_index or 0) + 1,
-                    "similar_engine": _normalize_engine(engine),
-                    "similar_generation_mode": "text" if str(generation_mode or "image").strip().lower() == "text" else "image",
-                    "similar_aspect_ratio": aspect_ratio,
-                }
+            project = await _sync_similar_scene_generation_tracking(
+                db,
+                project_id,
+                scene_id=scene_id,
+                stage=scene_stage,
+                scene_index=int(scene.scene_index or 0) + 1,
+                engine=engine,
+                generation_mode=generation_mode,
+                aspect_ratio=aspect_ratio,
             )
-            project.tags = tags
-            project.status = VideoStatus.GENERATING_CLIPS
-            project.progress = 20
-            await db.commit()
+            if not project:
+                return
+            tags = _safe_tags_dict(project.tags)
 
             clip_dir = Path(settings.media_dir) / "clips" / str(project_id)
             image_dir = Path(settings.media_dir) / "images" / str(project_id)
@@ -3198,28 +3314,22 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
                 reference_frames_by_scene_index=reference_frames_by_scene_index,
             )
 
-            tags = _safe_tags_dict(project.tags)
-            tags.update({"type": "similar", "similar_stage": "preview_ready"})
-            tags.pop("similar_current_scene_id", None)
-            tags.pop("similar_current_scene_index", None)
-            tags.pop("similar_generation_mode", None)
-            project.tags = tags
-            project.status = VideoStatus.PENDING
-            project.progress = 0
-            project.error_message = None
-            await db.commit()
+            await _sync_similar_scene_generation_tracking(
+                db,
+                project_id,
+                scene_id=scene_id,
+                complete=True,
+            )
 
         except Exception as exc:
             logger.error("Similar scene regeneration failed for project %s scene %s: %s", project_id, scene_id, exc, exc_info=True)
-            project = await db.get(VideoProject, project_id)
-            if not project:
-                return
-            tags = _safe_tags_dict(project.tags)
-            tags.update({"type": "similar", "similar_stage": "regenerate_failed"})
-            project.tags = tags
-            project.status = VideoStatus.FAILED
-            project.error_message = _safe_error_message(exc, "Falha ao regenerar a cena")[:1000]
-            await db.commit()
+            await _sync_similar_scene_generation_tracking(
+                db,
+                project_id,
+                scene_id=scene_id,
+                complete=True,
+                failed_message=_safe_error_message(exc, "Falha ao regenerar a cena"),
+            )
 
 
 async def run_similar_generate_unified_scene(
