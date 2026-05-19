@@ -15476,10 +15476,10 @@ th,
 
     .editor-canvas-wrapper {
         width: auto;
-        height: clamp(160px, 26vh, 220px);
-        max-width: min(100%, 86vw);
+        height: clamp(220px, 34vh, 310px);
+        max-width: min(100%, 92vw);
         max-height: none;
-        min-width: clamp(120px, 42vw, 180px);
+        min-width: clamp(160px, 56vw, 220px);
         flex: 0 0 auto;
         align-self: center;
     }
@@ -15487,6 +15487,9 @@ th,
     .editor-play-controls {
         width: 100%;
         justify-content: center;
+        margin-top: auto;
+        padding-top: 10px;
+        padding-bottom: 2px;
     }
 
     .editor-quick-actions {

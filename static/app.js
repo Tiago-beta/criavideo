@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v486 loaded");
+console.log("[CriaVideo] app.js v487 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -34991,6 +34991,19 @@ function _editorStartTimelineScrub(event) {
 
     const timelineEl = document.getElementById("editor-timeline");
     const pointerType = String(event.pointerType || "mouse");
+    const rulerEl = document.getElementById("editor-timeline-ruler");
+    const playheadEl = document.getElementById("editor-timeline-playhead");
+    const timelineRect = timelineEl?.getBoundingClientRect?.();
+    const playheadRect = playheadEl?.getBoundingClientRect?.();
+    const localY = timelineRect ? (Number(event.clientY || 0) - timelineRect.top) : 0;
+    const rulerHeight = Math.max(24, Number(rulerEl?.offsetHeight || 24));
+    const pointerNearRuler = Boolean(rulerEl && (event.target === rulerEl || event.target.closest?.(".editor-timeline-ruler")));
+    const pointerNearPlayhead = Boolean(
+        playheadRect
+        && Math.abs(Number(event.clientX || 0) - (playheadRect.left + (playheadRect.width / 2))) <= 18
+        && localY <= (rulerHeight + 18)
+    );
+    const prefersDirectScrub = pointerType === "touch" && (pointerNearRuler || pointerNearPlayhead || localY <= (rulerHeight + 6));
 
     _editorTimelineScrub = {
         active: true,
@@ -35000,7 +35013,7 @@ function _editorStartTimelineScrub(event) {
         startX: Number(event.clientX || 0),
         startY: Number(event.clientY || 0),
         startScrollLeft: Number(timelineEl?.scrollLeft || 0),
-        mode: pointerType === "touch" ? "pending" : "scrub",
+        mode: prefersDirectScrub ? "scrub" : pointerType === "touch" ? "pending" : "scrub",
         moved: false,
     };
 
@@ -35024,7 +35037,7 @@ function _editorOnTimelineScrubMove(event) {
     const dy = Number(event.clientY || 0) - scrub.startY;
 
     if (scrub.mode === "pending") {
-        const threshold = scrub.pointerType === "touch" ? 8 : 0;
+        const threshold = scrub.pointerType === "touch" ? 6 : 0;
         if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) {
             return;
         }
