@@ -11801,6 +11801,49 @@ th,
     margin-top: 10px;
 }
 
+.similar-reference-frame-create-actions {
+    justify-content: flex-end;
+}
+
+.similar-frame-create-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 224, 118, 0.9);
+    background: linear-gradient(180deg, rgba(255, 218, 92, 0.98), rgba(223, 159, 26, 0.96));
+    color: #2c2000;
+    font-size: 0.94rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    box-shadow: 0 16px 30px rgba(214, 152, 17, 0.22);
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+.similar-frame-create-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: rgba(255, 236, 154, 0.98);
+    background: linear-gradient(180deg, rgba(255, 232, 124, 0.98), rgba(236, 172, 37, 0.96));
+    color: #241900;
+    box-shadow: 0 20px 36px rgba(214, 152, 17, 0.28);
+}
+
+.similar-frame-create-btn:disabled {
+    opacity: 0.62;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.similar-frame-create-btn svg {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
+}
+
 .similar-reference-frame-submit-btn {
     display: inline-flex;
     align-items: center;
@@ -11907,6 +11950,14 @@ th,
     .similar-reference-frame-gallery,
     .similar-scene-preview {
         grid-template-columns: 1fr;
+    }
+
+    .similar-reference-frame-create-actions {
+        justify-content: stretch;
+    }
+
+    .similar-frame-create-btn {
+        width: 100%;
     }
 
     .similar-reference-frame-body-has-clip {

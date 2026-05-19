@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v483 loaded");
+console.log("[CriaVideo] app.js v484 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -5676,6 +5676,16 @@ function initCreateWizard() {
             const target = event.target;
             if (!(target instanceof HTMLTextAreaElement)) return;
 
+            const frameMatch = /^similar-frame-instruction-(\d+)$/.exec(String(target.id || ""));
+            if (frameMatch) {
+                const sceneId = Number(frameMatch[1] || 0);
+                if (!sceneId) return;
+
+                _syncSimilarDraftsFromDom();
+                _setSimilarFrameCreateActionVisibility(sceneId);
+                return;
+            }
+
             const match = /^similar-scene-prompt-(\d+)$/.exec(String(target.id || ""));
             if (!match) return;
 
@@ -7461,6 +7471,17 @@ function _similarPreviewAspectClass(aspectRatio) {
     return "similar-preview-box-horizontal";
 }
 
+function _setSimilarFrameCreateActionVisibility(sceneId, forceVisible = null) {
+    const actionEl = document.getElementById(`similar-frame-create-action-${sceneId}`);
+    if (!actionEl) return;
+
+    const nextVisible = typeof forceVisible === "boolean"
+        ? forceVisible
+        : !!String(document.getElementById(`similar-frame-instruction-${sceneId}`)?.value || "").trim();
+
+    actionEl.hidden = !nextVisible;
+}
+
 function _normalizeSimilarBusySceneIds(rawSceneIds) {
     const source = Array.isArray(rawSceneIds) ? rawSceneIds : [rawSceneIds];
     const resolved = [];
@@ -8529,6 +8550,7 @@ function _renderSimilarScenes(project, options = {}) {
             ? String(draft.frameInstruction || "")
             : "";
         const frameInstructionValue = esc(frameInstruction);
+        const showFrameCreateAction = !!frameInstruction;
         const narrationRaw = Object.prototype.hasOwnProperty.call(draft, "narrationText")
             ? String(draft.narrationText || "")
             : _extractSimilarNarrationFromPrompt(promptRaw);
@@ -8553,6 +8575,9 @@ function _renderSimilarScenes(project, options = {}) {
             ? frameGenerateTitle
             : "Escreva um ajuste ou envie uma nova foto";
         const frameRerollDisabledAttr = frameBusy || !canGenerateFrameVariant ? "disabled" : "";
+        const frameCreateTitle = generatedImageVariants.length
+            ? "Criar nova imagem com este ajuste"
+            : "Criar imagem com este ajuste";
         const framePanelSummary = generatedImageVariants.length
             ? `${generatedImageVariants.length + 1} imagens lado a lado.`
             : "Contexto visual da cena.";
@@ -8732,6 +8757,9 @@ function _renderSimilarScenes(project, options = {}) {
                             <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.image}</button>
                         </div>
                         ${frameUploadsMarkup}
+                        <div id="similar-frame-create-action-${sceneId}" class="similar-reference-frame-editor-actions similar-reference-frame-create-actions" ${showFrameCreateAction ? "" : "hidden"}>
+                            <button class="similar-frame-create-btn" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameCreateTitle}" aria-label="${frameCreateTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.wand}<span>Criar</span></button>
+                        </div>
                         ${frameBusyMarkup}
                     </div>
                 </section>
