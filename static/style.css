@@ -13209,6 +13209,24 @@ th,
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+    min-width: 0;
+}
+
+.editor-topbar-actions .btn {
+    min-width: 0;
+}
+
+.editor-topbar-export-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.editor-topbar-export-label {
+    display: inline-flex;
 }
 
 /* ── Main editor area (tools + preview + props) ── */
@@ -14382,6 +14400,7 @@ th,
     position: relative;
     overflow-x: auto;
     overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .editor-timeline-ruler {
@@ -14603,6 +14622,9 @@ th,
     overflow: hidden;
     text-overflow: ellipsis;
     transition: opacity 0.2s;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
 }
 .editor-track-clip:hover { opacity: 0.85; }
 
@@ -14636,6 +14658,7 @@ th,
     transition: opacity 0.18s ease, transform 0.18s ease;
     cursor: ew-resize;
     z-index: 2;
+    touch-action: none;
 }
 
 .editor-track-clip-handle.start {
@@ -15173,17 +15196,19 @@ th,
 
     #page-editor:has(.editor-workspace:not([hidden])),
     #page-editor.editor-fullscreen {
-        margin: -16px -16px -76px;
+        margin: -16px -16px calc(-76px - env(safe-area-inset-bottom, 0px));
         padding: 0;
-        width: calc(100% + 32px);
+        width: auto;
+        max-width: none;
     }
 
     .editor-workspace {
-        --editor-mobile-props-height: clamp(96px, 18vh, 152px);
+        --editor-mobile-props-height: clamp(72px, 11vh, 104px);
         height: calc(100vh - 56px);
         height: calc(100dvh - 56px);
         display: flex;
         flex-direction: column;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
     }
 
     .editor-main {
@@ -15198,8 +15223,9 @@ th,
         bottom: auto; left: auto; right: auto;
         width: 100%;
         flex-direction: row;
-        justify-content: space-around;
-        padding: 4px 0;
+        justify-content: flex-start;
+        gap: 4px;
+        padding: 4px 6px;
         border-right: none;
         border-top: 1px solid var(--border);
         overflow-x: auto;
@@ -15208,7 +15234,9 @@ th,
     }
 
     .editor-tool-btn {
-        min-width: 48px;
+        min-width: 56px;
+        padding: 6px 4px;
+        gap: 4px;
     }
 
     .editor-transition-grid {
@@ -15218,29 +15246,38 @@ th,
     .editor-preview-area {
         order: 1;
         flex: 1;
-        padding: 6px;
+        padding: 8px 8px 6px;
+        gap: 6px;
         min-height: 0;
     }
 
+    .editor-canvas-wrapper {
+        width: auto;
+        height: clamp(160px, 26vh, 220px);
+        max-width: min(100%, 86vw);
+        max-height: none;
+    }
+
     .editor-quick-actions {
-        flex-wrap: wrap;
-        row-gap: 6px;
+        flex-wrap: nowrap;
+        row-gap: 0;
         padding: 6px 8px;
+        gap: 6px;
+        overflow-x: auto;
+        overflow-y: hidden;
     }
 
     .editor-aspect-selector {
-        width: 100%;
+        width: auto;
         justify-content: flex-end;
+        margin-left: 0;
+        flex: 0 0 auto;
     }
 
     .editor-upload-card {
         flex-direction: column;
         align-items: stretch;
         gap: 10px;
-    }
-
-    .editor-canvas-wrapper {
-        max-height: 100%;
     }
 
     .editor-props-panel {
@@ -15272,7 +15309,8 @@ th,
 
     .editor-timeline {
         height: auto;
-        min-height: 116px;
+        min-height: 128px;
+        max-height: 34vh;
         flex-shrink: 0;
     }
 
@@ -15285,9 +15323,59 @@ th,
     }
 
     .editor-topbar {
-        padding: 6px 12px;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas:
+            "back name export"
+            "actions actions actions";
+        align-items: center;
+        column-gap: 8px;
+        row-gap: 6px;
+        padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px;
         min-height: 44px;
         flex-shrink: 0;
+    }
+
+    .editor-back-btn {
+        grid-area: back;
+    }
+
+    .editor-project-name {
+        grid-area: name;
+        min-width: 0;
+        font-size: 13px;
+        padding: 5px 6px;
+    }
+
+    .editor-topbar-actions {
+        grid-area: actions;
+        width: 100%;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 36px 36px;
+        gap: 6px;
+    }
+
+    .editor-topbar-actions .btn {
+        width: 100%;
+        height: 36px;
+        padding: 0 10px;
+    }
+
+    #editor-undo-btn,
+    #editor-redo-btn {
+        padding: 0;
+    }
+
+    #editor-export-btn {
+        grid-area: export;
+        height: 36px;
+        min-width: 0;
+        padding: 0 12px;
+        gap: 6px;
+    }
+
+    .editor-topbar-export-label {
+        font-size: 12px;
     }
 }
 

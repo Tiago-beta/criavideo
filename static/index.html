@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260517-08">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260519-01">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 476;
+        var REQUIRED_VER = 477;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -313,6 +313,10 @@
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
                                 </button>
                                 <span class="editor-project-name" id="editor-project-name" title="Clique para renomear" tabindex="0">Projeto</span>
+                                <button class="btn btn-primary btn-sm editor-topbar-export-btn" id="editor-export-btn" type="button">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    <span class="editor-topbar-export-label">Exportar</span>
+                                </button>
                                 <div class="editor-topbar-actions">
                                     <button class="btn btn-secondary btn-sm" id="editor-new-btn" type="button" title="Iniciar nova edição">
                                         Novo +
@@ -322,10 +326,6 @@
                                     </button>
                                     <button class="btn btn-secondary btn-sm" id="editor-redo-btn" type="button" title="Refazer" disabled>
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
-                                    </button>
-                                    <button class="btn btn-primary btn-sm" id="editor-export-btn" type="button">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                                        Exportar
                                     </button>
                                 </div>
                             </div>
@@ -4390,8 +4390,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260517-08"></script>
-    <script src="/video/static/pwa.js?v=20260517-08"></script>
+    <script src="/video/static/app.js?v=20260519-01"></script>
+    <script src="/video/static/pwa.js?v=20260519-01"></script>
 </body>
 </html>
 

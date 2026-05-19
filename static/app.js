@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v476 loaded");
+console.log("[CriaVideo] app.js v477 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -34610,26 +34610,103 @@ function _editorSeekByClientX(clientX) {
     _editorApplyTimelineFrame(nextTime, false);
 }
 
+function _editorCapturePointer(target, pointerId) {
+    if (!target || pointerId === undefined || typeof target.setPointerCapture !== "function") return;
+    try {
+        target.setPointerCapture(pointerId);
+    } catch {
+        // Touch browsers may reject capture while a native scroll is active.
+    }
+}
+
+function _editorReleasePointerCapture(target, pointerId) {
+    if (!target || pointerId === undefined || typeof target.releasePointerCapture !== "function") return;
+    try {
+        target.releasePointerCapture(pointerId);
+    } catch {
+        // Ignore if the pointer was already released.
+    }
+}
+
 function _editorStartTimelineScrub(event) {
     if (!_editorGetTimelineDuration()) return false;
     if (event.button !== undefined && event.button !== 0) return false;
     if (event.target.closest(".editor-track-clip")) return false;
     if (event.target.closest(".editor-track-label")) return false;
 
-    _editorTimelineScrub = { active: true };
-    _editorSeekByClientX(event.clientX);
+    const timelineEl = document.getElementById("editor-timeline");
+    const pointerType = String(event.pointerType || "mouse");
+
+    _editorTimelineScrub = {
+        active: true,
+        pointerId: event.pointerId,
+        pointerType,
+        pointerTarget: timelineEl,
+        startX: Number(event.clientX || 0),
+        startY: Number(event.clientY || 0),
+        startScrollLeft: Number(timelineEl?.scrollLeft || 0),
+        mode: pointerType === "touch" ? "pending" : "scrub",
+        moved: false,
+    };
+
+    if (_editorTimelineScrub.mode === "scrub") {
+        _editorSeekByClientX(event.clientX);
+    }
+
+    _editorCapturePointer(timelineEl, event.pointerId);
     document.addEventListener("pointermove", _editorOnTimelineScrubMove);
-    document.addEventListener("pointerup", _editorOnTimelineScrubEnd, { once: true });
+    document.addEventListener("pointerup", _editorOnTimelineScrubEnd);
+    document.addEventListener("pointercancel", _editorOnTimelineScrubEnd);
     return true;
 }
 
 function _editorOnTimelineScrubMove(event) {
-    if (!_editorTimelineScrub?.active) return;
+    const scrub = _editorTimelineScrub;
+    if (!scrub?.active) return;
+    if (scrub.pointerId !== undefined && event.pointerId !== undefined && event.pointerId !== scrub.pointerId) return;
+
+    const dx = Number(event.clientX || 0) - scrub.startX;
+    const dy = Number(event.clientY || 0) - scrub.startY;
+
+    if (scrub.mode === "pending") {
+        const threshold = scrub.pointerType === "touch" ? 8 : 0;
+        if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) {
+            return;
+        }
+
+        scrub.moved = true;
+        scrub.mode = Math.abs(dx) >= Math.abs(dy) ? "pan" : "scrub";
+        if (scrub.mode === "scrub") {
+            _editorSeekByClientX(event.clientX);
+        }
+        return;
+    }
+
+    if (scrub.mode === "pan") {
+        const timelineEl = document.getElementById("editor-timeline");
+        if (!timelineEl) return;
+        timelineEl.scrollLeft = Math.max(0, scrub.startScrollLeft - dx);
+        scrub.moved = true;
+        if (event.cancelable) {
+            event.preventDefault();
+        }
+        return;
+    }
+
+    scrub.moved = true;
     _editorSeekByClientX(event.clientX);
 }
 
-function _editorOnTimelineScrubEnd() {
+function _editorOnTimelineScrubEnd(event) {
     document.removeEventListener("pointermove", _editorOnTimelineScrubMove);
+    document.removeEventListener("pointerup", _editorOnTimelineScrubEnd);
+    document.removeEventListener("pointercancel", _editorOnTimelineScrubEnd);
+
+    const scrub = _editorTimelineScrub;
+    if (scrub?.active && scrub.pointerType === "touch" && scrub.mode === "pending" && event?.clientX !== undefined) {
+        _editorSeekByClientX(event.clientX);
+    }
+    _editorReleasePointerCapture(scrub?.pointerTarget, scrub?.pointerId);
     _editorTimelineScrub = null;
 }
 
@@ -38348,12 +38425,18 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
     let mode = "move";
     if (_editorTimelineCanResize(kind, track) && frozenClipRect) {
         const handleEdge = event.target?.closest?.(".editor-track-clip-handle")?.dataset?.resizeEdge || "";
-        const localX = event.clientX - frozenClipRect.left;
-        const edgeSize = Math.max(10, Math.min(20, frozenClipRect.width * 0.24));
-        if (handleEdge === "start" || localX <= edgeSize) {
+        if (handleEdge === "start") {
             mode = "resize-start";
-        } else if (handleEdge === "end" || localX >= frozenClipRect.width - edgeSize) {
+        } else if (handleEdge === "end") {
             mode = "resize-end";
+        } else if (event.pointerType !== "touch") {
+            const localX = event.clientX - frozenClipRect.left;
+            const edgeSize = Math.max(10, Math.min(20, frozenClipRect.width * 0.24));
+            if (localX <= edgeSize) {
+                mode = "resize-start";
+            } else if (localX >= frozenClipRect.width - edgeSize) {
+                mode = "resize-end";
+            }
         }
     }
 
@@ -38392,10 +38475,15 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
         minDuration: kind === "sticker" ? 0.5 : 0.2,
         moved: false,
         saved: false,
+        pointerId: event.pointerId,
+        pointerTarget: clipEl,
+        pointerType: String(event.pointerType || "mouse"),
     };
 
+    _editorCapturePointer(clipEl, event.pointerId);
     document.addEventListener("pointermove", _editorOnTimelineDragMove);
-    document.addEventListener("pointerup", _editorOnTimelineDragEnd, { once: true });
+    document.addEventListener("pointerup", _editorOnTimelineDragEnd);
+    document.addEventListener("pointercancel", _editorOnTimelineDragEnd);
     return true;
 }
 
@@ -38451,6 +38539,7 @@ function _editorOnTimelineDragMove(event) {
     if (!_editorTimelineDrag) return;
 
     const drag = _editorTimelineDrag;
+    if (drag.pointerId !== undefined && event.pointerId !== undefined && event.pointerId !== drag.pointerId) return;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
     const deltaSec = (dx / drag.trackWidth) * Math.max(0.1, Number(drag.pixelDuration || drag.duration || 0.1));
@@ -38513,7 +38602,8 @@ function _editorOnTimelineDragMove(event) {
         }
     }
 
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+    const moveThreshold = drag.pointerType === "touch" ? 4 : 1;
+    if (Math.abs(dx) > moveThreshold || Math.abs(dy) > moveThreshold) {
         drag.moved = true;
     }
     if (drag.moved && !drag.saved) {
@@ -38535,8 +38625,11 @@ function _editorOnTimelineDragMove(event) {
 
 function _editorOnTimelineDragEnd() {
     document.removeEventListener("pointermove", _editorOnTimelineDragMove);
+    document.removeEventListener("pointerup", _editorOnTimelineDragEnd);
+    document.removeEventListener("pointercancel", _editorOnTimelineDragEnd);
     if (!_editorTimelineDrag) return;
 
+    _editorReleasePointerCapture(_editorTimelineDrag.pointerTarget, _editorTimelineDrag.pointerId);
     const moved = _editorTimelineDrag.moved;
     const kind = _editorTimelineDrag.kind;
     const id = _editorTimelineDrag.id;
@@ -39057,7 +39150,7 @@ function _bindEditorEvents() {
     // Timeline click-and-hold scrub
     document.getElementById("editor-timeline")?.addEventListener("pointerdown", (e) => {
         const started = _editorStartTimelineScrub(e);
-        if (started) {
+        if (started && e.pointerType !== "touch") {
             e.preventDefault();
         }
     });
