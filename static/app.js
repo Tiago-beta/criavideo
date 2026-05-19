@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v477 loaded");
+console.log("[CriaVideo] app.js v484 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -201,6 +201,7 @@ function showToast(msg, type = "info") {
 const WAN_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const DEFAULT_REALISTIC_DURATION_OPTIONS = [5, 10, 15, 20, 45, 60];
 const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
+const VIDU_Q3_REALISTIC_DURATION_OPTIONS = Array.from({ length: 16 }, (_, index) => index + 1);
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
 const WORKFLOW_PROMPT_AI_STYLE_OPTIONS = [
     { value: "commercial", label: "Comercial" },
@@ -353,6 +354,8 @@ function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
     }
     const options = engine === "wan2"
         ? WAN_REALISTIC_DURATION_OPTIONS
+        : engine === "viduq3"
+            ? VIDU_Q3_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
             ? SEEDANCE_REALISTIC_DURATION_OPTIONS
             : DEFAULT_REALISTIC_DURATION_OPTIONS;
@@ -373,6 +376,8 @@ function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engine = engineBtn?.dataset.value || "wan2";
     const options = engine === "wan2"
         ? WAN_REALISTIC_DURATION_OPTIONS
+        : engine === "viduq3"
+            ? VIDU_Q3_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
             ? SEEDANCE_REALISTIC_DURATION_OPTIONS
             : DEFAULT_REALISTIC_DURATION_OPTIONS;
@@ -383,6 +388,8 @@ function _syncAutoRealisticDurationOptions(preferredValue = null) {
     const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "wan2";
     const options = engine === "grok"
         ? AUTO_GROK_DURATION_OPTIONS
+        : engine === "viduq3"
+            ? VIDU_Q3_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
             ? SEEDANCE_REALISTIC_DURATION_OPTIONS
             : WAN_REALISTIC_DURATION_OPTIONS;
@@ -4081,10 +4088,11 @@ let similarState = {
     pollingTimer: null,
     controlsLocked: false,
     engineManuallySelected: false,
-    selectedEngine: "wan2",
+    selectedEngine: "viduq3",
     sceneEngineSelectionBySceneId: {},
     pendingBusyStage: "",
     pendingBusySceneId: 0,
+    pendingBusySceneIds: [],
     busyProgressStage: "",
     busyProgressCurrent: 0,
     busyProgressTarget: 0,
@@ -4190,9 +4198,9 @@ const SIMILAR_DETECTED_MODE_LABELS = {
     unknown: "Não foi possível identificar com confiança o perfil visual do vídeo.",
 };
 const SIMILAR_MODE_ENGINE_DEFAULT = {
-    static_narrated: "wan2",
-    realistic: "wan2",
-    unknown: "wan2",
+    static_narrated: "viduq3",
+    realistic: "viduq3",
+    unknown: "viduq3",
 };
 const SIMILAR_ACTION_ICONS = {
     save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
@@ -5092,6 +5100,8 @@ async function createSimilar(projectId) {
     }
 
     const realisticArtists = new Set([
+        "Pro 3.1",
+        "Vidu Q3 Pro Starter",
         "Wan 2.2",
         "Ultra High 1.0",
         "Ultra High 2.2",
@@ -5116,9 +5126,10 @@ async function createSimilar(projectId) {
 
     const normalizeEngine = (value) => {
         const raw = String(value || "").trim().toLowerCase();
-        if (["wan2", "grok", "seedance"].includes(raw)) {
+        if (["wan2", "grok", "seedance", "viduq3"].includes(raw)) {
             return raw;
         }
+        if (raw.includes("pro 3.1") || raw.includes("vidu")) return "viduq3";
         if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
         if (raw.includes("cria 3.0") || raw.includes("grok")) return "grok";
@@ -5665,6 +5676,16 @@ function initCreateWizard() {
             const target = event.target;
             if (!(target instanceof HTMLTextAreaElement)) return;
 
+            const frameMatch = /^similar-frame-instruction-(\d+)$/.exec(String(target.id || ""));
+            if (frameMatch) {
+                const sceneId = Number(frameMatch[1] || 0);
+                if (!sceneId) return;
+
+                _syncSimilarDraftsFromDom();
+                _setSimilarFrameCreateActionVisibility(sceneId);
+                return;
+            }
+
             const match = /^similar-scene-prompt-(\d+)$/.exec(String(target.id || ""));
             if (!match) return;
 
@@ -6016,13 +6037,58 @@ function _chooseCreateMode(mode) {
         openScriptImageCreatorFromCreateMode();
         return;
     }
-    if (normalizedMode === "series") {
-        openSeriesWorkspaceStart({ fromCreateModal: true });
+    if (normalizedMode === "audio") {
+        _openCreateAudioBuilderMode();
         return;
     }
     document.getElementById("create-mode-selection").hidden = true;
     switchCreateMode(normalizedMode);
 }
+
+function _openCreateAudioBuilderMode() {
+    switchCreateMode("script");
+    toggleScriptAudioBuilder(true);
+    toggleMinhaVoz("script-audio-builder", true);
+    const modalBody = document.querySelector("#modal-new-project .modal-body");
+    if (modalBody) {
+        modalBody.scrollTop = 0;
+    }
+}
+
+function handleNewProjectModalClose() {
+    const aiSuggestPanel = document.getElementById("ai-suggest-panel");
+    if (aiSuggestPanel && !aiSuggestPanel.hidden) {
+        hideAiSuggestPanel();
+        return;
+    }
+
+    const workflowPanel = document.getElementById("create-panel-workflow");
+    if (workflowPanel && !workflowPanel.hidden) {
+        document.getElementById("workflow-back")?.click();
+        return;
+    }
+
+    const similarPanel = document.getElementById("create-panel-similar");
+    if (similarPanel && !similarPanel.hidden) {
+        document.getElementById("similar-back")?.click();
+        return;
+    }
+
+    const scriptPanel = document.getElementById("create-panel-script");
+    if (scriptPanel && !scriptPanel.hidden) {
+        scriptBack();
+        return;
+    }
+
+    const wizardPanel = document.getElementById("create-panel-wizard");
+    if (wizardPanel && !wizardPanel.hidden) {
+        wizardBack();
+        return;
+    }
+
+    closeModal("modal-new-project");
+}
+window.handleNewProjectModalClose = handleNewProjectModalClose;
 
 function switchCreateMode(mode) {
     if (!mode) return;
@@ -6719,7 +6785,7 @@ function _renderSimilarUnifiedPrompt(project) {
     similarState.unifiedEngine = selectedEngine;
     similarState.unifiedDuration = selectedDuration;
 
-    enginePickerEl.innerHTML = ["grok", "wan2", "seedance"].map((engineValue) => `
+    enginePickerEl.innerHTML = ["viduq3", "grok", "wan2", "seedance"].map((engineValue) => `
         <button
             class="similar-scene-engine-btn${selectedEngine === engineValue ? " selected" : ""}"
             type="button"
@@ -6728,7 +6794,7 @@ function _renderSimilarUnifiedPrompt(project) {
             aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
         >${_similarSceneEngineLabel(engineValue)}</button>
     `).join("");
-    _renderDurationButtons("similar-unified-duration-options", [5, 10, 15], selectedDuration);
+    _renderDurationButtons("similar-unified-duration-options", _similarUnifiedDurationOptions(selectedEngine), selectedDuration);
 
     const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
     const unifiedClipUrl = String(tags.similar_unified_clip_url || "").trim();
@@ -7291,14 +7357,18 @@ function similarSelectSceneDuration(sceneId, rawValue) {
 
 function _normalizeSimilarEngine(rawValue) {
     const value = String(rawValue || "").trim().toLowerCase();
-    if (value === "grok" || value === "wan2" || value === "seedance") {
+    if (value === "grok" || value === "wan2" || value === "seedance" || value === "viduq3") {
         return value;
     }
-    return "wan2";
+    if (value.includes("vidu") || value.includes("pro 3.1") || value === "pro31" || value === "pro3.1") {
+        return "viduq3";
+    }
+    return "viduq3";
 }
 
 function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
+    if (normalized === "viduq3") return "Pro 3.1";
     if (normalized === "wan2") return "Ultra 3.0";
     if (normalized === "seedance") return "Mega 2.0";
     return "Cria 2.5";
@@ -7306,6 +7376,7 @@ function _similarSceneEngineLabel(engineValue) {
 
 function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
+    if (normalized === "viduq3") return "Pro 3.1";
     if (normalized === "wan2") return "Ultra High 3.0";
     if (normalized === "seedance") return "Mega 2.0 Ultra";
     return "Cria Speed 2.5 (Grok)";
@@ -7316,7 +7387,7 @@ function _getSimilarSceneSelectedEngine(sceneId) {
     return _normalizeSimilarEngine(
         similarState.sceneEngineSelectionBySceneId?.[sceneKey]
         || similarState.selectedEngine
-        || "wan2"
+        || "viduq3"
     );
 }
 
@@ -7339,19 +7410,26 @@ function _getSimilarUnifiedSelectedEngine(tags = null) {
     return _normalizeSimilarEngine(
         similarState.unifiedEngine
         || safeTags.similar_unified_clip_engine
-        || "seedance"
+        || "viduq3"
     );
+}
+
+function _similarUnifiedDurationOptions(engineValue) {
+    return _normalizeSimilarEngine(engineValue) === "viduq3"
+        ? VIDU_Q3_REALISTIC_DURATION_OPTIONS
+        : [5, 10, 15];
 }
 
 function _getSimilarUnifiedSelectedDuration(tags = null) {
     const safeTags = tags && typeof tags === "object" && !Array.isArray(tags)
         ? tags
         : _safeSimilarTags(similarState.lastProjectSnapshot?.tags);
+    const selectedEngine = _getSimilarUnifiedSelectedEngine(safeTags);
     const preferred = parseInt(
         similarState.unifiedDuration || safeTags.similar_unified_clip_duration || "10",
         10,
     );
-    return _pickClosestDurationOption([5, 10, 15], preferred || 10);
+    return _pickClosestDurationOption(_similarUnifiedDurationOptions(selectedEngine), preferred || 10);
 }
 
 function similarSelectUnifiedEngine(engineValue) {
@@ -7393,14 +7471,117 @@ function _similarPreviewAspectClass(aspectRatio) {
     return "similar-preview-box-horizontal";
 }
 
-function _setSimilarBusyIntent(stage = "", sceneId = 0) {
-    similarState.pendingBusyStage = String(stage || "").trim();
-    similarState.pendingBusySceneId = Number(sceneId || 0);
+function _setSimilarFrameCreateActionVisibility(sceneId, forceVisible = null) {
+    const actionEl = document.getElementById(`similar-frame-create-action-${sceneId}`);
+    if (!actionEl) return;
+
+    const nextVisible = typeof forceVisible === "boolean"
+        ? forceVisible
+        : !!String(document.getElementById(`similar-frame-instruction-${sceneId}`)?.value || "").trim();
+
+    actionEl.hidden = !nextVisible;
 }
 
-function _clearSimilarBusyIntent() {
+function _normalizeSimilarBusySceneIds(rawSceneIds) {
+    const source = Array.isArray(rawSceneIds) ? rawSceneIds : [rawSceneIds];
+    const resolved = [];
+    source.forEach((rawValue) => {
+        const sceneId = Number(rawValue || 0);
+        if (sceneId > 0 && !resolved.includes(sceneId)) {
+            resolved.push(sceneId);
+        }
+    });
+    return resolved;
+}
+
+function _getSimilarPendingBusySceneIds() {
+    return _normalizeSimilarBusySceneIds(similarState.pendingBusySceneIds);
+}
+
+function _setSimilarPendingBusySceneIds(sceneIds) {
+    const normalized = _normalizeSimilarBusySceneIds(sceneIds);
+    similarState.pendingBusySceneIds = normalized;
+    similarState.pendingBusySceneId = normalized[normalized.length - 1] || 0;
+    return normalized;
+}
+
+function _addSimilarPendingBusySceneId(sceneId) {
+    const normalizedSceneId = Number(sceneId || 0);
+    if (normalizedSceneId <= 0) {
+        return _getSimilarPendingBusySceneIds();
+    }
+
+    const nextIds = _getSimilarPendingBusySceneIds();
+    if (!nextIds.includes(normalizedSceneId)) {
+        nextIds.push(normalizedSceneId);
+    }
+    return _setSimilarPendingBusySceneIds(nextIds);
+}
+
+function _removeSimilarPendingBusySceneId(sceneId) {
+    const normalizedSceneId = Number(sceneId || 0);
+    if (normalizedSceneId <= 0) {
+        return _getSimilarPendingBusySceneIds();
+    }
+    return _setSimilarPendingBusySceneIds(
+        _getSimilarPendingBusySceneIds().filter((value) => value !== normalizedSceneId)
+    );
+}
+
+function _extractSimilarActiveSceneGenerationIds(tags = {}) {
+    const resolved = _normalizeSimilarBusySceneIds(tags?.similar_active_scene_generation_ids || []);
+    const fallbackSceneId = Number(tags?.similar_regenerating_scene_id || 0);
+    const previewSceneId = Number(tags?.similar_current_scene_id || 0);
+    const stage = String(tags?.similar_stage || "").trim();
+
+    if (fallbackSceneId > 0 && !resolved.includes(fallbackSceneId)) {
+        resolved.push(fallbackSceneId);
+    }
+    if (stage === "generating_previews" && previewSceneId > 0 && !resolved.includes(previewSceneId)) {
+        resolved.push(previewSceneId);
+    }
+
+    return resolved;
+}
+
+function _reconcileSimilarPendingBusySceneIds(project, tags = {}) {
+    const activeSceneIds = _extractSimilarActiveSceneGenerationIds(tags);
+    const status = String(project?.status || "").trim().toLowerCase();
+
+    if (!activeSceneIds.length && !_isSimilarBusyProcessingStatus(status)) {
+        _setSimilarPendingBusySceneIds([]);
+        return activeSceneIds;
+    }
+
+    const nextPendingIds = _getSimilarPendingBusySceneIds().filter((sceneId) => !activeSceneIds.includes(sceneId));
+    _setSimilarPendingBusySceneIds(nextPendingIds);
+    return activeSceneIds;
+}
+
+function _setSimilarBusyIntent(stage = "", sceneId = 0) {
+    similarState.pendingBusyStage = String(stage || "").trim();
+    const normalizedSceneId = Number(sceneId || 0);
+    if (["generating_scene", "regenerating_scene"].includes(similarState.pendingBusyStage) && normalizedSceneId > 0) {
+        _addSimilarPendingBusySceneId(normalizedSceneId);
+        return;
+    }
+    similarState.pendingBusySceneId = normalizedSceneId;
+}
+
+function _clearSimilarBusyIntent(sceneId = 0) {
+    const normalizedSceneId = Number(sceneId || 0);
+    if (normalizedSceneId > 0) {
+        const remainingSceneIds = _removeSimilarPendingBusySceneId(normalizedSceneId);
+        if (!remainingSceneIds.length && ["generating_scene", "regenerating_scene"].includes(String(similarState.pendingBusyStage || "").trim())) {
+            similarState.pendingBusyStage = "";
+            similarState.pendingBusySceneId = 0;
+        }
+        return;
+    }
+
     similarState.pendingBusyStage = "";
     similarState.pendingBusySceneId = 0;
+    _setSimilarPendingBusySceneIds([]);
 }
 
 function _isSimilarBusyProcessingStatus(status) {
@@ -7408,16 +7589,19 @@ function _isSimilarBusyProcessingStatus(status) {
     return ["generating_scenes", "generating_clips", "rendering"].includes(normalizedStatus);
 }
 
-function _hideSimilarBusyOverlay() {
+function _hideSimilarBusyOverlay(options = {}) {
+    const preserveProgress = !!options.preserveProgress;
     const overlayEl = document.getElementById("similar-busy-overlay");
     const modalEl = document.getElementById("modal-new-project");
-    if (similarState.busyProgressTimer) {
+    if (!preserveProgress && similarState.busyProgressTimer) {
         clearInterval(similarState.busyProgressTimer);
         similarState.busyProgressTimer = null;
     }
-    similarState.busyProgressStage = "";
-    similarState.busyProgressCurrent = 0;
-    similarState.busyProgressTarget = 0;
+    if (!preserveProgress) {
+        similarState.busyProgressStage = "";
+        similarState.busyProgressCurrent = 0;
+        similarState.busyProgressTarget = 0;
+    }
     if (overlayEl) {
         overlayEl.hidden = true;
     }
@@ -7524,7 +7708,14 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
     }
 
     const scenes = Array.isArray(project?.scenes) ? project.scenes : [];
-    const requestedSceneId = Number(options.sceneId || tags?.similar_regenerating_scene_id || similarState.pendingBusySceneId || 0);
+    const requestedSceneId = Number(
+        options.sceneId
+        || _extractSimilarActiveSceneGenerationIds(tags)[0]
+        || tags?.similar_regenerating_scene_id
+        || similarState.pendingBusySceneId
+        || _getSimilarPendingBusySceneIds()[0]
+        || 0
+    );
     const targetScene = requestedSceneId
         ? scenes.find((scene) => Number(scene?.id || 0) === requestedSceneId) || _getSimilarProjectScene(requestedSceneId)
         : null;
@@ -7597,13 +7788,13 @@ function _setSimilarEngineSelection(engineValue, options = {}) {
     });
 
     if (!found) {
-        const fallback = document.querySelector("#similar-engine-options [data-value='wan2']");
+        const fallback = document.querySelector("#similar-engine-options [data-value='viduq3']");
         if (fallback) {
             fallback.classList.add("selected");
         }
     }
 
-    similarState.selectedEngine = found ? normalized : "wan2";
+    similarState.selectedEngine = found ? normalized : "viduq3";
     if (markManual) {
         similarState.engineManuallySelected = true;
     }
@@ -7615,7 +7806,7 @@ function _getSimilarSelectedEngine() {
     if (selected) {
         return _normalizeSimilarEngine(selected.dataset.value);
     }
-    return _normalizeSimilarEngine(similarState.selectedEngine || "wan2");
+    return _normalizeSimilarEngine(similarState.selectedEngine || "viduq3");
 }
 
 function _resolveSimilarDetectedMode(tags) {
@@ -7669,7 +7860,7 @@ function _updateSimilarGenerationStep(project, tags) {
     }
 
     const suggestedEngine = _normalizeSimilarEngine(
-        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "wan2"
+        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "viduq3"
     );
     if (!similarState.engineManuallySelected) {
         _setSimilarEngineSelection(suggestedEngine, { markManual: false });
@@ -8303,13 +8494,10 @@ function _renderSimilarScenes(project, options = {}) {
     const projectTags = _safeSimilarTags(project?.tags);
     const activeBusyStage = _resolveSimilarBusyStage(String(projectTags.similar_stage || "").trim(), String(project?.status || "").trim().toLowerCase())
         || String(similarState.pendingBusyStage || "").trim();
-    const activeBusySceneId = Number(
-        (activeBusyStage === "generating_previews"
-            ? projectTags.similar_current_scene_id
-            : (projectTags.similar_regenerating_scene_id || projectTags.similar_current_scene_id))
-        || similarState.pendingBusySceneId
-        || 0
-    );
+    const activeBusySceneIds = new Set([
+        ..._extractSimilarActiveSceneGenerationIds(projectTags),
+        ..._getSimilarPendingBusySceneIds(),
+    ]);
     const similarActionIcons = {
         save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
         upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
@@ -8341,16 +8529,19 @@ function _renderSimilarScenes(project, options = {}) {
         const pendingCount = pendingUploads.length;
         const applyDisabledAttr = pendingCount ? "" : "disabled";
         const clearDisabledAttr = pendingCount ? "" : "disabled";
-        const applyUploadedLabel = pendingCount > 1
-            ? "Aplicar imagens (WAN 2.6)"
-            : "Aplicar imagem enviada";
         const selectedSceneEngine = _getSimilarSceneSelectedEngine(sceneId);
+        const applyUploadedLabel = pendingCount > 1
+            ? `Aplicar imagens (${_similarEngineDisplayLabel(selectedSceneEngine)})`
+            : "Aplicar imagem enviada";
         const hasImagePreview = !!String(scene.image_url || "").trim();
         const clipUrlRaw = String(scene.clip_url || scene.clip_path || "");
         const clipUrlSafe = esc(clipUrlRaw);
         const hasClipPreview = !!clipUrlRaw.trim();
         const hasReferenceFrame = !!String(scene.reference_frame_url || "").trim();
-        const isGeneratingSceneClip = activeBusySceneId === sceneId && ["generating_scene", "regenerating_scene", "generating_previews"].includes(activeBusyStage);
+        const isGeneratingSceneClip = activeBusySceneIds.has(sceneId) && (
+            ["generating_scene", "regenerating_scene", "generating_previews"].includes(activeBusyStage)
+            || activeBusySceneIds.size > 0
+        );
         const frameEditorOpen = !!draft.frameEditorOpen;
         const narrationEditorOpen = !!draft.narrationEditorOpen;
         const frameBusy = !!draft.frameBusy;
@@ -8359,6 +8550,7 @@ function _renderSimilarScenes(project, options = {}) {
             ? String(draft.frameInstruction || "")
             : "";
         const frameInstructionValue = esc(frameInstruction);
+        const showFrameCreateAction = !!frameInstruction;
         const narrationRaw = Object.prototype.hasOwnProperty.call(draft, "narrationText")
             ? String(draft.narrationText || "")
             : _extractSimilarNarrationFromPrompt(promptRaw);
@@ -8367,6 +8559,9 @@ function _renderSimilarScenes(project, options = {}) {
         const referenceFrameUrlRaw = String(scene.reference_frame_url || "");
         const referenceFrameAltRaw = `Frame extraido da cena ${idx + 1}`;
         const referenceDownloadName = esc(`frame-cena-${idx + 1}.jpg`);
+        const referenceTextExcerptRaw = String(scene.reference_frame_text_excerpt || "").trim();
+        const referenceTextDetected = !!scene.reference_frame_text_detected || !!referenceTextExcerptRaw;
+        const removeTextTitle = "Remover escrita do frame base";
         const generatedImageVariants = Array.isArray(scene.generated_image_variants)
             ? scene.generated_image_variants.filter((item) => String(item?.url || item?.path || "").trim())
             : [];
@@ -8380,9 +8575,21 @@ function _renderSimilarScenes(project, options = {}) {
             ? frameGenerateTitle
             : "Escreva um ajuste ou envie uma nova foto";
         const frameRerollDisabledAttr = frameBusy || !canGenerateFrameVariant ? "disabled" : "";
+        const frameCreateTitle = generatedImageVariants.length
+            ? "Criar nova imagem com este ajuste"
+            : "Criar imagem com este ajuste";
         const framePanelSummary = generatedImageVariants.length
             ? `${generatedImageVariants.length + 1} imagens lado a lado.`
             : "Contexto visual da cena.";
+        const referenceFrameQuickActionsMarkup = referenceTextDetected
+            ? `
+                <div class="similar-reference-frame-tools">
+                    <div class="similar-reference-frame-quick-actions">
+                        <button class="similar-frame-tool-btn similar-frame-tool-btn-warning" type="button" onclick="similarRemoveFrameText(${sceneId})" title="${removeTextTitle}" aria-label="${removeTextTitle}" ${frameBusyDisabledAttr}>Remover escrita</button>
+                    </div>
+                </div>
+            `
+            : "";
         const sceneClipProgress = isGeneratingSceneClip
             ? Math.max(4, Math.min(99, Math.round(Number(similarState.busyProgressCurrent || project?.progress || similarState.progress || 0) || 4)))
             : 0;
@@ -8522,6 +8729,7 @@ function _renderSimilarScenes(project, options = {}) {
                             <strong>Frame base</strong>
                             <span>${framePanelSummary}</span>
                         </div>
+                        ${referenceFrameQuickActionsMarkup}
                     </div>
                     <div class="similar-reference-frame-body${inlineClipMarkup ? " similar-reference-frame-body-has-clip" : ""}">
                         <div class="similar-reference-frame-primary-column">
@@ -8549,6 +8757,9 @@ function _renderSimilarScenes(project, options = {}) {
                             <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.image}</button>
                         </div>
                         ${frameUploadsMarkup}
+                        <div id="similar-frame-create-action-${sceneId}" class="similar-reference-frame-editor-actions similar-reference-frame-create-actions" ${showFrameCreateAction ? "" : "hidden"}>
+                            <button class="similar-frame-create-btn" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameCreateTitle}" aria-label="${frameCreateTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.wand}<span>Criar</span></button>
+                        </div>
                         ${frameBusyMarkup}
                     </div>
                 </section>
@@ -8620,7 +8831,7 @@ function _renderSimilarScenes(project, options = {}) {
                         <input id="similar-scene-duration-mode-${sceneId}" type="hidden" value="${durationSelection.selectedMode}" data-server-value="${durationSelection.serverMode}">
                     </div>
                     <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
-                        ${["grok", "wan2", "seedance"].map((engineValue) => `
+                        ${["viduq3", "grok", "wan2", "seedance"].map((engineValue) => `
                             <button
                                 class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
                                 type="button"
@@ -10432,6 +10643,7 @@ function workflowAddNode(kind) {
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
+                <option value="viduq3">Pro 3.1</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
@@ -10449,6 +10661,7 @@ function workflowAddNode(kind) {
             <label>Resolução</label>
             <select id="workflow-resolution" class="input workflow-input">
                 <option value="480p">480p</option>
+                <option value="540p">540p</option>
                 <option value="720p" selected>720p</option>
                 <option value="1080p">1080p</option>
             </select>
@@ -10773,6 +10986,7 @@ function getRealisticEngineLabel(engine) {
     const labels = {
         grok: "Cria 3.0 speed",
         wan2: "Ultra High 1.0",
+        viduq3: "Pro 3.1",
         seedance: "Mega 2.0 Ultra",
         avatar31: "Avatar 3.1 Plus",
     };
@@ -10866,9 +11080,14 @@ function workflowStartTemplateRunTracking(projectId, engineLabel, templateKey = 
 }
 
 function workflowEngineDurationOptions(engine) {
+    if (engine === "viduq3") return [...VIDU_Q3_REALISTIC_DURATION_OPTIONS];
     if (engine === "seedance") return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
     if (engine === "wan2") return [...WAN_REALISTIC_DURATION_OPTIONS];
     return [...DEFAULT_REALISTIC_DURATION_OPTIONS];
+}
+
+function workflowPreferredResolutionForEngine(engine) {
+    return engine === "viduq3" ? "540p" : "720p";
 }
 
 function workflowSyncEngineDurationOptions() {
@@ -10876,13 +11095,23 @@ function workflowSyncEngineDurationOptions() {
     const durationSelect = document.getElementById("workflow-duration");
     if (!engineSelect || !durationSelect) return;
     const current = parseInt(durationSelect.value || "15", 10) || 15;
-    const options = workflowEngineDurationOptions(engineSelect.value || "wan2");
+    const selectedEngine = engineSelect.value || "wan2";
+    const options = workflowEngineDurationOptions(selectedEngine);
     const nextValue = _pickClosestDurationOption(options, current || options[0]);
     durationSelect.innerHTML = options.map((value) => `<option value="${value}">${value}s</option>`).join("");
     durationSelect.value = String(nextValue);
     const toggleGroup = document.getElementById("workflow-seedance-last-frame-group");
     if (toggleGroup) {
-        toggleGroup.hidden = (engineSelect.value || "wan2") !== "seedance";
+        toggleGroup.hidden = selectedEngine !== "seedance";
+    }
+    const resolutionSelect = document.getElementById("workflow-resolution");
+    if (resolutionSelect) {
+        const preferredResolution = workflowPreferredResolutionForEngine(selectedEngine);
+        if (selectedEngine === "viduq3") {
+            resolutionSelect.value = preferredResolution;
+        } else if (!resolutionSelect.value || resolutionSelect.value === "540p") {
+            resolutionSelect.value = preferredResolution;
+        }
     }
 }
 
@@ -11052,6 +11281,7 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
+                <option value="viduq3">Pro 3.1</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
@@ -11769,7 +11999,7 @@ async function workflowRunSeedance() {
         const duration = parseInt(document.getElementById("workflow-duration")?.value || "10", 10) || 10;
         const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
-        const resolution = document.getElementById("workflow-resolution")?.value || "720p";
+        const resolution = document.getElementById("workflow-resolution")?.value || (workflowEngine === "viduq3" ? "540p" : "720p");
         const useLastImageAsFinalFrame = workflowEngine === "seedance"
             && !!document.getElementById("workflow-seedance-last-frame")?.checked;
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
@@ -11922,6 +12152,7 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
         const isProcessing = ["generating_scenes", "generating_clips", "rendering"].includes(status);
         const rawStage = String(tags.similar_stage || "").trim();
         const stage = _resolveSimilarBusyStage(rawStage, status) || rawStage;
+        const activeSceneGenerationIds = _reconcileSimilarPendingBusySceneIds(project, tags);
         const lockGlobalUi = isProcessing && !["generating_scene", "regenerating_scene", "generating_previews"].includes(stage);
         const suppressGlobalStatus = status !== "failed" && (
             (isProcessing && ["generating_scene", "regenerating_scene", "generating_previews"].includes(stage))
@@ -11955,12 +12186,12 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
             message = `${stageLabel} (${progress}%)`;
         }
 
-        if (!isProcessing) {
+        if (!isProcessing && !activeSceneGenerationIds.length) {
             _clearSimilarBusyIntent();
             _hideSimilarBusyOverlay();
         }
 
-        const showGlobalStatus = status === "failed" || isProcessing;
+        const showGlobalStatus = status === "failed" || isProcessing || activeSceneGenerationIds.length > 0;
         _setSimilarStatus(showGlobalStatus && !suppressGlobalStatus ? message : "", kind);
         similarState.lastProjectSnapshot = project;
         _syncSimilarSourcePreview(project);
@@ -11972,11 +12203,11 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
             stage,
             status,
             progress,
-            sceneId: Number(tags.similar_regenerating_scene_id || 0) || similarState.pendingBusySceneId,
+            sceneId: activeSceneGenerationIds[0] || Number(tags.similar_regenerating_scene_id || 0) || similarState.pendingBusySceneId,
         });
         _refreshSimilarButtonsDisabled(lockGlobalUi);
 
-        if (!isProcessing) {
+        if (!isProcessing && !activeSceneGenerationIds.length) {
             _stopSimilarPolling();
             _refreshSimilarButtonsDisabled(false);
         }
@@ -13016,7 +13247,7 @@ async function similarApplyUploadedSceneImages(sceneId) {
 
     try {
         if (uploadIds.length > 1) {
-            _setSimilarStatus("Unindo imagens enviadas com WAN 2.6...", "running");
+            _setSimilarStatus(`Preparando imagens para ${_similarEngineDisplayLabel(_getSimilarSceneSelectedEngine(sceneId))}...`, "running");
         } else {
             _setSimilarStatus("Aplicando imagem enviada na cena...", "running");
         }
@@ -13143,7 +13374,18 @@ function similarCloseFrameEdit(sceneId) {
     }
 }
 
-async function similarGenerateFrameVariant(sceneId) {
+function _buildSimilarFrameTextRemovalInstruction(scene) {
+    const detectedText = String(scene?.reference_frame_text_excerpt || "").trim();
+    return [
+        "Remover completamente qualquer escrita, legenda, logotipo tipografico, marca d'agua, letreiro ou palavra visivel deste frame.",
+        detectedText ? `Eliminar especificamente o texto \"${detectedText}\" sem deixar rastros.` : "",
+        "Reconstruir a area afetada com fundo, textura, perspectiva e iluminacao coerentes com a imagem original.",
+        "Manter exatamente o mesmo enquadramento, os mesmos objetos restantes e a mesma luz.",
+        "Nao criar nenhum texto novo.",
+    ].filter(Boolean).join(" ");
+}
+
+async function _requestSimilarFrameVariant(sceneId, { instructionOverride = "", busyLabel = "", successMessage = "", promoteReferenceFrame = false } = {}) {
     const projectId = Number(similarState.projectId || 0);
     if (!projectId) {
         alert("Inicie a analise antes de editar um frame.");
@@ -13161,7 +13403,7 @@ async function similarGenerateFrameVariant(sceneId) {
     const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
     const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
     const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
-    const editInstruction = String(instructionEl?.value || "").trim();
+    const editInstruction = String(instructionOverride || instructionEl?.value || "").trim();
     const uploadIds = [];
     _getSimilarScenePendingUploads(sceneId).forEach((item) => {
         const uploadId = String(item?.upload_id || "").trim();
@@ -13177,11 +13419,20 @@ async function similarGenerateFrameVariant(sceneId) {
     }
 
     try {
+        if (editInstruction) {
+            _setSimilarSceneFrameEditorDraft(sceneId, {
+                open: true,
+                instruction: editInstruction,
+            });
+        }
+        const resolvedBusyLabel = String(busyLabel || "").trim() || (
+            uploadIds.length
+                ? "Trocando a pessoa/elemento no frame com as imagens enviadas..."
+                : "Criando uma nova imagem a partir do frame..."
+        );
         _setSimilarSceneFrameEditorDraft(sceneId, {
             frameBusy: true,
-            frameBusyLabel: uploadIds.length
-                ? "Trocando a pessoa/elemento no frame com as imagens enviadas..."
-                : "Criando uma nova imagem a partir do frame...",
+            frameBusyLabel: resolvedBusyLabel,
         });
         if (similarState.lastProjectSnapshot) {
             _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
@@ -13194,12 +13445,13 @@ async function similarGenerateFrameVariant(sceneId) {
                 generate_from_prompt: true,
                 prompt_override: promptOverride,
                 edit_instruction: editInstruction,
+                promote_reference_frame: !!promoteReferenceFrame,
                 image_upload_ids: uploadIds,
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });
         _setSimilarSceneFrameEditorDraft(sceneId, { open: true, frameBusy: false, frameBusyLabel: "" });
-        showToast("Nova variacao criada a partir do frame.", "success");
+        showToast(successMessage || "Nova variacao criada a partir do frame.", "success");
         await _refreshSimilarProject();
     } catch (error) {
         _setSimilarSceneFrameEditorDraft(sceneId, { frameBusy: false, frameBusyLabel: "" });
@@ -13208,6 +13460,20 @@ async function similarGenerateFrameVariant(sceneId) {
         }
         showToast(`Erro ao editar frame com IA: ${error.message}`, "error");
     }
+}
+
+async function similarGenerateFrameVariant(sceneId) {
+    await _requestSimilarFrameVariant(sceneId);
+}
+
+async function similarRemoveFrameText(sceneId) {
+    const scene = _getSimilarProjectScene(sceneId);
+    await _requestSimilarFrameVariant(sceneId, {
+        instructionOverride: _buildSimilarFrameTextRemovalInstruction(scene),
+        busyLabel: "Removendo escrita do frame base...",
+        promoteReferenceFrame: true,
+        successMessage: "Escrita removida do frame base.",
+    });
 }
 
 async function similarRegenerateScene(sceneId, generationMode = "image") {
@@ -13223,12 +13489,18 @@ async function similarRegenerateScene(sceneId, generationMode = "image") {
         const promptOverride = _readSimilarScenePromptForRequest(sceneId, { applyNarration: true }).trim();
         const hasExistingClip = !!String(scene?.clip_url || scene?.clip_path || "").trim();
         const busyStage = hasExistingClip ? "regenerating_scene" : "generating_scene";
+        const hasActiveSceneGeneration = _extractSimilarActiveSceneGenerationIds(_safeSimilarTags(similarState.lastProjectSnapshot?.tags)).length > 0
+            || _getSimilarPendingBusySceneIds().length > 0;
         _setSimilarBusyIntent(busyStage, sceneId);
-        similarState.busyProgressStage = busyStage;
-        similarState.busyProgressCurrent = 4;
-        similarState.busyProgressTarget = 4;
+        if (!hasActiveSceneGeneration) {
+            similarState.busyProgressStage = busyStage;
+            similarState.busyProgressCurrent = 4;
+            similarState.busyProgressTarget = 4;
+        } else if (!String(similarState.busyProgressStage || "").trim()) {
+            similarState.busyProgressStage = busyStage;
+        }
         _ensureSimilarBusyProgressTimer();
-        _hideSimilarBusyOverlay();
+        _hideSimilarBusyOverlay({ preserveProgress: true });
         if (similarState.lastProjectSnapshot) {
             _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
         }
@@ -13254,9 +13526,15 @@ async function similarRegenerateScene(sceneId, generationMode = "image") {
         await _refreshSimilarProject();
     } catch (error) {
         showToast(`Erro ao regenerar cena: ${error.message}`, "error");
-        _clearSimilarBusyIntent();
-        _hideSimilarBusyOverlay();
+        _clearSimilarBusyIntent(sceneId);
+        _hideSimilarBusyOverlay({
+            preserveProgress: _extractSimilarActiveSceneGenerationIds(_safeSimilarTags(similarState.lastProjectSnapshot?.tags)).length > 0
+                || _getSimilarPendingBusySceneIds().length > 0,
+        });
         _refreshSimilarButtonsDisabled(false);
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
     }
 }
 
@@ -13949,6 +14227,7 @@ function resetCreateWizard(options = {}) {
     if (audioBuilder) audioBuilder.hidden = true;
     const audioBuilderTrigger = document.getElementById("script-video-audio-builder-trigger");
     if (audioBuilderTrigger) audioBuilderTrigger.classList.remove("active", "is-ready");
+    toggleMinhaVoz("script-audio-builder", false);
     const audioBuilderText = document.getElementById("script-audio-builder-text");
     if (audioBuilderText) audioBuilderText.value = "";
     const audioBuilderCharCount = document.getElementById("script-audio-builder-char-count");
@@ -14796,7 +15075,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "google/nano-banana/text-to-image",
         label: "Nano Banana",
-        defaultCostLabel: "6 créditos",
+        defaultCostLabel: "3 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14806,7 +15085,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "google/nano-banana-pro/text-to-image",
         label: "Nano Banana Pro",
-        defaultCostLabel: "8 créditos",
+        defaultCostLabel: "5 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14816,7 +15095,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "bytedance/seedream-v5.0-lite/sequential",
         label: "Mega 5.0 Anime",
-        defaultCostLabel: "8 créditos",
+        defaultCostLabel: "7 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14826,7 +15105,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "bytedance/seedream-v4.5",
         label: "Mega 5.0 Real",
-        defaultCostLabel: "9 créditos",
+        defaultCostLabel: "8 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14836,7 +15115,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "openai/gpt-image-1/text-to-image",
         label: "GPT Image",
-        defaultCostLabel: "11 créditos",
+        defaultCostLabel: "7 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -17000,13 +17279,13 @@ function updateScriptVideoAreaVisibility() {
         audioVideoTrigger.classList.toggle("has-file", hasManualAudio && scriptUserAudioSourceKind === "video");
         audioVideoTrigger.disabled = scriptUserAudioVideoExtracting;
     }
-    if (builderHeading) {
-        builderHeading.textContent = hasVideo ? "Criar áudio para este vídeo" : "Criar áudio com voz IA";
+    const builderCopy = document.getElementById("script-audio-builder-copy");
+    if (builderCopy) builderCopy.hidden = !hasVideo;
+    if (builderHeading && hasVideo) {
+        builderHeading.textContent = "Criar áudio para este vídeo";
     }
-    if (builderSubheading) {
-        builderSubheading.textContent = hasVideo
-            ? "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar."
-            : "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio para usar neste projeto.";
+    if (builderSubheading && hasVideo) {
+        builderSubheading.textContent = "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.";
     }
 }
 
@@ -27021,17 +27300,18 @@ function selectPersona(el, prefix) {
     }
 }
 
-function toggleMinhaVoz(prefix) {
+function toggleMinhaVoz(prefix, forceOpen = null) {
     const btn = document.getElementById(`${prefix}-minha-voz-btn`);
     const panel = document.getElementById(`${prefix}-persona-panel`);
-    const isOpen = !panel.classList.contains('hidden');
-    
-    if (isOpen) {
-        panel.classList.add('hidden');
-        btn.classList.remove('active');
-    } else {
-        panel.classList.remove('hidden');
-        btn.classList.add('active');
+    if (!btn || !panel) return;
+
+    const shouldOpen = typeof forceOpen === "boolean"
+        ? forceOpen
+        : panel.classList.contains("hidden");
+
+    panel.classList.toggle("hidden", !shouldOpen);
+    btn.classList.toggle("active", shouldOpen);
+    if (shouldOpen) {
         loadVoiceProfiles();
     }
 }
@@ -27587,6 +27867,9 @@ function _getPlanBillingDetails(plan, billingPeriod = _creditBillingPeriod) {
 
 function _getDisplayUnitPrice(row) {
     const unitSuffix = row.unit === "second" ? "s" : "img";
+    if (Number(row.usdPerUnit || 0) <= 0) {
+        return `Grátis/${unitSuffix}`;
+    }
     if (_creditDisplayCurrency === "brl") {
         return `${_formatBrl(row.brlPerUnit || 0)}/${unitSuffix}`;
     }
@@ -27756,13 +28039,16 @@ function _renderPricingComparisonSections() {
             const planCells = plans.map((plan) => {
                 const usage = row.plans?.[plan.code] || {};
                 const billing = _getPlanBillingDetails(plan);
+                const isUnlimited = !!usage.unlimited;
                 const baseCount = parseInt(usage.includedUnits || 0, 10) || 0;
-                const count = String(plan.code || "free") === "free"
+                const count = isUnlimited
+                    ? null
+                    : String(plan.code || "free") === "free"
                     ? baseCount
                     : baseCount * (billing.comparisonMultiplier || 1);
                 return `
                     <td class="pricing-model-value-cell" data-theme="${plan.accent || plan.code || 'free'}">
-                        <strong>${_formatComparisonUnits(row, count)}</strong>
+                        <strong>${isUnlimited ? "Ilimitado" : _formatComparisonUnits(row, count)}</strong>
                         <span>${_getDisplayUnitPrice(row)}</span>
                     </td>
                 `;

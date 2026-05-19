@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260519-01">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260519-05">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 477;
+        var REQUIRED_VER = 484;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1196,7 +1196,7 @@
             </div>
             <div class="modal-header">
                 <h3 id="create-modal-title">Novo projeto de vídeo</h3>
-                <button class="modal-close" onclick="closeModal('modal-new-project')" type="button">&times;</button>
+                <button class="modal-close" onclick="handleNewProjectModalClose()" type="button">&times;</button>
             </div>
             <div class="modal-body">
 
@@ -1239,12 +1239,12 @@
                             <strong>Imagens</strong>
                             <small>Criar imagens primeiro, antes de gerar o vídeo.</small>
                         </button>
-                        <button class="mode-selection-card" data-create-mode="series" onclick="_chooseCreateMode('series')" type="button">
+                        <button class="mode-selection-card" data-create-mode="audio" onclick="_chooseCreateMode('audio')" type="button">
                             <div class="mode-selection-icon">
-                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8"/><path d="M8 13h6"/><path d="M15 2v4"/><path d="M9 2v4"/></svg>
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v10"/><path d="M16 5v8"/><path d="M8 7v6"/><path d="M6 17a6 6 0 0 0 12 0"/><path d="M9 21h6"/></svg>
                             </div>
-                            <strong>Séries</strong>
-                            <small>Crie filmes completos, séries e dramas longos com personagens, storyboard e timeline.</small>
+                            <strong>Áudio</strong>
+                            <small>Criar áudio primeiro, antes de gerar o vídeo.</small>
                         </button>
                     </div>
                 </div>
@@ -1297,7 +1297,7 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Vídeo realista com Cria 3.0 speed, Ultra High 1.0, Mega 2.0 Ultra e Avatar 3.1 Plus</small>
+                                <small>Vídeo realista com Pro 3.1, Cria 3.0 speed, Ultra High 1.0, Mega 2.0 Ultra e Avatar 3.1 Plus</small>
                                 <span class="credit-badge credit-high">Custo: Alto</span>
                             </div>
                         </div>
@@ -1478,6 +1478,10 @@
                                 <button class="engine-option selected" data-value="wan2" type="button">
                                     <strong>Ultra High 1.0</strong>
                                     <small class="engine-option-desc">Cria vídeo com áudio nativo e sem restrição.</small>
+                                </button>
+                                <button class="engine-option" data-value="viduq3" type="button">
+                                    <strong>Pro 3.1</strong>
+                                    <small class="engine-option-desc">Start/end com 540p nativo e duração de 1 a 16 segundos.</small>
                                 </button>
                                 <button class="engine-option" data-value="grok" type="button">
                                     <strong>Cria 3.0 speed</strong>
@@ -1722,51 +1726,9 @@
 
                                 <div id="script-video-audio-builder" class="script-video-audio-builder" hidden>
                                     <div class="script-video-audio-builder-head">
-                                        <div>
+                                        <div id="script-audio-builder-copy">
                                             <strong id="script-audio-builder-heading">Criar áudio com voz IA</strong>
                                             <small id="script-audio-builder-subheading">Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.</small>
-                                        </div>
-                                        <button class="btn-icon-sm" type="button" onclick="toggleScriptAudioBuilder(false)" title="Fechar" aria-label="Fechar">&times;</button>
-                                    </div>
-
-                                    <div class="script-video-audio-builder-actions">
-                                        <button class="persona-record-btn script-audio-record-btn" id="script-audio-record-btn" type="button" onclick="toggleScriptAudioDictationRecording()">
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                                            <span id="script-audio-record-btn-label">Gravar e transcrever</span>
-                                        </button>
-                                    </div>
-
-                                    <div id="script-audio-dictation-status" class="script-audio-builder-inline-status" hidden></div>
-
-                                    <div class="form-group script-video-audio-text-group">
-                                        <label for="script-audio-builder-text">Texto que será falado</label>
-                                        <textarea id="script-audio-builder-text" class="wizard-textarea" rows="6" maxlength="20000" placeholder="Grave, cole ou escreva a narração aqui..." oninput="syncScriptAudioBuilderDraft()"></textarea>
-                                    </div>
-                                    <div class="script-actions">
-                                        <span class="char-count"><span id="script-audio-builder-char-count">0</span> / 20.000</span>
-                                    </div>
-
-                                    <div class="script-audio-builder-quick-controls">
-                                        <div class="form-group script-audio-builder-option-group">
-                                            <label>Tom da narração</label>
-                                            <div class="pause-options script-audio-builder-option-row" id="script-audio-builder-tone-options">
-                                                <button class="pause-option selected" data-value="informativo" type="button">Informativo</button>
-                                                <button class="pause-option" data-value="inspirador" type="button">Inspirador</button>
-                                                <button class="pause-option" data-value="descontraido" type="button">Descontraído</button>
-                                                <button class="pause-option" data-value="profundo" type="button">Profundo</button>
-                                                <button class="pause-option" data-value="dramatico" type="button">Dramático</button>
-                                                <button class="pause-option" data-value="motivacional" type="button">Motivacional</button>
-                                            </div>
-                                        </div>
-
-                                        <div class="form-group script-audio-builder-option-group">
-                                            <label>Pausas</label>
-                                            <div class="pause-options script-audio-builder-option-row" id="script-audio-builder-pause-options">
-                                                <button class="pause-option selected" data-value="normal" type="button">Normal</button>
-                                                <button class="pause-option" data-value="relaxed" type="button">Suaves</button>
-                                                <button class="pause-option" data-value="deep" type="button">Profundas</button>
-                                            </div>
-                                            <small class="pause-hint">Define o respiro e o ritmo antes de gerar o áudio.</small>
                                         </div>
                                     </div>
 
@@ -1870,6 +1832,47 @@
                                                     <div class="script-audio-direction-note">As instruções acima refinam a interpretação sem trocar o texto falado.</div>
                                                 </div>
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="script-video-audio-builder-actions">
+                                        <button class="persona-record-btn script-audio-record-btn" id="script-audio-record-btn" type="button" onclick="toggleScriptAudioDictationRecording()">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                            <span id="script-audio-record-btn-label">Gravar e transcrever</span>
+                                        </button>
+                                    </div>
+
+                                    <div id="script-audio-dictation-status" class="script-audio-builder-inline-status" hidden></div>
+
+                                    <div class="form-group script-video-audio-text-group">
+                                        <label for="script-audio-builder-text">Texto que será falado</label>
+                                        <textarea id="script-audio-builder-text" class="wizard-textarea" rows="6" maxlength="20000" placeholder="Grave, cole ou escreva a narração aqui..." oninput="syncScriptAudioBuilderDraft()"></textarea>
+                                    </div>
+                                    <div class="script-actions">
+                                        <span class="char-count"><span id="script-audio-builder-char-count">0</span> / 20.000</span>
+                                    </div>
+
+                                    <div class="script-audio-builder-quick-controls">
+                                        <div class="form-group script-audio-builder-option-group">
+                                            <label>Tom da narração</label>
+                                            <div class="pause-options script-audio-builder-option-row" id="script-audio-builder-tone-options">
+                                                <button class="pause-option selected" data-value="informativo" type="button">Informativo</button>
+                                                <button class="pause-option" data-value="inspirador" type="button">Inspirador</button>
+                                                <button class="pause-option" data-value="descontraido" type="button">Descontraído</button>
+                                                <button class="pause-option" data-value="profundo" type="button">Profundo</button>
+                                                <button class="pause-option" data-value="dramatico" type="button">Dramático</button>
+                                                <button class="pause-option" data-value="motivacional" type="button">Motivacional</button>
+                                            </div>
+                                        </div>
+
+                                        <div class="form-group script-audio-builder-option-group">
+                                            <label>Pausas</label>
+                                            <div class="pause-options script-audio-builder-option-row" id="script-audio-builder-pause-options">
+                                                <button class="pause-option selected" data-value="normal" type="button">Normal</button>
+                                                <button class="pause-option" data-value="relaxed" type="button">Suaves</button>
+                                                <button class="pause-option" data-value="deep" type="button">Profundas</button>
+                                            </div>
+                                            <small class="pause-hint">Define o respiro e o ritmo antes de gerar o áudio.</small>
                                         </div>
                                     </div>
 
@@ -1984,7 +1987,7 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Vídeo realista com Cria 3.0 speed, Ultra High 1.0, Mega 2.0 Ultra e Avatar 3.1 Plus</small>
+                                <small>Vídeo realista com Pro 3.1, Cria 3.0 speed, Ultra High 1.0, Mega 2.0 Ultra e Avatar 3.1 Plus</small>
                                 <span class="credit-badge credit-high">Custo: Alto</span>
                             </div>
                         </div>
@@ -2219,6 +2222,10 @@
                                 <button class="engine-option selected" data-value="wan2" type="button">
                                     <strong>Ultra High 1.0</strong>
                                     <small class="engine-option-desc">Cria vídeo com áudio nativo e sem restrição.</small>
+                                </button>
+                                <button class="engine-option" data-value="viduq3" type="button">
+                                    <strong>Pro 3.1</strong>
+                                    <small class="engine-option-desc">Start/end com 540p nativo e duração de 1 a 16 segundos.</small>
                                 </button>
                                 <button class="engine-option" data-value="grok" type="button">
                                     <strong>Cria 3.0 speed</strong>
@@ -2503,8 +2510,9 @@
                         </div>
 
                         <div id="similar-engine-options" class="engine-options">
+                            <button class="similar-scene-engine-btn similar-generation-engine-btn selected" data-value="viduq3" type="button" title="Pro 3.1" aria-label="Pro 3.1">Pro 3.1</button>
                             <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="grok" type="button" title="Cria Speed 2.5 (Grok)" aria-label="Cria Speed 2.5 (Grok)">Cria 2.5</button>
-                            <button class="similar-scene-engine-btn similar-generation-engine-btn selected" data-value="wan2" type="button" title="Ultra High 3.0" aria-label="Ultra High 3.0">Ultra 3.0</button>
+                            <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="wan2" type="button" title="Ultra High 3.0" aria-label="Ultra High 3.0">Ultra 3.0</button>
                             <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="seedance" type="button" title="Mega 2.0 Ultra" aria-label="Mega 2.0 Ultra">Mega 2.0</button>
                         </div>
 
@@ -2522,7 +2530,7 @@
                     <div class="workflow-panel-head">
                         <div>
                             <h3 class="wizard-question">Criar vídeo com workflow</h3>
-                            <p class="wizard-hint">Arraste os blocos, conecte referências e rode o motor Seedance 2.0.</p>
+                            <p class="wizard-hint">Arraste os blocos, conecte referências e rode o motor de vídeo desejado.</p>
                         </div>
                         <div class="workflow-head-actions">
                             <button class="btn btn-secondary btn-sm workflow-head-btn" id="workflow-new-blank" type="button" title="Novo workflow" aria-label="Novo workflow">
@@ -2622,6 +2630,7 @@
                                     <label>Motor de IA</label>
                                     <select id="workflow-engine" class="input workflow-input">
                                         <option value="wan2" selected>Ultra High 1.0</option>
+                                        <option value="viduq3">Pro 3.1</option>
                                         <option value="grok">Cria 3.0 speed</option>
                                         <option value="seedance">Mega 2.0 Ultra</option>
                                         <option value="avatar31">Avatar 3.1 Plus</option>
@@ -2639,6 +2648,7 @@
                                     <label>Resolução</label>
                                     <select id="workflow-resolution" class="input workflow-input">
                                         <option value="480p">480p</option>
+                                        <option value="540p">540p</option>
                                         <option value="720p" selected>720p</option>
                                         <option value="1080p">1080p</option>
                                     </select>
@@ -3451,6 +3461,10 @@
                                 <button class="engine-option selected" data-value="wan2" type="button">
                                     <strong>Ultra High 1.0</strong>
                                     <small class="engine-option-desc">Cria vídeo com áudio nativo e sem restrição.</small>
+                                </button>
+                                <button class="engine-option" data-value="viduq3" type="button">
+                                    <strong>Pro 3.1</strong>
+                                    <small class="engine-option-desc">Start/end com 540p nativo e duração de 1 a 16 segundos.</small>
                                 </button>
                                 <button class="engine-option" data-value="grok" type="button">
                                     <strong>Cria 3.0 speed</strong>
@@ -4390,8 +4404,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260519-01"></script>
-    <script src="/video/static/pwa.js?v=20260519-01"></script>
+    <script src="/video/static/app.js?v=20260519-05"></script>
+    <script src="/video/static/pwa.js?v=20260519-05"></script>
 </body>
 </html>
 

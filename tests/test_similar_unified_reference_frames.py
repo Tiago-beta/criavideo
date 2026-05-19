@@ -6,9 +6,13 @@ from unittest.mock import AsyncMock, patch
 
 import app.tasks.similar_tasks as similar_tasks
 from app.routers.video import (
+    _extract_similar_reference_frame_map,
     _extract_similar_reference_end_frame_map,
+    _extract_similar_reference_text_detected_map,
+    _extract_similar_reference_text_excerpt_map,
     _ensure_similar_unified_boundary_frame_paths,
     _extract_similar_unified_boundary_frame_paths,
+    _promote_similar_scene_reference_frame,
     _serialize_project_scene,
 )
 from app.tasks.similar_tasks import (
@@ -97,12 +101,42 @@ class TestSimilarUnifiedReferenceFrames(unittest.TestCase):
                 {"0": self.start_path},
                 {"0": self.end_path},
                 {},
+                {},
+                {},
                 {"0": 5.0},
             )
 
         self.assertEqual(payload["reference_frame_start_path"], self.start_path)
         self.assertEqual(payload["reference_frame_end_path"], self.end_path)
         self.assertEqual(payload["reference_frame_urls"], ["/media/start.jpg", "/media/end.jpg"])
+
+    def test_promote_scene_reference_replaces_base_and_previous_boundary(self):
+        promoted_path = str(Path(self.temp_dir.name) / "scene-1-clean.jpg")
+        Path(promoted_path).write_bytes(b"clean")
+
+        tags = {
+            "similar_reference_frames": {
+                "0": self.start_path,
+                "1": self.fallback_path,
+            },
+            "similar_reference_end_frames": {
+                "0": self.end_path,
+            },
+            "similar_reference_frame_text_detected": {
+                "1": True,
+            },
+            "similar_reference_frame_text_excerpt": {
+                "1": "DIY Double C Shelf - Easy Build",
+            },
+        }
+        scene = SimpleNamespace(scene_index=1, image_path=promoted_path)
+
+        _promote_similar_scene_reference_frame(tags, scene)
+
+        self.assertEqual(_extract_similar_reference_frame_map(tags)["1"], promoted_path)
+        self.assertEqual(_extract_similar_reference_end_frame_map(tags)["0"], promoted_path)
+        self.assertNotIn("1", _extract_similar_reference_text_detected_map(tags))
+        self.assertNotIn("1", _extract_similar_reference_text_excerpt_map(tags))
 
 
 class TestSimilarUnifiedBoundaryFallbacks(unittest.IsolatedAsyncioTestCase):
