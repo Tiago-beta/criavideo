@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v493 loaded");
+console.log("[CriaVideo] app.js v494 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28518,6 +28518,9 @@ let _editorTimelineScrub = null;
 let _editorMediaLayerDrag = null;
 let _editorTextOverlayDrag = null;
 let _editorTextOverlayIgnoreClick = false;
+let _editorInlineTextEditId = "";
+let _editorInlineTextEditPendingFocus = "";
+let _editorMobileTrackVolumeOpen = "";
 let _editorMusicPreviewAudio = null;
 let _editorMusicPreviewObjectUrl = "";
 let _editorMusicPreviewSourceKey = "";
@@ -28558,7 +28561,7 @@ const _EDITOR_TIMELINE_MAX_ZOOM = 12;
 const _EDITOR_TIMELINE_ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12];
 const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
 const _EDITOR_TIMELINE_LABEL_WIDTH = 40;
-const _EDITOR_TIMELINE_MOBILE_LABEL_WIDTH = 40;
+const _EDITOR_TIMELINE_MOBILE_LABEL_WIDTH = 34;
 const _EDITOR_TIMELINE_RIGHT_GUTTER = 16;
 const _EDITOR_SEGMENT_SPEED_MIN = 0.25;
 const _EDITOR_SEGMENT_SPEED_MAX = 4;
@@ -29550,10 +29553,12 @@ function _editorRefreshAspectControls() {
     const btn = document.getElementById("editor-aspect-btn");
     if (!btn) return;
 
-    const label = normalized === "source" ? `Auto ${resolved}` : resolved;
+    const label = normalized === "source" ? "Auto" : "";
     const title = normalized === "source"
         ? `Proporção automática (${resolved})`
         : `Proporção ${resolved}`;
+    const valueEl = btn.querySelector(".editor-aspect-icon-value");
+    if (valueEl) valueEl.textContent = resolved;
     btn.dataset.aspectLabel = label;
     btn.classList.toggle("auto", normalized === "source");
     btn.title = title;
@@ -34574,6 +34579,9 @@ async function openEditor(projectId, options = {}) {
         _editor.playbackRate = 1;
         _editor.mobileControlMode = "tools";
         _editor._virtualPlaybackActive = false;
+        _editorInlineTextEditId = "";
+        _editorInlineTextEditPendingFocus = "";
+        _editorMobileTrackVolumeOpen = "";
         _editorStopVirtualTimelinePlayback();
         _editorResetSourceWaveformState();
         _editorCloseAIMusicModal(true);
@@ -35269,6 +35277,7 @@ function _editorDrawOverlays(t) {
 
     // Draw texts
     const selectedText = _editorGetSelectedTextItem();
+    const inlineEditingTextId = String(_editorInlineTextEditId || "");
     let selectedTextBounds = null;
     for (const txt of _editor.texts) {
         if (t >= txt.startTime && t <= txt.endTime) {
@@ -35288,7 +35297,10 @@ function _editorDrawOverlays(t) {
             ctx.shadowOffsetY = 1;
             const x = (txt.x / 100) * canvas.width;
             const y = (txt.y / 100) * canvas.height;
-            ctx.fillText(txt.content, x, y);
+            const isInlineEditing = inlineEditingTextId && String(txt.id) === inlineEditingTextId;
+            if (!isInlineEditing) {
+                ctx.fillText(txt.content, x, y);
+            }
             ctx.shadowColor = "transparent";
 
             if (_editorIsMobileViewport() && _editor.activeTool === "text" && selectedText && String(selectedText.id) === String(txt.id)) {
@@ -35326,6 +35338,8 @@ function _editorDrawOverlays(t) {
         ctx.stroke();
         ctx.restore();
     }
+
+    _editorRenderInlineTextEditor(selectedText, selectedTextBounds);
 
     // Draw subtitles
     for (const sub of _editor.subtitles) {
@@ -35499,6 +35513,127 @@ function _editorGetTextCanvasBounds(item, canvas, ctx) {
     };
 }
 
+function _editorShouldShowInlineTextEditor(item = null) {
+    const selectedText = item || _editorGetSelectedTextItem();
+    return Boolean(
+        selectedText
+        && _editorIsMobileViewport()
+        && _editor.activeTool === "text"
+        && String(_editorInlineTextEditId || "") === String(selectedText.id || "")
+    );
+}
+
+function _editorFocusInlineTextEditor(selectAll = false) {
+    const input = document.querySelector("#editor-inline-text-host .editor-inline-text-editor");
+    if (!input) return;
+    try {
+        input.focus({ preventScroll: true });
+    } catch {
+        input.focus();
+    }
+    if (selectAll && typeof input.select === "function") {
+        input.select();
+        return;
+    }
+    if (typeof input.setSelectionRange === "function") {
+        const len = String(input.value || "").length;
+        input.setSelectionRange(len, len);
+    }
+}
+
+function _editorRenderInlineTextEditor(item = null, bounds = null) {
+    const host = document.getElementById("editor-inline-text-host");
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!host || !canvas) return;
+
+    const selectedText = item || _editorGetSelectedTextItem();
+    if (!_editorShouldShowInlineTextEditor(selectedText)) {
+        if (host.innerHTML) {
+            host.innerHTML = "";
+        }
+        host.hidden = true;
+        return;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx || !selectedText) {
+        host.innerHTML = "";
+        host.hidden = true;
+        return;
+    }
+
+    const resolvedBounds = bounds || _editorGetTextCanvasBounds(selectedText, canvas, ctx);
+    const scale = canvas.height / 720;
+    const width = Math.max(72, resolvedBounds.right - resolvedBounds.left);
+    const height = Math.max(32, resolvedBounds.bottom - resolvedBounds.top);
+    const left = Math.max(4, Math.min(canvas.width - width - 4, resolvedBounds.left));
+    const top = Math.max(4, Math.min(canvas.height - height - 4, resolvedBounds.top));
+
+    let input = host.querySelector(".editor-inline-text-editor");
+    const currentId = String(selectedText.id || "");
+    if (!input || String(input.dataset.textId || "") !== currentId) {
+        host.innerHTML = '<input class="editor-inline-text-editor" type="text" spellcheck="false" autocomplete="off" autocapitalize="sentences">';
+        input = host.querySelector(".editor-inline-text-editor");
+        input.addEventListener("pointerdown", (event) => {
+            event.stopPropagation();
+        });
+        input.addEventListener("click", (event) => {
+            event.stopPropagation();
+        });
+        input.addEventListener("focus", () => {
+            _editorInlineTextEditId = String(input.dataset.textId || "");
+        });
+        input.addEventListener("blur", () => {
+            if (String(_editorInlineTextEditId || "") !== String(input.dataset.textId || "")) return;
+            _editorInlineTextEditId = "";
+            _editorInlineTextEditPendingFocus = "";
+            const video = document.getElementById("editor-video");
+            _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+        });
+        input.addEventListener("keydown", (event) => {
+            event.stopPropagation();
+            if (event.key === "Enter") {
+                event.preventDefault();
+                input.blur();
+                return;
+            }
+            if (event.key === "Escape") {
+                event.preventDefault();
+                _editorInlineTextEditId = "";
+                _editorInlineTextEditPendingFocus = "";
+                input.blur();
+            }
+        });
+        input.addEventListener("input", () => {
+            _editorUpdateTextProp(input._editorTextId, "content", input.value);
+        });
+    }
+
+    input._editorTextId = selectedText.id;
+    input.dataset.textId = currentId;
+    input.placeholder = "Digite aqui";
+    input.style.left = `${left}px`;
+    input.style.top = `${top}px`;
+    input.style.width = `${width}px`;
+    input.style.height = `${height}px`;
+    input.style.lineHeight = `${height}px`;
+    input.style.fontSize = `${Math.max(16, Number(selectedText.fontSize || 36) * scale)}px`;
+    input.style.fontFamily = String(selectedText.fontFamily || "Manrope, sans-serif");
+    input.style.fontWeight = selectedText.bold ? "700" : "500";
+    input.style.fontStyle = selectedText.italic ? "italic" : "normal";
+    input.style.color = String(selectedText.color || "#ffffff");
+    host.hidden = false;
+
+    if (document.activeElement !== input && input.value !== String(selectedText.content || "")) {
+        input.value = String(selectedText.content || "");
+    }
+
+    if (_editorInlineTextEditPendingFocus && _editorInlineTextEditPendingFocus === currentId) {
+        _editorInlineTextEditPendingFocus = "";
+        requestAnimationFrame(() => _editorFocusInlineTextEditor(true));
+    }
+}
+
 function _editorResolveTextOverlayInteraction(clientX, clientY) {
     const canvas = document.getElementById("editor-overlay-canvas");
     if (!canvas || !_editor.texts.length) return null;
@@ -35544,6 +35679,8 @@ function _editorStartTextOverlayDrag(event) {
     const interaction = _editorResolveTextOverlayInteraction(event.clientX, event.clientY);
     if (!interaction?.item) return false;
 
+    _editorInlineTextEditId = "";
+    _editorInlineTextEditPendingFocus = "";
     _editorSelectText(interaction.item.id);
     const canvas = document.getElementById("editor-overlay-canvas");
     if (!canvas) return false;
@@ -35639,8 +35776,22 @@ function _editorHandleOverlayClick(event) {
     if (hitText) {
         event.preventDefault();
         event.stopPropagation();
+        const alreadySelected = String(_editor.selectedClip.id || "") === String(hitText.id);
         _editorSelectText(hitText.id);
+        if (_editorIsMobileViewport() && alreadySelected) {
+            _editorInlineTextEditId = String(hitText.id);
+            _editorInlineTextEditPendingFocus = String(hitText.id);
+            const video = document.getElementById("editor-video");
+            _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+        }
         return;
+    }
+
+    if (_editorInlineTextEditId) {
+        _editorInlineTextEditId = "";
+        _editorInlineTextEditPendingFocus = "";
+        const video = document.getElementById("editor-video");
+        _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
     }
 
     const hitSubtitle = _editorFindSubtitleAtCanvasPoint(event.clientX, event.clientY);
@@ -35993,6 +36144,13 @@ window._editorApplyTransitionTypeToAllVideoSlots = _editorApplyTransitionTypeToA
 
 // ---------- Tool selection ----------
 function _editorSelectTool(toolName) {
+    if (toolName !== "text") {
+        _editorInlineTextEditId = "";
+        _editorInlineTextEditPendingFocus = "";
+    }
+    if (toolName !== "trim") {
+        _editorMobileTrackVolumeOpen = "";
+    }
     _editor.activeTool = toolName;
     document.querySelectorAll(".editor-tool-btn").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.tool === toolName);
@@ -36027,6 +36185,9 @@ function _editorSelectTool(toolName) {
     }
 
     _editorApplyMobileControlMode();
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
 }
 
 function _editorGetApprovedSmartCuts() {
@@ -36718,33 +36879,57 @@ function _editorSubtitleEditForm() {
 // ---------- Text actions ----------
 function _editorBuildTrackLabelMarkup(row) {
     const iconHtml = `<span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>`;
-    return iconHtml;
-}
-
-function _editorBuildTrackInlineVolumeMarkup(row) {
-    if (!_editorIsMobileViewport() || (row.track !== "video" && row.track !== "audio")) {
-        return "";
+    const showMobileVolume = _editorIsMobileViewport() && (row.track === "video" || row.track === "audio");
+    if (!showMobileVolume) {
+        return iconHtml;
     }
 
     const volumePct = Math.max(0, Math.min(100, Math.round(_editorGetTrackMasterVolumePercent(row.track))));
     const volumeTitle = `Volume da faixa ${String(row.label || row.track || "").toLowerCase()}`;
+    const mutedClass = volumePct <= 0 ? " muted" : "";
+    const openClass = _editorMobileTrackVolumeOpen === row.track ? " open" : "";
+
     return `
-        <div class="editor-track-inline-volume" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
-            <input
-                class="editor-track-inline-volume-slider${volumePct <= 0 ? " muted" : ""}"
-                type="range"
-                min="0"
-                max="100"
-                value="${volumePct}"
+        ${iconHtml}
+        <span class="editor-track-label-volume-wrap${openClass}${mutedClass}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
+            <button
+                class="editor-track-label-volume${mutedClass}"
+                type="button"
                 title="${esc(volumeTitle)}"
                 aria-label="${esc(volumeTitle)}"
-                onpointerdown="event.stopPropagation()"
-                onclick="event.stopPropagation()"
-                oninput="_editorSetTrackVolumeFromTrim('${row.track}', this.value)"
+                aria-expanded="${_editorMobileTrackVolumeOpen === row.track ? "true" : "false"}"
+                onclick="event.stopPropagation();_editorToggleMobileTrackVolume('${row.track}')"
             >
-        </div>
+                ${_editorTimelineVolumeIcon(row.track)}
+            </button>
+            <span class="editor-track-label-volume-popover${openClass}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
+                <input
+                    class="editor-track-label-slider${mutedClass}"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value="${volumePct}"
+                    title="${esc(volumeTitle)}"
+                    aria-label="${esc(volumeTitle)}"
+                    onpointerdown="event.stopPropagation()"
+                    onclick="event.stopPropagation()"
+                    oninput="_editorSetTrackVolumeFromTrim('${row.track}', this.value); this.closest('.editor-track-label-volume-wrap')?.classList.toggle('muted', (parseInt(this.value, 10) || 0) <= 0); this.closest('.editor-track-label-volume-wrap')?.querySelector('.editor-track-label-volume')?.classList.toggle('muted', (parseInt(this.value, 10) || 0) <= 0);"
+                >
+            </span>
+        </span>
     `;
 }
+
+function _editorBuildTrackInlineVolumeMarkup(row) {
+    return "";
+}
+
+function _editorToggleMobileTrackVolume(track) {
+    const nextTrack = String(track || "");
+    _editorMobileTrackVolumeOpen = _editorMobileTrackVolumeOpen === nextTrack ? "" : nextTrack;
+    _editorRenderTimeline();
+}
+window._editorToggleMobileTrackVolume = _editorToggleMobileTrackVolume;
 
 function _editorAddText() {
     _editorSaveState();
@@ -36757,6 +36942,8 @@ function _editorAddText() {
     };
     _editor.texts.push(newText);
     _editor.selectedClip = { kind: "text", id: String(newText.id) };
+    _editorInlineTextEditId = String(newText.id);
+    _editorInlineTextEditPendingFocus = String(newText.id);
     _editorRefreshQuickActions();
     if (_editor.activeTool !== "text") {
         _editorSelectTool("text");
@@ -36764,6 +36951,8 @@ function _editorAddText() {
         _editorRenderProps();
     }
     _editorRenderTimeline();
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderMobileStagePanel();
 }
 window._editorAddText = _editorAddText;
 
@@ -36777,6 +36966,9 @@ function _editorSelectText(id) {
         _editorRenderProps();
     }
     _editorRenderTimeline();
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderMobileStagePanel();
 }
 window._editorSelectText = _editorSelectText;
 
@@ -36786,9 +36978,16 @@ function _editorDeleteText(id) {
     if (_editor.selectedClip.kind === "text" && _editor.selectedClip.id === String(id)) {
         _editor.selectedClip = { kind: "", id: "" };
     }
+    if (String(_editorInlineTextEditId || "") === String(id)) {
+        _editorInlineTextEditId = "";
+        _editorInlineTextEditPendingFocus = "";
+    }
     _editorRefreshQuickActions();
     _editorRenderProps();
     _editorRenderTimeline();
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderMobileStagePanel();
 }
 window._editorDeleteText = _editorDeleteText;
 
@@ -38406,7 +38605,7 @@ function _editorRenderTimeline() {
                 <div class="editor-track-label">
                     ${_editorBuildTrackLabelMarkup(row)}
                 </div>
-                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px;${leadGutter ? `margin-left:${leadGutter}px;` : ""}">${_editorBuildTrackInlineVolumeMarkup(row)}${row.clipsHtml || ""}</div>
+                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px;${leadGutter ? `margin-left:${leadGutter}px;` : ""}">${row.clipsHtml || ""}</div>
             </div>
         `;
     }).join("");
@@ -40014,6 +40213,13 @@ function _bindEditorEvents() {
         const tool = btn.dataset.tool;
         if (!tool) return;
         btn.addEventListener("click", () => _editorSelectTool(tool));
+    });
+
+    document.addEventListener("click", (event) => {
+        if (!_editorMobileTrackVolumeOpen) return;
+        if (event.target.closest(".editor-track-label-volume-wrap")) return;
+        _editorMobileTrackVolumeOpen = "";
+        _editorRenderTimeline();
     });
 
     document.getElementById("editor-timeline-tracks")?.addEventListener("pointerdown", (e) => {

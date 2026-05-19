@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260519-14">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260519-15">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 493;
+        var REQUIRED_VER = 494;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -392,6 +392,7 @@
                                         <video id="editor-video" playsinline webkit-playsinline preload="auto" muted></video>
                                         <div id="editor-media-layer-host"></div>
                                         <canvas id="editor-overlay-canvas"></canvas>
+                                        <div class="editor-inline-text-host" id="editor-inline-text-host" hidden></div>
                                     </div>
                                     <!-- Play controls -->
                                     <div class="editor-play-controls">
@@ -402,7 +403,9 @@
                                         <span class="editor-time-sep">/</span>
                                         <span class="editor-time" id="editor-time-total">00:00</span>
                                         <button class="editor-aspect-icon-btn" id="editor-aspect-btn" type="button" title="Proporção automática" aria-label="Proporção automática">
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 9h8"/><path d="M8 15h5"/></svg>
+                                            <span class="editor-aspect-icon-display" aria-hidden="true">
+                                                <span class="editor-aspect-icon-value">16:9</span>
+                                            </span>
                                         </button>
                                     </div>
                                     <div class="editor-mobile-stage-panel" id="editor-mobile-stage-panel" hidden></div>
@@ -4417,8 +4420,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260519-14"></script>
-    <script src="/video/static/pwa.js?v=20260519-14"></script>
+    <script src="/video/static/app.js?v=20260519-15"></script>
+    <script src="/video/static/pwa.js?v=20260519-15"></script>
 </body>
 </html>
 
