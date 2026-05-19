@@ -1046,19 +1046,31 @@ def _extract_existing_similar_paths(paths: list[str] | tuple[str, ...] | str | N
     return ordered_paths
 
 
-def _ensure_similar_no_text_instruction(prompt_text: str) -> str:
+def _ensure_similar_no_text_instruction(prompt_text: str, visible_text_excerpt: object = "") -> str:
     base_prompt = str(prompt_text or "").strip()
     if not base_prompt:
         return base_prompt
 
+    detected_text = _normalize_similar_visible_text_excerpt(visible_text_excerpt)
+    detected_text_instruction = ""
+    if detected_text:
+        detected_text_instruction = (
+            "TEXTO DETECTADO NAS REFERENCIAS (OBRIGATORIO): remova integralmente qualquer escrita visivel ligada a "
+            f'"{detected_text}", preenchendo a area com material, fundo e textura coerentes, sem gerar texto novo.'
+        )
+
     lowered = base_prompt.lower()
     if any(marker in lowered for marker in _SIMILAR_NO_TEXT_MARKERS):
+        if detected_text_instruction and detected_text.lower() not in lowered:
+            return f"{base_prompt}\n\n{detected_text_instruction}".strip()
         return base_prompt
 
     instruction = (
         "SEM TEXTO NA TELA (OBRIGATORIO): remova qualquer texto, legenda, logotipo, marca d'agua, letreiro, rotulo, "
         "embalagem com escrita ou palavra visivel que apareca nas referencias. O video final deve sair sem nada escrito na tela."
     )
+    if detected_text_instruction:
+        return f"{base_prompt}\n\n{instruction}\n\n{detected_text_instruction}".strip()
     return f"{base_prompt}\n\n{instruction}".strip()
 
 
@@ -1683,6 +1695,121 @@ def _extract_scene_prompt_from_content(content: object) -> str:
     return candidate
 
 
+def _coerce_scene_analysis_payload(content: object) -> dict[str, object]:
+    if isinstance(content, dict):
+        return content
+
+    if isinstance(content, list):
+        for item in content:
+            payload = _coerce_scene_analysis_payload(item)
+            if payload:
+                return payload
+        return {}
+
+    if hasattr(content, "model_dump") and callable(getattr(content, "model_dump")):
+        try:
+            dumped = content.model_dump()
+        except Exception:
+            dumped = None
+        if isinstance(dumped, dict):
+            return dumped
+
+    for attr in ("content", "text", "value"):
+        if hasattr(content, attr):
+            payload = _coerce_scene_analysis_payload(getattr(content, attr))
+            if payload:
+                return payload
+
+    if not isinstance(content, str):
+        return {}
+
+    candidate = content.strip()
+    if not candidate:
+        return {}
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\s*```$", "", candidate).strip()
+    if not (candidate.startswith("{") or candidate.startswith("[")):
+        return {}
+
+    try:
+        parsed = json.loads(candidate)
+    except Exception:
+        return {}
+
+    if isinstance(parsed, dict):
+        return parsed
+    if isinstance(parsed, list):
+        for item in parsed:
+            payload = _coerce_scene_analysis_payload(item)
+            if payload:
+                return payload
+    return {}
+
+
+def _coerce_scene_analysis_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "sim", "detected", "present", "found"}:
+            return True
+        if normalized in {"false", "0", "no", "nao", "não", "absent", "none", "not_found", "not found"}:
+            return False
+    return None
+
+
+def _normalize_similar_visible_text_excerpt(raw_text: object, *, limit: int = 240) -> str:
+    text = _normalize_similar_context_text(raw_text, limit=limit).strip().strip('"“”')
+    text = re.sub(r"^\s*(?:texto(?:\s+detectado)?|visible[_ ]text(?:[_ ]excerpt)?|text(?:[_ ]excerpt)?|detected[_ ]text)\s*:\s*", "", text, flags=re.IGNORECASE)
+    lowered = text.lower()
+    if lowered in {"", "none", "n/a", "na", "nenhum", "sem texto", "no text", "no visible text"}:
+        return ""
+    return text
+
+
+def _extract_scene_analysis_from_content(content: object) -> dict[str, object]:
+    prompt = _extract_scene_prompt_from_content(content)
+    payload = _coerce_scene_analysis_payload(content)
+
+    detected = False
+    excerpt = ""
+    if payload:
+        for key in (
+            "visible_text_detected",
+            "has_visible_text",
+            "text_detected",
+            "overlay_text_detected",
+            "text_removal_required",
+        ):
+            coerced = _coerce_scene_analysis_bool(payload.get(key))
+            if coerced is not None:
+                detected = coerced
+                break
+
+        for key in (
+            "visible_text_excerpt",
+            "visible_text",
+            "text_excerpt",
+            "detected_text",
+            "text_to_remove",
+        ):
+            excerpt = _normalize_similar_visible_text_excerpt(payload.get(key))
+            if excerpt:
+                break
+
+    if excerpt:
+        detected = True
+
+    return {
+        "scene_prompt": prompt,
+        "visible_text_detected": detected,
+        "visible_text_excerpt": excerpt,
+    }
+
+
 def _is_quota_exhausted_error(exc: Exception) -> bool:
     raw = str(exc or "").strip().lower()
     status_code = getattr(exc, "status_code", None)
@@ -1772,7 +1899,7 @@ async def _request_scene_prompt_from_model(
     global_context: str = "",
     spoken_context: str = "",
     spoken_language: str = "",
-) -> str:
+) -> dict[str, object]:
     instruction_text = _build_scene_analysis_instruction(
         start_time,
         end_time,
@@ -1807,7 +1934,13 @@ async def _request_scene_prompt_from_model(
                 "Nunca mantenha texto, logotipos, marcas d'água, letreiros ou legendas visíveis na recriação do vídeo. "
                 "Se houver fala inteligivel no trecho, use isso apenas para inferir intencao, emocao e timing visual da acao, sem incluir dialogo, falas entre aspas, legendas ou texto narrado no prompt final. "
                 "O audio da recriacao deve ficar restrito a som ambiente natural e diegetico, sem narracao, locucao, voz em off ou palavras faladas. "
-                + ("Retorne JSON com chave 'scene_prompt'." if structured else "Retorne apenas o prompt final em um único parágrafo, sem JSON e sem marcadores.")
+                + (
+                    "Retorne JSON com as chaves 'scene_prompt', 'visible_text_detected' e 'visible_text_excerpt'. "
+                    "Marque visible_text_detected=true quando houver qualquer escrita, legenda, logo tipográfico, marca d'água, embalagem com palavras ou letreiro legível em qualquer frame. "
+                    "Em visible_text_excerpt, copie de forma curta o texto visível mais relevante para ser removido."
+                    if structured
+                    else "Retorne apenas o prompt final em um único parágrafo, sem JSON e sem marcadores."
+                )
             ),
         },
         {
@@ -1827,10 +1960,10 @@ async def _request_scene_prompt_from_model(
 
     resp = await client.chat.completions.create(**request_kwargs)
     content = resp.choices[0].message.content if getattr(resp, "choices", None) else ""
-    return _extract_scene_prompt_from_content(content)
+    return _extract_scene_analysis_from_content(content)
 
 
-async def _analyze_frame_prompt(
+async def _analyze_frame_details(
     client: openai.AsyncOpenAI,
     frame_paths: list[str],
     start_time: float,
@@ -1839,7 +1972,7 @@ async def _analyze_frame_prompt(
     global_context: str = "",
     spoken_context: str = "",
     spoken_language: str = "",
-) -> str:
+) -> dict[str, object]:
     valid_frame_paths = _extract_existing_similar_paths(frame_paths)
     if not valid_frame_paths:
         raise RuntimeError("Nenhum frame valido foi encontrado para a analise da cena")
@@ -1855,7 +1988,7 @@ async def _analyze_frame_prompt(
 
     for attempt_model, structured in attempts:
         try:
-            prompt = await _request_scene_prompt_from_model(
+            analysis = await _request_scene_prompt_from_model(
                 client,
                 attempt_model,
                 image_data_urls,
@@ -1867,8 +2000,15 @@ async def _analyze_frame_prompt(
                 spoken_context=spoken_context,
                 spoken_language=spoken_language,
             )
+            prompt = str(analysis.get("scene_prompt") or "").strip()
             if prompt:
-                return _ensure_similar_no_text_instruction(prompt[:1600])
+                visible_text_excerpt = _normalize_similar_visible_text_excerpt(analysis.get("visible_text_excerpt"))
+                visible_text_detected = bool(analysis.get("visible_text_detected")) or bool(visible_text_excerpt)
+                return {
+                    "scene_prompt": _ensure_similar_no_text_instruction(prompt[:1600], visible_text_excerpt),
+                    "visible_text_detected": visible_text_detected,
+                    "visible_text_excerpt": visible_text_excerpt,
+                }
         except Exception as exc:
             logger.warning(
                 "Frame analysis retry activated for model=%s structured=%s: %s",
@@ -1895,14 +2035,45 @@ async def _analyze_frame_prompt(
         )
         if prompt:
             logger.info("Frame analysis fallback succeeded with Google model=%s", _SIMILAR_GOOGLE_ANALYSIS_MODEL)
-            return _ensure_similar_no_text_instruction(prompt[:1600])
+            return {
+                "scene_prompt": _ensure_similar_no_text_instruction(prompt[:1600]),
+                "visible_text_detected": False,
+                "visible_text_excerpt": "",
+            }
     except Exception as exc:
         logger.warning("Frame analysis Google fallback failed: %s", exc)
 
-    return _ensure_similar_no_text_instruction(
-        "Cena cinematografica ultra detalhada com composicao fiel ao frame de referencia, "
-        "movimento de camera suave, iluminacao natural e continuidade visual consistente."
+    return {
+        "scene_prompt": _ensure_similar_no_text_instruction(
+            "Cena cinematografica ultra detalhada com composicao fiel ao frame de referencia, "
+            "movimento de camera suave, iluminacao natural e continuidade visual consistente."
+        ),
+        "visible_text_detected": False,
+        "visible_text_excerpt": "",
+    }
+
+
+async def _analyze_frame_prompt(
+    client: openai.AsyncOpenAI,
+    frame_paths: list[str],
+    start_time: float,
+    end_time: float,
+    duration_seconds: float,
+    global_context: str = "",
+    spoken_context: str = "",
+    spoken_language: str = "",
+) -> str:
+    analysis = await _analyze_frame_details(
+        client,
+        frame_paths,
+        start_time,
+        end_time,
+        duration_seconds,
+        global_context=global_context,
+        spoken_context=spoken_context,
+        spoken_language=spoken_language,
     )
+    return str(analysis.get("scene_prompt") or "").strip()
 
 
 def _build_temporal_prompt(scenes: list[dict]) -> str:
@@ -2650,6 +2821,8 @@ async def run_similar_reference_analysis(
             scene_frame_payloads: list[dict] = []
             reference_frames_by_scene_index: dict[str, str] = {}
             reference_end_frames_by_scene_index: dict[str, str] = {}
+            reference_text_detected_by_scene_index: dict[str, bool] = {}
+            reference_text_excerpt_by_scene_index: dict[str, str] = {}
 
             for idx, (start, end) in enumerate(scene_ranges):
                 start_frame_timestamp = _resolve_similar_reference_frame_timestamp(start, duration_seconds)
@@ -2697,7 +2870,7 @@ async def run_similar_reference_analysis(
                 end_frame_path = str(payload.get("end_frame_path") or "").strip()
                 reference_frame_paths = _extract_existing_similar_paths(payload.get("reference_frame_paths") or [])
                 spoken_excerpt = _extract_scene_transcript_excerpt(transcript_words, start, end)
-                prompt = await _analyze_frame_prompt(
+                analysis = await _analyze_frame_details(
                     client=openai_client,
                     frame_paths=reference_frame_paths,
                     start_time=start,
@@ -2707,6 +2880,14 @@ async def run_similar_reference_analysis(
                     spoken_context=spoken_excerpt,
                     spoken_language=transcript_language,
                 )
+                prompt = str(analysis.get("scene_prompt") or "").strip()
+                reference_text_detected = bool(analysis.get("visible_text_detected"))
+                reference_text_excerpt = _normalize_similar_visible_text_excerpt(analysis.get("visible_text_excerpt"))
+                scene_key = str(int(payload.get("scene_index", idx) or idx))
+                if reference_text_detected:
+                    reference_text_detected_by_scene_index[scene_key] = True
+                if reference_text_excerpt:
+                    reference_text_excerpt_by_scene_index[scene_key] = reference_text_excerpt
 
                 scene_payloads.append(
                     {
@@ -2719,6 +2900,8 @@ async def run_similar_reference_analysis(
                         "reference_frame_paths": reference_frame_paths,
                         "spoken_context": spoken_excerpt,
                         "spoken_language": transcript_language,
+                        "reference_frame_text_detected": reference_text_detected,
+                        "reference_frame_text_excerpt": reference_text_excerpt,
                     }
                 )
 
@@ -2785,6 +2968,8 @@ async def run_similar_reference_analysis(
                     "similar_detected_scene_durations": detected_scene_durations,
                     "similar_reference_frames": reference_frames_by_scene_index,
                     "similar_reference_end_frames": reference_end_frames_by_scene_index,
+                    "similar_reference_frame_text_detected": reference_text_detected_by_scene_index,
+                    "similar_reference_frame_text_excerpt": reference_text_excerpt_by_scene_index,
                     "similar_total_duration": duration_seconds,
                     "similar_source_total_duration": source_duration_seconds,
                     "similar_analysis_duration": duration_seconds,

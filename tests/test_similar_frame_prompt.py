@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 from app.routers.video import _extract_explicit_scene_dialogue
 from app.tasks.similar_tasks import (
     _analyze_frame_prompt,
+    _extract_scene_analysis_from_content,
     _build_scene_analysis_instruction,
     _build_similar_general_prompt_fallback,
     _build_similar_scene_generation_context,
@@ -147,6 +148,17 @@ class TestSimilarFramePrompt(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("FALA OBRIGATORIA EM PT-BR", prompt)
         self.assertNotIn("Chegou o painel que eu estava esperando", prompt)
 
+    def test_extract_scene_analysis_from_content_keeps_visible_text_metadata(self):
+        analysis = _extract_scene_analysis_from_content(
+            '{"scene_prompt": "Mulher monta uma estante de madeira em bancada clara.", '
+            '"visible_text_detected": true, '
+            '"visible_text_excerpt": "DIY Double C Shelf - Easy Build"}'
+        )
+
+        self.assertEqual(analysis["scene_prompt"], "Mulher monta uma estante de madeira em bancada clara.")
+        self.assertTrue(analysis["visible_text_detected"])
+        self.assertEqual(analysis["visible_text_excerpt"], "DIY Double C Shelf - Easy Build")
+
     def test_extract_scene_transcript_excerpt_uses_scene_window(self):
         excerpt = _extract_scene_transcript_excerpt(
             [
@@ -243,6 +255,28 @@ class TestSimilarFramePrompt(unittest.IsolatedAsyncioTestCase):
         self.assertIn("cimento", prompt)
         self.assertIn("cascas de ovo", prompt)
         self.assertEqual(create_mock.await_count, 2)
+
+    async def test_analyze_frame_prompt_includes_detected_text_to_remove(self):
+        create_mock = AsyncMock(
+            return_value=_fake_openai_response(
+                '{"scene_prompt": "Mulher monta uma estante de madeira sobre bancada escura, mantendo o mesmo enquadramento do tutorial.", '
+                '"visible_text_detected": true, '
+                '"visible_text_excerpt": "DIY Double C Shelf - Easy Build"}'
+            )
+        )
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create_mock)))
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+            tmp.write(b"fake-image")
+            tmp_path = tmp.name
+
+        try:
+            prompt = await _analyze_frame_prompt(client, tmp_path, 0.0, 3.9, 19.0)
+        finally:
+            os.unlink(tmp_path)
+
+        self.assertIn("DIY Double C Shelf - Easy Build", prompt)
+        self.assertIn("SEM TEXTO NA TELA", prompt)
 
     async def test_analyze_frame_prompt_uses_google_after_openai_quota_error(self):
         class FakeQuotaError(RuntimeError):

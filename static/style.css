@@ -11635,6 +11635,25 @@ th,
     align-items: center;
 }
 
+.similar-reference-frame-warning-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 193, 77, 0.34);
+    background: rgba(255, 193, 77, 0.14);
+    color: #ffe7ae;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.similar-reference-frame-warning-text {
+    color: #ffe0a0;
+}
+
 .similar-frame-tool-btn {
     display: inline-flex;
     align-items: center;
@@ -11888,6 +11907,11 @@ th,
 
     .similar-frame-tool-btn-icon {
         flex: 0 0 auto;
+    }
+
+    .similar-reference-frame-warning-pill {
+        width: 100%;
+        justify-content: center;
     }
 
     .similar-reference-frame-gallery,

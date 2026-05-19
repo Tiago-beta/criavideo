@@ -1861,6 +1861,43 @@ def _extract_similar_reference_end_frame_map(raw_tags: object) -> dict[str, str]
     return resolved
 
 
+def _extract_similar_reference_text_detected_map(raw_tags: object) -> dict[str, bool]:
+    tags = _safe_tags_dict(raw_tags)
+    raw_map = tags.get("similar_reference_frame_text_detected") if isinstance(tags.get("similar_reference_frame_text_detected"), dict) else {}
+    if not isinstance(raw_map, dict):
+        return {}
+
+    resolved: dict[str, bool] = {}
+    for key, raw_value in raw_map.items():
+        if isinstance(raw_value, bool):
+            resolved[str(key)] = raw_value
+            continue
+        if isinstance(raw_value, (int, float)):
+            resolved[str(key)] = bool(raw_value)
+            continue
+        if isinstance(raw_value, str):
+            normalized = raw_value.strip().lower()
+            if normalized in {"true", "1", "yes", "sim"}:
+                resolved[str(key)] = True
+            elif normalized in {"false", "0", "no", "nao", "não"}:
+                resolved[str(key)] = False
+    return resolved
+
+
+def _extract_similar_reference_text_excerpt_map(raw_tags: object) -> dict[str, str]:
+    tags = _safe_tags_dict(raw_tags)
+    raw_map = tags.get("similar_reference_frame_text_excerpt") if isinstance(tags.get("similar_reference_frame_text_excerpt"), dict) else {}
+    if not isinstance(raw_map, dict):
+        return {}
+
+    resolved: dict[str, str] = {}
+    for key, raw_value in raw_map.items():
+        text = re.sub(r"\s+", " ", str(raw_value or "")).strip()
+        if text:
+            resolved[str(key)] = text[:240]
+    return resolved
+
+
 def _collect_similar_unified_video_reference_paths(
     scenes: list[VideoScene],
     tags_data: dict[str, Any],
@@ -2255,6 +2292,8 @@ def _serialize_project_scene(
     scene: VideoScene,
     reference_frame_map: dict[str, str] | None = None,
     reference_frame_end_map: dict[str, str] | None = None,
+    reference_text_detected_map: dict[str, bool] | None = None,
+    reference_text_excerpt_map: dict[str, str] | None = None,
     generated_frame_variant_map: dict[str, list[str]] | None = None,
     detected_scene_duration_map: dict[str, float] | None = None,
 ) -> dict[str, Any]:
@@ -2279,6 +2318,10 @@ def _serialize_project_scene(
     generated_frame_variants: list[dict[str, Any]] = []
     variant_scene_key = str(int(scene.id or 0))
     active_image_path = str(scene.image_path or "").strip()
+    reference_frame_text_detected = bool((reference_text_detected_map or {}).get(scene_key))
+    reference_frame_text_excerpt = str((reference_text_excerpt_map or {}).get(scene_key) or "").strip()
+    if reference_frame_text_excerpt:
+        reference_frame_text_detected = True
     detected_duration_seconds = float(
         (detected_scene_duration_map or {}).get(scene_key) or _similar_scene_duration_seconds(scene)
     )
@@ -2313,6 +2356,8 @@ def _serialize_project_scene(
         "reference_frame_end_url": _to_media_url(reference_frame_end_path),
         "reference_frame_paths": reference_frame_paths,
         "reference_frame_urls": reference_frame_urls,
+        "reference_frame_text_detected": reference_frame_text_detected,
+        "reference_frame_text_excerpt": reference_frame_text_excerpt,
         "start_time": scene.start_time,
         "end_time": scene.end_time,
         "detected_duration_seconds": detected_duration_seconds,
@@ -3109,6 +3154,8 @@ async def get_project(
     response_tags = project.tags
     reference_frame_map: dict[str, str] = {}
     reference_frame_end_map: dict[str, str] = {}
+    reference_text_detected_map: dict[str, bool] = {}
+    reference_text_excerpt_map: dict[str, str] = {}
     generated_frame_variant_map: dict[str, list[str]] = {}
     detected_scene_duration_map: dict[str, float] = {}
     if _is_similar_project(project):
@@ -3130,6 +3177,8 @@ async def get_project(
             response_tags["similar_unified_end_frame_url"] = _to_media_url(unified_end_frame_path)
         reference_frame_map = _extract_similar_reference_frame_map(response_tags)
         reference_frame_end_map = _extract_similar_reference_end_frame_map(response_tags)
+        reference_text_detected_map = _extract_similar_reference_text_detected_map(response_tags)
+        reference_text_excerpt_map = _extract_similar_reference_text_excerpt_map(response_tags)
         generated_frame_variant_map = _extract_similar_generated_frame_variant_map(response_tags)
         detected_scene_duration_map = _extract_similar_detected_scene_duration_map(response_tags)
 
@@ -3147,7 +3196,15 @@ async def get_project(
         "error_message": project.error_message,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "scenes": [
-            _serialize_project_scene(s, reference_frame_map, reference_frame_end_map, generated_frame_variant_map, detected_scene_duration_map)
+            _serialize_project_scene(
+                s,
+                reference_frame_map,
+                reference_frame_end_map,
+                reference_text_detected_map,
+                reference_text_excerpt_map,
+                generated_frame_variant_map,
+                detected_scene_duration_map,
+            )
             for s in scenes
         ],
         "renders": [
@@ -3785,8 +3842,20 @@ async def update_similar_scene(
 
     reference_frame_map = _extract_similar_reference_frame_map(project.tags)
     reference_frame_end_map = _extract_similar_reference_end_frame_map(project.tags)
+    reference_text_detected_map = _extract_similar_reference_text_detected_map(project.tags)
+    reference_text_excerpt_map = _extract_similar_reference_text_excerpt_map(project.tags)
     detected_scene_duration_map = _extract_similar_detected_scene_duration_map(project.tags)
-    return {"scene": _serialize_project_scene(scene, reference_frame_map, reference_frame_end_map, None, detected_scene_duration_map)}
+    return {
+        "scene": _serialize_project_scene(
+            scene,
+            reference_frame_map,
+            reference_frame_end_map,
+            reference_text_detected_map,
+            reference_text_excerpt_map,
+            None,
+            detected_scene_duration_map,
+        )
+    }
 
 
 @router.post("/projects/{project_id}/similar/scenes/{scene_id}/image")
@@ -3944,9 +4013,21 @@ async def upsert_similar_scene_image(
 
     reference_frame_map = _extract_similar_reference_frame_map(project.tags)
     reference_frame_end_map = _extract_similar_reference_end_frame_map(project.tags)
+    reference_text_detected_map = _extract_similar_reference_text_detected_map(project.tags)
+    reference_text_excerpt_map = _extract_similar_reference_text_excerpt_map(project.tags)
     generated_frame_variant_map = _extract_similar_generated_frame_variant_map(project.tags)
     detected_scene_duration_map = _extract_similar_detected_scene_duration_map(project.tags)
-    return {"scene": _serialize_project_scene(scene, reference_frame_map, reference_frame_end_map, generated_frame_variant_map, detected_scene_duration_map)}
+    return {
+        "scene": _serialize_project_scene(
+            scene,
+            reference_frame_map,
+            reference_frame_end_map,
+            reference_text_detected_map,
+            reference_text_excerpt_map,
+            generated_frame_variant_map,
+            detected_scene_duration_map,
+        )
+    }
 
 
 @router.post("/projects/{project_id}/similar/generate-previews")
