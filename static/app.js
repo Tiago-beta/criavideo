@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v485 loaded");
+console.log("[CriaVideo] app.js v486 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -34440,6 +34440,10 @@ async function openEditor(projectId, options = {}) {
         document.getElementById("page-editor")?.classList.add("editor-fullscreen");
 
         const video = document.getElementById("editor-video");
+        video.preload = "auto";
+        video.playsInline = true;
+        video.setAttribute("playsinline", "true");
+        video.setAttribute("webkit-playsinline", "true");
         video.src = _editor.videoUrl;
         video.load();
         let editorReady = false;
@@ -34447,6 +34451,15 @@ async function openEditor(projectId, options = {}) {
         const readyPromise = new Promise((resolve) => {
             resolveOpen = resolve;
         });
+        const refreshEditorPreviewFrame = () => {
+            if (!editorReady) return;
+            requestAnimationFrame(() => {
+                const previewTime = Number(_editor.timelineTime || 0);
+                _editorApplyAspectRatio();
+                _editorRenderMediaLayers();
+                _editorApplyTimelineFrame(previewTime, false);
+            });
+        };
         const finalizeEditorOpen = () => {
             if (editorReady) return;
             editorReady = true;
@@ -34492,9 +34505,17 @@ async function openEditor(projectId, options = {}) {
             if (shouldRestoreDraft && restored) {
                 showToast("Edição restaurada de onde você parou.", "success");
             }
+            refreshEditorPreviewFrame();
             resolveOpen?.();
         };
         video.onloadedmetadata = finalizeEditorOpen;
+        video.onloadeddata = () => {
+            if (!editorReady) {
+                finalizeEditorOpen();
+            }
+            refreshEditorPreviewFrame();
+        };
+        video.oncanplay = refreshEditorPreviewFrame;
         video.onerror = finalizeEditorOpen;
         setTimeout(finalizeEditorOpen, 1500);
         _updateUndoRedoBtns();
