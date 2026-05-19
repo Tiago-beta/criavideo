@@ -645,6 +645,15 @@ async def _prepare_seedance_reference(file_path: str, api_key: str) -> str:
         return uploaded_reference
 
 
+async def _prepare_vidu_reference(file_path: str, api_key: str) -> str:
+    uploaded_reference = await _upload_media_to_atlas(file_path, api_key)
+    if _is_http_url(uploaded_reference):
+        return uploaded_reference
+    raise RuntimeError(
+        "Atlas uploadMedia nao retornou URL publica para o Pro 3.1"
+    )
+
+
 def _resolve_seedance_reference_inputs(
     image_path: str | None = None,
     image_paths: list[str] | None = None,
@@ -1026,8 +1035,8 @@ async def generate_vidu_q3_video(
     if movement_amplitude not in {"auto", "small", "medium", "large"}:
         movement_amplitude = "auto"
 
-    start_image_ref = await _prepare_seedance_reference(start_image_source, api_key)
-    end_image_ref = await _prepare_seedance_reference(end_image_source, api_key)
+    start_image_ref = await _prepare_vidu_reference(start_image_source, api_key)
+    end_image_ref = await _prepare_vidu_reference(end_image_source, api_key)
 
     payload = {
         "model": VIDU_Q3_START_END_MODEL,
