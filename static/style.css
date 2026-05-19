@@ -15421,7 +15421,7 @@ th,
     }
 
     .editor-workspace {
-        --editor-mobile-props-height: clamp(72px, 11vh, 104px);
+        --editor-mobile-props-height: clamp(58px, 8.5vh, 84px);
         height: calc(100vh - 56px);
         height: calc(100dvh - 56px);
         display: flex;
@@ -15441,7 +15441,6 @@ th,
     }
 
     .editor-tools-panel {
-        order: 2;
         position: relative;
         bottom: auto; left: auto; right: auto;
         width: 100%;
@@ -15489,8 +15488,8 @@ th,
     .editor-preview-area {
         order: 1;
         flex: 1;
-        padding: 6px 8px 4px;
-        gap: 6px;
+        padding: 2px 6px 0;
+        gap: 4px;
         min-height: 0;
         width: 100%;
         align-self: stretch;
@@ -15499,11 +15498,12 @@ th,
     }
 
     .editor-canvas-wrapper {
-        width: auto;
-        height: clamp(250px, 40vh, 380px);
-        max-width: min(100%, 94vw);
-        max-height: none;
-        min-width: clamp(180px, 64vw, 280px);
+        width: min(100%, 98vw);
+        height: clamp(300px, 48vh, 520px);
+        max-width: min(100%, 98vw);
+        max-height: calc(100dvh - 252px);
+        min-height: 260px;
+        min-width: min(98vw, 340px);
         flex: 0 0 auto;
         align-self: center;
     }
@@ -15511,14 +15511,31 @@ th,
     .editor-play-controls {
         width: 100%;
         justify-content: center;
-        margin-top: auto;
-        padding-top: 10px;
-        padding-bottom: 2px;
+        margin-top: 2px;
+        padding-top: 2px;
+        padding-bottom: 0;
+    }
+
+    .editor-play-btn {
+        background: none;
+        border: none;
+        width: auto;
+        height: auto;
+        padding: 0 2px;
+        border-radius: 0;
+    }
+
+    .editor-play-btn:hover {
+        background: none;
+    }
+
+    #editor-play-icon {
+        width: 28px;
+        height: 28px;
     }
 
     .editor-quick-actions {
         display: none;
-        order: 2;
         flex-wrap: nowrap;
         row-gap: 0;
         padding: 4px 6px;
@@ -15686,9 +15703,9 @@ th,
     }
 
     .editor-timeline-playhead {
-        position: sticky;
-        left: var(--editor-playhead-fixed-left, 50%);
-        z-index: 12;
+        width: 3px;
+        z-index: 14;
+        box-shadow: 0 0 0 1px rgba(255, 196, 87, 0.2);
     }
 }
 

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v488 loaded");
+console.log("[CriaVideo] app.js v489 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28569,6 +28569,30 @@ function _editorUseFixedMobilePlayhead() {
     return _editorIsMobileViewport() && workspace && !workspace.hidden;
 }
 
+function _editorSyncMobileBarsPlacement() {
+    const workspace = document.getElementById("editor-workspace");
+    const main = workspace?.querySelector(".editor-main");
+    const previewArea = workspace?.querySelector(".editor-preview-area");
+    const timeline = document.getElementById("editor-timeline");
+    const toolsPanel = document.getElementById("editor-tools-panel");
+    const quickActions = document.getElementById("editor-quick-actions");
+    if (!workspace || !main || !previewArea || !timeline || !toolsPanel || !quickActions) return;
+
+    const useBottomBars = _editorIsMobileViewport() && !workspace.hidden;
+    if (useBottomBars) {
+        workspace.appendChild(quickActions);
+        workspace.appendChild(toolsPanel);
+        return;
+    }
+
+    if (toolsPanel.parentElement !== main || toolsPanel.nextElementSibling !== previewArea) {
+        main.insertBefore(toolsPanel, previewArea);
+    }
+    if (quickActions.parentElement !== workspace || quickActions.nextElementSibling !== timeline) {
+        workspace.insertBefore(quickActions, timeline);
+    }
+}
+
 function _editorGetTimelineViewportFocusOffset() {
     const timelineEl = document.getElementById("editor-timeline");
     if (!timelineEl) return _EDITOR_TIMELINE_LABEL_WIDTH + 120;
@@ -28576,12 +28600,24 @@ function _editorGetTimelineViewportFocusOffset() {
     return Math.round(_EDITOR_TIMELINE_LABEL_WIDTH + (visibleTrackWidth / 2));
 }
 
+function _editorGetTimelineLeadGutter() {
+    if (!_editorUseFixedMobilePlayhead()) return 0;
+    return Math.max(0, _editorGetTimelineViewportFocusOffset() - _EDITOR_TIMELINE_LABEL_WIDTH);
+}
+
+function _editorGetTimelineTrailingGutter() {
+    if (!_editorUseFixedMobilePlayhead()) return _EDITOR_TIMELINE_RIGHT_GUTTER;
+    const timelineEl = document.getElementById("editor-timeline");
+    const viewportWidth = Math.max(0, Number(timelineEl?.clientWidth || 0));
+    return Math.max(_EDITOR_TIMELINE_RIGHT_GUTTER, Math.round(viewportWidth - _editorGetTimelineViewportFocusOffset()));
+}
+
 function _editorGetTimeAtTimelineViewport(scrollLeft = 0) {
     const timelineDuration = _editorGetTimelineDuration();
     if (!timelineDuration) return 0;
     const trackWidth = Math.max(1, _editorGetTimelineTrackWidth(timelineDuration));
     const absoluteX = Math.max(0, Number(scrollLeft || 0) + _editorGetTimelineViewportFocusOffset());
-    const trackX = Math.max(0, Math.min(trackWidth, absoluteX - _EDITOR_TIMELINE_LABEL_WIDTH));
+    const trackX = Math.max(0, Math.min(trackWidth, absoluteX - _EDITOR_TIMELINE_LABEL_WIDTH - _editorGetTimelineLeadGutter()));
     return (trackX / trackWidth) * timelineDuration;
 }
 
@@ -28592,6 +28628,8 @@ function _editorApplyMobileControlMode() {
     const mobileToolsToggle = document.getElementById("editor-mobile-tools-toggle");
     const mobileActive = _editorIsMobileViewport() && workspace && !workspace.hidden;
     const actionsOpen = mobileActive && _editor.mobileControlMode === "actions";
+
+    _editorSyncMobileBarsPlacement();
 
     if (workspace) {
         workspace.classList.toggle("editor-mobile-actions-open", actionsOpen);
@@ -34640,7 +34678,9 @@ function closeEditor() {
     _editor.timelineTime = 0;
     _editor.timelineZoom = 1;
     _editor.playbackRate = 1;
+    _editor.mobileControlMode = "tools";
     _editorResetSourceWaveformState();
+    _editorApplyMobileControlMode();
 }
 
 // ---------- Format time ----------
@@ -34686,7 +34726,8 @@ function _editorCenterTimelineOnTime(timeSec) {
         if (!timelineDuration) return;
         const trackWidth = Math.max(document.getElementById("editor-track-video")?.offsetWidth || 0, _editorGetTimelineTrackWidth(timelineDuration));
         const safeTime = Math.max(0, Math.min(timelineDuration, Number(timeSec || 0)));
-        const x = _EDITOR_TIMELINE_LABEL_WIDTH + (safeTime / timelineDuration) * trackWidth;
+        const leadGutter = _editorGetTimelineLeadGutter();
+        const x = _EDITOR_TIMELINE_LABEL_WIDTH + leadGutter + (safeTime / timelineDuration) * trackWidth;
         const viewportTarget = _editorUseFixedMobilePlayhead() ? _editorGetTimelineViewportFocusOffset() : (timelineEl.clientWidth / 2);
         const targetScroll = Math.max(0, Math.min(timelineEl.scrollWidth - timelineEl.clientWidth, x - viewportTarget));
         timelineEl.scrollLeft = targetScroll;
@@ -34700,14 +34741,16 @@ function _editorPreserveTimelineFocusViewport(focusTime, previousTrackWidth = 0)
 
     const safeFocus = Math.max(0, Math.min(timelineDuration, Number(focusTime || 0)));
     const oldTrackWidth = Math.max(1, Number(previousTrackWidth || _editorGetTimelineTrackWidth(timelineDuration)));
-    const oldFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + ((safeFocus / timelineDuration) * oldTrackWidth);
+    const oldLeadGutter = _editorGetTimelineLeadGutter();
+    const oldFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + oldLeadGutter + ((safeFocus / timelineDuration) * oldTrackWidth);
     const viewportOffset = _editorUseFixedMobilePlayhead()
         ? _editorGetTimelineViewportFocusOffset()
         : (oldFocusX - Number(timelineEl.scrollLeft || 0));
 
     requestAnimationFrame(() => {
         const nextTrackWidth = Math.max(1, _editorGetTimelineTrackWidth(timelineDuration));
-        const nextFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + ((safeFocus / timelineDuration) * nextTrackWidth);
+        const nextLeadGutter = _editorGetTimelineLeadGutter();
+        const nextFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + nextLeadGutter + ((safeFocus / timelineDuration) * nextTrackWidth);
         const maxScroll = Math.max(0, timelineEl.scrollWidth - timelineEl.clientWidth);
         const targetScroll = Math.max(0, Math.min(maxScroll, nextFocusX - viewportOffset));
         timelineEl.scrollLeft = targetScroll;
@@ -34968,21 +35011,20 @@ function _editorMovePlayhead(t) {
     const safeTime = Math.max(0, Math.min(timelineDuration, t || 0));
     const pct = timelineDuration > 0 ? (safeTime / timelineDuration) : 0;
     const x = Math.max(0, Math.min(trackWidth - 2, pct * trackWidth));
-    const absoluteX = _EDITOR_TIMELINE_LABEL_WIDTH + x;
+    const leadGutter = _editorGetTimelineLeadGutter();
+    const absoluteX = _EDITOR_TIMELINE_LABEL_WIDTH + leadGutter + x;
 
     if (_editorUseFixedMobilePlayhead()) {
         const fixedOffset = _editorGetTimelineViewportFocusOffset();
-        playhead.style.setProperty("--editor-playhead-fixed-left", `${fixedOffset}px`);
-        playhead.style.left = `${fixedOffset}px`;
         const maxScroll = Math.max(0, timelineEl.scrollWidth - timelineEl.clientWidth);
         const targetScroll = Math.max(0, Math.min(maxScroll, absoluteX - fixedOffset));
         if (Math.abs(Number(timelineEl.scrollLeft || 0) - targetScroll) > 0.5) {
             timelineEl.scrollLeft = targetScroll;
         }
+        playhead.style.left = `${targetScroll + fixedOffset}px`;
         return;
     }
 
-    playhead.style.removeProperty("--editor-playhead-fixed-left");
     playhead.style.left = `${absoluteX}px`;
 }
 
@@ -37681,7 +37723,9 @@ function _editorRenderTimeline() {
     const trackRowSelection = selectedKind === "track" ? _editorGetSelectedSegmentTracks() : [];
     const rows = [];
     const trackW = _editorGetTimelineTrackWidth(dur);
-    const timelineInnerWidth = Math.max(120, Math.round(_EDITOR_TIMELINE_LABEL_WIDTH + trackW + _EDITOR_TIMELINE_RIGHT_GUTTER));
+    const leadGutter = _editorGetTimelineLeadGutter();
+    const trailingGutter = _editorGetTimelineTrailingGutter();
+    const timelineInnerWidth = Math.max(120, Math.round(_EDITOR_TIMELINE_LABEL_WIDTH + leadGutter + trackW + trailingGutter));
     const transitionMarkersByTrack = new Map();
 
     if (dur > 0.05) {
@@ -37934,7 +37978,7 @@ function _editorRenderTimeline() {
                 <div class="editor-track-label">
                     <span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>
                 </div>
-                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px">${row.clipsHtml || ""}</div>
+                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px;${leadGutter ? `margin-left:${leadGutter}px;` : ""}">${row.clipsHtml || ""}</div>
             </div>
         `;
     }).join("");
@@ -37978,9 +38022,9 @@ function _editorRenderTimeline() {
         const tickClass = showLabel ? " major" : "";
         if (showLabel) {
             const minuteClass = dur >= 600 && step >= 60 ? " minute" : "";
-            rulerHtml += `<span class="editor-ruler-mark${minuteClass}" style="left:${_EDITOR_TIMELINE_LABEL_WIDTH + pct}px">${_editorFormatRulerTime(t, dur, step)}</span>`;
+            rulerHtml += `<span class="editor-ruler-mark${minuteClass}" style="left:${_EDITOR_TIMELINE_LABEL_WIDTH + leadGutter + pct}px">${_editorFormatRulerTime(t, dur, step)}</span>`;
         }
-        rulerHtml += `<span class="editor-ruler-tick${tickClass}" style="left:${_EDITOR_TIMELINE_LABEL_WIDTH + pct}px"></span>`;
+        rulerHtml += `<span class="editor-ruler-tick${tickClass}" style="left:${_EDITOR_TIMELINE_LABEL_WIDTH + leadGutter + pct}px"></span>`;
     });
     ruler.innerHTML = rulerHtml;
 
