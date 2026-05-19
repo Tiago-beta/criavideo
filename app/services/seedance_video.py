@@ -122,6 +122,17 @@ def _retry_delay_from_header(retry_after: str | None, default_seconds: int = 5) 
         return default_seconds
 
 
+def _atlas_assets_not_ready(status_code: int, details: str) -> bool:
+    if int(status_code or 0) != 425:
+        return False
+    lowered = str(details or "").strip().lower()
+    return (
+        "no provider has all atlas assets ready" in lowered
+        or ("atlas assets ready" in lowered and "candidate" in lowered)
+        or ("atlas_ids" in lowered and "candidate" in lowered)
+    )
+
+
 def _file_to_data_uri(file_path: str) -> str:
     mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
     with open(file_path, "rb") as source:
@@ -782,6 +793,16 @@ async def generate_realistic_video(
 
                 if resp.is_error:
                     details = _extract_atlas_error_message(resp)
+                    if _atlas_assets_not_ready(resp.status_code, details):
+                        wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(24, 4 + attempt * 2))
+                        logger.warning(
+                            "Seedance assets ainda nao estao prontos no provider (%s, attempt %d/5). Retrying in %ds",
+                            variant_name,
+                            attempt + 1,
+                            wait_s,
+                        )
+                        await asyncio.sleep(wait_s)
+                        continue
                     last_error_message = f"Erro ao iniciar Seedance (HTTP {resp.status_code}): {details}"
                     if variant_index < len(payload_variants) - 1 and 400 <= resp.status_code < 500:
                         logger.warning(
@@ -1033,16 +1054,18 @@ async def generate_vidu_q3_video(
     }
 
     async with httpx.AsyncClient(timeout=120) as client:
-        for attempt in range(5):
+        max_attempts = 12
+        for attempt in range(max_attempts):
             try:
                 resp = await client.post(submit_url, headers=headers, json=payload)
             except httpx.RequestError as e:
-                if attempt >= 4:
+                if attempt >= max_attempts - 1:
                     raise RuntimeError(f"Falha de conexao ao iniciar Pro 3.1: {e}")
                 wait_s = min(20, 2 ** attempt)
                 logger.warning(
-                    "Vidu Q3 request error on create (attempt %d/5): %s. Retrying in %ds",
+                    "Vidu Q3 request error on create (attempt %d/%d): %s. Retrying in %ds",
                     attempt + 1,
+                    max_attempts,
                     e,
                     wait_s,
                 )
@@ -1050,12 +1073,13 @@ async def generate_vidu_q3_video(
                 continue
 
             if resp.status_code == 429:
-                if attempt >= 4:
+                if attempt >= max_attempts - 1:
                     raise RuntimeError("Pro 3.1 esta com alta demanda no momento (429). Tente novamente em alguns segundos.")
                 wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(30, 2 ** (attempt + 2)))
                 logger.warning(
-                    "Vidu Q3 rate-limited on create (attempt %d/5). Retrying in %ds",
+                    "Vidu Q3 rate-limited on create (attempt %d/%d). Retrying in %ds",
                     attempt + 1,
+                    max_attempts,
                     wait_s,
                 )
                 await asyncio.sleep(wait_s)
@@ -1063,6 +1087,18 @@ async def generate_vidu_q3_video(
 
             if resp.is_error:
                 details = _extract_atlas_error_message(resp)
+                if _atlas_assets_not_ready(resp.status_code, details):
+                    wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(30, 4 + attempt * 2))
+                    logger.warning(
+                        "Vidu Q3 assets ainda nao estao prontos no provider (attempt %d/%d). Retrying in %ds",
+                        attempt + 1,
+                        max_attempts,
+                        wait_s,
+                    )
+                    if on_progress:
+                        await on_progress(18, "Preparando imagens de referencia para Pro 3.1...")
+                    await asyncio.sleep(wait_s)
+                    continue
                 raise RuntimeError(f"Erro ao iniciar Pro 3.1 (HTTP {resp.status_code}): {details}")
 
             response_payload = resp.json() if resp.content else {}
