@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v487 loaded");
+console.log("[CriaVideo] app.js v488 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28445,6 +28445,7 @@ const _editor = {
     timelineTime: 0,
     timelineZoom: 1,
     playbackRate: 1,
+    mobileControlMode: "tools",
     _virtualPlaybackActive: false,
     _virtualPlaybackRaf: 0,
     _virtualPlaybackLastTs: 0,
@@ -28558,6 +28559,64 @@ const _EDITOR_TIMELINE_LABEL_WIDTH = 40;
 const _EDITOR_TIMELINE_RIGHT_GUTTER = 16;
 const _EDITOR_SEGMENT_SPEED_MIN = 0.25;
 const _EDITOR_SEGMENT_SPEED_MAX = 4;
+
+function _editorIsMobileViewport() {
+    return window.innerWidth <= 768;
+}
+
+function _editorUseFixedMobilePlayhead() {
+    const workspace = document.getElementById("editor-workspace");
+    return _editorIsMobileViewport() && workspace && !workspace.hidden;
+}
+
+function _editorGetTimelineViewportFocusOffset() {
+    const timelineEl = document.getElementById("editor-timeline");
+    if (!timelineEl) return _EDITOR_TIMELINE_LABEL_WIDTH + 120;
+    const visibleTrackWidth = Math.max(120, timelineEl.clientWidth - _EDITOR_TIMELINE_LABEL_WIDTH - _EDITOR_TIMELINE_RIGHT_GUTTER);
+    return Math.round(_EDITOR_TIMELINE_LABEL_WIDTH + (visibleTrackWidth / 2));
+}
+
+function _editorGetTimeAtTimelineViewport(scrollLeft = 0) {
+    const timelineDuration = _editorGetTimelineDuration();
+    if (!timelineDuration) return 0;
+    const trackWidth = Math.max(1, _editorGetTimelineTrackWidth(timelineDuration));
+    const absoluteX = Math.max(0, Number(scrollLeft || 0) + _editorGetTimelineViewportFocusOffset());
+    const trackX = Math.max(0, Math.min(trackWidth, absoluteX - _EDITOR_TIMELINE_LABEL_WIDTH));
+    return (trackX / trackWidth) * timelineDuration;
+}
+
+function _editorApplyMobileControlMode() {
+    const workspace = document.getElementById("editor-workspace");
+    const quickActions = document.getElementById("editor-quick-actions");
+    const mobileActionsToggle = document.getElementById("editor-mobile-actions-toggle");
+    const mobileToolsToggle = document.getElementById("editor-mobile-tools-toggle");
+    const mobileActive = _editorIsMobileViewport() && workspace && !workspace.hidden;
+    const actionsOpen = mobileActive && _editor.mobileControlMode === "actions";
+
+    if (workspace) {
+        workspace.classList.toggle("editor-mobile-actions-open", actionsOpen);
+    }
+    if (quickActions) {
+        quickActions.hidden = Boolean(mobileActive && !actionsOpen);
+    }
+    if (mobileActionsToggle) {
+        mobileActionsToggle.classList.toggle("active", actionsOpen);
+        mobileActionsToggle.setAttribute("aria-pressed", actionsOpen ? "true" : "false");
+    }
+    if (mobileToolsToggle) {
+        mobileToolsToggle.classList.toggle("active", actionsOpen);
+        mobileToolsToggle.setAttribute("aria-pressed", actionsOpen ? "true" : "false");
+    }
+
+    if (mobileActive) {
+        _editorMovePlayhead(Number(_editor.timelineTime || 0));
+    }
+}
+
+function _editorSetMobileControlMode(mode = "tools") {
+    _editor.mobileControlMode = mode === "actions" ? "actions" : "tools";
+    _editorApplyMobileControlMode();
+}
 const _EDITOR_SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 const _EDITOR_TRANSITION_OPTIONS = [
     { value: "dissolve", label: "Dissolver", desc: "Mistura suave entre os dois clipes", preview: "dissolve" },
@@ -34427,6 +34486,7 @@ async function openEditor(projectId, options = {}) {
         _editor.timelineTime = 0;
         _editor.timelineZoom = 1;
         _editor.playbackRate = 1;
+        _editor.mobileControlMode = "tools";
         _editor._virtualPlaybackActive = false;
         _editorStopVirtualTimelinePlayback();
         _editorResetSourceWaveformState();
@@ -34438,6 +34498,7 @@ async function openEditor(projectId, options = {}) {
         document.getElementById("editor-select-view").hidden = true;
         document.getElementById("editor-workspace").hidden = false;
         document.getElementById("page-editor")?.classList.add("editor-fullscreen");
+        _editorSetMobileControlMode("tools");
 
         const video = document.getElementById("editor-video");
         video.preload = "auto";
@@ -34626,7 +34687,8 @@ function _editorCenterTimelineOnTime(timeSec) {
         const trackWidth = Math.max(document.getElementById("editor-track-video")?.offsetWidth || 0, _editorGetTimelineTrackWidth(timelineDuration));
         const safeTime = Math.max(0, Math.min(timelineDuration, Number(timeSec || 0)));
         const x = _EDITOR_TIMELINE_LABEL_WIDTH + (safeTime / timelineDuration) * trackWidth;
-        const targetScroll = Math.max(0, Math.min(timelineEl.scrollWidth - timelineEl.clientWidth, x - (timelineEl.clientWidth / 2)));
+        const viewportTarget = _editorUseFixedMobilePlayhead() ? _editorGetTimelineViewportFocusOffset() : (timelineEl.clientWidth / 2);
+        const targetScroll = Math.max(0, Math.min(timelineEl.scrollWidth - timelineEl.clientWidth, x - viewportTarget));
         timelineEl.scrollLeft = targetScroll;
     });
 }
@@ -34639,7 +34701,9 @@ function _editorPreserveTimelineFocusViewport(focusTime, previousTrackWidth = 0)
     const safeFocus = Math.max(0, Math.min(timelineDuration, Number(focusTime || 0)));
     const oldTrackWidth = Math.max(1, Number(previousTrackWidth || _editorGetTimelineTrackWidth(timelineDuration)));
     const oldFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + ((safeFocus / timelineDuration) * oldTrackWidth);
-    const viewportOffset = oldFocusX - Number(timelineEl.scrollLeft || 0);
+    const viewportOffset = _editorUseFixedMobilePlayhead()
+        ? _editorGetTimelineViewportFocusOffset()
+        : (oldFocusX - Number(timelineEl.scrollLeft || 0));
 
     requestAnimationFrame(() => {
         const nextTrackWidth = Math.max(1, _editorGetTimelineTrackWidth(timelineDuration));
@@ -34897,13 +34961,29 @@ function _editorTimeUpdate() {
 
 function _editorMovePlayhead(t) {
     const playhead = document.getElementById("editor-timeline-playhead");
+    const timelineEl = document.getElementById("editor-timeline");
     const timelineDuration = _editorGetTimelineDuration();
-    if (!playhead || !timelineDuration) return;
+    if (!playhead || !timelineEl || !timelineDuration) return;
     const trackWidth = _editorGetTimelineTrackWidth(timelineDuration);
     const safeTime = Math.max(0, Math.min(timelineDuration, t || 0));
     const pct = timelineDuration > 0 ? (safeTime / timelineDuration) : 0;
     const x = Math.max(0, Math.min(trackWidth - 2, pct * trackWidth));
-    playhead.style.left = (_EDITOR_TIMELINE_LABEL_WIDTH + x) + "px";
+    const absoluteX = _EDITOR_TIMELINE_LABEL_WIDTH + x;
+
+    if (_editorUseFixedMobilePlayhead()) {
+        const fixedOffset = _editorGetTimelineViewportFocusOffset();
+        playhead.style.setProperty("--editor-playhead-fixed-left", `${fixedOffset}px`);
+        playhead.style.left = `${fixedOffset}px`;
+        const maxScroll = Math.max(0, timelineEl.scrollWidth - timelineEl.clientWidth);
+        const targetScroll = Math.max(0, Math.min(maxScroll, absoluteX - fixedOffset));
+        if (Math.abs(Number(timelineEl.scrollLeft || 0) - targetScroll) > 0.5) {
+            timelineEl.scrollLeft = targetScroll;
+        }
+        return;
+    }
+
+    playhead.style.removeProperty("--editor-playhead-fixed-left");
+    playhead.style.left = `${absoluteX}px`;
 }
 
 function _editorClampToVideoSegments(timeSec) {
@@ -35054,6 +35134,10 @@ function _editorOnTimelineScrubMove(event) {
         const timelineEl = document.getElementById("editor-timeline");
         if (!timelineEl) return;
         timelineEl.scrollLeft = Math.max(0, scrub.startScrollLeft - dx);
+        if (_editorUseFixedMobilePlayhead()) {
+            const nextTime = _editorGetTimeAtTimelineViewport(timelineEl.scrollLeft);
+            _editorApplyTimelineFrame(nextTime, _editor.playing);
+        }
         scrub.moved = true;
         if (event.cancelable) {
             event.preventDefault();
@@ -35607,6 +35691,8 @@ function _editorSelectTool(toolName) {
     } else if (pp) {
         pp.style.removeProperty("display");
     }
+
+    _editorApplyMobileControlMode();
 }
 
 function _editorGetApprovedSmartCuts() {
@@ -38244,6 +38330,8 @@ function _editorRefreshQuickActions() {
         speedBtn.setAttribute("aria-label", `Velocidade de reprodução ${rateLabel}`);
         speedBtn.setAttribute("data-rate-label", rateLabel);
     }
+
+    _editorApplyMobileControlMode();
 }
 
 function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
@@ -39404,6 +39492,12 @@ function _bindEditorEvents() {
     document.getElementById("editor-quick-delete")?.addEventListener("click", _editorDeleteSelectedClip);
     document.getElementById("editor-quick-duplicate")?.addEventListener("click", _editorCopySelectedClip);
     document.getElementById("editor-quick-paste")?.addEventListener("click", _editorPasteClipboard);
+    document.getElementById("editor-mobile-actions-toggle")?.addEventListener("click", () => {
+        _editorSetMobileControlMode("actions");
+    });
+    document.getElementById("editor-mobile-tools-toggle")?.addEventListener("click", () => {
+        _editorSetMobileControlMode("tools");
+    });
     document.getElementById("editor-project-name")?.addEventListener("click", (event) => {
         event.stopPropagation();
         _editorStartProjectNameEdit();
@@ -39524,6 +39618,7 @@ function _bindEditorEvents() {
     });
     document.getElementById("editor-timeline")?.addEventListener("wheel", _editorHandleTimelineWheel, { passive: false });
     document.addEventListener("wheel", _editorHandleTimelineWheel, { passive: false });
+    window.addEventListener("resize", _editorApplyMobileControlMode);
 
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
@@ -39536,6 +39631,7 @@ function _bindEditorEvents() {
 
     _editorRefreshQuickActions();
     _editorRefreshTrackSelectionUI();
+    _editorApplyMobileControlMode();
 }
 
 // Init editor bindings when DOM ready

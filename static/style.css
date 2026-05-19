@@ -13489,6 +13489,10 @@ th,
 }
 .editor-tool-btn svg { flex-shrink: 0; }
 
+.editor-mobile-mode-toggle {
+    display: none;
+}
+
 /* Preview area */
 .editor-preview-area {
     flex: 1 1 0;
@@ -15448,8 +15452,28 @@ th,
         border-right: none;
         border-top: 1px solid var(--border);
         overflow-x: auto;
+        overflow-y: hidden;
         height: auto;
         flex-shrink: 0;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    .editor-tools-panel::-webkit-scrollbar {
+        display: none;
+    }
+
+    .editor-mobile-mode-toggle {
+        display: inline-flex;
+        min-width: 66px;
+        flex-shrink: 0;
+    }
+
+    .editor-tools-panel .editor-mobile-mode-toggle {
+        position: sticky;
+        left: 0;
+        z-index: 2;
+        background: linear-gradient(180deg, rgba(8, 35, 58, 0.98), rgba(7, 26, 45, 0.98));
     }
 
     .editor-tool-btn {
@@ -15465,7 +15489,7 @@ th,
     .editor-preview-area {
         order: 1;
         flex: 1;
-        padding: 8px 8px 6px;
+        padding: 6px 8px 4px;
         gap: 6px;
         min-height: 0;
         width: 100%;
@@ -15476,10 +15500,10 @@ th,
 
     .editor-canvas-wrapper {
         width: auto;
-        height: clamp(220px, 34vh, 310px);
-        max-width: min(100%, 92vw);
+        height: clamp(250px, 40vh, 380px);
+        max-width: min(100%, 94vw);
         max-height: none;
-        min-width: clamp(160px, 56vw, 220px);
+        min-width: clamp(180px, 64vw, 280px);
         flex: 0 0 auto;
         align-self: center;
     }
@@ -15493,12 +15517,37 @@ th,
     }
 
     .editor-quick-actions {
+        display: none;
+        order: 2;
         flex-wrap: nowrap;
         row-gap: 0;
-        padding: 6px 8px;
+        padding: 4px 6px;
         gap: 6px;
         overflow-x: auto;
         overflow-y: hidden;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    .editor-quick-actions::-webkit-scrollbar {
+        display: none;
+    }
+
+    .editor-workspace.editor-mobile-actions-open .editor-tools-panel {
+        display: none;
+    }
+
+    .editor-workspace.editor-mobile-actions-open .editor-quick-actions {
+        display: flex;
+    }
+
+    .editor-quick-actions .editor-mobile-mode-toggle {
+        display: inline-flex;
+        min-width: 40px;
+        position: sticky;
+        left: 0;
+        z-index: 2;
+        background: linear-gradient(180deg, rgba(8, 35, 58, 0.98), rgba(7, 26, 45, 0.98));
     }
 
     .editor-aspect-selector {
@@ -15561,6 +15610,13 @@ th,
         min-height: 128px;
         max-height: 34vh;
         flex-shrink: 0;
+        overflow-x: hidden;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    .editor-timeline::-webkit-scrollbar {
+        display: none;
     }
 
     .editor-timeline-ruler {
@@ -15572,58 +15628,84 @@ th,
     }
 
     .editor-topbar {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto;
-        grid-template-areas:
-            "back name export"
-            "actions actions actions";
+        display: flex;
         align-items: center;
-        column-gap: 8px;
-        row-gap: 6px;
-        padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px;
-        min-height: 44px;
+        flex-wrap: nowrap;
+        gap: 6px;
+        padding: calc(8px + env(safe-area-inset-top, 0px)) 10px 6px;
+        min-height: 40px;
         flex-shrink: 0;
     }
 
     .editor-back-btn {
-        grid-area: back;
+        flex-shrink: 0;
     }
 
     .editor-project-name {
-        grid-area: name;
+        flex: 1;
         min-width: 0;
-        font-size: 13px;
-        padding: 5px 6px;
+        font-size: 12px;
+        padding: 4px 2px;
     }
 
     .editor-topbar-actions {
-        grid-area: actions;
-        width: 100%;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 36px 36px;
-        gap: 6px;
+        width: auto;
+        display: inline-flex;
+        flex: 0 0 auto;
+        gap: 4px;
     }
 
     .editor-topbar-actions .btn {
-        width: 100%;
-        height: 36px;
-        padding: 0 10px;
+        width: auto;
+        height: 34px;
+        padding: 0 8px;
     }
 
     #editor-undo-btn,
     #editor-redo-btn {
+        width: 34px;
+        min-width: 34px;
         padding: 0;
     }
 
+    #editor-new-btn {
+        min-width: 72px;
+        padding: 0 10px;
+    }
+
     #editor-export-btn {
-        grid-area: export;
-        height: 36px;
+        height: 34px;
         min-width: 0;
-        padding: 0 12px;
-        gap: 6px;
+        padding: 0 10px;
+        gap: 5px;
+        flex-shrink: 0;
     }
 
     .editor-topbar-export-label {
+        font-size: 12px;
+    }
+
+    .editor-timeline-playhead {
+        position: sticky;
+        left: var(--editor-playhead-fixed-left, 50%);
+        z-index: 12;
+    }
+}
+
+@media (max-width: 430px) {
+    .editor-topbar-export-label {
+        display: none;
+    }
+
+    #editor-export-btn {
+        width: 36px;
+        min-width: 36px;
+        padding: 0;
+    }
+
+    #editor-new-btn {
+        min-width: 64px;
+        padding: 0 8px;
         font-size: 12px;
     }
 }
