@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260518-01">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260518-03">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 477;
+        var REQUIRED_VER = 478;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -115,7 +115,11 @@
         </section>
 
         <div id="app-shell" hidden>
-            <div id="app">
+            <div id="app" class="sidebar-collapsed">
+                <!-- Toggle button to reopen sidebar -->
+                <button id="sidebar-toggle" class="sidebar-toggle" type="button" title="Mostrar menu">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
                 <aside class="sidebar" id="sidebar">
                     <div class="sidebar-header">
                         <div class="logo">
@@ -1192,7 +1196,7 @@
             </div>
             <div class="modal-header">
                 <h3 id="create-modal-title">Novo projeto de vídeo</h3>
-                <button class="modal-close" onclick="closeModal('modal-new-project')" type="button">&times;</button>
+                <button class="modal-close" onclick="handleNewProjectModalClose()" type="button">&times;</button>
             </div>
             <div class="modal-body">
 
@@ -1235,12 +1239,12 @@
                             <strong>Imagens</strong>
                             <small>Criar imagens primeiro, antes de gerar o vídeo.</small>
                         </button>
-                        <button class="mode-selection-card" data-create-mode="series" onclick="_chooseCreateMode('series')" type="button">
+                        <button class="mode-selection-card" data-create-mode="audio" onclick="_chooseCreateMode('audio')" type="button">
                             <div class="mode-selection-icon">
-                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8"/><path d="M8 13h6"/><path d="M15 2v4"/><path d="M9 2v4"/></svg>
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v10"/><path d="M16 5v8"/><path d="M8 7v6"/><path d="M6 17a6 6 0 0 0 12 0"/><path d="M9 21h6"/></svg>
                             </div>
-                            <strong>Séries</strong>
-                            <small>Crie filmes completos, séries e dramas longos com personagens, storyboard e timeline.</small>
+                            <strong>Áudio</strong>
+                            <small>Criar áudio primeiro, antes de gerar o vídeo.</small>
                         </button>
                     </div>
                 </div>
@@ -1718,51 +1722,9 @@
 
                                 <div id="script-video-audio-builder" class="script-video-audio-builder" hidden>
                                     <div class="script-video-audio-builder-head">
-                                        <div>
+                                        <div id="script-audio-builder-copy">
                                             <strong id="script-audio-builder-heading">Criar áudio com voz IA</strong>
                                             <small id="script-audio-builder-subheading">Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.</small>
-                                        </div>
-                                        <button class="btn-icon-sm" type="button" onclick="toggleScriptAudioBuilder(false)" title="Fechar" aria-label="Fechar">&times;</button>
-                                    </div>
-
-                                    <div class="script-video-audio-builder-actions">
-                                        <button class="persona-record-btn script-audio-record-btn" id="script-audio-record-btn" type="button" onclick="toggleScriptAudioDictationRecording()">
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                                            <span id="script-audio-record-btn-label">Gravar e transcrever</span>
-                                        </button>
-                                    </div>
-
-                                    <div id="script-audio-dictation-status" class="script-audio-builder-inline-status" hidden></div>
-
-                                    <div class="form-group script-video-audio-text-group">
-                                        <label for="script-audio-builder-text">Texto que será falado</label>
-                                        <textarea id="script-audio-builder-text" class="wizard-textarea" rows="6" maxlength="20000" placeholder="Grave, cole ou escreva a narração aqui..." oninput="syncScriptAudioBuilderDraft()"></textarea>
-                                    </div>
-                                    <div class="script-actions">
-                                        <span class="char-count"><span id="script-audio-builder-char-count">0</span> / 20.000</span>
-                                    </div>
-
-                                    <div class="script-audio-builder-quick-controls">
-                                        <div class="form-group script-audio-builder-option-group">
-                                            <label>Tom da narração</label>
-                                            <div class="pause-options script-audio-builder-option-row" id="script-audio-builder-tone-options">
-                                                <button class="pause-option selected" data-value="informativo" type="button">Informativo</button>
-                                                <button class="pause-option" data-value="inspirador" type="button">Inspirador</button>
-                                                <button class="pause-option" data-value="descontraido" type="button">Descontraído</button>
-                                                <button class="pause-option" data-value="profundo" type="button">Profundo</button>
-                                                <button class="pause-option" data-value="dramatico" type="button">Dramático</button>
-                                                <button class="pause-option" data-value="motivacional" type="button">Motivacional</button>
-                                            </div>
-                                        </div>
-
-                                        <div class="form-group script-audio-builder-option-group">
-                                            <label>Pausas</label>
-                                            <div class="pause-options script-audio-builder-option-row" id="script-audio-builder-pause-options">
-                                                <button class="pause-option selected" data-value="normal" type="button">Normal</button>
-                                                <button class="pause-option" data-value="relaxed" type="button">Suaves</button>
-                                                <button class="pause-option" data-value="deep" type="button">Profundas</button>
-                                            </div>
-                                            <small class="pause-hint">Define o respiro e o ritmo antes de gerar o áudio.</small>
                                         </div>
                                     </div>
 
@@ -1866,6 +1828,47 @@
                                                     <div class="script-audio-direction-note">As instruções acima refinam a interpretação sem trocar o texto falado.</div>
                                                 </div>
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="script-video-audio-builder-actions">
+                                        <button class="persona-record-btn script-audio-record-btn" id="script-audio-record-btn" type="button" onclick="toggleScriptAudioDictationRecording()">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                            <span id="script-audio-record-btn-label">Gravar e transcrever</span>
+                                        </button>
+                                    </div>
+
+                                    <div id="script-audio-dictation-status" class="script-audio-builder-inline-status" hidden></div>
+
+                                    <div class="form-group script-video-audio-text-group">
+                                        <label for="script-audio-builder-text">Texto que será falado</label>
+                                        <textarea id="script-audio-builder-text" class="wizard-textarea" rows="6" maxlength="20000" placeholder="Grave, cole ou escreva a narração aqui..." oninput="syncScriptAudioBuilderDraft()"></textarea>
+                                    </div>
+                                    <div class="script-actions">
+                                        <span class="char-count"><span id="script-audio-builder-char-count">0</span> / 20.000</span>
+                                    </div>
+
+                                    <div class="script-audio-builder-quick-controls">
+                                        <div class="form-group script-audio-builder-option-group">
+                                            <label>Tom da narração</label>
+                                            <div class="pause-options script-audio-builder-option-row" id="script-audio-builder-tone-options">
+                                                <button class="pause-option selected" data-value="informativo" type="button">Informativo</button>
+                                                <button class="pause-option" data-value="inspirador" type="button">Inspirador</button>
+                                                <button class="pause-option" data-value="descontraido" type="button">Descontraído</button>
+                                                <button class="pause-option" data-value="profundo" type="button">Profundo</button>
+                                                <button class="pause-option" data-value="dramatico" type="button">Dramático</button>
+                                                <button class="pause-option" data-value="motivacional" type="button">Motivacional</button>
+                                            </div>
+                                        </div>
+
+                                        <div class="form-group script-audio-builder-option-group">
+                                            <label>Pausas</label>
+                                            <div class="pause-options script-audio-builder-option-row" id="script-audio-builder-pause-options">
+                                                <button class="pause-option selected" data-value="normal" type="button">Normal</button>
+                                                <button class="pause-option" data-value="relaxed" type="button">Suaves</button>
+                                                <button class="pause-option" data-value="deep" type="button">Profundas</button>
+                                            </div>
+                                            <small class="pause-hint">Define o respiro e o ritmo antes de gerar o áudio.</small>
                                         </div>
                                     </div>
 
@@ -4386,8 +4389,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260518-01"></script>
-    <script src="/video/static/pwa.js?v=20260518-01"></script>
+    <script src="/video/static/app.js?v=20260518-03"></script>
+    <script src="/video/static/pwa.js?v=20260518-03"></script>
 </body>
 </html>
 
