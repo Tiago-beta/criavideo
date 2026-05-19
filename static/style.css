@@ -13916,8 +13916,16 @@ th,
 }
 
 .editor-mobile-stage-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
     display: none;
+    align-items: flex-end;
     width: 100%;
+    padding: 10px;
+    z-index: 6;
+    pointer-events: none;
 }
 
 .editor-mobile-stage-panel[hidden] {
@@ -13933,6 +13941,19 @@ th,
     background: linear-gradient(180deg, rgba(8, 29, 48, 0.96), rgba(6, 21, 37, 0.98));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 -14px 36px rgba(0, 0, 0, 0.3);
+    pointer-events: auto;
+    max-height: min(55%, 250px);
+    overflow-y: auto;
+}
+
+.editor-mobile-stage-card-compact {
+    gap: 0;
+    padding: 10px;
+}
+
+.editor-mobile-stage-add-btn {
+    width: 100%;
+    margin: 0;
 }
 
 .editor-mobile-stage-header {
@@ -14855,7 +14876,7 @@ th,
 }
 
 .editor-track-label {
-    width: 40px;
+    width: var(--editor-timeline-label-width, 40px);
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -14881,6 +14902,22 @@ th,
     align-items: center;
     justify-content: center;
     min-width: auto;
+}
+
+.editor-track-label-slider-wrap {
+    display: none;
+}
+
+.editor-track-label-slider {
+    width: 100%;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+    background: transparent;
+}
+
+.editor-track-label-slider.muted {
+    accent-color: #ff6a78;
 }
 
 .editor-track-label-volume {
@@ -15792,21 +15829,8 @@ th,
     }
 
     .editor-mobile-stage-panel {
-        display: block;
-        max-height: min(30vh, 260px);
-        overflow-y: auto;
-        padding-top: 4px;
-        flex-shrink: 0;
-    }
-
-    .editor-workspace.editor-mobile-stage-text-open .editor-props-panel {
-        display: none;
-        height: 0;
-        max-height: 0;
-        min-height: 0;
-        padding: 0;
-        border-top: none;
-        overflow: hidden;
+        display: flex;
+        padding: 10px;
     }
 
     .editor-upload-card {
@@ -15817,22 +15841,17 @@ th,
 
     .editor-props-panel {
         order: 3;
-        display: block;
+        display: none !important;
         position: relative;
         bottom: auto; left: auto; right: auto; top: auto;
-        width: 100%;
-        height: var(--editor-mobile-props-height);
-        max-height: var(--editor-mobile-props-height);
-        min-height: var(--editor-mobile-props-height);
-        border-left: none;
-        border-top: 1px solid var(--border);
+        width: 0;
+        height: 0;
+        max-height: 0;
+        min-height: 0;
+        border: 0;
         border-radius: 0;
-        padding: 6px 10px;
-        overflow-y: auto;
-        overflow-x: hidden;
-        scrollbar-gutter: auto;
-        scrollbar-width: thin;
-        scrollbar-color: rgba(225, 239, 252, 0.28) transparent;
+        padding: 0;
+        overflow: hidden;
         flex-shrink: 0;
     }
 
@@ -15850,7 +15869,7 @@ th,
     }
 
     .editor-props-panel.open {
-        display: block;
+        display: none !important;
     }
 
     .editor-props-panel .editor-props-title {
@@ -15877,6 +15896,73 @@ th,
 
     .editor-timeline-tracks {
         padding-right: 24px;
+    }
+
+    .editor-track-label {
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 8px;
+        padding: 0 8px;
+    }
+
+    .editor-track-label-main {
+        width: 14px;
+        min-width: 14px;
+    }
+
+    .editor-track-label-slider-wrap {
+        display: inline-flex;
+        flex: 1 1 auto;
+        min-width: 0;
+        align-items: center;
+    }
+
+    .editor-track-label-slider {
+        -webkit-appearance: none;
+        appearance: none;
+        height: 18px;
+    }
+
+    .editor-track-label-slider::-webkit-slider-runnable-track {
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(225, 239, 252, 0.34);
+    }
+
+    .editor-track-label-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 10px;
+        height: 10px;
+        margin-top: -3px;
+        border-radius: 999px;
+        border: none;
+        background: var(--accent);
+        box-shadow: 0 0 0 2px rgba(8, 29, 48, 0.8);
+    }
+
+    .editor-track-label-slider.muted::-webkit-slider-thumb {
+        background: #ff6a78;
+    }
+
+    .editor-track-label-slider::-moz-range-track {
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(225, 239, 252, 0.34);
+    }
+
+    .editor-track-label-slider::-moz-range-thumb {
+        width: 10px;
+        height: 10px;
+        border: none;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 0 2px rgba(8, 29, 48, 0.8);
+    }
+
+    .editor-track-label-slider.muted::-moz-range-thumb {
+        background: #ff6a78;
     }
 
     .editor-topbar {

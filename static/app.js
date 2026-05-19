@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v491 loaded");
+console.log("[CriaVideo] app.js v492 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28556,12 +28556,17 @@ const _EDITOR_TIMELINE_MAX_ZOOM = 12;
 const _EDITOR_TIMELINE_ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12];
 const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
 const _EDITOR_TIMELINE_LABEL_WIDTH = 40;
+const _EDITOR_TIMELINE_MOBILE_LABEL_WIDTH = 84;
 const _EDITOR_TIMELINE_RIGHT_GUTTER = 16;
 const _EDITOR_SEGMENT_SPEED_MIN = 0.25;
 const _EDITOR_SEGMENT_SPEED_MAX = 4;
 
 function _editorIsMobileViewport() {
     return window.innerWidth <= 768;
+}
+
+function _editorGetTimelineLabelWidth() {
+    return _editorIsMobileViewport() ? _EDITOR_TIMELINE_MOBILE_LABEL_WIDTH : _EDITOR_TIMELINE_LABEL_WIDTH;
 }
 
 function _editorUseFixedMobilePlayhead() {
@@ -28595,14 +28600,15 @@ function _editorSyncMobileBarsPlacement() {
 
 function _editorGetTimelineViewportFocusOffset() {
     const timelineEl = document.getElementById("editor-timeline");
-    if (!timelineEl) return _EDITOR_TIMELINE_LABEL_WIDTH + 120;
-    const visibleTrackWidth = Math.max(120, timelineEl.clientWidth - _EDITOR_TIMELINE_LABEL_WIDTH - _EDITOR_TIMELINE_RIGHT_GUTTER);
-    return Math.round(_EDITOR_TIMELINE_LABEL_WIDTH + (visibleTrackWidth / 2));
+    const labelWidth = _editorGetTimelineLabelWidth();
+    if (!timelineEl) return labelWidth + 120;
+    const visibleTrackWidth = Math.max(120, timelineEl.clientWidth - labelWidth - _EDITOR_TIMELINE_RIGHT_GUTTER);
+    return Math.round(labelWidth + (visibleTrackWidth / 2));
 }
 
 function _editorGetTimelineLeadGutter() {
     if (!_editorUseFixedMobilePlayhead()) return 0;
-    return Math.max(0, _editorGetTimelineViewportFocusOffset() - _EDITOR_TIMELINE_LABEL_WIDTH);
+    return Math.max(0, _editorGetTimelineViewportFocusOffset() - _editorGetTimelineLabelWidth());
 }
 
 function _editorGetTimelineTrailingGutter() {
@@ -28617,7 +28623,7 @@ function _editorGetTimeAtTimelineViewport(scrollLeft = 0) {
     if (!timelineDuration) return 0;
     const trackWidth = Math.max(1, _editorGetTimelineTrackWidth(timelineDuration));
     const absoluteX = Math.max(0, Number(scrollLeft || 0) + _editorGetTimelineViewportFocusOffset());
-    const trackX = Math.max(0, Math.min(trackWidth, absoluteX - _EDITOR_TIMELINE_LABEL_WIDTH - _editorGetTimelineLeadGutter()));
+    const trackX = Math.max(0, Math.min(trackWidth, absoluteX - _editorGetTimelineLabelWidth() - _editorGetTimelineLeadGutter()));
     return (trackX / trackWidth) * timelineDuration;
 }
 
@@ -34735,7 +34741,7 @@ function _editorGetTimelineTrackWidth(durationSec = 0) {
     const timelineEl = document.getElementById("editor-timeline");
     const parentWidth = Number(timelineEl?.parentElement?.clientWidth || 0);
     const viewportWidth = parentWidth > 0 ? parentWidth : Number(timelineEl?.clientWidth || 0);
-    const viewportTrackWidth = Math.max(560, viewportWidth - (_EDITOR_TIMELINE_LABEL_WIDTH + _EDITOR_TIMELINE_RIGHT_GUTTER));
+    const viewportTrackWidth = Math.max(560, viewportWidth - (_editorGetTimelineLabelWidth() + _EDITOR_TIMELINE_RIGHT_GUTTER));
     const zoom = _editorClampTimelineZoom(_editor.timelineZoom || 1);
     const baseWidth = Math.max(420, viewportTrackWidth);
     return Math.round(baseWidth * zoom);
@@ -34756,7 +34762,7 @@ function _editorCenterTimelineOnTime(timeSec) {
         const trackWidth = Math.max(document.getElementById("editor-track-video")?.offsetWidth || 0, _editorGetTimelineTrackWidth(timelineDuration));
         const safeTime = Math.max(0, Math.min(timelineDuration, Number(timeSec || 0)));
         const leadGutter = _editorGetTimelineLeadGutter();
-        const x = _EDITOR_TIMELINE_LABEL_WIDTH + leadGutter + (safeTime / timelineDuration) * trackWidth;
+        const x = _editorGetTimelineLabelWidth() + leadGutter + (safeTime / timelineDuration) * trackWidth;
         const viewportTarget = _editorUseFixedMobilePlayhead() ? _editorGetTimelineViewportFocusOffset() : (timelineEl.clientWidth / 2);
         const targetScroll = Math.max(0, Math.min(timelineEl.scrollWidth - timelineEl.clientWidth, x - viewportTarget));
         timelineEl.scrollLeft = targetScroll;
@@ -34771,7 +34777,8 @@ function _editorPreserveTimelineFocusViewport(focusTime, previousTrackWidth = 0)
     const safeFocus = Math.max(0, Math.min(timelineDuration, Number(focusTime || 0)));
     const oldTrackWidth = Math.max(1, Number(previousTrackWidth || _editorGetTimelineTrackWidth(timelineDuration)));
     const oldLeadGutter = _editorGetTimelineLeadGutter();
-    const oldFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + oldLeadGutter + ((safeFocus / timelineDuration) * oldTrackWidth);
+    const labelWidth = _editorGetTimelineLabelWidth();
+    const oldFocusX = labelWidth + oldLeadGutter + ((safeFocus / timelineDuration) * oldTrackWidth);
     const viewportOffset = _editorUseFixedMobilePlayhead()
         ? _editorGetTimelineViewportFocusOffset()
         : (oldFocusX - Number(timelineEl.scrollLeft || 0));
@@ -34779,7 +34786,7 @@ function _editorPreserveTimelineFocusViewport(focusTime, previousTrackWidth = 0)
     requestAnimationFrame(() => {
         const nextTrackWidth = Math.max(1, _editorGetTimelineTrackWidth(timelineDuration));
         const nextLeadGutter = _editorGetTimelineLeadGutter();
-        const nextFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + nextLeadGutter + ((safeFocus / timelineDuration) * nextTrackWidth);
+        const nextFocusX = labelWidth + nextLeadGutter + ((safeFocus / timelineDuration) * nextTrackWidth);
         const maxScroll = Math.max(0, timelineEl.scrollWidth - timelineEl.clientWidth);
         const targetScroll = Math.max(0, Math.min(maxScroll, nextFocusX - viewportOffset));
         timelineEl.scrollLeft = targetScroll;
@@ -35041,7 +35048,7 @@ function _editorMovePlayhead(t) {
     const pct = timelineDuration > 0 ? (safeTime / timelineDuration) : 0;
     const x = Math.max(0, Math.min(trackWidth - 2, pct * trackWidth));
     const leadGutter = _editorGetTimelineLeadGutter();
-    const absoluteX = _EDITOR_TIMELINE_LABEL_WIDTH + leadGutter + x;
+    const absoluteX = _editorGetTimelineLabelWidth() + leadGutter + x;
 
     if (_editorUseFixedMobilePlayhead()) {
         const fixedOffset = _editorGetTimelineViewportFocusOffset();
@@ -35810,11 +35817,10 @@ function _editorSelectTool(toolName) {
     }
 
     _editorRenderProps();
-    // On mobile, toggle props panel
     const pp = document.getElementById("editor-props-panel");
-    if (pp && window.innerWidth <= 768) {
-        pp.classList.toggle("open", true);
-        pp.style.display = "block";
+    if (pp && _editorIsMobileViewport()) {
+        pp.classList.remove("open");
+        pp.style.removeProperty("display");
     } else if (pp) {
         pp.style.removeProperty("display");
     }
@@ -36511,23 +36517,29 @@ function _editorSubtitleEditForm() {
 // ---------- Text actions ----------
 function _editorBuildTrackLabelMarkup(row) {
     const iconHtml = `<span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>`;
-    if (!_editorIsTrackSelectable(row.track)) {
+    const shouldShowMobileVolume = _editorIsMobileViewport() && (row.track === "video" || row.track === "audio");
+    if (!_editorIsTrackSelectable(row.track) || !shouldShowMobileVolume) {
         return iconHtml;
     }
 
-    const volumePct = _editorGetTrackMasterVolumePercent(row.track);
-    const volumeTitle = `Abrir volume da faixa ${String(row.label || row.track || "").toLowerCase()}`;
+    const volumePct = Math.max(0, Math.min(100, Math.round(_editorGetTrackMasterVolumePercent(row.track))));
+    const volumeTitle = `Volume da faixa ${String(row.label || row.track || "").toLowerCase()}`;
     return `
         ${iconHtml}
-        <button
-            class="editor-track-label-volume${volumePct <= 0 ? " muted" : ""}"
-            type="button"
-            title="${esc(volumeTitle)}"
-            aria-label="${esc(volumeTitle)}"
-            onclick="event.stopPropagation();_editorOpenTrackVolumeControls('${row.track}')"
-        >
-            ${_editorTimelineVolumeIcon(row.track)}
-        </button>
+        <span class="editor-track-label-slider-wrap" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
+            <input
+                class="editor-track-label-slider${volumePct <= 0 ? " muted" : ""}"
+                type="range"
+                min="0"
+                max="100"
+                value="${volumePct}"
+                title="${esc(volumeTitle)}"
+                aria-label="${esc(volumeTitle)}"
+                onpointerdown="event.stopPropagation()"
+                onclick="event.stopPropagation()"
+                oninput="_editorSetTrackVolumeFromTrim('${row.track}', this.value)"
+            >
+        </span>
     `;
 }
 
@@ -36607,7 +36619,7 @@ function _editorGetSelectedTextItem() {
 }
 
 function _editorShouldShowMobileTextStageEditor() {
-    return _editorIsMobileViewport() && _editor.activeTool === "text" && Boolean(_editorGetSelectedTextItem());
+    return _editorIsMobileViewport() && _editor.activeTool === "text";
 }
 
 function _editorRenderMobileStagePanel() {
@@ -36615,14 +36627,23 @@ function _editorRenderMobileStagePanel() {
     const workspace = document.getElementById("editor-workspace");
     if (!panel || !workspace) return;
 
-    const selectedText = _editorShouldShowMobileTextStageEditor() ? _editorGetSelectedTextItem() : null;
-    const showPanel = Boolean(selectedText);
+    const showPanel = _editorShouldShowMobileTextStageEditor();
+    const selectedText = showPanel ? _editorGetSelectedTextItem() : null;
 
     workspace.classList.toggle("editor-mobile-stage-text-open", showPanel);
     panel.hidden = !showPanel;
 
-    if (!showPanel || !selectedText) {
+    if (!showPanel) {
         panel.innerHTML = "";
+        return;
+    }
+
+    if (!selectedText) {
+        panel.innerHTML = `
+            <div class="editor-mobile-stage-card editor-mobile-stage-card-compact">
+                <button class="editor-add-btn editor-mobile-stage-add-btn" type="button" onclick="_editorAddText()">+ Adicionar texto</button>
+            </div>
+        `;
         return;
     }
 
@@ -36638,7 +36659,7 @@ function _editorRenderMobileStagePanel() {
                 </div>
                 <button class="editor-mobile-stage-delete" type="button" onclick="_editorDeleteText(${selectedText.id})">Excluir</button>
             </div>
-            <textarea class="editor-mobile-stage-input" rows="3" oninput="_editorUpdateTextProp(${selectedText.id},'content',this.value)">${esc(String(selectedText.content || ""))}</textarea>
+            <textarea class="editor-mobile-stage-input" rows="2" placeholder="Digite aqui" oninput="_editorUpdateTextProp(${selectedText.id},'content',this.value)">${esc(String(selectedText.content || ""))}</textarea>
             <div class="editor-mobile-stage-toolbar">
                 <label class="editor-mobile-stage-color" title="Cor do texto">
                     <input type="color" value="${esc(String(selectedText.color || "#ffffff"))}" oninput="_editorUpdateTextProp(${selectedText.id},'color',this.value)">
@@ -37671,7 +37692,9 @@ window._editorSetTrackVolumeFromTrim = _editorSetTrackVolumeFromTrim;
 function _editorOpenTrackVolumeControls(track) {
     if (!_editorIsTrackSelectable(track)) return;
     _editorToggleTrackSelection(track);
-    document.getElementById("editor-props-panel")?.classList.add("open");
+    if (!_editorIsMobileViewport()) {
+        document.getElementById("editor-props-panel")?.classList.add("open");
+    }
 }
 window._editorOpenTrackVolumeControls = _editorOpenTrackVolumeControls;
 
@@ -37922,8 +37945,13 @@ function _editorRenderTimeline() {
     const trackW = _editorGetTimelineTrackWidth(dur);
     const leadGutter = _editorGetTimelineLeadGutter();
     const trailingGutter = _editorGetTimelineTrailingGutter();
-    const timelineInnerWidth = Math.max(120, Math.round(_EDITOR_TIMELINE_LABEL_WIDTH + leadGutter + trackW + trailingGutter));
+    const labelWidth = _editorGetTimelineLabelWidth();
+    const timelineInnerWidth = Math.max(120, Math.round(labelWidth + leadGutter + trackW + trailingGutter));
     const transitionMarkersByTrack = new Map();
+
+    if (timelineEl) {
+        timelineEl.style.setProperty("--editor-timeline-label-width", `${labelWidth}px`);
+    }
 
     if (dur > 0.05) {
         _editorGetTransitionSlots().forEach((slot) => {
@@ -38219,9 +38247,9 @@ function _editorRenderTimeline() {
         const tickClass = showLabel ? " major" : "";
         if (showLabel) {
             const minuteClass = dur >= 600 && step >= 60 ? " minute" : "";
-            rulerHtml += `<span class="editor-ruler-mark${minuteClass}" style="left:${_EDITOR_TIMELINE_LABEL_WIDTH + leadGutter + pct}px">${_editorFormatRulerTime(t, dur, step)}</span>`;
+            rulerHtml += `<span class="editor-ruler-mark${minuteClass}" style="left:${labelWidth + leadGutter + pct}px">${_editorFormatRulerTime(t, dur, step)}</span>`;
         }
-        rulerHtml += `<span class="editor-ruler-tick${tickClass}" style="left:${_EDITOR_TIMELINE_LABEL_WIDTH + leadGutter + pct}px"></span>`;
+        rulerHtml += `<span class="editor-ruler-tick${tickClass}" style="left:${labelWidth + leadGutter + pct}px"></span>`;
     });
     ruler.innerHTML = rulerHtml;
 
