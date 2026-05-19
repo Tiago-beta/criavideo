@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260519-11">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260519-12">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 490;
+        var REQUIRED_VER = 491;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -410,9 +410,7 @@
                                 <!-- Right properties panel -->
                                 <div class="editor-props-panel" id="editor-props-panel">
                                     <!-- Dynamic content based on active tool -->
-                                    <div class="editor-props-content" id="editor-props-content">
-                                        <p class="editor-props-hint">Selecione uma ferramenta para começar.</p>
-                                    </div>
+                                    <div class="editor-props-content" id="editor-props-content"></div>
                                 </div>
                             </div>
                             <div class="editor-quick-actions" id="editor-quick-actions">
@@ -4419,8 +4417,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260519-11"></script>
-    <script src="/video/static/pwa.js?v=20260519-11"></script>
+    <script src="/video/static/app.js?v=20260519-12"></script>
+    <script src="/video/static/pwa.js?v=20260519-12"></script>
 </body>
 </html>
 

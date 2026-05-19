@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v490 loaded");
+console.log("[CriaVideo] app.js v491 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -36509,17 +36509,6 @@ function _editorSubtitleEditForm() {
 }
 
 // ---------- Text actions ----------
-function _editorAddText() {
-    _editorSaveState();
-    const video = document.getElementById("editor-video");
-    const t = Number(_editor.timelineTime || video?.currentTime || 0);
-    _editor.texts.forEach(x => x._selected = false);
-    const newText = {
-        id: _editorGenId(), content: "Seu texto aqui", startTime: t, endTime: Math.min(t + 5, _editor.duration),
-        x: 50, y: 50, fontSize: 36, color: "#ffffff", fontFamily: "Manrope, sans-serif", bold: true, italic: false, _selected: true,
-    };
-    _editor.texts.push(newText);
-
 function _editorBuildTrackLabelMarkup(row) {
     const iconHtml = `<span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>`;
     if (!_editorIsTrackSelectable(row.track)) {
@@ -36541,6 +36530,17 @@ function _editorBuildTrackLabelMarkup(row) {
         </button>
     `;
 }
+
+function _editorAddText() {
+    _editorSaveState();
+    const video = document.getElementById("editor-video");
+    const t = Number(_editor.timelineTime || video?.currentTime || 0);
+    _editor.texts.forEach(x => x._selected = false);
+    const newText = {
+        id: _editorGenId(), content: "Seu texto aqui", startTime: t, endTime: Math.min(t + 5, _editor.duration),
+        x: 50, y: 50, fontSize: 36, color: "#ffffff", fontFamily: "Manrope, sans-serif", bold: true, italic: false, _selected: true,
+    };
+    _editor.texts.push(newText);
     _editor.selectedClip = { kind: "text", id: String(newText.id) };
     _editorRefreshQuickActions();
     if (_editor.activeTool !== "text") {
