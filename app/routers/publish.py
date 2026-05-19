@@ -375,25 +375,94 @@ async def ai_suggest(
                 break
         return final
 
-    def _normalize_hashtags(raw_hashtags: str, fallback_tags: list[str], max_items: int = 15) -> str:
-        tokens = re.findall(r"#?[\wÀ-ÿ]+", str(raw_hashtags or ""), flags=re.UNICODE)
-        if not tokens and fallback_tags:
-            tokens = [f"#{tag.replace(' ', '')}" for tag in fallback_tags]
+    def _compact_hashtag_label(value: str) -> str:
+        words = re.findall(r"[\wÀ-ÿ]+", str(value or ""), flags=re.UNICODE)
+        if not words:
+            return ""
 
-        seen = set()
-        cleaned = []
-        for token in tokens:
-            label = token.lstrip("#").strip()
+        compact = "".join(f"{word[:1].upper()}{word[1:]}" for word in words if word)
+        return compact[:48]
+
+    def _normalize_hashtags(raw_hashtags: str, fallback_tags: list[str], max_items: int = 8) -> str:
+        discovery_defaults = [
+            "IdeiaGenial",
+            "VideoViral",
+            "PassoAPasso",
+            "DicaCriativa",
+            "VejaIsso",
+        ]
+        discovery_keys = {item.lower() for item in discovery_defaults}
+        raw_tokens = re.findall(r"#?[\wÀ-ÿ]+", str(raw_hashtags or ""), flags=re.UNICODE)
+        raw_labels = [_compact_hashtag_label(token.lstrip("#")) for token in raw_tokens]
+        fallback_labels = [_compact_hashtag_label(tag) for tag in fallback_tags]
+
+        def _append_unique(bucket: list[str], seen: set[str], value: str) -> None:
+            label = str(value or "").strip()
             if not label:
-                continue
+                return
             key = label.lower()
             if key in seen:
-                continue
+                return
             seen.add(key)
-            cleaned.append(f"#{label}")
-            if len(cleaned) >= max_items:
+            bucket.append(label)
+
+        contextual: list[str] = []
+        contextual_seen: set[str] = set()
+        for label in raw_labels + fallback_labels:
+            if label.lower() in discovery_keys:
+                continue
+            _append_unique(contextual, contextual_seen, label)
+
+        discovery: list[str] = []
+        discovery_seen: set[str] = set()
+        for label in raw_labels:
+            if label.lower() in discovery_keys:
+                _append_unique(discovery, discovery_seen, label)
+        for label in discovery_defaults:
+            _append_unique(discovery, discovery_seen, label)
+
+        min_items = min(5, max_items)
+        contextual_limit = max(1, min(4, max_items - 2))
+        contextual_block: list[str] = []
+        contextual_block_seen: set[str] = set()
+        for label in contextual:
+            if len(contextual_block) >= contextual_limit:
                 break
-        return " ".join(cleaned)
+            _append_unique(contextual_block, contextual_block_seen, label)
+
+        discovery_block: list[str] = []
+        discovery_block_seen: set[str] = set()
+        for label in discovery:
+            if len(contextual_block) + len(discovery_block) >= max_items:
+                break
+            _append_unique(discovery_block, discovery_block_seen, label)
+
+        for label in fallback_labels:
+            if len(contextual_block) + len(discovery_block) >= min_items or len(contextual_block) >= contextual_limit:
+                break
+            _append_unique(contextual_block, contextual_block_seen, label)
+        for label in discovery_defaults:
+            if len(contextual_block) + len(discovery_block) >= min_items:
+                break
+            _append_unique(discovery_block, discovery_block_seen, label)
+
+        grouped_blocks = []
+        if contextual_block:
+            grouped_blocks.append(" ".join(f"#{label}" for label in contextual_block))
+        if discovery_block:
+            grouped_blocks.append(" ".join(f"#{label}" for label in discovery_block))
+
+        if not grouped_blocks:
+            fallback_block: list[str] = []
+            fallback_seen: set[str] = set()
+            for label in raw_labels + fallback_labels + discovery_defaults:
+                if len(fallback_block) >= max_items:
+                    break
+                _append_unique(fallback_block, fallback_seen, label)
+            if fallback_block:
+                grouped_blocks.append(" ".join(f"#{label}" for label in fallback_block))
+
+        return "\n".join(grouped_blocks).strip()
 
     def _derive_thumbnail_hook(seed: str) -> str:
         words = re.findall(r"[\wÀ-ÿ]+", str(seed or ""), flags=re.UNICODE)
@@ -1078,7 +1147,8 @@ GUIDE OBRIGATORIO DE TITULO E DESCRICAO:
 - descrição deve começar com letra maiúscula
 - descricao com 2 a 3 primeiras linhas fortes para vender o clique antes do "mostrar mais"
 - linha 1 deve repetir a palavra-chave principal
-- incluir CTA e hashtags relevantes sem excesso
+- incluir CTA e 5 a 8 hashtags relevantes, agrupadas em 2 linhas: primeira linha com hashtags do tema/contexto e segunda linha com hashtags amplas de descoberta coerentes com o video
+- incluir entre as hashtags amplas exemplos no estilo #IdeiaGenial e #VideoViral quando fizer sentido
 
 MODELO EDITORIAL (usar como estrutura, nunca como texto fixo):
 - identificar a palavra-chave real do vídeo a partir de título, letra, descrição e tags
@@ -1116,7 +1186,7 @@ Retorne SOMENTE JSON (sem markdown):
     "titles": ["...", "...", "...", "...", "..."],
     "selected_title": "...",
     "description": "...",
-    "hashtags": "#... #...",
+    "hashtags": "#TemaPrincipal #PassoAPasso #ProjetoCriativo\n#IdeiaGenial #VideoViral #DicaCriativa",
     "tags": ["...", "...", "..."],
     "thumbnail_hook": "...",
     "thumbnail_prompt": "..."
@@ -1223,6 +1293,8 @@ REGRAS FINAIS OBRIGATORIAS:
 - descricao com primeiras 2 linhas muito fortes para clique
 - descrição deve começar com letra maiúscula
 - descricao sem letra completa
+- hashtags finais com 5 a 8 itens, agrupadas em 2 linhas: contexto primeiro, descoberta depois
+- incluir hashtags amplas no estilo #IdeiaGenial e #VideoViral quando coerentes com o contexto real
 - thumbnail_hook com 2 a 5 palavras em portugues
 - thumbnail_prompt com foco em 1 ideia principal, contraste forte e texto grande legivel
 - ortografia revisada em pt-BR, com acentuacao e pontuacao natural
@@ -1238,7 +1310,7 @@ Retorne SOMENTE JSON:
     ],
     "chosen_title": "...",
     "description": "...",
-    "hashtags": "#... #...",
+    "hashtags": "#TemaPrincipal #PassoAPasso #ProjetoCriativo\n#IdeiaGenial #VideoViral #DicaCriativa",
     "tags": ["...", "..."],
     "thumbnail_hook": "...",
     "thumbnail_prompt": "..."

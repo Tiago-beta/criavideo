@@ -2768,6 +2768,44 @@ a {
     color: #ffd5d5;
 }
 
+.publish-analysis-details-toggle {
+    width: 100%;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.9rem;
+    padding: 0.85rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(0, 212, 255, 0.18);
+    background: rgba(8, 30, 49, 0.58);
+    color: #eef8ff;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.publish-analysis-details-toggle:hover,
+.publish-analysis-details-toggle:focus-visible {
+    border-color: rgba(111, 228, 255, 0.38);
+    background: rgba(10, 37, 60, 0.72);
+}
+
+.publish-analysis-details-toggle.is-open {
+    border-color: rgba(111, 228, 255, 0.34);
+    background: rgba(10, 37, 60, 0.8);
+}
+
+.publish-analysis-details-arrow {
+    transition: transform 0.2s ease;
+}
+
+.publish-analysis-details-toggle.is-open .publish-analysis-details-arrow {
+    transform: rotate(180deg);
+}
+
 .publish-analysis-summary {
     margin-bottom: 0.9rem;
     padding: 0.95rem 1rem;
@@ -2844,6 +2882,18 @@ a {
 .publish-generate-ai-btn {
     width: 100%;
     justify-content: center;
+    gap: 0.6rem;
+}
+
+.publish-generate-ai-btn.is-attention,
+.publish-generate-ai-btn.is-attention:disabled {
+    opacity: 1;
+    color: #081420;
+    border-color: rgba(255, 211, 110, 0.92);
+    background: linear-gradient(120deg, #ffbf5f, #ffe27a, #7ce7ff, #ffbf5f);
+    background-size: 220% 100%;
+    box-shadow: 0 0 0 1px rgba(255, 226, 122, 0.22), 0 14px 28px rgba(255, 191, 95, 0.22);
+    animation: publishGenerateBlink 1.1s ease-in-out infinite, publishGenerateSweep 2.8s linear infinite;
 }
 
 @keyframes publishUploadShimmer {
@@ -2881,6 +2931,27 @@ a {
     50% {
         transform: translateY(-1px);
         background-position: 100% 50%;
+    }
+}
+
+@keyframes publishGenerateBlink {
+    0%,
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    50% {
+        opacity: 0.72;
+        transform: translateY(-1px) scale(0.992);
+    }
+}
+
+@keyframes publishGenerateSweep {
+    0% {
+        background-position: 0% 50%;
+    }
+    100% {
+        background-position: 220% 50%;
     }
 }
 

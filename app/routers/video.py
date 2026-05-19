@@ -2882,6 +2882,7 @@ class StartSimilarAnalysisRequest(BaseModel):
     aspect_ratio: str = "16:9"
     analysis_mode: str = "scene"
     analysis_limit_seconds: int = 0
+    hide_from_create_list: bool = False
 
 
 class SimilarUpdateSceneRequest(BaseModel):
@@ -3038,6 +3039,7 @@ async def start_similar_analysis(
         "similar_analysis_mode": analysis_mode,
         "similar_analysis_limit_seconds": analysis_limit_seconds,
         "similar_scene_seconds": max(int(settings.similar_scene_default_seconds or 5), 5),
+        "hide_from_create_list": bool(req.hide_from_create_list),
     }
 
     project = VideoProject(
@@ -3160,6 +3162,7 @@ async def list_projects(
                 "workflow_type": workflow_type,
                 "workflow_stage": str(tags_data.get("similar_stage") or "").strip(),
                 "is_editor_project": is_editor_project,
+                "hide_from_create_list": bool(tags_data.get("hide_from_create_list")),
             }
         )
 

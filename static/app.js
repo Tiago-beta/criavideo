@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v484 loaded");
+console.log("[CriaVideo] app.js v485 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -1144,6 +1144,12 @@ function bindDashboardEvents() {
     if (publishGenerateBtn) {
         publishGenerateBtn.addEventListener("click", () => {
             generatePublishTitleDescription();
+        });
+    }
+    const publishDetailsBtn = document.getElementById("btn-publish-analysis-details");
+    if (publishDetailsBtn) {
+        publishDetailsBtn.addEventListener("click", () => {
+            togglePublishAnalysisDetails();
         });
     }
     const publishPreviewVideo = document.getElementById("pub-render-preview");
@@ -3687,7 +3693,8 @@ function _isProjectProcessingStatus(status) {
 
 function _projectVisibleInCreateList(project) {
     const normalizedStatus = String(project?.status || "").trim().toLowerCase();
-    return !_isEditorProjectListItem(project)
+    return !project?.hide_from_create_list
+        && !_isEditorProjectListItem(project)
         && (
             _isProjectProcessingStatus(normalizedStatus)
             || normalizedStatus === "failed"
@@ -20805,13 +20812,40 @@ function _setPublishAnalysisStatus(message = "", kind = "idle") {
     statusEl.className = `publish-analysis-status is-${kind}`;
 }
 
+function togglePublishAnalysisDetails(forceExpanded = null) {
+    const toggleBtn = document.getElementById("btn-publish-analysis-details");
+    const summaryEl = document.getElementById("publish-analysis-summary");
+    if (!toggleBtn || !summaryEl || toggleBtn.hidden || !summaryEl.innerHTML.trim()) {
+        if (toggleBtn) {
+            toggleBtn.setAttribute("aria-expanded", "false");
+            toggleBtn.classList.remove("is-open");
+        }
+        if (summaryEl) {
+            summaryEl.hidden = true;
+        }
+        return;
+    }
+
+    const currentExpanded = toggleBtn.getAttribute("aria-expanded") === "true";
+    const nextExpanded = forceExpanded === null ? !currentExpanded : !!forceExpanded;
+    toggleBtn.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+    toggleBtn.classList.toggle("is-open", nextExpanded);
+    summaryEl.hidden = !nextExpanded;
+}
+
 function _renderPublishAnalysisSummary(project = null) {
     const summaryEl = document.getElementById("publish-analysis-summary");
+    const detailsBtn = document.getElementById("btn-publish-analysis-details");
     if (!summaryEl) {
         return;
     }
 
     if (!project) {
+        if (detailsBtn) {
+            detailsBtn.hidden = true;
+            detailsBtn.setAttribute("aria-expanded", "false");
+            detailsBtn.classList.remove("is-open");
+        }
         summaryEl.hidden = true;
         summaryEl.innerHTML = "";
         return;
@@ -20864,10 +20898,17 @@ function _renderPublishAnalysisSummary(project = null) {
     }).filter(Boolean);
 
     if (!sceneCount && !summaryPreview && !sceneItems.length && !cameraLabel && !detectedReason && !audioMeta && !transcriptPreview) {
+        if (detailsBtn) {
+            detailsBtn.hidden = true;
+            detailsBtn.setAttribute("aria-expanded", "false");
+            detailsBtn.classList.remove("is-open");
+        }
         summaryEl.hidden = true;
         summaryEl.innerHTML = "";
         return;
     }
+
+    const keepExpanded = detailsBtn?.getAttribute("aria-expanded") === "true";
 
     const metaBits = [
         sceneCount > 0 ? `${sceneCount} cenas mapeadas` : "",
@@ -20876,7 +20917,6 @@ function _renderPublishAnalysisSummary(project = null) {
         detectedReason,
     ].filter(Boolean);
 
-    summaryEl.hidden = false;
     summaryEl.innerHTML = `
         <div class="publish-analysis-summary-meta">
             ${metaBits.map((item) => `<span>${esc(item)}</span>`).join("")}
@@ -20885,6 +20925,10 @@ function _renderPublishAnalysisSummary(project = null) {
         ${transcriptPreview ? `<div class="publish-analysis-transcript"><strong>Transcricao do audio</strong><p>${esc(transcriptPreview)}</p></div>` : ""}
         ${sceneItems.length ? `<ul class="publish-analysis-scene-list">${sceneItems.join("")}</ul>` : ""}
     `;
+    if (detailsBtn) {
+        detailsBtn.hidden = false;
+    }
+    togglePublishAnalysisDetails(keepExpanded);
 }
 
 function _isPublishAnalysisReady(project = null) {
@@ -20946,8 +20990,11 @@ function _refreshPublishAnalysisActions() {
         analyzeLabel.textContent = isAnalyzing ? "Analisando..." : "Analisar";
     }
     if (generateBtn) {
-        generateBtn.disabled = !hasRender || !analysisReady || isAnalyzing || isGenerating;
+        const canShowGenerate = hasRender && (analysisReady || isGenerating);
+        generateBtn.hidden = !canShowGenerate;
+        generateBtn.disabled = !canShowGenerate || isAnalyzing || isGenerating;
         generateBtn.textContent = isGenerating ? "Gerando..." : "Gerar título e descrição";
+        generateBtn.classList.toggle("is-attention", canShowGenerate && !isAnalyzing && !isGenerating);
     }
     if (previewCard) {
         previewCard.classList.toggle("is-analyzing", hasRender && isAnalyzing);
@@ -21162,6 +21209,7 @@ async function publishStartAnalysis() {
                 aspect_ratio: aspectRatio,
                 analysis_mode: "scene",
                 analysis_limit_seconds: PUBLISH_ANALYSIS_MAX_SECONDS,
+                hide_from_create_list: true,
             }),
         });
 
