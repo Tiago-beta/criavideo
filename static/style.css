@@ -11635,25 +11635,6 @@ th,
     align-items: center;
 }
 
-.similar-reference-frame-warning-pill {
-    display: inline-flex;
-    align-items: center;
-    min-height: 36px;
-    padding: 0 12px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 193, 77, 0.34);
-    background: rgba(255, 193, 77, 0.14);
-    color: #ffe7ae;
-    font-size: 0.76rem;
-    font-weight: 800;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-}
-
-.similar-reference-frame-warning-text {
-    color: #ffe0a0;
-}
-
 .similar-frame-tool-btn {
     display: inline-flex;
     align-items: center;
@@ -11686,6 +11667,20 @@ th,
     border-color: rgba(255, 193, 77, 0.44);
     background: rgba(255, 193, 77, 0.16);
     color: #ffe7ae;
+}
+
+.similar-frame-tool-btn-warning {
+    border-color: rgba(255, 211, 92, 0.9);
+    background: linear-gradient(180deg, rgba(255, 209, 59, 0.96), rgba(214, 152, 17, 0.94));
+    color: #2f2200;
+    box-shadow: 0 12px 26px rgba(214, 152, 17, 0.22);
+}
+
+.similar-frame-tool-btn-warning:hover {
+    border-color: rgba(255, 228, 128, 0.98);
+    background: linear-gradient(180deg, rgba(255, 223, 98, 0.98), rgba(230, 167, 25, 0.96));
+    color: #241800;
+    box-shadow: 0 16px 30px rgba(214, 152, 17, 0.28);
 }
 
 .similar-frame-tool-btn.is-active {
@@ -11907,11 +11902,6 @@ th,
 
     .similar-frame-tool-btn-icon {
         flex: 0 0 auto;
-    }
-
-    .similar-reference-frame-warning-pill {
-        width: 100%;
-        justify-content: center;
     }
 
     .similar-reference-frame-gallery,

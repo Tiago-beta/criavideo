@@ -2288,6 +2288,43 @@ def _clear_similar_generated_frame_variants(tags_data: dict[str, Any], scene_id:
         tags_data.pop("similar_generated_frame_variants", None)
 
 
+def _promote_similar_scene_reference_frame(
+    tags_data: dict[str, Any],
+    scene: VideoScene | Any,
+    *,
+    reference_path: object = "",
+) -> None:
+    promoted_path = str(reference_path or getattr(scene, "image_path", "") or "").strip()
+    if not (promoted_path and os.path.exists(promoted_path)):
+        return
+
+    scene_index = int(getattr(scene, "scene_index", 0) or 0)
+    scene_key = str(scene_index)
+
+    reference_frame_map = _extract_similar_reference_frame_map(tags_data)
+    reference_frame_map[scene_key] = promoted_path
+    tags_data["similar_reference_frames"] = reference_frame_map
+
+    if scene_index > 0:
+        reference_end_map = _extract_similar_reference_end_frame_map(tags_data)
+        reference_end_map[str(scene_index - 1)] = promoted_path
+        tags_data["similar_reference_end_frames"] = reference_end_map
+
+    reference_text_detected_map = _extract_similar_reference_text_detected_map(tags_data)
+    reference_text_detected_map.pop(scene_key, None)
+    if reference_text_detected_map:
+        tags_data["similar_reference_frame_text_detected"] = reference_text_detected_map
+    else:
+        tags_data.pop("similar_reference_frame_text_detected", None)
+
+    reference_text_excerpt_map = _extract_similar_reference_text_excerpt_map(tags_data)
+    reference_text_excerpt_map.pop(scene_key, None)
+    if reference_text_excerpt_map:
+        tags_data["similar_reference_frame_text_excerpt"] = reference_text_excerpt_map
+    else:
+        tags_data.pop("similar_reference_frame_text_excerpt", None)
+
+
 def _serialize_project_scene(
     scene: VideoScene,
     reference_frame_map: dict[str, str] | None = None,
@@ -2860,6 +2897,7 @@ class SimilarSceneImageRequest(BaseModel):
     generate_from_prompt: bool = False
     prompt_override: str = ""
     edit_instruction: str = ""
+    promote_reference_frame: bool = False
     aspect_ratio: str = "16:9"
 
 
@@ -3904,15 +3942,17 @@ async def upsert_similar_scene_image(
     )
     tags_data = _safe_tags_dict(project.tags)
     reference_frame_map = _extract_similar_reference_frame_map(tags_data)
-    source_reference_image = str(reference_frame_map.get(str(current_scene_index)) or "").strip()
+    source_reference_image = str(scene.image_path or "").strip()
+    if source_reference_image and not os.path.exists(source_reference_image):
+        source_reference_image = ""
+    if not source_reference_image:
+        source_reference_image = str(reference_frame_map.get(str(current_scene_index)) or "").strip()
     if source_reference_image and not os.path.exists(source_reference_image):
         source_reference_image = ""
     if not source_reference_image and anchor_scene and current_scene_index > int(anchor_scene.scene_index or 0):
         candidate_anchor_path = str(anchor_scene.image_path or "").strip()
         if candidate_anchor_path and os.path.exists(candidate_anchor_path):
             source_reference_image = candidate_anchor_path
-    if not source_reference_image and scene.image_path and os.path.exists(str(scene.image_path)):
-        source_reference_image = str(scene.image_path)
 
     effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     image_dir = Path(settings.media_dir) / "images" / str(project.id)
@@ -3995,7 +4035,11 @@ async def upsert_similar_scene_image(
     scene.scene_type = "image"
 
     tags_data = _safe_tags_dict(project.tags)
-    if req.generate_from_prompt and track_generated_variant:
+    promote_reference_frame = bool(req.promote_reference_frame and req.generate_from_prompt and track_generated_variant)
+    if promote_reference_frame:
+        _promote_similar_scene_reference_frame(tags_data, scene, reference_path=scene.image_path)
+        _clear_similar_generated_frame_variants(tags_data, int(scene.id or 0))
+    elif req.generate_from_prompt and track_generated_variant:
         _set_similar_generated_frame_variants(
             tags_data,
             int(scene.id or 0),

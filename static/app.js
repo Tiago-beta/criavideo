@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v481 loaded");
+console.log("[CriaVideo] app.js v482 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -8436,11 +8436,6 @@ function _renderSimilarScenes(project, options = {}) {
         const referenceDownloadName = esc(`frame-cena-${idx + 1}.jpg`);
         const referenceTextExcerptRaw = String(scene.reference_frame_text_excerpt || "").trim();
         const referenceTextDetected = !!scene.reference_frame_text_detected || !!referenceTextExcerptRaw;
-        const referenceTextWarningTitle = esc(
-            referenceTextExcerptRaw
-                ? `Escrita detectada no frame base: ${referenceTextExcerptRaw}`
-                : "Escrita detectada no frame base"
-        );
         const removeTextTitle = "Remover escrita do frame base";
         const generatedImageVariants = Array.isArray(scene.generated_image_variants)
             ? scene.generated_image_variants.filter((item) => String(item?.url || item?.path || "").trim())
@@ -8458,15 +8453,11 @@ function _renderSimilarScenes(project, options = {}) {
         const framePanelSummary = generatedImageVariants.length
             ? `${generatedImageVariants.length + 1} imagens lado a lado.`
             : "Contexto visual da cena.";
-        const referenceTextHintMarkup = referenceTextDetected
-            ? `<p class="field-hint similar-reference-frame-warning-text">Escrita detectada no frame base${referenceTextExcerptRaw ? `: &quot;${esc(referenceTextExcerptRaw)}&quot;.` : "."} Use Remover escrita antes de gerar o video.</p>`
-            : "";
         const referenceFrameQuickActionsMarkup = referenceTextDetected
             ? `
                 <div class="similar-reference-frame-tools">
                     <div class="similar-reference-frame-quick-actions">
-                        <span class="similar-reference-frame-warning-pill" title="${referenceTextWarningTitle}">Escrita detectada</span>
-                        <button class="similar-frame-tool-btn" type="button" onclick="similarRemoveFrameText(${sceneId})" title="${removeTextTitle}" aria-label="${removeTextTitle}" ${frameBusyDisabledAttr}>Remover escrita</button>
+                        <button class="similar-frame-tool-btn similar-frame-tool-btn-warning" type="button" onclick="similarRemoveFrameText(${sceneId})" title="${removeTextTitle}" aria-label="${removeTextTitle}" ${frameBusyDisabledAttr}>Remover escrita</button>
                     </div>
                 </div>
             `
@@ -8630,7 +8621,6 @@ function _renderSimilarScenes(project, options = {}) {
                     <div class="similar-reference-frame-editor is-open">
                         <label for="similar-frame-instruction-${sceneId}">O que a IA deve mudar neste frame? (opcional)</label>
                         <textarea id="similar-frame-instruction-${sceneId}" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar o produto por uma embalagem premium, manter a mesma mesa, o mesmo enquadramento e a mesma luz." ${frameBusyDisabledAttr}>${frameInstructionValue}</textarea>
-                        ${referenceTextHintMarkup}
                         <p class="field-hint">A imagem nova sai do frame original e respeita o prompt atual da cena para manter o contexto.</p>
                         <div class="similar-reference-frame-editor-tools">
                             <button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarUploadFrameReference(${sceneId})" title="Enviar nova foto" aria-label="Enviar nova foto" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
@@ -13263,7 +13253,7 @@ function _buildSimilarFrameTextRemovalInstruction(scene) {
     ].filter(Boolean).join(" ");
 }
 
-async function _requestSimilarFrameVariant(sceneId, { instructionOverride = "", busyLabel = "", successMessage = "" } = {}) {
+async function _requestSimilarFrameVariant(sceneId, { instructionOverride = "", busyLabel = "", successMessage = "", promoteReferenceFrame = false } = {}) {
     const projectId = Number(similarState.projectId || 0);
     if (!projectId) {
         alert("Inicie a analise antes de editar um frame.");
@@ -13323,6 +13313,7 @@ async function _requestSimilarFrameVariant(sceneId, { instructionOverride = "", 
                 generate_from_prompt: true,
                 prompt_override: promptOverride,
                 edit_instruction: editInstruction,
+                promote_reference_frame: !!promoteReferenceFrame,
                 image_upload_ids: uploadIds,
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
@@ -13348,6 +13339,7 @@ async function similarRemoveFrameText(sceneId) {
     await _requestSimilarFrameVariant(sceneId, {
         instructionOverride: _buildSimilarFrameTextRemovalInstruction(scene),
         busyLabel: "Removendo escrita do frame base...",
+        promoteReferenceFrame: true,
         successMessage: "Escrita removida do frame base.",
     });
 }
