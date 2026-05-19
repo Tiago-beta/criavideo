@@ -13527,6 +13527,12 @@ th,
     display: block;
 }
 
+#editor-video {
+    object-fit: contain;
+    object-position: center;
+    background: #000;
+}
+
 #editor-overlay-canvas {
     position: absolute;
     top: 0;
@@ -13872,6 +13878,189 @@ th,
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+}
+
+.editor-aspect-icon-btn {
+    display: none;
+    position: relative;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(7, 20, 33, 0.82);
+    color: rgba(236, 245, 255, 0.92);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.editor-aspect-icon-btn::after {
+    content: attr(data-aspect-label);
+    position: absolute;
+    right: 3px;
+    bottom: 2px;
+    padding: 1px 4px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.72);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: 0.02em;
+}
+
+.editor-aspect-icon-btn.auto::after {
+    background: rgba(0, 212, 255, 0.22);
+    color: var(--accent-2);
+}
+
+.editor-mobile-stage-panel {
+    display: none;
+    width: 100%;
+}
+
+.editor-mobile-stage-panel[hidden] {
+    display: none !important;
+}
+
+.editor-mobile-stage-card {
+    display: grid;
+    gap: 10px;
+    width: 100%;
+    padding: 12px;
+    border-radius: 18px 18px 0 0;
+    background: linear-gradient(180deg, rgba(8, 29, 48, 0.96), rgba(6, 21, 37, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 -14px 36px rgba(0, 0, 0, 0.3);
+}
+
+.editor-mobile-stage-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.editor-mobile-stage-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.editor-mobile-stage-title strong {
+    font-size: 14px;
+    color: var(--text);
+}
+
+.editor-mobile-stage-title span {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.editor-mobile-stage-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 40px;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 106, 120, 0.28);
+    background: rgba(255, 106, 120, 0.12);
+    color: #ff95a0;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.editor-mobile-stage-input {
+    width: 100%;
+    min-height: 86px;
+    resize: vertical;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+    padding: 12px 14px;
+    font: inherit;
+}
+
+.editor-mobile-stage-input:focus {
+    outline: none;
+    border-color: rgba(0, 212, 255, 0.45);
+    box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.18);
+}
+
+.editor-mobile-stage-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.editor-mobile-stage-color {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+
+.editor-mobile-stage-color input[type="color"] {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+}
+
+.editor-mobile-stage-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 38px;
+    height: 38px;
+    padding: 0 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(235, 243, 252, 0.88);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.editor-mobile-stage-chip.active {
+    border-color: rgba(0, 212, 255, 0.34);
+    background: rgba(0, 212, 255, 0.16);
+    color: var(--accent-2);
+}
+
+.editor-mobile-stage-slider-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.editor-mobile-stage-slider-row input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+}
+
+.editor-mobile-stage-slider-row output {
+    min-width: 44px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 
 .editor-play-btn {
@@ -14669,9 +14858,10 @@ th,
     width: 40px;
     flex-shrink: 0;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0;
+    gap: 2px;
     padding: 0;
     font-size: 10px;
     color: var(--text-muted);
@@ -14691,6 +14881,31 @@ th,
     align-items: center;
     justify-content: center;
     min-width: auto;
+}
+
+.editor-track-label-volume {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+    cursor: pointer;
+}
+
+.editor-track-label-volume svg {
+    width: 10px;
+    height: 10px;
+}
+
+.editor-track-label-volume.muted {
+    color: rgba(255, 106, 120, 0.88);
+    border-color: rgba(255, 106, 120, 0.24);
+    background: rgba(255, 106, 120, 0.1);
 }
 
 .editor-track-props-volume-group {
@@ -15499,9 +15714,9 @@ th,
 
     .editor-canvas-wrapper {
         width: min(100%, 98vw);
-        height: clamp(300px, 48vh, 520px);
+        height: clamp(320px, 54vh, 560px);
         max-width: min(100%, 98vw);
-        max-height: calc(100dvh - 252px);
+        max-height: calc(100dvh - 222px);
         min-height: 260px;
         min-width: min(98vw, 340px);
         flex: 0 0 auto;
@@ -15514,6 +15729,7 @@ th,
         margin-top: 2px;
         padding-top: 2px;
         padding-bottom: 0;
+        gap: 10px;
     }
 
     .editor-play-btn {
@@ -15532,6 +15748,10 @@ th,
     #editor-play-icon {
         width: 28px;
         height: 28px;
+    }
+
+    .editor-aspect-icon-btn {
+        display: inline-flex;
     }
 
     .editor-quick-actions {
@@ -15568,10 +15788,25 @@ th,
     }
 
     .editor-aspect-selector {
-        width: auto;
-        justify-content: flex-end;
-        margin-left: 0;
-        flex: 0 0 auto;
+        display: none;
+    }
+
+    .editor-mobile-stage-panel {
+        display: block;
+        max-height: min(30vh, 260px);
+        overflow-y: auto;
+        padding-top: 4px;
+        flex-shrink: 0;
+    }
+
+    .editor-workspace.editor-mobile-stage-text-open .editor-props-panel {
+        display: none;
+        height: 0;
+        max-height: 0;
+        min-height: 0;
+        padding: 0;
+        border-top: none;
+        overflow: hidden;
     }
 
     .editor-upload-card {

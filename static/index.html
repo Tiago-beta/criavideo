@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260519-10">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260519-11">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 489;
+        var REQUIRED_VER = 490;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -401,7 +401,11 @@
                                         <span class="editor-time" id="editor-time-current">00:00</span>
                                         <span class="editor-time-sep">/</span>
                                         <span class="editor-time" id="editor-time-total">00:00</span>
+                                        <button class="editor-aspect-icon-btn" id="editor-aspect-btn" type="button" title="Proporção automática" aria-label="Proporção automática">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 9h8"/><path d="M8 15h5"/></svg>
+                                        </button>
                                     </div>
+                                    <div class="editor-mobile-stage-panel" id="editor-mobile-stage-panel" hidden></div>
                                 </div>
                                 <!-- Right properties panel -->
                                 <div class="editor-props-panel" id="editor-props-panel">
@@ -4415,8 +4419,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260519-10"></script>
-    <script src="/video/static/pwa.js?v=20260519-10"></script>
+    <script src="/video/static/app.js?v=20260519-11"></script>
+    <script src="/video/static/pwa.js?v=20260519-11"></script>
 </body>
 </html>
 

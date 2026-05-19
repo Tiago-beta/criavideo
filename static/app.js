@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v489 loaded");
+console.log("[CriaVideo] app.js v490 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -29513,14 +29513,43 @@ function _editorApplyAspectRatio() {
     }[resolved] || "9 / 16";
     wrapper.style.setProperty("--editor-aspect-ratio", cssVal);
 
-    const sel = document.getElementById("editor-aspect-select");
-    if (sel) sel.value = _normalizeAspectValue(_editor.outputAspectRatio);
+    _editorRefreshAspectControls();
 
     const video = document.getElementById("editor-video");
     _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
 
     _editorRenderMediaLayers();
 }
+
+function _editorRefreshAspectControls() {
+    const normalized = _normalizeAspectValue(_editor.outputAspectRatio);
+    const resolved = _resolveAspectRatio();
+
+    const sel = document.getElementById("editor-aspect-select");
+    if (sel) sel.value = normalized;
+
+    const btn = document.getElementById("editor-aspect-btn");
+    if (!btn) return;
+
+    const label = normalized === "source" ? `Auto ${resolved}` : resolved;
+    const title = normalized === "source"
+        ? `Proporção automática (${resolved})`
+        : `Proporção ${resolved}`;
+    btn.dataset.aspectLabel = label;
+    btn.classList.toggle("auto", normalized === "source");
+    btn.title = title;
+    btn.setAttribute("aria-label", title);
+}
+
+function _editorCycleAspectRatio() {
+    const values = ["source", "9:16", "16:9", "1:1"];
+    const current = _normalizeAspectValue(_editor.outputAspectRatio);
+    const index = values.indexOf(current);
+    const next = values[(index + 1 + values.length) % values.length];
+    _editorSaveState();
+    _editorSetOutputAspectRatio(next);
+}
+window._editorCycleAspectRatio = _editorCycleAspectRatio;
 
 function _editorSetOutputAspectRatio(value) {
     _editor.outputAspectRatio = _normalizeAspectValue(value);
@@ -35308,7 +35337,7 @@ function _editorFindSubtitleAtCanvasPoint(clientX, clientY) {
 
     const video = document.getElementById("editor-video");
     if (!video) return null;
-    const currentTime = Number(video.currentTime || 0);
+    const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
 
     const rect = canvas.getBoundingClientRect();
     const x = clientX - rect.left;
@@ -35349,7 +35378,63 @@ function _editorFindSubtitleAtCanvasPoint(clientX, clientY) {
     return null;
 }
 
+function _editorFindTextAtCanvasPoint(clientX, clientY) {
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas || !_editor.texts.length) return null;
+
+    const video = document.getElementById("editor-video");
+    if (!video) return null;
+    const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
+
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const activeTexts = _editor.texts.filter((item) => currentTime >= item.startTime && currentTime <= item.endTime);
+    if (!activeTexts.length) return null;
+
+    for (let i = activeTexts.length - 1; i >= 0; i -= 1) {
+        const item = activeTexts[i];
+        const scale = canvas.height / 720;
+        const fs = Number(item.fontSize || 36) * scale;
+        let fontStr = "";
+        if (item.italic) fontStr += "italic ";
+        if (item.bold) fontStr += "bold ";
+        fontStr += `${fs}px ${item.fontFamily || "Manrope, sans-serif"}`;
+        ctx.font = fontStr;
+
+        const content = String(item.content || "");
+        const textW = ctx.measureText(content).width;
+        const pad = Math.max(6 * scale, fs * 0.18);
+        const tx = (Number(item.x || 50) / 100) * canvas.width;
+        const ty = (Number(item.y || 50) / 100) * canvas.height;
+
+        const left = tx - textW / 2 - pad;
+        const right = tx + textW / 2 + pad;
+        const top = ty - fs / 2 - pad;
+        const bottom = ty + fs / 2 + pad;
+
+        if (x >= left && x <= right && y >= top && y <= bottom) {
+            return item;
+        }
+    }
+
+    return null;
+}
+
 function _editorHandleOverlayClick(event) {
+    const hitText = _editorFindTextAtCanvasPoint(event.clientX, event.clientY);
+    if (hitText) {
+        event.preventDefault();
+        event.stopPropagation();
+        _editorSelectText(hitText.id);
+        return;
+    }
+
     const hitSubtitle = _editorFindSubtitleAtCanvasPoint(event.clientX, event.clientY);
     if (!hitSubtitle) return;
 
@@ -36310,6 +36395,8 @@ function _editorRenderProps() {
             </div>
         `;
     }
+
+    _editorRenderMobileStagePanel();
 }
 
 // Text edit form
@@ -36432,9 +36519,35 @@ function _editorAddText() {
         x: 50, y: 50, fontSize: 36, color: "#ffffff", fontFamily: "Manrope, sans-serif", bold: true, italic: false, _selected: true,
     };
     _editor.texts.push(newText);
+
+function _editorBuildTrackLabelMarkup(row) {
+    const iconHtml = `<span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>`;
+    if (!_editorIsTrackSelectable(row.track)) {
+        return iconHtml;
+    }
+
+    const volumePct = _editorGetTrackMasterVolumePercent(row.track);
+    const volumeTitle = `Abrir volume da faixa ${String(row.label || row.track || "").toLowerCase()}`;
+    return `
+        ${iconHtml}
+        <button
+            class="editor-track-label-volume${volumePct <= 0 ? " muted" : ""}"
+            type="button"
+            title="${esc(volumeTitle)}"
+            aria-label="${esc(volumeTitle)}"
+            onclick="event.stopPropagation();_editorOpenTrackVolumeControls('${row.track}')"
+        >
+            ${_editorTimelineVolumeIcon(row.track)}
+        </button>
+    `;
+}
     _editor.selectedClip = { kind: "text", id: String(newText.id) };
     _editorRefreshQuickActions();
-    _editorRenderProps();
+    if (_editor.activeTool !== "text") {
+        _editorSelectTool("text");
+    } else {
+        _editorRenderProps();
+    }
     _editorRenderTimeline();
 }
 window._editorAddText = _editorAddText;
@@ -36443,7 +36556,12 @@ function _editorSelectText(id) {
     _editor.texts.forEach(t => t._selected = (t.id === id));
     _editor.selectedClip = { kind: "text", id: String(id) };
     _editorRefreshQuickActions();
-    _editorRenderProps();
+    if (_editor.activeTool !== "text") {
+        _editorSelectTool("text");
+    } else {
+        _editorRenderProps();
+    }
+    _editorRenderTimeline();
 }
 window._editorSelectText = _editorSelectText;
 
@@ -36469,6 +36587,78 @@ function _editorUpdateTextProp(id, prop, val) {
     _editorRenderTimeline();
 }
 window._editorUpdateTextProp = _editorUpdateTextProp;
+
+function _editorToggleTextFlag(id, prop) {
+    const target = _editor.texts.find((item) => item.id === id);
+    if (!target) return;
+    target[prop] = !Boolean(target[prop]);
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderTimeline();
+    _editorRenderMobileStagePanel();
+}
+window._editorToggleTextFlag = _editorToggleTextFlag;
+
+function _editorGetSelectedTextItem() {
+    return _editor.texts.find((item) => item._selected)
+        || _editor.texts.find((item) => String(item.id) === String(_editor.selectedClip.id || ""))
+        || null;
+}
+
+function _editorShouldShowMobileTextStageEditor() {
+    return _editorIsMobileViewport() && _editor.activeTool === "text" && Boolean(_editorGetSelectedTextItem());
+}
+
+function _editorRenderMobileStagePanel() {
+    const panel = document.getElementById("editor-mobile-stage-panel");
+    const workspace = document.getElementById("editor-workspace");
+    if (!panel || !workspace) return;
+
+    const selectedText = _editorShouldShowMobileTextStageEditor() ? _editorGetSelectedTextItem() : null;
+    const showPanel = Boolean(selectedText);
+
+    workspace.classList.toggle("editor-mobile-stage-text-open", showPanel);
+    panel.hidden = !showPanel;
+
+    if (!showPanel || !selectedText) {
+        panel.innerHTML = "";
+        return;
+    }
+
+    const fontSize = Math.round(Number(selectedText.fontSize || 36));
+    const y = Math.round(Number(selectedText.y || 50));
+
+    panel.innerHTML = `
+        <div class="editor-mobile-stage-card">
+            <div class="editor-mobile-stage-header">
+                <div class="editor-mobile-stage-title">
+                    <strong>Texto na tela</strong>
+                    <span>${_fmtTime(selectedText.startTime)} - ${_fmtTime(selectedText.endTime)}</span>
+                </div>
+                <button class="editor-mobile-stage-delete" type="button" onclick="_editorDeleteText(${selectedText.id})">Excluir</button>
+            </div>
+            <textarea class="editor-mobile-stage-input" rows="3" oninput="_editorUpdateTextProp(${selectedText.id},'content',this.value)">${esc(String(selectedText.content || ""))}</textarea>
+            <div class="editor-mobile-stage-toolbar">
+                <label class="editor-mobile-stage-color" title="Cor do texto">
+                    <input type="color" value="${esc(String(selectedText.color || "#ffffff"))}" oninput="_editorUpdateTextProp(${selectedText.id},'color',this.value)">
+                </label>
+                <button class="editor-mobile-stage-chip${selectedText.bold ? " active" : ""}" type="button" onclick="_editorToggleTextFlag(${selectedText.id},'bold')">B</button>
+                <button class="editor-mobile-stage-chip${selectedText.italic ? " active" : ""}" type="button" onclick="_editorToggleTextFlag(${selectedText.id},'italic')">I</button>
+            </div>
+            <div class="editor-mobile-stage-slider-row">
+                <span>Tamanho</span>
+                <input type="range" min="12" max="120" value="${fontSize}" oninput="document.getElementById('editor-mobile-text-size-value').textContent=this.value+'px';_editorUpdateTextProp(${selectedText.id},'fontSize',parseInt(this.value,10)||36)">
+                <output id="editor-mobile-text-size-value">${fontSize}px</output>
+            </div>
+            <div class="editor-mobile-stage-slider-row">
+                <span>Altura</span>
+                <input type="range" min="5" max="95" value="${y}" oninput="document.getElementById('editor-mobile-text-y-value').textContent=this.value+'%';_editorUpdateTextProp(${selectedText.id},'y',parseInt(this.value,10)||50)">
+                <output id="editor-mobile-text-y-value">${y}%</output>
+            </div>
+        </div>
+    `;
+}
 
 function _editorOpenSubtitleTextModal(subtitleId) {
     const normalizedId = String(subtitleId || "");
@@ -37478,6 +37668,13 @@ function _editorSetTrackVolumeFromTrim(track, val) {
 }
 window._editorSetTrackVolumeFromTrim = _editorSetTrackVolumeFromTrim;
 
+function _editorOpenTrackVolumeControls(track) {
+    if (!_editorIsTrackSelectable(track)) return;
+    _editorToggleTrackSelection(track);
+    document.getElementById("editor-props-panel")?.classList.add("open");
+}
+window._editorOpenTrackVolumeControls = _editorOpenTrackVolumeControls;
+
 function _editorSetSegmentVolume(track, id, val) {
     const targetTrack = _editorIsAudioTrack(track)
         ? "audio"
@@ -37976,7 +38173,7 @@ function _editorRenderTimeline() {
         return `
             <div class="editor-track" data-track="${row.track}">
                 <div class="editor-track-label">
-                    <span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>
+                    ${_editorBuildTrackLabelMarkup(row)}
                 </div>
                 <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px;${leadGutter ? `margin-left:${leadGutter}px;` : ""}">${row.clipsHtml || ""}</div>
             </div>
@@ -39473,6 +39670,7 @@ function _bindEditorEvents() {
     }
     document.getElementById("editor-overlay-canvas")?.addEventListener("click", _editorHandleOverlayClick);
     document.getElementById("editor-play-btn")?.addEventListener("click", _editorTogglePlay);
+    document.getElementById("editor-aspect-btn")?.addEventListener("click", _editorCycleAspectRatio);
     document.getElementById("editor-back-btn")?.addEventListener("click", closeEditor);
     document.getElementById("editor-new-btn")?.addEventListener("click", _editorOpenStartModal);
     document.getElementById("editor-undo-btn")?.addEventListener("click", _editorUndo);
@@ -39521,6 +39719,7 @@ function _bindEditorEvents() {
     document.addEventListener("pointerup", _editorOnMediaLayerDragEnd);
     window.addEventListener("resize", _editorRenderMediaLayers);
     window.addEventListener("resize", _editorRenderTimeline);
+    window.addEventListener("resize", _editorRenderMobileStagePanel);
     document.getElementById("editor-quick-add-text")?.addEventListener("click", _editorAddText);
     document.getElementById("editor-quick-add-subtitle")?.addEventListener("click", _editorAddSubtitle);
     document.getElementById("editor-quick-cut")?.addEventListener("click", _editorSplitAtCurrentTime);
