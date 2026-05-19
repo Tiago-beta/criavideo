@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v494 loaded");
+console.log("[CriaVideo] app.js v495 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28562,6 +28562,7 @@ const _EDITOR_TIMELINE_ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 
 const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
 const _EDITOR_TIMELINE_LABEL_WIDTH = 40;
 const _EDITOR_TIMELINE_MOBILE_LABEL_WIDTH = 34;
+const _EDITOR_TIMELINE_MOBILE_FOCUS_BIAS = -10;
 const _EDITOR_TIMELINE_RIGHT_GUTTER = 16;
 const _EDITOR_SEGMENT_SPEED_MIN = 0.25;
 const _EDITOR_SEGMENT_SPEED_MAX = 4;
@@ -28617,7 +28618,8 @@ function _editorGetTimelineViewportFocusOffset() {
     const labelWidth = _editorGetTimelineLabelWidth();
     if (!timelineEl) return labelWidth + 120;
     const visibleTrackWidth = Math.max(120, timelineEl.clientWidth - labelWidth - _EDITOR_TIMELINE_RIGHT_GUTTER);
-    return Math.round(labelWidth + (visibleTrackWidth / 2));
+    const bias = _editorIsMobileViewport() ? _EDITOR_TIMELINE_MOBILE_FOCUS_BIAS : 0;
+    return Math.max(labelWidth + 88, Math.round(labelWidth + (visibleTrackWidth / 2) + bias));
 }
 
 function _editorGetTimelineLeadGutter() {
@@ -29548,18 +29550,23 @@ function _editorRefreshAspectControls() {
     const resolved = _resolveAspectRatio();
 
     const sel = document.getElementById("editor-aspect-select");
-    if (sel) sel.value = normalized;
+    if (sel) {
+        sel.value = normalized;
+        const sourceOption = sel.querySelector('option[value="source"]');
+        if (sourceOption) {
+            sourceOption.textContent = resolved;
+        }
+    }
 
     const btn = document.getElementById("editor-aspect-btn");
     if (!btn) return;
 
-    const label = normalized === "source" ? "Auto" : "";
     const title = normalized === "source"
         ? `Proporção automática (${resolved})`
         : `Proporção ${resolved}`;
     const valueEl = btn.querySelector(".editor-aspect-icon-value");
     if (valueEl) valueEl.textContent = resolved;
-    btn.dataset.aspectLabel = label;
+    btn.dataset.aspectLabel = "";
     btn.classList.toggle("auto", normalized === "source");
     btn.title = title;
     btn.setAttribute("aria-label", title);
@@ -32801,7 +32808,6 @@ async function _editorPrepareRecorderSession(mode) {
                 ctx.drawImage(webcamVideoEl, x, y, overlayWidth, overlayHeight);
                 ctx.restore();
             }
-
             _editorRecorderRuntime.drawRaf = nextFrame(drawFrame);
         };
         drawFrame();
@@ -35322,19 +35328,31 @@ function _editorDrawOverlays(t) {
             selectedTextBounds.bottom - selectedTextBounds.top,
         );
         ctx.setLineDash([]);
-        ctx.fillStyle = "#1ee58d";
+        ctx.fillStyle = "rgba(255, 92, 112, 0.96)";
         ctx.beginPath();
         ctx.arc(selectedTextBounds.handleX, selectedTextBounds.handleY, selectedTextBounds.handleRadius, 0, Math.PI * 2);
         ctx.fill();
         ctx.lineWidth = Math.max(1.2, 1.6 * scale);
         ctx.strokeStyle = "rgba(4, 14, 24, 0.82)";
         ctx.stroke();
-        ctx.strokeStyle = "rgba(255,255,255,0.92)";
+        const trashW = selectedTextBounds.handleRadius * 0.95;
+        const trashH = selectedTextBounds.handleRadius * 1.02;
+        const trashX = selectedTextBounds.handleX - (trashW / 2);
+        const trashY = selectedTextBounds.handleY - (trashH / 2) + 0.5;
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
         ctx.beginPath();
-        ctx.moveTo(selectedTextBounds.handleX - selectedTextBounds.handleRadius * 0.45, selectedTextBounds.handleY);
-        ctx.lineTo(selectedTextBounds.handleX + selectedTextBounds.handleRadius * 0.45, selectedTextBounds.handleY);
-        ctx.moveTo(selectedTextBounds.handleX, selectedTextBounds.handleY - selectedTextBounds.handleRadius * 0.45);
-        ctx.lineTo(selectedTextBounds.handleX, selectedTextBounds.handleY + selectedTextBounds.handleRadius * 0.45);
+        ctx.moveTo(trashX + trashW * 0.2, trashY + trashH * 0.22);
+        ctx.lineTo(trashX + trashW * 0.8, trashY + trashH * 0.22);
+        ctx.moveTo(trashX + trashW * 0.35, trashY + trashH * 0.14);
+        ctx.lineTo(trashX + trashW * 0.65, trashY + trashH * 0.14);
+        ctx.moveTo(trashX + trashW * 0.28, trashY + trashH * 0.26);
+        ctx.lineTo(trashX + trashW * 0.34, trashY + trashH * 0.82);
+        ctx.lineTo(trashX + trashW * 0.66, trashY + trashH * 0.82);
+        ctx.lineTo(trashX + trashW * 0.72, trashY + trashH * 0.26);
+        ctx.moveTo(trashX + trashW * 0.44, trashY + trashH * 0.38);
+        ctx.lineTo(trashX + trashW * 0.44, trashY + trashH * 0.68);
+        ctx.moveTo(trashX + trashW * 0.56, trashY + trashH * 0.38);
+        ctx.lineTo(trashX + trashW * 0.56, trashY + trashH * 0.68);
         ctx.stroke();
         ctx.restore();
     }
@@ -35585,6 +35603,10 @@ function _editorRenderInlineTextEditor(item = null, bounds = null) {
         });
         input.addEventListener("blur", () => {
             if (String(_editorInlineTextEditId || "") !== String(input.dataset.textId || "")) return;
+            if (!String(input.value || "").trim().length) {
+                _editorDeleteText(input._editorTextId);
+                return;
+            }
             _editorInlineTextEditId = "";
             _editorInlineTextEditPendingFocus = "";
             const video = document.getElementById("editor-video");
@@ -35595,6 +35617,11 @@ function _editorRenderInlineTextEditor(item = null, bounds = null) {
             if (event.key === "Enter") {
                 event.preventDefault();
                 input.blur();
+                return;
+            }
+            if ((event.key === "Backspace" || event.key === "Delete") && !String(input.value || "").length) {
+                event.preventDefault();
+                _editorDeleteText(input._editorTextId);
                 return;
             }
             if (event.key === "Escape") {
@@ -35659,7 +35686,7 @@ function _editorResolveTextOverlayInteraction(clientX, clientY) {
         const handleDx = x - bounds.handleX;
         const handleDy = y - bounds.handleY;
         if ((handleDx * handleDx) + (handleDy * handleDy) <= (bounds.handleRadius * bounds.handleRadius)) {
-            return { item: selectedText, bounds, mode: "resize" };
+            return { item: selectedText, bounds, mode: "delete" };
         }
     }
 
@@ -35678,6 +35705,14 @@ function _editorStartTextOverlayDrag(event) {
     if (!_editorIsMobileViewport()) return false;
     const interaction = _editorResolveTextOverlayInteraction(event.clientX, event.clientY);
     if (!interaction?.item) return false;
+
+    if (interaction.mode === "delete") {
+        _editorTextOverlayIgnoreClick = true;
+        _editorDeleteText(interaction.item.id);
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+    }
 
     _editorInlineTextEditId = "";
     _editorInlineTextEditPendingFocus = "";
@@ -36890,8 +36925,9 @@ function _editorBuildTrackLabelMarkup(row) {
     const openClass = _editorMobileTrackVolumeOpen === row.track ? " open" : "";
 
     return `
-        ${iconHtml}
-        <span class="editor-track-label-volume-wrap${openClass}${mutedClass}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
+        <span class="editor-track-label-controls" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
+            ${iconHtml}
+            <span class="editor-track-label-volume-wrap${openClass}${mutedClass}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
             <button
                 class="editor-track-label-volume${mutedClass}"
                 type="button"
@@ -36915,6 +36951,7 @@ function _editorBuildTrackLabelMarkup(row) {
                     onclick="event.stopPropagation()"
                     oninput="_editorSetTrackVolumeFromTrim('${row.track}', this.value); this.closest('.editor-track-label-volume-wrap')?.classList.toggle('muted', (parseInt(this.value, 10) || 0) <= 0); this.closest('.editor-track-label-volume-wrap')?.querySelector('.editor-track-label-volume')?.classList.toggle('muted', (parseInt(this.value, 10) || 0) <= 0);"
                 >
+            </span>
             </span>
         </span>
     `;
@@ -37031,11 +37068,12 @@ function _editorRenderMobileStagePanel() {
 
     const showPanel = _editorShouldShowMobileTextStageEditor();
     const selectedText = showPanel ? _editorGetSelectedTextItem() : null;
+    const shouldShowAddPanel = showPanel && !selectedText;
 
-    workspace.classList.toggle("editor-mobile-stage-text-open", showPanel);
-    panel.hidden = !showPanel;
+    workspace.classList.toggle("editor-mobile-stage-text-open", shouldShowAddPanel);
+    panel.hidden = !shouldShowAddPanel;
 
-    if (!showPanel) {
+    if (!showPanel || selectedText) {
         panel.innerHTML = "";
         return;
     }
@@ -37049,38 +37087,6 @@ function _editorRenderMobileStagePanel() {
         return;
     }
 
-    const fontSize = Math.round(Number(selectedText.fontSize || 36));
-    const y = Math.round(Number(selectedText.y || 50));
-
-    panel.innerHTML = `
-        <div class="editor-mobile-stage-card">
-            <div class="editor-mobile-stage-header">
-                <div class="editor-mobile-stage-title">
-                    <strong>Texto na tela</strong>
-                    <span>${_fmtTime(selectedText.startTime)} - ${_fmtTime(selectedText.endTime)}</span>
-                </div>
-                <button class="editor-mobile-stage-delete" type="button" onclick="_editorDeleteText(${selectedText.id})">Excluir</button>
-            </div>
-            <input class="editor-mobile-stage-input" type="text" value="${esc(String(selectedText.content || ""))}" placeholder="Digite aqui" onfocus="this.select()" oninput="_editorUpdateTextProp(${selectedText.id},'content',this.value)">
-            <div class="editor-mobile-stage-toolbar">
-                <label class="editor-mobile-stage-color" title="Cor do texto">
-                    <input type="color" value="${esc(String(selectedText.color || "#ffffff"))}" oninput="_editorUpdateTextProp(${selectedText.id},'color',this.value)">
-                </label>
-                <button class="editor-mobile-stage-chip${selectedText.bold ? " active" : ""}" type="button" onclick="_editorToggleTextFlag(${selectedText.id},'bold')">B</button>
-                <button class="editor-mobile-stage-chip${selectedText.italic ? " active" : ""}" type="button" onclick="_editorToggleTextFlag(${selectedText.id},'italic')">I</button>
-            </div>
-            <div class="editor-mobile-stage-slider-row">
-                <span>Tamanho</span>
-                <input type="range" min="12" max="120" value="${fontSize}" oninput="document.getElementById('editor-mobile-text-size-value').textContent=this.value+'px';_editorUpdateTextProp(${selectedText.id},'fontSize',parseInt(this.value,10)||36)">
-                <output id="editor-mobile-text-size-value">${fontSize}px</output>
-            </div>
-            <div class="editor-mobile-stage-slider-row">
-                <span>Altura</span>
-                <input type="range" min="5" max="95" value="${y}" oninput="document.getElementById('editor-mobile-text-y-value').textContent=this.value+'%';_editorUpdateTextProp(${selectedText.id},'y',parseInt(this.value,10)||50)">
-                <output id="editor-mobile-text-y-value">${y}%</output>
-            </div>
-        </div>
-    `;
 }
 
 function _editorOpenSubtitleTextModal(subtitleId) {

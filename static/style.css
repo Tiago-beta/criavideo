@@ -13885,11 +13885,12 @@ th,
     position: relative;
     align-items: center;
     justify-content: center;
-    width: 42px;
-    height: 36px;
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(7, 20, 33, 0.82);
+    width: auto;
+    height: auto;
+    padding: 0;
+    border-radius: 0;
+    border: none;
+    background: transparent;
     color: rgba(236, 245, 255, 0.92);
     cursor: pointer;
     flex-shrink: 0;
@@ -13900,8 +13901,8 @@ th,
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 17px;
+    width: 30px;
+    height: 21px;
     border: 2px solid currentColor;
     border-radius: 4px;
 }
@@ -13930,7 +13931,7 @@ th,
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 7px;
+    font-size: 8px;
     font-weight: 900;
     letter-spacing: -0.04em;
     line-height: 1;
@@ -13938,23 +13939,11 @@ th,
 }
 
 .editor-aspect-icon-btn::after {
-    content: attr(data-aspect-label);
-    position: absolute;
-    right: 3px;
-    bottom: 2px;
-    padding: 1px 4px;
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.72);
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 8px;
-    font-weight: 700;
-    line-height: 1.1;
-    letter-spacing: 0.02em;
-    opacity: 0;
+    display: none;
 }
 
 .editor-aspect-icon-btn[data-aspect-label]:not([data-aspect-label=""])::after {
-    opacity: 1;
+    display: none;
 }
 
 .editor-aspect-icon-btn.auto::after {
@@ -14948,7 +14937,7 @@ th,
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 0;
     padding: 0;
     font-size: 10px;
     color: var(--text-muted);
@@ -14968,6 +14957,13 @@ th,
     align-items: center;
     justify-content: center;
     min-width: auto;
+}
+
+.editor-track-label-controls {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
 }
 
 .editor-track-label-slider-wrap {
@@ -14996,15 +14992,14 @@ th,
 .editor-track-label-volume-popover {
     display: none;
     position: absolute;
-    left: calc(100% + 8px);
+    left: calc(100% + 6px);
     top: 50%;
     transform: translateY(-50%);
-    width: 82px;
-    padding: 7px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(0, 212, 255, 0.18);
-    background: rgba(4, 18, 31, 0.96);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+    width: 72px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
     z-index: 8;
 }
 
@@ -15045,7 +15040,7 @@ th,
     border: none;
     border-radius: 0;
     background: transparent;
-    color: rgba(120, 212, 255, 0.94);
+    color: rgba(236, 245, 255, 0.92);
     cursor: pointer;
 }
 
@@ -15853,8 +15848,8 @@ th,
     .editor-preview-area {
         order: 1;
         flex: 1;
-        padding: 2px 6px 0;
-        gap: 4px;
+        padding: 4px 6px 0;
+        gap: 2px;
         min-height: 0;
         width: 100%;
         align-self: stretch;
@@ -15863,11 +15858,11 @@ th,
     }
 
     .editor-canvas-wrapper {
-        width: min(100%, 98vw);
-        height: clamp(320px, 54vh, 560px);
-        max-width: min(100%, 98vw);
-        max-height: calc(100dvh - 222px);
-        min-height: 260px;
+        width: min(100%, 99vw);
+        height: clamp(340px, 58vh, 620px);
+        max-width: min(100%, 99vw);
+        max-height: calc(100dvh - 186px);
+        min-height: 280px;
         min-width: min(98vw, 340px);
         flex: 0 0 auto;
         align-self: center;
@@ -15876,7 +15871,7 @@ th,
     .editor-play-controls {
         width: 100%;
         justify-content: center;
-        margin-top: 2px;
+        margin-top: 4px;
         padding-top: 2px;
         padding-bottom: 0;
         gap: 10px;
@@ -16015,7 +16010,7 @@ th,
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 4px;
+        gap: 0;
         padding: 0;
     }
 
