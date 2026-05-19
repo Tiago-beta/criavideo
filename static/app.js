@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v492 loaded");
+console.log("[CriaVideo] app.js v493 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28407,7 +28407,7 @@ const _editor = {
     sourceAspectRatio: "9:16",
     outputAspectRatio: "source",
     playing: false,
-    activeTool: "text",
+    activeTool: "trim",
     smartCuts: [],
     smartCutsLoading: false,
     smartCutsError: "",
@@ -28516,6 +28516,8 @@ function _editorPreviewSeekTo(videoEl, targetTime, options = {}) {
 let _editorTimelineDrag = null;
 let _editorTimelineScrub = null;
 let _editorMediaLayerDrag = null;
+let _editorTextOverlayDrag = null;
+let _editorTextOverlayIgnoreClick = false;
 let _editorMusicPreviewAudio = null;
 let _editorMusicPreviewObjectUrl = "";
 let _editorMusicPreviewSourceKey = "";
@@ -28556,13 +28558,22 @@ const _EDITOR_TIMELINE_MAX_ZOOM = 12;
 const _EDITOR_TIMELINE_ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12];
 const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
 const _EDITOR_TIMELINE_LABEL_WIDTH = 40;
-const _EDITOR_TIMELINE_MOBILE_LABEL_WIDTH = 84;
+const _EDITOR_TIMELINE_MOBILE_LABEL_WIDTH = 40;
 const _EDITOR_TIMELINE_RIGHT_GUTTER = 16;
 const _EDITOR_SEGMENT_SPEED_MIN = 0.25;
 const _EDITOR_SEGMENT_SPEED_MAX = 4;
 
 function _editorIsMobileViewport() {
     return window.innerWidth <= 768;
+}
+
+function _editorResolveInitialActiveTool(toolName = "", selectedClip = null) {
+    const nextTool = String(toolName || "trim");
+    const selectedKind = String(selectedClip?.kind || _editor.selectedClip?.kind || "");
+    if (_editorIsMobileViewport() && nextTool === "text" && selectedKind !== "text") {
+        return "trim";
+    }
+    return nextTool;
 }
 
 function _editorGetTimelineLabelWidth() {
@@ -29219,7 +29230,7 @@ function _editorBuildDraftSnapshot() {
         editProjectName: String(_editor.editProjectName || ""),
         sourceAspectRatio: String(_editor.sourceAspectRatio || "9:16"),
         outputAspectRatio: String(_editor.outputAspectRatio || "source"),
-        activeTool: String(_editor.activeTool || "text"),
+        activeTool: String(_editor.activeTool || "trim"),
         smartCuts: _editor.smartCuts || [],
         smartCutSubtitleStyle: String(_editor.smartCutSubtitleStyle || "destaque"),
         timelineTime: Number(_editor.timelineTime || 0),
@@ -29293,7 +29304,7 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
             _editor.sourceAspectRatio = String(draft.sourceAspectRatio);
         }
         _editor.outputAspectRatio = _normalizeAspectValue(String(draft.outputAspectRatio || _editor.outputAspectRatio || "source"));
-        _editor.activeTool = String(draft.activeTool || _editor.activeTool || "text");
+        _editor.activeTool = String(draft.activeTool || _editor.activeTool || "trim");
         _editor.smartCuts = Array.isArray(draft.smartCuts) ? draft.smartCuts : [];
         _editor.smartCutSubtitleStyle = _getSubStyle(String(draft.smartCutSubtitleStyle || "destaque")).name;
         _editor.smartCutWords = [];
@@ -29327,6 +29338,8 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
         } else {
             _editor.selectedClip = { kind: "", id: "", track: "" };
         }
+
+        _editor.activeTool = _editorResolveInitialActiveTool(_editor.activeTool, _editor.selectedClip);
 
         _editor.trimStart = Math.max(0, Number(draft.trimStart || 0));
         _editor.trimEnd = Math.max(_editor.trimStart, Number(draft.trimEnd || 0));
@@ -34524,7 +34537,7 @@ async function openEditor(projectId, options = {}) {
         _editor.sourceAspectRatio = ["9:16", "16:9", "1:1"].includes(detail.aspect_ratio) ? detail.aspect_ratio : "9:16";
         _editor.outputAspectRatio = "source";
         _editor.playing = false;
-        _editor.activeTool = "text";
+        _editor.activeTool = "trim";
         _editor.smartCuts = [];
         _editor.smartCutsLoading = false;
         _editor.smartCutsError = "";
@@ -34635,7 +34648,7 @@ async function openEditor(projectId, options = {}) {
             _editorRefreshQuickActions();
             _editorRenderTimeline();
             _editorCenterTimelineOnTime(Number(_editor.timelineTime || 0));
-            _editorSelectTool(restored ? _editor.activeTool : "text");
+            _editorSelectTool(_editorResolveInitialActiveTool(restored ? _editor.activeTool : "trim", _editor.selectedClip));
             if (shouldRestoreDraft && restored) {
                 showToast("Edição restaurada de onde você parou.", "success");
             }
@@ -35255,6 +35268,8 @@ function _editorDrawOverlays(t) {
     video.style.filter = _getCSSFilter(_editor.filter);
 
     // Draw texts
+    const selectedText = _editorGetSelectedTextItem();
+    let selectedTextBounds = null;
     for (const txt of _editor.texts) {
         if (t >= txt.startTime && t <= txt.endTime) {
             const fs = txt.fontSize * (canvas.height / 720);
@@ -35275,7 +35290,41 @@ function _editorDrawOverlays(t) {
             const y = (txt.y / 100) * canvas.height;
             ctx.fillText(txt.content, x, y);
             ctx.shadowColor = "transparent";
+
+            if (_editorIsMobileViewport() && _editor.activeTool === "text" && selectedText && String(selectedText.id) === String(txt.id)) {
+                selectedTextBounds = _editorGetTextCanvasBounds(txt, canvas, ctx);
+            }
         }
+    }
+
+    if (selectedTextBounds && _editorIsMobileViewport() && _editor.activeTool === "text") {
+        const scale = canvas.height / 720;
+        ctx.save();
+        ctx.setLineDash([Math.max(4, 6 * scale), Math.max(3, 4 * scale)]);
+        ctx.lineWidth = Math.max(1.6, 2 * scale);
+        ctx.strokeStyle = "rgba(238, 246, 255, 0.92)";
+        ctx.strokeRect(
+            selectedTextBounds.left,
+            selectedTextBounds.top,
+            selectedTextBounds.right - selectedTextBounds.left,
+            selectedTextBounds.bottom - selectedTextBounds.top,
+        );
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#1ee58d";
+        ctx.beginPath();
+        ctx.arc(selectedTextBounds.handleX, selectedTextBounds.handleY, selectedTextBounds.handleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = Math.max(1.2, 1.6 * scale);
+        ctx.strokeStyle = "rgba(4, 14, 24, 0.82)";
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(255,255,255,0.92)";
+        ctx.beginPath();
+        ctx.moveTo(selectedTextBounds.handleX - selectedTextBounds.handleRadius * 0.45, selectedTextBounds.handleY);
+        ctx.lineTo(selectedTextBounds.handleX + selectedTextBounds.handleRadius * 0.45, selectedTextBounds.handleY);
+        ctx.moveTo(selectedTextBounds.handleX, selectedTextBounds.handleY - selectedTextBounds.handleRadius * 0.45);
+        ctx.lineTo(selectedTextBounds.handleX, selectedTextBounds.handleY + selectedTextBounds.handleRadius * 0.45);
+        ctx.stroke();
+        ctx.restore();
     }
 
     // Draw subtitles
@@ -35406,26 +35455,8 @@ function _editorFindTextAtCanvasPoint(clientX, clientY) {
 
     for (let i = activeTexts.length - 1; i >= 0; i -= 1) {
         const item = activeTexts[i];
-        const scale = canvas.height / 720;
-        const fs = Number(item.fontSize || 36) * scale;
-        let fontStr = "";
-        if (item.italic) fontStr += "italic ";
-        if (item.bold) fontStr += "bold ";
-        fontStr += `${fs}px ${item.fontFamily || "Manrope, sans-serif"}`;
-        ctx.font = fontStr;
-
-        const content = String(item.content || "");
-        const textW = ctx.measureText(content).width;
-        const pad = Math.max(6 * scale, fs * 0.18);
-        const tx = (Number(item.x || 50) / 100) * canvas.width;
-        const ty = (Number(item.y || 50) / 100) * canvas.height;
-
-        const left = tx - textW / 2 - pad;
-        const right = tx + textW / 2 + pad;
-        const top = ty - fs / 2 - pad;
-        const bottom = ty + fs / 2 + pad;
-
-        if (x >= left && x <= right && y >= top && y <= bottom) {
+        const bounds = _editorGetTextCanvasBounds(item, canvas, ctx);
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
             return item;
         }
     }
@@ -35433,7 +35464,177 @@ function _editorFindTextAtCanvasPoint(clientX, clientY) {
     return null;
 }
 
+function _editorGetTextCanvasBounds(item, canvas, ctx) {
+    const scale = canvas.height / 720;
+    const fs = Number(item.fontSize || 36) * scale;
+    let fontStr = "";
+    if (item.italic) fontStr += "italic ";
+    if (item.bold) fontStr += "bold ";
+    fontStr += `${fs}px ${item.fontFamily || "Manrope, sans-serif"}`;
+    ctx.font = fontStr;
+
+    const content = String(item.content || "");
+    const textW = ctx.measureText(content).width;
+    const pad = Math.max(6 * scale, fs * 0.18);
+    const tx = (Number(item.x || 50) / 100) * canvas.width;
+    const ty = (Number(item.y || 50) / 100) * canvas.height;
+    const handleRadius = Math.max(9, fs * 0.24);
+    const left = tx - textW / 2 - pad;
+    const right = tx + textW / 2 + pad;
+    const top = ty - fs / 2 - pad;
+    const bottom = ty + fs / 2 + pad;
+    const handleX = Math.min(canvas.width - handleRadius - 4, right + handleRadius * 0.7);
+    const handleY = ty;
+
+    return {
+        left,
+        right,
+        top,
+        bottom,
+        handleX,
+        handleY,
+        handleRadius,
+        widthPct: ((right - left) / Math.max(1, canvas.width)) * 100,
+        heightPct: ((bottom - top) / Math.max(1, canvas.height)) * 100,
+    };
+}
+
+function _editorResolveTextOverlayInteraction(clientX, clientY) {
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas || !_editor.texts.length) return null;
+
+    const video = document.getElementById("editor-video");
+    if (!video) return null;
+    const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
+
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const activeTexts = _editor.texts.filter((item) => currentTime >= item.startTime && currentTime <= item.endTime);
+    if (!activeTexts.length) return null;
+
+    const selectedText = _editorGetSelectedTextItem();
+    if (selectedText && activeTexts.some((item) => String(item.id) === String(selectedText.id))) {
+        const bounds = _editorGetTextCanvasBounds(selectedText, canvas, ctx);
+        const handleDx = x - bounds.handleX;
+        const handleDy = y - bounds.handleY;
+        if ((handleDx * handleDx) + (handleDy * handleDy) <= (bounds.handleRadius * bounds.handleRadius)) {
+            return { item: selectedText, bounds, mode: "resize" };
+        }
+    }
+
+    for (let i = activeTexts.length - 1; i >= 0; i -= 1) {
+        const item = activeTexts[i];
+        const bounds = _editorGetTextCanvasBounds(item, canvas, ctx);
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
+            return { item, bounds, mode: "move" };
+        }
+    }
+
+    return null;
+}
+
+function _editorStartTextOverlayDrag(event) {
+    if (!_editorIsMobileViewport()) return false;
+    const interaction = _editorResolveTextOverlayInteraction(event.clientX, event.clientY);
+    if (!interaction?.item) return false;
+
+    _editorSelectText(interaction.item.id);
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas) return false;
+
+    _editorTextOverlayDrag = {
+        id: String(interaction.item.id),
+        mode: interaction.mode,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startX: Number(interaction.item.x || 50),
+        startY: Number(interaction.item.y || 50),
+        startFontSize: Number(interaction.item.fontSize || 36),
+        widthPct: Number(interaction.bounds.widthPct || 0),
+        heightPct: Number(interaction.bounds.heightPct || 0),
+        pointerId: event.pointerId,
+        pointerTarget: canvas,
+        saved: false,
+        moved: false,
+    };
+
+    _editorCapturePointer(canvas, event.pointerId);
+    document.addEventListener("pointermove", _editorOnTextOverlayDragMove);
+    document.addEventListener("pointerup", _editorOnTextOverlayDragEnd);
+    document.addEventListener("pointercancel", _editorOnTextOverlayDragEnd);
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+}
+
+function _editorOnTextOverlayDragMove(event) {
+    if (!_editorTextOverlayDrag) return;
+    if (_editorTextOverlayDrag.pointerId !== undefined && event.pointerId !== undefined && event.pointerId !== _editorTextOverlayDrag.pointerId) return;
+
+    const drag = _editorTextOverlayDrag;
+    const item = _editor.texts.find((entry) => String(entry.id) === String(drag.id));
+    if (!item) return;
+
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas) return;
+
+    const dx = event.clientX - drag.startClientX;
+    const dy = event.clientY - drag.startClientY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+        drag.moved = true;
+    }
+    if (drag.moved && !drag.saved) {
+        _editorSaveState();
+        drag.saved = true;
+    }
+
+    if (drag.mode === "resize") {
+        const delta = (dx / Math.max(1, canvas.width)) * 180;
+        item.fontSize = Math.max(14, Math.min(120, Math.round(drag.startFontSize + delta)));
+    } else {
+        const halfWidthPct = drag.widthPct / 2;
+        const halfHeightPct = drag.heightPct / 2;
+        item.x = Math.max(halfWidthPct + 2, Math.min(98 - halfWidthPct, drag.startX + ((dx / Math.max(1, canvas.width)) * 100)));
+        item.y = Math.max(halfHeightPct + 2, Math.min(98 - halfHeightPct, drag.startY + ((dy / Math.max(1, canvas.height)) * 100)));
+    }
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderMobileStagePanel();
+    if (event.cancelable) {
+        event.preventDefault();
+    }
+}
+
+function _editorOnTextOverlayDragEnd() {
+    document.removeEventListener("pointermove", _editorOnTextOverlayDragMove);
+    document.removeEventListener("pointerup", _editorOnTextOverlayDragEnd);
+    document.removeEventListener("pointercancel", _editorOnTextOverlayDragEnd);
+    if (!_editorTextOverlayDrag) return;
+
+    _editorReleasePointerCapture(_editorTextOverlayDrag.pointerTarget, _editorTextOverlayDrag.pointerId);
+    const moved = Boolean(_editorTextOverlayDrag.moved);
+    _editorTextOverlayDrag = null;
+    if (!moved) return;
+
+    _editorTextOverlayIgnoreClick = true;
+    _editorRenderMobileStagePanel();
+    _editorRenderProps();
+    _editorScheduleDraftPersist(120);
+}
+
 function _editorHandleOverlayClick(event) {
+    if (_editorTextOverlayIgnoreClick) {
+        _editorTextOverlayIgnoreClick = false;
+        return;
+    }
+
     const hitText = _editorFindTextAtCanvasPoint(event.clientX, event.clientY);
     if (hitText) {
         event.preventDefault();
@@ -36517,18 +36718,20 @@ function _editorSubtitleEditForm() {
 // ---------- Text actions ----------
 function _editorBuildTrackLabelMarkup(row) {
     const iconHtml = `<span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>`;
-    const shouldShowMobileVolume = _editorIsMobileViewport() && (row.track === "video" || row.track === "audio");
-    if (!_editorIsTrackSelectable(row.track) || !shouldShowMobileVolume) {
-        return iconHtml;
+    return iconHtml;
+}
+
+function _editorBuildTrackInlineVolumeMarkup(row) {
+    if (!_editorIsMobileViewport() || (row.track !== "video" && row.track !== "audio")) {
+        return "";
     }
 
     const volumePct = Math.max(0, Math.min(100, Math.round(_editorGetTrackMasterVolumePercent(row.track))));
     const volumeTitle = `Volume da faixa ${String(row.label || row.track || "").toLowerCase()}`;
     return `
-        ${iconHtml}
-        <span class="editor-track-label-slider-wrap" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
+        <div class="editor-track-inline-volume" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
             <input
-                class="editor-track-label-slider${volumePct <= 0 ? " muted" : ""}"
+                class="editor-track-inline-volume-slider${volumePct <= 0 ? " muted" : ""}"
                 type="range"
                 min="0"
                 max="100"
@@ -36539,7 +36742,7 @@ function _editorBuildTrackLabelMarkup(row) {
                 onclick="event.stopPropagation()"
                 oninput="_editorSetTrackVolumeFromTrim('${row.track}', this.value)"
             >
-        </span>
+        </div>
     `;
 }
 
@@ -36549,7 +36752,7 @@ function _editorAddText() {
     const t = Number(_editor.timelineTime || video?.currentTime || 0);
     _editor.texts.forEach(x => x._selected = false);
     const newText = {
-        id: _editorGenId(), content: "Seu texto aqui", startTime: t, endTime: Math.min(t + 5, _editor.duration),
+        id: _editorGenId(), content: "Digite aqui", startTime: t, endTime: Math.min(t + 5, _editor.duration),
         x: 50, y: 50, fontSize: 36, color: "#ffffff", fontFamily: "Manrope, sans-serif", bold: true, italic: false, _selected: true,
     };
     _editor.texts.push(newText);
@@ -36659,7 +36862,7 @@ function _editorRenderMobileStagePanel() {
                 </div>
                 <button class="editor-mobile-stage-delete" type="button" onclick="_editorDeleteText(${selectedText.id})">Excluir</button>
             </div>
-            <textarea class="editor-mobile-stage-input" rows="2" placeholder="Digite aqui" oninput="_editorUpdateTextProp(${selectedText.id},'content',this.value)">${esc(String(selectedText.content || ""))}</textarea>
+            <input class="editor-mobile-stage-input" type="text" value="${esc(String(selectedText.content || ""))}" placeholder="Digite aqui" onfocus="this.select()" oninput="_editorUpdateTextProp(${selectedText.id},'content',this.value)">
             <div class="editor-mobile-stage-toolbar">
                 <label class="editor-mobile-stage-color" title="Cor do texto">
                     <input type="color" value="${esc(String(selectedText.color || "#ffffff"))}" oninput="_editorUpdateTextProp(${selectedText.id},'color',this.value)">
@@ -38203,7 +38406,7 @@ function _editorRenderTimeline() {
                 <div class="editor-track-label">
                     ${_editorBuildTrackLabelMarkup(row)}
                 </div>
-                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px;${leadGutter ? `margin-left:${leadGutter}px;` : ""}">${row.clipsHtml || ""}</div>
+                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px;${leadGutter ? `margin-left:${leadGutter}px;` : ""}">${_editorBuildTrackInlineVolumeMarkup(row)}${row.clipsHtml || ""}</div>
             </div>
         `;
     }).join("");
@@ -39696,6 +39899,9 @@ function _bindEditorEvents() {
             _editorResetPlaybackToStart();
         });
     }
+    document.getElementById("editor-overlay-canvas")?.addEventListener("pointerdown", (event) => {
+        _editorStartTextOverlayDrag(event);
+    });
     document.getElementById("editor-overlay-canvas")?.addEventListener("click", _editorHandleOverlayClick);
     document.getElementById("editor-play-btn")?.addEventListener("click", _editorTogglePlay);
     document.getElementById("editor-aspect-btn")?.addEventListener("click", _editorCycleAspectRatio);
