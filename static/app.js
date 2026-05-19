@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v479 loaded");
+console.log("[CriaVideo] app.js v480 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -201,6 +201,7 @@ function showToast(msg, type = "info") {
 const WAN_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const DEFAULT_REALISTIC_DURATION_OPTIONS = [5, 10, 15, 20, 45, 60];
 const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
+const VIDU_Q3_REALISTIC_DURATION_OPTIONS = Array.from({ length: 16 }, (_, index) => index + 1);
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
 const WORKFLOW_PROMPT_AI_STYLE_OPTIONS = [
     { value: "commercial", label: "Comercial" },
@@ -353,6 +354,8 @@ function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
     }
     const options = engine === "wan2"
         ? WAN_REALISTIC_DURATION_OPTIONS
+        : engine === "viduq3"
+            ? VIDU_Q3_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
             ? SEEDANCE_REALISTIC_DURATION_OPTIONS
             : DEFAULT_REALISTIC_DURATION_OPTIONS;
@@ -373,6 +376,8 @@ function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engine = engineBtn?.dataset.value || "wan2";
     const options = engine === "wan2"
         ? WAN_REALISTIC_DURATION_OPTIONS
+        : engine === "viduq3"
+            ? VIDU_Q3_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
             ? SEEDANCE_REALISTIC_DURATION_OPTIONS
             : DEFAULT_REALISTIC_DURATION_OPTIONS;
@@ -383,6 +388,8 @@ function _syncAutoRealisticDurationOptions(preferredValue = null) {
     const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "wan2";
     const options = engine === "grok"
         ? AUTO_GROK_DURATION_OPTIONS
+        : engine === "viduq3"
+            ? VIDU_Q3_REALISTIC_DURATION_OPTIONS
         : engine === "seedance"
             ? SEEDANCE_REALISTIC_DURATION_OPTIONS
             : WAN_REALISTIC_DURATION_OPTIONS;
@@ -4081,7 +4088,7 @@ let similarState = {
     pollingTimer: null,
     controlsLocked: false,
     engineManuallySelected: false,
-    selectedEngine: "wan2",
+    selectedEngine: "viduq3",
     sceneEngineSelectionBySceneId: {},
     pendingBusyStage: "",
     pendingBusySceneId: 0,
@@ -4190,9 +4197,9 @@ const SIMILAR_DETECTED_MODE_LABELS = {
     unknown: "Não foi possível identificar com confiança o perfil visual do vídeo.",
 };
 const SIMILAR_MODE_ENGINE_DEFAULT = {
-    static_narrated: "wan2",
-    realistic: "wan2",
-    unknown: "wan2",
+    static_narrated: "viduq3",
+    realistic: "viduq3",
+    unknown: "viduq3",
 };
 const SIMILAR_ACTION_ICONS = {
     save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
@@ -5092,6 +5099,8 @@ async function createSimilar(projectId) {
     }
 
     const realisticArtists = new Set([
+        "Pro 3.1",
+        "Vidu Q3 Pro Starter",
         "Wan 2.2",
         "Ultra High 1.0",
         "Ultra High 2.2",
@@ -5116,9 +5125,10 @@ async function createSimilar(projectId) {
 
     const normalizeEngine = (value) => {
         const raw = String(value || "").trim().toLowerCase();
-        if (["wan2", "grok", "seedance"].includes(raw)) {
+        if (["wan2", "grok", "seedance", "viduq3"].includes(raw)) {
             return raw;
         }
+        if (raw.includes("pro 3.1") || raw.includes("vidu")) return "viduq3";
         if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
         if (raw.includes("cria 3.0") || raw.includes("grok")) return "grok";
@@ -6764,7 +6774,7 @@ function _renderSimilarUnifiedPrompt(project) {
     similarState.unifiedEngine = selectedEngine;
     similarState.unifiedDuration = selectedDuration;
 
-    enginePickerEl.innerHTML = ["grok", "wan2", "seedance"].map((engineValue) => `
+    enginePickerEl.innerHTML = ["viduq3", "grok", "wan2", "seedance"].map((engineValue) => `
         <button
             class="similar-scene-engine-btn${selectedEngine === engineValue ? " selected" : ""}"
             type="button"
@@ -6773,7 +6783,7 @@ function _renderSimilarUnifiedPrompt(project) {
             aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
         >${_similarSceneEngineLabel(engineValue)}</button>
     `).join("");
-    _renderDurationButtons("similar-unified-duration-options", [5, 10, 15], selectedDuration);
+    _renderDurationButtons("similar-unified-duration-options", _similarUnifiedDurationOptions(selectedEngine), selectedDuration);
 
     const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
     const unifiedClipUrl = String(tags.similar_unified_clip_url || "").trim();
@@ -7336,14 +7346,18 @@ function similarSelectSceneDuration(sceneId, rawValue) {
 
 function _normalizeSimilarEngine(rawValue) {
     const value = String(rawValue || "").trim().toLowerCase();
-    if (value === "grok" || value === "wan2" || value === "seedance") {
+    if (value === "grok" || value === "wan2" || value === "seedance" || value === "viduq3") {
         return value;
     }
-    return "wan2";
+    if (value.includes("vidu") || value.includes("pro 3.1") || value === "pro31" || value === "pro3.1") {
+        return "viduq3";
+    }
+    return "viduq3";
 }
 
 function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
+    if (normalized === "viduq3") return "Pro 3.1";
     if (normalized === "wan2") return "Ultra 3.0";
     if (normalized === "seedance") return "Mega 2.0";
     return "Cria 2.5";
@@ -7351,6 +7365,7 @@ function _similarSceneEngineLabel(engineValue) {
 
 function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
+    if (normalized === "viduq3") return "Pro 3.1";
     if (normalized === "wan2") return "Ultra High 3.0";
     if (normalized === "seedance") return "Mega 2.0 Ultra";
     return "Cria Speed 2.5 (Grok)";
@@ -7361,7 +7376,7 @@ function _getSimilarSceneSelectedEngine(sceneId) {
     return _normalizeSimilarEngine(
         similarState.sceneEngineSelectionBySceneId?.[sceneKey]
         || similarState.selectedEngine
-        || "wan2"
+        || "viduq3"
     );
 }
 
@@ -7384,19 +7399,26 @@ function _getSimilarUnifiedSelectedEngine(tags = null) {
     return _normalizeSimilarEngine(
         similarState.unifiedEngine
         || safeTags.similar_unified_clip_engine
-        || "seedance"
+        || "viduq3"
     );
+}
+
+function _similarUnifiedDurationOptions(engineValue) {
+    return _normalizeSimilarEngine(engineValue) === "viduq3"
+        ? VIDU_Q3_REALISTIC_DURATION_OPTIONS
+        : [5, 10, 15];
 }
 
 function _getSimilarUnifiedSelectedDuration(tags = null) {
     const safeTags = tags && typeof tags === "object" && !Array.isArray(tags)
         ? tags
         : _safeSimilarTags(similarState.lastProjectSnapshot?.tags);
+    const selectedEngine = _getSimilarUnifiedSelectedEngine(safeTags);
     const preferred = parseInt(
         similarState.unifiedDuration || safeTags.similar_unified_clip_duration || "10",
         10,
     );
-    return _pickClosestDurationOption([5, 10, 15], preferred || 10);
+    return _pickClosestDurationOption(_similarUnifiedDurationOptions(selectedEngine), preferred || 10);
 }
 
 function similarSelectUnifiedEngine(engineValue) {
@@ -7642,13 +7664,13 @@ function _setSimilarEngineSelection(engineValue, options = {}) {
     });
 
     if (!found) {
-        const fallback = document.querySelector("#similar-engine-options [data-value='wan2']");
+        const fallback = document.querySelector("#similar-engine-options [data-value='viduq3']");
         if (fallback) {
             fallback.classList.add("selected");
         }
     }
 
-    similarState.selectedEngine = found ? normalized : "wan2";
+    similarState.selectedEngine = found ? normalized : "viduq3";
     if (markManual) {
         similarState.engineManuallySelected = true;
     }
@@ -7660,7 +7682,7 @@ function _getSimilarSelectedEngine() {
     if (selected) {
         return _normalizeSimilarEngine(selected.dataset.value);
     }
-    return _normalizeSimilarEngine(similarState.selectedEngine || "wan2");
+    return _normalizeSimilarEngine(similarState.selectedEngine || "viduq3");
 }
 
 function _resolveSimilarDetectedMode(tags) {
@@ -7714,7 +7736,7 @@ function _updateSimilarGenerationStep(project, tags) {
     }
 
     const suggestedEngine = _normalizeSimilarEngine(
-        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "wan2"
+        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "viduq3"
     );
     if (!similarState.engineManuallySelected) {
         _setSimilarEngineSelection(suggestedEngine, { markManual: false });
@@ -8386,10 +8408,10 @@ function _renderSimilarScenes(project, options = {}) {
         const pendingCount = pendingUploads.length;
         const applyDisabledAttr = pendingCount ? "" : "disabled";
         const clearDisabledAttr = pendingCount ? "" : "disabled";
-        const applyUploadedLabel = pendingCount > 1
-            ? "Aplicar imagens (WAN 2.6)"
-            : "Aplicar imagem enviada";
         const selectedSceneEngine = _getSimilarSceneSelectedEngine(sceneId);
+        const applyUploadedLabel = pendingCount > 1
+            ? `Aplicar imagens (${_similarEngineDisplayLabel(selectedSceneEngine)})`
+            : "Aplicar imagem enviada";
         const hasImagePreview = !!String(scene.image_url || "").trim();
         const clipUrlRaw = String(scene.clip_url || scene.clip_path || "");
         const clipUrlSafe = esc(clipUrlRaw);
@@ -8665,7 +8687,7 @@ function _renderSimilarScenes(project, options = {}) {
                         <input id="similar-scene-duration-mode-${sceneId}" type="hidden" value="${durationSelection.selectedMode}" data-server-value="${durationSelection.serverMode}">
                     </div>
                     <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
-                        ${["grok", "wan2", "seedance"].map((engineValue) => `
+                        ${["viduq3", "grok", "wan2", "seedance"].map((engineValue) => `
                             <button
                                 class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
                                 type="button"
@@ -10477,6 +10499,7 @@ function workflowAddNode(kind) {
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
+                <option value="viduq3">Pro 3.1</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
@@ -10494,6 +10517,7 @@ function workflowAddNode(kind) {
             <label>Resolução</label>
             <select id="workflow-resolution" class="input workflow-input">
                 <option value="480p">480p</option>
+                <option value="540p">540p</option>
                 <option value="720p" selected>720p</option>
                 <option value="1080p">1080p</option>
             </select>
@@ -10818,6 +10842,7 @@ function getRealisticEngineLabel(engine) {
     const labels = {
         grok: "Cria 3.0 speed",
         wan2: "Ultra High 1.0",
+        viduq3: "Pro 3.1",
         seedance: "Mega 2.0 Ultra",
         avatar31: "Avatar 3.1 Plus",
     };
@@ -10911,9 +10936,14 @@ function workflowStartTemplateRunTracking(projectId, engineLabel, templateKey = 
 }
 
 function workflowEngineDurationOptions(engine) {
+    if (engine === "viduq3") return [...VIDU_Q3_REALISTIC_DURATION_OPTIONS];
     if (engine === "seedance") return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
     if (engine === "wan2") return [...WAN_REALISTIC_DURATION_OPTIONS];
     return [...DEFAULT_REALISTIC_DURATION_OPTIONS];
+}
+
+function workflowPreferredResolutionForEngine(engine) {
+    return engine === "viduq3" ? "540p" : "720p";
 }
 
 function workflowSyncEngineDurationOptions() {
@@ -10921,13 +10951,23 @@ function workflowSyncEngineDurationOptions() {
     const durationSelect = document.getElementById("workflow-duration");
     if (!engineSelect || !durationSelect) return;
     const current = parseInt(durationSelect.value || "15", 10) || 15;
-    const options = workflowEngineDurationOptions(engineSelect.value || "wan2");
+    const selectedEngine = engineSelect.value || "wan2";
+    const options = workflowEngineDurationOptions(selectedEngine);
     const nextValue = _pickClosestDurationOption(options, current || options[0]);
     durationSelect.innerHTML = options.map((value) => `<option value="${value}">${value}s</option>`).join("");
     durationSelect.value = String(nextValue);
     const toggleGroup = document.getElementById("workflow-seedance-last-frame-group");
     if (toggleGroup) {
-        toggleGroup.hidden = (engineSelect.value || "wan2") !== "seedance";
+        toggleGroup.hidden = selectedEngine !== "seedance";
+    }
+    const resolutionSelect = document.getElementById("workflow-resolution");
+    if (resolutionSelect) {
+        const preferredResolution = workflowPreferredResolutionForEngine(selectedEngine);
+        if (selectedEngine === "viduq3") {
+            resolutionSelect.value = preferredResolution;
+        } else if (!resolutionSelect.value || resolutionSelect.value === "540p") {
+            resolutionSelect.value = preferredResolution;
+        }
     }
 }
 
@@ -11097,6 +11137,7 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
+                <option value="viduq3">Pro 3.1</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
@@ -11814,7 +11855,7 @@ async function workflowRunSeedance() {
         const duration = parseInt(document.getElementById("workflow-duration")?.value || "10", 10) || 10;
         const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
-        const resolution = document.getElementById("workflow-resolution")?.value || "720p";
+        const resolution = document.getElementById("workflow-resolution")?.value || (workflowEngine === "viduq3" ? "540p" : "720p");
         const useLastImageAsFinalFrame = workflowEngine === "seedance"
             && !!document.getElementById("workflow-seedance-last-frame")?.checked;
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
@@ -13061,7 +13102,7 @@ async function similarApplyUploadedSceneImages(sceneId) {
 
     try {
         if (uploadIds.length > 1) {
-            _setSimilarStatus("Unindo imagens enviadas com WAN 2.6...", "running");
+            _setSimilarStatus(`Preparando imagens para ${_similarEngineDisplayLabel(_getSimilarSceneSelectedEngine(sceneId))}...`, "running");
         } else {
             _setSimilarStatus("Aplicando imagem enviada na cena...", "running");
         }

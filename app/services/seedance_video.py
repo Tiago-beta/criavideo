@@ -19,6 +19,7 @@ settings = get_settings()
 ATLAS_VIDEO_API_BASE_URL = (settings.atlascloud_api_base_url or "https://api.atlascloud.ai/api/v1").rstrip("/")
 ATLAS_CONSOLE_API_BASE_URL = (settings.atlascloud_console_api_base_url or "https://console.atlascloud.ai/api/v1").rstrip("/")
 SEEDANCE_T2V_MODEL = (settings.atlascloud_seedance_t2v_model or "bytedance/seedance-2.0/text-to-video").strip()
+VIDU_Q3_START_END_MODEL = (settings.atlascloud_vidu_q3_start_end_model or "vidu/q3-pro/start-end-to-video").strip()
 _SEEDANCE_I2V_DEFAULT_MODEL = "bytedance/seedance-2.0/image-to-video"
 _SEEDANCE_I2V_TARGET_RESOLUTION = "480p"
 _seedance_i2v_cfg = (settings.atlascloud_seedance_i2v_model or "").strip()
@@ -36,6 +37,7 @@ SEEDANCE_RATE_LIMIT_MSG = (
     "Tente novamente em alguns segundos ou use Ultra High 1.0."
 )
 _ALLOWED_ASPECT_RATIOS = {"21:9", "16:9", "9:16", "1:1", "4:3", "3:4"}
+_VIDU_ALLOWED_RESOLUTIONS = {"540p", "720p", "1080p"}
 
 
 def _atlas_api_key() -> str:
@@ -64,6 +66,13 @@ def _ensure_seedance_resolution_instruction(prompt: str, resolution: str) -> str
         return base_prompt
 
     return f"{base_prompt}\n\nResolution requirement: render output in {normalized_resolution}."
+
+
+def _normalize_vidu_resolution(resolution: str) -> str:
+    candidate = str(resolution or "540p").strip().lower() or "540p"
+    if candidate in _VIDU_ALLOWED_RESOLUTIONS:
+        return candidate
+    return "540p"
 
 
 def _extract_atlas_error_message(resp: httpx.Response) -> str:
@@ -952,5 +961,264 @@ async def generate_realistic_video(
 
     file_size = os.path.getsize(output_path)
     logger.info(f"Seedance video downloaded: {output_path} ({file_size} bytes)")
+
+    return output_path
+
+
+async def generate_vidu_q3_video(
+    prompt: str,
+    duration: int = 5,
+    aspect_ratio: str = "16:9",
+    output_path: str = "",
+    seed: int | None = None,
+    resolution: str = "540p",
+    generate_audio: bool = True,
+    image_path: str | None = None,
+    end_image_path: str | None = None,
+    image_paths: list[str] | None = None,
+    movement_amplitude: str = "auto",
+    bgm: bool = False,
+    timeout_seconds: int = 600,
+    on_progress=None,
+) -> str:
+    api_key = _atlas_api_key()
+    if not api_key:
+        raise RuntimeError("ATLASCLOUD_API_KEY not configured")
+
+    reference_inputs = _resolve_seedance_reference_inputs(image_path=image_path, image_paths=image_paths)
+    explicit_end_image = str(end_image_path or "").strip()
+    if explicit_end_image and not os.path.exists(explicit_end_image):
+        explicit_end_image = ""
+
+    start_image_source = reference_inputs[0] if reference_inputs else explicit_end_image
+    end_image_source = explicit_end_image or (reference_inputs[-1] if reference_inputs else start_image_source)
+
+    if not start_image_source or not os.path.exists(start_image_source):
+        raise RuntimeError("Pro 3.1 exige uma imagem inicial valida")
+    if not end_image_source or not os.path.exists(end_image_source):
+        end_image_source = start_image_source
+
+    duration = max(1, min(int(duration or 5), 16))
+    aspect_ratio = _resolve_aspect_ratio(aspect_ratio)
+    resolution = _normalize_vidu_resolution(resolution)
+    movement_amplitude = str(movement_amplitude or "auto").strip().lower() or "auto"
+    if movement_amplitude not in {"auto", "small", "medium", "large"}:
+        movement_amplitude = "auto"
+
+    start_image_ref = await _prepare_seedance_reference(start_image_source, api_key)
+    end_image_ref = await _prepare_seedance_reference(end_image_source, api_key)
+
+    payload = {
+        "model": VIDU_Q3_START_END_MODEL,
+        "prompt": str(prompt or "").strip(),
+        "duration": duration,
+        "aspect_ratio": aspect_ratio,
+        "ratio": aspect_ratio,
+        "resolution": resolution,
+        "generate_audio": generate_audio,
+        "watermark": False,
+        "bgm": bool(bgm),
+        "movement_amplitude": movement_amplitude,
+        "image": start_image_ref,
+        "end_image": end_image_ref,
+    }
+    if seed is not None:
+        payload["seed"] = int(seed)
+
+    prediction_id = ""
+    submit_url = f"{ATLAS_VIDEO_API_BASE_URL}/model/generateVideo"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        for attempt in range(5):
+            try:
+                resp = await client.post(submit_url, headers=headers, json=payload)
+            except httpx.RequestError as e:
+                if attempt >= 4:
+                    raise RuntimeError(f"Falha de conexao ao iniciar Pro 3.1: {e}")
+                wait_s = min(20, 2 ** attempt)
+                logger.warning(
+                    "Vidu Q3 request error on create (attempt %d/5): %s. Retrying in %ds",
+                    attempt + 1,
+                    e,
+                    wait_s,
+                )
+                await asyncio.sleep(wait_s)
+                continue
+
+            if resp.status_code == 429:
+                if attempt >= 4:
+                    raise RuntimeError("Pro 3.1 esta com alta demanda no momento (429). Tente novamente em alguns segundos.")
+                wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(30, 2 ** (attempt + 2)))
+                logger.warning(
+                    "Vidu Q3 rate-limited on create (attempt %d/5). Retrying in %ds",
+                    attempt + 1,
+                    wait_s,
+                )
+                await asyncio.sleep(wait_s)
+                continue
+
+            if resp.is_error:
+                details = _extract_atlas_error_message(resp)
+                raise RuntimeError(f"Erro ao iniciar Pro 3.1 (HTTP {resp.status_code}): {details}")
+
+            response_payload = resp.json() if resp.content else {}
+            data_node = response_payload.get("data") if isinstance(response_payload, dict) else None
+            prediction_id = str((data_node or {}).get("id") or response_payload.get("id") or "").strip()
+            if not prediction_id:
+                raise RuntimeError("Atlas Cloud nao retornou prediction id para o Pro 3.1")
+            break
+
+    if not prediction_id:
+        raise RuntimeError("Nao foi possivel iniciar a geracao no Pro 3.1.")
+
+    logger.info("Vidu Q3 prediction created: %s (model=%s)", prediction_id, payload.get("model"))
+
+    if on_progress:
+        await on_progress(20, "Gerando video com Pro 3.1...")
+
+    poll_url = f"{ATLAS_VIDEO_API_BASE_URL}/model/prediction/{prediction_id}"
+    poll_headers = {"Authorization": f"Bearer {api_key}"}
+    candidate_urls: list[str] = []
+
+    start_time = time.time()
+    last_progress = 20
+    async with httpx.AsyncClient(timeout=60) as client:
+        while (time.time() - start_time) < timeout_seconds:
+            try:
+                resp = await client.get(poll_url, headers=poll_headers)
+            except httpx.RequestError as e:
+                logger.warning("Vidu Q3 poll request error: %s", e)
+                await asyncio.sleep(5)
+                continue
+
+            if resp.status_code == 429:
+                wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=6)
+                logger.warning("Vidu Q3 rate-limited on poll. Retrying in %ds", wait_s)
+                await asyncio.sleep(wait_s)
+                continue
+
+            if resp.is_error:
+                details = _extract_atlas_error_message(resp)
+                raise RuntimeError(f"Erro ao consultar status do Pro 3.1 (HTTP {resp.status_code}): {details}")
+
+            data = resp.json() if resp.content else {}
+            data_node = data.get("data") if isinstance(data, dict) else {}
+            status = str((data_node or {}).get("status") or data.get("status") or "").strip().lower()
+
+            if status in {"completed", "succeeded", "success"}:
+                poll_candidates: list[str] = []
+                _collect_video_url_candidates(data_node, poll_candidates)
+                _collect_video_url_candidates(data, poll_candidates)
+                candidate_urls = _dedupe_preserve_order(poll_candidates)
+
+                if not candidate_urls:
+                    raise RuntimeError("Pro 3.1 returned empty output")
+                break
+            elif status in {"failed", "error", "canceled", "cancelled"}:
+                error = (data_node or {}).get("error") or data.get("error") or "Unknown error"
+                raise RuntimeError(f"Pro 3.1 generation failed: {error}")
+
+            elapsed = time.time() - start_time
+            progress = min(75, 20 + int((elapsed / timeout_seconds) * 55))
+            if progress > last_progress and on_progress:
+                last_progress = progress
+                await on_progress(progress, "Gerando video com Pro 3.1...")
+
+            await asyncio.sleep(5)
+        else:
+            raise TimeoutError(f"Pro 3.1 generation timed out after {timeout_seconds}s")
+
+    result_candidates = await _fetch_result_video_candidates(prediction_id, api_key)
+    if result_candidates:
+        candidate_urls = _dedupe_preserve_order(result_candidates + candidate_urls)
+
+    if not candidate_urls:
+        raise RuntimeError("Pro 3.1 nao retornou URL de video valida")
+
+    if on_progress:
+        await on_progress(80, "Baixando video gerado...")
+
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    selected_url = ""
+    downloaded_without_audio = False
+    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+        for idx, video_url in enumerate(candidate_urls):
+            downloaded = False
+            for attempt in range(4):
+                try:
+                    resp = await client.get(video_url)
+                except httpx.RequestError as e:
+                    if attempt >= 3:
+                        logger.warning("Falha ao baixar Pro 3.1 URL %s: %s", video_url, e)
+                        break
+                    wait_s = min(12, 2 ** (attempt + 1))
+                    logger.warning(
+                        "Vidu Q3 download request error (url %d/%d, attempt %d/4): %s. Retrying in %ds",
+                        idx + 1,
+                        len(candidate_urls),
+                        attempt + 1,
+                        e,
+                        wait_s,
+                    )
+                    await asyncio.sleep(wait_s)
+                    continue
+
+                if resp.status_code == 429:
+                    if attempt >= 3:
+                        logger.warning("Vidu Q3 candidate URL rate-limited too many times: %s", video_url)
+                        break
+                    wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(20, 2 ** (attempt + 2)))
+                    logger.warning(
+                        "Vidu Q3 rate-limited on download (url %d/%d, attempt %d/4). Retrying in %ds",
+                        idx + 1,
+                        len(candidate_urls),
+                        attempt + 1,
+                        wait_s,
+                    )
+                    await asyncio.sleep(wait_s)
+                    continue
+
+                resp.raise_for_status()
+                content_type = str(resp.headers.get("Content-Type") or "").lower().strip()
+                if content_type.startswith("audio/"):
+                    logger.warning("Skipping Pro 3.1 non-video candidate URL (%s): %s", content_type, video_url)
+                    break
+
+                with open(output_path, "wb") as f:
+                    f.write(resp.content)
+                downloaded = True
+                break
+
+            if not downloaded:
+                continue
+
+            if generate_audio and not _file_has_audio_stream(output_path):
+                downloaded_without_audio = True
+                logger.warning(
+                    "Pro 3.1 candidate URL %d/%d has no audio stream. Trying next candidate.",
+                    idx + 1,
+                    len(candidate_urls),
+                )
+                continue
+
+            selected_url = video_url
+            break
+
+    if not selected_url and not downloaded_without_audio:
+        raise RuntimeError("Nao foi possivel baixar o video do Pro 3.1.")
+    if selected_url:
+        logger.info("Pro 3.1 downloaded using candidate URL: %s", selected_url)
+    elif downloaded_without_audio:
+        logger.warning("Pro 3.1 video baixado sem trilha de audio apos testar todas as URLs candidatas.")
+
+    file_size = os.path.getsize(output_path)
+    logger.info("Pro 3.1 video downloaded: %s (%s bytes)", output_path, file_size)
 
     return output_path

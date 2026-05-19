@@ -38,7 +38,7 @@ from app.services.scene_generator import (
     generate_scene_image,
     merge_reference_images_with_nano_banana,
 )
-from app.services.seedance_video import generate_realistic_video
+from app.services.seedance_video import generate_realistic_video, generate_vidu_q3_video
 from app.services.thumbnail_generator import generate_thumbnail_from_frame
 from app.services.video_composer import _get_duration as get_duration
 
@@ -986,13 +986,13 @@ def _build_similar_scene_ranges(
     duration_seconds: float,
     cut_times: list[float],
     *,
-    target_chunk_seconds: float = 5.0,
+    target_chunk_seconds: float = 2.0,
     min_seconds: float = _SIMILAR_SCENE_MIN_SECONDS,
     max_count: int = _SIMILAR_SCENE_MAX_COUNT,
 ) -> list[tuple[float, float]]:
     total_duration = max(float(duration_seconds or 0), 0.1)
     final_ranges: list[tuple[float, float]] = []
-    safe_chunk = max(5.0, float(target_chunk_seconds or 5.0), min_seconds)
+    safe_chunk = max(2.0, min_seconds)
     start = 0.0
     while start < total_duration - 0.05:
         end = min(total_duration, start + safe_chunk)
@@ -1927,10 +1927,8 @@ def _normalize_detected_mode(value: object) -> str:
 
 
 def _suggest_engine_for_detected_mode(mode: str) -> str:
-    normalized = _normalize_detected_mode(mode)
-    if normalized == "realistic":
-        return "wan2"
-    return "grok"
+    _normalize_detected_mode(mode)
+    return "viduq3"
 
 
 def _heuristic_detect_reference_mode(scene_payloads: list[dict]) -> tuple[str, float, str]:
@@ -2103,8 +2101,10 @@ def _scene_duration_seconds(scene: VideoScene) -> float:
 
 def _normalize_engine(value: str) -> str:
     raw = str(value or "").strip().lower()
-    if raw in {"grok", "wan2", "seedance"}:
+    if raw in {"grok", "wan2", "seedance", "viduq3"}:
         return raw
+    if "vidu" in raw or "pro 3.1" in raw or raw in {"pro31", "pro3.1", "pro-3.1"}:
+        return "viduq3"
     if "seedance" in raw:
         return "seedance"
     if "wan" in raw or "ultra" in raw:
@@ -2116,6 +2116,8 @@ def _engine_duration(engine: str, duration: int) -> int:
     safe = max(1, int(duration or 5))
     if engine == "grok":
         return max(1, min(15, safe))
+    if engine == "viduq3":
+        return max(1, min(16, safe))
     if engine == "wan2":
         allowed = (5, 10, 15)
         if safe in allowed:
@@ -2129,6 +2131,8 @@ def _engine_duration(engine: str, duration: int) -> int:
 def _engine_min_duration(engine: str) -> float:
     normalized_engine = _normalize_engine(engine)
     if normalized_engine == "grok":
+        return 1.0
+    if normalized_engine == "viduq3":
         return 1.0
     if normalized_engine == "wan2":
         return 5.0
@@ -2453,6 +2457,25 @@ async def _generate_clip_for_scene(
                 generate_audio=True,
                 on_progress=None,
             )
+        elif normalized_engine == "viduq3":
+            vidu_start_image = (scene_reference_paths[0] if scene_reference_paths else image_path) if normalized_generation_mode == "image" else image_path
+            vidu_end_image = vidu_start_image
+            if normalized_generation_mode == "image" and scene_reference_paths:
+                vidu_end_image = scene_reference_paths[-1] or vidu_start_image
+            await generate_vidu_q3_video(
+                prompt=prompt,
+                duration=clip_duration,
+                aspect_ratio=aspect_ratio,
+                output_path=output_path,
+                resolution="540p",
+                generate_audio=True,
+                image_path=vidu_start_image,
+                end_image_path=vidu_end_image,
+                image_paths=scene_reference_paths if normalized_generation_mode == "image" else None,
+                movement_amplitude="auto",
+                bgm=False,
+                on_progress=None,
+            )
         else:
             await generate_realistic_video(
                 prompt=prompt,
@@ -2614,7 +2637,7 @@ async def run_similar_reference_analysis(
             if requested_analysis_limit > 0.05:
                 duration_seconds = min(source_duration_seconds, max(1.0, requested_analysis_limit))
             analysis_truncated = duration_seconds + 0.05 < source_duration_seconds
-            scene_seconds = max(5.0, float(settings.similar_scene_default_seconds or 5))
+            scene_seconds = max(2.0, float(settings.similar_scene_default_seconds or 2))
             scene_ranges = _build_similar_scene_ranges(
                 duration_seconds,
                 [],
@@ -3026,7 +3049,7 @@ async def run_similar_generate_unified_scene(
             return
 
         normalized_engine = _normalize_engine(engine)
-        requested_duration = max(5, min(15, int(duration_seconds or 10)))
+        requested_duration = _engine_duration(normalized_engine, int(duration_seconds or 10))
 
         if not _is_similar_project(project):
             project.status = VideoStatus.FAILED
@@ -3115,6 +3138,21 @@ async def run_similar_generate_unified_scene(
                     image_paths=combined_reference_paths,
                     image_path=combined_reference_paths[0],
                     use_last_image_as_final_frame=use_last_image_as_final_frame,
+                    on_progress=None,
+                )
+            elif normalized_engine == "viduq3":
+                await generate_vidu_q3_video(
+                    prompt=unified_prompt,
+                    duration=requested_duration,
+                    aspect_ratio=aspect_ratio,
+                    output_path=output_path,
+                    resolution="540p",
+                    generate_audio=True,
+                    image_path=combined_reference_paths[0],
+                    end_image_path=combined_reference_paths[-1] if len(combined_reference_paths) > 1 else combined_reference_paths[0],
+                    image_paths=combined_reference_paths,
+                    movement_amplitude="auto",
+                    bgm=False,
                     on_progress=None,
                 )
             else:

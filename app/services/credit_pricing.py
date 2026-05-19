@@ -226,6 +226,7 @@ REALISTIC_BASE_CREDITS_8S = {
     "wan2": 100,
     "grok": 90,
     "seedance": 170,
+    "viduq3": 50,
     "avatar31": 85,
 }
 
@@ -234,6 +235,7 @@ REALISTIC_ENGINE_USD_PER_SEC = {
     "wan2": 0.060,
     "grok": 0.050,
     "seedance": 0.085,
+    "viduq3": 0.042,
     "avatar31": 0.048,
 }
 REALISTIC_ENGINE_MIN_CREDITS_PER_SEC = {
@@ -251,7 +253,7 @@ SIMILAR_ANALYSIS_FRAME_USD = 0.0042
 SIMILAR_ANALYSIS_SUMMARY_USD = 0.010
 SIMILAR_ANALYSIS_SCENE_PROMPT_USD = 0.007
 SIMILAR_ANALYSIS_GENERAL_PROMPT_USD = 0.014
-SIMILAR_ANALYSIS_SCENE_SECONDS = 3.0
+SIMILAR_ANALYSIS_SCENE_SECONDS = 2.0
 SIMILAR_ANALYSIS_CONTEXT_FRAMES = 6
 IMAGE_GENERATION_MODEL_USD = {
     "google/nano-banana-pro/text-to-image": 0.020,
@@ -368,6 +370,13 @@ VIDEO_COMPARISON_MODELS = [
         "label": "Mega 2.0 Ultra",
         "kind": "video",
         "engine": "seedance",
+        "featured": True,
+    },
+    {
+        "key": "viduq3-video",
+        "label": "Pro 3.1",
+        "kind": "video",
+        "engine": "viduq3",
         "featured": True,
     },
     {
@@ -511,6 +520,7 @@ def get_credit_comparison_sections() -> list[dict[str, Any]]:
         engine = str(item["engine"] or "grok").strip().lower()
         credits_per_unit = _realistic_engine_credits_per_second(engine)
         billed_usd_per_unit = _billed_usd_per_unit_from_credits(credits_per_unit)
+        display_usd_per_unit = REALISTIC_ENGINE_USD_PER_SEC.get(engine, billed_usd_per_unit) if engine == "viduq3" else billed_usd_per_unit
         usage = {}
         for plan in plans:
             plan_budget = _plan_credit_budget(plan)
@@ -525,8 +535,8 @@ def get_credit_comparison_sections() -> list[dict[str, Any]]:
             "kind": item["kind"],
             "unit": "second",
             "creditsPerUnit": credits_per_unit,
-            "usdPerUnit": billed_usd_per_unit,
-            "brlPerUnit": _usd_to_brl_amount(billed_usd_per_unit),
+            "usdPerUnit": round(display_usd_per_unit, 6),
+            "brlPerUnit": _usd_to_brl_amount(display_usd_per_unit),
             "featured": bool(item.get("featured")),
             "plans": usage,
         })

@@ -12026,6 +12026,12 @@ th,
     color: #ffe2a1;
 }
 
+.similar-scene-engine-btn[data-value="viduq3"].selected {
+    border-color: rgba(73, 163, 255, 0.54);
+    background: rgba(73, 163, 255, 0.16);
+    color: #dceeff;
+}
+
 .similar-scene-action-btn {
     width: 42px;
     height: 42px;
