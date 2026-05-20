@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v505 loaded");
+console.log("[CriaVideo] app.js v506 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -30226,7 +30226,8 @@ function _editorSyncSourcePreviewPlayback(timelineTime = 0, shouldPlay = false, 
     audio.volume = nextVolume;
     audio.playbackRate = nextRate;
 
-    if (audio.readyState >= 1 && Math.abs(Number(audio.currentTime || 0) - targetTime) > 0.18) {
+    const seekTolerance = shouldPlay ? 0.32 : 0.18;
+    if (audio.readyState >= 1 && Math.abs(Number(audio.currentTime || 0) - targetTime) > seekTolerance) {
         try {
             audio.currentTime = targetTime;
         } catch {
@@ -30439,8 +30440,12 @@ function _editorGetOverlayTrackEndTime() {
 
 function _editorGetVisibleTimelineEndTime() {
     const baseEnd = _editor.hideBaseVideoTrack ? 0 : _editorGetVideoTrackEndTime();
+    const hiddenBaseAudioEnd = _editor.hideBaseVideoTrack && Number(_editor.originalVolume || 0) > 0
+        ? _editorGetVideoTrackEndTime()
+        : 0;
     return Math.max(
         baseEnd,
+        hiddenBaseAudioEnd,
         _editorGetLayerTrackEndTime(),
         _editorGetAudioTrackEndTime(),
         _editorGetOverlayTrackEndTime(),
@@ -30518,6 +30523,9 @@ function _editorMapTimeAcrossRemovedGaps(timeValue, gaps = []) {
 function _editorCollapseHiddenBaseTimelineGaps() {
     if (!_editor.hideBaseVideoTrack) return false;
 
+    const currentBaseEnd = Math.max(0.1, Number(_editorGetVideoTrackEndTime() || _editor.duration || 0.1));
+    const retainedBaseAudioEnd = Number(_editor.originalVolume || 0) > 0 ? currentBaseEnd : 0;
+
     const mergedRanges = _editorCollectNonBaseTimelineRanges();
     const gaps = [];
     for (let index = 0; index < mergedRanges.length - 1; index += 1) {
@@ -30545,9 +30553,10 @@ function _editorCollapseHiddenBaseTimelineGaps() {
     }
 
     const recalculatedRanges = _editorCollectNonBaseTimelineRanges();
-    const activeEnd = recalculatedRanges.length
+    const calculatedEnd = recalculatedRanges.length
         ? Math.max(0.1, Number(recalculatedRanges[recalculatedRanges.length - 1][1] || 0.1))
         : 0.1;
+    const activeEnd = Math.max(calculatedEnd, retainedBaseAudioEnd);
     const seedSegment = _editor.videoSegments[0] || { id: _editorGenId(), sourceStart: 0, reversed: false, volume: 100 };
     _editor.videoSegments = [{
         id: seedSegment.id || _editorGenId(),
@@ -31472,7 +31481,8 @@ function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
         targetTime = Math.max(0, Math.min(targetTime, Math.max(0, duration - 0.02)));
     }
 
-    if (Math.abs(Number(audio.currentTime || 0) - targetTime) > 0.25) {
+    const seekTolerance = shouldPlay ? 0.45 : 0.25;
+    if (Math.abs(Number(audio.currentTime || 0) - targetTime) > seekTolerance) {
         if (audio.readyState >= 1) {
             try {
                 audio.currentTime = targetTime;
@@ -31960,6 +31970,15 @@ async function _editorUploadVideo(input) {
     }
 
     try {
+        if (selection.audioFiles.length) {
+            if (selection.audioFiles.length > 1 || selection.imageFiles.length || selection.videoFiles.length) {
+                showToast("Para iniciar com áudio, envie apenas 1 arquivo de áudio por vez.", "error");
+                return;
+            }
+            await _editorStartWithUploadedAudioFiles(selection.audioFiles);
+            return;
+        }
+
         const orderedEntries = await _editorResolveMediaImportOrder(selection.orderedEntries, "project");
         if (!orderedEntries?.length) return;
         await _editorStartWithOrderedMediaEntries(orderedEntries);
@@ -31975,9 +31994,11 @@ function _editorGetLocalMediaKind(file) {
     const ext = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
     const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp"]);
     const videoExts = new Set([".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"]);
+    const audioExts = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus", ".weba"]);
 
     if (mime.startsWith("image/") || imageExts.has(ext)) return "image";
     if (mime.startsWith("video/") || videoExts.has(ext)) return "video";
+    if (mime.startsWith("audio/") || audioExts.has(ext)) return "audio";
     return "";
 }
 
@@ -32008,6 +32029,7 @@ function _editorSortOrderedMediaEntries(entries = []) {
 function _editorClassifyLocalMediaFiles(files = []) {
     const imageFiles = [];
     const videoFiles = [];
+    const audioFiles = [];
     const invalidFiles = [];
     const orderedEntries = [];
 
@@ -32023,20 +32045,27 @@ function _editorClassifyLocalMediaFiles(files = []) {
             orderedEntries.push({ kind, file });
             return;
         }
+        if (kind === "audio") {
+            audioFiles.push(file);
+            orderedEntries.push({ kind, file });
+            return;
+        }
         invalidFiles.push(file);
     });
 
     if (invalidFiles.length) {
         return {
             orderedEntries: _editorSortOrderedMediaEntries(orderedEntries),
+            audioFiles: [...audioFiles].sort(_editorCompareMediaFileNames),
             imageFiles: [...imageFiles].sort(_editorCompareMediaFileNames),
             videoFiles: [...videoFiles].sort(_editorCompareMediaFileNames),
-            error: "Selecione apenas vídeos MP4/MOV/WEBM/MKV/AVI ou imagens JPG/PNG/WebP.",
+            error: "Selecione apenas vídeos MP4/MOV/WEBM/MKV/AVI, áudios MP3/WAV/M4A/AAC/OGG/FLAC/OPUS ou imagens JPG/PNG/WebP.",
         };
     }
 
     return {
         orderedEntries: _editorSortOrderedMediaEntries(orderedEntries),
+        audioFiles: [...audioFiles].sort(_editorCompareMediaFileNames),
         imageFiles: [...imageFiles].sort(_editorCompareMediaFileNames),
         videoFiles: [...videoFiles].sort(_editorCompareMediaFileNames),
         error: "",
@@ -32047,6 +32076,13 @@ async function _editorUploadSingleVideoProject(file) {
     const formData = new FormData();
     formData.append("file", file);
     return apiForm("/video/editor/upload-video", formData, { method: "POST" });
+}
+
+async function _editorUploadSingleAudioProject(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("aspect_ratio", "9:16");
+    return apiForm("/video/editor/upload-audio-project", formData, { method: "POST" });
 }
 
 async function _editorUploadSingleLayerImage(file) {
@@ -32398,17 +32434,23 @@ function _editorApplyImageSequenceLayers(layers, options = {}) {
     let cursor = Math.max(0, Number(options.startTime || 0));
 
     sequence.forEach((payload, idx) => {
-        const layerKind = String(payload.kind || "image") === "video" ? "video" : "image";
-        const layerSpan = layerKind === "video"
+        const rawKind = String(payload.kind || "image").trim().toLowerCase();
+        const layerKind = rawKind === "audio"
+            ? "audio"
+            : (rawKind === "video" ? "video" : "image");
+        const layerSpan = layerKind === "video" || layerKind === "audio"
             ? Math.max(0.1, Number(payload.duration || 0) || clipSeconds)
             : clipSeconds;
         const startTime = cursor;
         const endTime = startTime + layerSpan;
-        _editorPushMediaLayer(layerKind, payload, {
+        const layer = _editorPushMediaLayer(layerKind, payload, {
             startTime,
             endTime,
             select: idx === sequence.length - 1,
         });
+        if (layerKind === "audio" && layer) {
+            layer.volume = Math.max(0, Math.min(200, Number(_editor.musicVolume || 100)));
+        }
         cursor = endTime;
     });
 }
@@ -32445,6 +32487,47 @@ async function _editorStartWithUploadedImages(files) {
         showToast("Erro ao preparar imagens no editor: " + (err?.message || "erro desconhecido"), "error");
     }
 }
+
+async function _editorStartWithUploadedAudioFiles(files) {
+    const audioFiles = Array.isArray(files)
+        ? files.filter((file) => _editorGetLocalMediaKind(file) === "audio")
+        : [];
+    if (!audioFiles.length) {
+        showToast("Selecione 1 áudio MP3, WAV, M4A, AAC, OGG, FLAC ou OPUS para continuar.", "error");
+        return;
+    }
+
+    const [audioFile] = audioFiles;
+
+    try {
+        closeModal("modal-editor-start");
+        showToast("Preparando áudio no editor...");
+        const payload = await _editorUploadSingleAudioProject(audioFile);
+        await loadEditorVideosList();
+
+        if (payload?.project_id) {
+            showToast("Áudio enviado! Abrindo editor...", "success");
+            await openEditor(payload.project_id, {
+                restoreDraft: false,
+                initialMediaLayers: payload.layers || [],
+                hideBaseVideoTrack: true,
+            });
+            return;
+        }
+
+        showToast("Áudio enviado com sucesso.", "success");
+    } catch (err) {
+        showToast("Erro ao preparar áudio no editor: " + (err?.message || "erro desconhecido"), "error");
+    }
+}
+
+async function _editorStartWithAudio(input) {
+    const files = Array.from(input?.files || []);
+    if (input) input.value = "";
+    if (!files.length) return;
+    await _editorStartWithUploadedAudioFiles(files);
+}
+window._editorStartWithAudio = _editorStartWithAudio;
 
 function _editorRecorderUsesScreen(mode) {
     return mode === "screen" || mode === "screen_camera" || mode === "window";
@@ -33591,6 +33674,12 @@ function _editorChooseStartMode(mode) {
         return;
     }
 
+    if (selectedMode === "audio_pc") {
+        closeModal("modal-editor-start");
+        document.getElementById("editor-start-audio-upload-input")?.click();
+        return;
+    }
+
     if (selectedMode === "library") {
         _editorOpenSourceProjectLibrary();
         return;
@@ -34413,9 +34502,12 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         const maxTime = sourceEnd > 0 ? Math.max(0, sourceEnd - 0.05) : playbackTime;
         const targetTime = Math.max(0, Math.min(playbackTime, maxTime));
         const useSmoothReverseSeek = Boolean(shouldPlay && normalizedLayer.reversed && normalizedLayer.kind === "video");
+        const syncTolerance = normalizedLayer.kind === "audio"
+            ? (shouldPlay ? 0.45 : 0.12)
+            : ((normalizedLayer.kind === "video" && normalizedLayer.audioOnly && shouldPlay) ? 0.28 : 0.1);
         if (useSmoothReverseSeek) {
             _editorPreviewSeekTo(mediaEl, targetTime, { nowMs: performance.now() });
-        } else if (Math.abs((mediaEl.currentTime || 0) - targetTime) > 0.1) {
+        } else if (Math.abs((mediaEl.currentTime || 0) - targetTime) > syncTolerance) {
             try {
                 mediaEl.currentTime = targetTime;
             } catch {
@@ -39410,6 +39502,17 @@ function _editorSelectionCanDelete() {
     return ["segment", "text", "subtitle", "sticker", "music", "audio", "media-layer", "transition"].includes(_editor.selectedClip.kind);
 }
 
+function _editorCanSwitchLastVideoToAudioOnly() {
+    if (Number(_editor.originalVolume || 0) > 0) return true;
+    if (_editorShouldShowAudioTrack()) return true;
+
+    return (_editor.mediaLayers || []).some((layer) => {
+        const normalizedLayer = _editorNormalizeMediaLayer(layer);
+        if (normalizedLayer.kind === "audio") return true;
+        return normalizedLayer.kind === "video" && Boolean(normalizedLayer.audioOnly || normalizedLayer.hasAudio);
+    });
+}
+
 function _editorSelectionCanDuplicate() {
     return ["text", "subtitle", "sticker"].includes(_editor.selectedClip.kind);
 }
@@ -39848,6 +39951,19 @@ function _editorDeleteSelectedClip() {
                 const currentVideo = document.getElementById("editor-video");
                 _editorApplyTimelineFrame(Number(_editor.timelineTime || currentVideo?.currentTime || 0), false);
                 showToast("Áudio removido.", "success");
+                return;
+            }
+            if (_editorIsVideoTrack(selTrack) && _editorCanSwitchLastVideoToAudioOnly()) {
+                _editorSaveState();
+                _editor.hideBaseVideoTrack = true;
+                _editorCollapseHiddenBaseTimelineGaps();
+                _editor.selectedClip = { kind: "", id: "", track: "" };
+                _editorRenderProps();
+                _editorRenderTimeline();
+                _editorRenderMediaLayers();
+                const currentVideo = document.getElementById("editor-video");
+                _editorApplyTimelineFrame(Number(_editor.timelineTime || currentVideo?.currentTime || 0), false);
+                showToast("Vídeo removido. O editor vai manter apenas o áudio com fundo preto.", "success");
                 return;
             }
             const trackLabel = selTrack === "audio" ? "audio" : "video";
@@ -40621,6 +40737,7 @@ async function _editorExport() {
         aspect_ratio: _resolveAspectRatio(),
         trim_start: _editor.trimStart,
         trim_end: _editor.trimEnd,
+        hide_base_video_track: Boolean(_editor.hideBaseVideoTrack),
         trim_video_segments: _editor.videoSegments
             .map(seg => ({
                 start: _editorSegSourceStart(seg),
