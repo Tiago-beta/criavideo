@@ -15839,6 +15839,7 @@ th,
         height: calc(100dvh - 56px);
         display: flex;
         flex-direction: column;
+        position: relative;
         padding-bottom: env(safe-area-inset-bottom, 0px);
         width: 100vw;
         max-width: 100vw;
@@ -15875,6 +15876,7 @@ th,
         touch-action: pan-x;
         scroll-behavior: smooth;
         padding-bottom: 6px;
+        z-index: 1;
     }
 
     .editor-tools-panel::-webkit-scrollbar {
@@ -15971,6 +15973,11 @@ th,
 
     .editor-quick-actions {
         display: none;
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: env(safe-area-inset-bottom, 0px);
+        z-index: 12;
         flex-wrap: nowrap;
         row-gap: 0;
         padding: 4px 6px;
@@ -15985,6 +15992,10 @@ th,
         touch-action: pan-x;
         scroll-behavior: smooth;
         padding-bottom: 6px;
+        box-sizing: border-box;
+        border-top: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(8, 35, 58, 0.98), rgba(7, 26, 45, 0.98));
+        box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.22);
     }
 
     .editor-quick-actions::-webkit-scrollbar {
@@ -16010,7 +16021,12 @@ th,
     }
 
     .editor-quick-actions .editor-mobile-mode-toggle {
-        display: none;
+        display: inline-flex;
+        min-width: 40px;
+        position: sticky;
+        left: 0;
+        z-index: 2;
+        background: linear-gradient(180deg, rgba(8, 35, 58, 0.98), rgba(7, 26, 45, 0.98));
     }
 
     .editor-aspect-selector {
@@ -16345,6 +16361,32 @@ th,
     border-color: var(--accent);
     color: var(--accent);
     background: rgba(0, 212, 255, 0.14);
+}
+
+.editor-sub-toolbar.editor-sub-actions-row {
+    justify-content: flex-start;
+    gap: 10px;
+}
+
+.editor-sub-action-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+}
+
+.editor-sub-icon-btn:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.editor-sub-icon-btn-danger {
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+.editor-sub-icon-btn-danger:hover {
+    border-color: rgba(239, 68, 68, 0.48);
+    color: #ff6a78;
 }
 
 .editor-sub-quick-card {

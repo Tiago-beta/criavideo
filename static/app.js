@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v499 loaded");
+console.log("[CriaVideo] app.js v500 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28611,6 +28611,8 @@ let _editorTimelineScrub = null;
 let _editorMediaLayerDrag = null;
 let _editorTextOverlayDrag = null;
 let _editorTextOverlayIgnoreClick = false;
+let _editorSubtitleOverlayDrag = null;
+let _editorSubtitleOverlayIgnoreClick = false;
 let _editorInlineTextEditId = "";
 let _editorInlineTextEditPendingFocus = "";
 let _editorMobileTrackVolumeOpen = "";
@@ -35466,6 +35468,9 @@ function _editorDrawOverlays(t) {
 
     _editorRenderInlineTextEditor(selectedText, selectedTextBounds);
 
+    const selectedSubtitle = _editorGetSelectedSubtitleItem();
+    let selectedSubtitleBounds = null;
+
     // Draw subtitles
     for (const sub of _editor.subtitles) {
         if (t >= sub.startTime && t <= sub.endTime) {
@@ -35509,7 +35514,41 @@ function _editorDrawOverlays(t) {
             ctx.shadowOffsetY = 1;
             ctx.fillText(sub.text, sx, sy);
             ctx.shadowColor = "transparent";
+
+            if (_editorIsMobileViewport() && _editor.activeTool === "subtitles" && selectedSubtitle && String(selectedSubtitle.id) === String(sub.id)) {
+                selectedSubtitleBounds = _editorGetSubtitleCanvasBounds(sub, canvas, ctx);
+            }
         }
+    }
+
+    if (selectedSubtitleBounds && _editorIsMobileViewport() && _editor.activeTool === "subtitles") {
+        const scale = canvas.height / 720;
+        ctx.save();
+        ctx.setLineDash([Math.max(4, 6 * scale), Math.max(3, 4 * scale)]);
+        ctx.lineWidth = Math.max(1.6, 2 * scale);
+        ctx.strokeStyle = "rgba(238, 246, 255, 0.92)";
+        ctx.strokeRect(
+            selectedSubtitleBounds.left,
+            selectedSubtitleBounds.top,
+            selectedSubtitleBounds.right - selectedSubtitleBounds.left,
+            selectedSubtitleBounds.bottom - selectedSubtitleBounds.top,
+        );
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(255, 184, 77, 0.96)";
+        ctx.beginPath();
+        ctx.arc(selectedSubtitleBounds.handleX, selectedSubtitleBounds.handleY, selectedSubtitleBounds.handleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = Math.max(1.2, 1.6 * scale);
+        ctx.strokeStyle = "rgba(4, 14, 24, 0.82)";
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(4, 14, 24, 0.92)";
+        ctx.beginPath();
+        ctx.moveTo(selectedSubtitleBounds.handleX - selectedSubtitleBounds.handleRadius * 0.34, selectedSubtitleBounds.handleY + selectedSubtitleBounds.handleRadius * 0.18);
+        ctx.lineTo(selectedSubtitleBounds.handleX + selectedSubtitleBounds.handleRadius * 0.18, selectedSubtitleBounds.handleY - selectedSubtitleBounds.handleRadius * 0.34);
+        ctx.lineTo(selectedSubtitleBounds.handleX + selectedSubtitleBounds.handleRadius * 0.18, selectedSubtitleBounds.handleY + selectedSubtitleBounds.handleRadius * 0.18);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
     }
 
     // Draw stickers
@@ -35547,30 +35586,49 @@ function _editorFindSubtitleAtCanvasPoint(clientX, clientY) {
 
     for (let i = activeSubs.length - 1; i >= 0; i -= 1) {
         const sub = activeSubs[i];
-        const scale = canvas.height / 720;
-        const fs = (sub.fontSize || 28) * scale;
-        let fontStr = "";
-        if (sub.italic) fontStr += "italic ";
-        if (sub.bold) fontStr += "bold ";
-        fontStr += fs + "px " + (sub.fontFamily || "Arial, sans-serif");
-        ctx.font = fontStr;
+        const bounds = _editorGetSubtitleCanvasBounds(sub, canvas, ctx);
 
-        const sx = (sub.x / 100) * canvas.width;
-        const sy = (sub.y / 100) * canvas.height;
-        const textW = ctx.measureText(sub.text || "").width;
-        const pad = sub.bgColor ? 8 * scale : 4 * scale;
-
-        const left = sx - textW / 2 - pad;
-        const right = sx + textW / 2 + pad;
-        const top = sy - fs / 2 - pad * 0.7;
-        const bottom = sy + fs / 2 + pad * 0.7;
-
-        if (x >= left && x <= right && y >= top && y <= bottom) {
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
             return sub;
         }
     }
 
     return null;
+}
+
+function _editorGetSubtitleCanvasBounds(item, canvas, ctx) {
+    const scale = canvas.height / 720;
+    const fs = Number(item.fontSize || 28) * scale;
+    let fontStr = "";
+    if (item.italic) fontStr += "italic ";
+    if (item.bold) fontStr += "bold ";
+    fontStr += `${fs}px ${item.fontFamily || "Arial, sans-serif"}`;
+    ctx.font = fontStr;
+
+    const content = String(item.text || "");
+    const textW = ctx.measureText(content).width;
+    const pad = item.bgColor ? 8 * scale : 4 * scale;
+    const tx = (Number(item.x || 50) / 100) * canvas.width;
+    const ty = (Number(item.y || 82) / 100) * canvas.height;
+    const handleRadius = Math.max(10, fs * 0.24);
+    const left = tx - textW / 2 - pad;
+    const right = tx + textW / 2 + pad;
+    const top = ty - fs / 2 - pad * 0.7;
+    const bottom = ty + fs / 2 + pad * 0.7;
+    const handleX = Math.min(canvas.width - handleRadius - 4, right + handleRadius * 0.45);
+    const handleY = Math.min(canvas.height - handleRadius - 4, bottom + handleRadius * 0.15);
+
+    return {
+        left,
+        right,
+        top,
+        bottom,
+        handleX,
+        handleY,
+        handleRadius,
+        widthPct: ((right - left) / Math.max(1, canvas.width)) * 100,
+        heightPct: ((bottom - top) / Math.max(1, canvas.height)) * 100,
+    };
 }
 
 function _editorFindTextAtCanvasPoint(clientX, clientY) {
@@ -35808,6 +35866,136 @@ function _editorResolveTextOverlayInteraction(clientX, clientY) {
     return null;
 }
 
+function _editorResolveSubtitleOverlayInteraction(clientX, clientY) {
+    if (!_editorIsMobileViewport() || _editor.activeTool !== "subtitles") return null;
+
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas || !_editor.subtitles.length) return null;
+
+    const video = document.getElementById("editor-video");
+    if (!video) return null;
+    const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
+
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const activeSubs = _editor.subtitles.filter((item) => currentTime >= item.startTime && currentTime <= item.endTime);
+    if (!activeSubs.length) return null;
+
+    const selectedSubtitle = _editorGetSelectedSubtitleItem();
+    if (selectedSubtitle && activeSubs.some((item) => String(item.id) === String(selectedSubtitle.id))) {
+        const bounds = _editorGetSubtitleCanvasBounds(selectedSubtitle, canvas, ctx);
+        const handleDx = x - bounds.handleX;
+        const handleDy = y - bounds.handleY;
+        if ((handleDx * handleDx) + (handleDy * handleDy) <= (bounds.handleRadius * bounds.handleRadius)) {
+            return { item: selectedSubtitle, bounds, mode: "resize" };
+        }
+    }
+
+    for (let i = activeSubs.length - 1; i >= 0; i -= 1) {
+        const item = activeSubs[i];
+        const bounds = _editorGetSubtitleCanvasBounds(item, canvas, ctx);
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
+            return { item, bounds, mode: "move" };
+        }
+    }
+
+    return null;
+}
+
+function _editorStartSubtitleOverlayDrag(event) {
+    const interaction = _editorResolveSubtitleOverlayInteraction(event.clientX, event.clientY);
+    if (!interaction?.item) return false;
+
+    _editorSelectSubtitle(interaction.item.id, false);
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas) return false;
+
+    _editorSubtitleOverlayDrag = {
+        id: String(interaction.item.id),
+        mode: interaction.mode,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startX: Number(interaction.item.x || 50),
+        startY: Number(interaction.item.y || 82),
+        startFontSize: Number(interaction.item.fontSize || 28),
+        widthPct: Number(interaction.bounds.widthPct || 0),
+        heightPct: Number(interaction.bounds.heightPct || 0),
+        pointerId: event.pointerId,
+        pointerTarget: canvas,
+        saved: false,
+        moved: false,
+    };
+
+    _editorCapturePointer(canvas, event.pointerId);
+    document.addEventListener("pointermove", _editorOnSubtitleOverlayDragMove);
+    document.addEventListener("pointerup", _editorOnSubtitleOverlayDragEnd);
+    document.addEventListener("pointercancel", _editorOnSubtitleOverlayDragEnd);
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+}
+
+function _editorOnSubtitleOverlayDragMove(event) {
+    if (!_editorSubtitleOverlayDrag) return;
+    if (_editorSubtitleOverlayDrag.pointerId !== undefined && event.pointerId !== undefined && event.pointerId !== _editorSubtitleOverlayDrag.pointerId) return;
+
+    const drag = _editorSubtitleOverlayDrag;
+    const item = _editor.subtitles.find((entry) => String(entry.id) === String(drag.id));
+    if (!item) return;
+
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas) return;
+
+    const dx = event.clientX - drag.startClientX;
+    const dy = event.clientY - drag.startClientY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+        drag.moved = true;
+    }
+    if (drag.moved && !drag.saved) {
+        _editorSaveState();
+        drag.saved = true;
+    }
+
+    if (drag.mode === "resize") {
+        const delta = (dx / Math.max(1, canvas.width)) * 180;
+        item.fontSize = Math.max(14, Math.min(120, Math.round(drag.startFontSize + delta)));
+    } else {
+        const halfWidthPct = drag.widthPct / 2;
+        const halfHeightPct = drag.heightPct / 2;
+        item.x = Math.max(halfWidthPct + 2, Math.min(98 - halfWidthPct, drag.startX + ((dx / Math.max(1, canvas.width)) * 100)));
+        item.y = Math.max(halfHeightPct + 2, Math.min(98 - halfHeightPct, drag.startY + ((dy / Math.max(1, canvas.height)) * 100)));
+    }
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    if (event.cancelable) {
+        event.preventDefault();
+    }
+}
+
+function _editorOnSubtitleOverlayDragEnd() {
+    document.removeEventListener("pointermove", _editorOnSubtitleOverlayDragMove);
+    document.removeEventListener("pointerup", _editorOnSubtitleOverlayDragEnd);
+    document.removeEventListener("pointercancel", _editorOnSubtitleOverlayDragEnd);
+    if (!_editorSubtitleOverlayDrag) return;
+
+    _editorReleasePointerCapture(_editorSubtitleOverlayDrag.pointerTarget, _editorSubtitleOverlayDrag.pointerId);
+    const moved = Boolean(_editorSubtitleOverlayDrag.moved);
+    _editorSubtitleOverlayDrag = null;
+    if (!moved) return;
+
+    _editorSubtitleOverlayIgnoreClick = true;
+    _editorRenderProps();
+    _editorRenderTimeline();
+    _editorScheduleDraftPersist(120);
+}
+
 function _editorStartTextOverlayDrag(event) {
     if (!_editorIsMobileViewport()) return false;
     const interaction = _editorResolveTextOverlayInteraction(event.clientX, event.clientY);
@@ -35909,8 +36097,9 @@ function _editorOnTextOverlayDragEnd() {
 }
 
 function _editorHandleOverlayClick(event) {
-    if (_editorTextOverlayIgnoreClick) {
+    if (_editorTextOverlayIgnoreClick || _editorSubtitleOverlayIgnoreClick) {
         _editorTextOverlayIgnoreClick = false;
+        _editorSubtitleOverlayIgnoreClick = false;
         return;
     }
 
@@ -35941,7 +36130,29 @@ function _editorHandleOverlayClick(event) {
 
     event.preventDefault();
     event.stopPropagation();
-    _editorSelectSubtitle(hitSubtitle.id, true);
+    const alreadySelected = String(_editor.selectedClip.id || "") === String(hitSubtitle.id);
+    if (_editor.activeTool !== "subtitles") {
+        _editorSelectSubtitle(hitSubtitle.id, true);
+        return;
+    }
+
+    _editorSelectSubtitle(hitSubtitle.id, false);
+
+    if (_editorIsMobileViewport()) {
+        if (!_editor.mobileSubtitleModalOpen) {
+            _editor.mobileSubtitleModalOpen = true;
+            _editorRenderMobileSubtitleSheet();
+            return;
+        }
+        if (alreadySelected) {
+            _editorOpenSubtitleTextModal(hitSubtitle.id);
+        }
+        return;
+    }
+
+    if (alreadySelected) {
+        _editorOpenSubtitleTextModal(hitSubtitle.id);
+    }
 }
 
 function _getCSSFilter(name) {
@@ -36450,56 +36661,63 @@ window._editorClearSmartCuts = _editorClearSmartCuts;
 function _editorBuildSubtitlesPanelMarkup() {
     const isGenerating = _editor._subtitleGenerating;
     const hasSubs = _editor.subtitles.length > 0;
-    const selectedSub = _editor.subtitles.find((subtitle) => subtitle._selected) || _editor.subtitles[0] || null;
-    const subtitleY = Math.round(selectedSub?.y ?? 82);
-    const subtitleSize = Math.round(selectedSub?.fontSize ?? 28);
 
     return `
-        <button class="editor-add-btn" onclick="_editorAutoSubtitles()" ${isGenerating ? "disabled" : ""}>
-            ${isGenerating
-                ? '<div class="spinner-small" style="width:14px;height:14px"></div> Gerando legendas...'
-                : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg> Gerar legendas automaticas'}
-        </button>
-        <button class="editor-add-btn" onclick="_editorAddSubtitle()" style="margin-top:4px">+ Adicionar legenda manual</button>
-        ${hasSubs ? `
-            <button class="editor-add-btn" onclick="_editorClearSubtitles()" style="margin-top:4px;border-color:rgba(239,68,68,0.3);color:#ef4444">Limpar todas</button>
-        ` : ""}
-        ${hasSubs ? `
-            <div class="editor-sub-toolbar" style="margin-top:8px">
-                <span class="editor-sub-count">${_editor.subtitles.length} trecho(s) gerado(s)</span>
+        <div class="editor-sub-toolbar editor-sub-actions-row">
+            <button
+                class="editor-sub-icon-btn editor-sub-action-btn"
+                type="button"
+                onclick="_editorAutoSubtitles()"
+                ${isGenerating ? "disabled" : ""}
+                title="Gerar legendas automáticas"
+                aria-label="Gerar legendas automáticas"
+            >
+                ${isGenerating
+                    ? '<div class="spinner-small" style="width:14px;height:14px"></div>'
+                    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>'}
+            </button>
+            <button
+                class="editor-sub-icon-btn editor-sub-action-btn"
+                type="button"
+                onclick="_editorAddSubtitle()"
+                title="Adicionar legenda manual"
+                aria-label="Adicionar legenda manual"
+            >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14"/>
+                    <path d="M5 12h14"/>
+                </svg>
+            </button>
+            ${hasSubs ? `
                 <button
-                    class="editor-sub-icon-btn${_editor.subtitleListOpen ? " active" : ""}"
+                    class="editor-sub-icon-btn editor-sub-action-btn${_editor.subtitleListOpen ? " active" : ""}"
+                    type="button"
                     onclick="_editorToggleSubtitleList()"
                     title="Editar trechos"
                     aria-label="Editar trechos"
                 >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 20h9"/>
                         <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
                     </svg>
                 </button>
-            </div>
-            <div class="editor-sub-quick-card">
-                <div class="editor-sub-quick-row">
-                    <span class="editor-sub-quick-label">Posicao</span>
-                    <div class="editor-sub-stepper">
-                        <button type="button" onclick="_editorNudgeSubtitlesY(-2)" aria-label="Subir legenda">↑</button>
-                        <input type="range" min="5" max="95" value="${subtitleY}" oninput="_editorSetSubtitlesY(this.value, true)">
-                        <button type="button" onclick="_editorNudgeSubtitlesY(2)" aria-label="Descer legenda">↓</button>
-                    </div>
-                    <span class="editor-sub-quick-value" data-editor-sub-y-value>${subtitleY}%</span>
-                </div>
-                <div class="editor-sub-quick-row">
-                    <span class="editor-sub-quick-label">Tamanho</span>
-                    <div class="editor-sub-stepper">
-                        <button type="button" onclick="_editorNudgeSubtitlesSize(-2)" aria-label="Reduzir legenda">-</button>
-                        <input type="range" min="14" max="72" value="${subtitleSize}" oninput="_editorSetSubtitlesFontSize(this.value, true)">
-                        <button type="button" onclick="_editorNudgeSubtitlesSize(2)" aria-label="Aumentar legenda">+</button>
-                    </div>
-                    <span class="editor-sub-quick-value" data-editor-sub-size-value>${subtitleSize}px</span>
-                </div>
-            </div>
-        ` : ""}
+                <button
+                    class="editor-sub-icon-btn editor-sub-action-btn editor-sub-icon-btn-danger"
+                    type="button"
+                    onclick="_editorClearSubtitles()"
+                    title="Limpar todas"
+                    aria-label="Limpar todas"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                        <path d="M10 11v6"/>
+                        <path d="M14 11v6"/>
+                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                    </svg>
+                </button>
+            ` : ""}
+        </div>
         ${hasSubs && _editor.subtitleListOpen ? `
             <div class="editor-props-group" style="margin-top:8px;max-height:200px;overflow-y:auto">
                 ${_editor.subtitles.map(s => `
@@ -37218,6 +37436,12 @@ window._editorToggleTextFlag = _editorToggleTextFlag;
 function _editorGetSelectedTextItem() {
     return _editor.texts.find((item) => item._selected)
         || _editor.texts.find((item) => String(item.id) === String(_editor.selectedClip.id || ""))
+        || null;
+}
+
+function _editorGetSelectedSubtitleItem() {
+    return _editor.subtitles.find((item) => item._selected)
+        || _editor.subtitles.find((item) => String(item.id) === String(_editor.selectedClip.id || ""))
         || null;
 }
 
@@ -40273,7 +40497,8 @@ function _bindEditorEvents() {
         });
     }
     document.getElementById("editor-overlay-canvas")?.addEventListener("pointerdown", (event) => {
-        _editorStartTextOverlayDrag(event);
+        if (_editorStartTextOverlayDrag(event)) return;
+        _editorStartSubtitleOverlayDrag(event);
     });
     document.getElementById("editor-overlay-canvas")?.addEventListener("click", _editorHandleOverlayClick);
     document.getElementById("editor-play-btn")?.addEventListener("click", _editorTogglePlay);
