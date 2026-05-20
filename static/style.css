@@ -15834,6 +15834,7 @@ th,
     .editor-workspace {
         --editor-mobile-props-height: clamp(58px, 8.5vh, 84px);
         --editor-mobile-timeline-height: clamp(124px, 20vh, 148px);
+        --editor-mobile-preview-max-height: calc(100dvh - 220px - var(--editor-mobile-timeline-height));
         height: calc(100vh - 56px);
         height: calc(100dvh - 56px);
         display: flex;
@@ -15907,7 +15908,7 @@ th,
         flex: 0 0 auto;
         padding: 6px 4px;
         gap: 4px;
-        touch-action: pan-x;
+        touch-action: manipulation;
     }
 
     .editor-transition-grid {
@@ -15928,10 +15929,10 @@ th,
 
     .editor-canvas-wrapper {
         width: min(100%, 99vw);
-        height: clamp(224px, 39vh, 420px);
+        height: clamp(320px, var(--editor-mobile-preview-max-height), 620px);
         max-width: min(100%, 99vw);
-        max-height: calc(100dvh - 252px);
-        min-height: 208px;
+        max-height: var(--editor-mobile-preview-max-height);
+        min-height: 280px;
         min-width: min(98vw, 340px);
         flex: 0 0 auto;
         align-self: center;
@@ -16005,7 +16006,7 @@ th,
 
     .editor-quick-icon-btn {
         flex: 0 0 auto;
-        touch-action: pan-x;
+        touch-action: manipulation;
     }
 
     .editor-quick-actions .editor-mobile-mode-toggle {

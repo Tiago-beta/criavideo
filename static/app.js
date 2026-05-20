@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v498 loaded");
+console.log("[CriaVideo] app.js v499 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28474,10 +28474,11 @@ function _editorBindMobileHorizontalBarDrag(container) {
         startX: 0,
         startScrollLeft: 0,
         active: false,
+        captured: false,
     };
 
     const finishDrag = (pointerId = drag.pointerId) => {
-        if (pointerId != null && typeof container.releasePointerCapture === "function") {
+        if (drag.captured && pointerId != null && typeof container.releasePointerCapture === "function") {
             try {
                 container.releasePointerCapture(pointerId);
             } catch (_) {
@@ -28493,6 +28494,7 @@ function _editorBindMobileHorizontalBarDrag(container) {
         drag.startX = 0;
         drag.startScrollLeft = 0;
         drag.active = false;
+        drag.captured = false;
         container.classList.remove("editor-mobile-bar-dragging");
     };
 
@@ -28504,14 +28506,6 @@ function _editorBindMobileHorizontalBarDrag(container) {
         drag.startX = event.clientX;
         drag.startScrollLeft = Number(container.scrollLeft || 0);
         drag.active = false;
-
-        if (typeof container.setPointerCapture === "function") {
-            try {
-                container.setPointerCapture(event.pointerId);
-            } catch (_) {
-                // Ignore browsers that refuse capture for this target.
-            }
-        }
     });
 
     container.addEventListener("pointermove", (event) => {
@@ -28520,6 +28514,15 @@ function _editorBindMobileHorizontalBarDrag(container) {
         const deltaX = event.clientX - drag.startX;
         if (!drag.active && Math.abs(deltaX) < 6) {
             return;
+        }
+
+        if (!drag.captured && typeof container.setPointerCapture === "function") {
+            try {
+                container.setPointerCapture(event.pointerId);
+                drag.captured = true;
+            } catch (_) {
+                // Ignore browsers that refuse capture for this target.
+            }
         }
 
         drag.active = true;
