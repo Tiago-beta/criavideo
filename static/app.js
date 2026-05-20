@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v502 loaded");
+console.log("[CriaVideo] app.js v503 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -27955,6 +27955,27 @@ function _ensureCreditOfferSelection() {
     _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
 }
 
+function _applyPreferredCreditOffer(preferredKind = "") {
+    const normalized = String(preferredKind || "").trim().toLowerCase();
+    if (normalized === "plan") {
+        const paidPlans = _paidCreditPlans();
+        if (paidPlans.length) {
+            const currentPlan = paidPlans.find((plan) => String(plan.code || "").trim().toLowerCase() === _currentCreditPlan);
+            _selectedCreditOffer = {
+                kind: "plan",
+                code: String((currentPlan || paidPlans[0] || {}).code || "starter"),
+                packageIndex: 0,
+            };
+            return;
+        }
+    }
+    if (["package", "topup", "recarga"].includes(normalized) && _creditPackagesCatalog().length) {
+        _selectedCreditOffer = { kind: "package", code: "", packageIndex: 0 };
+        return;
+    }
+    _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
+}
+
 function _getSelectedCreditOfferDetails() {
     _ensureCreditOfferSelection();
 
@@ -28250,7 +28271,7 @@ function showCreditsPurchaseModal(preferredKind = "") {
         document.body.appendChild(overlay);
     }
 
-    _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
+    _applyPreferredCreditOffer(preferredKind);
     _ensureCreditOfferSelection();
     overlay.innerHTML = _renderCreditsPurchaseModalContent();
 }
@@ -28379,7 +28400,7 @@ async function pollCreditStatus(reference) {
 // Wire up all page credit badges.
 document.querySelectorAll("[data-credits-trigger]").forEach((el) => {
     el.addEventListener("click", () => {
-        showCreditsPurchaseModal();
+        showCreditsPurchaseModal(el.dataset.creditsPreferred || "");
     });
 });
 
