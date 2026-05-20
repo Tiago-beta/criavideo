@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v476 loaded");
+console.log("[CriaVideo] app.js v477 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28114,6 +28114,7 @@ const _editor = {
     _virtualPlaybackActive: false,
     _virtualPlaybackRaf: 0,
     _virtualPlaybackLastTs: 0,
+    _playbackFollowRaf: 0,
 };
 
 let _editorClipboard = {
@@ -29728,6 +29729,58 @@ function _editorStopVirtualTimelinePlayback() {
     _editor._virtualPlaybackLastTs = 0;
 }
 
+function _editorStopPlaybackFollowLoop() {
+    if (_editor._playbackFollowRaf) {
+        cancelAnimationFrame(_editor._playbackFollowRaf);
+        _editor._playbackFollowRaf = 0;
+    }
+}
+
+function _editorStartPlaybackFollowLoop() {
+    _editorStopPlaybackFollowLoop();
+
+    const initialVideo = document.getElementById("editor-video");
+    let lastSourceTime = Number(initialVideo?.currentTime || 0);
+    let lastAdvanceTs = performance.now();
+
+    const tick = (ts) => {
+        if (!_editor.playing || _editor._virtualPlaybackActive) {
+            _editor._playbackFollowRaf = 0;
+            return;
+        }
+
+        const video = document.getElementById("editor-video");
+        if (!video || !video.src) {
+            _editor._playbackFollowRaf = 0;
+            return;
+        }
+
+        const sourceTime = Number(video.currentTime || 0);
+        if (Math.abs(sourceTime - lastSourceTime) > 0.003) {
+            lastSourceTime = sourceTime;
+            lastAdvanceTs = ts;
+        }
+
+        _editorTimeUpdate();
+
+        if (!_editor.playing || _editor._virtualPlaybackActive) {
+            _editor._playbackFollowRaf = 0;
+            return;
+        }
+
+        const stalledForMs = ts - lastAdvanceTs;
+        const canFallbackToVirtual = !video.ended && !video.seeking && (video.paused || video.readyState >= 2);
+        if (canFallbackToVirtual && stalledForMs > 240) {
+            _editorStartVirtualTimelinePlayback(Number(_editor.timelineTime || sourceTime || 0));
+            return;
+        }
+
+        _editor._playbackFollowRaf = requestAnimationFrame(tick);
+    };
+
+    _editor._playbackFollowRaf = requestAnimationFrame(tick);
+}
+
 function _editorGetVideoPlaybackEndTime() {
     const trackEnd = Math.max(0, Number(_editorGetVideoTrackEndTime() || 0));
     const mediaDuration = Math.max(0, Number(_editor.duration || 0));
@@ -29793,6 +29846,7 @@ function _editorApplyTimelineFrame(timeSec, shouldPlay = false) {
 }
 
 function _editorStartVirtualTimelinePlayback(startTime = 0) {
+    _editorStopPlaybackFollowLoop();
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = true;
 
@@ -34094,6 +34148,7 @@ async function openEditor(projectId, options = {}) {
         _editor.timelineZoom = 1;
         _editor.playbackRate = 1;
         _editor._virtualPlaybackActive = false;
+        _editorStopPlaybackFollowLoop();
         _editorStopVirtualTimelinePlayback();
         _editorResetSourceWaveformState();
         _editorCloseAIMusicModal(true);
@@ -34202,6 +34257,7 @@ function closeEditor() {
     _editorCloseAudioVideoSourceModal(true);
     _editorCloseRecorderModal(true);
     const video = document.getElementById("editor-video");
+    _editorStopPlaybackFollowLoop();
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = false;
     video.pause();
@@ -34414,6 +34470,7 @@ function _editorTogglePlay() {
 
     if (_editor.playing) {
         _editor.playing = false;
+        _editorStopPlaybackFollowLoop();
         _editorStopVirtualTimelinePlayback();
         video.pause();
         _editorApplyTimelineFrame(_editor.timelineTime || video.currentTime || 0, false);
@@ -34460,6 +34517,7 @@ function _editorTogglePlay() {
             });
         }
         _editorApplyTimelineFrame(startTime, true);
+        _editorStartPlaybackFollowLoop();
     }
 
     _updatePlayIcon();
@@ -34478,6 +34536,7 @@ function _editorResetPlaybackToStart() {
     const video = document.getElementById("editor-video");
     if (!video) return;
 
+    _editorStopPlaybackFollowLoop();
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = false;
     video.pause();
@@ -34548,7 +34607,31 @@ function _editorMovePlayhead(t) {
     const safeTime = Math.max(0, Math.min(timelineDuration, t || 0));
     const pct = timelineDuration > 0 ? (safeTime / timelineDuration) : 0;
     const x = Math.max(0, Math.min(trackWidth - 2, pct * trackWidth));
-    playhead.style.left = (_EDITOR_TIMELINE_LABEL_WIDTH + x) + "px";
+    const playheadLeft = _EDITOR_TIMELINE_LABEL_WIDTH + x;
+    playhead.style.left = playheadLeft + "px";
+
+    if (_editor.playing) {
+        const timelineEl = document.getElementById("editor-timeline");
+        const viewportWidth = Number(timelineEl?.clientWidth || 0);
+        if (timelineEl && viewportWidth > 0) {
+            const currentScroll = Number(timelineEl.scrollLeft || 0);
+            const minViewportX = Math.max(24, viewportWidth * 0.28);
+            const maxViewportX = Math.min(viewportWidth - 24, viewportWidth * 0.62);
+            const playheadViewportX = playheadLeft - currentScroll;
+            let targetScroll = currentScroll;
+
+            if (playheadViewportX < minViewportX) {
+                targetScroll = Math.max(0, playheadLeft - minViewportX);
+            } else if (playheadViewportX > maxViewportX) {
+                const maxScroll = Math.max(0, timelineEl.scrollWidth - viewportWidth);
+                targetScroll = Math.max(0, Math.min(maxScroll, playheadLeft - maxViewportX));
+            }
+
+            if (Math.abs(targetScroll - currentScroll) > 0.5) {
+                timelineEl.scrollLeft = targetScroll;
+            }
+        }
+    }
 }
 
 function _editorClampToVideoSegments(timeSec) {
@@ -34585,6 +34668,7 @@ function _editorSeekByClientX(clientX) {
                     // Ignore autoplay interruptions in preview.
                 });
             }
+            _editorStartPlaybackFollowLoop();
         }
         _editorApplyTimelineFrame(nextTime, _editor.playing);
         return;
