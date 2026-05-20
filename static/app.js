@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v501 loaded");
+console.log("[CriaVideo] app.js v502 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28623,6 +28623,8 @@ let _editorMusicPreviewLoadPromise = null;
 let _editorMusicPreviewRequestId = 0;
 let _editorMusicPreviewWarned = false;
 let _editorMusicPreviewPrimed = false;
+let _editorSourcePreviewAudio = null;
+let _editorSourcePreviewSourceKey = "";
 let _editorMediaImportOrderModal = {
     open: false,
     context: "project",
@@ -29968,10 +29970,8 @@ function _editorSegSourceTimeAtTimelineTime(seg, timelineTime) {
 }
 
 function _editorGetTrackSegmentAtTimelineTime(track = "video", timelineTime = 0) {
-    const sorted = [...
-        (_editorIsAudioTrack(track) ? _editorGetSegments(track) : _editor.videoSegments)
-    ].sort((a, b) => a.start - b.start);
-    return sorted.find((seg) => timelineTime >= Number(seg.start || 0) - 0.01 && timelineTime <= Number(seg.end || 0) + 0.01) || null;
+    const segments = _editorIsAudioTrack(track) ? _editorGetSegments(track) : _editor.videoSegments;
+    return segments.find((seg) => timelineTime >= Number(seg.start || 0) - 0.01 && timelineTime <= Number(seg.end || 0) + 0.01) || null;
 }
 
 function _editorTimelineToTrackSourceTime(timelineTime, track = "video") {
@@ -29980,11 +29980,123 @@ function _editorTimelineToTrackSourceTime(timelineTime, track = "video") {
     return _editorSegSourceTimeAtTimelineTime(seg, timelineTime);
 }
 
-function _editorSyncBaseVideoPreviewVolume(timelineTime = 0) {
+function _editorShouldUseDetachedSourceAudioPreview() {
+    if (_editorShouldShowAudioTrack()) return false;
+    if (_editorHasReversedVideoSegments()) return false;
+    if (!_editor.videoSegments.length) return false;
+
+    const video = document.getElementById("editor-video");
+    const sourceUrl = _editorNormalizeMediaUrl(video?.currentSrc || video?.src || _editor.videoUrl || "");
+    if (!sourceUrl) return false;
+
+    return _editor.videoSegments.length > 1 || _editorHasSpeedAdjustedVideoSegments();
+}
+
+function _editorGetSourcePreviewAudio() {
+    if (!_editorSourcePreviewAudio) {
+        _editorSourcePreviewAudio = new Audio();
+        _editorSourcePreviewAudio.preload = "auto";
+        _editorSourcePreviewAudio.loop = true;
+        _editorSourcePreviewAudio.setAttribute("playsinline", "true");
+        _editorSourcePreviewAudio.playbackRate = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
+    }
+    return _editorSourcePreviewAudio;
+}
+
+function _editorSetSourcePreviewAudioSource(url = "") {
+    const audio = _editorGetSourcePreviewAudio();
+    const normalizedUrl = _editorNormalizeMediaUrl(url);
+
+    if (!normalizedUrl) {
+        if (audio.src) {
+            audio.pause();
+            audio.removeAttribute("src");
+            audio.load();
+        }
+        _editorSourcePreviewSourceKey = "";
+        return false;
+    }
+
+    if (_editorSourcePreviewSourceKey === normalizedUrl && audio.src) {
+        return true;
+    }
+
+    audio.pause();
+    audio.src = normalizedUrl;
+    audio.load();
+    _editorSourcePreviewSourceKey = normalizedUrl;
+    return true;
+}
+
+function _editorSyncSourcePreviewPlayback(timelineTime = 0, shouldPlay = false, activeSegment = null, volumeOverride = null) {
+    if (!_editorShouldUseDetachedSourceAudioPreview()) {
+        if (_editorSourcePreviewAudio && !_editorSourcePreviewAudio.paused) {
+            _editorSourcePreviewAudio.pause();
+        }
+        return false;
+    }
+
+    const video = document.getElementById("editor-video");
+    const sourceUrl = video?.currentSrc || video?.src || _editor.videoUrl || "";
+    if (!_editorSetSourcePreviewAudioSource(sourceUrl)) {
+        return false;
+    }
+
+    const audio = _editorGetSourcePreviewAudio();
+    const segment = activeSegment || _editorGetTrackSegmentAtTimelineTime("video", Number(timelineTime || 0));
+    const nextVolume = Number.isFinite(volumeOverride)
+        ? Math.max(0, Math.min(1, Number(volumeOverride || 0)))
+        : _editorGetTrackEffectiveSegmentVolumeFactor("video", segment);
+    const nextRate = Math.max(0.25, Math.min(8, Number(_editor.playbackRate || 1) * _editorSegmentPlaybackSpeed(segment)));
+    let targetTime = Math.max(0, _editorTimelineToSourceTime(timelineTime));
+    const duration = Number(audio.duration || 0);
+
+    if (Number.isFinite(duration) && duration > 0.05) {
+        targetTime = Math.max(0, Math.min(targetTime, Math.max(0, duration - 0.02)));
+    }
+
+    audio.volume = nextVolume;
+    audio.playbackRate = nextRate;
+
+    if (audio.readyState >= 1 && Math.abs(Number(audio.currentTime || 0) - targetTime) > 0.18) {
+        try {
+            audio.currentTime = targetTime;
+        } catch {
+            // Ignore seek errors while metadata is loading.
+        }
+    }
+
+    if (shouldPlay) {
+        if (audio.paused) {
+            const playPromise = audio.play();
+            if (playPromise && typeof playPromise.catch === "function") {
+                playPromise.catch(() => {
+                    // Keep the preview silent rather than surfacing autoplay noise.
+                });
+            }
+        }
+        return true;
+    }
+
+    if (!audio.paused) {
+        audio.pause();
+    }
+    return true;
+}
+
+function _editorSyncBaseVideoPreviewVolume(timelineTime = 0, shouldPlay = false) {
     const video = document.getElementById("editor-video");
     if (!video) return;
     const activeSegment = _editorGetTrackSegmentAtTimelineTime("video", Number(timelineTime || 0));
     const nextVolume = _editorGetTrackEffectiveSegmentVolumeFactor("video", activeSegment);
+    const usingDetachedAudio = _editorSyncSourcePreviewPlayback(timelineTime, shouldPlay, activeSegment, nextVolume);
+
+    if (usingDetachedAudio) {
+        video.volume = 0;
+        video.muted = true;
+        return;
+    }
+
     video.volume = nextVolume;
     video.muted = nextVolume <= 0.0001;
 }
@@ -29995,8 +30107,7 @@ function _editorTimelineToSourceTime(timelineTime) {
 
 function _editorSourceToTimelineTime(sourceTime) {
     if (!_editor.videoSegments.length) return sourceTime;
-    const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
-    for (const seg of sorted) {
+    for (const seg of _editor.videoSegments) {
         const ss = _editorSegSourceStart(seg);
         const se = _editorSegSourceEnd(seg);
         if (sourceTime >= ss - 0.01 && sourceTime <= se + 0.01) {
@@ -30377,7 +30488,7 @@ function _editorApplyTimelineFrame(timeSec, shouldPlay = false) {
         }
     }
 
-    _editorSyncBaseVideoPreviewVolume(safeTime);
+    _editorSyncBaseVideoPreviewVolume(safeTime, Boolean(shouldPlay));
 
     const timeEl = document.getElementById("editor-time-current");
     if (timeEl) timeEl.textContent = _fmtTime(safeTime);
@@ -35015,6 +35126,10 @@ function _editorApplyPlaybackRate(nextRate, options = {}) {
         _editorMusicPreviewAudio.playbackRate = safeRate;
     }
 
+    if (_editorSourcePreviewAudio) {
+        _editorSourcePreviewAudio.playbackRate = safeRate;
+    }
+
     const speedBtn = document.getElementById("editor-quick-speed");
     if (speedBtn) {
         const label = _editorFormatRateLabel(safeRate);
@@ -35075,6 +35190,7 @@ function _editorTogglePlay() {
     if (!_editorMusicPreviewPrimed) {
         _editorPrimeMusicPreviewPlayback(startTime);
     }
+    _editorSyncBaseVideoPreviewVolume(startTime, true);
 
     const videoPlaybackEnd = _editorGetVideoPlaybackEndTime();
     if (_editorShouldUseVirtualVideoPlayback() || startTime > videoPlaybackEnd + 0.01) {
