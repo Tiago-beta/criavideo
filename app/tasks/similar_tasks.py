@@ -2016,13 +2016,19 @@ def _scene_duration_seconds(scene: VideoScene) -> float:
 
 def _normalize_engine(value: str) -> str:
     raw = str(value or "").strip().lower()
-    if raw in {"grok", "wan2", "seedance"}:
+    if raw in {"grok", "wan2", "seedance", "lite2"}:
         return raw
+    if "lite 2.0" in raw or "seedance v1.5" in raw or "seedance-v1.5" in raw:
+        return "lite2"
     if "seedance" in raw:
         return "seedance"
     if "wan" in raw or "ultra" in raw:
         return "wan2"
     return "grok"
+
+
+def _is_seedance_family_engine(engine: str) -> bool:
+    return _normalize_engine(engine) in {"seedance", "lite2"}
 
 
 def _engine_duration(engine: str, duration: int) -> int:
@@ -2034,6 +2040,8 @@ def _engine_duration(engine: str, duration: int) -> int:
         if safe in allowed:
             return safe
         return min(allowed, key=lambda candidate: (abs(candidate - safe), candidate))
+    if engine == "lite2":
+        return max(5, min(12, safe))
     if engine == "seedance":
         return max(5, min(10, safe))
     return max(5, min(15, safe))
@@ -2044,6 +2052,8 @@ def _engine_min_duration(engine: str) -> float:
     if normalized_engine == "grok":
         return 1.0
     if normalized_engine == "wan2":
+        return 5.0
+    if normalized_engine == "lite2":
         return 5.0
     if normalized_engine == "seedance":
         return 4.0
@@ -2228,6 +2238,7 @@ async def _generate_clip_for_scene(
 ) -> str:
     normalized_engine = _normalize_engine(engine)
     normalized_generation_mode = "text" if str(generation_mode or "image").strip().lower() == "text" else "image"
+    use_reference_generation = normalized_generation_mode == "image" or normalized_engine == "lite2"
     scene_duration_seconds = _scene_duration_seconds(scene)
     clip_duration = _engine_duration(normalized_engine, _scene_duration(scene))
     prompt, reference_image_path = _build_similar_scene_generation_context(
@@ -2247,7 +2258,7 @@ async def _generate_clip_for_scene(
     project_user_id = int(getattr(project, "user_id", 0) or 0) or project_id
     scene_reference_paths: list[str] = []
     merged_reference_image = ""
-    if normalized_generation_mode == "image":
+    if use_reference_generation:
         preferred_start_path = manual_image_path or reference_image_path
         scene_reference_paths = await _resolve_similar_scene_boundary_reference_paths(
             project_id,
@@ -2266,7 +2277,7 @@ async def _generate_clip_for_scene(
                 reference_frames_by_scene_index=reference_frames_by_scene_index,
             )
             scene_reference_paths = [generated_image_path]
-        if normalized_engine != "seedance" and len(scene_reference_paths) > 1:
+        if not _is_seedance_family_engine(normalized_engine) and len(scene_reference_paths) > 1:
             merged_reference_image = str(
                 build_persona_reference_montage(
                     project_user_id,
@@ -2280,15 +2291,15 @@ async def _generate_clip_for_scene(
 
     use_last_image_as_final_frame = len(scene_reference_paths) > 1
     base_reference_image = ""
-    if normalized_generation_mode == "image":
-        if normalized_engine == "seedance":
+    if use_reference_generation:
+        if _is_seedance_family_engine(normalized_engine):
             base_reference_image = scene_reference_paths[0] if scene_reference_paths else ""
         else:
             base_reference_image = merged_reference_image or (scene_reference_paths[0] if scene_reference_paths else "")
 
-    if normalized_engine == "seedance" and base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
+    if _is_seedance_family_engine(normalized_engine) and base_reference_image and scene_duration_seconds < _engine_min_duration(normalized_engine):
         seedance_target_duration = max(0.6, float(scene_duration_seconds or 0.0))
-        tmp_output_path = str(clip_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_seedance_full.mp4")
+        tmp_output_path = str(clip_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_{normalized_engine}_full.mp4")
         await generate_realistic_video(
             prompt=prompt,
             duration=int(_engine_min_duration(normalized_engine)),
@@ -2299,6 +2310,7 @@ async def _generate_clip_for_scene(
             image_path=scene_reference_paths[0] if scene_reference_paths else base_reference_image,
             image_paths=scene_reference_paths[1:] if len(scene_reference_paths) > 1 else None,
             use_last_image_as_final_frame=use_last_image_as_final_frame,
+            engine_variant=normalized_engine,
             on_progress=None,
         )
         await _trim_clip_duration(tmp_output_path, seedance_target_duration, output_path)
@@ -2375,9 +2387,10 @@ async def _generate_clip_for_scene(
                 output_path=output_path,
                 resolution="480p",
                 generate_audio=True,
-                image_path=(scene_reference_paths[0] if scene_reference_paths else image_path) if normalized_generation_mode == "image" else None,
-                image_paths=scene_reference_paths[1:] if normalized_generation_mode == "image" and len(scene_reference_paths) > 1 else None,
+                image_path=(scene_reference_paths[0] if scene_reference_paths else image_path) if use_reference_generation else None,
+                image_paths=scene_reference_paths[1:] if use_reference_generation and len(scene_reference_paths) > 1 else None,
                 use_last_image_as_final_frame=use_last_image_as_final_frame,
+                engine_variant=normalized_engine,
                 on_progress=None,
             )
 
@@ -2989,7 +3002,7 @@ async def run_similar_generate_unified_scene(
             )
             if not combined_reference_paths:
                 raise RuntimeError("Nenhum frame de referencia foi encontrado para a cena unica")
-            use_last_image_as_final_frame = normalized_engine == "seedance" and (
+            use_last_image_as_final_frame = _is_seedance_family_engine(normalized_engine) and (
                 len(boundary_reference_paths) > 1
                 or (bool(tags.get("similar_unified_use_last_image_as_final_frame")) and len(uploaded_reference_paths) > 1)
             )
@@ -3018,7 +3031,7 @@ async def run_similar_generate_unified_scene(
             project.error_message = None
             await db.commit()
 
-            if normalized_engine == "seedance":
+            if _is_seedance_family_engine(normalized_engine):
                 await generate_realistic_video(
                     prompt=unified_prompt,
                     duration=requested_duration,
@@ -3029,6 +3042,7 @@ async def run_similar_generate_unified_scene(
                     image_paths=combined_reference_paths,
                     image_path=combined_reference_paths[0],
                     use_last_image_as_final_frame=use_last_image_as_final_frame,
+                    engine_variant=normalized_engine,
                     on_progress=None,
                 )
             else:

@@ -274,6 +274,16 @@ def _normalize_wan_duration_seconds(value: int) -> int:
     return min(allowed, key=lambda candidate: (abs(candidate - raw), candidate))
 
 
+def _normalize_lite2_duration_seconds(value: int) -> int:
+    """Normalize Lite 2.0 duration to the Seedance v1.5 Fast window."""
+    return max(5, min(int(value or 5), 12))
+
+
+_REALISTIC_ENGINES = {"grok", "wan2", "minimax", "seedance", "lite2", "avatar31"}
+_SIMILAR_ENGINES = {"grok", "wan2", "minimax", "seedance", "lite2"}
+_SEEDANCE_FAMILY_ENGINES = {"seedance", "lite2"}
+
+
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
     persona = _normalize_interaction_persona(interaction_persona)
     if not persona:
@@ -2823,20 +2833,20 @@ class SimilarUnifiedBoundaryFrameRequest(SimilarSceneImageRequest):
 
 
 class SimilarGeneratePreviewsRequest(BaseModel):
-    engine: str = "grok"
+    engine: str = "lite2"
     aspect_ratio: str = "16:9"
 
 
 class SimilarRegenerateSceneRequest(BaseModel):
     scene_id: int
-    engine: str = "grok"
+    engine: str = "lite2"
     aspect_ratio: str = "16:9"
     prompt_override: str = ""
     generation_mode: str = "image"
 
 
 class SimilarGenerateUnifiedSceneRequest(BaseModel):
-    engine: str = "seedance"
+    engine: str = "lite2"
     aspect_ratio: str = "16:9"
     duration_seconds: int = 10
     prompt_override: str = ""
@@ -3342,8 +3352,8 @@ async def generate_similar_unified_scene(
     if project.status in {VideoStatus.GENERATING_SCENES, VideoStatus.GENERATING_CLIPS, VideoStatus.RENDERING}:
         raise HTTPException(status_code=400, detail="Projeto ainda esta processando")
 
-    engine = str(req.engine or "seedance").strip().lower() or "seedance"
-    if engine not in {"grok", "wan2", "minimax", "seedance"}:
+    engine = str(req.engine or "lite2").strip().lower() or "lite2"
+    if engine not in _SIMILAR_ENGINES:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
     duration_seconds = int(req.duration_seconds or 0)
@@ -3402,7 +3412,7 @@ async def generate_similar_unified_scene(
         tags_data["similar_unified_reference_frame_count"] = len({path for path in (start_frame_path, end_frame_path) if path})
 
     tags_data["similar_unified_upload_image_paths"] = unified_upload_paths
-    tags_data["similar_unified_use_last_image_as_final_frame"] = engine == "seedance" and (
+    tags_data["similar_unified_use_last_image_as_final_frame"] = engine in _SEEDANCE_FAMILY_ENGINES and (
         has_boundary_pair or (bool(req.use_last_image_as_final_frame) and len(unified_upload_paths) > 1)
     )
 
@@ -3972,8 +3982,8 @@ async def generate_similar_previews(
     if not scenes:
         raise HTTPException(status_code=400, detail="Projeto nao possui cenas para gerar")
 
-    engine = str(req.engine or "grok").strip().lower() or "grok"
-    if engine not in {"grok", "wan2", "minimax", "seedance"}:
+    engine = str(req.engine or "lite2").strip().lower() or "lite2"
+    if engine not in _SIMILAR_ENGINES:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
     from app.routers.credits import deduct_credits
@@ -4016,8 +4026,8 @@ async def regenerate_similar_scene(
     if not scene or scene.project_id != project_id:
         raise HTTPException(status_code=404, detail="Cena nao encontrada")
 
-    engine = str(req.engine or "grok").strip().lower() or "grok"
-    if engine not in {"grok", "wan2", "minimax", "seedance"}:
+    engine = str(req.engine or "lite2").strip().lower() or "lite2"
+    if engine not in _SIMILAR_ENGINES:
         raise HTTPException(status_code=400, detail="Engine invalida")
     generation_mode = str(req.generation_mode or "image").strip().lower() or "image"
     if generation_mode not in {"image", "text"}:
@@ -5866,11 +5876,13 @@ async def generate_realistic_prompt_endpoint(
     else:
         topic_for_optimizer = topic
 
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok", "avatar31") else "wan2"
+    engine = req.engine if req.engine in _REALISTIC_ENGINES else "wan2"
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
+    elif engine == "lite2":
+        duration = _normalize_lite2_duration_seconds(int(req.duration or 5))
     elif engine == "seedance":
         duration = max(1, min(int(req.duration or 10), 15))
     elif engine == "avatar31":
@@ -6052,7 +6064,7 @@ class GenerateRealisticRequest(BaseModel):
     cover_custom_prompt: str = ""
     cover_source: str = ""
     tevoxi_has_official_cover_reference: bool = False
-    engine: str = "wan2"  # "seedance", "minimax", "wan2", "grok" or "avatar31"
+    engine: str = "wan2"  # "seedance", "lite2", "minimax", "wan2", "grok" or "avatar31"
     audio_url: str = ""       # External audio URL (e.g. from Tevoxi)
     lyrics: str = ""          # Lyrics/transcription for the audio clip
     clip_start: float = 0     # Start time in seconds for audio clip
@@ -6078,7 +6090,7 @@ async def generate_realistic_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     """Generate a realistic AI video using the available realistic engines."""
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok", "avatar31") else "wan2"
+    engine = req.engine if req.engine in _REALISTIC_ENGINES else "wan2"
     prompt = (req.prompt or "").strip()
     avatar_promptless_mode = engine == "avatar31" and not prompt
     if not prompt and engine != "avatar31":
@@ -6091,6 +6103,8 @@ async def generate_realistic_endpoint(
         duration = max(1, min(int(req.duration or 10), 60))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
+    elif engine == "lite2":
+        duration = _normalize_lite2_duration_seconds(int(req.duration or 5))
     elif engine == "seedance":
         duration = max(1, min(int(req.duration or 10), 15))
     elif engine == "avatar31":
@@ -6170,7 +6184,7 @@ async def generate_realistic_endpoint(
         if avatar_duration > 0:
             duration = max(1, min(avatar_duration, 180))
 
-    use_last_image_as_final_frame = bool(req.use_last_image_as_final_frame) and engine == "seedance"
+    use_last_image_as_final_frame = bool(req.use_last_image_as_final_frame) and engine in _SEEDANCE_FAMILY_ENGINES
 
     disable_persona_reference = bool(req.disable_persona_reference) and engine == "grok" and not bool(upload_ids)
     if disable_persona_reference:
@@ -6322,11 +6336,11 @@ async def generate_realistic_endpoint(
     effective_add_music = bool(req.add_music or resolved_audio_source)
     provider_generate_audio = bool(req.generate_audio)
     seedance_native_audio_only = False
-    if engine == "seedance":
-        # Seedance should always request native model audio when available.
+    if engine in _SEEDANCE_FAMILY_ENGINES:
+        # Seedance-family engines should always request native model audio when available.
         provider_generate_audio = True
         if provider_generate_audio and not external_audio_url and not effective_add_narration and not dialogue_enabled:
-            # Prefer native SFX from Seedance unless user explicitly supplied another audio source.
+            # Prefer native SFX from Seedance-family engines unless user explicitly supplied another audio source.
             effective_add_music = False
             seedance_native_audio_only = True
     elif engine == "wan2":
@@ -6358,7 +6372,7 @@ async def generate_realistic_endpoint(
     else:
         await deduct_credits(db, user["id"], credits_needed)
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "lite2": "Lite 2.0", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
     engine_label = engine_labels.get(engine, "Wan 2.6")
 
     # Use custom title if provided. Avatar can be promptless, so keep a deterministic fallback.

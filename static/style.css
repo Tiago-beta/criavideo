@@ -11008,6 +11008,12 @@ th,
     color: #b7f5ff;
 }
 
+#similar-engine-options .engine-option[data-value="lite2"].selected {
+    border-color: rgba(255, 163, 94, 0.48);
+    background: rgba(255, 163, 94, 0.14);
+    color: #ffd7bf;
+}
+
 #similar-engine-options .engine-option[data-value="seedance"].selected {
     border-color: rgba(128, 246, 214, 0.4);
     background: rgba(128, 246, 214, 0.12);

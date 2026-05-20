@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v476 loaded");
+console.log("[CriaVideo] app.js v477 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -201,7 +201,51 @@ function showToast(msg, type = "info") {
 const WAN_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const DEFAULT_REALISTIC_DURATION_OPTIONS = [5, 10, 15, 20, 45, 60];
 const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
+const LITE2_REALISTIC_DURATION_OPTIONS = [5, 10, 12];
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
+const SIMILAR_ENGINE_OPTIONS = ["grok", "wan2", "lite2", "seedance"];
+const SEEDANCE_FAMILY_ENGINES = new Set(["seedance", "lite2"]);
+
+function _isSeedanceFamilyEngine(engineValue) {
+    return SEEDANCE_FAMILY_ENGINES.has(String(engineValue || "").trim().toLowerCase());
+}
+
+function _getCreateRealisticDurationOptions(engineValue) {
+    const engine = String(engineValue || "").trim().toLowerCase();
+    if (engine === "wan2") return WAN_REALISTIC_DURATION_OPTIONS;
+    if (engine === "lite2") return LITE2_REALISTIC_DURATION_OPTIONS;
+    if (engine === "seedance") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
+    return DEFAULT_REALISTIC_DURATION_OPTIONS;
+}
+
+function _getAutoRealisticDurationOptions(engineValue) {
+    const engine = String(engineValue || "").trim().toLowerCase();
+    if (engine === "grok") return AUTO_GROK_DURATION_OPTIONS;
+    if (engine === "lite2") return LITE2_REALISTIC_DURATION_OPTIONS;
+    if (engine === "seedance") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
+    return WAN_REALISTIC_DURATION_OPTIONS;
+}
+
+function _getSimilarManualDurationOptions(engineValue) {
+    const normalizedEngine = _normalizeSimilarEngine(engineValue);
+    if (normalizedEngine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
+    return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
+}
+
+function _clampSimilarDurationForEngine(engineValue, durationValue) {
+    const normalizedEngine = _normalizeSimilarEngine(engineValue);
+    const safeDuration = Number(durationValue || 0);
+    const maxDuration = normalizedEngine === "lite2" ? 12 : 15;
+    if (!Number.isFinite(safeDuration) || safeDuration <= 0) {
+        return 5;
+    }
+    return Math.max(5, Math.min(maxDuration, safeDuration));
+}
+
+function _pickSimilarManualDuration(engineValue, rawValue) {
+    return _pickClosestDurationOption(_getSimilarManualDurationOptions(engineValue), rawValue);
+}
+
 const WORKFLOW_PROMPT_AI_STYLE_OPTIONS = [
     { value: "commercial", label: "Comercial" },
     { value: "meme", label: "Meme Viral" },
@@ -351,11 +395,7 @@ function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
         _syncSeedanceLastFrameToggle(prefix);
         return;
     }
-    const options = engine === "wan2"
-        ? WAN_REALISTIC_DURATION_OPTIONS
-        : engine === "seedance"
-            ? SEEDANCE_REALISTIC_DURATION_OPTIONS
-            : DEFAULT_REALISTIC_DURATION_OPTIONS;
+    const options = _getCreateRealisticDurationOptions(engine);
     _renderDurationButtons(`${prefix}-realistic-duration`, options, preferredValue);
     _syncSeedanceLastFrameToggle(prefix);
 }
@@ -364,28 +404,20 @@ function _syncSeedanceLastFrameToggle(prefix) {
     const toggleGroup = document.getElementById(`${prefix}-seedance-last-frame-group`);
     if (!toggleGroup) return;
     const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
-    toggleGroup.hidden = engine !== "seedance";
+    toggleGroup.hidden = !_isSeedanceFamilyEngine(engine);
 }
 
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected")
         || document.querySelector("#wizard-realistic-engine .engine-option.selected");
     const engine = engineBtn?.dataset.value || "wan2";
-    const options = engine === "wan2"
-        ? WAN_REALISTIC_DURATION_OPTIONS
-        : engine === "seedance"
-            ? SEEDANCE_REALISTIC_DURATION_OPTIONS
-            : DEFAULT_REALISTIC_DURATION_OPTIONS;
+    const options = _getCreateRealisticDurationOptions(engine);
     _renderDurationButtons("ai-suggest-realistic-duration", options, preferredValue);
 }
 
 function _syncAutoRealisticDurationOptions(preferredValue = null) {
     const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "wan2";
-    const options = engine === "grok"
-        ? AUTO_GROK_DURATION_OPTIONS
-        : engine === "seedance"
-            ? SEEDANCE_REALISTIC_DURATION_OPTIONS
-            : WAN_REALISTIC_DURATION_OPTIONS;
+    const options = _getAutoRealisticDurationOptions(engine);
     _renderDurationButtons("auto-realistic-duration", options, preferredValue);
 }
 
@@ -4081,7 +4113,7 @@ let similarState = {
     pollingTimer: null,
     controlsLocked: false,
     engineManuallySelected: false,
-    selectedEngine: "wan2",
+    selectedEngine: "lite2",
     sceneEngineSelectionBySceneId: {},
     pendingBusyStage: "",
     pendingBusySceneId: 0,
@@ -4190,9 +4222,9 @@ const SIMILAR_DETECTED_MODE_LABELS = {
     unknown: "Não foi possível identificar com confiança o perfil visual do vídeo.",
 };
 const SIMILAR_MODE_ENGINE_DEFAULT = {
-    static_narrated: "wan2",
-    realistic: "wan2",
-    unknown: "wan2",
+    static_narrated: "lite2",
+    realistic: "lite2",
+    unknown: "lite2",
 };
 const SIMILAR_ACTION_ICONS = {
     save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
@@ -5095,6 +5127,7 @@ async function createSimilar(projectId) {
         "Wan 2.2",
         "Ultra High 1.0",
         "Ultra High 2.2",
+        "Lite 2.0",
         "Mega 2.0 Ultra",
         "Seedance 2.0",
         "Grok",
@@ -5116,9 +5149,10 @@ async function createSimilar(projectId) {
 
     const normalizeEngine = (value) => {
         const raw = String(value || "").trim().toLowerCase();
-        if (["wan2", "grok", "seedance"].includes(raw)) {
+        if (["wan2", "grok", "seedance", "lite2"].includes(raw)) {
             return raw;
         }
+        if (raw.includes("lite 2.0") || raw.includes("seedance v1.5") || raw.includes("seedance-v1.5")) return "lite2";
         if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
         if (raw.includes("cria 3.0") || raw.includes("grok")) return "grok";
@@ -5891,7 +5925,7 @@ function initCreateWizard() {
             const container = eng.closest(".form-group")?.parentElement;
             if (container) {
                 // Keep realistic engines without auto music by default (user can still enable manually).
-                const hasNativeAudio = (engineVal === "grok" || engineVal === "seedance" || engineVal === "wan2");
+                const hasNativeAudio = (engineVal === "grok" || _isSeedanceFamilyEngine(engineVal) || engineVal === "wan2");
                 const musicCb = container.querySelector("[id$='-realistic-music']");
                 if (musicCb) {
                     const useScriptTevoxi = musicCb.id === "script-realistic-music"
@@ -6719,7 +6753,7 @@ function _renderSimilarUnifiedPrompt(project) {
     similarState.unifiedEngine = selectedEngine;
     similarState.unifiedDuration = selectedDuration;
 
-    enginePickerEl.innerHTML = ["grok", "wan2", "seedance"].map((engineValue) => `
+    enginePickerEl.innerHTML = SIMILAR_ENGINE_OPTIONS.map((engineValue) => `
         <button
             class="similar-scene-engine-btn${selectedEngine === engineValue ? " selected" : ""}"
             type="button"
@@ -6728,7 +6762,7 @@ function _renderSimilarUnifiedPrompt(project) {
             aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
         >${_similarSceneEngineLabel(engineValue)}</button>
     `).join("");
-    _renderDurationButtons("similar-unified-duration-options", [5, 10, 15], selectedDuration);
+    _renderDurationButtons("similar-unified-duration-options", _getSimilarManualDurationOptions(selectedEngine), selectedDuration);
 
     const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
     const unifiedClipUrl = String(tags.similar_unified_clip_url || "").trim();
@@ -7272,11 +7306,12 @@ function similarSelectSceneDuration(sceneId, rawValue) {
     const durationWrapEl = document.getElementById(`similar-scene-duration-options-${targetId}`);
     if (!durationEl || !durationModeEl || !durationWrapEl) return;
 
+    const selectedEngine = _getSimilarSceneSelectedEngine(targetId);
     const detectedDurationSeconds = _similarSceneDetectedDurationSeconds(scene);
     const normalizedMode = _normalizeSimilarSceneDurationMode(rawValue) || "auto";
     const selectedDuration = normalizedMode === "auto"
-        ? detectedDurationSeconds
-        : _pickClosestDurationOption([5, 10, 15], rawValue);
+        ? _clampSimilarDurationForEngine(selectedEngine, detectedDurationSeconds)
+        : _pickSimilarManualDuration(selectedEngine, rawValue);
 
     durationEl.value = String(selectedDuration);
     durationModeEl.value = normalizedMode;
@@ -7291,7 +7326,7 @@ function similarSelectSceneDuration(sceneId, rawValue) {
 
 function _normalizeSimilarEngine(rawValue) {
     const value = String(rawValue || "").trim().toLowerCase();
-    if (value === "grok" || value === "wan2" || value === "seedance") {
+    if (value === "grok" || value === "wan2" || value === "lite2" || value === "seedance") {
         return value;
     }
     return "wan2";
@@ -7300,6 +7335,7 @@ function _normalizeSimilarEngine(rawValue) {
 function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
     if (normalized === "wan2") return "Ultra 3.0";
+    if (normalized === "lite2") return "Lite 2.0";
     if (normalized === "seedance") return "Mega 2.0";
     return "Cria 2.5";
 }
@@ -7307,6 +7343,7 @@ function _similarSceneEngineLabel(engineValue) {
 function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
     if (normalized === "wan2") return "Ultra High 3.0";
+    if (normalized === "lite2") return "Lite 2.0";
     if (normalized === "seedance") return "Mega 2.0 Ultra";
     return "Cria Speed 2.5 (Grok)";
 }
@@ -7316,7 +7353,7 @@ function _getSimilarSceneSelectedEngine(sceneId) {
     return _normalizeSimilarEngine(
         similarState.sceneEngineSelectionBySceneId?.[sceneKey]
         || similarState.selectedEngine
-        || "wan2"
+        || "lite2"
     );
 }
 
@@ -7339,7 +7376,7 @@ function _getSimilarUnifiedSelectedEngine(tags = null) {
     return _normalizeSimilarEngine(
         similarState.unifiedEngine
         || safeTags.similar_unified_clip_engine
-        || "seedance"
+        || "lite2"
     );
 }
 
@@ -7351,11 +7388,18 @@ function _getSimilarUnifiedSelectedDuration(tags = null) {
         similarState.unifiedDuration || safeTags.similar_unified_clip_duration || "10",
         10,
     );
-    return _pickClosestDurationOption([5, 10, 15], preferred || 10);
+    return _pickClosestDurationOption(
+        _getSimilarManualDurationOptions(_getSimilarUnifiedSelectedEngine(safeTags)),
+        preferred || 10,
+    );
 }
 
 function similarSelectUnifiedEngine(engineValue) {
     similarState.unifiedEngine = _normalizeSimilarEngine(engineValue);
+    similarState.unifiedDuration = _pickClosestDurationOption(
+        _getSimilarManualDurationOptions(similarState.unifiedEngine),
+        similarState.unifiedDuration || 10,
+    );
     if (similarState.lastProjectSnapshot) {
         _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
     }
@@ -7597,13 +7641,13 @@ function _setSimilarEngineSelection(engineValue, options = {}) {
     });
 
     if (!found) {
-        const fallback = document.querySelector("#similar-engine-options [data-value='wan2']");
+        const fallback = document.querySelector("#similar-engine-options [data-value='lite2']");
         if (fallback) {
             fallback.classList.add("selected");
         }
     }
 
-    similarState.selectedEngine = found ? normalized : "wan2";
+    similarState.selectedEngine = found ? normalized : "lite2";
     if (markManual) {
         similarState.engineManuallySelected = true;
     }
@@ -7615,7 +7659,7 @@ function _getSimilarSelectedEngine() {
     if (selected) {
         return _normalizeSimilarEngine(selected.dataset.value);
     }
-    return _normalizeSimilarEngine(similarState.selectedEngine || "wan2");
+    return _normalizeSimilarEngine(similarState.selectedEngine || "lite2");
 }
 
 function _resolveSimilarDetectedMode(tags) {
@@ -7669,7 +7713,7 @@ function _updateSimilarGenerationStep(project, tags) {
     }
 
     const suggestedEngine = _normalizeSimilarEngine(
-        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "wan2"
+        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "lite2"
     );
     if (!similarState.engineManuallySelected) {
         _setSimilarEngineSelection(suggestedEngine, { markManual: false });
@@ -7936,16 +7980,17 @@ function _normalizeSimilarSceneDurationMode(rawValue) {
     if (value === "auto") {
         return "auto";
     }
-    if (["5", "10", "15"].includes(value)) {
+    if (["5", "10", "12", "15"].includes(value)) {
         return value;
     }
     return "";
 }
 
 function _resolveSimilarSceneDurationSelection(scene, draft = {}) {
-    const detectedDurationSeconds = _similarSceneDetectedDurationSeconds(scene);
-    const currentDurationSeconds = _similarSceneDurationSeconds(scene);
-    const manualOptions = [5, 10, 15];
+    const selectedEngine = _getSimilarSceneSelectedEngine(Number(scene?.id || 0));
+    const detectedDurationSeconds = _clampSimilarDurationForEngine(selectedEngine, _similarSceneDetectedDurationSeconds(scene));
+    const currentDurationSeconds = _clampSimilarDurationForEngine(selectedEngine, _similarSceneDurationSeconds(scene));
+    const manualOptions = _getSimilarManualDurationOptions(selectedEngine);
     const closestManualDuration = _pickClosestDurationOption(manualOptions, currentDurationSeconds);
     const serverMode = Math.abs(currentDurationSeconds - detectedDurationSeconds) <= 0.05
         ? "auto"
@@ -8000,14 +8045,15 @@ function _similarSceneTimingNeedsSave(sceneId) {
     const durationModeEl = document.getElementById(`similar-scene-duration-mode-${targetId}`);
     if (!durationEl || !durationModeEl) return false;
 
+    const selectedEngine = _getSimilarSceneSelectedEngine(targetId);
     const durationSelection = _resolveSimilarSceneDurationSelection(scene);
     const currentMode = _normalizeSimilarSceneDurationMode(durationModeEl.value || "") || durationSelection.serverMode;
     const currentDuration = currentMode === "auto"
         ? durationSelection.detectedDurationSeconds
-        : _pickClosestDurationOption([5, 10, 15], Number(durationEl.value || 0) || durationSelection.selectedDurationSeconds);
+        : _pickSimilarManualDuration(selectedEngine, Number(durationEl.value || 0) || durationSelection.selectedDurationSeconds);
     const serverDuration = durationSelection.serverMode === "auto"
         ? durationSelection.detectedDurationSeconds
-        : _pickClosestDurationOption([5, 10, 15], durationSelection.currentDurationSeconds);
+        : _pickSimilarManualDuration(selectedEngine, durationSelection.currentDurationSeconds);
 
     return currentMode !== durationSelection.serverMode || Math.abs(currentDuration - serverDuration) > 0.05;
 }
@@ -8153,9 +8199,10 @@ function _syncSimilarDraftsFromDom() {
 
         const serverStart = scene ? Number(scene.start_time || 0).toFixed(1) : String(startEl?.dataset.serverValue || "");
         const durationSelection = _resolveSimilarSceneDurationSelection(scene, existingDraft);
+        const selectedEngine = _getSimilarSceneSelectedEngine(sceneId);
         const serverDuration = durationSelection.serverMode === "auto"
             ? String(durationSelection.detectedDurationSeconds)
-            : String(_pickClosestDurationOption([5, 10, 15], durationSelection.currentDurationSeconds));
+            : String(_pickSimilarManualDuration(selectedEngine, durationSelection.currentDurationSeconds));
         const serverDurationMode = durationSelection.serverMode;
         const startValue = startEl ? String(startEl.value || "") : serverStart;
         const durationValue = durationEl ? String(durationEl.value || "") : serverDuration;
@@ -8404,7 +8451,8 @@ function _renderSimilarScenes(project, options = {}) {
         const durationValue = durationSelection.selectedMode === "auto"
             ? durationSelection.detectedDurationSeconds
             : durationSelection.selectedDurationSeconds;
-        const durationButtonsMarkup = ["auto", "5", "10", "15"].map((value) => {
+        const manualDurationOptions = _getSimilarManualDurationOptions(selectedSceneEngine);
+        const durationButtonsMarkup = ["auto", ...manualDurationOptions.map((value) => String(value))].map((value) => {
             const normalizedValue = _normalizeSimilarSceneDurationMode(value) || "auto";
             const isSelected = durationSelection.selectedMode === normalizedValue;
             const title = normalizedValue === "auto"
@@ -8620,7 +8668,7 @@ function _renderSimilarScenes(project, options = {}) {
                         <input id="similar-scene-duration-mode-${sceneId}" type="hidden" value="${durationSelection.selectedMode}" data-server-value="${durationSelection.serverMode}">
                     </div>
                     <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
-                        ${["grok", "wan2", "seedance"].map((engineValue) => `
+                        ${SIMILAR_ENGINE_OPTIONS.map((engineValue) => `
                             <button
                                 class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
                                 type="button"
@@ -10433,12 +10481,13 @@ function workflowAddNode(kind) {
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
+                <option value="lite2">Lite 2.0</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Lite 2.0 e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
             <label>Duração</label>
             <select id="workflow-duration" class="input workflow-input">
@@ -10773,6 +10822,7 @@ function getRealisticEngineLabel(engine) {
     const labels = {
         grok: "Cria 3.0 speed",
         wan2: "Ultra High 1.0",
+        lite2: "Lite 2.0",
         seedance: "Mega 2.0 Ultra",
         avatar31: "Avatar 3.1 Plus",
     };
@@ -10866,6 +10916,7 @@ function workflowStartTemplateRunTracking(projectId, engineLabel, templateKey = 
 }
 
 function workflowEngineDurationOptions(engine) {
+    if (engine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
     if (engine === "seedance") return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
     if (engine === "wan2") return [...WAN_REALISTIC_DURATION_OPTIONS];
     return [...DEFAULT_REALISTIC_DURATION_OPTIONS];
@@ -10882,7 +10933,7 @@ function workflowSyncEngineDurationOptions() {
     durationSelect.value = String(nextValue);
     const toggleGroup = document.getElementById("workflow-seedance-last-frame-group");
     if (toggleGroup) {
-        toggleGroup.hidden = (engineSelect.value || "wan2") !== "seedance";
+        toggleGroup.hidden = !_isSeedanceFamilyEngine(engineSelect.value || "wan2");
     }
 }
 
@@ -11053,12 +11104,13 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
+                <option value="lite2">Lite 2.0</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Lite 2.0 e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
         `;
         if (durationLabel) durationLabel.insertAdjacentHTML("beforebegin", html);
@@ -11770,7 +11822,7 @@ async function workflowRunSeedance() {
         const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
         const resolution = document.getElementById("workflow-resolution")?.value || "720p";
-        const useLastImageAsFinalFrame = workflowEngine === "seedance"
+        const useLastImageAsFinalFrame = _isSeedanceFamilyEngine(workflowEngine)
             && !!document.getElementById("workflow-seedance-last-frame")?.checked;
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
         if (workflowEngine === "avatar31" && !workflowAudioUploadId) {
@@ -12021,7 +12073,7 @@ function _resetSimilarModeState() {
     similarState.verifiedSourceName = "";
     similarState.controlsLocked = false;
     similarState.engineManuallySelected = false;
-    similarState.selectedEngine = "grok";
+    similarState.selectedEngine = "lite2";
     similarState.sceneEngineSelectionBySceneId = {};
     _clearSimilarBusyIntent();
     similarState.lastProjectSnapshot = null;
@@ -12053,7 +12105,7 @@ function _resetSimilarModeState() {
     if (titleEl) titleEl.value = "";
     const aspectEl = document.getElementById("similar-aspect");
     if (aspectEl) aspectEl.value = "16:9";
-    _setSimilarEngineSelection("grok", { markManual: false });
+    _setSimilarEngineSelection("lite2", { markManual: false });
     const uploadInput = document.getElementById("similar-scene-image-input");
     if (uploadInput) uploadInput.value = "";
 
@@ -12211,7 +12263,7 @@ async function similarStartAnalysis(analysisMode = "scene") {
     similarState.detectedMode = "";
     similarState.detectedReason = "";
     similarState.detectedConfidence = 0;
-    _setSimilarEngineSelection("grok", { markManual: false });
+    _setSimilarEngineSelection("lite2", { markManual: false });
     _clearSimilarUnifiedPrompt();
 
     _refreshSimilarButtonsDisabled(true);
@@ -12379,7 +12431,7 @@ async function similarGenerateUnifiedScene() {
             uploadIds.push(uploadId);
         }
     });
-    const useLastImageAsFinalFrame = engine === "seedance"
+    const useLastImageAsFinalFrame = _isSeedanceFamilyEngine(engine)
         && !!document.getElementById("similar-unified-seedance-last-frame")?.checked;
 
     try {
@@ -12860,15 +12912,19 @@ async function similarSaveScene(sceneId, options = {}) {
         promptEl.value = prompt;
     }
     const fallbackStart = Number(scene?.start_time || 0);
+    const selectedEngine = _getSimilarSceneSelectedEngine(sceneId);
     const fallbackDuration = scene ? _similarSceneDuration(scene) : 5;
-    const fallbackDurationSeconds = scene ? _similarSceneDurationSeconds(scene) : fallbackDuration;
-    const detectedDurationSeconds = scene ? _similarSceneDetectedDurationSeconds(scene) : fallbackDurationSeconds;
+    const fallbackDurationSeconds = _clampSimilarDurationForEngine(selectedEngine, scene ? _similarSceneDurationSeconds(scene) : fallbackDuration);
+    const detectedDurationSeconds = _clampSimilarDurationForEngine(selectedEngine, scene ? _similarSceneDetectedDurationSeconds(scene) : fallbackDurationSeconds);
     const startRaw = Number.parseFloat(startEl?.value || String(fallbackStart));
     const startTime = Number.isFinite(startRaw) ? Math.max(0, startRaw) : Math.max(0, fallbackStart);
     const selectedDurationMode = _normalizeSimilarSceneDurationMode(durationModeEl?.value || "")
-        || (Math.abs(fallbackDurationSeconds - detectedDurationSeconds) <= 0.05 ? "auto" : String(_pickClosestDurationOption([5, 10, 15], fallbackDurationSeconds)));
-    const durationRaw = parseInt(durationEl?.value || String(fallbackDuration), 10);
-    const duration = Number.isFinite(durationRaw) ? Math.max(5, Math.min(15, durationRaw)) : fallbackDuration;
+        || (Math.abs(fallbackDurationSeconds - detectedDurationSeconds) <= 0.05 ? "auto" : String(_pickSimilarManualDuration(selectedEngine, fallbackDurationSeconds)));
+    const durationRaw = Number.parseFloat(durationEl?.value || String(fallbackDuration));
+    const duration = _clampSimilarDurationForEngine(
+        selectedEngine,
+        Number.isFinite(durationRaw) ? durationRaw : fallbackDuration,
+    );
     const payload = {
         prompt,
         start_time: startTime,
@@ -13660,7 +13716,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 image_upload_ids: imageUploadIds,
                 audio_upload_id: audioUploadId,
                 engine: engine,
-                use_last_image_as_final_frame: engine === "seedance"
+                use_last_image_as_final_frame: _isSeedanceFamilyEngine(engine)
                     && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
                 audio_url: selectedTevoxiSong ? (selectedTevoxiSong.audio_url || "") : "",
                 lyrics: selectedTevoxiSong
@@ -24188,7 +24244,7 @@ function _setAutoRealisticEngine(engineValue) {
 
     const toggleGroup = document.getElementById("auto-seedance-last-frame-group");
     if (toggleGroup) {
-        toggleGroup.hidden = (selected?.dataset.value || "wan2") !== "seedance";
+        toggleGroup.hidden = !_isSeedanceFamilyEngine(selected?.dataset.value || "wan2");
     }
 
     _syncAutoRealisticDurationOptions();
@@ -26358,7 +26414,7 @@ async function createAutoSchedule() {
             add_music: useMusic && !useTevoxi,
             use_tevoxi: useTevoxi,
             use_last_image_as_final_frame: !useTevoxi
-                && (selectedEngine?.dataset.value || "") === "seedance"
+                && _isSeedanceFamilyEngine(selectedEngine?.dataset.value || "")
                 && !!document.getElementById("auto-seedance-last-frame")?.checked,
             enable_subtitles: enableSubs,
         };

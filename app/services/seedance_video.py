@@ -21,21 +21,54 @@ ATLAS_CONSOLE_API_BASE_URL = (settings.atlascloud_console_api_base_url or "https
 SEEDANCE_T2V_MODEL = (settings.atlascloud_seedance_t2v_model or "bytedance/seedance-2.0/text-to-video").strip()
 _SEEDANCE_I2V_DEFAULT_MODEL = "bytedance/seedance-2.0/image-to-video"
 _SEEDANCE_I2V_TARGET_RESOLUTION = "480p"
+_SEEDANCE_LITE_I2V_DEFAULT_MODEL = "bytedance/seedance-v1.5-pro/image-to-video-fast"
+_SEEDANCE_LITE_I2V_TARGET_RESOLUTION = "720p"
 _seedance_i2v_cfg = (settings.atlascloud_seedance_i2v_model or "").strip()
 if _seedance_i2v_cfg in {
     "",
-    "bytedance/seedance-2.0/image-to-video",
+    _SEEDANCE_I2V_DEFAULT_MODEL,
     "bytedance/seedance-v1.5-pro/image-to-video",
     "bytedance/seedance-v1.5-pro/image-to-video-fast",
 }:
     SEEDANCE_I2V_MODEL = _SEEDANCE_I2V_DEFAULT_MODEL
 else:
     SEEDANCE_I2V_MODEL = _seedance_i2v_cfg
+_seedance_lite_i2v_cfg = (settings.atlascloud_seedance_lite_i2v_model or "").strip()
+if _seedance_lite_i2v_cfg:
+    SEEDANCE_LITE_I2V_MODEL = _seedance_lite_i2v_cfg
+else:
+    SEEDANCE_LITE_I2V_MODEL = _SEEDANCE_LITE_I2V_DEFAULT_MODEL
 SEEDANCE_RATE_LIMIT_MSG = (
     "Seedance esta com alta demanda no momento (429). "
     "Tente novamente em alguns segundos ou use Ultra High 1.0."
 )
 _ALLOWED_ASPECT_RATIOS = {"21:9", "16:9", "9:16", "1:1", "4:3", "3:4"}
+
+
+def _normalize_seedance_engine_variant(value: str) -> str:
+    raw = str(value or "seedance").strip().lower()
+    if raw in {"lite2", "seedance15", "seedance-v1.5", "seedance-v1.5-fast"}:
+        return "lite2"
+    return "seedance"
+
+
+def _resolve_seedance_generation_profile(
+    *,
+    engine_variant: str,
+    use_i2v: bool,
+    duration: int,
+    resolution: str,
+) -> tuple[str, int, str]:
+    normalized_variant = _normalize_seedance_engine_variant(engine_variant)
+    if use_i2v and normalized_variant == "lite2":
+        normalized_duration = max(5, min(int(duration or 5), 12))
+        return SEEDANCE_LITE_I2V_MODEL, normalized_duration, _SEEDANCE_LITE_I2V_TARGET_RESOLUTION
+    if use_i2v:
+        normalized_duration = max(4, min(int(duration or 5), 15))
+        return SEEDANCE_I2V_MODEL, normalized_duration, _SEEDANCE_I2V_TARGET_RESOLUTION
+    normalized_duration = max(1, min(int(duration or 7), 10))
+    normalized_resolution = str(resolution or "720p").strip() or "720p"
+    return SEEDANCE_T2V_MODEL, normalized_duration, normalized_resolution
 
 
 def _atlas_api_key() -> str:
@@ -655,6 +688,7 @@ async def generate_realistic_video(
     use_last_image_as_final_frame: bool = False,
     preserve_prompt_exactly: bool = False,
     timeout_seconds: int = 600,
+    engine_variant: str = "seedance",
     on_progress=None,
 ) -> str:
     """Generate a realistic video using Seedance via Atlas Cloud API.
@@ -667,13 +701,13 @@ async def generate_realistic_video(
 
     reference_inputs = _resolve_seedance_reference_inputs(image_path=image_path, image_paths=image_paths)
     use_i2v = bool(reference_inputs)
-    duration = max(4, min(int(duration or 5), 15)) if use_i2v else max(1, min(int(duration or 7), 10))
     aspect_ratio = _resolve_aspect_ratio(aspect_ratio)
-    if use_i2v:
-        resolution = _SEEDANCE_I2V_TARGET_RESOLUTION
-    else:
-        resolution = str(resolution or "720p").strip() or "720p"
-    model_id = SEEDANCE_I2V_MODEL if use_i2v else SEEDANCE_T2V_MODEL
+    model_id, duration, resolution = _resolve_seedance_generation_profile(
+        engine_variant=engine_variant,
+        use_i2v=use_i2v,
+        duration=duration,
+        resolution=resolution,
+    )
     prompt_for_model = prompt if preserve_prompt_exactly else (_ensure_seedance_resolution_instruction(prompt, resolution) if use_i2v else prompt)
 
     payload = {
@@ -702,7 +736,7 @@ async def generate_realistic_video(
             raise RuntimeError("Falha ao preparar as imagens de referencia para o Seedance")
 
         first_image_payload = dict(payload)
-        first_image_payload["model"] = SEEDANCE_I2V_MODEL
+        first_image_payload["model"] = model_id
         first_image_payload["image"] = uploaded_refs[0]
 
         if len(uploaded_refs) > 1:
@@ -714,7 +748,7 @@ async def generate_realistic_video(
 
         if len(uploaded_refs) > 1:
             multi_image_payload = dict(payload)
-            multi_image_payload["model"] = SEEDANCE_I2V_MODEL
+            multi_image_payload["model"] = model_id
             multi_image_payload["images"] = uploaded_refs
             payload_variants.append(("multi-image", multi_image_payload))
 
@@ -804,7 +838,13 @@ async def generate_realistic_video(
     if not prediction_id:
         raise RuntimeError("Nao foi possivel iniciar a geracao no Seedance.")
 
-    logger.info("Seedance prediction created: %s (model=%s, variant=%s)", prediction_id, payload.get("model"), selected_variant or "default")
+    logger.info(
+        "Seedance prediction created: %s (model=%s, engine=%s, variant=%s)",
+        prediction_id,
+        payload.get("model"),
+        _normalize_seedance_engine_variant(engine_variant),
+        selected_variant or "default",
+    )
 
     if on_progress:
         await on_progress(20, "Gerando video realista com Seedance...")

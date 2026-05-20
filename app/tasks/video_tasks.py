@@ -1576,9 +1576,10 @@ async def run_realistic_video_pipeline(project_id: int):
 
             # Determine engine from audio_path field (used to store engine choice)
             engine = (project.audio_path or "").strip()
-            if engine not in ("seedance", "wan2", "grok", "avatar31"):
+            if engine not in ("seedance", "lite2", "wan2", "grok", "avatar31"):
                 engine = "wan2"
-            engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
+            seedance_family_engine = engine in {"seedance", "lite2"}
+            engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "lite2": "Lite 2.0", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
             engine_label = engine_labels.get(engine, "Wan 2.6")
             logger.info(f"Realistic video pipeline for project {project_id} using engine: {engine}")
 
@@ -1774,6 +1775,8 @@ async def run_realistic_video_pipeline(project_id: int):
                 duration = max(1, min(duration, 60))
             elif engine == "wan2":
                 duration = _resolve_wan_effective_duration(duration)
+            elif engine == "lite2":
+                duration = max(1, min(duration, 12))
             elif engine == "seedance":
                 duration = max(1, min(duration, 15))
             elif engine == "avatar31":
@@ -1791,7 +1794,7 @@ async def run_realistic_video_pipeline(project_id: int):
             seedance_native_audio_only = bool(tags_data.get("seedance_native_audio_only", False))
             use_last_image_as_final_frame = bool(
                 tags_data.get("use_last_image_as_final_frame", use_last_image_as_final_frame)
-            ) and engine == "seedance"
+            ) and seedance_family_engine
             external_audio_url_for_prompt = str(
                 tags_data.get("audio_upload_path")
                 or tags_data.get("audio_url", "")
@@ -1962,7 +1965,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 if prompt_optimized:
                     optimized_prompt = user_prompt
                     logger.info(f"Realistic prompt already optimized, using as-is: {optimized_prompt[:200]}...")
-                elif engine == "seedance" and upload_reference_lock_mode:
+                elif seedance_family_engine and upload_reference_lock_mode:
                     optimized_prompt = user_prompt
                     logger.info(
                         "Seedance upload reference mode active for project %s: skipping prompt rewrite to preserve uploaded scene fidelity",
@@ -2052,7 +2055,7 @@ async def run_realistic_video_pipeline(project_id: int):
 
             aspect_ratio = project.aspect_ratio or "16:9"
             generate_audio = bool(tags_data.get("provider_generate_audio", not getattr(project, "no_background_music", False)))
-            if engine in {"seedance", "avatar31"} and not generate_audio:
+            if engine in {"seedance", "lite2", "avatar31"} and not generate_audio:
                 generate_audio = True
             scene_reference_path = image_path
             grok_direct_reference_path = image_path if (image_path and os.path.exists(image_path)) else ""
@@ -2078,7 +2081,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 and bool(upload_reference_paths)
             )
             use_direct_upload_reference_for_seedance = (
-                engine == "seedance"
+                seedance_family_engine
                 and use_direct_upload_reference
             )
             enable_grok_persona_anchor = (
@@ -2237,6 +2240,28 @@ async def run_realistic_video_pipeline(project_id: int):
                     "Realistic video: Grok max-fidelity enabled, using direct persona reference image (%s)",
                     grok_direct_reference_path,
                 )
+
+            if engine == "lite2":
+                lite2_reference_path = upload_reference_paths[0] if upload_reference_paths else scene_reference_path
+                if not lite2_reference_path or not os.path.exists(lite2_reference_path):
+                    from app.services.scene_generator import generate_scene_image
+
+                    await _on_progress(16, "Gerando imagem-base para o Lite 2.0...")
+                    lite2_ref_dir = render_dir / "lite2_ref"
+                    lite2_ref_dir.mkdir(parents=True, exist_ok=True)
+                    lite2_reference_path = str(lite2_ref_dir / "reference.png")
+                    lite2_prompt = optimized_prompt[:500]
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        None,
+                        generate_scene_image,
+                        lite2_prompt,
+                        aspect_ratio,
+                        lite2_reference_path,
+                        True,
+                    )
+                    logger.info("Lite 2.0 reference image generated: %s", lite2_reference_path)
+                    scene_reference_path = lite2_reference_path
 
             if engine == "grok":
                 grok_base_image_path = grok_direct_reference_path or scene_reference_path
@@ -2519,6 +2544,7 @@ async def run_realistic_video_pipeline(project_id: int):
                                 image_paths=clip_image_paths,
                                 use_last_image_as_final_frame=use_last_image_as_final_frame,
                                 preserve_prompt_exactly=preserve_prompt_exactly,
+                                engine_variant=engine,
                                 on_progress=clip_progress,
                             )
                             final_prompt = prompt_for_attempt
@@ -2623,8 +2649,8 @@ async def run_realistic_video_pipeline(project_id: int):
             has_audio = False
             provider_has_audio = await _video_has_audio_stream(output_path)
             provider_generate_audio = bool(tags.get("provider_generate_audio", False))
-            provider_missing_audio = engine in {"seedance", "avatar31"} and provider_generate_audio and not provider_has_audio
-            seedance_missing_audio = engine == "seedance" and provider_missing_audio
+            provider_missing_audio = engine in {"seedance", "lite2", "avatar31"} and provider_generate_audio and not provider_has_audio
+            seedance_missing_audio = seedance_family_engine and provider_missing_audio
             if provider_missing_audio:
                 logger.warning(
                     "%s returned video without native audio for project %s.",
@@ -2685,7 +2711,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     grok_shadow_audio_path,
                 )
 
-            elif engine in ("wan2", "grok", "seedance") and (add_narration or add_music or dialogue_enabled or seedance_missing_audio):
+            elif engine in ("wan2", "grok", "seedance", "lite2") and (add_narration or add_music or dialogue_enabled or seedance_missing_audio):
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
                 audio_dir.mkdir(parents=True, exist_ok=True)
 

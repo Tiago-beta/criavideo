@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260517-08">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260520-01">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 476;
+        var REQUIRED_VER = 477;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1483,6 +1483,10 @@
                                     <strong>Cria 3.0 speed</strong>
                                     <small class="engine-option-desc">Cria vídeo com velocidade rápida.</small>
                                 </button>
+                                <button class="engine-option" data-value="lite2" type="button">
+                                    <strong>Lite 2.0</strong>
+                                    <small class="engine-option-desc">Seedance v1.5 Fast com imagem-base e áudio nativo.</small>
+                                </button>
                                 <button class="engine-option" data-value="seedance" type="button">
                                     <strong>Mega 2.0 Ultra</strong>
                                     <small class="engine-option-desc">Cria vídeo realista com áudio nativo.</small>
@@ -1499,7 +1503,7 @@
                                 <input type="checkbox" id="wizard-seedance-last-frame">
                                 <span>Ultima imagem = quadro final</span>
                             </label>
-                            <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                            <small class="pause-hint">No Lite 2.0 e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                         </div>
 
                         <div class="form-group" id="wizard-realistic-duration-group">
@@ -2224,6 +2228,10 @@
                                     <strong>Cria 3.0 speed</strong>
                                     <small class="engine-option-desc">Cria vídeo com velocidade rápida.</small>
                                 </button>
+                                <button class="engine-option" data-value="lite2" type="button">
+                                    <strong>Lite 2.0</strong>
+                                    <small class="engine-option-desc">Seedance v1.5 Fast com imagem-base e áudio nativo.</small>
+                                </button>
                                 <button class="engine-option" data-value="seedance" type="button">
                                     <strong>Mega 2.0 Ultra</strong>
                                     <small class="engine-option-desc">Cria vídeo realista com áudio nativo.</small>
@@ -2240,7 +2248,7 @@
                                 <input type="checkbox" id="script-seedance-last-frame">
                                 <span>Ultima imagem = quadro final</span>
                             </label>
-                            <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                            <small class="pause-hint">No Lite 2.0 e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                         </div>
 
                         <div class="form-group" id="script-realistic-duration-group">
@@ -2623,12 +2631,13 @@
                                     <select id="workflow-engine" class="input workflow-input">
                                         <option value="wan2" selected>Ultra High 1.0</option>
                                         <option value="grok">Cria 3.0 speed</option>
+                                        <option value="lite2">Lite 2.0</option>
                                         <option value="seedance">Mega 2.0 Ultra</option>
                                         <option value="avatar31">Avatar 3.1 Plus</option>
                                     </select>
                                     <div id="workflow-seedance-last-frame-group" hidden>
                                         <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                                        <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                                        <small class="pause-hint">No Lite 2.0 e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                                     </div>
                                     <label>Duração</label>
                                     <select id="workflow-duration" class="input workflow-input">
@@ -3456,6 +3465,10 @@
                                     <strong>Cria 3.0 speed</strong>
                                     <small class="engine-option-desc">Cria vídeo com velocidade rápida.</small>
                                 </button>
+                                <button class="engine-option" data-value="lite2" type="button">
+                                    <strong>Lite 2.0</strong>
+                                    <small class="engine-option-desc">Seedance v1.5 Fast com imagem-base e áudio nativo.</small>
+                                </button>
                                 <button class="engine-option" data-value="seedance" type="button">
                                     <strong>Mega 2.0 Ultra</strong>
                                     <small class="engine-option-desc">Cria vídeo realista com áudio nativo.</small>
@@ -3471,7 +3484,7 @@
                                 <input type="checkbox" id="auto-seedance-last-frame">
                                 <span>Ultima imagem = quadro final</span>
                             </label>
-                            <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                            <small class="pause-hint">No Lite 2.0 e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                         </div>
                         <div class="form-group">
                             <label>Duração do vídeo</label>
@@ -4390,8 +4403,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260517-08"></script>
-    <script src="/video/static/pwa.js?v=20260517-08"></script>
+    <script src="/video/static/app.js?v=20260520-01"></script>
+    <script src="/video/static/pwa.js?v=20260520-01"></script>
 </body>
 </html>
 
