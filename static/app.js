@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v508 loaded");
+console.log("[CriaVideo] app.js v509 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -30760,11 +30760,7 @@ function _editorClearExternalAudioTrack() {
 
 function _editorGetTimelineDuration() {
     const visibleEnd = Math.max(0.1, Number(_editorGetVisibleTimelineEndTime() || 0.1));
-    if (_editor.hideBaseVideoTrack) {
-        return visibleEnd;
-    }
-    const baseDuration = Math.max(0.1, Number(_editor.duration || 0.1));
-    return Math.max(baseDuration, visibleEnd);
+    return visibleEnd;
 }
 
 function _editorGetLayerVideoAppendStart() {
@@ -30853,7 +30849,7 @@ function _editorHasSpeedAdjustedVideoSegments() {
 }
 
 function _editorShouldUseVirtualVideoPlayback() {
-    return _editorHasReversedVideoSegments() || _editorHasSpeedAdjustedVideoSegments();
+    return _editor.videoSegments.length > 1 || _editorHasReversedVideoSegments() || _editorHasSpeedAdjustedVideoSegments();
 }
 
 function _editorGetVideoTailAnchorTime() {
@@ -36123,13 +36119,13 @@ function _editorDrawOverlays(t) {
             ctx.fillText(sub.text, sx, sy);
             ctx.shadowColor = "transparent";
 
-            if (_editorIsMobileViewport() && _editor.activeTool === "subtitles" && selectedSubtitle && String(selectedSubtitle.id) === String(sub.id)) {
+            if (_editor.activeTool === "subtitles" && selectedSubtitle && String(selectedSubtitle.id) === String(sub.id)) {
                 selectedSubtitleBounds = _editorGetSubtitleCanvasBounds(sub, canvas, ctx);
             }
         }
     }
 
-    if (selectedSubtitleBounds && _editorIsMobileViewport() && _editor.activeTool === "subtitles") {
+    if (selectedSubtitleBounds && _editor.activeTool === "subtitles") {
         const scale = canvas.height / 720;
         ctx.save();
         ctx.setLineDash([Math.max(4, 6 * scale), Math.max(3, 4 * scale)]);
@@ -36475,7 +36471,7 @@ function _editorResolveTextOverlayInteraction(clientX, clientY) {
 }
 
 function _editorResolveSubtitleOverlayInteraction(clientX, clientY) {
-    if (!_editorIsMobileViewport() || _editor.activeTool !== "subtitles") return null;
+    if (_editor.activeTool !== "subtitles") return null;
 
     const canvas = document.getElementById("editor-overlay-canvas");
     if (!canvas || !_editor.subtitles.length) return null;
@@ -36519,6 +36515,10 @@ function _editorResolveSubtitleOverlayInteraction(clientX, clientY) {
 function _editorStartSubtitleOverlayDrag(event) {
     const interaction = _editorResolveSubtitleOverlayInteraction(event.clientX, event.clientY);
     if (!interaction?.item) return false;
+
+    if (!_editorIsMobileViewport() && String(_editor.selectedClip.id || "") !== String(interaction.item.id)) {
+        return false;
+    }
 
     _editorSelectSubtitle(interaction.item.id, false);
     const canvas = document.getElementById("editor-overlay-canvas");
