@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v511 loaded");
+console.log("[CriaVideo] app.js v512 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -12297,8 +12297,11 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
             message = `${stageLabel} ${detectedModeLabel}`;
         }
 
+        const showGlobalStatus = status === "failed" || isProcessing || activeSceneGenerationIds.length > 0;
         if (!isProcessing && !activeSceneGenerationIds.length) {
             _clearSimilarBusyIntent();
+        }
+
         _setSimilarStatus(
             showGlobalStatus && !suppressGlobalStatus ? message : "",
             kind,
@@ -12306,10 +12309,6 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
                 ? { progress: progress > 0 ? progress : 4, stage }
                 : {},
         );
-        }
-
-        const showGlobalStatus = status === "failed" || isProcessing || activeSceneGenerationIds.length > 0;
-        _setSimilarStatus(showGlobalStatus && !suppressGlobalStatus ? message : "", kind);
         similarState.lastProjectSnapshot = project;
         _syncSimilarSourcePreview(project);
         scheduleSimilarAnalysisCreditEstimates();
