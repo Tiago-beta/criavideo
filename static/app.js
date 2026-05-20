@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v506 loaded");
+console.log("[CriaVideo] app.js v507 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4105,6 +4105,7 @@ let similarState = {
     projectId: 0,
     status: "",
     progress: 0,
+    bulkFrameTextRemovalBusy: false,
     activeUploadSceneId: 0,
     sourceVideoFile: null,
     sourceVideoObjectUrl: "",
@@ -4210,7 +4211,7 @@ let workflowState = {
 const SIMILAR_STAGE_LABELS = {
     queued_analysis: "Vídeo recebido. Preparando análise...",
     downloading_reference: "Baixando vídeo de referência...",
-    analyzing_reference: "Analisando frames e criando prompts por cena...",
+    analyzing_reference: "Analisando o vídeo.",
     analysis_ready: "Análise concluída. Revise as cenas abaixo.",
     analysis_general_ready: "Análise geral concluída. O prompt único já está pronto.",
     scene_edited: "Cena atualizada. Gere a previa para validar.",
@@ -6258,15 +6259,19 @@ function _stopSimilarPolling() {
     }
 }
 
-function _setSimilarStatus(message, kind = "running") {
+function _setSimilarStatus(message, kind = "running", options = {}) {
     const statusEl = document.getElementById("similar-status");
     if (!statusEl) return;
 
     const text = String(message || "").trim();
+    const previousProgress = Number(statusEl.dataset.progress || 0);
+    const previousStage = String(statusEl.dataset.stage || "").trim();
     if (!text) {
         statusEl.hidden = true;
         statusEl.replaceChildren();
         statusEl.className = "similar-status";
+        delete statusEl.dataset.progress;
+        delete statusEl.dataset.stage;
         return;
     }
 
@@ -6287,8 +6292,29 @@ function _setSimilarStatus(message, kind = "running") {
         statusEl.classList.add("status-running");
         const progressEl = document.createElement("span");
         progressEl.className = "similar-status-progress";
+        const hasDeterminateProgress = Number.isFinite(Number(options.progress));
+        const currentStage = String(options.stage || "").trim();
+        if (hasDeterminateProgress) {
+            progressEl.classList.add("is-determinate");
+        }
         const progressBarEl = document.createElement("span");
         progressBarEl.className = "similar-status-progress-bar";
+        if (hasDeterminateProgress) {
+            const normalizedProgress = Math.max(4, Math.min(100, Number(options.progress || 0) || 4));
+            const canReusePreviousProgress = currentStage && currentStage === previousStage && previousProgress > 0 && previousProgress <= normalizedProgress;
+            const startProgress = canReusePreviousProgress
+                ? previousProgress
+                : Math.max(4, Math.min(normalizedProgress, 8));
+            progressBarEl.style.width = `${startProgress}%`;
+            statusEl.dataset.progress = String(normalizedProgress);
+            statusEl.dataset.stage = currentStage;
+            requestAnimationFrame(() => {
+                progressBarEl.style.width = `${normalizedProgress}%`;
+            });
+        } else {
+            delete statusEl.dataset.progress;
+            delete statusEl.dataset.stage;
+        }
         progressEl.appendChild(progressBarEl);
         statusEl.appendChild(progressEl);
     }
@@ -8519,6 +8545,7 @@ function _renderSimilarScenes(project, options = {}) {
     const force = !!options.force;
     const listEl = document.getElementById("similar-scenes-list");
     const containerEl = document.getElementById("similar-scenes-container");
+    const toolbarEl = containerEl?.querySelector(".similar-scenes-toolbar");
     if (!listEl || !containerEl) return;
 
     if (!force) {
@@ -8539,6 +8566,29 @@ function _renderSimilarScenes(project, options = {}) {
         containerEl.hidden = true;
         listEl.innerHTML = "";
         return;
+    }
+
+    const scenesWithDetectedText = scenes.filter((scene) => {
+        const excerpt = String(scene?.reference_frame_text_excerpt || "").trim();
+        return !!scene?.reference_frame_text_detected || !!excerpt;
+    });
+
+    if (toolbarEl) {
+        const detectedTextCount = scenesWithDetectedText.length;
+        const removeAllLabel = similarState.bulkFrameTextRemovalBusy
+            ? "Removendo escritas..."
+            : "Remover todas as escritas";
+        const removeAllDisabledAttr = similarState.bulkFrameTextRemovalBusy ? "disabled" : "";
+        const detectedTextLabel = detectedTextCount === 1
+            ? "1 cena com escrita detectada."
+            : `${detectedTextCount} cenas com escrita detectada.`;
+
+        toolbarEl.innerHTML = `
+            <span class="field-hint">Etapa 1: revise prompts, tempos e imagens de cada cena.</span>
+            ${detectedTextCount
+                ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-warning" type="button" onclick="similarRemoveAllFrameText()" title="${removeAllLabel}" aria-label="${removeAllLabel}" ${removeAllDisabledAttr}>${removeAllLabel}</button><span class="field-hint similar-scenes-toolbar-note">${detectedTextLabel}</span>`
+                : ""}
+        `;
     }
 
     containerEl.hidden = false;
@@ -8791,6 +8841,7 @@ function _renderSimilarScenes(project, options = {}) {
                         </div>
                         ${inlineClipMarkup}
                     </div>
+                    ${referenceFrameQuickActionsMarkup}
                     <div class="similar-reference-frame-narration-editor${narrationEditorOpen ? " is-open" : ""}" ${narrationEditorOpen ? "" : "hidden"}>
                         <label for="similar-scene-narration-${sceneId}">O que deve ser falado nesta cena?</label>
                         <textarea id="similar-scene-narration-${sceneId}" class="input similar-reference-frame-editor-input" rows="2" maxlength="320" placeholder="Ex.: Estou muito feliz, agora vou renovar minha sala" onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); similarApplySceneNarration(${sceneId}); }">${narrationValue}</textarea>
@@ -12242,13 +12293,17 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
             message = "Vídeo final pronto. Você pode assistir na lista de projetos.";
         } else if ((stage === "analysis_ready" || stage === "analysis_general_ready") && detectedModeLabel) {
             message = `${stageLabel} ${detectedModeLabel}`;
-        } else if (progress > 0) {
-            message = `${stageLabel} (${progress}%)`;
         }
 
         if (!isProcessing && !activeSceneGenerationIds.length) {
             _clearSimilarBusyIntent();
-            _hideSimilarBusyOverlay();
+        _setSimilarStatus(
+            showGlobalStatus && !suppressGlobalStatus ? message : "",
+            kind,
+            showGlobalStatus && !suppressGlobalStatus && kind === "running"
+                ? { progress: progress > 0 ? progress : 4, stage }
+                : {},
+        );
         }
 
         const showGlobalStatus = status === "failed" || isProcessing || activeSceneGenerationIds.length > 0;
@@ -12300,6 +12355,7 @@ function _resetSimilarModeState() {
     similarState.projectId = 0;
     similarState.status = "";
     similarState.progress = 0;
+    similarState.bulkFrameTextRemovalBusy = false;
     similarState.activeUploadSceneId = 0;
     _clearSimilarSourceFile();
     similarState.sourceVerificationStatus = "idle";
@@ -13449,18 +13505,29 @@ function _buildSimilarFrameTextRemovalInstruction(scene) {
     ].filter(Boolean).join(" ");
 }
 
-async function _requestSimilarFrameVariant(sceneId, { instructionOverride = "", busyLabel = "", successMessage = "", promoteReferenceFrame = false } = {}) {
+async function _requestSimilarFrameVariant(
+    sceneId,
+    {
+        instructionOverride = "",
+        busyLabel = "",
+        successMessage = "",
+        promoteReferenceFrame = false,
+        suppressSuccessToast = false,
+        suppressErrorToast = false,
+        rethrowOnError = false,
+    } = {},
+) {
     const projectId = Number(similarState.projectId || 0);
     if (!projectId) {
         alert("Inicie a analise antes de editar um frame.");
-        return;
+        return false;
     }
 
     const scene = _getSimilarProjectScene(sceneId);
     const hasReferenceFrame = !!String(scene?.reference_frame_url || scene?.reference_frame_path || "").trim();
     if (!hasReferenceFrame) {
         showToast("Esta cena ainda nao possui frame de referencia disponivel.", "error");
-        return;
+        return false;
     }
 
     _applySimilarNarrationToPrompt(sceneId);
@@ -13479,7 +13546,7 @@ async function _requestSimilarFrameVariant(sceneId, { instructionOverride = "", 
     if (!editInstruction && !uploadIds.length) {
         showToast("Escreva um ajuste ou envie uma nova foto antes de criar a imagem.", "error");
         instructionEl?.focus();
-        return;
+        return false;
     }
 
     try {
@@ -13515,14 +13582,118 @@ async function _requestSimilarFrameVariant(sceneId, { instructionOverride = "", 
             }),
         });
         _setSimilarSceneFrameEditorDraft(sceneId, { open: true, frameBusy: false, frameBusyLabel: "" });
-        showToast(successMessage || "Nova variacao criada a partir do frame.", "success");
+        if (!suppressSuccessToast) {
+            showToast(successMessage || "Nova variacao criada a partir do frame.", "success");
+        }
         await _refreshSimilarProject();
+        return true;
     } catch (error) {
         _setSimilarSceneFrameEditorDraft(sceneId, { frameBusy: false, frameBusyLabel: "" });
         if (similarState.lastProjectSnapshot) {
             _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
         }
-        showToast(`Erro ao editar frame com IA: ${error.message}`, "error");
+        if (!suppressErrorToast) {
+            showToast(`Erro ao editar frame com IA: ${error.message}`, "error");
+        }
+        if (rethrowOnError) {
+            throw error;
+        }
+        return false;
+    }
+}
+
+async function similarGenerateFrameVariant(sceneId) {
+    await _requestSimilarFrameVariant(sceneId);
+}
+
+async function similarRemoveFrameText(sceneId) {
+    const scene = _getSimilarProjectScene(sceneId);
+    await _requestSimilarFrameVariant(sceneId, {
+        instructionOverride: _buildSimilarFrameTextRemovalInstruction(scene),
+        busyLabel: "Removendo escrita do frame base...",
+        promoteReferenceFrame: true,
+        successMessage: "Escrita removida do frame base.",
+    });
+}
+
+async function similarRemoveAllFrameText() {
+    if (similarState.bulkFrameTextRemovalBusy) {
+        return;
+    }
+
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Inicie a analise antes de remover as escritas.");
+        return;
+    }
+
+    const detectedScenes = (Array.isArray(similarState.lastProjectSnapshot?.scenes) ? similarState.lastProjectSnapshot.scenes : [])
+        .filter((scene) => Number(scene?.id || 0) > 0)
+        .filter((scene) => !!scene?.reference_frame_text_detected || !!String(scene?.reference_frame_text_excerpt || "").trim())
+        .filter((scene) => !!String(scene?.reference_frame_url || scene?.reference_frame_path || "").trim())
+        .sort((left, right) => Number(left?.scene_index || 0) - Number(right?.scene_index || 0));
+
+    if (!detectedScenes.length) {
+        showToast("Nenhuma cena com escrita detectada.", "info");
+        return;
+    }
+
+    similarState.bulkFrameTextRemovalBusy = true;
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+
+    let successCount = 0;
+    const failedSceneNumbers = [];
+
+    try {
+        for (let index = 0; index < detectedScenes.length; index += 1) {
+            const scene = detectedScenes[index];
+            const sceneId = Number(scene?.id || 0);
+            if (!sceneId) {
+                continue;
+            }
+
+            try {
+                const updated = await _requestSimilarFrameVariant(sceneId, {
+                    instructionOverride: _buildSimilarFrameTextRemovalInstruction(scene),
+                    busyLabel: `Removendo escrita do frame ${index + 1} de ${detectedScenes.length}...`,
+                    promoteReferenceFrame: true,
+                    suppressSuccessToast: true,
+                    suppressErrorToast: true,
+                    rethrowOnError: true,
+                });
+                if (updated) {
+                    successCount += 1;
+                }
+            } catch (_error) {
+                failedSceneNumbers.push(Number(scene?.scene_index || index) + 1);
+            }
+        }
+    } finally {
+        similarState.bulkFrameTextRemovalBusy = false;
+        await _refreshSimilarProject({ silent: true, preserveUnifiedTags: true });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+    }
+
+    if (successCount > 0) {
+        showToast(
+            successCount === 1
+                ? "Escrita removida de 1 frame base."
+                : `Escrita removida de ${successCount} frames base.`,
+            "success",
+        );
+    }
+
+    if (failedSceneNumbers.length) {
+        showToast(
+            failedSceneNumbers.length === 1
+                ? `Falha ao remover a escrita da cena ${failedSceneNumbers[0]}.`
+                : `Falha ao remover a escrita das cenas ${failedSceneNumbers.join(", ")}.`,
+            "error",
+        );
     }
 }
 

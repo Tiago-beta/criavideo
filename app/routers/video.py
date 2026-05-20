@@ -2339,10 +2339,10 @@ def _serialize_project_scene(
     scene: VideoScene,
     reference_frame_map: dict[str, str] | None = None,
     reference_frame_end_map: dict[str, str] | None = None,
-    reference_text_detected_map: dict[str, bool] | None = None,
-    reference_text_excerpt_map: dict[str, str] | None = None,
     generated_frame_variant_map: dict[str, list[str]] | None = None,
     detected_scene_duration_map: dict[str, float] | None = None,
+    reference_text_detected_map: dict[str, bool] | None = None,
+    reference_text_excerpt_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     reference_frame_path = ""
     reference_frame_end_path = ""
@@ -3251,10 +3251,10 @@ async def get_project(
                 s,
                 reference_frame_map,
                 reference_frame_end_map,
-                reference_text_detected_map,
-                reference_text_excerpt_map,
                 generated_frame_variant_map,
                 detected_scene_duration_map,
+                reference_text_detected_map=reference_text_detected_map,
+                reference_text_excerpt_map=reference_text_excerpt_map,
             )
             for s in scenes
         ],
@@ -3901,10 +3901,10 @@ async def update_similar_scene(
             scene,
             reference_frame_map,
             reference_frame_end_map,
-            reference_text_detected_map,
-            reference_text_excerpt_map,
             None,
             detected_scene_duration_map,
+            reference_text_detected_map=reference_text_detected_map,
+            reference_text_excerpt_map=reference_text_excerpt_map,
         )
     }
 
@@ -4079,10 +4079,10 @@ async def upsert_similar_scene_image(
             scene,
             reference_frame_map,
             reference_frame_end_map,
-            reference_text_detected_map,
-            reference_text_excerpt_map,
             generated_frame_variant_map,
             detected_scene_duration_map,
+            reference_text_detected_map=reference_text_detected_map,
+            reference_text_excerpt_map=reference_text_excerpt_map,
         )
     }
 

@@ -11533,6 +11533,14 @@ th,
     animation: similar-status-progress-slide 2.8s ease-in-out infinite;
 }
 
+.similar-status-progress.is-determinate .similar-status-progress-bar {
+    width: 0;
+    animation: none;
+    transform: none;
+    transition: width 3.2s linear;
+    background: linear-gradient(90deg, rgba(17, 201, 255, 0.94), rgba(255, 193, 79, 0.98));
+}
+
 @keyframes similar-status-progress-slide {
     0% {
         transform: translateX(-72%) scaleX(0.82);
@@ -11745,6 +11753,10 @@ th,
     flex-wrap: wrap;
     gap: 10px;
     margin-bottom: 12px;
+}
+
+.similar-scenes-toolbar-note {
+    align-self: center;
 }
 
 .similar-generation-step {
