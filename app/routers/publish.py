@@ -384,21 +384,34 @@ async def ai_suggest(
         return compact[:48]
 
     def _normalize_hashtags(raw_hashtags: str, fallback_tags: list[str], max_items: int = 8) -> str:
-        discovery_defaults = [
-            "IdeiaGenial",
-            "VideoViral",
-            "PassoAPasso",
-            "DicaCriativa",
-            "VejaIsso",
-        ]
-        discovery_keys = {item.lower() for item in discovery_defaults}
+        blocked_generic_labels = {
+            "ideiagenial",
+            "videoviral",
+            "dicacriativa",
+            "vejaisso",
+        }
+        blocked_meta_labels = {
+            "analise",
+            "análise",
+            "contexto",
+            "descricao",
+            "descrição",
+            "prompt",
+            "thumbnail",
+        }
         raw_tokens = re.findall(r"#?[\wÀ-ÿ]+", str(raw_hashtags or ""), flags=re.UNICODE)
         raw_labels = [_compact_hashtag_label(token.lstrip("#")) for token in raw_tokens]
         fallback_labels = [_compact_hashtag_label(tag) for tag in fallback_tags]
 
+        def _is_blocked_label(value: str) -> bool:
+            key = str(value or "").strip().lower()
+            return key in blocked_generic_labels or key in blocked_meta_labels
+
         def _append_unique(bucket: list[str], seen: set[str], value: str) -> None:
             label = str(value or "").strip()
             if not label:
+                return
+            if _is_blocked_label(label):
                 return
             key = label.lower()
             if key in seen:
@@ -406,45 +419,20 @@ async def ai_suggest(
             seen.add(key)
             bucket.append(label)
 
-        contextual: list[str] = []
+        primary_limit = max(1, min(4, max_items))
+        contextual_block: list[str] = []
         contextual_seen: set[str] = set()
         for label in raw_labels + fallback_labels:
-            if label.lower() in discovery_keys:
-                continue
-            _append_unique(contextual, contextual_seen, label)
-
-        discovery: list[str] = []
-        discovery_seen: set[str] = set()
-        for label in raw_labels:
-            if label.lower() in discovery_keys:
-                _append_unique(discovery, discovery_seen, label)
-        for label in discovery_defaults:
-            _append_unique(discovery, discovery_seen, label)
-
-        min_items = min(5, max_items)
-        contextual_limit = max(1, min(4, max_items - 2))
-        contextual_block: list[str] = []
-        contextual_block_seen: set[str] = set()
-        for label in contextual:
-            if len(contextual_block) >= contextual_limit:
+            if len(contextual_block) >= primary_limit:
                 break
-            _append_unique(contextual_block, contextual_block_seen, label)
+            _append_unique(contextual_block, contextual_seen, label)
 
         discovery_block: list[str] = []
-        discovery_block_seen: set[str] = set()
-        for label in discovery:
+        discovery_seen: set[str] = set(contextual_seen)
+        for label in fallback_labels + raw_labels:
             if len(contextual_block) + len(discovery_block) >= max_items:
                 break
-            _append_unique(discovery_block, discovery_block_seen, label)
-
-        for label in fallback_labels:
-            if len(contextual_block) + len(discovery_block) >= min_items or len(contextual_block) >= contextual_limit:
-                break
-            _append_unique(contextual_block, contextual_block_seen, label)
-        for label in discovery_defaults:
-            if len(contextual_block) + len(discovery_block) >= min_items:
-                break
-            _append_unique(discovery_block, discovery_block_seen, label)
+            _append_unique(discovery_block, discovery_seen, label)
 
         grouped_blocks = []
         if contextual_block:
@@ -455,7 +443,7 @@ async def ai_suggest(
         if not grouped_blocks:
             fallback_block: list[str] = []
             fallback_seen: set[str] = set()
-            for label in raw_labels + fallback_labels + discovery_defaults:
+            for label in raw_labels + fallback_labels:
                 if len(fallback_block) >= max_items:
                     break
                 _append_unique(fallback_block, fallback_seen, label)
@@ -653,11 +641,6 @@ async def ai_suggest(
         if len(title) > 80:
             title = (title[:80].rsplit(" ", 1)[0] or title[:80]).strip()
 
-        if len(title) < 45:
-            extension = " | mensagem, emoção e contexto"
-            if len(title) + len(extension) <= 80:
-                title = title + extension
-
         return _stylize_publish_title(title, keyword)
 
     def _description_looks_strong(text: str, primary_keyword: str) -> bool:
@@ -692,6 +675,17 @@ async def ai_suggest(
             "sugestao positiva",
         ]
         return any(term in body and term not in context_lower for term in niche_terms)
+
+    def _has_publish_process_terms(text: str) -> bool:
+        body = str(text or "").lower()
+        blocked_patterns = [
+            r"\bcontexto\b",
+            r"\bdescri[cç][aã]o\b",
+            r"\ban[aá]lise\b",
+            r"\bprompt\b",
+            r"\bthumbnail\b",
+        ]
+        return any(re.search(pattern, body) for pattern in blocked_patterns)
 
     def _normalize_ptbr_copy(text: str) -> str:
         content = str(text or "").strip()
@@ -1014,7 +1008,7 @@ async def ai_suggest(
         bullets = [
             f"{keyword}",
             extra_keywords[0] if len(extra_keywords) >= 1 else "Mensagem principal do conteúdo",
-            extra_keywords[1] if len(extra_keywords) >= 2 else "Contexto e emoção do vídeo",
+            extra_keywords[1] if len(extra_keywords) >= 2 else "Tema central do vídeo",
             extra_keywords[2] if len(extra_keywords) >= 3 else "Pontos mais importantes para o público",
         ]
 
@@ -1144,11 +1138,13 @@ GUIDE OBRIGATORIO DE TITULO E DESCRICAO:
 - usar caixa mista: maioria das palavras em minúsculas e 1 a 3 palavras de gatilho em MAIÚSCULAS
 - formula do titulo: [palavra-chave principal] + [beneficio forte] + [curiosidade ou promessa]
 - evitar exageros falsos
+- nunca usar palavras de bastidor/processo no título, como contexto, descrição, análise, prompt ou thumbnail
 - descrição deve começar com letra maiúscula
 - descricao com 2 a 3 primeiras linhas fortes para vender o clique antes do "mostrar mais"
 - linha 1 deve repetir a palavra-chave principal
-- incluir CTA e 5 a 8 hashtags relevantes, agrupadas em 2 linhas: primeira linha com hashtags do tema/contexto e segunda linha com hashtags amplas de descoberta coerentes com o video
-- incluir entre as hashtags amplas exemplos no estilo #IdeiaGenial e #VideoViral quando fizer sentido
+- incluir CTA e 5 a 8 hashtags relevantes, agrupadas em 2 linhas: primeira linha com palavras do tema real do vídeo e segunda linha com termos amplos, mas ainda fiéis ao áudio/letra/transcrição e ao visual
+- se for vídeo musical, descobrir o tema pela letra, pela transcrição e pela emoção real da música antes de criar hashtags
+- nunca usar hashtags genéricas de outros nichos, como #IdeiaGenial, #VideoViral, #DicaCriativa ou #VejaIsso, quando elas não forem literalmente coerentes com o vídeo
 
 MODELO EDITORIAL (usar como estrutura, nunca como texto fixo):
 - identificar a palavra-chave real do vídeo a partir de título, letra, descrição e tags
@@ -1174,6 +1170,7 @@ Regras de saida:
 - thumbnail_hook com 2 a 5 palavras
 - thumbnail_prompt pronto para gerar arte
 - nunca remover acentos (ex.: vídeo, você, sessão, descrição)
+- hashtags devem nascer do tema real, da fala/letra e do visual do vídeo, nunca de modelos prontos de outro nicho
 - usar o modelo editorial apenas como estrutura, sem copiar nichos ou termos de exemplo
 
 Retorne SOMENTE JSON (sem markdown):
@@ -1186,7 +1183,7 @@ Retorne SOMENTE JSON (sem markdown):
     "titles": ["...", "...", "...", "...", "..."],
     "selected_title": "...",
     "description": "...",
-    "hashtags": "#TemaPrincipal #PassoAPasso #ProjetoCriativo\n#IdeiaGenial #VideoViral #DicaCriativa",
+    "hashtags": "#TemaPrincipal #MensagemCentral #PalavraChaveReal\n#GeneroOuClima #SentimentoDoVideo #ElementoVisualReal",
     "tags": ["...", "...", "..."],
     "thumbnail_hook": "...",
     "thumbnail_prompt": "..."
@@ -1290,11 +1287,13 @@ REGRAS FINAIS OBRIGATORIAS:
 - titulo deve começar com letra maiúscula
 - usar caixa mista: maioria das palavras em minúsculas e 1 a 3 palavras de gatilho em MAIÚSCULAS
 - combine a transcricao completa do audio com a analise visual das cenas antes de decidir o assunto principal do video
+- nunca use palavras de bastidor/processo no título final, como contexto, descrição, análise, prompt ou thumbnail
 - descricao com primeiras 2 linhas muito fortes para clique
 - descrição deve começar com letra maiúscula
 - descricao sem letra completa
-- hashtags finais com 5 a 8 itens, agrupadas em 2 linhas: contexto primeiro, descoberta depois
-- incluir hashtags amplas no estilo #IdeiaGenial e #VideoViral quando coerentes com o contexto real
+- hashtags finais com 5 a 8 itens, agrupadas em 2 linhas: tema real primeiro, ampliação coerente depois
+- se for vídeo musical, basear as hashtags na letra, na mensagem cantada/falada, no clima e no cenário real do vídeo
+- proibir hashtags genéricas de outros nichos, como #IdeiaGenial, #VideoViral, #DicaCriativa ou #VejaIsso, quando não forem literalmente fiéis ao vídeo
 - thumbnail_hook com 2 a 5 palavras em portugues
 - thumbnail_prompt com foco em 1 ideia principal, contraste forte e texto grande legivel
 - ortografia revisada em pt-BR, com acentuacao e pontuacao natural
@@ -1310,7 +1309,7 @@ Retorne SOMENTE JSON:
     ],
     "chosen_title": "...",
     "description": "...",
-    "hashtags": "#TemaPrincipal #PassoAPasso #ProjetoCriativo\n#IdeiaGenial #VideoViral #DicaCriativa",
+    "hashtags": "#TemaPrincipal #MensagemCentral #PalavraChaveReal\n#GeneroOuClima #SentimentoDoVideo #ElementoVisualReal",
     "tags": ["...", "..."],
     "thumbnail_hook": "...",
     "thumbnail_prompt": "..."
@@ -1339,7 +1338,7 @@ Retorne SOMENTE JSON:
             ).strip(),
             80,
         )
-        if not chosen_title or _has_off_context_niche_terms(chosen_title, context):
+        if not chosen_title or _has_off_context_niche_terms(chosen_title, context) or _has_publish_process_terms(chosen_title):
             chosen_title = title_seed
 
         primary_keyword = _pick_primary_keyword(keywords, tema)
