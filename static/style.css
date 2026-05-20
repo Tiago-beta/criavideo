@@ -15070,6 +15070,61 @@ th,
 }
 .editor-add-btn:hover { background: rgba(0, 212, 255, 0.2); }
 
+.editor-text-presets-intro {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.editor-text-presets-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.editor-text-preset-card {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 212, 255, 0.16);
+    background: linear-gradient(180deg, rgba(10, 30, 48, 0.92), rgba(8, 22, 37, 0.96));
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.18s, border-color 0.18s, background 0.18s;
+}
+
+.editor-text-preset-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(0, 212, 255, 0.34);
+    background: linear-gradient(180deg, rgba(12, 36, 58, 0.96), rgba(9, 25, 42, 0.98));
+}
+
+.editor-text-preset-badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #9cc4df;
+}
+
+.editor-text-preset-preview {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.15;
+}
+
+.editor-text-preset-meta {
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
 /* Trim controls */
 .editor-trim-range {
     display: flex;
@@ -17160,12 +17215,26 @@ th,
 .editor-sub-toolbar.editor-sub-actions-row {
     justify-content: flex-start;
     gap: 10px;
+    flex-wrap: wrap;
 }
 
 .editor-sub-action-btn {
     width: 38px;
     height: 38px;
     border-radius: 10px;
+}
+
+.editor-sub-action-btn-labeled {
+    width: auto;
+    min-width: 0;
+    padding: 0 12px;
+    gap: 8px;
+}
+
+.editor-sub-action-btn-label {
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
 }
 
 .editor-sub-icon-btn:disabled {

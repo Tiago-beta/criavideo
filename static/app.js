@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v510 loaded");
+console.log("[CriaVideo] app.js v511 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -29862,6 +29862,21 @@ function _getSubStyle(name) {
     return SUBTITLE_STYLES.find(s => s.name === name) || SUBTITLE_STYLES[0];
 }
 
+const EDITOR_TEXT_PRESETS = [
+    { key: "headline_clean", label: "Titulo limpo", preview: "TITULO DO VIDEO", content: "TITULO DO VIDEO", color: "#ffffff", fontFamily: "Manrope, sans-serif", fontSize: 34, bold: true, italic: false, x: 50, y: 18, duration: 5 },
+    { key: "cta_subscribe", label: "Inscricao", preview: "SE INSCREVA", content: "SE INSCREVA", color: "#ff4d4f", fontFamily: "Arial Black, sans-serif", fontSize: 40, bold: true, italic: false, x: 50, y: 78, duration: 5 },
+    { key: "cta_like", label: "Like", preview: "DEIXE SEU LIKE", content: "DEIXE SEU LIKE", color: "#ffd54a", fontFamily: "Arial Black, sans-serif", fontSize: 36, bold: true, italic: false, x: 50, y: 70, duration: 5 },
+    { key: "cta_comment", label: "Comentario", preview: "COMENTA AQUI", content: "COMENTA AQUI", color: "#67e8f9", fontFamily: "Outfit, sans-serif", fontSize: 34, bold: true, italic: false, x: 50, y: 64, duration: 5 },
+    { key: "alert", label: "Alerta", preview: "OLHA ISSO", content: "OLHA ISSO", color: "#ff6b6b", fontFamily: "Arial Black, sans-serif", fontSize: 42, bold: true, italic: false, x: 50, y: 28, duration: 4 },
+    { key: "tutorial", label: "Passo rapido", preview: "PASSO 1", content: "PASSO 1", color: "#5cf0ca", fontFamily: "Outfit, sans-serif", fontSize: 32, bold: true, italic: false, x: 50, y: 24, duration: 4 },
+    { key: "promo", label: "Oferta", preview: "SO HOJE", content: "SO HOJE", color: "#f97316", fontFamily: "Arial Black, sans-serif", fontSize: 38, bold: true, italic: false, x: 50, y: 30, duration: 4 },
+    { key: "elegant", label: "Elegante", preview: "Mensagem suave", content: "Mensagem suave", color: "#f5f5f5", fontFamily: "Georgia, serif", fontSize: 30, bold: false, italic: true, x: 50, y: 82, duration: 5 },
+];
+
+function _editorGetTextPreset(key) {
+    return EDITOR_TEXT_PRESETS.find((preset) => preset.key === String(key || "")) || null;
+}
+
 function _editorSaveState() {
     const snap = JSON.stringify({
         duration: _editor.duration,
@@ -37498,7 +37513,7 @@ function _editorBuildSubtitlesPanelMarkup() {
     return `
         <div class="editor-sub-toolbar editor-sub-actions-row">
             <button
-                class="editor-sub-icon-btn editor-sub-action-btn"
+                class="editor-sub-icon-btn editor-sub-action-btn editor-sub-action-btn-labeled"
                 type="button"
                 onclick="_editorAutoSubtitles()"
                 ${isGenerating ? "disabled" : ""}
@@ -37508,9 +37523,10 @@ function _editorBuildSubtitlesPanelMarkup() {
                 ${isGenerating
                     ? '<div class="spinner-small" style="width:14px;height:14px"></div>'
                     : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>'}
+                <span class="editor-sub-action-btn-label">Criar automático</span>
             </button>
             <button
-                class="editor-sub-icon-btn editor-sub-action-btn"
+                class="editor-sub-icon-btn editor-sub-action-btn editor-sub-action-btn-labeled"
                 type="button"
                 onclick="_editorAddSubtitle()"
                 title="Adicionar legenda manual"
@@ -37520,6 +37536,7 @@ function _editorBuildSubtitlesPanelMarkup() {
                     <path d="M12 5v14"/>
                     <path d="M5 12h14"/>
                 </svg>
+                <span class="editor-sub-action-btn-label">Criar manual</span>
             </button>
             ${hasSubs ? `
                 <button
@@ -37650,7 +37667,28 @@ function _editorRenderProps() {
     if (tool === "text") {
         container.innerHTML = `
             <div class="editor-props-title">Textos</div>
-            <button class="editor-add-btn" onclick="_editorAddText()">+ Adicionar texto</button>
+            <button class="editor-add-btn" onclick="_editorAddText()">+ Criar texto manual</button>
+            <div class="editor-props-title" style="margin-top:12px">Modelos prontos</div>
+            <p class="editor-text-presets-intro">Toque em um modelo para inserir no video e depois editar o texto como quiser.</p>
+            <div class="editor-text-presets-grid">
+                ${EDITOR_TEXT_PRESETS.map((preset) => {
+                    const previewStyle = [
+                        `font-family:${preset.fontFamily}`,
+                        `color:${preset.color}`,
+                        `font-size:${Math.max(16, Math.min(22, Math.round(Number(preset.fontSize || 28) * 0.55)))}px`,
+                        `font-weight:${preset.bold ? "700" : "500"}`,
+                        `font-style:${preset.italic ? "italic" : "normal"}`,
+                    ].join(";");
+                    return `
+                        <button class="editor-text-preset-card" type="button" onclick="_editorAddTextPreset('${preset.key}')">
+                            <span class="editor-text-preset-badge">${esc(preset.label)}</span>
+                            <span class="editor-text-preset-preview" style="${previewStyle}">${esc(preset.preview)}</span>
+                            <span class="editor-text-preset-meta">Adicionar e editar</span>
+                        </button>
+                    `;
+                }).join("")}
+            </div>
+            <div class="editor-props-title" style="margin-top:12px">Textos adicionados</div>
             <div id="editor-text-list" class="editor-props-group">
                 ${_editor.texts.map(t => `
                     <div class="editor-subtitle-item${t._selected ? ' active' : ''}" onclick="_editorSelectText(${t.id})">
@@ -38207,13 +38245,29 @@ function _editorToggleMobileTrackVolume(track) {
 window._editorToggleMobileTrackVolume = _editorToggleMobileTrackVolume;
 
 function _editorAddText() {
+    let options = null;
+    if (arguments.length && arguments[0] && typeof arguments[0] === "object") {
+        options = arguments[0];
+    }
     _editorSaveState();
     const video = document.getElementById("editor-video");
     const t = Number(_editor.timelineTime || video?.currentTime || 0);
+    const duration = Math.max(1, Number(options?.duration || 5));
+    const maxEnd = Math.max(t + 0.1, Number(_editor.duration || (t + duration)));
     _editor.texts.forEach(x => x._selected = false);
     const newText = {
-        id: _editorGenId(), content: "Digite aqui", startTime: t, endTime: Math.min(t + 5, _editor.duration),
-        x: 50, y: 50, fontSize: 36, color: "#ffffff", fontFamily: "Manrope, sans-serif", bold: true, italic: false, _selected: true,
+        id: _editorGenId(),
+        content: String(options?.content || "Digite aqui"),
+        startTime: t,
+        endTime: Math.min(t + duration, maxEnd),
+        x: Math.max(0, Math.min(100, Number(options?.x ?? 50))),
+        y: Math.max(0, Math.min(100, Number(options?.y ?? 50))),
+        fontSize: Math.max(12, Math.min(120, Number(options?.fontSize || 36))),
+        color: String(options?.color || "#ffffff"),
+        fontFamily: String(options?.fontFamily || "Manrope, sans-serif"),
+        bold: options?.bold !== undefined ? Boolean(options.bold) : true,
+        italic: Boolean(options?.italic),
+        _selected: true,
     };
     _editor.texts.push(newText);
     _editor.selectedClip = { kind: "text", id: String(newText.id) };
@@ -38230,6 +38284,13 @@ function _editorAddText() {
     _editorRenderMobileStagePanel();
 }
 window._editorAddText = _editorAddText;
+
+function _editorAddTextPreset(presetKey) {
+    const preset = _editorGetTextPreset(presetKey);
+    if (!preset) return;
+    _editorAddText(preset);
+}
+window._editorAddTextPreset = _editorAddTextPreset;
 
 function _editorSelectText(id) {
     _editor.texts.forEach(t => t._selected = (t.id === id));
