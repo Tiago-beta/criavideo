@@ -15833,7 +15833,7 @@ th,
 
     .editor-workspace {
         --editor-mobile-props-height: clamp(58px, 8.5vh, 84px);
-        --editor-mobile-timeline-height: clamp(156px, 26vh, 186px);
+        --editor-mobile-timeline-height: clamp(124px, 20vh, 148px);
         height: calc(100vh - 56px);
         height: calc(100dvh - 56px);
         display: flex;
@@ -15928,10 +15928,10 @@ th,
 
     .editor-canvas-wrapper {
         width: min(100%, 99vw);
-        height: clamp(340px, 58vh, 620px);
+        height: clamp(224px, 39vh, 420px);
         max-width: min(100%, 99vw);
-        max-height: calc(100dvh - 186px);
-        min-height: 280px;
+        max-height: calc(100dvh - 252px);
+        min-height: 208px;
         min-width: min(98vw, 340px);
         flex: 0 0 auto;
         align-self: center;
@@ -15999,10 +15999,6 @@ th,
         border-radius: 999px;
     }
 
-    .editor-workspace.editor-mobile-actions-open .editor-tools-panel {
-        display: none;
-    }
-
     .editor-workspace.editor-mobile-actions-open .editor-quick-actions {
         display: flex;
     }
@@ -16013,12 +16009,7 @@ th,
     }
 
     .editor-quick-actions .editor-mobile-mode-toggle {
-        display: inline-flex;
-        min-width: 40px;
-        position: sticky;
-        left: 0;
-        z-index: 2;
-        background: linear-gradient(180deg, rgba(8, 35, 58, 0.98), rgba(7, 26, 45, 0.98));
+        display: none;
     }
 
     .editor-aspect-selector {
@@ -16112,6 +16103,7 @@ th,
         flex-shrink: 0;
         overflow-x: hidden;
         overflow-y: auto;
+        touch-action: pan-x pan-y;
         scrollbar-width: thin;
         scrollbar-color: rgba(225, 239, 252, 0.45) transparent;
         scrollbar-gutter: stable;
@@ -16147,6 +16139,7 @@ th,
 
     .editor-timeline-tracks {
         padding-right: 24px;
+        padding-bottom: 8px;
     }
 
     .editor-track-label {

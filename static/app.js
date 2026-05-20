@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v497 loaded");
+console.log("[CriaVideo] app.js v498 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28755,6 +28755,7 @@ function _editorApplyMobileControlMode() {
     if (mobileActionsToggle) {
         mobileActionsToggle.classList.toggle("active", actionsOpen);
         mobileActionsToggle.setAttribute("aria-pressed", actionsOpen ? "true" : "false");
+        mobileActionsToggle.setAttribute("aria-expanded", actionsOpen ? "true" : "false");
     }
     if (mobileToolsToggle) {
         mobileToolsToggle.classList.toggle("active", actionsOpen);
@@ -28771,6 +28772,10 @@ function _editorApplyMobileControlMode() {
 function _editorSetMobileControlMode(mode = "tools") {
     _editor.mobileControlMode = mode === "actions" ? "actions" : "tools";
     _editorApplyMobileControlMode();
+}
+
+function _editorToggleMobileControlMode() {
+    _editorSetMobileControlMode(_editor.mobileControlMode === "actions" ? "tools" : "actions");
 }
 const _EDITOR_SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 const _EDITOR_TRANSITION_OPTIONS = [
@@ -35285,6 +35290,10 @@ function _editorStartTimelineScrub(event) {
     );
     const prefersDirectScrub = pointerType === "touch" && (pointerNearRuler || pointerNearPlayhead || localY <= (rulerHeight + 6));
 
+    if (pointerType === "touch" && !prefersDirectScrub) {
+        return false;
+    }
+
     _editorTimelineScrub = {
         active: true,
         pointerId: event.pointerId,
@@ -40331,7 +40340,7 @@ function _bindEditorEvents() {
     document.getElementById("editor-quick-duplicate")?.addEventListener("click", _editorCopySelectedClip);
     document.getElementById("editor-quick-paste")?.addEventListener("click", _editorPasteClipboard);
     document.getElementById("editor-mobile-actions-toggle")?.addEventListener("click", () => {
-        _editorSetMobileControlMode("actions");
+        _editorToggleMobileControlMode();
     });
     document.getElementById("editor-mobile-tools-toggle")?.addEventListener("click", () => {
         _editorSetMobileControlMode("tools");
