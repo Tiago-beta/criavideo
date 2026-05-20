@@ -27989,6 +27989,10 @@ function _formatComparisonUnits(row, count) {
     return `${formatted} imagens`;
 }
 
+function _shouldShowCreditTopupSection() {
+    return Math.max(0, parseInt(_userCredits || "0", 10) || 0) <= 0;
+}
+
 function _ensureCreditOfferSelection() {
     const packages = _creditPackagesCatalog();
     const paidPlans = _paidCreditPlans();
@@ -28003,7 +28007,7 @@ function _ensureCreditOfferSelection() {
     }
     if (_selectedCreditOffer.kind === "package") {
         const idx = Number(_selectedCreditOffer.packageIndex || 0);
-        if (packages[idx]) {
+        if (_shouldShowCreditTopupSection() && packages[idx]) {
             _selectedCreditOffer.packageIndex = idx;
             return;
         }
@@ -28026,7 +28030,7 @@ function _applyPreferredCreditOffer(preferredKind = "") {
             return;
         }
     }
-    if (["package", "topup", "recarga"].includes(normalized) && _creditPackagesCatalog().length) {
+    if (["package", "topup", "recarga"].includes(normalized) && _shouldShowCreditTopupSection() && _creditPackagesCatalog().length) {
         _selectedCreditOffer = { kind: "package", code: "", packageIndex: 0 };
         return;
     }
@@ -28044,6 +28048,7 @@ function _getSelectedCreditOfferDetails() {
             title: pkg.label || `Recarga ${_formatCreditsInt(pkg.credits)}`,
             subtitle: `${_formatCreditsInt(pkg.credits)} créditos extras avulsos`,
             priceLabel: _getDisplayPrice(pkg),
+            headlinePrice: _getDisplayPrice(pkg),
             purchaseLabel: "Créditos extras",
         };
     }
@@ -28056,6 +28061,7 @@ function _getSelectedCreditOfferDetails() {
         title: `${plan.name || plan.shortName || "Plano"}${billing.period === "annual" ? " anual" : ""}`,
         subtitle: billing.summaryLabel,
         priceLabel: billing.priceLabel,
+        headlinePrice: billing.headlinePrice,
         purchaseLabel: billing.period === "annual" ? "Plano anual" : "Plano mensal",
     };
 }
@@ -28078,8 +28084,11 @@ function _renderPricingPlanCards() {
         const equivalentMonthly = billing.equivalentMonthlyLabel
             ? `<div class="pricing-plan-subprice">${billing.equivalentMonthlyLabel}</div>`
             : "";
+        const actionButton = isCurrent
+            ? `<button class="pricing-plan-select is-disabled" type="button" disabled>${ctaLabel}</button>`
+            : `<button class="pricing-plan-select" type="button" onclick="event.stopPropagation(); selectCreditPlan('${planCode}', true)">${ctaLabel}</button>`;
         return `
-            <article class="pricing-plan-card ${isSelected ? "is-selected" : ""}" data-theme="${plan.accent || planCode}" onclick="selectCreditPlan('${planCode}')">
+            <article class="pricing-plan-card ${isSelected ? "is-selected" : ""}" data-theme="${plan.accent || planCode}" onclick="selectCreditPlan('${planCode}', false)">
                 ${badge}
                 <div class="pricing-plan-card-head">
                     <h3>${plan.name || plan.shortName || planCode}</h3>
@@ -28088,7 +28097,7 @@ function _renderPricingPlanCards() {
                 <div class="pricing-plan-price">${detailLine}</div>
                 ${equivalentMonthly}
                 <div class="pricing-plan-cycle">${cycleLabel}</div>
-                <button class="pricing-plan-select" type="button" onclick="event.stopPropagation(); selectCreditPlan('${planCode}')">${ctaLabel}</button>
+                ${actionButton}
                 <div class="pricing-plan-points">${creditsLabel}</div>
                 <ul class="pricing-plan-benefits">
                     ${benefits.map((item) => `<li>${item}</li>`).join("")}
@@ -28107,7 +28116,7 @@ function _renderPricingPackages() {
         const badge = pkg.badge ? `<span class="pricing-topup-badge">${pkg.badge}</span>` : "";
         const selected = selectedPackageIndex === index ? "is-selected" : "";
         return `
-            <button class="pricing-topup-card ${selected}" type="button" onclick="selectCreditPackage(${index})">
+            <button class="pricing-topup-card ${selected}" type="button" onclick="selectCreditPackage(${index}, true)">
                 ${badge}
                 <span class="pricing-topup-title">${pkg.label || `Recarga ${_formatCreditsInt(pkg.credits)}`}</span>
                 <strong class="pricing-topup-price">${_getDisplayPrice(pkg)}</strong>
@@ -28137,14 +28146,17 @@ function _renderPricingComparisonSections() {
             ? (plan.billingLabel || `${_formatCreditsInt(planBudget)} créditos iniciais`)
             : billing.comparisonMetaLabel;
         const actionLabel = isCurrent ? "Plano atual" : "Selecionar plano";
+        const actionButton = code === "free"
+            ? `<button class="pricing-compare-plan-btn is-disabled" type="button" disabled>${isCurrent ? "Plano atual" : "Plano gratuito"}</button>`
+            : isCurrent
+            ? `<button class="pricing-compare-plan-btn is-disabled" type="button" disabled>${actionLabel}</button>`
+            : `<button class="pricing-compare-plan-btn" type="button" onclick="selectCreditPlan('${code}', true)">${actionLabel}</button>`;
         return `
             <th class="pricing-compare-plan ${isCurrent ? "is-current" : ""}" data-theme="${plan.accent || code}">
                 <div class="pricing-compare-plan-name">${plan.shortName || plan.name || code}</div>
                 <div class="pricing-compare-plan-price">${priceLabel}</div>
                 <div class="pricing-compare-plan-meta">${metaLine}</div>
-                ${code === "free"
-                    ? `<button class="pricing-compare-plan-btn is-disabled" type="button" disabled>${isCurrent ? "Plano atual" : "Plano gratuito"}</button>`
-                    : `<button class="pricing-compare-plan-btn ${isCurrent ? "is-disabled" : ""}" type="button" onclick="selectCreditPlan('${code}')">${actionLabel}</button>`}
+                ${actionButton}
             </th>
         `;
     }).join("");
@@ -28228,7 +28240,7 @@ function _renderCreditCheckoutPanel() {
             <div class="pricing-checkout-copy">
                 <span>${selectedOffer.purchaseLabel}</span>
                 <strong>${selectedOffer.title}</strong>
-                <small>${selectedOffer.subtitle} • ${selectedOffer.priceLabel}</small>
+                <small>${selectedOffer.subtitle} • ${selectedOffer.headlinePrice || selectedOffer.priceLabel}</small>
             </div>
             <div class="pricing-checkout-actions">
                 <button class="credits-btn credits-btn-pix" type="button" onclick="purchaseCredits('pix')">Pagar com PIX</button>
@@ -28236,6 +28248,61 @@ function _renderCreditCheckoutPanel() {
             </div>
         </section>
     `;
+}
+
+function closeCreditCheckoutModal() {
+    document.getElementById("credit-checkout-modal-overlay")?.remove();
+}
+
+function closeCreditsPurchaseModal() {
+    closeCreditCheckoutModal();
+    document.getElementById("credits-modal-overlay")?.remove();
+}
+
+function _renderCreditCheckoutModalContent() {
+    const selectedOffer = _getSelectedCreditOfferDetails();
+    if (!selectedOffer) return "";
+
+    const isPlan = selectedOffer.kind === "plan";
+    const helperText = isPlan
+        ? "Confira o plano selecionado e escolha como deseja finalizar o pagamento."
+        : "Confira a recarga escolhida e selecione a forma de pagamento para adicionar créditos ao saldo.";
+
+    return `
+        <div class="credit-checkout-modal">
+            <button class="credits-modal-close" type="button" onclick="closeCreditCheckoutModal()">&times;</button>
+            <span class="credit-checkout-kicker">${selectedOffer.purchaseLabel}</span>
+            <h3>${isPlan ? "Finalizar escolha do plano" : "Finalizar compra de créditos"}</h3>
+            <p class="credit-checkout-description">${helperText}</p>
+            <div class="credit-checkout-balance">
+                <strong>Saldo atual:</strong> ${_formatCreditsInt(_userCredits)} créditos
+            </div>
+            ${_renderCreditCheckoutPanel()}
+        </div>
+    `;
+}
+
+function showCreditCheckoutModal() {
+    const selectedOffer = _getSelectedCreditOfferDetails();
+    if (!selectedOffer) {
+        showToast("Selecione um plano ou uma recarga para continuar.", "error");
+        return;
+    }
+
+    let overlay = document.getElementById("credit-checkout-modal-overlay");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "credit-checkout-modal-overlay";
+        overlay.className = "credit-checkout-modal-overlay";
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) {
+                closeCreditCheckoutModal();
+            }
+        });
+        document.body.appendChild(overlay);
+    }
+
+    overlay.innerHTML = _renderCreditCheckoutModalContent();
 }
 
 function _renderCreditsPurchaseModalContent() {
@@ -28247,15 +28314,19 @@ function _renderCreditsPurchaseModalContent() {
     const expiresText = _currentCreditPlanExpiresAt
         ? new Date(_currentCreditPlanExpiresAt).toLocaleDateString("pt-BR")
         : "";
+    const showTopupSection = _shouldShowCreditTopupSection();
+    const pricingIntroText = showTopupSection
+        ? "Plano mensal com créditos inclusos. Como seu saldo atual acabou, as recargas extras estão liberadas abaixo."
+        : "Plano mensal com créditos inclusos. As recargas extras aparecem quando o saldo do ciclo acabar.";
 
     return `
         <div class="credits-modal credits-modal--pricing">
-            <button class="credits-modal-close" type="button" onclick="document.getElementById('credits-modal-overlay').remove()">&times;</button>
+            <button class="credits-modal-close" type="button" onclick="closeCreditsPurchaseModal()">&times;</button>
             <div class="pricing-shell">
                 <div class="pricing-head">
                     <div>
                         <h2>Mude seu plano</h2>
-                        <p>Plano mensal com créditos inclusos e recarga extra sempre disponível quando o saldo acabar.</p>
+                        <p>${pricingIntroText}</p>
                     </div>
                     <div class="pricing-toolbar">
                         <div class="pricing-currency-switch">
@@ -28280,16 +28351,17 @@ function _renderCreditsPurchaseModalContent() {
                 </div>
 
                 <div class="pricing-plan-grid">${_renderPricingPlanCards()}</div>
-                ${_selectedCreditOffer.kind === "plan" ? _renderCreditCheckoutPanel() : ""}
 
+                ${showTopupSection
+                    ? `
                 <section class="pricing-topup-section">
                     <div class="pricing-topup-section-head">
                         <h3>Créditos extras</h3>
-                        <p>Se o saldo acabar antes do fim do ciclo, adicione recargas avulsas sem mexer no plano atual.</p>
+                        <p>Seu saldo atual acabou. Escolha uma recarga avulsa para continuar gerando sem trocar de plano.</p>
                     </div>
                     <div class="pricing-topup-grid">${_renderPricingPackages()}</div>
-                </section>
-                ${_selectedCreditOffer.kind === "package" ? _renderCreditCheckoutPanel() : ""}
+                </section>`
+                    : ""}
 
                 <div class="pricing-comparison-stack">${_renderPricingComparisonSections()}</div>
 
@@ -28322,25 +28394,39 @@ function showCreditsPurchaseModal(preferredKind = "") {
         overlay.className = "credits-modal-overlay";
         overlay.addEventListener("click", (event) => {
             if (event.target === overlay) {
-                overlay.remove();
+                closeCreditsPurchaseModal();
             }
         });
         document.body.appendChild(overlay);
     }
 
+    closeCreditCheckoutModal();
     _applyPreferredCreditOffer(preferredKind);
     _ensureCreditOfferSelection();
     overlay.innerHTML = _renderCreditsPurchaseModalContent();
 }
 
-function selectCreditPlan(planCode) {
-    _selectedCreditOffer = { kind: "plan", code: String(planCode || "starter"), packageIndex: 0 };
+function selectCreditPlan(planCode, openCheckout = false) {
+    const normalizedPlanCode = String(planCode || "starter");
+    const isCurrentPlan = _creditBillingPeriod === "monthly"
+        && normalizedPlanCode.trim().toLowerCase() === _currentCreditPlan;
+    _selectedCreditOffer = { kind: "plan", code: normalizedPlanCode, packageIndex: 0 };
     _rerenderCreditsPurchaseModal();
+    if (openCheckout && !isCurrentPlan) {
+        showCreditCheckoutModal();
+        return;
+    }
+    closeCreditCheckoutModal();
 }
 
-function selectCreditPackage(idx) {
+function selectCreditPackage(idx, openCheckout = false) {
     _selectedCreditOffer = { kind: "package", code: "", packageIndex: Math.max(0, parseInt(idx || "0", 10) || 0) };
     _rerenderCreditsPurchaseModal();
+    if (openCheckout) {
+        showCreditCheckoutModal();
+        return;
+    }
+    closeCreditCheckoutModal();
 }
 
 function setCreditDisplayCurrency(currency) {
@@ -28388,7 +28474,7 @@ async function purchaseCredits(method) {
             method: "POST",
             body: JSON.stringify(payload),
         });
-        document.getElementById("credits-modal-overlay")?.remove();
+        closeCreditsPurchaseModal();
 
         if (method === "pix" && data.pixCopiaECola) {
             showPixQrModal(data);
@@ -28463,6 +28549,9 @@ document.querySelectorAll("[data-credits-trigger]").forEach((el) => {
 
 window.selectCreditPackage = selectCreditPackage;
 window.selectCreditPlan = selectCreditPlan;
+window.showCreditCheckoutModal = showCreditCheckoutModal;
+window.closeCreditCheckoutModal = closeCreditCheckoutModal;
+window.closeCreditsPurchaseModal = closeCreditsPurchaseModal;
 window.setCreditDisplayCurrency = setCreditDisplayCurrency;
 window.setCreditBillingPeriod = setCreditBillingPeriod;
 window.toggleCreditComparisonSection = toggleCreditComparisonSection;
