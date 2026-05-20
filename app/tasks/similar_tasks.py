@@ -54,6 +54,7 @@ _SIMILAR_SCENE_TIME_RE = re.compile(r"pts_time:(\d+(?:\.\d+)?)")
 _SIMILAR_SCENE_DETECT_THRESHOLD = 0.22
 _SIMILAR_SCENE_MIN_SECONDS = 0.85
 _SIMILAR_SCENE_MAX_COUNT = 180
+_SIMILAR_FRAME_EXTRACTION_RETRY_BACKOFFS = (0.0, 0.15, 0.5, 1.0, 2.0)
 _SIMILAR_REFERENCE_CLIP_FPS = 30
 _SIMILAR_GOOGLE_ANALYSIS_MODEL = "gemini-2.5-flash"
 _SIMILAR_CONTEXT_FRAME_SAMPLE_COUNT = 6
@@ -1015,25 +1016,51 @@ async def _extract_frame(video_path: str, timestamp_seconds: float, output_path:
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg",
-        "-y",
-        "-ss",
-        f"{max(0.0, float(timestamp_seconds)):.3f}",
-        "-i",
-        video_path,
-        "-frames:v",
-        "1",
-        "-q:v",
-        "2",
-        output_path,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-    if proc.returncode != 0 or not out.exists() or out.stat().st_size <= 0:
-        details = (stderr or b"").decode(errors="ignore")[-500:]
-        raise RuntimeError(f"Frame extraction failed: {details}")
+    safe_timestamp = max(0.0, float(timestamp_seconds or 0.0))
+    attempt_timestamps: list[float] = []
+    seen_attempt_keys: set[int] = set()
+    for backoff in _SIMILAR_FRAME_EXTRACTION_RETRY_BACKOFFS:
+        candidate = round(max(0.0, safe_timestamp - float(backoff)), 3)
+        candidate_key = int(round(candidate * 1000))
+        if candidate_key in seen_attempt_keys:
+            continue
+        seen_attempt_keys.add(candidate_key)
+        attempt_timestamps.append(candidate)
+        if candidate <= 0.0:
+            break
+
+    last_details = ""
+    attempted_labels: list[str] = []
+    for attempt_timestamp in attempt_timestamps or [0.0]:
+        attempted_labels.append(f"{attempt_timestamp:.3f}")
+        if out.exists():
+            try:
+                out.unlink()
+            except OSError:
+                pass
+
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-y",
+            "-ss",
+            f"{attempt_timestamp:.3f}",
+            "-i",
+            video_path,
+            "-frames:v",
+            "1",
+            "-q:v",
+            "2",
+            output_path,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode == 0 and out.exists() and out.stat().st_size > 0:
+            return
+        last_details = (stderr or b"").decode(errors="ignore")[-500:]
+
+    attempts_label = ", ".join(attempted_labels)
+    raise RuntimeError(f"Frame extraction failed after timestamps [{attempts_label}]: {last_details}")
 
 
 async def _detect_scene_change_timestamps(

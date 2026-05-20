@@ -264,5 +264,47 @@ class TestSimilarSceneBoundaryReferences(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(Path(ordered_paths[1]).name, "similar_scene_002_end_frame.jpg")
 
 
+class TestSimilarFrameExtractionFallbacks(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.video_path = str(Path(self.temp_dir.name) / "source.mp4")
+        Path(self.video_path).write_bytes(b"video")
+
+    async def asyncTearDown(self):
+        self.temp_dir.cleanup()
+
+    async def test_extract_frame_retries_with_earlier_timestamp_after_eof_seek(self):
+        output_path = str(Path(self.temp_dir.name) / "frame.jpg")
+        call_args: list[tuple] = []
+
+        class FakeProcess:
+            def __init__(self, returncode: int, stderr: bytes = b"", on_communicate=None):
+                self.returncode = returncode
+                self._stderr = stderr
+                self._on_communicate = on_communicate
+
+            async def communicate(self):
+                if self._on_communicate is not None:
+                    self._on_communicate()
+                return b"", self._stderr
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            del kwargs
+            call_args.append(args)
+            if len(call_args) == 1:
+                return FakeProcess(
+                    1,
+                    b"Nothing was written into output file, because at least one of its streams received no packets.",
+                )
+            return FakeProcess(0, b"", on_communicate=lambda: Path(output_path).write_bytes(b"frame"))
+
+        with patch("app.tasks.similar_tasks.asyncio.create_subprocess_exec", new=fake_create_subprocess_exec):
+            await similar_tasks._extract_frame(self.video_path, 1.95, output_path)
+
+        self.assertTrue(Path(output_path).exists())
+        seek_timestamps = [args[args.index("-ss") + 1] for args in call_args]
+        self.assertEqual(seek_timestamps[:2], ["1.950", "1.800"])
+
+
 if __name__ == "__main__":
     unittest.main()
