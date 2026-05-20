@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v500 loaded");
+console.log("[CriaVideo] app.js v501 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -37295,16 +37295,19 @@ function _editorSubtitleEditForm() {
 
 // ---------- Text actions ----------
 function _editorBuildTrackLabelMarkup(row) {
+    const trackId = String(row.track || "").trim();
+    const usesAudioMasterVolume = trackId === "audio" || /^layer-audio-\d+$/i.test(trackId);
+    const controlTrack = usesAudioMasterVolume ? "audio" : trackId;
     const iconHtml = `<span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>`;
-    const showMobileVolume = _editorIsMobileViewport() && (row.track === "video" || row.track === "audio");
+    const showMobileVolume = _editorIsMobileViewport() && (trackId === "video" || usesAudioMasterVolume);
     if (!showMobileVolume) {
         return iconHtml;
     }
 
-    const volumePct = Math.max(0, Math.min(100, Math.round(_editorGetTrackMasterVolumePercent(row.track))));
-    const volumeTitle = `Volume da faixa ${String(row.label || row.track || "").toLowerCase()}`;
+    const volumePct = Math.max(0, Math.min(100, Math.round(_editorGetTrackMasterVolumePercent(controlTrack))));
+    const volumeTitle = `Volume da faixa ${String(row.label || trackId || "").toLowerCase()}`;
     const mutedClass = volumePct <= 0 ? " muted" : "";
-    const openClass = _editorMobileTrackVolumeOpen === row.track ? " open" : "";
+    const openClass = _editorMobileTrackVolumeOpen === trackId ? " open" : "";
 
     return `
         <span class="editor-track-label-controls" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
@@ -37315,10 +37318,10 @@ function _editorBuildTrackLabelMarkup(row) {
                 type="button"
                 title="${esc(volumeTitle)}"
                 aria-label="${esc(volumeTitle)}"
-                aria-expanded="${_editorMobileTrackVolumeOpen === row.track ? "true" : "false"}"
-                onclick="event.stopPropagation();_editorToggleMobileTrackVolume('${row.track}')"
+                aria-expanded="${_editorMobileTrackVolumeOpen === trackId ? "true" : "false"}"
+                onclick="event.stopPropagation();_editorToggleMobileTrackVolume('${trackId}')"
             >
-                ${_editorTimelineVolumeIcon(row.track)}
+                ${_editorTimelineVolumeIcon(controlTrack)}
             </button>
             <span class="editor-track-label-volume-popover${openClass}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
                 <input
@@ -37331,7 +37334,7 @@ function _editorBuildTrackLabelMarkup(row) {
                     aria-label="${esc(volumeTitle)}"
                     onpointerdown="event.stopPropagation()"
                     onclick="event.stopPropagation()"
-                    oninput="_editorSetTrackVolumeFromTrim('${row.track}', this.value); this.closest('.editor-track-label-volume-wrap')?.classList.toggle('muted', (parseInt(this.value, 10) || 0) <= 0); this.closest('.editor-track-label-volume-wrap')?.querySelector('.editor-track-label-volume')?.classList.toggle('muted', (parseInt(this.value, 10) || 0) <= 0);"
+                    oninput="_editorSetTrackVolumeFromTrim('${controlTrack}', this.value); this.closest('.editor-track-label-volume-wrap')?.classList.toggle('muted', (parseInt(this.value, 10) || 0) <= 0); this.closest('.editor-track-label-volume-wrap')?.querySelector('.editor-track-label-volume')?.classList.toggle('muted', (parseInt(this.value, 10) || 0) <= 0);"
                 >
             </span>
             </span>

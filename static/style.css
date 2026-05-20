@@ -16015,6 +16015,11 @@ th,
         display: flex;
     }
 
+    .editor-workspace.editor-mobile-actions-open .editor-tools-panel {
+        visibility: hidden;
+        pointer-events: none;
+    }
+
     .editor-quick-icon-btn {
         flex: 0 0 auto;
         touch-action: manipulation;
@@ -16170,6 +16175,15 @@ th,
     .editor-track-label-main {
         width: auto;
         min-width: auto;
+    }
+
+    .editor-track-label-controls {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .editor-track-label-volume-wrap {
+        left: 3px;
     }
 
     .editor-track-label-slider-wrap {
