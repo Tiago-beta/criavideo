@@ -170,7 +170,7 @@ _DIALOGUE_TIMING_LINE_RE = re.compile(
 
 def _similar_scene_duration_seconds(scene: VideoScene | None) -> float:
     if not scene:
-        return float(max(5, int(settings.similar_scene_default_seconds or 5)))
+        return float(max(2, int(settings.similar_scene_default_seconds or 2)))
 
     try:
         start_time = float(scene.start_time or 0)
@@ -184,7 +184,7 @@ def _similar_scene_duration_seconds(scene: VideoScene | None) -> float:
     duration = end_time - start_time
     if duration > 0.1:
         return max(1.0, duration)
-    return float(max(5, int(settings.similar_scene_default_seconds or 5)))
+    return float(max(2, int(settings.similar_scene_default_seconds or 2)))
 
 
 def _ensure_reference_image_instruction(prompt: str, reference_mode: str = "") -> str:
@@ -279,9 +279,9 @@ def _normalize_lite2_duration_seconds(value: int) -> int:
     return max(5, min(int(value or 5), 12))
 
 
-_REALISTIC_ENGINES = {"grok", "wan2", "minimax", "seedance", "lite2", "avatar31"}
-_SIMILAR_ENGINES = {"grok", "wan2", "minimax", "seedance", "lite2"}
-_SEEDANCE_FAMILY_ENGINES = {"seedance", "lite2"}
+_REALISTIC_ENGINES = {"grok", "wan2", "minimax", "seedance", "lite2", "viduq3", "avatar31"}
+_SIMILAR_ENGINES = {"grok", "wan2", "minimax", "seedance", "lite2", "viduq3"}
+_SEEDANCE_FAMILY_ENGINES = {"seedance", "lite2", "viduq3"}
 
 
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
@@ -1871,6 +1871,43 @@ def _extract_similar_reference_end_frame_map(raw_tags: object) -> dict[str, str]
     return resolved
 
 
+def _extract_similar_reference_text_detected_map(raw_tags: object) -> dict[str, bool]:
+    tags = _safe_tags_dict(raw_tags)
+    raw_map = tags.get("similar_reference_frame_text_detected") if isinstance(tags.get("similar_reference_frame_text_detected"), dict) else {}
+    if not isinstance(raw_map, dict):
+        return {}
+
+    resolved: dict[str, bool] = {}
+    for key, raw_value in raw_map.items():
+        if isinstance(raw_value, bool):
+            resolved[str(key)] = raw_value
+            continue
+        if isinstance(raw_value, (int, float)):
+            resolved[str(key)] = bool(raw_value)
+            continue
+        if isinstance(raw_value, str):
+            normalized = raw_value.strip().lower()
+            if normalized in {"true", "1", "yes", "sim"}:
+                resolved[str(key)] = True
+            elif normalized in {"false", "0", "no", "nao", "não"}:
+                resolved[str(key)] = False
+    return resolved
+
+
+def _extract_similar_reference_text_excerpt_map(raw_tags: object) -> dict[str, str]:
+    tags = _safe_tags_dict(raw_tags)
+    raw_map = tags.get("similar_reference_frame_text_excerpt") if isinstance(tags.get("similar_reference_frame_text_excerpt"), dict) else {}
+    if not isinstance(raw_map, dict):
+        return {}
+
+    resolved: dict[str, str] = {}
+    for key, raw_value in raw_map.items():
+        text = re.sub(r"\s+", " ", str(raw_value or "")).strip()
+        if text:
+            resolved[str(key)] = text[:240]
+    return resolved
+
+
 def _collect_similar_unified_video_reference_paths(
     scenes: list[VideoScene],
     tags_data: dict[str, Any],
@@ -2261,10 +2298,49 @@ def _clear_similar_generated_frame_variants(tags_data: dict[str, Any], scene_id:
         tags_data.pop("similar_generated_frame_variants", None)
 
 
+def _promote_similar_scene_reference_frame(
+    tags_data: dict[str, Any],
+    scene: VideoScene | Any,
+    *,
+    reference_path: object = "",
+) -> None:
+    promoted_path = str(reference_path or getattr(scene, "image_path", "") or "").strip()
+    if not (promoted_path and os.path.exists(promoted_path)):
+        return
+
+    scene_index = int(getattr(scene, "scene_index", 0) or 0)
+    scene_key = str(scene_index)
+
+    reference_frame_map = _extract_similar_reference_frame_map(tags_data)
+    reference_frame_map[scene_key] = promoted_path
+    tags_data["similar_reference_frames"] = reference_frame_map
+
+    if scene_index > 0:
+        reference_end_map = _extract_similar_reference_end_frame_map(tags_data)
+        reference_end_map[str(scene_index - 1)] = promoted_path
+        tags_data["similar_reference_end_frames"] = reference_end_map
+
+    reference_text_detected_map = _extract_similar_reference_text_detected_map(tags_data)
+    reference_text_detected_map.pop(scene_key, None)
+    if reference_text_detected_map:
+        tags_data["similar_reference_frame_text_detected"] = reference_text_detected_map
+    else:
+        tags_data.pop("similar_reference_frame_text_detected", None)
+
+    reference_text_excerpt_map = _extract_similar_reference_text_excerpt_map(tags_data)
+    reference_text_excerpt_map.pop(scene_key, None)
+    if reference_text_excerpt_map:
+        tags_data["similar_reference_frame_text_excerpt"] = reference_text_excerpt_map
+    else:
+        tags_data.pop("similar_reference_frame_text_excerpt", None)
+
+
 def _serialize_project_scene(
     scene: VideoScene,
     reference_frame_map: dict[str, str] | None = None,
     reference_frame_end_map: dict[str, str] | None = None,
+    reference_text_detected_map: dict[str, bool] | None = None,
+    reference_text_excerpt_map: dict[str, str] | None = None,
     generated_frame_variant_map: dict[str, list[str]] | None = None,
     detected_scene_duration_map: dict[str, float] | None = None,
 ) -> dict[str, Any]:
@@ -2289,6 +2365,10 @@ def _serialize_project_scene(
     generated_frame_variants: list[dict[str, Any]] = []
     variant_scene_key = str(int(scene.id or 0))
     active_image_path = str(scene.image_path or "").strip()
+    reference_frame_text_detected = bool((reference_text_detected_map or {}).get(scene_key))
+    reference_frame_text_excerpt = str((reference_text_excerpt_map or {}).get(scene_key) or "").strip()
+    if reference_frame_text_excerpt:
+        reference_frame_text_detected = True
     detected_duration_seconds = float(
         (detected_scene_duration_map or {}).get(scene_key) or _similar_scene_duration_seconds(scene)
     )
@@ -2323,6 +2403,8 @@ def _serialize_project_scene(
         "reference_frame_end_url": _to_media_url(reference_frame_end_path),
         "reference_frame_paths": reference_frame_paths,
         "reference_frame_urls": reference_frame_urls,
+        "reference_frame_text_detected": reference_frame_text_detected,
+        "reference_frame_text_excerpt": reference_frame_text_excerpt,
         "start_time": scene.start_time,
         "end_time": scene.end_time,
         "detected_duration_seconds": detected_duration_seconds,
@@ -2810,6 +2892,7 @@ class StartSimilarAnalysisRequest(BaseModel):
     aspect_ratio: str = "16:9"
     analysis_mode: str = "scene"
     analysis_limit_seconds: int = 0
+    hide_from_create_list: bool = False
 
 
 class SimilarUpdateSceneRequest(BaseModel):
@@ -2825,6 +2908,7 @@ class SimilarSceneImageRequest(BaseModel):
     generate_from_prompt: bool = False
     prompt_override: str = ""
     edit_instruction: str = ""
+    promote_reference_frame: bool = False
     aspect_ratio: str = "16:9"
 
 
@@ -2965,6 +3049,7 @@ async def start_similar_analysis(
         "similar_analysis_mode": analysis_mode,
         "similar_analysis_limit_seconds": analysis_limit_seconds,
         "similar_scene_seconds": max(int(settings.similar_scene_default_seconds or 5), 5),
+        "hide_from_create_list": bool(req.hide_from_create_list),
     }
 
     project = VideoProject(
@@ -3087,6 +3172,7 @@ async def list_projects(
                 "workflow_type": workflow_type,
                 "workflow_stage": str(tags_data.get("similar_stage") or "").strip(),
                 "is_editor_project": is_editor_project,
+                "hide_from_create_list": bool(tags_data.get("hide_from_create_list")),
             }
         )
 
@@ -3119,6 +3205,8 @@ async def get_project(
     response_tags = project.tags
     reference_frame_map: dict[str, str] = {}
     reference_frame_end_map: dict[str, str] = {}
+    reference_text_detected_map: dict[str, bool] = {}
+    reference_text_excerpt_map: dict[str, str] = {}
     generated_frame_variant_map: dict[str, list[str]] = {}
     detected_scene_duration_map: dict[str, float] = {}
     if _is_similar_project(project):
@@ -3140,6 +3228,8 @@ async def get_project(
             response_tags["similar_unified_end_frame_url"] = _to_media_url(unified_end_frame_path)
         reference_frame_map = _extract_similar_reference_frame_map(response_tags)
         reference_frame_end_map = _extract_similar_reference_end_frame_map(response_tags)
+        reference_text_detected_map = _extract_similar_reference_text_detected_map(response_tags)
+        reference_text_excerpt_map = _extract_similar_reference_text_excerpt_map(response_tags)
         generated_frame_variant_map = _extract_similar_generated_frame_variant_map(response_tags)
         detected_scene_duration_map = _extract_similar_detected_scene_duration_map(response_tags)
 
@@ -3157,7 +3247,15 @@ async def get_project(
         "error_message": project.error_message,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "scenes": [
-            _serialize_project_scene(s, reference_frame_map, reference_frame_end_map, generated_frame_variant_map, detected_scene_duration_map)
+            _serialize_project_scene(
+                s,
+                reference_frame_map,
+                reference_frame_end_map,
+                reference_text_detected_map,
+                reference_text_excerpt_map,
+                generated_frame_variant_map,
+                detected_scene_duration_map,
+            )
             for s in scenes
         ],
         "renders": [
@@ -3357,7 +3455,10 @@ async def generate_similar_unified_scene(
         raise HTTPException(status_code=400, detail="Engine invalida")
 
     duration_seconds = int(req.duration_seconds or 0)
-    if duration_seconds not in {5, 10, 15}:
+    if engine == "viduq3":
+        if duration_seconds < 1 or duration_seconds > 16:
+            raise HTTPException(status_code=400, detail="Duracao invalida. Use de 1 a 16 segundos")
+    elif duration_seconds not in {5, 10, 15}:
         raise HTTPException(status_code=400, detail="Duracao invalida. Use 5, 10 ou 15 segundos")
 
     tags_data = _safe_tags_dict(project.tags)
@@ -3792,8 +3893,20 @@ async def update_similar_scene(
 
     reference_frame_map = _extract_similar_reference_frame_map(project.tags)
     reference_frame_end_map = _extract_similar_reference_end_frame_map(project.tags)
+    reference_text_detected_map = _extract_similar_reference_text_detected_map(project.tags)
+    reference_text_excerpt_map = _extract_similar_reference_text_excerpt_map(project.tags)
     detected_scene_duration_map = _extract_similar_detected_scene_duration_map(project.tags)
-    return {"scene": _serialize_project_scene(scene, reference_frame_map, reference_frame_end_map, None, detected_scene_duration_map)}
+    return {
+        "scene": _serialize_project_scene(
+            scene,
+            reference_frame_map,
+            reference_frame_end_map,
+            reference_text_detected_map,
+            reference_text_excerpt_map,
+            None,
+            detected_scene_duration_map,
+        )
+    }
 
 
 @router.post("/projects/{project_id}/similar/scenes/{scene_id}/image")
@@ -3842,15 +3955,17 @@ async def upsert_similar_scene_image(
     )
     tags_data = _safe_tags_dict(project.tags)
     reference_frame_map = _extract_similar_reference_frame_map(tags_data)
-    source_reference_image = str(reference_frame_map.get(str(current_scene_index)) or "").strip()
+    source_reference_image = str(scene.image_path or "").strip()
+    if source_reference_image and not os.path.exists(source_reference_image):
+        source_reference_image = ""
+    if not source_reference_image:
+        source_reference_image = str(reference_frame_map.get(str(current_scene_index)) or "").strip()
     if source_reference_image and not os.path.exists(source_reference_image):
         source_reference_image = ""
     if not source_reference_image and anchor_scene and current_scene_index > int(anchor_scene.scene_index or 0):
         candidate_anchor_path = str(anchor_scene.image_path or "").strip()
         if candidate_anchor_path and os.path.exists(candidate_anchor_path):
             source_reference_image = candidate_anchor_path
-    if not source_reference_image and scene.image_path and os.path.exists(str(scene.image_path)):
-        source_reference_image = str(scene.image_path)
 
     effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     image_dir = Path(settings.media_dir) / "images" / str(project.id)
@@ -3933,7 +4048,11 @@ async def upsert_similar_scene_image(
     scene.scene_type = "image"
 
     tags_data = _safe_tags_dict(project.tags)
-    if req.generate_from_prompt and track_generated_variant:
+    promote_reference_frame = bool(req.promote_reference_frame and req.generate_from_prompt and track_generated_variant)
+    if promote_reference_frame:
+        _promote_similar_scene_reference_frame(tags_data, scene, reference_path=scene.image_path)
+        _clear_similar_generated_frame_variants(tags_data, int(scene.id or 0))
+    elif req.generate_from_prompt and track_generated_variant:
         _set_similar_generated_frame_variants(
             tags_data,
             int(scene.id or 0),
@@ -3951,9 +4070,21 @@ async def upsert_similar_scene_image(
 
     reference_frame_map = _extract_similar_reference_frame_map(project.tags)
     reference_frame_end_map = _extract_similar_reference_end_frame_map(project.tags)
+    reference_text_detected_map = _extract_similar_reference_text_detected_map(project.tags)
+    reference_text_excerpt_map = _extract_similar_reference_text_excerpt_map(project.tags)
     generated_frame_variant_map = _extract_similar_generated_frame_variant_map(project.tags)
     detected_scene_duration_map = _extract_similar_detected_scene_duration_map(project.tags)
-    return {"scene": _serialize_project_scene(scene, reference_frame_map, reference_frame_end_map, generated_frame_variant_map, detected_scene_duration_map)}
+    return {
+        "scene": _serialize_project_scene(
+            scene,
+            reference_frame_map,
+            reference_frame_end_map,
+            reference_text_detected_map,
+            reference_text_excerpt_map,
+            generated_frame_variant_map,
+            detected_scene_duration_map,
+        )
+    }
 
 
 @router.post("/projects/{project_id}/similar/generate-previews")
@@ -5879,6 +6010,8 @@ async def generate_realistic_prompt_endpoint(
     engine = req.engine if req.engine in _REALISTIC_ENGINES else "wan2"
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
+    elif engine == "viduq3":
+        duration = max(1, min(int(req.duration or 10), 16))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
     elif engine == "lite2":
@@ -6064,7 +6197,7 @@ class GenerateRealisticRequest(BaseModel):
     cover_custom_prompt: str = ""
     cover_source: str = ""
     tevoxi_has_official_cover_reference: bool = False
-    engine: str = "wan2"  # "seedance", "lite2", "minimax", "wan2", "grok" or "avatar31"
+    engine: str = "wan2"  # "seedance", "lite2", "viduq3", "minimax", "wan2", "grok" or "avatar31"
     audio_url: str = ""       # External audio URL (e.g. from Tevoxi)
     lyrics: str = ""          # Lyrics/transcription for the audio clip
     clip_start: float = 0     # Start time in seconds for audio clip
@@ -6101,6 +6234,8 @@ async def generate_realistic_endpoint(
     preserve_prompt_exactly = bool(req.preserve_prompt_exactly) or avatar_promptless_mode
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
+    elif engine == "viduq3":
+        duration = max(1, min(int(req.duration or 10), 16))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
     elif engine == "lite2":
@@ -6337,10 +6472,10 @@ async def generate_realistic_endpoint(
     provider_generate_audio = bool(req.generate_audio)
     seedance_native_audio_only = False
     if engine in _SEEDANCE_FAMILY_ENGINES:
-        # Seedance-family engines should always request native model audio when available.
+        # Native-audio Atlas engines should always request model audio when available.
         provider_generate_audio = True
         if provider_generate_audio and not external_audio_url and not effective_add_narration and not dialogue_enabled:
-            # Prefer native SFX from Seedance-family engines unless user explicitly supplied another audio source.
+            # Prefer native SFX unless user explicitly supplied another audio source.
             effective_add_music = False
             seedance_native_audio_only = True
     elif engine == "wan2":
@@ -6372,7 +6507,7 @@ async def generate_realistic_endpoint(
     else:
         await deduct_credits(db, user["id"], credits_needed)
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "lite2": "Lite 2.0", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "lite2": "Lite 2.0", "viduq3": "Pro 3.1", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
     engine_label = engine_labels.get(engine, "Wan 2.6")
 
     # Use custom title if provided. Avatar can be promptless, so keep a deterministic fallback.

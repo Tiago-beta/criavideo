@@ -1571,15 +1571,15 @@ async def run_realistic_video_pipeline(project_id: int):
             if not project:
                 return
 
-            from app.services.seedance_video import optimize_prompt_for_seedance, generate_realistic_video, sanitize_prompt_for_retry
+            from app.services.seedance_video import optimize_prompt_for_seedance, generate_realistic_video, generate_vidu_q3_video, sanitize_prompt_for_retry
             from app.services.video_composer import _get_duration as get_duration
 
             # Determine engine from audio_path field (used to store engine choice)
             engine = (project.audio_path or "").strip()
-            if engine not in ("seedance", "lite2", "wan2", "grok", "avatar31"):
+            if engine not in ("seedance", "lite2", "viduq3", "wan2", "grok", "avatar31"):
                 engine = "wan2"
-            seedance_family_engine = engine in {"seedance", "lite2"}
-            engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "lite2": "Lite 2.0", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
+            seedance_family_engine = engine in {"seedance", "lite2", "viduq3"}
+            engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "lite2": "Lite 2.0", "viduq3": "Pro 3.1", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
             engine_label = engine_labels.get(engine, "Wan 2.6")
             logger.info(f"Realistic video pipeline for project {project_id} using engine: {engine}")
 
@@ -1773,6 +1773,8 @@ async def run_realistic_video_pipeline(project_id: int):
             duration = int(project.track_duration or 7)
             if engine == "grok":
                 duration = max(1, min(duration, 60))
+            elif engine == "viduq3":
+                duration = max(1, min(duration, 16))
             elif engine == "wan2":
                 duration = _resolve_wan_effective_duration(duration)
             elif engine == "lite2":
@@ -2055,7 +2057,7 @@ async def run_realistic_video_pipeline(project_id: int):
 
             aspect_ratio = project.aspect_ratio or "16:9"
             generate_audio = bool(tags_data.get("provider_generate_audio", not getattr(project, "no_background_music", False)))
-            if engine in {"seedance", "lite2", "avatar31"} and not generate_audio:
+            if engine in {"seedance", "lite2", "viduq3", "avatar31"} and not generate_audio:
                 generate_audio = True
             scene_reference_path = image_path
             grok_direct_reference_path = image_path if (image_path and os.path.exists(image_path)) else ""
@@ -2362,6 +2364,33 @@ async def run_realistic_video_pipeline(project_id: int):
                     on_progress=_on_progress,
                 )
 
+            elif engine == "viduq3":
+                vidu_start_image = scene_reference_path or (upload_reference_paths[0] if upload_reference_paths else image_path)
+                vidu_end_image = vidu_start_image
+                if len(upload_reference_paths) > 1:
+                    vidu_end_image = upload_reference_paths[-1] or vidu_start_image
+                elif image_path and os.path.exists(image_path):
+                    vidu_end_image = image_path
+
+                if not vidu_start_image or not os.path.exists(vidu_start_image):
+                    raise RuntimeError("Pro 3.1 exige uma imagem de referencia valida.")
+
+                await _on_progress(18, "Iniciando geracao de video Pro 3.1...")
+                await generate_vidu_q3_video(
+                    prompt=optimized_prompt,
+                    duration=duration,
+                    aspect_ratio=aspect_ratio,
+                    output_path=output_path,
+                    resolution="540p",
+                    generate_audio=generate_audio,
+                    image_path=vidu_start_image,
+                    end_image_path=vidu_end_image,
+                    image_paths=upload_reference_paths if len(upload_reference_paths) > 1 else None,
+                    movement_amplitude="auto",
+                    bgm=effective_add_music,
+                    on_progress=_on_progress,
+                )
+
             elif engine == "wan2":
                 # ── Wan via Atlas Cloud ──
                 from app.services.runpod_video import generate_wan_video
@@ -2649,7 +2678,7 @@ async def run_realistic_video_pipeline(project_id: int):
             has_audio = False
             provider_has_audio = await _video_has_audio_stream(output_path)
             provider_generate_audio = bool(tags.get("provider_generate_audio", False))
-            provider_missing_audio = engine in {"seedance", "lite2", "avatar31"} and provider_generate_audio and not provider_has_audio
+            provider_missing_audio = engine in {"seedance", "lite2", "viduq3", "avatar31"} and provider_generate_audio and not provider_has_audio
             seedance_missing_audio = seedance_family_engine and provider_missing_audio
             if provider_missing_audio:
                 logger.warning(
