@@ -1217,7 +1217,7 @@ def _ensure_similar_no_text_instruction(prompt_text: str, visible_text_excerpt: 
         "embalagem com escrita ou palavra visivel que apareca nas referencias. O video final deve sair sem nada escrito na tela."
     )
     if detected_text_instruction:
-        return f"{base_prompt}\n\n{instruction}\n\n{detected_text_instruction}".strip()
+        instruction = f"{instruction}\n\n{detected_text_instruction}"
     return f"{base_prompt}\n\n{instruction}".strip()
 
 
@@ -1910,7 +1910,12 @@ def _coerce_scene_analysis_bool(value: object) -> bool | None:
 
 def _normalize_similar_visible_text_excerpt(raw_text: object, *, limit: int = 240) -> str:
     text = _normalize_similar_context_text(raw_text, limit=limit).strip().strip('"“”')
-    text = re.sub(r"^\s*(?:texto(?:\s+detectado)?|visible[_ ]text(?:[_ ]excerpt)?|text(?:[_ ]excerpt)?|detected[_ ]text)\s*:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"^\s*(?:texto(?:\s+detectado)?|visible[_ ]text(?:[_ ]excerpt)?|text(?:[_ ]excerpt)?|detected[_ ]text)\s*:\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
     lowered = text.lower()
     if lowered in {"", "none", "n/a", "na", "nenhum", "sem texto", "no text", "no visible text"}:
         return ""

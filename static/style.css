@@ -1092,7 +1092,7 @@ a {
     text-align: center;
 }
 .pricing-compare-plan {
-    min-width: 152px;
+    min-width: 168px;
     text-align: center;
 }
 .pricing-compare-plan.is-current {
@@ -1148,11 +1148,18 @@ a {
 .pricing-compare-plan-btn {
     margin-top: 14px;
     width: 100%;
-    height: 40px;
+    min-height: 52px;
+    padding: 10px 12px;
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(255, 255, 255, 0.05);
     color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    line-height: 1.15;
+    white-space: normal;
     font-weight: 700;
     cursor: pointer;
 }
@@ -1177,6 +1184,10 @@ a {
 }
 .pricing-compare-plan-btn[disabled] {
     cursor: default;
+}
+.pricing-plan-select.is-disabled,
+.pricing-compare-plan-btn.is-disabled {
+    filter: saturate(0.7);
 }
 .pricing-table-toggle {
     margin: 12px 18px 18px;
@@ -1260,6 +1271,70 @@ a {
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
+}
+.credit-checkout-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(3, 7, 16, 0.76);
+    backdrop-filter: blur(10px);
+}
+.credit-checkout-modal {
+    position: relative;
+    width: min(560px, 100%);
+    padding: 28px 24px 24px;
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        radial-gradient(circle at top left, rgba(var(--accent-rgb), 0.14), transparent 36%),
+        linear-gradient(180deg, rgba(10, 14, 24, 0.98), rgba(7, 11, 20, 0.98));
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+}
+.credit-checkout-kicker {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(var(--accent-rgb), 0.12);
+    border: 1px solid rgba(var(--accent-rgb), 0.24);
+    color: var(--accent);
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.credit-checkout-modal h3 {
+    margin: 14px 0 0;
+    font-size: 1.55rem;
+    letter-spacing: -0.02em;
+}
+.credit-checkout-description {
+    margin: 12px 0 0;
+    color: var(--text-muted);
+    line-height: 1.55;
+}
+.credit-checkout-balance {
+    margin-top: 18px;
+    color: var(--text-muted);
+    font-size: 0.92rem;
+}
+.credit-checkout-balance strong {
+    color: var(--text);
+}
+.credit-checkout-modal .pricing-checkout-panel {
+    margin-top: 18px;
+    flex-direction: column;
+    align-items: stretch;
+}
+.credit-checkout-modal .pricing-checkout-actions {
+    width: 100%;
+}
+.credit-checkout-modal .credits-btn {
+    flex: 1 1 180px;
 }
 .credits-modal-title {
     text-align: center;
@@ -1402,6 +1477,13 @@ a {
     }
     .pricing-table-section-head {
         padding: 0 8px 0 12px;
+    }
+    .credit-checkout-modal {
+        padding: 24px 18px 18px;
+    }
+    .credit-checkout-modal .pricing-checkout-actions,
+    .credit-checkout-modal .credits-btn {
+        width: 100%;
     }
 }
 /* PIX QR Modal */
@@ -11451,6 +11533,14 @@ th,
     animation: similar-status-progress-slide 2.8s ease-in-out infinite;
 }
 
+.similar-status-progress.is-determinate .similar-status-progress-bar {
+    width: 0;
+    animation: none;
+    transform: none;
+    transition: width 3.2s linear;
+    background: linear-gradient(90deg, rgba(17, 201, 255, 0.94), rgba(255, 193, 79, 0.98));
+}
+
 @keyframes similar-status-progress-slide {
     0% {
         transform: translateX(-72%) scaleX(0.82);
@@ -11663,6 +11753,10 @@ th,
     flex-wrap: wrap;
     gap: 10px;
     margin-bottom: 12px;
+}
+
+.similar-scenes-toolbar-note {
+    align-self: center;
 }
 
 .similar-generation-step {

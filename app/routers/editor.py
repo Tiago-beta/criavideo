@@ -15,7 +15,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1305,6 +1305,7 @@ class ExportRequest(BaseModel):
     original_volume: int = 100
     music_volume: int = 80
     music_path: str = ""
+    hide_base_video_track: bool = False
     texts: list[TextOverlay] = []
     subtitles: list[SubtitleEntry] = []
     stickers: list[StickerEntry] = []
@@ -1886,6 +1887,52 @@ async def upload_image_sequence(
             blank_video_path.unlink(missing_ok=True)
         for layer in uploaded_layers:
             raw_path = str(layer.get("path") or "").strip()
+            if raw_path:
+                Path(raw_path).unlink(missing_ok=True)
+        raise
+
+
+@router.post("/upload-audio-project")
+async def upload_audio_project(
+    file: UploadFile = File(...),
+    aspect_ratio: str = Form("9:16"),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    uploaded_audio: dict | None = None
+    blank_video_path: Path | None = None
+
+    try:
+        uploaded_audio = await _save_editor_layer_audio_upload(file, int(user["id"]))
+        audio_duration = max(1.0, float(uploaded_audio.get("duration") or 0.0))
+        canvas_width, canvas_height = _editor_canvas_size_for_aspect(aspect_ratio or "9:16")
+
+        blank_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "videos"
+        blank_dir.mkdir(parents=True, exist_ok=True)
+        blank_video_path = blank_dir / f"audio_project_{uuid.uuid4().hex[:10]}.mp4"
+        _create_editor_blank_video(blank_video_path, canvas_width, canvas_height, audio_duration)
+
+        original_label = str(file.filename or "Audio enviado").strip() or "Audio enviado"
+        payload = await _create_editor_video_project(
+            db=db,
+            user_id=int(user["id"]),
+            video_path=blank_video_path,
+            original_name=original_label,
+            file_size=int(blank_video_path.stat().st_size) if blank_video_path.exists() else 0,
+            description="Audio enviado para edição",
+        )
+        payload.update(
+            {
+                "layers": [uploaded_audio],
+                "source": "audio-project",
+            }
+        )
+        return payload
+    except Exception:
+        if blank_video_path and blank_video_path.exists():
+            blank_video_path.unlink(missing_ok=True)
+        if uploaded_audio:
+            raw_path = str(uploaded_audio.get("path") or "").strip()
             if raw_path:
                 Path(raw_path).unlink(missing_ok=True)
         raise
@@ -2707,6 +2754,9 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         aspect_filter = _build_aspect_cover_filter(src_width, src_height, selected_aspect)
         if aspect_filter:
             vfilters.append(aspect_filter)
+
+        if req.hide_base_video_track:
+            vfilters.append("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill")
 
         # Text overlays using drawtext
         for txt in req.texts:

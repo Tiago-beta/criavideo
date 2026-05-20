@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v505 loaded");
+console.log("[CriaVideo] app.js v508 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4105,6 +4105,7 @@ let similarState = {
     projectId: 0,
     status: "",
     progress: 0,
+    bulkFrameTextRemovalBusy: false,
     activeUploadSceneId: 0,
     sourceVideoFile: null,
     sourceVideoObjectUrl: "",
@@ -4210,7 +4211,7 @@ let workflowState = {
 const SIMILAR_STAGE_LABELS = {
     queued_analysis: "Vídeo recebido. Preparando análise...",
     downloading_reference: "Baixando vídeo de referência...",
-    analyzing_reference: "Analisando frames e criando prompts por cena...",
+    analyzing_reference: "Analisando o vídeo.",
     analysis_ready: "Análise concluída. Revise as cenas abaixo.",
     analysis_general_ready: "Análise geral concluída. O prompt único já está pronto.",
     scene_edited: "Cena atualizada. Gere a previa para validar.",
@@ -6260,15 +6261,19 @@ function _stopSimilarPolling() {
     }
 }
 
-function _setSimilarStatus(message, kind = "running") {
+function _setSimilarStatus(message, kind = "running", options = {}) {
     const statusEl = document.getElementById("similar-status");
     if (!statusEl) return;
 
     const text = String(message || "").trim();
+    const previousProgress = Number(statusEl.dataset.progress || 0);
+    const previousStage = String(statusEl.dataset.stage || "").trim();
     if (!text) {
         statusEl.hidden = true;
         statusEl.replaceChildren();
         statusEl.className = "similar-status";
+        delete statusEl.dataset.progress;
+        delete statusEl.dataset.stage;
         return;
     }
 
@@ -6289,8 +6294,29 @@ function _setSimilarStatus(message, kind = "running") {
         statusEl.classList.add("status-running");
         const progressEl = document.createElement("span");
         progressEl.className = "similar-status-progress";
+        const hasDeterminateProgress = Number.isFinite(Number(options.progress));
+        const currentStage = String(options.stage || "").trim();
+        if (hasDeterminateProgress) {
+            progressEl.classList.add("is-determinate");
+        }
         const progressBarEl = document.createElement("span");
         progressBarEl.className = "similar-status-progress-bar";
+        if (hasDeterminateProgress) {
+            const normalizedProgress = Math.max(4, Math.min(100, Number(options.progress || 0) || 4));
+            const canReusePreviousProgress = currentStage && currentStage === previousStage && previousProgress > 0 && previousProgress <= normalizedProgress;
+            const startProgress = canReusePreviousProgress
+                ? previousProgress
+                : Math.max(4, Math.min(normalizedProgress, 8));
+            progressBarEl.style.width = `${startProgress}%`;
+            statusEl.dataset.progress = String(normalizedProgress);
+            statusEl.dataset.stage = currentStage;
+            requestAnimationFrame(() => {
+                progressBarEl.style.width = `${normalizedProgress}%`;
+            });
+        } else {
+            delete statusEl.dataset.progress;
+            delete statusEl.dataset.stage;
+        }
         progressEl.appendChild(progressBarEl);
         statusEl.appendChild(progressEl);
     }
@@ -8521,6 +8547,7 @@ function _renderSimilarScenes(project, options = {}) {
     const force = !!options.force;
     const listEl = document.getElementById("similar-scenes-list");
     const containerEl = document.getElementById("similar-scenes-container");
+    const toolbarEl = containerEl?.querySelector(".similar-scenes-toolbar");
     if (!listEl || !containerEl) return;
 
     if (!force) {
@@ -8541,6 +8568,29 @@ function _renderSimilarScenes(project, options = {}) {
         containerEl.hidden = true;
         listEl.innerHTML = "";
         return;
+    }
+
+    const scenesWithDetectedText = scenes.filter((scene) => {
+        const excerpt = String(scene?.reference_frame_text_excerpt || "").trim();
+        return !!scene?.reference_frame_text_detected || !!excerpt;
+    });
+
+    if (toolbarEl) {
+        const detectedTextCount = scenesWithDetectedText.length;
+        const removeAllLabel = similarState.bulkFrameTextRemovalBusy
+            ? "Removendo escritas..."
+            : "Remover todas as escritas";
+        const removeAllDisabledAttr = similarState.bulkFrameTextRemovalBusy ? "disabled" : "";
+        const detectedTextLabel = detectedTextCount === 1
+            ? "1 cena com escrita detectada."
+            : `${detectedTextCount} cenas com escrita detectada.`;
+
+        toolbarEl.innerHTML = `
+            <span class="field-hint">Etapa 1: revise prompts, tempos e imagens de cada cena.</span>
+            ${detectedTextCount
+                ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-warning" type="button" onclick="similarRemoveAllFrameText()" title="${removeAllLabel}" aria-label="${removeAllLabel}" ${removeAllDisabledAttr}>${removeAllLabel}</button><span class="field-hint similar-scenes-toolbar-note">${detectedTextLabel}</span>`
+                : ""}
+        `;
     }
 
     containerEl.hidden = false;
@@ -8793,6 +8843,7 @@ function _renderSimilarScenes(project, options = {}) {
                         </div>
                         ${inlineClipMarkup}
                     </div>
+                    ${referenceFrameQuickActionsMarkup}
                     <div class="similar-reference-frame-narration-editor${narrationEditorOpen ? " is-open" : ""}" ${narrationEditorOpen ? "" : "hidden"}>
                         <label for="similar-scene-narration-${sceneId}">O que deve ser falado nesta cena?</label>
                         <textarea id="similar-scene-narration-${sceneId}" class="input similar-reference-frame-editor-input" rows="2" maxlength="320" placeholder="Ex.: Estou muito feliz, agora vou renovar minha sala" onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); similarApplySceneNarration(${sceneId}); }">${narrationValue}</textarea>
@@ -12244,13 +12295,17 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
             message = "Vídeo final pronto. Você pode assistir na lista de projetos.";
         } else if ((stage === "analysis_ready" || stage === "analysis_general_ready") && detectedModeLabel) {
             message = `${stageLabel} ${detectedModeLabel}`;
-        } else if (progress > 0) {
-            message = `${stageLabel} (${progress}%)`;
         }
 
         if (!isProcessing && !activeSceneGenerationIds.length) {
             _clearSimilarBusyIntent();
-            _hideSimilarBusyOverlay();
+        _setSimilarStatus(
+            showGlobalStatus && !suppressGlobalStatus ? message : "",
+            kind,
+            showGlobalStatus && !suppressGlobalStatus && kind === "running"
+                ? { progress: progress > 0 ? progress : 4, stage }
+                : {},
+        );
         }
 
         const showGlobalStatus = status === "failed" || isProcessing || activeSceneGenerationIds.length > 0;
@@ -12302,6 +12357,7 @@ function _resetSimilarModeState() {
     similarState.projectId = 0;
     similarState.status = "";
     similarState.progress = 0;
+    similarState.bulkFrameTextRemovalBusy = false;
     similarState.activeUploadSceneId = 0;
     _clearSimilarSourceFile();
     similarState.sourceVerificationStatus = "idle";
@@ -13451,18 +13507,29 @@ function _buildSimilarFrameTextRemovalInstruction(scene) {
     ].filter(Boolean).join(" ");
 }
 
-async function _requestSimilarFrameVariant(sceneId, { instructionOverride = "", busyLabel = "", successMessage = "", promoteReferenceFrame = false } = {}) {
+async function _requestSimilarFrameVariant(
+    sceneId,
+    {
+        instructionOverride = "",
+        busyLabel = "",
+        successMessage = "",
+        promoteReferenceFrame = false,
+        suppressSuccessToast = false,
+        suppressErrorToast = false,
+        rethrowOnError = false,
+    } = {},
+) {
     const projectId = Number(similarState.projectId || 0);
     if (!projectId) {
         alert("Inicie a analise antes de editar um frame.");
-        return;
+        return false;
     }
 
     const scene = _getSimilarProjectScene(sceneId);
     const hasReferenceFrame = !!String(scene?.reference_frame_url || scene?.reference_frame_path || "").trim();
     if (!hasReferenceFrame) {
         showToast("Esta cena ainda nao possui frame de referencia disponivel.", "error");
-        return;
+        return false;
     }
 
     _applySimilarNarrationToPrompt(sceneId);
@@ -13481,7 +13548,7 @@ async function _requestSimilarFrameVariant(sceneId, { instructionOverride = "", 
     if (!editInstruction && !uploadIds.length) {
         showToast("Escreva um ajuste ou envie uma nova foto antes de criar a imagem.", "error");
         instructionEl?.focus();
-        return;
+        return false;
     }
 
     try {
@@ -13517,14 +13584,118 @@ async function _requestSimilarFrameVariant(sceneId, { instructionOverride = "", 
             }),
         });
         _setSimilarSceneFrameEditorDraft(sceneId, { open: true, frameBusy: false, frameBusyLabel: "" });
-        showToast(successMessage || "Nova variacao criada a partir do frame.", "success");
+        if (!suppressSuccessToast) {
+            showToast(successMessage || "Nova variacao criada a partir do frame.", "success");
+        }
         await _refreshSimilarProject();
+        return true;
     } catch (error) {
         _setSimilarSceneFrameEditorDraft(sceneId, { frameBusy: false, frameBusyLabel: "" });
         if (similarState.lastProjectSnapshot) {
             _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
         }
-        showToast(`Erro ao editar frame com IA: ${error.message}`, "error");
+        if (!suppressErrorToast) {
+            showToast(`Erro ao editar frame com IA: ${error.message}`, "error");
+        }
+        if (rethrowOnError) {
+            throw error;
+        }
+        return false;
+    }
+}
+
+async function similarGenerateFrameVariant(sceneId) {
+    await _requestSimilarFrameVariant(sceneId);
+}
+
+async function similarRemoveFrameText(sceneId) {
+    const scene = _getSimilarProjectScene(sceneId);
+    await _requestSimilarFrameVariant(sceneId, {
+        instructionOverride: _buildSimilarFrameTextRemovalInstruction(scene),
+        busyLabel: "Removendo escrita do frame base...",
+        promoteReferenceFrame: true,
+        successMessage: "Escrita removida do frame base.",
+    });
+}
+
+async function similarRemoveAllFrameText() {
+    if (similarState.bulkFrameTextRemovalBusy) {
+        return;
+    }
+
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Inicie a analise antes de remover as escritas.");
+        return;
+    }
+
+    const detectedScenes = (Array.isArray(similarState.lastProjectSnapshot?.scenes) ? similarState.lastProjectSnapshot.scenes : [])
+        .filter((scene) => Number(scene?.id || 0) > 0)
+        .filter((scene) => !!scene?.reference_frame_text_detected || !!String(scene?.reference_frame_text_excerpt || "").trim())
+        .filter((scene) => !!String(scene?.reference_frame_url || scene?.reference_frame_path || "").trim())
+        .sort((left, right) => Number(left?.scene_index || 0) - Number(right?.scene_index || 0));
+
+    if (!detectedScenes.length) {
+        showToast("Nenhuma cena com escrita detectada.", "info");
+        return;
+    }
+
+    similarState.bulkFrameTextRemovalBusy = true;
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+
+    let successCount = 0;
+    const failedSceneNumbers = [];
+
+    try {
+        for (let index = 0; index < detectedScenes.length; index += 1) {
+            const scene = detectedScenes[index];
+            const sceneId = Number(scene?.id || 0);
+            if (!sceneId) {
+                continue;
+            }
+
+            try {
+                const updated = await _requestSimilarFrameVariant(sceneId, {
+                    instructionOverride: _buildSimilarFrameTextRemovalInstruction(scene),
+                    busyLabel: `Removendo escrita do frame ${index + 1} de ${detectedScenes.length}...`,
+                    promoteReferenceFrame: true,
+                    suppressSuccessToast: true,
+                    suppressErrorToast: true,
+                    rethrowOnError: true,
+                });
+                if (updated) {
+                    successCount += 1;
+                }
+            } catch (_error) {
+                failedSceneNumbers.push(Number(scene?.scene_index || index) + 1);
+            }
+        }
+    } finally {
+        similarState.bulkFrameTextRemovalBusy = false;
+        await _refreshSimilarProject({ silent: true, preserveUnifiedTags: true });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+    }
+
+    if (successCount > 0) {
+        showToast(
+            successCount === 1
+                ? "Escrita removida de 1 frame base."
+                : `Escrita removida de ${successCount} frames base.`,
+            "success",
+        );
+    }
+
+    if (failedSceneNumbers.length) {
+        showToast(
+            failedSceneNumbers.length === 1
+                ? `Falha ao remover a escrita da cena ${failedSceneNumbers[0]}.`
+                : `Falha ao remover a escrita das cenas ${failedSceneNumbers.join(", ")}.`,
+            "error",
+        );
     }
 }
 
@@ -27991,6 +28162,10 @@ function _formatComparisonUnits(row, count) {
     return `${formatted} imagens`;
 }
 
+function _shouldShowCreditTopupSection() {
+    return Math.max(0, parseInt(_userCredits || "0", 10) || 0) <= 0;
+}
+
 function _ensureCreditOfferSelection() {
     const packages = _creditPackagesCatalog();
     const paidPlans = _paidCreditPlans();
@@ -28005,7 +28180,7 @@ function _ensureCreditOfferSelection() {
     }
     if (_selectedCreditOffer.kind === "package") {
         const idx = Number(_selectedCreditOffer.packageIndex || 0);
-        if (packages[idx]) {
+        if (_shouldShowCreditTopupSection() && packages[idx]) {
             _selectedCreditOffer.packageIndex = idx;
             return;
         }
@@ -28028,7 +28203,7 @@ function _applyPreferredCreditOffer(preferredKind = "") {
             return;
         }
     }
-    if (["package", "topup", "recarga"].includes(normalized) && _creditPackagesCatalog().length) {
+    if (["package", "topup", "recarga"].includes(normalized) && _shouldShowCreditTopupSection() && _creditPackagesCatalog().length) {
         _selectedCreditOffer = { kind: "package", code: "", packageIndex: 0 };
         return;
     }
@@ -28046,6 +28221,7 @@ function _getSelectedCreditOfferDetails() {
             title: pkg.label || `Recarga ${_formatCreditsInt(pkg.credits)}`,
             subtitle: `${_formatCreditsInt(pkg.credits)} créditos extras avulsos`,
             priceLabel: _getDisplayPrice(pkg),
+            headlinePrice: _getDisplayPrice(pkg),
             purchaseLabel: "Créditos extras",
         };
     }
@@ -28058,6 +28234,7 @@ function _getSelectedCreditOfferDetails() {
         title: `${plan.name || plan.shortName || "Plano"}${billing.period === "annual" ? " anual" : ""}`,
         subtitle: billing.summaryLabel,
         priceLabel: billing.priceLabel,
+        headlinePrice: billing.headlinePrice,
         purchaseLabel: billing.period === "annual" ? "Plano anual" : "Plano mensal",
     };
 }
@@ -28080,8 +28257,11 @@ function _renderPricingPlanCards() {
         const equivalentMonthly = billing.equivalentMonthlyLabel
             ? `<div class="pricing-plan-subprice">${billing.equivalentMonthlyLabel}</div>`
             : "";
+        const actionButton = isCurrent
+            ? `<button class="pricing-plan-select is-disabled" type="button" disabled>${ctaLabel}</button>`
+            : `<button class="pricing-plan-select" type="button" onclick="event.stopPropagation(); selectCreditPlan('${planCode}', true)">${ctaLabel}</button>`;
         return `
-            <article class="pricing-plan-card ${isSelected ? "is-selected" : ""}" data-theme="${plan.accent || planCode}" onclick="selectCreditPlan('${planCode}')">
+            <article class="pricing-plan-card ${isSelected ? "is-selected" : ""}" data-theme="${plan.accent || planCode}" onclick="selectCreditPlan('${planCode}', false)">
                 ${badge}
                 <div class="pricing-plan-card-head">
                     <h3>${plan.name || plan.shortName || planCode}</h3>
@@ -28090,7 +28270,7 @@ function _renderPricingPlanCards() {
                 <div class="pricing-plan-price">${detailLine}</div>
                 ${equivalentMonthly}
                 <div class="pricing-plan-cycle">${cycleLabel}</div>
-                <button class="pricing-plan-select" type="button" onclick="event.stopPropagation(); selectCreditPlan('${planCode}')">${ctaLabel}</button>
+                ${actionButton}
                 <div class="pricing-plan-points">${creditsLabel}</div>
                 <ul class="pricing-plan-benefits">
                     ${benefits.map((item) => `<li>${item}</li>`).join("")}
@@ -28109,7 +28289,7 @@ function _renderPricingPackages() {
         const badge = pkg.badge ? `<span class="pricing-topup-badge">${pkg.badge}</span>` : "";
         const selected = selectedPackageIndex === index ? "is-selected" : "";
         return `
-            <button class="pricing-topup-card ${selected}" type="button" onclick="selectCreditPackage(${index})">
+            <button class="pricing-topup-card ${selected}" type="button" onclick="selectCreditPackage(${index}, true)">
                 ${badge}
                 <span class="pricing-topup-title">${pkg.label || `Recarga ${_formatCreditsInt(pkg.credits)}`}</span>
                 <strong class="pricing-topup-price">${_getDisplayPrice(pkg)}</strong>
@@ -28139,14 +28319,17 @@ function _renderPricingComparisonSections() {
             ? (plan.billingLabel || `${_formatCreditsInt(planBudget)} créditos iniciais`)
             : billing.comparisonMetaLabel;
         const actionLabel = isCurrent ? "Plano atual" : "Selecionar plano";
+        const actionButton = code === "free"
+            ? `<button class="pricing-compare-plan-btn is-disabled" type="button" disabled>${isCurrent ? "Plano atual" : "Plano gratuito"}</button>`
+            : isCurrent
+            ? `<button class="pricing-compare-plan-btn is-disabled" type="button" disabled>${actionLabel}</button>`
+            : `<button class="pricing-compare-plan-btn" type="button" onclick="selectCreditPlan('${code}', true)">${actionLabel}</button>`;
         return `
             <th class="pricing-compare-plan ${isCurrent ? "is-current" : ""}" data-theme="${plan.accent || code}">
                 <div class="pricing-compare-plan-name">${plan.shortName || plan.name || code}</div>
                 <div class="pricing-compare-plan-price">${priceLabel}</div>
                 <div class="pricing-compare-plan-meta">${metaLine}</div>
-                ${code === "free"
-                    ? `<button class="pricing-compare-plan-btn is-disabled" type="button" disabled>${isCurrent ? "Plano atual" : "Plano gratuito"}</button>`
-                    : `<button class="pricing-compare-plan-btn ${isCurrent ? "is-disabled" : ""}" type="button" onclick="selectCreditPlan('${code}')">${actionLabel}</button>`}
+                ${actionButton}
             </th>
         `;
     }).join("");
@@ -28230,7 +28413,7 @@ function _renderCreditCheckoutPanel() {
             <div class="pricing-checkout-copy">
                 <span>${selectedOffer.purchaseLabel}</span>
                 <strong>${selectedOffer.title}</strong>
-                <small>${selectedOffer.subtitle} • ${selectedOffer.priceLabel}</small>
+                <small>${selectedOffer.subtitle} • ${selectedOffer.headlinePrice || selectedOffer.priceLabel}</small>
             </div>
             <div class="pricing-checkout-actions">
                 <button class="credits-btn credits-btn-pix" type="button" onclick="purchaseCredits('pix')">Pagar com PIX</button>
@@ -28238,6 +28421,61 @@ function _renderCreditCheckoutPanel() {
             </div>
         </section>
     `;
+}
+
+function closeCreditCheckoutModal() {
+    document.getElementById("credit-checkout-modal-overlay")?.remove();
+}
+
+function closeCreditsPurchaseModal() {
+    closeCreditCheckoutModal();
+    document.getElementById("credits-modal-overlay")?.remove();
+}
+
+function _renderCreditCheckoutModalContent() {
+    const selectedOffer = _getSelectedCreditOfferDetails();
+    if (!selectedOffer) return "";
+
+    const isPlan = selectedOffer.kind === "plan";
+    const helperText = isPlan
+        ? "Confira o plano selecionado e escolha como deseja finalizar o pagamento."
+        : "Confira a recarga escolhida e selecione a forma de pagamento para adicionar créditos ao saldo.";
+
+    return `
+        <div class="credit-checkout-modal">
+            <button class="credits-modal-close" type="button" onclick="closeCreditCheckoutModal()">&times;</button>
+            <span class="credit-checkout-kicker">${selectedOffer.purchaseLabel}</span>
+            <h3>${isPlan ? "Finalizar escolha do plano" : "Finalizar compra de créditos"}</h3>
+            <p class="credit-checkout-description">${helperText}</p>
+            <div class="credit-checkout-balance">
+                <strong>Saldo atual:</strong> ${_formatCreditsInt(_userCredits)} créditos
+            </div>
+            ${_renderCreditCheckoutPanel()}
+        </div>
+    `;
+}
+
+function showCreditCheckoutModal() {
+    const selectedOffer = _getSelectedCreditOfferDetails();
+    if (!selectedOffer) {
+        showToast("Selecione um plano ou uma recarga para continuar.", "error");
+        return;
+    }
+
+    let overlay = document.getElementById("credit-checkout-modal-overlay");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "credit-checkout-modal-overlay";
+        overlay.className = "credit-checkout-modal-overlay";
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) {
+                closeCreditCheckoutModal();
+            }
+        });
+        document.body.appendChild(overlay);
+    }
+
+    overlay.innerHTML = _renderCreditCheckoutModalContent();
 }
 
 function _renderCreditsPurchaseModalContent() {
@@ -28249,15 +28487,19 @@ function _renderCreditsPurchaseModalContent() {
     const expiresText = _currentCreditPlanExpiresAt
         ? new Date(_currentCreditPlanExpiresAt).toLocaleDateString("pt-BR")
         : "";
+    const showTopupSection = _shouldShowCreditTopupSection();
+    const pricingIntroText = showTopupSection
+        ? "Plano mensal com créditos inclusos. Como seu saldo atual acabou, as recargas extras estão liberadas abaixo."
+        : "Plano mensal com créditos inclusos. As recargas extras aparecem quando o saldo do ciclo acabar.";
 
     return `
         <div class="credits-modal credits-modal--pricing">
-            <button class="credits-modal-close" type="button" onclick="document.getElementById('credits-modal-overlay').remove()">&times;</button>
+            <button class="credits-modal-close" type="button" onclick="closeCreditsPurchaseModal()">&times;</button>
             <div class="pricing-shell">
                 <div class="pricing-head">
                     <div>
                         <h2>Mude seu plano</h2>
-                        <p>Plano mensal com créditos inclusos e recarga extra sempre disponível quando o saldo acabar.</p>
+                        <p>${pricingIntroText}</p>
                     </div>
                     <div class="pricing-toolbar">
                         <div class="pricing-currency-switch">
@@ -28282,16 +28524,17 @@ function _renderCreditsPurchaseModalContent() {
                 </div>
 
                 <div class="pricing-plan-grid">${_renderPricingPlanCards()}</div>
-                ${_selectedCreditOffer.kind === "plan" ? _renderCreditCheckoutPanel() : ""}
 
+                ${showTopupSection
+                    ? `
                 <section class="pricing-topup-section">
                     <div class="pricing-topup-section-head">
                         <h3>Créditos extras</h3>
-                        <p>Se o saldo acabar antes do fim do ciclo, adicione recargas avulsas sem mexer no plano atual.</p>
+                        <p>Seu saldo atual acabou. Escolha uma recarga avulsa para continuar gerando sem trocar de plano.</p>
                     </div>
                     <div class="pricing-topup-grid">${_renderPricingPackages()}</div>
-                </section>
-                ${_selectedCreditOffer.kind === "package" ? _renderCreditCheckoutPanel() : ""}
+                </section>`
+                    : ""}
 
                 <div class="pricing-comparison-stack">${_renderPricingComparisonSections()}</div>
 
@@ -28324,25 +28567,39 @@ function showCreditsPurchaseModal(preferredKind = "") {
         overlay.className = "credits-modal-overlay";
         overlay.addEventListener("click", (event) => {
             if (event.target === overlay) {
-                overlay.remove();
+                closeCreditsPurchaseModal();
             }
         });
         document.body.appendChild(overlay);
     }
 
+    closeCreditCheckoutModal();
     _applyPreferredCreditOffer(preferredKind);
     _ensureCreditOfferSelection();
     overlay.innerHTML = _renderCreditsPurchaseModalContent();
 }
 
-function selectCreditPlan(planCode) {
-    _selectedCreditOffer = { kind: "plan", code: String(planCode || "starter"), packageIndex: 0 };
+function selectCreditPlan(planCode, openCheckout = false) {
+    const normalizedPlanCode = String(planCode || "starter");
+    const isCurrentPlan = _creditBillingPeriod === "monthly"
+        && normalizedPlanCode.trim().toLowerCase() === _currentCreditPlan;
+    _selectedCreditOffer = { kind: "plan", code: normalizedPlanCode, packageIndex: 0 };
     _rerenderCreditsPurchaseModal();
+    if (openCheckout && !isCurrentPlan) {
+        showCreditCheckoutModal();
+        return;
+    }
+    closeCreditCheckoutModal();
 }
 
-function selectCreditPackage(idx) {
+function selectCreditPackage(idx, openCheckout = false) {
     _selectedCreditOffer = { kind: "package", code: "", packageIndex: Math.max(0, parseInt(idx || "0", 10) || 0) };
     _rerenderCreditsPurchaseModal();
+    if (openCheckout) {
+        showCreditCheckoutModal();
+        return;
+    }
+    closeCreditCheckoutModal();
 }
 
 function setCreditDisplayCurrency(currency) {
@@ -28390,7 +28647,7 @@ async function purchaseCredits(method) {
             method: "POST",
             body: JSON.stringify(payload),
         });
-        document.getElementById("credits-modal-overlay")?.remove();
+        closeCreditsPurchaseModal();
 
         if (method === "pix" && data.pixCopiaECola) {
             showPixQrModal(data);
@@ -28465,6 +28722,9 @@ document.querySelectorAll("[data-credits-trigger]").forEach((el) => {
 
 window.selectCreditPackage = selectCreditPackage;
 window.selectCreditPlan = selectCreditPlan;
+window.showCreditCheckoutModal = showCreditCheckoutModal;
+window.closeCreditCheckoutModal = closeCreditCheckoutModal;
+window.closeCreditsPurchaseModal = closeCreditsPurchaseModal;
 window.setCreditDisplayCurrency = setCreditDisplayCurrency;
 window.setCreditBillingPeriod = setCreditBillingPeriod;
 window.toggleCreditComparisonSection = toggleCreditComparisonSection;
@@ -28530,6 +28790,7 @@ const _editor = {
     _virtualPlaybackActive: false,
     _virtualPlaybackRaf: 0,
     _virtualPlaybackLastTs: 0,
+    _playbackFollowRaf: 0,
 };
 
 let _editorClipboard = {
@@ -30138,7 +30399,8 @@ function _editorSyncSourcePreviewPlayback(timelineTime = 0, shouldPlay = false, 
     audio.volume = nextVolume;
     audio.playbackRate = nextRate;
 
-    if (audio.readyState >= 1 && Math.abs(Number(audio.currentTime || 0) - targetTime) > 0.18) {
+    const seekTolerance = shouldPlay ? 0.32 : 0.18;
+    if (audio.readyState >= 1 && Math.abs(Number(audio.currentTime || 0) - targetTime) > seekTolerance) {
         try {
             audio.currentTime = targetTime;
         } catch {
@@ -30351,8 +30613,12 @@ function _editorGetOverlayTrackEndTime() {
 
 function _editorGetVisibleTimelineEndTime() {
     const baseEnd = _editor.hideBaseVideoTrack ? 0 : _editorGetVideoTrackEndTime();
+    const hiddenBaseAudioEnd = _editor.hideBaseVideoTrack && Number(_editor.originalVolume || 0) > 0
+        ? _editorGetVideoTrackEndTime()
+        : 0;
     return Math.max(
         baseEnd,
+        hiddenBaseAudioEnd,
         _editorGetLayerTrackEndTime(),
         _editorGetAudioTrackEndTime(),
         _editorGetOverlayTrackEndTime(),
@@ -30430,6 +30696,9 @@ function _editorMapTimeAcrossRemovedGaps(timeValue, gaps = []) {
 function _editorCollapseHiddenBaseTimelineGaps() {
     if (!_editor.hideBaseVideoTrack) return false;
 
+    const currentBaseEnd = Math.max(0.1, Number(_editorGetVideoTrackEndTime() || _editor.duration || 0.1));
+    const retainedBaseAudioEnd = Number(_editor.originalVolume || 0) > 0 ? currentBaseEnd : 0;
+
     const mergedRanges = _editorCollectNonBaseTimelineRanges();
     const gaps = [];
     for (let index = 0; index < mergedRanges.length - 1; index += 1) {
@@ -30457,9 +30726,10 @@ function _editorCollapseHiddenBaseTimelineGaps() {
     }
 
     const recalculatedRanges = _editorCollectNonBaseTimelineRanges();
-    const activeEnd = recalculatedRanges.length
+    const calculatedEnd = recalculatedRanges.length
         ? Math.max(0.1, Number(recalculatedRanges[recalculatedRanges.length - 1][1] || 0.1))
         : 0.1;
+    const activeEnd = Math.max(calculatedEnd, retainedBaseAudioEnd);
     const seedSegment = _editor.videoSegments[0] || { id: _editorGenId(), sourceStart: 0, reversed: false, volume: 100 };
     _editor.videoSegments = [{
         id: seedSegment.id || _editorGenId(),
@@ -30513,6 +30783,58 @@ function _editorStopVirtualTimelinePlayback() {
         _editor._virtualPlaybackRaf = 0;
     }
     _editor._virtualPlaybackLastTs = 0;
+}
+
+function _editorStopPlaybackFollowLoop() {
+    if (_editor._playbackFollowRaf) {
+        cancelAnimationFrame(_editor._playbackFollowRaf);
+        _editor._playbackFollowRaf = 0;
+    }
+}
+
+function _editorStartPlaybackFollowLoop() {
+    _editorStopPlaybackFollowLoop();
+
+    const initialVideo = document.getElementById("editor-video");
+    let lastSourceTime = Number(initialVideo?.currentTime || 0);
+    let lastAdvanceTs = performance.now();
+
+    const tick = (ts) => {
+        if (!_editor.playing || _editor._virtualPlaybackActive) {
+            _editor._playbackFollowRaf = 0;
+            return;
+        }
+
+        const video = document.getElementById("editor-video");
+        if (!video || !video.src) {
+            _editor._playbackFollowRaf = 0;
+            return;
+        }
+
+        const sourceTime = Number(video.currentTime || 0);
+        if (Math.abs(sourceTime - lastSourceTime) > 0.003) {
+            lastSourceTime = sourceTime;
+            lastAdvanceTs = ts;
+        }
+
+        _editorTimeUpdate();
+
+        if (!_editor.playing || _editor._virtualPlaybackActive) {
+            _editor._playbackFollowRaf = 0;
+            return;
+        }
+
+        const stalledForMs = ts - lastAdvanceTs;
+        const canFallbackToVirtual = !video.ended && !video.seeking && (video.paused || video.readyState >= 2);
+        if (canFallbackToVirtual && stalledForMs > 240) {
+            _editorStartVirtualTimelinePlayback(Number(_editor.timelineTime || sourceTime || 0));
+            return;
+        }
+
+        _editor._playbackFollowRaf = requestAnimationFrame(tick);
+    };
+
+    _editor._playbackFollowRaf = requestAnimationFrame(tick);
 }
 
 function _editorGetVideoPlaybackEndTime() {
@@ -30580,6 +30902,7 @@ function _editorApplyTimelineFrame(timeSec, shouldPlay = false) {
 }
 
 function _editorStartVirtualTimelinePlayback(startTime = 0) {
+    _editorStopPlaybackFollowLoop();
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = true;
 
@@ -31331,7 +31654,8 @@ function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
         targetTime = Math.max(0, Math.min(targetTime, Math.max(0, duration - 0.02)));
     }
 
-    if (Math.abs(Number(audio.currentTime || 0) - targetTime) > 0.25) {
+    const seekTolerance = shouldPlay ? 0.45 : 0.25;
+    if (Math.abs(Number(audio.currentTime || 0) - targetTime) > seekTolerance) {
         if (audio.readyState >= 1) {
             try {
                 audio.currentTime = targetTime;
@@ -31819,6 +32143,15 @@ async function _editorUploadVideo(input) {
     }
 
     try {
+        if (selection.audioFiles.length) {
+            if (selection.audioFiles.length > 1 || selection.imageFiles.length || selection.videoFiles.length) {
+                showToast("Para iniciar com áudio, envie apenas 1 arquivo de áudio por vez.", "error");
+                return;
+            }
+            await _editorStartWithUploadedAudioFiles(selection.audioFiles);
+            return;
+        }
+
         const orderedEntries = await _editorResolveMediaImportOrder(selection.orderedEntries, "project");
         if (!orderedEntries?.length) return;
         await _editorStartWithOrderedMediaEntries(orderedEntries);
@@ -31834,9 +32167,11 @@ function _editorGetLocalMediaKind(file) {
     const ext = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
     const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp"]);
     const videoExts = new Set([".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"]);
+    const audioExts = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus", ".weba"]);
 
     if (mime.startsWith("image/") || imageExts.has(ext)) return "image";
     if (mime.startsWith("video/") || videoExts.has(ext)) return "video";
+    if (mime.startsWith("audio/") || audioExts.has(ext)) return "audio";
     return "";
 }
 
@@ -31867,6 +32202,7 @@ function _editorSortOrderedMediaEntries(entries = []) {
 function _editorClassifyLocalMediaFiles(files = []) {
     const imageFiles = [];
     const videoFiles = [];
+    const audioFiles = [];
     const invalidFiles = [];
     const orderedEntries = [];
 
@@ -31882,20 +32218,27 @@ function _editorClassifyLocalMediaFiles(files = []) {
             orderedEntries.push({ kind, file });
             return;
         }
+        if (kind === "audio") {
+            audioFiles.push(file);
+            orderedEntries.push({ kind, file });
+            return;
+        }
         invalidFiles.push(file);
     });
 
     if (invalidFiles.length) {
         return {
             orderedEntries: _editorSortOrderedMediaEntries(orderedEntries),
+            audioFiles: [...audioFiles].sort(_editorCompareMediaFileNames),
             imageFiles: [...imageFiles].sort(_editorCompareMediaFileNames),
             videoFiles: [...videoFiles].sort(_editorCompareMediaFileNames),
-            error: "Selecione apenas vídeos MP4/MOV/WEBM/MKV/AVI ou imagens JPG/PNG/WebP.",
+            error: "Selecione apenas vídeos MP4/MOV/WEBM/MKV/AVI, áudios MP3/WAV/M4A/AAC/OGG/FLAC/OPUS ou imagens JPG/PNG/WebP.",
         };
     }
 
     return {
         orderedEntries: _editorSortOrderedMediaEntries(orderedEntries),
+        audioFiles: [...audioFiles].sort(_editorCompareMediaFileNames),
         imageFiles: [...imageFiles].sort(_editorCompareMediaFileNames),
         videoFiles: [...videoFiles].sort(_editorCompareMediaFileNames),
         error: "",
@@ -31906,6 +32249,13 @@ async function _editorUploadSingleVideoProject(file) {
     const formData = new FormData();
     formData.append("file", file);
     return apiForm("/video/editor/upload-video", formData, { method: "POST" });
+}
+
+async function _editorUploadSingleAudioProject(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("aspect_ratio", "9:16");
+    return apiForm("/video/editor/upload-audio-project", formData, { method: "POST" });
 }
 
 async function _editorUploadSingleLayerImage(file) {
@@ -32257,17 +32607,23 @@ function _editorApplyImageSequenceLayers(layers, options = {}) {
     let cursor = Math.max(0, Number(options.startTime || 0));
 
     sequence.forEach((payload, idx) => {
-        const layerKind = String(payload.kind || "image") === "video" ? "video" : "image";
-        const layerSpan = layerKind === "video"
+        const rawKind = String(payload.kind || "image").trim().toLowerCase();
+        const layerKind = rawKind === "audio"
+            ? "audio"
+            : (rawKind === "video" ? "video" : "image");
+        const layerSpan = layerKind === "video" || layerKind === "audio"
             ? Math.max(0.1, Number(payload.duration || 0) || clipSeconds)
             : clipSeconds;
         const startTime = cursor;
         const endTime = startTime + layerSpan;
-        _editorPushMediaLayer(layerKind, payload, {
+        const layer = _editorPushMediaLayer(layerKind, payload, {
             startTime,
             endTime,
             select: idx === sequence.length - 1,
         });
+        if (layerKind === "audio" && layer) {
+            layer.volume = Math.max(0, Math.min(200, Number(_editor.musicVolume || 100)));
+        }
         cursor = endTime;
     });
 }
@@ -32304,6 +32660,47 @@ async function _editorStartWithUploadedImages(files) {
         showToast("Erro ao preparar imagens no editor: " + (err?.message || "erro desconhecido"), "error");
     }
 }
+
+async function _editorStartWithUploadedAudioFiles(files) {
+    const audioFiles = Array.isArray(files)
+        ? files.filter((file) => _editorGetLocalMediaKind(file) === "audio")
+        : [];
+    if (!audioFiles.length) {
+        showToast("Selecione 1 áudio MP3, WAV, M4A, AAC, OGG, FLAC ou OPUS para continuar.", "error");
+        return;
+    }
+
+    const [audioFile] = audioFiles;
+
+    try {
+        closeModal("modal-editor-start");
+        showToast("Preparando áudio no editor...");
+        const payload = await _editorUploadSingleAudioProject(audioFile);
+        await loadEditorVideosList();
+
+        if (payload?.project_id) {
+            showToast("Áudio enviado! Abrindo editor...", "success");
+            await openEditor(payload.project_id, {
+                restoreDraft: false,
+                initialMediaLayers: payload.layers || [],
+                hideBaseVideoTrack: true,
+            });
+            return;
+        }
+
+        showToast("Áudio enviado com sucesso.", "success");
+    } catch (err) {
+        showToast("Erro ao preparar áudio no editor: " + (err?.message || "erro desconhecido"), "error");
+    }
+}
+
+async function _editorStartWithAudio(input) {
+    const files = Array.from(input?.files || []);
+    if (input) input.value = "";
+    if (!files.length) return;
+    await _editorStartWithUploadedAudioFiles(files);
+}
+window._editorStartWithAudio = _editorStartWithAudio;
 
 function _editorRecorderUsesScreen(mode) {
     return mode === "screen" || mode === "screen_camera" || mode === "window";
@@ -33450,6 +33847,12 @@ function _editorChooseStartMode(mode) {
         return;
     }
 
+    if (selectedMode === "audio_pc") {
+        closeModal("modal-editor-start");
+        document.getElementById("editor-start-audio-upload-input")?.click();
+        return;
+    }
+
     if (selectedMode === "library") {
         _editorOpenSourceProjectLibrary();
         return;
@@ -34272,9 +34675,12 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         const maxTime = sourceEnd > 0 ? Math.max(0, sourceEnd - 0.05) : playbackTime;
         const targetTime = Math.max(0, Math.min(playbackTime, maxTime));
         const useSmoothReverseSeek = Boolean(shouldPlay && normalizedLayer.reversed && normalizedLayer.kind === "video");
+        const syncTolerance = normalizedLayer.kind === "audio"
+            ? (shouldPlay ? 0.45 : 0.12)
+            : ((normalizedLayer.kind === "video" && normalizedLayer.audioOnly && shouldPlay) ? 0.28 : 0.1);
         if (useSmoothReverseSeek) {
             _editorPreviewSeekTo(mediaEl, targetTime, { nowMs: performance.now() });
-        } else if (Math.abs((mediaEl.currentTime || 0) - targetTime) > 0.1) {
+        } else if (Math.abs((mediaEl.currentTime || 0) - targetTime) > syncTolerance) {
             try {
                 mediaEl.currentTime = targetTime;
             } catch {
@@ -34881,6 +35287,7 @@ async function openEditor(projectId, options = {}) {
         _editor.playbackRate = 1;
         _editor.mobileControlMode = "tools";
         _editor._virtualPlaybackActive = false;
+        _editorStopPlaybackFollowLoop();
         _editorInlineTextEditId = "";
         _editorInlineTextEditPendingFocus = "";
         _editorMobileTrackVolumeOpen = "";
@@ -35014,6 +35421,7 @@ function closeEditor() {
     _editorCloseAudioVideoSourceModal(true);
     _editorCloseRecorderModal(true);
     const video = document.getElementById("editor-video");
+    _editorStopPlaybackFollowLoop();
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = false;
     video.pause();
@@ -35239,6 +35647,7 @@ function _editorTogglePlay() {
 
     if (_editor.playing) {
         _editor.playing = false;
+        _editorStopPlaybackFollowLoop();
         _editorStopVirtualTimelinePlayback();
         video.pause();
         _editorApplyTimelineFrame(_editor.timelineTime || video.currentTime || 0, false);
@@ -35286,6 +35695,7 @@ function _editorTogglePlay() {
             });
         }
         _editorApplyTimelineFrame(startTime, true);
+        _editorStartPlaybackFollowLoop();
     }
 
     _updatePlayIcon();
@@ -35304,6 +35714,7 @@ function _editorResetPlaybackToStart() {
     const video = document.getElementById("editor-video");
     if (!video) return;
 
+    _editorStopPlaybackFollowLoop();
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = false;
     video.pause();
@@ -35426,6 +35837,7 @@ function _editorSeekByClientX(clientX) {
                     // Ignore autoplay interruptions in preview.
                 });
             }
+            _editorStartPlaybackFollowLoop();
         }
         _editorApplyTimelineFrame(nextTime, _editor.playing);
         return;
@@ -39263,6 +39675,17 @@ function _editorSelectionCanDelete() {
     return ["segment", "text", "subtitle", "sticker", "music", "audio", "media-layer", "transition"].includes(_editor.selectedClip.kind);
 }
 
+function _editorCanSwitchLastVideoToAudioOnly() {
+    if (Number(_editor.originalVolume || 0) > 0) return true;
+    if (_editorShouldShowAudioTrack()) return true;
+
+    return (_editor.mediaLayers || []).some((layer) => {
+        const normalizedLayer = _editorNormalizeMediaLayer(layer);
+        if (normalizedLayer.kind === "audio") return true;
+        return normalizedLayer.kind === "video" && Boolean(normalizedLayer.audioOnly || normalizedLayer.hasAudio);
+    });
+}
+
 function _editorSelectionCanDuplicate() {
     return ["text", "subtitle", "sticker"].includes(_editor.selectedClip.kind);
 }
@@ -39701,6 +40124,19 @@ function _editorDeleteSelectedClip() {
                 const currentVideo = document.getElementById("editor-video");
                 _editorApplyTimelineFrame(Number(_editor.timelineTime || currentVideo?.currentTime || 0), false);
                 showToast("Áudio removido.", "success");
+                return;
+            }
+            if (_editorIsVideoTrack(selTrack) && _editorCanSwitchLastVideoToAudioOnly()) {
+                _editorSaveState();
+                _editor.hideBaseVideoTrack = true;
+                _editorCollapseHiddenBaseTimelineGaps();
+                _editor.selectedClip = { kind: "", id: "", track: "" };
+                _editorRenderProps();
+                _editorRenderTimeline();
+                _editorRenderMediaLayers();
+                const currentVideo = document.getElementById("editor-video");
+                _editorApplyTimelineFrame(Number(_editor.timelineTime || currentVideo?.currentTime || 0), false);
+                showToast("Vídeo removido. O editor vai manter apenas o áudio com fundo preto.", "success");
                 return;
             }
             const trackLabel = selTrack === "audio" ? "audio" : "video";
@@ -40474,6 +40910,7 @@ async function _editorExport() {
         aspect_ratio: _resolveAspectRatio(),
         trim_start: _editor.trimStart,
         trim_end: _editor.trimEnd,
+        hide_base_video_track: Boolean(_editor.hideBaseVideoTrack),
         trim_video_segments: _editor.videoSegments
             .map(seg => ({
                 start: _editorSegSourceStart(seg),
