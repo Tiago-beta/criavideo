@@ -225,7 +225,9 @@ PAID_PLAN_CODES = {plan["code"] for plan in CREDIT_SUBSCRIPTION_PLANS if plan["c
 REALISTIC_BASE_CREDITS_8S = {
     "wan2": 100,
     "grok": 90,
+    "lite2": 24,
     "seedance": 170,
+    "viduq3": 50,
     "avatar31": 85,
 }
 
@@ -233,7 +235,9 @@ REALISTIC_BASE_CREDITS_8S = {
 REALISTIC_ENGINE_USD_PER_SEC = {
     "wan2": 0.060,
     "grok": 0.050,
+    "lite2": 0.018,
     "seedance": 0.085,
+    "viduq3": 0.042,
     "avatar31": 0.048,
 }
 REALISTIC_ENGINE_MIN_CREDITS_PER_SEC = {
@@ -251,7 +255,7 @@ SIMILAR_ANALYSIS_FRAME_USD = 0.0042
 SIMILAR_ANALYSIS_SUMMARY_USD = 0.010
 SIMILAR_ANALYSIS_SCENE_PROMPT_USD = 0.007
 SIMILAR_ANALYSIS_GENERAL_PROMPT_USD = 0.014
-SIMILAR_ANALYSIS_SCENE_SECONDS = 3.0
+SIMILAR_ANALYSIS_SCENE_SECONDS = 2.0
 SIMILAR_ANALYSIS_CONTEXT_FRAMES = 6
 IMAGE_GENERATION_MODEL_USD = {
     "google/nano-banana-pro/text-to-image": 0.020,
@@ -291,68 +295,60 @@ IMAGE_GENERATION_BASE_FLOOR = {
 
 IMAGE_COMPARISON_MODELS = [
     {
-        "key": "nano-banana-1k",
-        "label": "Nano Banana 1K",
+        "key": "baidu-ernie-turbo",
+        "label": "Baidu ERNIE Turbo",
         "kind": "image",
-        "model": "google/nano-banana/text-to-image",
-        "size": "1K",
+        "model": "baidu/ERNIE-Image-Turbo/text-to-image",
+        "size": "2K",
         "featured": True,
     },
     {
-        "key": "nano-banana-2k",
-        "label": "Nano Banana 2K",
+        "key": "ultra-high-3-0",
+        "label": "Ultra High 3.0",
+        "kind": "image",
+        "model": "z-image/turbo",
+        "size": "2K",
+        "featured": True,
+    },
+    {
+        "key": "nano-banana",
+        "label": "Nano Banana",
         "kind": "image",
         "model": "google/nano-banana/text-to-image",
         "size": "2K",
         "featured": True,
     },
     {
-        "key": "nano-banana-4k",
-        "label": "Nano Banana 4K",
-        "kind": "image",
-        "model": "google/nano-banana/text-to-image",
-        "size": "4K",
-        "featured": True,
-    },
-    {
-        "key": "nano-banana-pro-1k",
-        "label": "Nano Banana Pro 1K",
-        "kind": "image",
-        "model": "google/nano-banana-pro/text-to-image",
-        "size": "1K",
-        "featured": True,
-    },
-    {
-        "key": "nano-banana-pro-2k",
-        "label": "Nano Banana Pro 2K",
+        "key": "nano-banana-pro",
+        "label": "Nano Banana Pro",
         "kind": "image",
         "model": "google/nano-banana-pro/text-to-image",
         "size": "2K",
         "featured": True,
     },
     {
-        "key": "mega-anime-2k",
-        "label": "Mega 5.0 Anime 2K",
+        "key": "mega-anime",
+        "label": "Mega 5.0 Anime",
         "kind": "image",
         "model": "bytedance/seedream-v5.0-lite/sequential",
         "size": "2K",
-        "featured": False,
+        "featured": True,
     },
     {
-        "key": "mega-real-2k",
-        "label": "Mega 5.0 Real 2K",
+        "key": "mega-real",
+        "label": "Mega 5.0 Real",
         "kind": "image",
         "model": "bytedance/seedream-v4.5",
         "size": "2K",
-        "featured": False,
+        "featured": True,
     },
     {
-        "key": "gpt-image-2k",
-        "label": "GPT Image 2K",
+        "key": "gpt-image",
+        "label": "GPT Image",
         "kind": "image",
         "model": "openai/gpt-image-1/text-to-image",
         "size": "2K",
-        "featured": False,
+        "featured": True,
     },
 ]
 
@@ -376,6 +372,20 @@ VIDEO_COMPARISON_MODELS = [
         "label": "Mega 2.0 Ultra",
         "kind": "video",
         "engine": "seedance",
+        "featured": True,
+    },
+    {
+        "key": "lite2-video",
+        "label": "Lite 2.0",
+        "kind": "video",
+        "engine": "lite2",
+        "featured": True,
+        },
+        {
+        "key": "viduq3-video",
+        "label": "Pro 3.1",
+        "kind": "video",
+        "engine": "viduq3",
         "featured": True,
     },
     {
@@ -485,13 +495,15 @@ def get_credit_comparison_sections() -> list[dict[str, Any]]:
         usd_per_unit = _estimate_image_unit_cost_usd(item["model"], item["size"])
         credits_per_unit = _credits_from_usd_value(usd_per_unit, minimum=0 if usd_per_unit <= 0 else 1)
         billed_usd_per_unit = _billed_usd_per_unit_from_credits(credits_per_unit)
+        is_unlimited = credits_per_unit <= 0
         usage = {}
         for plan in plans:
             plan_budget = _plan_credit_budget(plan)
-            included_units = int(math.floor(plan_budget / credits_per_unit)) if credits_per_unit > 0 else 0
+            included_units = None if is_unlimited else int(math.floor(plan_budget / credits_per_unit))
             usage[plan["code"]] = {
                 "includedUnits": included_units,
                 "budgetCredits": plan_budget,
+                "unlimited": is_unlimited,
             }
         image_rows.append({
             "key": item["key"],
@@ -509,7 +521,7 @@ def get_credit_comparison_sections() -> list[dict[str, Any]]:
         "key": "image-models",
         "title": "Modelos de imagem",
         "rows": image_rows,
-        "defaultVisibleRows": 5,
+        "defaultVisibleRows": len(image_rows),
     })
 
     video_rows: list[dict[str, Any]] = []
@@ -517,6 +529,7 @@ def get_credit_comparison_sections() -> list[dict[str, Any]]:
         engine = str(item["engine"] or "grok").strip().lower()
         credits_per_unit = _realistic_engine_credits_per_second(engine)
         billed_usd_per_unit = _billed_usd_per_unit_from_credits(credits_per_unit)
+        display_usd_per_unit = REALISTIC_ENGINE_USD_PER_SEC.get(engine, billed_usd_per_unit) if engine == "viduq3" else billed_usd_per_unit
         usage = {}
         for plan in plans:
             plan_budget = _plan_credit_budget(plan)
@@ -531,8 +544,8 @@ def get_credit_comparison_sections() -> list[dict[str, Any]]:
             "kind": item["kind"],
             "unit": "second",
             "creditsPerUnit": credits_per_unit,
-            "usdPerUnit": billed_usd_per_unit,
-            "brlPerUnit": _usd_to_brl_amount(billed_usd_per_unit),
+            "usdPerUnit": round(display_usd_per_unit, 6),
+            "brlPerUnit": _usd_to_brl_amount(display_usd_per_unit),
             "featured": bool(item.get("featured")),
             "plans": usage,
         })

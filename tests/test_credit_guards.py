@@ -64,11 +64,18 @@ class TestSimilarCreditPricing(unittest.TestCase):
         sections = get_credit_comparison_sections()
         video_section = next(section for section in sections if section["key"] == "video-models")
         seedance_row = next(row for row in video_section["rows"] if row["key"] == "seedance-video")
+        lite2_row = next(row for row in video_section["rows"] if row["key"] == "lite2-video")
+        vidu_row = next(row for row in video_section["rows"] if row["key"] == "viduq3-video")
 
         self.assertEqual(seedance_row["creditsPerUnit"], 15)
         self.assertEqual(seedance_row["usdPerUnit"], 0.15)
         self.assertEqual(seedance_row["plans"]["starter"]["includedUnits"], 106)
         self.assertEqual(seedance_row["plans"]["free"]["includedUnits"], 6)
+        self.assertEqual(lite2_row["creditsPerUnit"], 3)
+        self.assertEqual(lite2_row["usdPerUnit"], 0.03)
+        self.assertEqual(vidu_row["label"], "Pro 3.1")
+        self.assertEqual(vidu_row["creditsPerUnit"], 7)
+        self.assertEqual(vidu_row["usdPerUnit"], 0.042)
 
     def test_subscription_plan_catalog_exposes_annual_discount(self):
         plan = get_subscription_plan("professional")
@@ -85,8 +92,8 @@ class TestSimilarCreditPricing(unittest.TestCase):
         self.assertEqual(general["breakdown"]["mode"], "similar_analysis")
         self.assertEqual(general["breakdown"]["analysis_mode"], "general")
         self.assertEqual(scene["breakdown"]["analysis_mode"], "scene")
-        self.assertEqual(scene["breakdown"]["scene_count"], 5)
-        self.assertEqual(scene["breakdown"]["reference_frame_count"], 11)
+        self.assertEqual(scene["breakdown"]["scene_count"], 8)
+        self.assertEqual(scene["breakdown"]["reference_frame_count"], 14)
         self.assertGreater(scene["credits_needed"], general["credits_needed"])
 
     def test_similar_preview_estimate_sums_scene_costs(self):

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v477 loaded");
+console.log("[CriaVideo] app.js v505 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -201,7 +201,56 @@ function showToast(msg, type = "info") {
 const WAN_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const DEFAULT_REALISTIC_DURATION_OPTIONS = [5, 10, 15, 20, 45, 60];
 const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
+const LITE2_REALISTIC_DURATION_OPTIONS = [5, 10, 12];
+const VIDU_Q3_REALISTIC_DURATION_OPTIONS = Array.from({ length: 16 }, (_, index) => index + 1);
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
+const SIMILAR_ENGINE_OPTIONS = ["lite2", "viduq3", "grok", "wan2", "seedance"];
+const SEEDANCE_FAMILY_ENGINES = new Set(["seedance", "lite2", "viduq3"]);
+
+function _isSeedanceFamilyEngine(engineValue) {
+    return SEEDANCE_FAMILY_ENGINES.has(String(engineValue || "").trim().toLowerCase());
+}
+
+function _getCreateRealisticDurationOptions(engineValue) {
+    const engine = String(engineValue || "").trim().toLowerCase();
+    if (engine === "wan2") return WAN_REALISTIC_DURATION_OPTIONS;
+    if (engine === "viduq3") return VIDU_Q3_REALISTIC_DURATION_OPTIONS;
+    if (engine === "lite2") return LITE2_REALISTIC_DURATION_OPTIONS;
+    if (engine === "seedance") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
+    return DEFAULT_REALISTIC_DURATION_OPTIONS;
+}
+
+function _getAutoRealisticDurationOptions(engineValue) {
+    const engine = String(engineValue || "").trim().toLowerCase();
+    if (engine === "grok") return AUTO_GROK_DURATION_OPTIONS;
+    if (engine === "viduq3") return VIDU_Q3_REALISTIC_DURATION_OPTIONS;
+    if (engine === "lite2") return LITE2_REALISTIC_DURATION_OPTIONS;
+    if (engine === "seedance") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
+    return WAN_REALISTIC_DURATION_OPTIONS;
+}
+
+function _getSimilarManualDurationOptions(engineValue) {
+    const normalizedEngine = _normalizeSimilarEngine(engineValue);
+    if (normalizedEngine === "viduq3") return [...VIDU_Q3_REALISTIC_DURATION_OPTIONS];
+    if (normalizedEngine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
+    return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
+}
+
+function _clampSimilarDurationForEngine(engineValue, durationValue) {
+    const normalizedEngine = _normalizeSimilarEngine(engineValue);
+    const safeDuration = Number(durationValue || 0);
+    const minDuration = normalizedEngine === "viduq3" ? 1 : 5;
+    const maxDuration = normalizedEngine === "viduq3" ? 16 : normalizedEngine === "lite2" ? 12 : 15;
+    if (!Number.isFinite(safeDuration) || safeDuration <= 0) {
+        return minDuration;
+    }
+    return Math.max(minDuration, Math.min(maxDuration, safeDuration));
+}
+
+function _pickSimilarManualDuration(engineValue, rawValue) {
+    return _pickClosestDurationOption(_getSimilarManualDurationOptions(engineValue), rawValue);
+}
+
 const WORKFLOW_PROMPT_AI_STYLE_OPTIONS = [
     { value: "commercial", label: "Comercial" },
     { value: "meme", label: "Meme Viral" },
@@ -351,11 +400,7 @@ function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
         _syncSeedanceLastFrameToggle(prefix);
         return;
     }
-    const options = engine === "wan2"
-        ? WAN_REALISTIC_DURATION_OPTIONS
-        : engine === "seedance"
-            ? SEEDANCE_REALISTIC_DURATION_OPTIONS
-            : DEFAULT_REALISTIC_DURATION_OPTIONS;
+    const options = _getCreateRealisticDurationOptions(engine);
     _renderDurationButtons(`${prefix}-realistic-duration`, options, preferredValue);
     _syncSeedanceLastFrameToggle(prefix);
 }
@@ -364,28 +409,20 @@ function _syncSeedanceLastFrameToggle(prefix) {
     const toggleGroup = document.getElementById(`${prefix}-seedance-last-frame-group`);
     if (!toggleGroup) return;
     const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
-    toggleGroup.hidden = engine !== "seedance";
+    toggleGroup.hidden = !_isSeedanceFamilyEngine(engine);
 }
 
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected")
         || document.querySelector("#wizard-realistic-engine .engine-option.selected");
     const engine = engineBtn?.dataset.value || "wan2";
-    const options = engine === "wan2"
-        ? WAN_REALISTIC_DURATION_OPTIONS
-        : engine === "seedance"
-            ? SEEDANCE_REALISTIC_DURATION_OPTIONS
-            : DEFAULT_REALISTIC_DURATION_OPTIONS;
+    const options = _getCreateRealisticDurationOptions(engine);
     _renderDurationButtons("ai-suggest-realistic-duration", options, preferredValue);
 }
 
 function _syncAutoRealisticDurationOptions(preferredValue = null) {
     const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "wan2";
-    const options = engine === "grok"
-        ? AUTO_GROK_DURATION_OPTIONS
-        : engine === "seedance"
-            ? SEEDANCE_REALISTIC_DURATION_OPTIONS
-            : WAN_REALISTIC_DURATION_OPTIONS;
+    const options = _getAutoRealisticDurationOptions(engine);
     _renderDurationButtons("auto-realistic-duration", options, preferredValue);
 }
 
@@ -1137,6 +1174,12 @@ function bindDashboardEvents() {
     if (publishGenerateBtn) {
         publishGenerateBtn.addEventListener("click", () => {
             generatePublishTitleDescription();
+        });
+    }
+    const publishDetailsBtn = document.getElementById("btn-publish-analysis-details");
+    if (publishDetailsBtn) {
+        publishDetailsBtn.addEventListener("click", () => {
+            togglePublishAnalysisDetails();
         });
     }
     const publishPreviewVideo = document.getElementById("pub-render-preview");
@@ -3680,7 +3723,8 @@ function _isProjectProcessingStatus(status) {
 
 function _projectVisibleInCreateList(project) {
     const normalizedStatus = String(project?.status || "").trim().toLowerCase();
-    return !_isEditorProjectListItem(project)
+    return !project?.hide_from_create_list
+        && !_isEditorProjectListItem(project)
         && (
             _isProjectProcessingStatus(normalizedStatus)
             || normalizedStatus === "failed"
@@ -4081,10 +4125,11 @@ let similarState = {
     pollingTimer: null,
     controlsLocked: false,
     engineManuallySelected: false,
-    selectedEngine: "wan2",
+    selectedEngine: "lite2",
     sceneEngineSelectionBySceneId: {},
     pendingBusyStage: "",
     pendingBusySceneId: 0,
+    pendingBusySceneIds: [],
     busyProgressStage: "",
     busyProgressCurrent: 0,
     busyProgressTarget: 0,
@@ -4190,9 +4235,9 @@ const SIMILAR_DETECTED_MODE_LABELS = {
     unknown: "Não foi possível identificar com confiança o perfil visual do vídeo.",
 };
 const SIMILAR_MODE_ENGINE_DEFAULT = {
-    static_narrated: "wan2",
-    realistic: "wan2",
-    unknown: "wan2",
+    static_narrated: "lite2",
+    realistic: "lite2",
+    unknown: "lite2",
 };
 const SIMILAR_ACTION_ICONS = {
     save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
@@ -5092,9 +5137,12 @@ async function createSimilar(projectId) {
     }
 
     const realisticArtists = new Set([
+        "Pro 3.1",
+        "Vidu Q3 Pro Starter",
         "Wan 2.2",
         "Ultra High 1.0",
         "Ultra High 2.2",
+        "Lite 2.0",
         "Mega 2.0 Ultra",
         "Seedance 2.0",
         "Grok",
@@ -5116,9 +5164,11 @@ async function createSimilar(projectId) {
 
     const normalizeEngine = (value) => {
         const raw = String(value || "").trim().toLowerCase();
-        if (["wan2", "grok", "seedance"].includes(raw)) {
+        if (["wan2", "grok", "seedance", "lite2", "viduq3"].includes(raw)) {
             return raw;
         }
+        if (raw.includes("lite 2.0") || raw.includes("seedance v1.5") || raw.includes("seedance-v1.5")) return "lite2";
+        if (raw.includes("pro 3.1") || raw.includes("vidu")) return "viduq3";
         if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
         if (raw.includes("cria 3.0") || raw.includes("grok")) return "grok";
@@ -5665,6 +5715,16 @@ function initCreateWizard() {
             const target = event.target;
             if (!(target instanceof HTMLTextAreaElement)) return;
 
+            const frameMatch = /^similar-frame-instruction-(\d+)$/.exec(String(target.id || ""));
+            if (frameMatch) {
+                const sceneId = Number(frameMatch[1] || 0);
+                if (!sceneId) return;
+
+                _syncSimilarDraftsFromDom();
+                _setSimilarFrameCreateActionVisibility(sceneId);
+                return;
+            }
+
             const match = /^similar-scene-prompt-(\d+)$/.exec(String(target.id || ""));
             if (!match) return;
 
@@ -5891,7 +5951,7 @@ function initCreateWizard() {
             const container = eng.closest(".form-group")?.parentElement;
             if (container) {
                 // Keep realistic engines without auto music by default (user can still enable manually).
-                const hasNativeAudio = (engineVal === "grok" || engineVal === "seedance" || engineVal === "wan2");
+                const hasNativeAudio = (engineVal === "grok" || _isSeedanceFamilyEngine(engineVal) || engineVal === "wan2");
                 const musicCb = container.querySelector("[id$='-realistic-music']");
                 if (musicCb) {
                     const useScriptTevoxi = musicCb.id === "script-realistic-music"
@@ -6016,13 +6076,58 @@ function _chooseCreateMode(mode) {
         openScriptImageCreatorFromCreateMode();
         return;
     }
-    if (normalizedMode === "series") {
-        openSeriesWorkspaceStart({ fromCreateModal: true });
+    if (normalizedMode === "audio") {
+        _openCreateAudioBuilderMode();
         return;
     }
     document.getElementById("create-mode-selection").hidden = true;
     switchCreateMode(normalizedMode);
 }
+
+function _openCreateAudioBuilderMode() {
+    switchCreateMode("script");
+    toggleScriptAudioBuilder(true);
+    toggleMinhaVoz("script-audio-builder", true);
+    const modalBody = document.querySelector("#modal-new-project .modal-body");
+    if (modalBody) {
+        modalBody.scrollTop = 0;
+    }
+}
+
+function handleNewProjectModalClose() {
+    const aiSuggestPanel = document.getElementById("ai-suggest-panel");
+    if (aiSuggestPanel && !aiSuggestPanel.hidden) {
+        hideAiSuggestPanel();
+        return;
+    }
+
+    const workflowPanel = document.getElementById("create-panel-workflow");
+    if (workflowPanel && !workflowPanel.hidden) {
+        document.getElementById("workflow-back")?.click();
+        return;
+    }
+
+    const similarPanel = document.getElementById("create-panel-similar");
+    if (similarPanel && !similarPanel.hidden) {
+        document.getElementById("similar-back")?.click();
+        return;
+    }
+
+    const scriptPanel = document.getElementById("create-panel-script");
+    if (scriptPanel && !scriptPanel.hidden) {
+        scriptBack();
+        return;
+    }
+
+    const wizardPanel = document.getElementById("create-panel-wizard");
+    if (wizardPanel && !wizardPanel.hidden) {
+        wizardBack();
+        return;
+    }
+
+    closeModal("modal-new-project");
+}
+window.handleNewProjectModalClose = handleNewProjectModalClose;
 
 function switchCreateMode(mode) {
     if (!mode) return;
@@ -6719,7 +6824,7 @@ function _renderSimilarUnifiedPrompt(project) {
     similarState.unifiedEngine = selectedEngine;
     similarState.unifiedDuration = selectedDuration;
 
-    enginePickerEl.innerHTML = ["grok", "wan2", "seedance"].map((engineValue) => `
+    enginePickerEl.innerHTML = SIMILAR_ENGINE_OPTIONS.map((engineValue) => `
         <button
             class="similar-scene-engine-btn${selectedEngine === engineValue ? " selected" : ""}"
             type="button"
@@ -6728,7 +6833,7 @@ function _renderSimilarUnifiedPrompt(project) {
             aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
         >${_similarSceneEngineLabel(engineValue)}</button>
     `).join("");
-    _renderDurationButtons("similar-unified-duration-options", [5, 10, 15], selectedDuration);
+    _renderDurationButtons("similar-unified-duration-options", _similarUnifiedDurationOptions(selectedEngine), selectedDuration);
 
     const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
     const unifiedClipUrl = String(tags.similar_unified_clip_url || "").trim();
@@ -7272,11 +7377,12 @@ function similarSelectSceneDuration(sceneId, rawValue) {
     const durationWrapEl = document.getElementById(`similar-scene-duration-options-${targetId}`);
     if (!durationEl || !durationModeEl || !durationWrapEl) return;
 
+    const selectedEngine = _getSimilarSceneSelectedEngine(targetId);
     const detectedDurationSeconds = _similarSceneDetectedDurationSeconds(scene);
     const normalizedMode = _normalizeSimilarSceneDurationMode(rawValue) || "auto";
     const selectedDuration = normalizedMode === "auto"
-        ? detectedDurationSeconds
-        : _pickClosestDurationOption([5, 10, 15], rawValue);
+        ? _clampSimilarDurationForEngine(selectedEngine, detectedDurationSeconds)
+        : _pickSimilarManualDuration(selectedEngine, rawValue);
 
     durationEl.value = String(selectedDuration);
     durationModeEl.value = normalizedMode;
@@ -7291,22 +7397,35 @@ function similarSelectSceneDuration(sceneId, rawValue) {
 
 function _normalizeSimilarEngine(rawValue) {
     const value = String(rawValue || "").trim().toLowerCase();
-    if (value === "grok" || value === "wan2" || value === "seedance") {
+    if (value === "grok" || value === "wan2" || value === "lite2" || value === "seedance" || value === "viduq3") {
         return value;
     }
-    return "wan2";
+    if (value.includes("lite 2.0") || value.includes("seedance v1.5") || value.includes("seedance-v1.5")) {
+        return "lite2";
+    }
+    if (value.includes("vidu") || value.includes("pro 3.1") || value === "pro31" || value === "pro3.1") {
+        return "viduq3";
+    }
+    if (value.includes("mega 2.0") || value.includes("seedance")) return "seedance";
+    if (value.includes("cria 3.0") || value.includes("grok")) return "grok";
+    if (value.includes("wan") || value.includes("ultra")) return "wan2";
+    return "lite2";
 }
 
 function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
+    if (normalized === "viduq3") return "Pro 3.1";
     if (normalized === "wan2") return "Ultra 3.0";
+    if (normalized === "lite2") return "Lite 2.0";
     if (normalized === "seedance") return "Mega 2.0";
     return "Cria 2.5";
 }
 
 function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
+    if (normalized === "viduq3") return "Pro 3.1";
     if (normalized === "wan2") return "Ultra High 3.0";
+    if (normalized === "lite2") return "Lite 2.0";
     if (normalized === "seedance") return "Mega 2.0 Ultra";
     return "Cria Speed 2.5 (Grok)";
 }
@@ -7316,7 +7435,7 @@ function _getSimilarSceneSelectedEngine(sceneId) {
     return _normalizeSimilarEngine(
         similarState.sceneEngineSelectionBySceneId?.[sceneKey]
         || similarState.selectedEngine
-        || "wan2"
+        || "lite2"
     );
 }
 
@@ -7339,23 +7458,32 @@ function _getSimilarUnifiedSelectedEngine(tags = null) {
     return _normalizeSimilarEngine(
         similarState.unifiedEngine
         || safeTags.similar_unified_clip_engine
-        || "seedance"
+        || "lite2"
     );
+}
+
+function _similarUnifiedDurationOptions(engineValue) {
+    return _getSimilarManualDurationOptions(engineValue);
 }
 
 function _getSimilarUnifiedSelectedDuration(tags = null) {
     const safeTags = tags && typeof tags === "object" && !Array.isArray(tags)
         ? tags
         : _safeSimilarTags(similarState.lastProjectSnapshot?.tags);
+    const selectedEngine = _getSimilarUnifiedSelectedEngine(safeTags);
     const preferred = parseInt(
         similarState.unifiedDuration || safeTags.similar_unified_clip_duration || "10",
         10,
     );
-    return _pickClosestDurationOption([5, 10, 15], preferred || 10);
+    return _pickClosestDurationOption(_similarUnifiedDurationOptions(selectedEngine), preferred || 10);
 }
 
 function similarSelectUnifiedEngine(engineValue) {
     similarState.unifiedEngine = _normalizeSimilarEngine(engineValue);
+    similarState.unifiedDuration = _pickClosestDurationOption(
+        _getSimilarManualDurationOptions(similarState.unifiedEngine),
+        similarState.unifiedDuration || 10,
+    );
     if (similarState.lastProjectSnapshot) {
         _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
     }
@@ -7393,14 +7521,117 @@ function _similarPreviewAspectClass(aspectRatio) {
     return "similar-preview-box-horizontal";
 }
 
-function _setSimilarBusyIntent(stage = "", sceneId = 0) {
-    similarState.pendingBusyStage = String(stage || "").trim();
-    similarState.pendingBusySceneId = Number(sceneId || 0);
+function _setSimilarFrameCreateActionVisibility(sceneId, forceVisible = null) {
+    const actionEl = document.getElementById(`similar-frame-create-action-${sceneId}`);
+    if (!actionEl) return;
+
+    const nextVisible = typeof forceVisible === "boolean"
+        ? forceVisible
+        : !!String(document.getElementById(`similar-frame-instruction-${sceneId}`)?.value || "").trim();
+
+    actionEl.hidden = !nextVisible;
 }
 
-function _clearSimilarBusyIntent() {
+function _normalizeSimilarBusySceneIds(rawSceneIds) {
+    const source = Array.isArray(rawSceneIds) ? rawSceneIds : [rawSceneIds];
+    const resolved = [];
+    source.forEach((rawValue) => {
+        const sceneId = Number(rawValue || 0);
+        if (sceneId > 0 && !resolved.includes(sceneId)) {
+            resolved.push(sceneId);
+        }
+    });
+    return resolved;
+}
+
+function _getSimilarPendingBusySceneIds() {
+    return _normalizeSimilarBusySceneIds(similarState.pendingBusySceneIds);
+}
+
+function _setSimilarPendingBusySceneIds(sceneIds) {
+    const normalized = _normalizeSimilarBusySceneIds(sceneIds);
+    similarState.pendingBusySceneIds = normalized;
+    similarState.pendingBusySceneId = normalized[normalized.length - 1] || 0;
+    return normalized;
+}
+
+function _addSimilarPendingBusySceneId(sceneId) {
+    const normalizedSceneId = Number(sceneId || 0);
+    if (normalizedSceneId <= 0) {
+        return _getSimilarPendingBusySceneIds();
+    }
+
+    const nextIds = _getSimilarPendingBusySceneIds();
+    if (!nextIds.includes(normalizedSceneId)) {
+        nextIds.push(normalizedSceneId);
+    }
+    return _setSimilarPendingBusySceneIds(nextIds);
+}
+
+function _removeSimilarPendingBusySceneId(sceneId) {
+    const normalizedSceneId = Number(sceneId || 0);
+    if (normalizedSceneId <= 0) {
+        return _getSimilarPendingBusySceneIds();
+    }
+    return _setSimilarPendingBusySceneIds(
+        _getSimilarPendingBusySceneIds().filter((value) => value !== normalizedSceneId)
+    );
+}
+
+function _extractSimilarActiveSceneGenerationIds(tags = {}) {
+    const resolved = _normalizeSimilarBusySceneIds(tags?.similar_active_scene_generation_ids || []);
+    const fallbackSceneId = Number(tags?.similar_regenerating_scene_id || 0);
+    const previewSceneId = Number(tags?.similar_current_scene_id || 0);
+    const stage = String(tags?.similar_stage || "").trim();
+
+    if (fallbackSceneId > 0 && !resolved.includes(fallbackSceneId)) {
+        resolved.push(fallbackSceneId);
+    }
+    if (stage === "generating_previews" && previewSceneId > 0 && !resolved.includes(previewSceneId)) {
+        resolved.push(previewSceneId);
+    }
+
+    return resolved;
+}
+
+function _reconcileSimilarPendingBusySceneIds(project, tags = {}) {
+    const activeSceneIds = _extractSimilarActiveSceneGenerationIds(tags);
+    const status = String(project?.status || "").trim().toLowerCase();
+
+    if (!activeSceneIds.length && !_isSimilarBusyProcessingStatus(status)) {
+        _setSimilarPendingBusySceneIds([]);
+        return activeSceneIds;
+    }
+
+    const nextPendingIds = _getSimilarPendingBusySceneIds().filter((sceneId) => !activeSceneIds.includes(sceneId));
+    _setSimilarPendingBusySceneIds(nextPendingIds);
+    return activeSceneIds;
+}
+
+function _setSimilarBusyIntent(stage = "", sceneId = 0) {
+    similarState.pendingBusyStage = String(stage || "").trim();
+    const normalizedSceneId = Number(sceneId || 0);
+    if (["generating_scene", "regenerating_scene"].includes(similarState.pendingBusyStage) && normalizedSceneId > 0) {
+        _addSimilarPendingBusySceneId(normalizedSceneId);
+        return;
+    }
+    similarState.pendingBusySceneId = normalizedSceneId;
+}
+
+function _clearSimilarBusyIntent(sceneId = 0) {
+    const normalizedSceneId = Number(sceneId || 0);
+    if (normalizedSceneId > 0) {
+        const remainingSceneIds = _removeSimilarPendingBusySceneId(normalizedSceneId);
+        if (!remainingSceneIds.length && ["generating_scene", "regenerating_scene"].includes(String(similarState.pendingBusyStage || "").trim())) {
+            similarState.pendingBusyStage = "";
+            similarState.pendingBusySceneId = 0;
+        }
+        return;
+    }
+
     similarState.pendingBusyStage = "";
     similarState.pendingBusySceneId = 0;
+    _setSimilarPendingBusySceneIds([]);
 }
 
 function _isSimilarBusyProcessingStatus(status) {
@@ -7408,16 +7639,19 @@ function _isSimilarBusyProcessingStatus(status) {
     return ["generating_scenes", "generating_clips", "rendering"].includes(normalizedStatus);
 }
 
-function _hideSimilarBusyOverlay() {
+function _hideSimilarBusyOverlay(options = {}) {
+    const preserveProgress = !!options.preserveProgress;
     const overlayEl = document.getElementById("similar-busy-overlay");
     const modalEl = document.getElementById("modal-new-project");
-    if (similarState.busyProgressTimer) {
+    if (!preserveProgress && similarState.busyProgressTimer) {
         clearInterval(similarState.busyProgressTimer);
         similarState.busyProgressTimer = null;
     }
-    similarState.busyProgressStage = "";
-    similarState.busyProgressCurrent = 0;
-    similarState.busyProgressTarget = 0;
+    if (!preserveProgress) {
+        similarState.busyProgressStage = "";
+        similarState.busyProgressCurrent = 0;
+        similarState.busyProgressTarget = 0;
+    }
     if (overlayEl) {
         overlayEl.hidden = true;
     }
@@ -7524,7 +7758,14 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
     }
 
     const scenes = Array.isArray(project?.scenes) ? project.scenes : [];
-    const requestedSceneId = Number(options.sceneId || tags?.similar_regenerating_scene_id || similarState.pendingBusySceneId || 0);
+    const requestedSceneId = Number(
+        options.sceneId
+        || _extractSimilarActiveSceneGenerationIds(tags)[0]
+        || tags?.similar_regenerating_scene_id
+        || similarState.pendingBusySceneId
+        || _getSimilarPendingBusySceneIds()[0]
+        || 0
+    );
     const targetScene = requestedSceneId
         ? scenes.find((scene) => Number(scene?.id || 0) === requestedSceneId) || _getSimilarProjectScene(requestedSceneId)
         : null;
@@ -7597,13 +7838,13 @@ function _setSimilarEngineSelection(engineValue, options = {}) {
     });
 
     if (!found) {
-        const fallback = document.querySelector("#similar-engine-options [data-value='wan2']");
+        const fallback = document.querySelector("#similar-engine-options [data-value='lite2']");
         if (fallback) {
             fallback.classList.add("selected");
         }
     }
 
-    similarState.selectedEngine = found ? normalized : "wan2";
+    similarState.selectedEngine = found ? normalized : "lite2";
     if (markManual) {
         similarState.engineManuallySelected = true;
     }
@@ -7615,7 +7856,7 @@ function _getSimilarSelectedEngine() {
     if (selected) {
         return _normalizeSimilarEngine(selected.dataset.value);
     }
-    return _normalizeSimilarEngine(similarState.selectedEngine || "wan2");
+    return _normalizeSimilarEngine(similarState.selectedEngine || "lite2");
 }
 
 function _resolveSimilarDetectedMode(tags) {
@@ -7669,7 +7910,7 @@ function _updateSimilarGenerationStep(project, tags) {
     }
 
     const suggestedEngine = _normalizeSimilarEngine(
-        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "wan2"
+        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "lite2"
     );
     if (!similarState.engineManuallySelected) {
         _setSimilarEngineSelection(suggestedEngine, { markManual: false });
@@ -7936,16 +8177,17 @@ function _normalizeSimilarSceneDurationMode(rawValue) {
     if (value === "auto") {
         return "auto";
     }
-    if (["5", "10", "15"].includes(value)) {
+    if (["5", "10", "12", "15"].includes(value)) {
         return value;
     }
     return "";
 }
 
 function _resolveSimilarSceneDurationSelection(scene, draft = {}) {
-    const detectedDurationSeconds = _similarSceneDetectedDurationSeconds(scene);
-    const currentDurationSeconds = _similarSceneDurationSeconds(scene);
-    const manualOptions = [5, 10, 15];
+    const selectedEngine = _getSimilarSceneSelectedEngine(Number(scene?.id || 0));
+    const detectedDurationSeconds = _clampSimilarDurationForEngine(selectedEngine, _similarSceneDetectedDurationSeconds(scene));
+    const currentDurationSeconds = _clampSimilarDurationForEngine(selectedEngine, _similarSceneDurationSeconds(scene));
+    const manualOptions = _getSimilarManualDurationOptions(selectedEngine);
     const closestManualDuration = _pickClosestDurationOption(manualOptions, currentDurationSeconds);
     const serverMode = Math.abs(currentDurationSeconds - detectedDurationSeconds) <= 0.05
         ? "auto"
@@ -8000,14 +8242,15 @@ function _similarSceneTimingNeedsSave(sceneId) {
     const durationModeEl = document.getElementById(`similar-scene-duration-mode-${targetId}`);
     if (!durationEl || !durationModeEl) return false;
 
+    const selectedEngine = _getSimilarSceneSelectedEngine(targetId);
     const durationSelection = _resolveSimilarSceneDurationSelection(scene);
     const currentMode = _normalizeSimilarSceneDurationMode(durationModeEl.value || "") || durationSelection.serverMode;
     const currentDuration = currentMode === "auto"
         ? durationSelection.detectedDurationSeconds
-        : _pickClosestDurationOption([5, 10, 15], Number(durationEl.value || 0) || durationSelection.selectedDurationSeconds);
+        : _pickSimilarManualDuration(selectedEngine, Number(durationEl.value || 0) || durationSelection.selectedDurationSeconds);
     const serverDuration = durationSelection.serverMode === "auto"
         ? durationSelection.detectedDurationSeconds
-        : _pickClosestDurationOption([5, 10, 15], durationSelection.currentDurationSeconds);
+        : _pickSimilarManualDuration(selectedEngine, durationSelection.currentDurationSeconds);
 
     return currentMode !== durationSelection.serverMode || Math.abs(currentDuration - serverDuration) > 0.05;
 }
@@ -8153,9 +8396,10 @@ function _syncSimilarDraftsFromDom() {
 
         const serverStart = scene ? Number(scene.start_time || 0).toFixed(1) : String(startEl?.dataset.serverValue || "");
         const durationSelection = _resolveSimilarSceneDurationSelection(scene, existingDraft);
+        const selectedEngine = _getSimilarSceneSelectedEngine(sceneId);
         const serverDuration = durationSelection.serverMode === "auto"
             ? String(durationSelection.detectedDurationSeconds)
-            : String(_pickClosestDurationOption([5, 10, 15], durationSelection.currentDurationSeconds));
+            : String(_pickSimilarManualDuration(selectedEngine, durationSelection.currentDurationSeconds));
         const serverDurationMode = durationSelection.serverMode;
         const startValue = startEl ? String(startEl.value || "") : serverStart;
         const durationValue = durationEl ? String(durationEl.value || "") : serverDuration;
@@ -8303,13 +8547,10 @@ function _renderSimilarScenes(project, options = {}) {
     const projectTags = _safeSimilarTags(project?.tags);
     const activeBusyStage = _resolveSimilarBusyStage(String(projectTags.similar_stage || "").trim(), String(project?.status || "").trim().toLowerCase())
         || String(similarState.pendingBusyStage || "").trim();
-    const activeBusySceneId = Number(
-        (activeBusyStage === "generating_previews"
-            ? projectTags.similar_current_scene_id
-            : (projectTags.similar_regenerating_scene_id || projectTags.similar_current_scene_id))
-        || similarState.pendingBusySceneId
-        || 0
-    );
+    const activeBusySceneIds = new Set([
+        ..._extractSimilarActiveSceneGenerationIds(projectTags),
+        ..._getSimilarPendingBusySceneIds(),
+    ]);
     const similarActionIcons = {
         save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
         upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
@@ -8341,16 +8582,19 @@ function _renderSimilarScenes(project, options = {}) {
         const pendingCount = pendingUploads.length;
         const applyDisabledAttr = pendingCount ? "" : "disabled";
         const clearDisabledAttr = pendingCount ? "" : "disabled";
-        const applyUploadedLabel = pendingCount > 1
-            ? "Aplicar imagens (WAN 2.6)"
-            : "Aplicar imagem enviada";
         const selectedSceneEngine = _getSimilarSceneSelectedEngine(sceneId);
+        const applyUploadedLabel = pendingCount > 1
+            ? `Aplicar imagens (${_similarEngineDisplayLabel(selectedSceneEngine)})`
+            : "Aplicar imagem enviada";
         const hasImagePreview = !!String(scene.image_url || "").trim();
         const clipUrlRaw = String(scene.clip_url || scene.clip_path || "");
         const clipUrlSafe = esc(clipUrlRaw);
         const hasClipPreview = !!clipUrlRaw.trim();
         const hasReferenceFrame = !!String(scene.reference_frame_url || "").trim();
-        const isGeneratingSceneClip = activeBusySceneId === sceneId && ["generating_scene", "regenerating_scene", "generating_previews"].includes(activeBusyStage);
+        const isGeneratingSceneClip = activeBusySceneIds.has(sceneId) && (
+            ["generating_scene", "regenerating_scene", "generating_previews"].includes(activeBusyStage)
+            || activeBusySceneIds.size > 0
+        );
         const frameEditorOpen = !!draft.frameEditorOpen;
         const narrationEditorOpen = !!draft.narrationEditorOpen;
         const frameBusy = !!draft.frameBusy;
@@ -8359,6 +8603,7 @@ function _renderSimilarScenes(project, options = {}) {
             ? String(draft.frameInstruction || "")
             : "";
         const frameInstructionValue = esc(frameInstruction);
+        const showFrameCreateAction = !!frameInstruction;
         const narrationRaw = Object.prototype.hasOwnProperty.call(draft, "narrationText")
             ? String(draft.narrationText || "")
             : _extractSimilarNarrationFromPrompt(promptRaw);
@@ -8367,6 +8612,9 @@ function _renderSimilarScenes(project, options = {}) {
         const referenceFrameUrlRaw = String(scene.reference_frame_url || "");
         const referenceFrameAltRaw = `Frame extraido da cena ${idx + 1}`;
         const referenceDownloadName = esc(`frame-cena-${idx + 1}.jpg`);
+        const referenceTextExcerptRaw = String(scene.reference_frame_text_excerpt || "").trim();
+        const referenceTextDetected = !!scene.reference_frame_text_detected || !!referenceTextExcerptRaw;
+        const removeTextTitle = "Remover escrita do frame base";
         const generatedImageVariants = Array.isArray(scene.generated_image_variants)
             ? scene.generated_image_variants.filter((item) => String(item?.url || item?.path || "").trim())
             : [];
@@ -8380,9 +8628,21 @@ function _renderSimilarScenes(project, options = {}) {
             ? frameGenerateTitle
             : "Escreva um ajuste ou envie uma nova foto";
         const frameRerollDisabledAttr = frameBusy || !canGenerateFrameVariant ? "disabled" : "";
+        const frameCreateTitle = generatedImageVariants.length
+            ? "Criar nova imagem com este ajuste"
+            : "Criar imagem com este ajuste";
         const framePanelSummary = generatedImageVariants.length
             ? `${generatedImageVariants.length + 1} imagens lado a lado.`
             : "Contexto visual da cena.";
+        const referenceFrameQuickActionsMarkup = referenceTextDetected
+            ? `
+                <div class="similar-reference-frame-tools">
+                    <div class="similar-reference-frame-quick-actions">
+                        <button class="similar-frame-tool-btn similar-frame-tool-btn-warning" type="button" onclick="similarRemoveFrameText(${sceneId})" title="${removeTextTitle}" aria-label="${removeTextTitle}" ${frameBusyDisabledAttr}>Remover escrita</button>
+                    </div>
+                </div>
+            `
+            : "";
         const sceneClipProgress = isGeneratingSceneClip
             ? Math.max(4, Math.min(99, Math.round(Number(similarState.busyProgressCurrent || project?.progress || similarState.progress || 0) || 4)))
             : 0;
@@ -8404,7 +8664,8 @@ function _renderSimilarScenes(project, options = {}) {
         const durationValue = durationSelection.selectedMode === "auto"
             ? durationSelection.detectedDurationSeconds
             : durationSelection.selectedDurationSeconds;
-        const durationButtonsMarkup = ["auto", "5", "10", "15"].map((value) => {
+        const manualDurationOptions = _getSimilarManualDurationOptions(selectedSceneEngine);
+        const durationButtonsMarkup = ["auto", ...manualDurationOptions.map((value) => String(value))].map((value) => {
             const normalizedValue = _normalizeSimilarSceneDurationMode(value) || "auto";
             const isSelected = durationSelection.selectedMode === normalizedValue;
             const title = normalizedValue === "auto"
@@ -8522,6 +8783,7 @@ function _renderSimilarScenes(project, options = {}) {
                             <strong>Frame base</strong>
                             <span>${framePanelSummary}</span>
                         </div>
+                        ${referenceFrameQuickActionsMarkup}
                     </div>
                     <div class="similar-reference-frame-body${inlineClipMarkup ? " similar-reference-frame-body-has-clip" : ""}">
                         <div class="similar-reference-frame-primary-column">
@@ -8549,6 +8811,9 @@ function _renderSimilarScenes(project, options = {}) {
                             <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.image}</button>
                         </div>
                         ${frameUploadsMarkup}
+                        <div id="similar-frame-create-action-${sceneId}" class="similar-reference-frame-editor-actions similar-reference-frame-create-actions" ${showFrameCreateAction ? "" : "hidden"}>
+                            <button class="similar-frame-create-btn" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameCreateTitle}" aria-label="${frameCreateTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.wand}<span>Criar</span></button>
+                        </div>
                         ${frameBusyMarkup}
                     </div>
                 </section>
@@ -8620,7 +8885,7 @@ function _renderSimilarScenes(project, options = {}) {
                         <input id="similar-scene-duration-mode-${sceneId}" type="hidden" value="${durationSelection.selectedMode}" data-server-value="${durationSelection.serverMode}">
                     </div>
                     <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
-                        ${["grok", "wan2", "seedance"].map((engineValue) => `
+                        ${SIMILAR_ENGINE_OPTIONS.map((engineValue) => `
                             <button
                                 class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
                                 type="button"
@@ -10432,13 +10697,15 @@ function workflowAddNode(kind) {
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
+                <option value="viduq3">Pro 3.1</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
+                <option value="lite2">Lite 2.0</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Lite 2.0, no Pro 3.1 e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
             <label>Duração</label>
             <select id="workflow-duration" class="input workflow-input">
@@ -10449,6 +10716,7 @@ function workflowAddNode(kind) {
             <label>Resolução</label>
             <select id="workflow-resolution" class="input workflow-input">
                 <option value="480p">480p</option>
+                <option value="540p">540p</option>
                 <option value="720p" selected>720p</option>
                 <option value="1080p">1080p</option>
             </select>
@@ -10773,6 +11041,8 @@ function getRealisticEngineLabel(engine) {
     const labels = {
         grok: "Cria 3.0 speed",
         wan2: "Ultra High 1.0",
+        lite2: "Lite 2.0",
+        viduq3: "Pro 3.1",
         seedance: "Mega 2.0 Ultra",
         avatar31: "Avatar 3.1 Plus",
     };
@@ -10866,9 +11136,16 @@ function workflowStartTemplateRunTracking(projectId, engineLabel, templateKey = 
 }
 
 function workflowEngineDurationOptions(engine) {
+    if (engine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
+    if (engine === "viduq3") return [...VIDU_Q3_REALISTIC_DURATION_OPTIONS];
+    if (engine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
     if (engine === "seedance") return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
     if (engine === "wan2") return [...WAN_REALISTIC_DURATION_OPTIONS];
     return [...DEFAULT_REALISTIC_DURATION_OPTIONS];
+}
+
+function workflowPreferredResolutionForEngine(engine) {
+    return engine === "viduq3" ? "540p" : "720p";
 }
 
 function workflowSyncEngineDurationOptions() {
@@ -10876,13 +11153,24 @@ function workflowSyncEngineDurationOptions() {
     const durationSelect = document.getElementById("workflow-duration");
     if (!engineSelect || !durationSelect) return;
     const current = parseInt(durationSelect.value || "15", 10) || 15;
-    const options = workflowEngineDurationOptions(engineSelect.value || "wan2");
+    const selectedEngine = engineSelect.value || "wan2";
+    const options = workflowEngineDurationOptions(selectedEngine);
     const nextValue = _pickClosestDurationOption(options, current || options[0]);
     durationSelect.innerHTML = options.map((value) => `<option value="${value}">${value}s</option>`).join("");
     durationSelect.value = String(nextValue);
     const toggleGroup = document.getElementById("workflow-seedance-last-frame-group");
     if (toggleGroup) {
-        toggleGroup.hidden = (engineSelect.value || "wan2") !== "seedance";
+        toggleGroup.hidden = !_isSeedanceFamilyEngine(engineSelect.value || "wan2");
+        toggleGroup.hidden = !_isSeedanceFamilyEngine(selectedEngine);
+    }
+    const resolutionSelect = document.getElementById("workflow-resolution");
+    if (resolutionSelect) {
+        const preferredResolution = workflowPreferredResolutionForEngine(selectedEngine);
+        if (selectedEngine === "viduq3") {
+            resolutionSelect.value = preferredResolution;
+        } else if (!resolutionSelect.value || resolutionSelect.value === "540p") {
+            resolutionSelect.value = preferredResolution;
+        }
     }
 }
 
@@ -11052,13 +11340,15 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
+                <option value="viduq3">Pro 3.1</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
+                <option value="lite2">Lite 2.0</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Lite 2.0, no Pro 3.1 e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
         `;
         if (durationLabel) durationLabel.insertAdjacentHTML("beforebegin", html);
@@ -11769,8 +12059,8 @@ async function workflowRunSeedance() {
         const duration = parseInt(document.getElementById("workflow-duration")?.value || "10", 10) || 10;
         const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
-        const resolution = document.getElementById("workflow-resolution")?.value || "720p";
-        const useLastImageAsFinalFrame = workflowEngine === "seedance"
+        const resolution = document.getElementById("workflow-resolution")?.value || workflowPreferredResolutionForEngine(workflowEngine);
+        const useLastImageAsFinalFrame = _isSeedanceFamilyEngine(workflowEngine)
             && !!document.getElementById("workflow-seedance-last-frame")?.checked;
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
         if (workflowEngine === "avatar31" && !workflowAudioUploadId) {
@@ -11922,6 +12212,7 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
         const isProcessing = ["generating_scenes", "generating_clips", "rendering"].includes(status);
         const rawStage = String(tags.similar_stage || "").trim();
         const stage = _resolveSimilarBusyStage(rawStage, status) || rawStage;
+        const activeSceneGenerationIds = _reconcileSimilarPendingBusySceneIds(project, tags);
         const lockGlobalUi = isProcessing && !["generating_scene", "regenerating_scene", "generating_previews"].includes(stage);
         const suppressGlobalStatus = status !== "failed" && (
             (isProcessing && ["generating_scene", "regenerating_scene", "generating_previews"].includes(stage))
@@ -11955,12 +12246,12 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
             message = `${stageLabel} (${progress}%)`;
         }
 
-        if (!isProcessing) {
+        if (!isProcessing && !activeSceneGenerationIds.length) {
             _clearSimilarBusyIntent();
             _hideSimilarBusyOverlay();
         }
 
-        const showGlobalStatus = status === "failed" || isProcessing;
+        const showGlobalStatus = status === "failed" || isProcessing || activeSceneGenerationIds.length > 0;
         _setSimilarStatus(showGlobalStatus && !suppressGlobalStatus ? message : "", kind);
         similarState.lastProjectSnapshot = project;
         _syncSimilarSourcePreview(project);
@@ -11972,11 +12263,11 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
             stage,
             status,
             progress,
-            sceneId: Number(tags.similar_regenerating_scene_id || 0) || similarState.pendingBusySceneId,
+            sceneId: activeSceneGenerationIds[0] || Number(tags.similar_regenerating_scene_id || 0) || similarState.pendingBusySceneId,
         });
         _refreshSimilarButtonsDisabled(lockGlobalUi);
 
-        if (!isProcessing) {
+        if (!isProcessing && !activeSceneGenerationIds.length) {
             _stopSimilarPolling();
             _refreshSimilarButtonsDisabled(false);
         }
@@ -12021,7 +12312,7 @@ function _resetSimilarModeState() {
     similarState.verifiedSourceName = "";
     similarState.controlsLocked = false;
     similarState.engineManuallySelected = false;
-    similarState.selectedEngine = "grok";
+    similarState.selectedEngine = "lite2";
     similarState.sceneEngineSelectionBySceneId = {};
     _clearSimilarBusyIntent();
     similarState.lastProjectSnapshot = null;
@@ -12053,7 +12344,7 @@ function _resetSimilarModeState() {
     if (titleEl) titleEl.value = "";
     const aspectEl = document.getElementById("similar-aspect");
     if (aspectEl) aspectEl.value = "16:9";
-    _setSimilarEngineSelection("grok", { markManual: false });
+    _setSimilarEngineSelection("lite2", { markManual: false });
     const uploadInput = document.getElementById("similar-scene-image-input");
     if (uploadInput) uploadInput.value = "";
 
@@ -12211,7 +12502,7 @@ async function similarStartAnalysis(analysisMode = "scene") {
     similarState.detectedMode = "";
     similarState.detectedReason = "";
     similarState.detectedConfidence = 0;
-    _setSimilarEngineSelection("grok", { markManual: false });
+    _setSimilarEngineSelection("lite2", { markManual: false });
     _clearSimilarUnifiedPrompt();
 
     _refreshSimilarButtonsDisabled(true);
@@ -12379,7 +12670,7 @@ async function similarGenerateUnifiedScene() {
             uploadIds.push(uploadId);
         }
     });
-    const useLastImageAsFinalFrame = engine === "seedance"
+    const useLastImageAsFinalFrame = _isSeedanceFamilyEngine(engine)
         && !!document.getElementById("similar-unified-seedance-last-frame")?.checked;
 
     try {
@@ -12860,15 +13151,19 @@ async function similarSaveScene(sceneId, options = {}) {
         promptEl.value = prompt;
     }
     const fallbackStart = Number(scene?.start_time || 0);
+    const selectedEngine = _getSimilarSceneSelectedEngine(sceneId);
     const fallbackDuration = scene ? _similarSceneDuration(scene) : 5;
-    const fallbackDurationSeconds = scene ? _similarSceneDurationSeconds(scene) : fallbackDuration;
-    const detectedDurationSeconds = scene ? _similarSceneDetectedDurationSeconds(scene) : fallbackDurationSeconds;
+    const fallbackDurationSeconds = _clampSimilarDurationForEngine(selectedEngine, scene ? _similarSceneDurationSeconds(scene) : fallbackDuration);
+    const detectedDurationSeconds = _clampSimilarDurationForEngine(selectedEngine, scene ? _similarSceneDetectedDurationSeconds(scene) : fallbackDurationSeconds);
     const startRaw = Number.parseFloat(startEl?.value || String(fallbackStart));
     const startTime = Number.isFinite(startRaw) ? Math.max(0, startRaw) : Math.max(0, fallbackStart);
     const selectedDurationMode = _normalizeSimilarSceneDurationMode(durationModeEl?.value || "")
-        || (Math.abs(fallbackDurationSeconds - detectedDurationSeconds) <= 0.05 ? "auto" : String(_pickClosestDurationOption([5, 10, 15], fallbackDurationSeconds)));
-    const durationRaw = parseInt(durationEl?.value || String(fallbackDuration), 10);
-    const duration = Number.isFinite(durationRaw) ? Math.max(5, Math.min(15, durationRaw)) : fallbackDuration;
+        || (Math.abs(fallbackDurationSeconds - detectedDurationSeconds) <= 0.05 ? "auto" : String(_pickSimilarManualDuration(selectedEngine, fallbackDurationSeconds)));
+    const durationRaw = Number.parseFloat(durationEl?.value || String(fallbackDuration));
+    const duration = _clampSimilarDurationForEngine(
+        selectedEngine,
+        Number.isFinite(durationRaw) ? durationRaw : fallbackDuration,
+    );
     const payload = {
         prompt,
         start_time: startTime,
@@ -13016,7 +13311,7 @@ async function similarApplyUploadedSceneImages(sceneId) {
 
     try {
         if (uploadIds.length > 1) {
-            _setSimilarStatus("Unindo imagens enviadas com WAN 2.6...", "running");
+            _setSimilarStatus(`Preparando imagens para ${_similarEngineDisplayLabel(_getSimilarSceneSelectedEngine(sceneId))}...`, "running");
         } else {
             _setSimilarStatus("Aplicando imagem enviada na cena...", "running");
         }
@@ -13143,7 +13438,18 @@ function similarCloseFrameEdit(sceneId) {
     }
 }
 
-async function similarGenerateFrameVariant(sceneId) {
+function _buildSimilarFrameTextRemovalInstruction(scene) {
+    const detectedText = String(scene?.reference_frame_text_excerpt || "").trim();
+    return [
+        "Remover completamente qualquer escrita, legenda, logotipo tipografico, marca d'agua, letreiro ou palavra visivel deste frame.",
+        detectedText ? `Eliminar especificamente o texto \"${detectedText}\" sem deixar rastros.` : "",
+        "Reconstruir a area afetada com fundo, textura, perspectiva e iluminacao coerentes com a imagem original.",
+        "Manter exatamente o mesmo enquadramento, os mesmos objetos restantes e a mesma luz.",
+        "Nao criar nenhum texto novo.",
+    ].filter(Boolean).join(" ");
+}
+
+async function _requestSimilarFrameVariant(sceneId, { instructionOverride = "", busyLabel = "", successMessage = "", promoteReferenceFrame = false } = {}) {
     const projectId = Number(similarState.projectId || 0);
     if (!projectId) {
         alert("Inicie a analise antes de editar um frame.");
@@ -13161,7 +13467,7 @@ async function similarGenerateFrameVariant(sceneId) {
     const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
     const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
     const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
-    const editInstruction = String(instructionEl?.value || "").trim();
+    const editInstruction = String(instructionOverride || instructionEl?.value || "").trim();
     const uploadIds = [];
     _getSimilarScenePendingUploads(sceneId).forEach((item) => {
         const uploadId = String(item?.upload_id || "").trim();
@@ -13177,11 +13483,20 @@ async function similarGenerateFrameVariant(sceneId) {
     }
 
     try {
+        if (editInstruction) {
+            _setSimilarSceneFrameEditorDraft(sceneId, {
+                open: true,
+                instruction: editInstruction,
+            });
+        }
+        const resolvedBusyLabel = String(busyLabel || "").trim() || (
+            uploadIds.length
+                ? "Trocando a pessoa/elemento no frame com as imagens enviadas..."
+                : "Criando uma nova imagem a partir do frame..."
+        );
         _setSimilarSceneFrameEditorDraft(sceneId, {
             frameBusy: true,
-            frameBusyLabel: uploadIds.length
-                ? "Trocando a pessoa/elemento no frame com as imagens enviadas..."
-                : "Criando uma nova imagem a partir do frame...",
+            frameBusyLabel: resolvedBusyLabel,
         });
         if (similarState.lastProjectSnapshot) {
             _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
@@ -13194,12 +13509,13 @@ async function similarGenerateFrameVariant(sceneId) {
                 generate_from_prompt: true,
                 prompt_override: promptOverride,
                 edit_instruction: editInstruction,
+                promote_reference_frame: !!promoteReferenceFrame,
                 image_upload_ids: uploadIds,
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });
         _setSimilarSceneFrameEditorDraft(sceneId, { open: true, frameBusy: false, frameBusyLabel: "" });
-        showToast("Nova variacao criada a partir do frame.", "success");
+        showToast(successMessage || "Nova variacao criada a partir do frame.", "success");
         await _refreshSimilarProject();
     } catch (error) {
         _setSimilarSceneFrameEditorDraft(sceneId, { frameBusy: false, frameBusyLabel: "" });
@@ -13208,6 +13524,20 @@ async function similarGenerateFrameVariant(sceneId) {
         }
         showToast(`Erro ao editar frame com IA: ${error.message}`, "error");
     }
+}
+
+async function similarGenerateFrameVariant(sceneId) {
+    await _requestSimilarFrameVariant(sceneId);
+}
+
+async function similarRemoveFrameText(sceneId) {
+    const scene = _getSimilarProjectScene(sceneId);
+    await _requestSimilarFrameVariant(sceneId, {
+        instructionOverride: _buildSimilarFrameTextRemovalInstruction(scene),
+        busyLabel: "Removendo escrita do frame base...",
+        promoteReferenceFrame: true,
+        successMessage: "Escrita removida do frame base.",
+    });
 }
 
 async function similarRegenerateScene(sceneId, generationMode = "image") {
@@ -13223,12 +13553,18 @@ async function similarRegenerateScene(sceneId, generationMode = "image") {
         const promptOverride = _readSimilarScenePromptForRequest(sceneId, { applyNarration: true }).trim();
         const hasExistingClip = !!String(scene?.clip_url || scene?.clip_path || "").trim();
         const busyStage = hasExistingClip ? "regenerating_scene" : "generating_scene";
+        const hasActiveSceneGeneration = _extractSimilarActiveSceneGenerationIds(_safeSimilarTags(similarState.lastProjectSnapshot?.tags)).length > 0
+            || _getSimilarPendingBusySceneIds().length > 0;
         _setSimilarBusyIntent(busyStage, sceneId);
-        similarState.busyProgressStage = busyStage;
-        similarState.busyProgressCurrent = 4;
-        similarState.busyProgressTarget = 4;
+        if (!hasActiveSceneGeneration) {
+            similarState.busyProgressStage = busyStage;
+            similarState.busyProgressCurrent = 4;
+            similarState.busyProgressTarget = 4;
+        } else if (!String(similarState.busyProgressStage || "").trim()) {
+            similarState.busyProgressStage = busyStage;
+        }
         _ensureSimilarBusyProgressTimer();
-        _hideSimilarBusyOverlay();
+        _hideSimilarBusyOverlay({ preserveProgress: true });
         if (similarState.lastProjectSnapshot) {
             _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
         }
@@ -13254,9 +13590,15 @@ async function similarRegenerateScene(sceneId, generationMode = "image") {
         await _refreshSimilarProject();
     } catch (error) {
         showToast(`Erro ao regenerar cena: ${error.message}`, "error");
-        _clearSimilarBusyIntent();
-        _hideSimilarBusyOverlay();
+        _clearSimilarBusyIntent(sceneId);
+        _hideSimilarBusyOverlay({
+            preserveProgress: _extractSimilarActiveSceneGenerationIds(_safeSimilarTags(similarState.lastProjectSnapshot?.tags)).length > 0
+                || _getSimilarPendingBusySceneIds().length > 0,
+        });
         _refreshSimilarButtonsDisabled(false);
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
     }
 }
 
@@ -13660,7 +14002,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 image_upload_ids: imageUploadIds,
                 audio_upload_id: audioUploadId,
                 engine: engine,
-                use_last_image_as_final_frame: engine === "seedance"
+                use_last_image_as_final_frame: _isSeedanceFamilyEngine(engine)
                     && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
                 audio_url: selectedTevoxiSong ? (selectedTevoxiSong.audio_url || "") : "",
                 lyrics: selectedTevoxiSong
@@ -13949,6 +14291,7 @@ function resetCreateWizard(options = {}) {
     if (audioBuilder) audioBuilder.hidden = true;
     const audioBuilderTrigger = document.getElementById("script-video-audio-builder-trigger");
     if (audioBuilderTrigger) audioBuilderTrigger.classList.remove("active", "is-ready");
+    toggleMinhaVoz("script-audio-builder", false);
     const audioBuilderText = document.getElementById("script-audio-builder-text");
     if (audioBuilderText) audioBuilderText.value = "";
     const audioBuilderCharCount = document.getElementById("script-audio-builder-char-count");
@@ -14796,7 +15139,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "google/nano-banana/text-to-image",
         label: "Nano Banana",
-        defaultCostLabel: "6 créditos",
+        defaultCostLabel: "3 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14806,7 +15149,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "google/nano-banana-pro/text-to-image",
         label: "Nano Banana Pro",
-        defaultCostLabel: "8 créditos",
+        defaultCostLabel: "5 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14816,7 +15159,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "bytedance/seedream-v5.0-lite/sequential",
         label: "Mega 5.0 Anime",
-        defaultCostLabel: "8 créditos",
+        defaultCostLabel: "7 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14826,7 +15169,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "bytedance/seedream-v4.5",
         label: "Mega 5.0 Real",
-        defaultCostLabel: "9 créditos",
+        defaultCostLabel: "8 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14836,7 +15179,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "openai/gpt-image-1/text-to-image",
         label: "GPT Image",
-        defaultCostLabel: "11 créditos",
+        defaultCostLabel: "7 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -17000,13 +17343,13 @@ function updateScriptVideoAreaVisibility() {
         audioVideoTrigger.classList.toggle("has-file", hasManualAudio && scriptUserAudioSourceKind === "video");
         audioVideoTrigger.disabled = scriptUserAudioVideoExtracting;
     }
-    if (builderHeading) {
-        builderHeading.textContent = hasVideo ? "Criar áudio para este vídeo" : "Criar áudio com voz IA";
+    const builderCopy = document.getElementById("script-audio-builder-copy");
+    if (builderCopy) builderCopy.hidden = !hasVideo;
+    if (builderHeading && hasVideo) {
+        builderHeading.textContent = "Criar áudio para este vídeo";
     }
-    if (builderSubheading) {
-        builderSubheading.textContent = hasVideo
-            ? "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar."
-            : "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio para usar neste projeto.";
+    if (builderSubheading && hasVideo) {
+        builderSubheading.textContent = "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.";
     }
 }
 
@@ -20526,13 +20869,40 @@ function _setPublishAnalysisStatus(message = "", kind = "idle") {
     statusEl.className = `publish-analysis-status is-${kind}`;
 }
 
+function togglePublishAnalysisDetails(forceExpanded = null) {
+    const toggleBtn = document.getElementById("btn-publish-analysis-details");
+    const summaryEl = document.getElementById("publish-analysis-summary");
+    if (!toggleBtn || !summaryEl || toggleBtn.hidden || !summaryEl.innerHTML.trim()) {
+        if (toggleBtn) {
+            toggleBtn.setAttribute("aria-expanded", "false");
+            toggleBtn.classList.remove("is-open");
+        }
+        if (summaryEl) {
+            summaryEl.hidden = true;
+        }
+        return;
+    }
+
+    const currentExpanded = toggleBtn.getAttribute("aria-expanded") === "true";
+    const nextExpanded = forceExpanded === null ? !currentExpanded : !!forceExpanded;
+    toggleBtn.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+    toggleBtn.classList.toggle("is-open", nextExpanded);
+    summaryEl.hidden = !nextExpanded;
+}
+
 function _renderPublishAnalysisSummary(project = null) {
     const summaryEl = document.getElementById("publish-analysis-summary");
+    const detailsBtn = document.getElementById("btn-publish-analysis-details");
     if (!summaryEl) {
         return;
     }
 
     if (!project) {
+        if (detailsBtn) {
+            detailsBtn.hidden = true;
+            detailsBtn.setAttribute("aria-expanded", "false");
+            detailsBtn.classList.remove("is-open");
+        }
         summaryEl.hidden = true;
         summaryEl.innerHTML = "";
         return;
@@ -20585,10 +20955,17 @@ function _renderPublishAnalysisSummary(project = null) {
     }).filter(Boolean);
 
     if (!sceneCount && !summaryPreview && !sceneItems.length && !cameraLabel && !detectedReason && !audioMeta && !transcriptPreview) {
+        if (detailsBtn) {
+            detailsBtn.hidden = true;
+            detailsBtn.setAttribute("aria-expanded", "false");
+            detailsBtn.classList.remove("is-open");
+        }
         summaryEl.hidden = true;
         summaryEl.innerHTML = "";
         return;
     }
+
+    const keepExpanded = detailsBtn?.getAttribute("aria-expanded") === "true";
 
     const metaBits = [
         sceneCount > 0 ? `${sceneCount} cenas mapeadas` : "",
@@ -20597,7 +20974,6 @@ function _renderPublishAnalysisSummary(project = null) {
         detectedReason,
     ].filter(Boolean);
 
-    summaryEl.hidden = false;
     summaryEl.innerHTML = `
         <div class="publish-analysis-summary-meta">
             ${metaBits.map((item) => `<span>${esc(item)}</span>`).join("")}
@@ -20606,6 +20982,10 @@ function _renderPublishAnalysisSummary(project = null) {
         ${transcriptPreview ? `<div class="publish-analysis-transcript"><strong>Transcricao do audio</strong><p>${esc(transcriptPreview)}</p></div>` : ""}
         ${sceneItems.length ? `<ul class="publish-analysis-scene-list">${sceneItems.join("")}</ul>` : ""}
     `;
+    if (detailsBtn) {
+        detailsBtn.hidden = false;
+    }
+    togglePublishAnalysisDetails(keepExpanded);
 }
 
 function _isPublishAnalysisReady(project = null) {
@@ -20667,8 +21047,11 @@ function _refreshPublishAnalysisActions() {
         analyzeLabel.textContent = isAnalyzing ? "Analisando..." : "Analisar";
     }
     if (generateBtn) {
-        generateBtn.disabled = !hasRender || !analysisReady || isAnalyzing || isGenerating;
+        const canShowGenerate = hasRender && (analysisReady || isGenerating);
+        generateBtn.hidden = !canShowGenerate;
+        generateBtn.disabled = !canShowGenerate || isAnalyzing || isGenerating;
         generateBtn.textContent = isGenerating ? "Gerando..." : "Gerar título e descrição";
+        generateBtn.classList.toggle("is-attention", canShowGenerate && !isAnalyzing && !isGenerating);
     }
     if (previewCard) {
         previewCard.classList.toggle("is-analyzing", hasRender && isAnalyzing);
@@ -20883,6 +21266,7 @@ async function publishStartAnalysis() {
                 aspect_ratio: aspectRatio,
                 analysis_mode: "scene",
                 analysis_limit_seconds: PUBLISH_ANALYSIS_MAX_SECONDS,
+                hide_from_create_list: true,
             }),
         });
 
@@ -24188,7 +24572,7 @@ function _setAutoRealisticEngine(engineValue) {
 
     const toggleGroup = document.getElementById("auto-seedance-last-frame-group");
     if (toggleGroup) {
-        toggleGroup.hidden = (selected?.dataset.value || "wan2") !== "seedance";
+        toggleGroup.hidden = !_isSeedanceFamilyEngine(selected?.dataset.value || "wan2");
     }
 
     _syncAutoRealisticDurationOptions();
@@ -26358,7 +26742,7 @@ async function createAutoSchedule() {
             add_music: useMusic && !useTevoxi,
             use_tevoxi: useTevoxi,
             use_last_image_as_final_frame: !useTevoxi
-                && (selectedEngine?.dataset.value || "") === "seedance"
+                && _isSeedanceFamilyEngine(selectedEngine?.dataset.value || "")
                 && !!document.getElementById("auto-seedance-last-frame")?.checked,
             enable_subtitles: enableSubs,
         };
@@ -27021,17 +27405,18 @@ function selectPersona(el, prefix) {
     }
 }
 
-function toggleMinhaVoz(prefix) {
+function toggleMinhaVoz(prefix, forceOpen = null) {
     const btn = document.getElementById(`${prefix}-minha-voz-btn`);
     const panel = document.getElementById(`${prefix}-persona-panel`);
-    const isOpen = !panel.classList.contains('hidden');
-    
-    if (isOpen) {
-        panel.classList.add('hidden');
-        btn.classList.remove('active');
-    } else {
-        panel.classList.remove('hidden');
-        btn.classList.add('active');
+    if (!btn || !panel) return;
+
+    const shouldOpen = typeof forceOpen === "boolean"
+        ? forceOpen
+        : panel.classList.contains("hidden");
+
+    panel.classList.toggle("hidden", !shouldOpen);
+    btn.classList.toggle("active", shouldOpen);
+    if (shouldOpen) {
         loadVoiceProfiles();
     }
 }
@@ -27587,6 +27972,9 @@ function _getPlanBillingDetails(plan, billingPeriod = _creditBillingPeriod) {
 
 function _getDisplayUnitPrice(row) {
     const unitSuffix = row.unit === "second" ? "s" : "img";
+    if (Number(row.usdPerUnit || 0) <= 0) {
+        return `Grátis/${unitSuffix}`;
+    }
     if (_creditDisplayCurrency === "brl") {
         return `${_formatBrl(row.brlPerUnit || 0)}/${unitSuffix}`;
     }
@@ -27621,6 +28009,27 @@ function _ensureCreditOfferSelection() {
         }
     }
 
+    _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
+}
+
+function _applyPreferredCreditOffer(preferredKind = "") {
+    const normalized = String(preferredKind || "").trim().toLowerCase();
+    if (normalized === "plan") {
+        const paidPlans = _paidCreditPlans();
+        if (paidPlans.length) {
+            const currentPlan = paidPlans.find((plan) => String(plan.code || "").trim().toLowerCase() === _currentCreditPlan);
+            _selectedCreditOffer = {
+                kind: "plan",
+                code: String((currentPlan || paidPlans[0] || {}).code || "starter"),
+                packageIndex: 0,
+            };
+            return;
+        }
+    }
+    if (["package", "topup", "recarga"].includes(normalized) && _creditPackagesCatalog().length) {
+        _selectedCreditOffer = { kind: "package", code: "", packageIndex: 0 };
+        return;
+    }
     _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
 }
 
@@ -27756,13 +28165,16 @@ function _renderPricingComparisonSections() {
             const planCells = plans.map((plan) => {
                 const usage = row.plans?.[plan.code] || {};
                 const billing = _getPlanBillingDetails(plan);
+                const isUnlimited = !!usage.unlimited;
                 const baseCount = parseInt(usage.includedUnits || 0, 10) || 0;
-                const count = String(plan.code || "free") === "free"
+                const count = isUnlimited
+                    ? null
+                    : String(plan.code || "free") === "free"
                     ? baseCount
                     : baseCount * (billing.comparisonMultiplier || 1);
                 return `
                     <td class="pricing-model-value-cell" data-theme="${plan.accent || plan.code || 'free'}">
-                        <strong>${_formatComparisonUnits(row, count)}</strong>
+                        <strong>${isUnlimited ? "Ilimitado" : _formatComparisonUnits(row, count)}</strong>
                         <span>${_getDisplayUnitPrice(row)}</span>
                     </td>
                 `;
@@ -27916,7 +28328,7 @@ function showCreditsPurchaseModal(preferredKind = "") {
         document.body.appendChild(overlay);
     }
 
-    _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
+    _applyPreferredCreditOffer(preferredKind);
     _ensureCreditOfferSelection();
     overlay.innerHTML = _renderCreditsPurchaseModalContent();
 }
@@ -28045,7 +28457,7 @@ async function pollCreditStatus(reference) {
 // Wire up all page credit badges.
 document.querySelectorAll("[data-credits-trigger]").forEach((el) => {
     el.addEventListener("click", () => {
-        showCreditsPurchaseModal();
+        showCreditsPurchaseModal(el.dataset.creditsPreferred || "");
     });
 });
 
@@ -28073,7 +28485,7 @@ const _editor = {
     sourceAspectRatio: "9:16",
     outputAspectRatio: "source",
     playing: false,
-    activeTool: "text",
+    activeTool: "trim",
     smartCuts: [],
     smartCutsLoading: false,
     smartCutsError: "",
@@ -28111,6 +28523,8 @@ const _editor = {
     timelineTime: 0,
     timelineZoom: 1,
     playbackRate: 1,
+    mobileControlMode: "tools",
+    mobileSubtitleModalOpen: false,
     _virtualPlaybackActive: false,
     _virtualPlaybackRaf: 0,
     _virtualPlaybackLastTs: 0,
@@ -28127,6 +28541,98 @@ let _editorProjectNameEditState = {
     original: "",
     saving: false,
 };
+
+let _editorMobileBarDragSuppressUntil = 0;
+
+function _editorBindMobileHorizontalBarDrag(container) {
+    if (!container || container.dataset.mobileBarDragBound === "1") return;
+    container.dataset.mobileBarDragBound = "1";
+
+    const drag = {
+        pointerId: null,
+        startX: 0,
+        startScrollLeft: 0,
+        active: false,
+        captured: false,
+    };
+
+    const finishDrag = (pointerId = drag.pointerId) => {
+        if (drag.captured && pointerId != null && typeof container.releasePointerCapture === "function") {
+            try {
+                container.releasePointerCapture(pointerId);
+            } catch (_) {
+                // Ignore missing capture release on browsers that do not support it.
+            }
+        }
+
+        if (drag.active) {
+            _editorMobileBarDragSuppressUntil = Date.now() + 180;
+        }
+
+        drag.pointerId = null;
+        drag.startX = 0;
+        drag.startScrollLeft = 0;
+        drag.active = false;
+        drag.captured = false;
+        container.classList.remove("editor-mobile-bar-dragging");
+    };
+
+    container.addEventListener("pointerdown", (event) => {
+        if (!_editorIsMobileViewport()) return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+
+        drag.pointerId = event.pointerId;
+        drag.startX = event.clientX;
+        drag.startScrollLeft = Number(container.scrollLeft || 0);
+        drag.active = false;
+    });
+
+    container.addEventListener("pointermove", (event) => {
+        if (!_editorIsMobileViewport() || drag.pointerId !== event.pointerId) return;
+
+        const deltaX = event.clientX - drag.startX;
+        if (!drag.active && Math.abs(deltaX) < 6) {
+            return;
+        }
+
+        if (!drag.captured && typeof container.setPointerCapture === "function") {
+            try {
+                container.setPointerCapture(event.pointerId);
+                drag.captured = true;
+            } catch (_) {
+                // Ignore browsers that refuse capture for this target.
+            }
+        }
+
+        drag.active = true;
+        container.classList.add("editor-mobile-bar-dragging");
+        container.scrollLeft = Math.max(0, drag.startScrollLeft - deltaX);
+        event.preventDefault();
+    });
+
+    container.addEventListener("pointerup", (event) => {
+        if (drag.pointerId !== event.pointerId) return;
+        finishDrag(event.pointerId);
+    });
+
+    container.addEventListener("pointercancel", (event) => {
+        if (drag.pointerId !== event.pointerId) return;
+        finishDrag(event.pointerId);
+    });
+
+    container.addEventListener("lostpointercapture", () => {
+        if (drag.pointerId == null) return;
+        finishDrag();
+    });
+
+    container.addEventListener("click", (event) => {
+        if (!_editorIsMobileViewport()) return;
+        if (Date.now() >= _editorMobileBarDragSuppressUntil) return;
+        event.preventDefault();
+        event.stopPropagation();
+        _editorMobileBarDragSuppressUntil = 0;
+    }, true);
+}
 
 function _editorAttachPreviewSeekHandlers(videoEl) {
     if (!videoEl || videoEl._editorSeekHandlersAttached) return;
@@ -28182,6 +28688,13 @@ function _editorPreviewSeekTo(videoEl, targetTime, options = {}) {
 let _editorTimelineDrag = null;
 let _editorTimelineScrub = null;
 let _editorMediaLayerDrag = null;
+let _editorTextOverlayDrag = null;
+let _editorTextOverlayIgnoreClick = false;
+let _editorSubtitleOverlayDrag = null;
+let _editorSubtitleOverlayIgnoreClick = false;
+let _editorInlineTextEditId = "";
+let _editorInlineTextEditPendingFocus = "";
+let _editorMobileTrackVolumeOpen = "";
 let _editorMusicPreviewAudio = null;
 let _editorMusicPreviewObjectUrl = "";
 let _editorMusicPreviewSourceKey = "";
@@ -28189,6 +28702,8 @@ let _editorMusicPreviewLoadPromise = null;
 let _editorMusicPreviewRequestId = 0;
 let _editorMusicPreviewWarned = false;
 let _editorMusicPreviewPrimed = false;
+let _editorSourcePreviewAudio = null;
+let _editorSourcePreviewSourceKey = "";
 let _editorMediaImportOrderModal = {
     open: false,
     context: "project",
@@ -28222,9 +28737,132 @@ const _EDITOR_TIMELINE_MAX_ZOOM = 12;
 const _EDITOR_TIMELINE_ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12];
 const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
 const _EDITOR_TIMELINE_LABEL_WIDTH = 40;
+const _EDITOR_TIMELINE_MOBILE_LABEL_WIDTH = 34;
+const _EDITOR_TIMELINE_MOBILE_FOCUS_BIAS = -10;
 const _EDITOR_TIMELINE_RIGHT_GUTTER = 16;
 const _EDITOR_SEGMENT_SPEED_MIN = 0.25;
 const _EDITOR_SEGMENT_SPEED_MAX = 4;
+
+function _editorIsMobileViewport() {
+    return window.innerWidth <= 768;
+}
+
+function _editorResolveInitialActiveTool(toolName = "", selectedClip = null) {
+    const nextTool = String(toolName || "trim");
+    const selectedKind = String(selectedClip?.kind || _editor.selectedClip?.kind || "");
+    if (_editorIsMobileViewport() && nextTool === "text" && selectedKind !== "text") {
+        return "trim";
+    }
+    return nextTool;
+}
+
+function _editorGetTimelineLabelWidth() {
+    return _editorIsMobileViewport() ? _EDITOR_TIMELINE_MOBILE_LABEL_WIDTH : _EDITOR_TIMELINE_LABEL_WIDTH;
+}
+
+function _editorUseFixedMobilePlayhead() {
+    const workspace = document.getElementById("editor-workspace");
+    return _editorIsMobileViewport() && workspace && !workspace.hidden;
+}
+
+function _editorSyncMobileBarsPlacement() {
+    const workspace = document.getElementById("editor-workspace");
+    const main = workspace?.querySelector(".editor-main");
+    const previewArea = workspace?.querySelector(".editor-preview-area");
+    const timeline = document.getElementById("editor-timeline");
+    const toolsPanel = document.getElementById("editor-tools-panel");
+    const quickActions = document.getElementById("editor-quick-actions");
+    if (!workspace || !main || !previewArea || !timeline || !toolsPanel || !quickActions) return;
+
+    _editorBindMobileHorizontalBarDrag(toolsPanel);
+    _editorBindMobileHorizontalBarDrag(quickActions);
+
+    const useBottomBars = _editorIsMobileViewport() && !workspace.hidden;
+    if (useBottomBars) {
+        workspace.appendChild(quickActions);
+        workspace.appendChild(toolsPanel);
+        return;
+    }
+
+    if (toolsPanel.parentElement !== main || toolsPanel.nextElementSibling !== previewArea) {
+        main.insertBefore(toolsPanel, previewArea);
+    }
+    if (quickActions.parentElement !== workspace || quickActions.nextElementSibling !== timeline) {
+        workspace.insertBefore(quickActions, timeline);
+    }
+}
+
+function _editorGetTimelineViewportFocusOffset() {
+    const timelineEl = document.getElementById("editor-timeline");
+    const labelWidth = _editorGetTimelineLabelWidth();
+    if (!timelineEl) return labelWidth + 120;
+    const visibleTrackWidth = Math.max(120, timelineEl.clientWidth - labelWidth - _EDITOR_TIMELINE_RIGHT_GUTTER);
+    const bias = _editorIsMobileViewport() ? _EDITOR_TIMELINE_MOBILE_FOCUS_BIAS : 0;
+    return Math.max(labelWidth + 88, Math.round(labelWidth + (visibleTrackWidth / 2) + bias));
+}
+
+function _editorGetTimelineLeadGutter() {
+    if (!_editorUseFixedMobilePlayhead()) return 0;
+    return Math.max(0, _editorGetTimelineViewportFocusOffset() - _editorGetTimelineLabelWidth());
+}
+
+function _editorGetTimelineTrailingGutter() {
+    if (!_editorUseFixedMobilePlayhead()) return _EDITOR_TIMELINE_RIGHT_GUTTER;
+    const timelineEl = document.getElementById("editor-timeline");
+    const viewportWidth = Math.max(0, Number(timelineEl?.clientWidth || 0));
+    return Math.max(_EDITOR_TIMELINE_RIGHT_GUTTER, Math.round(viewportWidth - _editorGetTimelineViewportFocusOffset()));
+}
+
+function _editorGetTimeAtTimelineViewport(scrollLeft = 0) {
+    const timelineDuration = _editorGetTimelineDuration();
+    if (!timelineDuration) return 0;
+    const trackWidth = Math.max(1, _editorGetTimelineTrackWidth(timelineDuration));
+    const absoluteX = Math.max(0, Number(scrollLeft || 0) + _editorGetTimelineViewportFocusOffset());
+    const trackX = Math.max(0, Math.min(trackWidth, absoluteX - _editorGetTimelineLabelWidth() - _editorGetTimelineLeadGutter()));
+    return (trackX / trackWidth) * timelineDuration;
+}
+
+function _editorApplyMobileControlMode() {
+    const workspace = document.getElementById("editor-workspace");
+    const quickActions = document.getElementById("editor-quick-actions");
+    const mobileActionsToggle = document.getElementById("editor-mobile-actions-toggle");
+    const mobileToolsToggle = document.getElementById("editor-mobile-tools-toggle");
+    const mobileActive = _editorIsMobileViewport() && workspace && !workspace.hidden;
+    const actionsOpen = mobileActive && _editor.mobileControlMode === "actions";
+
+    _editorSyncMobileBarsPlacement();
+
+    if (workspace) {
+        workspace.classList.toggle("editor-mobile-actions-open", actionsOpen);
+    }
+    if (quickActions) {
+        quickActions.hidden = Boolean(mobileActive && !actionsOpen);
+    }
+    if (mobileActionsToggle) {
+        mobileActionsToggle.classList.toggle("active", actionsOpen);
+        mobileActionsToggle.setAttribute("aria-pressed", actionsOpen ? "true" : "false");
+        mobileActionsToggle.setAttribute("aria-expanded", actionsOpen ? "true" : "false");
+    }
+    if (mobileToolsToggle) {
+        mobileToolsToggle.classList.toggle("active", actionsOpen);
+        mobileToolsToggle.setAttribute("aria-pressed", actionsOpen ? "true" : "false");
+    }
+
+    if (mobileActive) {
+        _editorMovePlayhead(Number(_editor.timelineTime || 0));
+    }
+
+    _editorRenderMobileSubtitleSheet();
+}
+
+function _editorSetMobileControlMode(mode = "tools") {
+    _editor.mobileControlMode = mode === "actions" ? "actions" : "tools";
+    _editorApplyMobileControlMode();
+}
+
+function _editorToggleMobileControlMode() {
+    _editorSetMobileControlMode(_editor.mobileControlMode === "actions" ? "tools" : "actions");
+}
 const _EDITOR_SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 const _EDITOR_TRANSITION_OPTIONS = [
     { value: "dissolve", label: "Dissolver", desc: "Mistura suave entre os dois clipes", preview: "dissolve" },
@@ -28783,7 +29421,7 @@ function _editorBuildDraftSnapshot() {
         editProjectName: String(_editor.editProjectName || ""),
         sourceAspectRatio: String(_editor.sourceAspectRatio || "9:16"),
         outputAspectRatio: String(_editor.outputAspectRatio || "source"),
-        activeTool: String(_editor.activeTool || "text"),
+        activeTool: String(_editor.activeTool || "trim"),
         smartCuts: _editor.smartCuts || [],
         smartCutSubtitleStyle: String(_editor.smartCutSubtitleStyle || "destaque"),
         timelineTime: Number(_editor.timelineTime || 0),
@@ -28857,7 +29495,7 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
             _editor.sourceAspectRatio = String(draft.sourceAspectRatio);
         }
         _editor.outputAspectRatio = _normalizeAspectValue(String(draft.outputAspectRatio || _editor.outputAspectRatio || "source"));
-        _editor.activeTool = String(draft.activeTool || _editor.activeTool || "text");
+        _editor.activeTool = String(draft.activeTool || _editor.activeTool || "trim");
         _editor.smartCuts = Array.isArray(draft.smartCuts) ? draft.smartCuts : [];
         _editor.smartCutSubtitleStyle = _getSubStyle(String(draft.smartCutSubtitleStyle || "destaque")).name;
         _editor.smartCutWords = [];
@@ -28891,6 +29529,8 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
         } else {
             _editor.selectedClip = { kind: "", id: "", track: "" };
         }
+
+        _editor.activeTool = _editorResolveInitialActiveTool(_editor.activeTool, _editor.selectedClip);
 
         _editor.trimStart = Math.max(0, Number(draft.trimStart || 0));
         _editor.trimEnd = Math.max(_editor.trimStart, Number(draft.trimEnd || 0));
@@ -29083,14 +29723,50 @@ function _editorApplyAspectRatio() {
     }[resolved] || "9 / 16";
     wrapper.style.setProperty("--editor-aspect-ratio", cssVal);
 
-    const sel = document.getElementById("editor-aspect-select");
-    if (sel) sel.value = _normalizeAspectValue(_editor.outputAspectRatio);
+    _editorRefreshAspectControls();
 
     const video = document.getElementById("editor-video");
     _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
 
     _editorRenderMediaLayers();
 }
+
+function _editorRefreshAspectControls() {
+    const normalized = _normalizeAspectValue(_editor.outputAspectRatio);
+    const resolved = _resolveAspectRatio();
+
+    const sel = document.getElementById("editor-aspect-select");
+    if (sel) {
+        sel.value = normalized;
+        const sourceOption = sel.querySelector('option[value="source"]');
+        if (sourceOption) {
+            sourceOption.textContent = resolved;
+        }
+    }
+
+    const btn = document.getElementById("editor-aspect-btn");
+    if (!btn) return;
+
+    const title = normalized === "source"
+        ? `Proporção automática (${resolved})`
+        : `Proporção ${resolved}`;
+    const valueEl = btn.querySelector(".editor-aspect-icon-value");
+    if (valueEl) valueEl.textContent = resolved;
+    btn.dataset.aspectLabel = "";
+    btn.classList.toggle("auto", normalized === "source");
+    btn.title = title;
+    btn.setAttribute("aria-label", title);
+}
+
+function _editorCycleAspectRatio() {
+    const values = ["source", "9:16", "16:9", "1:1"];
+    const current = _normalizeAspectValue(_editor.outputAspectRatio);
+    const index = values.indexOf(current);
+    const next = values[(index + 1 + values.length) % values.length];
+    _editorSaveState();
+    _editorSetOutputAspectRatio(next);
+}
+window._editorCycleAspectRatio = _editorCycleAspectRatio;
 
 function _editorSetOutputAspectRatio(value) {
     _editor.outputAspectRatio = _normalizeAspectValue(value);
@@ -29373,10 +30049,8 @@ function _editorSegSourceTimeAtTimelineTime(seg, timelineTime) {
 }
 
 function _editorGetTrackSegmentAtTimelineTime(track = "video", timelineTime = 0) {
-    const sorted = [...
-        (_editorIsAudioTrack(track) ? _editorGetSegments(track) : _editor.videoSegments)
-    ].sort((a, b) => a.start - b.start);
-    return sorted.find((seg) => timelineTime >= Number(seg.start || 0) - 0.01 && timelineTime <= Number(seg.end || 0) + 0.01) || null;
+    const segments = _editorIsAudioTrack(track) ? _editorGetSegments(track) : _editor.videoSegments;
+    return segments.find((seg) => timelineTime >= Number(seg.start || 0) - 0.01 && timelineTime <= Number(seg.end || 0) + 0.01) || null;
 }
 
 function _editorTimelineToTrackSourceTime(timelineTime, track = "video") {
@@ -29385,11 +30059,123 @@ function _editorTimelineToTrackSourceTime(timelineTime, track = "video") {
     return _editorSegSourceTimeAtTimelineTime(seg, timelineTime);
 }
 
-function _editorSyncBaseVideoPreviewVolume(timelineTime = 0) {
+function _editorShouldUseDetachedSourceAudioPreview() {
+    if (_editorShouldShowAudioTrack()) return false;
+    if (_editorHasReversedVideoSegments()) return false;
+    if (!_editor.videoSegments.length) return false;
+
+    const video = document.getElementById("editor-video");
+    const sourceUrl = _editorNormalizeMediaUrl(video?.currentSrc || video?.src || _editor.videoUrl || "");
+    if (!sourceUrl) return false;
+
+    return _editor.videoSegments.length > 1 || _editorHasSpeedAdjustedVideoSegments();
+}
+
+function _editorGetSourcePreviewAudio() {
+    if (!_editorSourcePreviewAudio) {
+        _editorSourcePreviewAudio = new Audio();
+        _editorSourcePreviewAudio.preload = "auto";
+        _editorSourcePreviewAudio.loop = true;
+        _editorSourcePreviewAudio.setAttribute("playsinline", "true");
+        _editorSourcePreviewAudio.playbackRate = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
+    }
+    return _editorSourcePreviewAudio;
+}
+
+function _editorSetSourcePreviewAudioSource(url = "") {
+    const audio = _editorGetSourcePreviewAudio();
+    const normalizedUrl = _editorNormalizeMediaUrl(url);
+
+    if (!normalizedUrl) {
+        if (audio.src) {
+            audio.pause();
+            audio.removeAttribute("src");
+            audio.load();
+        }
+        _editorSourcePreviewSourceKey = "";
+        return false;
+    }
+
+    if (_editorSourcePreviewSourceKey === normalizedUrl && audio.src) {
+        return true;
+    }
+
+    audio.pause();
+    audio.src = normalizedUrl;
+    audio.load();
+    _editorSourcePreviewSourceKey = normalizedUrl;
+    return true;
+}
+
+function _editorSyncSourcePreviewPlayback(timelineTime = 0, shouldPlay = false, activeSegment = null, volumeOverride = null) {
+    if (!_editorShouldUseDetachedSourceAudioPreview()) {
+        if (_editorSourcePreviewAudio && !_editorSourcePreviewAudio.paused) {
+            _editorSourcePreviewAudio.pause();
+        }
+        return false;
+    }
+
+    const video = document.getElementById("editor-video");
+    const sourceUrl = video?.currentSrc || video?.src || _editor.videoUrl || "";
+    if (!_editorSetSourcePreviewAudioSource(sourceUrl)) {
+        return false;
+    }
+
+    const audio = _editorGetSourcePreviewAudio();
+    const segment = activeSegment || _editorGetTrackSegmentAtTimelineTime("video", Number(timelineTime || 0));
+    const nextVolume = Number.isFinite(volumeOverride)
+        ? Math.max(0, Math.min(1, Number(volumeOverride || 0)))
+        : _editorGetTrackEffectiveSegmentVolumeFactor("video", segment);
+    const nextRate = Math.max(0.25, Math.min(8, Number(_editor.playbackRate || 1) * _editorSegmentPlaybackSpeed(segment)));
+    let targetTime = Math.max(0, _editorTimelineToSourceTime(timelineTime));
+    const duration = Number(audio.duration || 0);
+
+    if (Number.isFinite(duration) && duration > 0.05) {
+        targetTime = Math.max(0, Math.min(targetTime, Math.max(0, duration - 0.02)));
+    }
+
+    audio.volume = nextVolume;
+    audio.playbackRate = nextRate;
+
+    if (audio.readyState >= 1 && Math.abs(Number(audio.currentTime || 0) - targetTime) > 0.18) {
+        try {
+            audio.currentTime = targetTime;
+        } catch {
+            // Ignore seek errors while metadata is loading.
+        }
+    }
+
+    if (shouldPlay) {
+        if (audio.paused) {
+            const playPromise = audio.play();
+            if (playPromise && typeof playPromise.catch === "function") {
+                playPromise.catch(() => {
+                    // Keep the preview silent rather than surfacing autoplay noise.
+                });
+            }
+        }
+        return true;
+    }
+
+    if (!audio.paused) {
+        audio.pause();
+    }
+    return true;
+}
+
+function _editorSyncBaseVideoPreviewVolume(timelineTime = 0, shouldPlay = false) {
     const video = document.getElementById("editor-video");
     if (!video) return;
     const activeSegment = _editorGetTrackSegmentAtTimelineTime("video", Number(timelineTime || 0));
     const nextVolume = _editorGetTrackEffectiveSegmentVolumeFactor("video", activeSegment);
+    const usingDetachedAudio = _editorSyncSourcePreviewPlayback(timelineTime, shouldPlay, activeSegment, nextVolume);
+
+    if (usingDetachedAudio) {
+        video.volume = 0;
+        video.muted = true;
+        return;
+    }
+
     video.volume = nextVolume;
     video.muted = nextVolume <= 0.0001;
 }
@@ -29400,8 +30186,7 @@ function _editorTimelineToSourceTime(timelineTime) {
 
 function _editorSourceToTimelineTime(sourceTime) {
     if (!_editor.videoSegments.length) return sourceTime;
-    const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
-    for (const seg of sorted) {
+    for (const seg of _editor.videoSegments) {
         const ss = _editorSegSourceStart(seg);
         const se = _editorSegSourceEnd(seg);
         if (sourceTime >= ss - 0.01 && sourceTime <= se + 0.01) {
@@ -29834,7 +30619,7 @@ function _editorApplyTimelineFrame(timeSec, shouldPlay = false) {
         }
     }
 
-    _editorSyncBaseVideoPreviewVolume(safeTime);
+    _editorSyncBaseVideoPreviewVolume(safeTime, Boolean(shouldPlay));
 
     const timeEl = document.getElementById("editor-time-current");
     if (timeEl) timeEl.textContent = _fmtTime(safeTime);
@@ -32371,7 +33156,6 @@ async function _editorPrepareRecorderSession(mode) {
                 ctx.drawImage(webcamVideoEl, x, y, overlayWidth, overlayHeight);
                 ctx.restore();
             }
-
             _editorRecorderRuntime.drawRaf = nextFrame(drawFrame);
         };
         drawFrame();
@@ -34112,7 +34896,7 @@ async function openEditor(projectId, options = {}) {
         _editor.sourceAspectRatio = ["9:16", "16:9", "1:1"].includes(detail.aspect_ratio) ? detail.aspect_ratio : "9:16";
         _editor.outputAspectRatio = "source";
         _editor.playing = false;
-        _editor.activeTool = "text";
+        _editor.activeTool = "trim";
         _editor.smartCuts = [];
         _editor.smartCutsLoading = false;
         _editor.smartCutsError = "";
@@ -34147,8 +34931,12 @@ async function openEditor(projectId, options = {}) {
         _editor.timelineTime = 0;
         _editor.timelineZoom = 1;
         _editor.playbackRate = 1;
+        _editor.mobileControlMode = "tools";
         _editor._virtualPlaybackActive = false;
         _editorStopPlaybackFollowLoop();
+        _editorInlineTextEditId = "";
+        _editorInlineTextEditPendingFocus = "";
+        _editorMobileTrackVolumeOpen = "";
         _editorStopVirtualTimelinePlayback();
         _editorResetSourceWaveformState();
         _editorCloseAIMusicModal(true);
@@ -34159,8 +34947,13 @@ async function openEditor(projectId, options = {}) {
         document.getElementById("editor-select-view").hidden = true;
         document.getElementById("editor-workspace").hidden = false;
         document.getElementById("page-editor")?.classList.add("editor-fullscreen");
+        _editorSetMobileControlMode("tools");
 
         const video = document.getElementById("editor-video");
+        video.preload = "auto";
+        video.playsInline = true;
+        video.setAttribute("playsinline", "true");
+        video.setAttribute("webkit-playsinline", "true");
         video.src = _editor.videoUrl;
         video.load();
         let editorReady = false;
@@ -34168,6 +34961,15 @@ async function openEditor(projectId, options = {}) {
         const readyPromise = new Promise((resolve) => {
             resolveOpen = resolve;
         });
+        const refreshEditorPreviewFrame = () => {
+            if (!editorReady) return;
+            requestAnimationFrame(() => {
+                const previewTime = Number(_editor.timelineTime || 0);
+                _editorApplyAspectRatio();
+                _editorRenderMediaLayers();
+                _editorApplyTimelineFrame(previewTime, false);
+            });
+        };
         const finalizeEditorOpen = () => {
             if (editorReady) return;
             editorReady = true;
@@ -34209,13 +35011,21 @@ async function openEditor(projectId, options = {}) {
             _editorRefreshQuickActions();
             _editorRenderTimeline();
             _editorCenterTimelineOnTime(Number(_editor.timelineTime || 0));
-            _editorSelectTool(restored ? _editor.activeTool : "text");
+            _editorSelectTool(_editorResolveInitialActiveTool(restored ? _editor.activeTool : "trim", _editor.selectedClip));
             if (shouldRestoreDraft && restored) {
                 showToast("Edição restaurada de onde você parou.", "success");
             }
+            refreshEditorPreviewFrame();
             resolveOpen?.();
         };
         video.onloadedmetadata = finalizeEditorOpen;
+        video.onloadeddata = () => {
+            if (!editorReady) {
+                finalizeEditorOpen();
+            }
+            refreshEditorPreviewFrame();
+        };
+        video.oncanplay = refreshEditorPreviewFrame;
         video.onerror = finalizeEditorOpen;
         setTimeout(finalizeEditorOpen, 1500);
         _updateUndoRedoBtns();
@@ -34280,7 +35090,9 @@ function closeEditor() {
     _editor.timelineTime = 0;
     _editor.timelineZoom = 1;
     _editor.playbackRate = 1;
+    _editor.mobileControlMode = "tools";
     _editorResetSourceWaveformState();
+    _editorApplyMobileControlMode();
 }
 
 // ---------- Format time ----------
@@ -34306,7 +35118,7 @@ function _editorGetTimelineTrackWidth(durationSec = 0) {
     const timelineEl = document.getElementById("editor-timeline");
     const parentWidth = Number(timelineEl?.parentElement?.clientWidth || 0);
     const viewportWidth = parentWidth > 0 ? parentWidth : Number(timelineEl?.clientWidth || 0);
-    const viewportTrackWidth = Math.max(560, viewportWidth - (_EDITOR_TIMELINE_LABEL_WIDTH + _EDITOR_TIMELINE_RIGHT_GUTTER));
+    const viewportTrackWidth = Math.max(560, viewportWidth - (_editorGetTimelineLabelWidth() + _EDITOR_TIMELINE_RIGHT_GUTTER));
     const zoom = _editorClampTimelineZoom(_editor.timelineZoom || 1);
     const baseWidth = Math.max(420, viewportTrackWidth);
     return Math.round(baseWidth * zoom);
@@ -34326,8 +35138,10 @@ function _editorCenterTimelineOnTime(timeSec) {
         if (!timelineDuration) return;
         const trackWidth = Math.max(document.getElementById("editor-track-video")?.offsetWidth || 0, _editorGetTimelineTrackWidth(timelineDuration));
         const safeTime = Math.max(0, Math.min(timelineDuration, Number(timeSec || 0)));
-        const x = _EDITOR_TIMELINE_LABEL_WIDTH + (safeTime / timelineDuration) * trackWidth;
-        const targetScroll = Math.max(0, Math.min(timelineEl.scrollWidth - timelineEl.clientWidth, x - (timelineEl.clientWidth / 2)));
+        const leadGutter = _editorGetTimelineLeadGutter();
+        const x = _editorGetTimelineLabelWidth() + leadGutter + (safeTime / timelineDuration) * trackWidth;
+        const viewportTarget = _editorUseFixedMobilePlayhead() ? _editorGetTimelineViewportFocusOffset() : (timelineEl.clientWidth / 2);
+        const targetScroll = Math.max(0, Math.min(timelineEl.scrollWidth - timelineEl.clientWidth, x - viewportTarget));
         timelineEl.scrollLeft = targetScroll;
     });
 }
@@ -34339,12 +35153,17 @@ function _editorPreserveTimelineFocusViewport(focusTime, previousTrackWidth = 0)
 
     const safeFocus = Math.max(0, Math.min(timelineDuration, Number(focusTime || 0)));
     const oldTrackWidth = Math.max(1, Number(previousTrackWidth || _editorGetTimelineTrackWidth(timelineDuration)));
-    const oldFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + ((safeFocus / timelineDuration) * oldTrackWidth);
-    const viewportOffset = oldFocusX - Number(timelineEl.scrollLeft || 0);
+    const oldLeadGutter = _editorGetTimelineLeadGutter();
+    const labelWidth = _editorGetTimelineLabelWidth();
+    const oldFocusX = labelWidth + oldLeadGutter + ((safeFocus / timelineDuration) * oldTrackWidth);
+    const viewportOffset = _editorUseFixedMobilePlayhead()
+        ? _editorGetTimelineViewportFocusOffset()
+        : (oldFocusX - Number(timelineEl.scrollLeft || 0));
 
     requestAnimationFrame(() => {
         const nextTrackWidth = Math.max(1, _editorGetTimelineTrackWidth(timelineDuration));
-        const nextFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + ((safeFocus / timelineDuration) * nextTrackWidth);
+        const nextLeadGutter = _editorGetTimelineLeadGutter();
+        const nextFocusX = labelWidth + nextLeadGutter + ((safeFocus / timelineDuration) * nextTrackWidth);
         const maxScroll = Math.max(0, timelineEl.scrollWidth - timelineEl.clientWidth);
         const targetScroll = Math.max(0, Math.min(maxScroll, nextFocusX - viewportOffset));
         timelineEl.scrollLeft = targetScroll;
@@ -34441,6 +35260,10 @@ function _editorApplyPlaybackRate(nextRate, options = {}) {
         _editorMusicPreviewAudio.playbackRate = safeRate;
     }
 
+    if (_editorSourcePreviewAudio) {
+        _editorSourcePreviewAudio.playbackRate = safeRate;
+    }
+
     const speedBtn = document.getElementById("editor-quick-speed");
     if (speedBtn) {
         const label = _editorFormatRateLabel(safeRate);
@@ -34502,6 +35325,7 @@ function _editorTogglePlay() {
     if (!_editorMusicPreviewPrimed) {
         _editorPrimeMusicPreviewPlayback(startTime);
     }
+    _editorSyncBaseVideoPreviewVolume(startTime, true);
 
     const videoPlaybackEnd = _editorGetVideoPlaybackEndTime();
     if (_editorShouldUseVirtualVideoPlayback() || startTime > videoPlaybackEnd + 0.01) {
@@ -34601,37 +35425,28 @@ function _editorTimeUpdate() {
 
 function _editorMovePlayhead(t) {
     const playhead = document.getElementById("editor-timeline-playhead");
+    const timelineEl = document.getElementById("editor-timeline");
     const timelineDuration = _editorGetTimelineDuration();
-    if (!playhead || !timelineDuration) return;
+    if (!playhead || !timelineEl || !timelineDuration) return;
     const trackWidth = _editorGetTimelineTrackWidth(timelineDuration);
     const safeTime = Math.max(0, Math.min(timelineDuration, t || 0));
     const pct = timelineDuration > 0 ? (safeTime / timelineDuration) : 0;
     const x = Math.max(0, Math.min(trackWidth - 2, pct * trackWidth));
-    const playheadLeft = _EDITOR_TIMELINE_LABEL_WIDTH + x;
-    playhead.style.left = playheadLeft + "px";
+    const leadGutter = _editorGetTimelineLeadGutter();
+    const absoluteX = _editorGetTimelineLabelWidth() + leadGutter + x;
 
-    if (_editor.playing) {
-        const timelineEl = document.getElementById("editor-timeline");
-        const viewportWidth = Number(timelineEl?.clientWidth || 0);
-        if (timelineEl && viewportWidth > 0) {
-            const currentScroll = Number(timelineEl.scrollLeft || 0);
-            const minViewportX = Math.max(24, viewportWidth * 0.28);
-            const maxViewportX = Math.min(viewportWidth - 24, viewportWidth * 0.62);
-            const playheadViewportX = playheadLeft - currentScroll;
-            let targetScroll = currentScroll;
-
-            if (playheadViewportX < minViewportX) {
-                targetScroll = Math.max(0, playheadLeft - minViewportX);
-            } else if (playheadViewportX > maxViewportX) {
-                const maxScroll = Math.max(0, timelineEl.scrollWidth - viewportWidth);
-                targetScroll = Math.max(0, Math.min(maxScroll, playheadLeft - maxViewportX));
-            }
-
-            if (Math.abs(targetScroll - currentScroll) > 0.5) {
-                timelineEl.scrollLeft = targetScroll;
-            }
+    if (_editorUseFixedMobilePlayhead()) {
+        const fixedOffset = _editorGetTimelineViewportFocusOffset();
+        const maxScroll = Math.max(0, timelineEl.scrollWidth - timelineEl.clientWidth);
+        const targetScroll = Math.max(0, Math.min(maxScroll, absoluteX - fixedOffset));
+        if (Math.abs(Number(timelineEl.scrollLeft || 0) - targetScroll) > 0.5) {
+            timelineEl.scrollLeft = targetScroll;
         }
+        playhead.style.left = `${targetScroll + fixedOffset}px`;
+        return;
     }
+
+    playhead.style.left = `${absoluteX}px`;
 }
 
 function _editorClampToVideoSegments(timeSec) {
@@ -34694,26 +35509,124 @@ function _editorSeekByClientX(clientX) {
     _editorApplyTimelineFrame(nextTime, false);
 }
 
+function _editorCapturePointer(target, pointerId) {
+    if (!target || pointerId === undefined || typeof target.setPointerCapture !== "function") return;
+    try {
+        target.setPointerCapture(pointerId);
+    } catch {
+        // Touch browsers may reject capture while a native scroll is active.
+    }
+}
+
+function _editorReleasePointerCapture(target, pointerId) {
+    if (!target || pointerId === undefined || typeof target.releasePointerCapture !== "function") return;
+    try {
+        target.releasePointerCapture(pointerId);
+    } catch {
+        // Ignore if the pointer was already released.
+    }
+}
+
 function _editorStartTimelineScrub(event) {
     if (!_editorGetTimelineDuration()) return false;
     if (event.button !== undefined && event.button !== 0) return false;
     if (event.target.closest(".editor-track-clip")) return false;
     if (event.target.closest(".editor-track-label")) return false;
 
-    _editorTimelineScrub = { active: true };
-    _editorSeekByClientX(event.clientX);
+    const timelineEl = document.getElementById("editor-timeline");
+    const pointerType = String(event.pointerType || "mouse");
+    const rulerEl = document.getElementById("editor-timeline-ruler");
+    const playheadEl = document.getElementById("editor-timeline-playhead");
+    const timelineRect = timelineEl?.getBoundingClientRect?.();
+    const playheadRect = playheadEl?.getBoundingClientRect?.();
+    const localY = timelineRect ? (Number(event.clientY || 0) - timelineRect.top) : 0;
+    const rulerHeight = Math.max(24, Number(rulerEl?.offsetHeight || 24));
+    const pointerNearRuler = Boolean(rulerEl && (event.target === rulerEl || event.target.closest?.(".editor-timeline-ruler")));
+    const pointerNearPlayhead = Boolean(
+        playheadRect
+        && Math.abs(Number(event.clientX || 0) - (playheadRect.left + (playheadRect.width / 2))) <= 18
+        && localY <= (rulerHeight + 18)
+    );
+    const prefersDirectScrub = pointerType === "touch" && (pointerNearRuler || pointerNearPlayhead || localY <= (rulerHeight + 6));
+
+    if (pointerType === "touch" && !prefersDirectScrub) {
+        return false;
+    }
+
+    _editorTimelineScrub = {
+        active: true,
+        pointerId: event.pointerId,
+        pointerType,
+        pointerTarget: timelineEl,
+        startX: Number(event.clientX || 0),
+        startY: Number(event.clientY || 0),
+        startScrollLeft: Number(timelineEl?.scrollLeft || 0),
+        mode: prefersDirectScrub ? "scrub" : pointerType === "touch" ? "pending" : "scrub",
+        moved: false,
+    };
+
+    if (_editorTimelineScrub.mode === "scrub") {
+        _editorSeekByClientX(event.clientX);
+    }
+
+    _editorCapturePointer(timelineEl, event.pointerId);
     document.addEventListener("pointermove", _editorOnTimelineScrubMove);
-    document.addEventListener("pointerup", _editorOnTimelineScrubEnd, { once: true });
+    document.addEventListener("pointerup", _editorOnTimelineScrubEnd);
+    document.addEventListener("pointercancel", _editorOnTimelineScrubEnd);
     return true;
 }
 
 function _editorOnTimelineScrubMove(event) {
-    if (!_editorTimelineScrub?.active) return;
+    const scrub = _editorTimelineScrub;
+    if (!scrub?.active) return;
+    if (scrub.pointerId !== undefined && event.pointerId !== undefined && event.pointerId !== scrub.pointerId) return;
+
+    const dx = Number(event.clientX || 0) - scrub.startX;
+    const dy = Number(event.clientY || 0) - scrub.startY;
+
+    if (scrub.mode === "pending") {
+        const threshold = scrub.pointerType === "touch" ? 6 : 0;
+        if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) {
+            return;
+        }
+
+        scrub.moved = true;
+        scrub.mode = Math.abs(dx) >= Math.abs(dy) ? "pan" : "scrub";
+        if (scrub.mode === "scrub") {
+            _editorSeekByClientX(event.clientX);
+        }
+        return;
+    }
+
+    if (scrub.mode === "pan") {
+        const timelineEl = document.getElementById("editor-timeline");
+        if (!timelineEl) return;
+        timelineEl.scrollLeft = Math.max(0, scrub.startScrollLeft - dx);
+        if (_editorUseFixedMobilePlayhead()) {
+            const nextTime = _editorGetTimeAtTimelineViewport(timelineEl.scrollLeft);
+            _editorApplyTimelineFrame(nextTime, _editor.playing);
+        }
+        scrub.moved = true;
+        if (event.cancelable) {
+            event.preventDefault();
+        }
+        return;
+    }
+
+    scrub.moved = true;
     _editorSeekByClientX(event.clientX);
 }
 
-function _editorOnTimelineScrubEnd() {
+function _editorOnTimelineScrubEnd(event) {
     document.removeEventListener("pointermove", _editorOnTimelineScrubMove);
+    document.removeEventListener("pointerup", _editorOnTimelineScrubEnd);
+    document.removeEventListener("pointercancel", _editorOnTimelineScrubEnd);
+
+    const scrub = _editorTimelineScrub;
+    if (scrub?.active && scrub.pointerType === "touch" && scrub.mode === "pending" && event?.clientX !== undefined) {
+        _editorSeekByClientX(event.clientX);
+    }
+    _editorReleasePointerCapture(scrub?.pointerTarget, scrub?.pointerId);
     _editorTimelineScrub = null;
 }
 
@@ -34732,6 +35645,9 @@ function _editorDrawOverlays(t) {
     video.style.filter = _getCSSFilter(_editor.filter);
 
     // Draw texts
+    const selectedText = _editorGetSelectedTextItem();
+    const inlineEditingTextId = String(_editorInlineTextEditId || "");
+    let selectedTextBounds = null;
     for (const txt of _editor.texts) {
         if (t >= txt.startTime && t <= txt.endTime) {
             const fs = txt.fontSize * (canvas.height / 720);
@@ -34750,10 +35666,64 @@ function _editorDrawOverlays(t) {
             ctx.shadowOffsetY = 1;
             const x = (txt.x / 100) * canvas.width;
             const y = (txt.y / 100) * canvas.height;
-            ctx.fillText(txt.content, x, y);
+            const isInlineEditing = inlineEditingTextId && String(txt.id) === inlineEditingTextId;
+            if (!isInlineEditing) {
+                ctx.fillText(txt.content, x, y);
+            }
             ctx.shadowColor = "transparent";
+
+            if (_editorIsMobileViewport() && _editor.activeTool === "text" && selectedText && String(selectedText.id) === String(txt.id)) {
+                selectedTextBounds = _editorGetTextCanvasBounds(txt, canvas, ctx);
+            }
         }
     }
+
+    if (selectedTextBounds && _editorIsMobileViewport() && _editor.activeTool === "text") {
+        const scale = canvas.height / 720;
+        ctx.save();
+        ctx.setLineDash([Math.max(4, 6 * scale), Math.max(3, 4 * scale)]);
+        ctx.lineWidth = Math.max(1.6, 2 * scale);
+        ctx.strokeStyle = "rgba(238, 246, 255, 0.92)";
+        ctx.strokeRect(
+            selectedTextBounds.left,
+            selectedTextBounds.top,
+            selectedTextBounds.right - selectedTextBounds.left,
+            selectedTextBounds.bottom - selectedTextBounds.top,
+        );
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(255, 92, 112, 0.96)";
+        ctx.beginPath();
+        ctx.arc(selectedTextBounds.handleX, selectedTextBounds.handleY, selectedTextBounds.handleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = Math.max(1.2, 1.6 * scale);
+        ctx.strokeStyle = "rgba(4, 14, 24, 0.82)";
+        ctx.stroke();
+        const trashW = selectedTextBounds.handleRadius * 0.95;
+        const trashH = selectedTextBounds.handleRadius * 1.02;
+        const trashX = selectedTextBounds.handleX - (trashW / 2);
+        const trashY = selectedTextBounds.handleY - (trashH / 2) + 0.5;
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
+        ctx.beginPath();
+        ctx.moveTo(trashX + trashW * 0.2, trashY + trashH * 0.22);
+        ctx.lineTo(trashX + trashW * 0.8, trashY + trashH * 0.22);
+        ctx.moveTo(trashX + trashW * 0.35, trashY + trashH * 0.14);
+        ctx.lineTo(trashX + trashW * 0.65, trashY + trashH * 0.14);
+        ctx.moveTo(trashX + trashW * 0.28, trashY + trashH * 0.26);
+        ctx.lineTo(trashX + trashW * 0.34, trashY + trashH * 0.82);
+        ctx.lineTo(trashX + trashW * 0.66, trashY + trashH * 0.82);
+        ctx.lineTo(trashX + trashW * 0.72, trashY + trashH * 0.26);
+        ctx.moveTo(trashX + trashW * 0.44, trashY + trashH * 0.38);
+        ctx.lineTo(trashX + trashW * 0.44, trashY + trashH * 0.68);
+        ctx.moveTo(trashX + trashW * 0.56, trashY + trashH * 0.38);
+        ctx.lineTo(trashX + trashW * 0.56, trashY + trashH * 0.68);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    _editorRenderInlineTextEditor(selectedText, selectedTextBounds);
+
+    const selectedSubtitle = _editorGetSelectedSubtitleItem();
+    let selectedSubtitleBounds = null;
 
     // Draw subtitles
     for (const sub of _editor.subtitles) {
@@ -34798,7 +35768,41 @@ function _editorDrawOverlays(t) {
             ctx.shadowOffsetY = 1;
             ctx.fillText(sub.text, sx, sy);
             ctx.shadowColor = "transparent";
+
+            if (_editorIsMobileViewport() && _editor.activeTool === "subtitles" && selectedSubtitle && String(selectedSubtitle.id) === String(sub.id)) {
+                selectedSubtitleBounds = _editorGetSubtitleCanvasBounds(sub, canvas, ctx);
+            }
         }
+    }
+
+    if (selectedSubtitleBounds && _editorIsMobileViewport() && _editor.activeTool === "subtitles") {
+        const scale = canvas.height / 720;
+        ctx.save();
+        ctx.setLineDash([Math.max(4, 6 * scale), Math.max(3, 4 * scale)]);
+        ctx.lineWidth = Math.max(1.6, 2 * scale);
+        ctx.strokeStyle = "rgba(238, 246, 255, 0.92)";
+        ctx.strokeRect(
+            selectedSubtitleBounds.left,
+            selectedSubtitleBounds.top,
+            selectedSubtitleBounds.right - selectedSubtitleBounds.left,
+            selectedSubtitleBounds.bottom - selectedSubtitleBounds.top,
+        );
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(255, 184, 77, 0.96)";
+        ctx.beginPath();
+        ctx.arc(selectedSubtitleBounds.handleX, selectedSubtitleBounds.handleY, selectedSubtitleBounds.handleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = Math.max(1.2, 1.6 * scale);
+        ctx.strokeStyle = "rgba(4, 14, 24, 0.82)";
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(4, 14, 24, 0.92)";
+        ctx.beginPath();
+        ctx.moveTo(selectedSubtitleBounds.handleX - selectedSubtitleBounds.handleRadius * 0.34, selectedSubtitleBounds.handleY + selectedSubtitleBounds.handleRadius * 0.18);
+        ctx.lineTo(selectedSubtitleBounds.handleX + selectedSubtitleBounds.handleRadius * 0.18, selectedSubtitleBounds.handleY - selectedSubtitleBounds.handleRadius * 0.34);
+        ctx.lineTo(selectedSubtitleBounds.handleX + selectedSubtitleBounds.handleRadius * 0.18, selectedSubtitleBounds.handleY + selectedSubtitleBounds.handleRadius * 0.18);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
     }
 
     // Draw stickers
@@ -34821,7 +35825,7 @@ function _editorFindSubtitleAtCanvasPoint(clientX, clientY) {
 
     const video = document.getElementById("editor-video");
     if (!video) return null;
-    const currentTime = Number(video.currentTime || 0);
+    const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
 
     const rect = canvas.getBoundingClientRect();
     const x = clientX - rect.left;
@@ -34836,25 +35840,9 @@ function _editorFindSubtitleAtCanvasPoint(clientX, clientY) {
 
     for (let i = activeSubs.length - 1; i >= 0; i -= 1) {
         const sub = activeSubs[i];
-        const scale = canvas.height / 720;
-        const fs = (sub.fontSize || 28) * scale;
-        let fontStr = "";
-        if (sub.italic) fontStr += "italic ";
-        if (sub.bold) fontStr += "bold ";
-        fontStr += fs + "px " + (sub.fontFamily || "Arial, sans-serif");
-        ctx.font = fontStr;
+        const bounds = _editorGetSubtitleCanvasBounds(sub, canvas, ctx);
 
-        const sx = (sub.x / 100) * canvas.width;
-        const sy = (sub.y / 100) * canvas.height;
-        const textW = ctx.measureText(sub.text || "").width;
-        const pad = sub.bgColor ? 8 * scale : 4 * scale;
-
-        const left = sx - textW / 2 - pad;
-        const right = sx + textW / 2 + pad;
-        const top = sy - fs / 2 - pad * 0.7;
-        const bottom = sy + fs / 2 + pad * 0.7;
-
-        if (x >= left && x <= right && y >= top && y <= bottom) {
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
             return sub;
         }
     }
@@ -34862,13 +35850,563 @@ function _editorFindSubtitleAtCanvasPoint(clientX, clientY) {
     return null;
 }
 
+function _editorGetSubtitleCanvasBounds(item, canvas, ctx) {
+    const scale = canvas.height / 720;
+    const fs = Number(item.fontSize || 28) * scale;
+    let fontStr = "";
+    if (item.italic) fontStr += "italic ";
+    if (item.bold) fontStr += "bold ";
+    fontStr += `${fs}px ${item.fontFamily || "Arial, sans-serif"}`;
+    ctx.font = fontStr;
+
+    const content = String(item.text || "");
+    const textW = ctx.measureText(content).width;
+    const pad = item.bgColor ? 8 * scale : 4 * scale;
+    const tx = (Number(item.x || 50) / 100) * canvas.width;
+    const ty = (Number(item.y || 82) / 100) * canvas.height;
+    const handleRadius = Math.max(10, fs * 0.24);
+    const left = tx - textW / 2 - pad;
+    const right = tx + textW / 2 + pad;
+    const top = ty - fs / 2 - pad * 0.7;
+    const bottom = ty + fs / 2 + pad * 0.7;
+    const handleX = Math.min(canvas.width - handleRadius - 4, right + handleRadius * 0.45);
+    const handleY = Math.min(canvas.height - handleRadius - 4, bottom + handleRadius * 0.15);
+
+    return {
+        left,
+        right,
+        top,
+        bottom,
+        handleX,
+        handleY,
+        handleRadius,
+        widthPct: ((right - left) / Math.max(1, canvas.width)) * 100,
+        heightPct: ((bottom - top) / Math.max(1, canvas.height)) * 100,
+    };
+}
+
+function _editorFindTextAtCanvasPoint(clientX, clientY) {
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas || !_editor.texts.length) return null;
+
+    const video = document.getElementById("editor-video");
+    if (!video) return null;
+    const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
+
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const activeTexts = _editor.texts.filter((item) => currentTime >= item.startTime && currentTime <= item.endTime);
+    if (!activeTexts.length) return null;
+
+    for (let i = activeTexts.length - 1; i >= 0; i -= 1) {
+        const item = activeTexts[i];
+        const bounds = _editorGetTextCanvasBounds(item, canvas, ctx);
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
+            return item;
+        }
+    }
+
+    return null;
+}
+
+function _editorGetTextCanvasBounds(item, canvas, ctx) {
+    const scale = canvas.height / 720;
+    const fs = Number(item.fontSize || 36) * scale;
+    let fontStr = "";
+    if (item.italic) fontStr += "italic ";
+    if (item.bold) fontStr += "bold ";
+    fontStr += `${fs}px ${item.fontFamily || "Manrope, sans-serif"}`;
+    ctx.font = fontStr;
+
+    const content = String(item.content || "");
+    const textW = ctx.measureText(content).width;
+    const pad = Math.max(6 * scale, fs * 0.18);
+    const tx = (Number(item.x || 50) / 100) * canvas.width;
+    const ty = (Number(item.y || 50) / 100) * canvas.height;
+    const handleRadius = Math.max(9, fs * 0.24);
+    const left = tx - textW / 2 - pad;
+    const right = tx + textW / 2 + pad;
+    const top = ty - fs / 2 - pad;
+    const bottom = ty + fs / 2 + pad;
+    const handleX = Math.min(canvas.width - handleRadius - 4, right + handleRadius * 0.7);
+    const handleY = ty;
+
+    return {
+        left,
+        right,
+        top,
+        bottom,
+        handleX,
+        handleY,
+        handleRadius,
+        widthPct: ((right - left) / Math.max(1, canvas.width)) * 100,
+        heightPct: ((bottom - top) / Math.max(1, canvas.height)) * 100,
+    };
+}
+
+function _editorShouldShowInlineTextEditor(item = null) {
+    const selectedText = item || _editorGetSelectedTextItem();
+    return Boolean(
+        selectedText
+        && _editorIsMobileViewport()
+        && _editor.activeTool === "text"
+        && String(_editorInlineTextEditId || "") === String(selectedText.id || "")
+    );
+}
+
+function _editorFocusInlineTextEditor(selectAll = false) {
+    const input = document.querySelector("#editor-inline-text-host .editor-inline-text-editor");
+    if (!input) return;
+    try {
+        input.focus({ preventScroll: true });
+    } catch {
+        input.focus();
+    }
+    if (selectAll && typeof input.select === "function") {
+        input.select();
+        return;
+    }
+    if (typeof input.setSelectionRange === "function") {
+        const len = String(input.value || "").length;
+        input.setSelectionRange(len, len);
+    }
+}
+
+function _editorRenderInlineTextEditor(item = null, bounds = null) {
+    const host = document.getElementById("editor-inline-text-host");
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!host || !canvas) return;
+
+    const selectedText = item || _editorGetSelectedTextItem();
+    if (!_editorShouldShowInlineTextEditor(selectedText)) {
+        if (host.innerHTML) {
+            host.innerHTML = "";
+        }
+        host.hidden = true;
+        return;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx || !selectedText) {
+        host.innerHTML = "";
+        host.hidden = true;
+        return;
+    }
+
+    const resolvedBounds = bounds || _editorGetTextCanvasBounds(selectedText, canvas, ctx);
+    const scale = canvas.height / 720;
+    const width = Math.max(72, resolvedBounds.right - resolvedBounds.left);
+    const height = Math.max(32, resolvedBounds.bottom - resolvedBounds.top);
+    const left = Math.max(4, Math.min(canvas.width - width - 4, resolvedBounds.left));
+    const top = Math.max(4, Math.min(canvas.height - height - 4, resolvedBounds.top));
+
+    let input = host.querySelector(".editor-inline-text-editor");
+    const currentId = String(selectedText.id || "");
+    if (!input || String(input.dataset.textId || "") !== currentId) {
+        host.innerHTML = '<input class="editor-inline-text-editor" type="text" spellcheck="false" autocomplete="off" autocapitalize="sentences">';
+        input = host.querySelector(".editor-inline-text-editor");
+        input.addEventListener("pointerdown", (event) => {
+            event.stopPropagation();
+        });
+        input.addEventListener("click", (event) => {
+            event.stopPropagation();
+        });
+        input.addEventListener("focus", () => {
+            _editorInlineTextEditId = String(input.dataset.textId || "");
+        });
+        input.addEventListener("blur", () => {
+            if (String(_editorInlineTextEditId || "") !== String(input.dataset.textId || "")) return;
+            if (!String(input.value || "").trim().length) {
+                _editorDeleteText(input._editorTextId);
+                return;
+            }
+            _editorInlineTextEditId = "";
+            _editorInlineTextEditPendingFocus = "";
+            const video = document.getElementById("editor-video");
+            _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+        });
+        input.addEventListener("keydown", (event) => {
+            event.stopPropagation();
+            if (event.key === "Enter") {
+                event.preventDefault();
+                input.blur();
+                return;
+            }
+            if ((event.key === "Backspace" || event.key === "Delete") && !String(input.value || "").length) {
+                event.preventDefault();
+                _editorDeleteText(input._editorTextId);
+                return;
+            }
+            if (event.key === "Escape") {
+                event.preventDefault();
+                _editorInlineTextEditId = "";
+                _editorInlineTextEditPendingFocus = "";
+                input.blur();
+            }
+        });
+        input.addEventListener("input", () => {
+            _editorUpdateTextProp(input._editorTextId, "content", input.value);
+        });
+    }
+
+    input._editorTextId = selectedText.id;
+    input.dataset.textId = currentId;
+    input.placeholder = "Digite aqui";
+    input.style.left = `${left}px`;
+    input.style.top = `${top}px`;
+    input.style.width = `${width}px`;
+    input.style.height = `${height}px`;
+    input.style.lineHeight = `${height}px`;
+    input.style.fontSize = `${Math.max(16, Number(selectedText.fontSize || 36) * scale)}px`;
+    input.style.fontFamily = String(selectedText.fontFamily || "Manrope, sans-serif");
+    input.style.fontWeight = selectedText.bold ? "700" : "500";
+    input.style.fontStyle = selectedText.italic ? "italic" : "normal";
+    input.style.color = String(selectedText.color || "#ffffff");
+    host.hidden = false;
+
+    if (document.activeElement !== input && input.value !== String(selectedText.content || "")) {
+        input.value = String(selectedText.content || "");
+    }
+
+    if (_editorInlineTextEditPendingFocus && _editorInlineTextEditPendingFocus === currentId) {
+        _editorInlineTextEditPendingFocus = "";
+        requestAnimationFrame(() => _editorFocusInlineTextEditor(true));
+    }
+}
+
+function _editorResolveTextOverlayInteraction(clientX, clientY) {
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas || !_editor.texts.length) return null;
+
+    const video = document.getElementById("editor-video");
+    if (!video) return null;
+    const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
+
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const activeTexts = _editor.texts.filter((item) => currentTime >= item.startTime && currentTime <= item.endTime);
+    if (!activeTexts.length) return null;
+
+    const selectedText = _editorGetSelectedTextItem();
+    if (selectedText && activeTexts.some((item) => String(item.id) === String(selectedText.id))) {
+        const bounds = _editorGetTextCanvasBounds(selectedText, canvas, ctx);
+        const handleDx = x - bounds.handleX;
+        const handleDy = y - bounds.handleY;
+        if ((handleDx * handleDx) + (handleDy * handleDy) <= (bounds.handleRadius * bounds.handleRadius)) {
+            return { item: selectedText, bounds, mode: "delete" };
+        }
+    }
+
+    for (let i = activeTexts.length - 1; i >= 0; i -= 1) {
+        const item = activeTexts[i];
+        const bounds = _editorGetTextCanvasBounds(item, canvas, ctx);
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
+            return { item, bounds, mode: "move" };
+        }
+    }
+
+    return null;
+}
+
+function _editorResolveSubtitleOverlayInteraction(clientX, clientY) {
+    if (!_editorIsMobileViewport() || _editor.activeTool !== "subtitles") return null;
+
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas || !_editor.subtitles.length) return null;
+
+    const video = document.getElementById("editor-video");
+    if (!video) return null;
+    const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
+
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const activeSubs = _editor.subtitles.filter((item) => currentTime >= item.startTime && currentTime <= item.endTime);
+    if (!activeSubs.length) return null;
+
+    const selectedSubtitle = _editorGetSelectedSubtitleItem();
+    if (selectedSubtitle && activeSubs.some((item) => String(item.id) === String(selectedSubtitle.id))) {
+        const bounds = _editorGetSubtitleCanvasBounds(selectedSubtitle, canvas, ctx);
+        const handleDx = x - bounds.handleX;
+        const handleDy = y - bounds.handleY;
+        if ((handleDx * handleDx) + (handleDy * handleDy) <= (bounds.handleRadius * bounds.handleRadius)) {
+            return { item: selectedSubtitle, bounds, mode: "resize" };
+        }
+    }
+
+    for (let i = activeSubs.length - 1; i >= 0; i -= 1) {
+        const item = activeSubs[i];
+        const bounds = _editorGetSubtitleCanvasBounds(item, canvas, ctx);
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
+            return { item, bounds, mode: "move" };
+        }
+    }
+
+    return null;
+}
+
+function _editorStartSubtitleOverlayDrag(event) {
+    const interaction = _editorResolveSubtitleOverlayInteraction(event.clientX, event.clientY);
+    if (!interaction?.item) return false;
+
+    _editorSelectSubtitle(interaction.item.id, false);
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas) return false;
+
+    _editorSubtitleOverlayDrag = {
+        id: String(interaction.item.id),
+        mode: interaction.mode,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startX: Number(interaction.item.x || 50),
+        startY: Number(interaction.item.y || 82),
+        startFontSize: Number(interaction.item.fontSize || 28),
+        widthPct: Number(interaction.bounds.widthPct || 0),
+        heightPct: Number(interaction.bounds.heightPct || 0),
+        pointerId: event.pointerId,
+        pointerTarget: canvas,
+        saved: false,
+        moved: false,
+    };
+
+    _editorCapturePointer(canvas, event.pointerId);
+    document.addEventListener("pointermove", _editorOnSubtitleOverlayDragMove);
+    document.addEventListener("pointerup", _editorOnSubtitleOverlayDragEnd);
+    document.addEventListener("pointercancel", _editorOnSubtitleOverlayDragEnd);
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+}
+
+function _editorOnSubtitleOverlayDragMove(event) {
+    if (!_editorSubtitleOverlayDrag) return;
+    if (_editorSubtitleOverlayDrag.pointerId !== undefined && event.pointerId !== undefined && event.pointerId !== _editorSubtitleOverlayDrag.pointerId) return;
+
+    const drag = _editorSubtitleOverlayDrag;
+    const item = _editor.subtitles.find((entry) => String(entry.id) === String(drag.id));
+    if (!item) return;
+
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas) return;
+
+    const dx = event.clientX - drag.startClientX;
+    const dy = event.clientY - drag.startClientY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+        drag.moved = true;
+    }
+    if (drag.moved && !drag.saved) {
+        _editorSaveState();
+        drag.saved = true;
+    }
+
+    if (drag.mode === "resize") {
+        const delta = (dx / Math.max(1, canvas.width)) * 180;
+        item.fontSize = Math.max(14, Math.min(120, Math.round(drag.startFontSize + delta)));
+    } else {
+        const halfWidthPct = drag.widthPct / 2;
+        const halfHeightPct = drag.heightPct / 2;
+        item.x = Math.max(halfWidthPct + 2, Math.min(98 - halfWidthPct, drag.startX + ((dx / Math.max(1, canvas.width)) * 100)));
+        item.y = Math.max(halfHeightPct + 2, Math.min(98 - halfHeightPct, drag.startY + ((dy / Math.max(1, canvas.height)) * 100)));
+    }
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    if (event.cancelable) {
+        event.preventDefault();
+    }
+}
+
+function _editorOnSubtitleOverlayDragEnd() {
+    document.removeEventListener("pointermove", _editorOnSubtitleOverlayDragMove);
+    document.removeEventListener("pointerup", _editorOnSubtitleOverlayDragEnd);
+    document.removeEventListener("pointercancel", _editorOnSubtitleOverlayDragEnd);
+    if (!_editorSubtitleOverlayDrag) return;
+
+    _editorReleasePointerCapture(_editorSubtitleOverlayDrag.pointerTarget, _editorSubtitleOverlayDrag.pointerId);
+    const moved = Boolean(_editorSubtitleOverlayDrag.moved);
+    _editorSubtitleOverlayDrag = null;
+    if (!moved) return;
+
+    _editorSubtitleOverlayIgnoreClick = true;
+    _editorRenderProps();
+    _editorRenderTimeline();
+    _editorScheduleDraftPersist(120);
+}
+
+function _editorStartTextOverlayDrag(event) {
+    if (!_editorIsMobileViewport()) return false;
+    const interaction = _editorResolveTextOverlayInteraction(event.clientX, event.clientY);
+    if (!interaction?.item) return false;
+
+    if (interaction.mode === "delete") {
+        _editorTextOverlayIgnoreClick = true;
+        _editorDeleteText(interaction.item.id);
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+    }
+
+    _editorInlineTextEditId = "";
+    _editorInlineTextEditPendingFocus = "";
+    _editorSelectText(interaction.item.id);
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas) return false;
+
+    _editorTextOverlayDrag = {
+        id: String(interaction.item.id),
+        mode: interaction.mode,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startX: Number(interaction.item.x || 50),
+        startY: Number(interaction.item.y || 50),
+        startFontSize: Number(interaction.item.fontSize || 36),
+        widthPct: Number(interaction.bounds.widthPct || 0),
+        heightPct: Number(interaction.bounds.heightPct || 0),
+        pointerId: event.pointerId,
+        pointerTarget: canvas,
+        saved: false,
+        moved: false,
+    };
+
+    _editorCapturePointer(canvas, event.pointerId);
+    document.addEventListener("pointermove", _editorOnTextOverlayDragMove);
+    document.addEventListener("pointerup", _editorOnTextOverlayDragEnd);
+    document.addEventListener("pointercancel", _editorOnTextOverlayDragEnd);
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+}
+
+function _editorOnTextOverlayDragMove(event) {
+    if (!_editorTextOverlayDrag) return;
+    if (_editorTextOverlayDrag.pointerId !== undefined && event.pointerId !== undefined && event.pointerId !== _editorTextOverlayDrag.pointerId) return;
+
+    const drag = _editorTextOverlayDrag;
+    const item = _editor.texts.find((entry) => String(entry.id) === String(drag.id));
+    if (!item) return;
+
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas) return;
+
+    const dx = event.clientX - drag.startClientX;
+    const dy = event.clientY - drag.startClientY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+        drag.moved = true;
+    }
+    if (drag.moved && !drag.saved) {
+        _editorSaveState();
+        drag.saved = true;
+    }
+
+    if (drag.mode === "resize") {
+        const delta = (dx / Math.max(1, canvas.width)) * 180;
+        item.fontSize = Math.max(14, Math.min(120, Math.round(drag.startFontSize + delta)));
+    } else {
+        const halfWidthPct = drag.widthPct / 2;
+        const halfHeightPct = drag.heightPct / 2;
+        item.x = Math.max(halfWidthPct + 2, Math.min(98 - halfWidthPct, drag.startX + ((dx / Math.max(1, canvas.width)) * 100)));
+        item.y = Math.max(halfHeightPct + 2, Math.min(98 - halfHeightPct, drag.startY + ((dy / Math.max(1, canvas.height)) * 100)));
+    }
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderMobileStagePanel();
+    if (event.cancelable) {
+        event.preventDefault();
+    }
+}
+
+function _editorOnTextOverlayDragEnd() {
+    document.removeEventListener("pointermove", _editorOnTextOverlayDragMove);
+    document.removeEventListener("pointerup", _editorOnTextOverlayDragEnd);
+    document.removeEventListener("pointercancel", _editorOnTextOverlayDragEnd);
+    if (!_editorTextOverlayDrag) return;
+
+    _editorReleasePointerCapture(_editorTextOverlayDrag.pointerTarget, _editorTextOverlayDrag.pointerId);
+    const moved = Boolean(_editorTextOverlayDrag.moved);
+    _editorTextOverlayDrag = null;
+    if (!moved) return;
+
+    _editorTextOverlayIgnoreClick = true;
+    _editorRenderMobileStagePanel();
+    _editorRenderProps();
+    _editorScheduleDraftPersist(120);
+}
+
 function _editorHandleOverlayClick(event) {
+    if (_editorTextOverlayIgnoreClick || _editorSubtitleOverlayIgnoreClick) {
+        _editorTextOverlayIgnoreClick = false;
+        _editorSubtitleOverlayIgnoreClick = false;
+        return;
+    }
+
+    const hitText = _editorFindTextAtCanvasPoint(event.clientX, event.clientY);
+    if (hitText) {
+        event.preventDefault();
+        event.stopPropagation();
+        const alreadySelected = String(_editor.selectedClip.id || "") === String(hitText.id);
+        _editorSelectText(hitText.id);
+        if (_editorIsMobileViewport() && alreadySelected) {
+            _editorInlineTextEditId = String(hitText.id);
+            _editorInlineTextEditPendingFocus = String(hitText.id);
+            const video = document.getElementById("editor-video");
+            _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+        }
+        return;
+    }
+
+    if (_editorInlineTextEditId) {
+        _editorInlineTextEditId = "";
+        _editorInlineTextEditPendingFocus = "";
+        const video = document.getElementById("editor-video");
+        _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    }
+
     const hitSubtitle = _editorFindSubtitleAtCanvasPoint(event.clientX, event.clientY);
     if (!hitSubtitle) return;
 
     event.preventDefault();
     event.stopPropagation();
-    _editorSelectSubtitle(hitSubtitle.id, true);
+    const alreadySelected = String(_editor.selectedClip.id || "") === String(hitSubtitle.id);
+    if (_editor.activeTool !== "subtitles") {
+        _editorSelectSubtitle(hitSubtitle.id, true);
+        return;
+    }
+
+    _editorSelectSubtitle(hitSubtitle.id, false);
+
+    if (_editorIsMobileViewport()) {
+        if (!_editor.mobileSubtitleModalOpen) {
+            _editor.mobileSubtitleModalOpen = true;
+            _editorRenderMobileSubtitleSheet();
+            return;
+        }
+        if (alreadySelected) {
+            _editorOpenSubtitleTextModal(hitSubtitle.id);
+        }
+        return;
+    }
+
+    if (alreadySelected) {
+        _editorOpenSubtitleTextModal(hitSubtitle.id);
+    }
 }
 
 function _getCSSFilter(name) {
@@ -35213,6 +36751,18 @@ window._editorApplyTransitionTypeToAllVideoSlots = _editorApplyTransitionTypeToA
 
 // ---------- Tool selection ----------
 function _editorSelectTool(toolName) {
+    if (toolName !== "text") {
+        _editorInlineTextEditId = "";
+        _editorInlineTextEditPendingFocus = "";
+    }
+    if (toolName !== "trim") {
+        _editorMobileTrackVolumeOpen = "";
+    }
+    if (toolName === "subtitles" && _editorIsMobileViewport()) {
+        _editor.mobileSubtitleModalOpen = true;
+    } else if (toolName !== "subtitles") {
+        _editor.mobileSubtitleModalOpen = false;
+    }
     _editor.activeTool = toolName;
     document.querySelectorAll(".editor-tool-btn").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.tool === toolName);
@@ -35238,14 +36788,18 @@ function _editorSelectTool(toolName) {
     }
 
     _editorRenderProps();
-    // On mobile, toggle props panel
     const pp = document.getElementById("editor-props-panel");
-    if (pp && window.innerWidth <= 768) {
-        pp.classList.toggle("open", true);
-        pp.style.display = "block";
+    if (pp && _editorIsMobileViewport()) {
+        pp.classList.remove("open");
+        pp.style.removeProperty("display");
     } else if (pp) {
         pp.style.removeProperty("display");
     }
+
+    _editorApplyMobileControlMode();
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
 }
 
 function _editorGetApprovedSmartCuts() {
@@ -35358,6 +36912,136 @@ window._editorSeekToSmartCut = _editorSeekToSmartCut;
 window._editorToggleSmartCut = _editorToggleSmartCut;
 window._editorClearSmartCuts = _editorClearSmartCuts;
 
+function _editorBuildSubtitlesPanelMarkup() {
+    const isGenerating = _editor._subtitleGenerating;
+    const hasSubs = _editor.subtitles.length > 0;
+
+    return `
+        <div class="editor-sub-toolbar editor-sub-actions-row">
+            <button
+                class="editor-sub-icon-btn editor-sub-action-btn"
+                type="button"
+                onclick="_editorAutoSubtitles()"
+                ${isGenerating ? "disabled" : ""}
+                title="Gerar legendas automáticas"
+                aria-label="Gerar legendas automáticas"
+            >
+                ${isGenerating
+                    ? '<div class="spinner-small" style="width:14px;height:14px"></div>'
+                    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>'}
+            </button>
+            <button
+                class="editor-sub-icon-btn editor-sub-action-btn"
+                type="button"
+                onclick="_editorAddSubtitle()"
+                title="Adicionar legenda manual"
+                aria-label="Adicionar legenda manual"
+            >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14"/>
+                    <path d="M5 12h14"/>
+                </svg>
+            </button>
+            ${hasSubs ? `
+                <button
+                    class="editor-sub-icon-btn editor-sub-action-btn${_editor.subtitleListOpen ? " active" : ""}"
+                    type="button"
+                    onclick="_editorToggleSubtitleList()"
+                    title="Editar trechos"
+                    aria-label="Editar trechos"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9"/>
+                        <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+                    </svg>
+                </button>
+                <button
+                    class="editor-sub-icon-btn editor-sub-action-btn editor-sub-icon-btn-danger"
+                    type="button"
+                    onclick="_editorClearSubtitles()"
+                    title="Limpar todas"
+                    aria-label="Limpar todas"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                        <path d="M10 11v6"/>
+                        <path d="M14 11v6"/>
+                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                    </svg>
+                </button>
+            ` : ""}
+        </div>
+        ${hasSubs && _editor.subtitleListOpen ? `
+            <div class="editor-props-group" style="margin-top:8px;max-height:200px;overflow-y:auto">
+                ${_editor.subtitles.map(s => `
+                    <div class="editor-subtitle-item${s._selected ? ' active' : ''}" onclick="_editorSelectSubtitle(${s.id})">
+                        <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
+                        <span class="sub-text">${esc(s.text)}</span>
+                        <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">✕</button>
+                    </div>
+                `).join("")}
+            </div>
+        ` : ""}
+        ${hasSubs ? `
+            <div class="editor-props-title" style="margin-top:12px">Estilos</div>
+            <div class="editor-subtitle-styles-grid">
+                ${SUBTITLE_STYLES.map(st => `
+                    <div class="editor-sub-style-card${(_editor.subtitles.find(s => s._selected) || {}).styleName === st.name ? ' active' : ''}" onclick="_editorApplySubStyle('${st.name}')">
+                        <div class="editor-sub-style-preview" style="font-family:${st.fontFamily};color:${st.fontColor};font-size:11px;font-weight:${st.bold ? 'bold' : 'normal'};font-style:${st.italic ? 'italic' : 'normal'};${st.bgColor ? 'background:' + st.bgColor + ';padding:2px 4px;border-radius:3px;' : ''}${st.outlineColor ? 'text-shadow:-1px -1px 0 ' + st.outlineColor + ',1px -1px 0 ' + st.outlineColor + ',-1px 1px 0 ' + st.outlineColor + ',1px 1px 0 ' + st.outlineColor + ';' : ''}">Abc</div>
+                        <span>${st.label}</span>
+                    </div>
+                `).join("")}
+            </div>
+        ` : ""}
+        ${_editor.subtitleListOpen ? _editorSubtitleEditForm() : ""}
+    `;
+}
+
+function _editorRenderMobileSubtitleSheet() {
+    const sheet = document.getElementById("editor-mobile-subtitles-sheet");
+    if (!sheet) return;
+
+    const shouldOpen = _editorIsMobileViewport()
+        && _editor.activeTool === "subtitles"
+        && _editor.mobileSubtitleModalOpen;
+
+    if (!shouldOpen) {
+        sheet.hidden = true;
+        sheet.classList.remove("open");
+        sheet.innerHTML = "";
+        return;
+    }
+
+    sheet.hidden = false;
+    sheet.classList.add("open");
+    sheet.innerHTML = `
+        <div class="editor-mobile-subtitles-sheet-header">
+            <div class="editor-mobile-subtitles-sheet-title">Legendas</div>
+            <button
+                class="editor-mobile-subtitles-sheet-close"
+                type="button"
+                onclick="_editorCloseMobileSubtitleSheet()"
+                aria-label="Fechar painel de legendas"
+            >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6 6 18"/>
+                    <path d="m6 6 12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="editor-mobile-subtitles-sheet-body">
+            ${_editorBuildSubtitlesPanelMarkup()}
+        </div>
+    `;
+}
+
+function _editorCloseMobileSubtitleSheet() {
+    _editor.mobileSubtitleModalOpen = false;
+    _editorRenderMobileSubtitleSheet();
+}
+window._editorCloseMobileSubtitleSheet = _editorCloseMobileSubtitleSheet;
+
 // ---------- Render properties panel based on tool ----------
 function _editorRenderProps() {
     const container = document.getElementById("editor-props-content");
@@ -35444,81 +37128,9 @@ function _editorRenderProps() {
             ${cuts.length ? '<button class="editor-add-btn editor-smartcuts-clear" onclick="_editorClearSmartCuts()">Limpar cortes</button>' : ""}
         `;
     } else if (tool === "subtitles") {
-        const isGenerating = _editor._subtitleGenerating;
-        const hasSubs = _editor.subtitles.length > 0;
-        const selectedSub = _editor.subtitles.find(s => s._selected) || _editor.subtitles[0] || null;
-        const subtitleY = Math.round(selectedSub?.y ?? 82);
-        const subtitleSize = Math.round(selectedSub?.fontSize ?? 28);
         container.innerHTML = `
             <div class="editor-props-title">Legendas</div>
-            <button class="editor-add-btn" onclick="_editorAutoSubtitles()" ${isGenerating ? "disabled" : ""}>
-                ${isGenerating
-                    ? '<div class="spinner-small" style="width:14px;height:14px"></div> Gerando legendas...'
-                    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg> Gerar legendas automaticas'}
-            </button>
-            <button class="editor-add-btn" onclick="_editorAddSubtitle()" style="margin-top:4px">+ Adicionar legenda manual</button>
-            ${hasSubs ? `
-                <button class="editor-add-btn" onclick="_editorClearSubtitles()" style="margin-top:4px;border-color:rgba(239,68,68,0.3);color:#ef4444">Limpar todas</button>
-            ` : ""}
-            ${hasSubs ? `
-                <div class="editor-sub-toolbar" style="margin-top:8px">
-                    <span class="editor-sub-count">${_editor.subtitles.length} trecho(s) gerado(s)</span>
-                    <button
-                        class="editor-sub-icon-btn${_editor.subtitleListOpen ? " active" : ""}"
-                        onclick="_editorToggleSubtitleList()"
-                        title="Editar trechos"
-                        aria-label="Editar trechos"
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 20h9"/>
-                            <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-                        </svg>
-                    </button>
-                </div>
-                <div class="editor-sub-quick-card">
-                    <div class="editor-sub-quick-row">
-                        <span class="editor-sub-quick-label">Posicao</span>
-                        <div class="editor-sub-stepper">
-                            <button type="button" onclick="_editorNudgeSubtitlesY(-2)" aria-label="Subir legenda">↑</button>
-                            <input type="range" min="5" max="95" value="${subtitleY}" oninput="_editorSetSubtitlesY(this.value, true)">
-                            <button type="button" onclick="_editorNudgeSubtitlesY(2)" aria-label="Descer legenda">↓</button>
-                        </div>
-                        <span class="editor-sub-quick-value" id="editor-sub-global-y-value">${subtitleY}%</span>
-                    </div>
-                    <div class="editor-sub-quick-row">
-                        <span class="editor-sub-quick-label">Tamanho</span>
-                        <div class="editor-sub-stepper">
-                            <button type="button" onclick="_editorNudgeSubtitlesSize(-2)" aria-label="Reduzir legenda">-</button>
-                            <input type="range" min="14" max="72" value="${subtitleSize}" oninput="_editorSetSubtitlesFontSize(this.value, true)">
-                            <button type="button" onclick="_editorNudgeSubtitlesSize(2)" aria-label="Aumentar legenda">+</button>
-                        </div>
-                        <span class="editor-sub-quick-value" id="editor-sub-global-size-value">${subtitleSize}px</span>
-                    </div>
-                </div>
-            ` : ""}
-            ${hasSubs && _editor.subtitleListOpen ? `
-                <div class="editor-props-group" id="editor-subtitle-list" style="margin-top:8px;max-height:200px;overflow-y:auto">
-                    ${_editor.subtitles.map(s => `
-                        <div class="editor-subtitle-item${s._selected ? ' active' : ''}" onclick="_editorSelectSubtitle(${s.id})">
-                            <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
-                            <span class="sub-text">${esc(s.text)}</span>
-                            <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">✕</button>
-                        </div>
-                    `).join("")}
-                </div>
-            ` : ""}
-            ${hasSubs ? `
-                <div class="editor-props-title" style="margin-top:12px">Estilos</div>
-                <div class="editor-subtitle-styles-grid" id="editor-sub-styles-grid">
-                    ${SUBTITLE_STYLES.map(st => `
-                        <div class="editor-sub-style-card${(_editor.subtitles.find(s=>s._selected)||{}).styleName === st.name ? ' active' : ''}" onclick="_editorApplySubStyle('${st.name}')">
-                            <div class="editor-sub-style-preview" style="font-family:${st.fontFamily};color:${st.fontColor};font-size:11px;font-weight:${st.bold?'bold':'normal'};font-style:${st.italic?'italic':'normal'};${st.bgColor?'background:'+st.bgColor+';padding:2px 4px;border-radius:3px;':''}${st.outlineColor?'text-shadow:-1px -1px 0 '+st.outlineColor+',1px -1px 0 '+st.outlineColor+',-1px 1px 0 '+st.outlineColor+',1px 1px 0 '+st.outlineColor+';':''}">Abc</div>
-                            <span>${st.label}</span>
-                        </div>
-                    `).join("")}
-                </div>
-            ` : ""}
-            ${_editor.subtitleListOpen ? _editorSubtitleEditForm() : ""}
+            ${_editorBuildSubtitlesPanelMarkup()}
         `;
     } else if (tool === "trim") {
         const hasExternalAudio = _editorShouldShowAudioTrack();
@@ -35821,6 +37433,9 @@ function _editorRenderProps() {
             </div>
         `;
     }
+
+    _editorRenderMobileStagePanel();
+    _editorRenderMobileSubtitleSheet();
 }
 
 // Text edit form
@@ -35933,20 +37548,87 @@ function _editorSubtitleEditForm() {
 }
 
 // ---------- Text actions ----------
+function _editorBuildTrackLabelMarkup(row) {
+    const trackId = String(row.track || "").trim();
+    const usesAudioMasterVolume = trackId === "audio" || /^layer-audio-\d+$/i.test(trackId);
+    const controlTrack = usesAudioMasterVolume ? "audio" : trackId;
+    const iconHtml = `<span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>`;
+    const showMobileVolume = _editorIsMobileViewport() && (trackId === "video" || usesAudioMasterVolume);
+    if (!showMobileVolume) {
+        return iconHtml;
+    }
+
+    const volumePct = Math.max(0, Math.min(100, Math.round(_editorGetTrackMasterVolumePercent(controlTrack))));
+    const volumeTitle = `Volume da faixa ${String(row.label || trackId || "").toLowerCase()}`;
+    const mutedClass = volumePct <= 0 ? " muted" : "";
+    const openClass = _editorMobileTrackVolumeOpen === trackId ? " open" : "";
+
+    return `
+        <span class="editor-track-label-controls" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
+            ${iconHtml}
+            <span class="editor-track-label-volume-wrap${openClass}${mutedClass}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
+            <button
+                class="editor-track-label-volume${mutedClass}"
+                type="button"
+                title="${esc(volumeTitle)}"
+                aria-label="${esc(volumeTitle)}"
+                aria-expanded="${_editorMobileTrackVolumeOpen === trackId ? "true" : "false"}"
+                onclick="event.stopPropagation();_editorToggleMobileTrackVolume('${trackId}')"
+            >
+                ${_editorTimelineVolumeIcon(controlTrack)}
+            </button>
+            <span class="editor-track-label-volume-popover${openClass}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
+                <input
+                    class="editor-track-label-slider${mutedClass}"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value="${volumePct}"
+                    title="${esc(volumeTitle)}"
+                    aria-label="${esc(volumeTitle)}"
+                    onpointerdown="event.stopPropagation()"
+                    onclick="event.stopPropagation()"
+                    oninput="_editorSetTrackVolumeFromTrim('${controlTrack}', this.value); this.closest('.editor-track-label-volume-wrap')?.classList.toggle('muted', (parseInt(this.value, 10) || 0) <= 0); this.closest('.editor-track-label-volume-wrap')?.querySelector('.editor-track-label-volume')?.classList.toggle('muted', (parseInt(this.value, 10) || 0) <= 0);"
+                >
+            </span>
+            </span>
+        </span>
+    `;
+}
+
+function _editorBuildTrackInlineVolumeMarkup(row) {
+    return "";
+}
+
+function _editorToggleMobileTrackVolume(track) {
+    const nextTrack = String(track || "");
+    _editorMobileTrackVolumeOpen = _editorMobileTrackVolumeOpen === nextTrack ? "" : nextTrack;
+    _editorRenderTimeline();
+}
+window._editorToggleMobileTrackVolume = _editorToggleMobileTrackVolume;
+
 function _editorAddText() {
     _editorSaveState();
     const video = document.getElementById("editor-video");
     const t = Number(_editor.timelineTime || video?.currentTime || 0);
     _editor.texts.forEach(x => x._selected = false);
     const newText = {
-        id: _editorGenId(), content: "Seu texto aqui", startTime: t, endTime: Math.min(t + 5, _editor.duration),
+        id: _editorGenId(), content: "Digite aqui", startTime: t, endTime: Math.min(t + 5, _editor.duration),
         x: 50, y: 50, fontSize: 36, color: "#ffffff", fontFamily: "Manrope, sans-serif", bold: true, italic: false, _selected: true,
     };
     _editor.texts.push(newText);
     _editor.selectedClip = { kind: "text", id: String(newText.id) };
+    _editorInlineTextEditId = String(newText.id);
+    _editorInlineTextEditPendingFocus = String(newText.id);
     _editorRefreshQuickActions();
-    _editorRenderProps();
+    if (_editor.activeTool !== "text") {
+        _editorSelectTool("text");
+    } else {
+        _editorRenderProps();
+    }
     _editorRenderTimeline();
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderMobileStagePanel();
 }
 window._editorAddText = _editorAddText;
 
@@ -35954,7 +37636,15 @@ function _editorSelectText(id) {
     _editor.texts.forEach(t => t._selected = (t.id === id));
     _editor.selectedClip = { kind: "text", id: String(id) };
     _editorRefreshQuickActions();
-    _editorRenderProps();
+    if (_editor.activeTool !== "text") {
+        _editorSelectTool("text");
+    } else {
+        _editorRenderProps();
+    }
+    _editorRenderTimeline();
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderMobileStagePanel();
 }
 window._editorSelectText = _editorSelectText;
 
@@ -35964,9 +37654,16 @@ function _editorDeleteText(id) {
     if (_editor.selectedClip.kind === "text" && _editor.selectedClip.id === String(id)) {
         _editor.selectedClip = { kind: "", id: "" };
     }
+    if (String(_editorInlineTextEditId || "") === String(id)) {
+        _editorInlineTextEditId = "";
+        _editorInlineTextEditPendingFocus = "";
+    }
     _editorRefreshQuickActions();
     _editorRenderProps();
     _editorRenderTimeline();
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderMobileStagePanel();
 }
 window._editorDeleteText = _editorDeleteText;
 
@@ -35980,6 +37677,62 @@ function _editorUpdateTextProp(id, prop, val) {
     _editorRenderTimeline();
 }
 window._editorUpdateTextProp = _editorUpdateTextProp;
+
+function _editorToggleTextFlag(id, prop) {
+    const target = _editor.texts.find((item) => item.id === id);
+    if (!target) return;
+    target[prop] = !Boolean(target[prop]);
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderTimeline();
+    _editorRenderMobileStagePanel();
+}
+window._editorToggleTextFlag = _editorToggleTextFlag;
+
+function _editorGetSelectedTextItem() {
+    return _editor.texts.find((item) => item._selected)
+        || _editor.texts.find((item) => String(item.id) === String(_editor.selectedClip.id || ""))
+        || null;
+}
+
+function _editorGetSelectedSubtitleItem() {
+    return _editor.subtitles.find((item) => item._selected)
+        || _editor.subtitles.find((item) => String(item.id) === String(_editor.selectedClip.id || ""))
+        || null;
+}
+
+function _editorShouldShowMobileTextStageEditor() {
+    return _editorIsMobileViewport() && _editor.activeTool === "text";
+}
+
+function _editorRenderMobileStagePanel() {
+    const panel = document.getElementById("editor-mobile-stage-panel");
+    const workspace = document.getElementById("editor-workspace");
+    if (!panel || !workspace) return;
+
+    const showPanel = _editorShouldShowMobileTextStageEditor();
+    const selectedText = showPanel ? _editorGetSelectedTextItem() : null;
+    const shouldShowAddPanel = showPanel && !selectedText;
+
+    workspace.classList.toggle("editor-mobile-stage-text-open", shouldShowAddPanel);
+    panel.hidden = !shouldShowAddPanel;
+
+    if (!showPanel || selectedText) {
+        panel.innerHTML = "";
+        return;
+    }
+
+    if (!selectedText) {
+        panel.innerHTML = `
+            <div class="editor-mobile-stage-card editor-mobile-stage-card-compact">
+                <button class="editor-add-btn editor-mobile-stage-add-btn" type="button" onclick="_editorAddText()">+ Adicionar texto</button>
+            </div>
+        `;
+        return;
+    }
+
+}
 
 function _editorOpenSubtitleTextModal(subtitleId) {
     const normalizedId = String(subtitleId || "");
@@ -36194,6 +37947,7 @@ function _editorSelectSubtitle(id, openEditor = false) {
     _editor.selectedClip = { kind: "subtitle", id: String(id), track: "text" };
     if (openEditor) {
         _editor.subtitleListOpen = true;
+        _editor.mobileSubtitleModalOpen = true;
     }
 
     if (openEditor && _editor.activeTool !== "subtitles") {
@@ -36207,7 +37961,8 @@ function _editorSelectSubtitle(id, openEditor = false) {
 
     if (openEditor) {
         requestAnimationFrame(() => {
-            const textarea = document.querySelector("#editor-props-content textarea");
+            const textarea = document.querySelector("#editor-mobile-subtitles-sheet textarea")
+                || document.querySelector("#editor-props-content textarea");
             if (textarea) {
                 textarea.focus();
                 textarea.select();
@@ -36243,8 +37998,9 @@ function _editorSetSubtitlesY(val, noRender = false) {
     if (!_editor.subtitles.length) return;
     const targetY = Math.max(5, Math.min(95, parseInt(val, 10) || 82));
     _editor.subtitles.forEach(s => { s.y = targetY; });
-    const yLabel = document.getElementById("editor-sub-global-y-value");
-    if (yLabel) yLabel.textContent = `${targetY}%`;
+    document.querySelectorAll("[data-editor-sub-y-value]").forEach((label) => {
+        label.textContent = `${targetY}%`;
+    });
     const video = document.getElementById("editor-video");
     _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
     _editorRenderTimeline();
@@ -36263,8 +38019,9 @@ function _editorSetSubtitlesFontSize(val, noRender = false) {
     if (!_editor.subtitles.length) return;
     const targetSize = Math.max(14, Math.min(72, parseInt(val, 10) || 28));
     _editor.subtitles.forEach(s => { s.fontSize = targetSize; });
-    const sizeLabel = document.getElementById("editor-sub-global-size-value");
-    if (sizeLabel) sizeLabel.textContent = `${targetSize}px`;
+    document.querySelectorAll("[data-editor-sub-size-value]").forEach((label) => {
+        label.textContent = `${targetSize}px`;
+    });
     const video = document.getElementById("editor-video");
     _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
     _editorRenderTimeline();
@@ -36989,6 +38746,15 @@ function _editorSetTrackVolumeFromTrim(track, val) {
 }
 window._editorSetTrackVolumeFromTrim = _editorSetTrackVolumeFromTrim;
 
+function _editorOpenTrackVolumeControls(track) {
+    if (!_editorIsTrackSelectable(track)) return;
+    _editorToggleTrackSelection(track);
+    if (!_editorIsMobileViewport()) {
+        document.getElementById("editor-props-panel")?.classList.add("open");
+    }
+}
+window._editorOpenTrackVolumeControls = _editorOpenTrackVolumeControls;
+
 function _editorSetSegmentVolume(track, id, val) {
     const targetTrack = _editorIsAudioTrack(track)
         ? "audio"
@@ -37234,8 +39000,15 @@ function _editorRenderTimeline() {
     const trackRowSelection = selectedKind === "track" ? _editorGetSelectedSegmentTracks() : [];
     const rows = [];
     const trackW = _editorGetTimelineTrackWidth(dur);
-    const timelineInnerWidth = Math.max(120, Math.round(_EDITOR_TIMELINE_LABEL_WIDTH + trackW + _EDITOR_TIMELINE_RIGHT_GUTTER));
+    const leadGutter = _editorGetTimelineLeadGutter();
+    const trailingGutter = _editorGetTimelineTrailingGutter();
+    const labelWidth = _editorGetTimelineLabelWidth();
+    const timelineInnerWidth = Math.max(120, Math.round(labelWidth + leadGutter + trackW + trailingGutter));
     const transitionMarkersByTrack = new Map();
+
+    if (timelineEl) {
+        timelineEl.style.setProperty("--editor-timeline-label-width", `${labelWidth}px`);
+    }
 
     if (dur > 0.05) {
         _editorGetTransitionSlots().forEach((slot) => {
@@ -37485,9 +39258,9 @@ function _editorRenderTimeline() {
         return `
             <div class="editor-track" data-track="${row.track}">
                 <div class="editor-track-label">
-                    <span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>
+                    ${_editorBuildTrackLabelMarkup(row)}
                 </div>
-                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px">${row.clipsHtml || ""}</div>
+                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px;${leadGutter ? `margin-left:${leadGutter}px;` : ""}">${row.clipsHtml || ""}</div>
             </div>
         `;
     }).join("");
@@ -37531,9 +39304,9 @@ function _editorRenderTimeline() {
         const tickClass = showLabel ? " major" : "";
         if (showLabel) {
             const minuteClass = dur >= 600 && step >= 60 ? " minute" : "";
-            rulerHtml += `<span class="editor-ruler-mark${minuteClass}" style="left:${_EDITOR_TIMELINE_LABEL_WIDTH + pct}px">${_editorFormatRulerTime(t, dur, step)}</span>`;
+            rulerHtml += `<span class="editor-ruler-mark${minuteClass}" style="left:${labelWidth + leadGutter + pct}px">${_editorFormatRulerTime(t, dur, step)}</span>`;
         }
-        rulerHtml += `<span class="editor-ruler-tick${tickClass}" style="left:${_EDITOR_TIMELINE_LABEL_WIDTH + pct}px"></span>`;
+        rulerHtml += `<span class="editor-ruler-tick${tickClass}" style="left:${labelWidth + leadGutter + pct}px"></span>`;
     });
     ruler.innerHTML = rulerHtml;
 
@@ -37883,6 +39656,8 @@ function _editorRefreshQuickActions() {
         speedBtn.setAttribute("aria-label", `Velocidade de reprodução ${rateLabel}`);
         speedBtn.setAttribute("data-rate-label", rateLabel);
     }
+
+    _editorApplyMobileControlMode();
 }
 
 function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
@@ -38432,12 +40207,18 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
     let mode = "move";
     if (_editorTimelineCanResize(kind, track) && frozenClipRect) {
         const handleEdge = event.target?.closest?.(".editor-track-clip-handle")?.dataset?.resizeEdge || "";
-        const localX = event.clientX - frozenClipRect.left;
-        const edgeSize = Math.max(10, Math.min(20, frozenClipRect.width * 0.24));
-        if (handleEdge === "start" || localX <= edgeSize) {
+        if (handleEdge === "start") {
             mode = "resize-start";
-        } else if (handleEdge === "end" || localX >= frozenClipRect.width - edgeSize) {
+        } else if (handleEdge === "end") {
             mode = "resize-end";
+        } else if (event.pointerType !== "touch") {
+            const localX = event.clientX - frozenClipRect.left;
+            const edgeSize = Math.max(10, Math.min(20, frozenClipRect.width * 0.24));
+            if (localX <= edgeSize) {
+                mode = "resize-start";
+            } else if (localX >= frozenClipRect.width - edgeSize) {
+                mode = "resize-end";
+            }
         }
     }
 
@@ -38476,10 +40257,15 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
         minDuration: kind === "sticker" ? 0.5 : 0.2,
         moved: false,
         saved: false,
+        pointerId: event.pointerId,
+        pointerTarget: clipEl,
+        pointerType: String(event.pointerType || "mouse"),
     };
 
+    _editorCapturePointer(clipEl, event.pointerId);
     document.addEventListener("pointermove", _editorOnTimelineDragMove);
-    document.addEventListener("pointerup", _editorOnTimelineDragEnd, { once: true });
+    document.addEventListener("pointerup", _editorOnTimelineDragEnd);
+    document.addEventListener("pointercancel", _editorOnTimelineDragEnd);
     return true;
 }
 
@@ -38535,6 +40321,7 @@ function _editorOnTimelineDragMove(event) {
     if (!_editorTimelineDrag) return;
 
     const drag = _editorTimelineDrag;
+    if (drag.pointerId !== undefined && event.pointerId !== undefined && event.pointerId !== drag.pointerId) return;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
     const deltaSec = (dx / drag.trackWidth) * Math.max(0.1, Number(drag.pixelDuration || drag.duration || 0.1));
@@ -38597,7 +40384,8 @@ function _editorOnTimelineDragMove(event) {
         }
     }
 
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+    const moveThreshold = drag.pointerType === "touch" ? 4 : 1;
+    if (Math.abs(dx) > moveThreshold || Math.abs(dy) > moveThreshold) {
         drag.moved = true;
     }
     if (drag.moved && !drag.saved) {
@@ -38619,8 +40407,11 @@ function _editorOnTimelineDragMove(event) {
 
 function _editorOnTimelineDragEnd() {
     document.removeEventListener("pointermove", _editorOnTimelineDragMove);
+    document.removeEventListener("pointerup", _editorOnTimelineDragEnd);
+    document.removeEventListener("pointercancel", _editorOnTimelineDragEnd);
     if (!_editorTimelineDrag) return;
 
+    _editorReleasePointerCapture(_editorTimelineDrag.pointerTarget, _editorTimelineDrag.pointerId);
     const moved = _editorTimelineDrag.moved;
     const kind = _editorTimelineDrag.kind;
     const id = _editorTimelineDrag.id;
@@ -38962,8 +40753,13 @@ function _bindEditorEvents() {
             _editorResetPlaybackToStart();
         });
     }
+    document.getElementById("editor-overlay-canvas")?.addEventListener("pointerdown", (event) => {
+        if (_editorStartTextOverlayDrag(event)) return;
+        _editorStartSubtitleOverlayDrag(event);
+    });
     document.getElementById("editor-overlay-canvas")?.addEventListener("click", _editorHandleOverlayClick);
     document.getElementById("editor-play-btn")?.addEventListener("click", _editorTogglePlay);
+    document.getElementById("editor-aspect-btn")?.addEventListener("click", _editorCycleAspectRatio);
     document.getElementById("editor-back-btn")?.addEventListener("click", closeEditor);
     document.getElementById("editor-new-btn")?.addEventListener("click", _editorOpenStartModal);
     document.getElementById("editor-undo-btn")?.addEventListener("click", _editorUndo);
@@ -39012,6 +40808,7 @@ function _bindEditorEvents() {
     document.addEventListener("pointerup", _editorOnMediaLayerDragEnd);
     window.addEventListener("resize", _editorRenderMediaLayers);
     window.addEventListener("resize", _editorRenderTimeline);
+    window.addEventListener("resize", _editorRenderMobileStagePanel);
     document.getElementById("editor-quick-add-text")?.addEventListener("click", _editorAddText);
     document.getElementById("editor-quick-add-subtitle")?.addEventListener("click", _editorAddSubtitle);
     document.getElementById("editor-quick-cut")?.addEventListener("click", _editorSplitAtCurrentTime);
@@ -39027,6 +40824,12 @@ function _bindEditorEvents() {
     document.getElementById("editor-quick-delete")?.addEventListener("click", _editorDeleteSelectedClip);
     document.getElementById("editor-quick-duplicate")?.addEventListener("click", _editorCopySelectedClip);
     document.getElementById("editor-quick-paste")?.addEventListener("click", _editorPasteClipboard);
+    document.getElementById("editor-mobile-actions-toggle")?.addEventListener("click", () => {
+        _editorToggleMobileControlMode();
+    });
+    document.getElementById("editor-mobile-tools-toggle")?.addEventListener("click", () => {
+        _editorSetMobileControlMode("tools");
+    });
     document.getElementById("editor-project-name")?.addEventListener("click", (event) => {
         event.stopPropagation();
         _editorStartProjectNameEdit();
@@ -39066,6 +40869,13 @@ function _bindEditorEvents() {
         const tool = btn.dataset.tool;
         if (!tool) return;
         btn.addEventListener("click", () => _editorSelectTool(tool));
+    });
+
+    document.addEventListener("click", (event) => {
+        if (!_editorMobileTrackVolumeOpen) return;
+        if (event.target.closest(".editor-track-label-volume-wrap")) return;
+        _editorMobileTrackVolumeOpen = "";
+        _editorRenderTimeline();
     });
 
     document.getElementById("editor-timeline-tracks")?.addEventListener("pointerdown", (e) => {
@@ -39141,12 +40951,13 @@ function _bindEditorEvents() {
     // Timeline click-and-hold scrub
     document.getElementById("editor-timeline")?.addEventListener("pointerdown", (e) => {
         const started = _editorStartTimelineScrub(e);
-        if (started) {
+        if (started && e.pointerType !== "touch") {
             e.preventDefault();
         }
     });
     document.getElementById("editor-timeline")?.addEventListener("wheel", _editorHandleTimelineWheel, { passive: false });
     document.addEventListener("wheel", _editorHandleTimelineWheel, { passive: false });
+    window.addEventListener("resize", _editorApplyMobileControlMode);
 
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
@@ -39159,6 +40970,7 @@ function _bindEditorEvents() {
 
     _editorRefreshQuickActions();
     _editorRefreshTrackSelectionUI();
+    _editorApplyMobileControlMode();
 }
 
 // Init editor bindings when DOM ready
