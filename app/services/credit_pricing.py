@@ -376,14 +376,14 @@ VIDEO_COMPARISON_MODELS = [
     },
     {
         "key": "lite2-video",
-        "label": "Lite 2.0",
+        "label": "Lite 2.0 Fast",
         "kind": "video",
         "engine": "lite2",
         "featured": True,
         },
         {
         "key": "viduq3-video",
-        "label": "Pro 3.1",
+        "label": "Pro 3.1 Start",
         "kind": "video",
         "engine": "viduq3",
         "featured": True,

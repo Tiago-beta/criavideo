@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v504 loaded");
+console.log("[CriaVideo] app.js v505 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -5137,11 +5137,13 @@ async function createSimilar(projectId) {
     }
 
     const realisticArtists = new Set([
+        "Pro 3.1 Start",
         "Pro 3.1",
         "Vidu Q3 Pro Starter",
         "Wan 2.2",
         "Ultra High 1.0",
         "Ultra High 2.2",
+        "Lite 2.0 Fast",
         "Lite 2.0",
         "Mega 2.0 Ultra",
         "Seedance 2.0",
@@ -7414,18 +7416,18 @@ function _normalizeSimilarEngine(rawValue) {
 
 function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "viduq3") return "Pro 3.1";
+    if (normalized === "viduq3") return "Pro 3.1 Start";
     if (normalized === "wan2") return "Ultra 3.0";
-    if (normalized === "lite2") return "Lite 2.0";
+    if (normalized === "lite2") return "Lite 2.0 Fast";
     if (normalized === "seedance") return "Mega 2.0";
     return "Cria 2.5";
 }
 
 function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "viduq3") return "Pro 3.1";
+    if (normalized === "viduq3") return "Pro 3.1 Start";
     if (normalized === "wan2") return "Ultra High 3.0";
-    if (normalized === "lite2") return "Lite 2.0";
+    if (normalized === "lite2") return "Lite 2.0 Fast";
     if (normalized === "seedance") return "Mega 2.0 Ultra";
     return "Cria Speed 2.5 (Grok)";
 }
@@ -10697,15 +10699,15 @@ function workflowAddNode(kind) {
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
-                <option value="viduq3">Pro 3.1</option>
+                <option value="viduq3">Pro 3.1 Start</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
-                <option value="lite2">Lite 2.0</option>
+                <option value="lite2">Lite 2.0 Fast</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Lite 2.0, no Pro 3.1 e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
             <label>Duração</label>
             <select id="workflow-duration" class="input workflow-input">
@@ -11041,8 +11043,8 @@ function getRealisticEngineLabel(engine) {
     const labels = {
         grok: "Cria 3.0 speed",
         wan2: "Ultra High 1.0",
-        lite2: "Lite 2.0",
-        viduq3: "Pro 3.1",
+        lite2: "Lite 2.0 Fast",
+        viduq3: "Pro 3.1 Start",
         seedance: "Mega 2.0 Ultra",
         avatar31: "Avatar 3.1 Plus",
     };
@@ -11340,15 +11342,15 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
-                <option value="viduq3">Pro 3.1</option>
+                <option value="viduq3">Pro 3.1 Start</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
-                <option value="lite2">Lite 2.0</option>
+                <option value="lite2">Lite 2.0 Fast</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Lite 2.0, no Pro 3.1 e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
         `;
         if (durationLabel) durationLabel.insertAdjacentHTML("beforebegin", html);

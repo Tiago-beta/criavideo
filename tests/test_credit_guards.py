@@ -71,9 +71,10 @@ class TestSimilarCreditPricing(unittest.TestCase):
         self.assertEqual(seedance_row["usdPerUnit"], 0.15)
         self.assertEqual(seedance_row["plans"]["starter"]["includedUnits"], 106)
         self.assertEqual(seedance_row["plans"]["free"]["includedUnits"], 6)
+        self.assertEqual(lite2_row["label"], "Lite 2.0 Fast")
         self.assertEqual(lite2_row["creditsPerUnit"], 3)
         self.assertEqual(lite2_row["usdPerUnit"], 0.03)
-        self.assertEqual(vidu_row["label"], "Pro 3.1")
+        self.assertEqual(vidu_row["label"], "Pro 3.1 Start")
         self.assertEqual(vidu_row["creditsPerUnit"], 7)
         self.assertEqual(vidu_row["usdPerUnit"], 0.042)
 
