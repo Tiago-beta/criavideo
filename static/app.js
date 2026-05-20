@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v509 loaded");
+console.log("[CriaVideo] app.js v510 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -32241,17 +32241,93 @@ function _editorClassifyLocalMediaFiles(files = []) {
     };
 }
 
-async function _editorUploadSingleVideoProject(file) {
-    const formData = new FormData();
-    formData.append("file", file);
-    return apiForm("/video/editor/upload-video", formData, { method: "POST" });
+function _editorDescribeImportFiles(files = []) {
+    const validFiles = Array.isArray(files) ? files.filter(Boolean) : [];
+    if (!validFiles.length) return "";
+    if (validFiles.length === 1) {
+        return String(validFiles[0].name || "mídia").trim();
+    }
+
+    const firstName = String(validFiles[0].name || "mídia").trim() || "mídia";
+    return `${firstName} + ${validFiles.length - 1} arquivo(s)`;
 }
 
-async function _editorUploadSingleAudioProject(file) {
+function _setEditorImportProgress({ active = false, progress = 0, title = "", message = "", fileName = "", processing = false } = {}) {
+    const wrapEl = document.getElementById("editor-import-loading");
+    const titleEl = document.getElementById("editor-import-loading-title");
+    const fillEl = document.getElementById("editor-import-loading-fill");
+    const percentEl = document.getElementById("editor-import-loading-percent");
+    const statusEl = document.getElementById("editor-import-loading-status");
+    const fileEl = document.getElementById("editor-import-loading-file");
+    const boundedProgress = Math.max(0, Math.min(100, Number(progress || 0)));
+    const nextTitle = String(title || "Carregando mídia no editor").trim() || "Carregando mídia no editor";
+    const nextMessage = String(message || "Preparando upload...").trim() || "Preparando upload...";
+    const nextFileName = String(fileName || "").trim();
+
+    if (wrapEl) {
+        wrapEl.hidden = !active;
+        wrapEl.classList.toggle("is-processing", Boolean(active && processing));
+    }
+    if (titleEl) {
+        titleEl.textContent = active ? nextTitle : "";
+    }
+    if (fillEl) {
+        fillEl.style.width = `${boundedProgress}%`;
+    }
+    if (percentEl) {
+        percentEl.textContent = active ? `${Math.round(boundedProgress)}%` : "";
+    }
+    if (statusEl) {
+        statusEl.textContent = active ? nextMessage : "";
+    }
+    if (fileEl) {
+        fileEl.textContent = active && nextFileName ? `Arquivo: ${nextFileName}` : "";
+    }
+}
+
+function _editorCreateImportProgressOptions({ title = "", fileName = "", uploadMessage = "", processingMessage = "" } = {}) {
+    const nextTitle = String(title || "Carregando mídia no editor").trim() || "Carregando mídia no editor";
+    const nextFileName = String(fileName || "").trim();
+    const nextUploadMessage = String(uploadMessage || "Enviando mídia para o editor...").trim() || "Enviando mídia para o editor...";
+    const nextProcessingMessage = String(processingMessage || "Upload concluído. Decodificando mídia...").trim() || "Upload concluído. Decodificando mídia...";
+
+    return {
+        onUploadProgress: ({ progress, lengthComputable }) => {
+            const percent = lengthComputable
+                ? Math.max(6, Math.min(88, Math.round(Number(progress || 0) * 100)))
+                : 32;
+            _setEditorImportProgress({
+                active: true,
+                progress: percent,
+                title: nextTitle,
+                message: nextUploadMessage,
+                fileName: nextFileName,
+            });
+        },
+        onUploadProcessing: () => {
+            _setEditorImportProgress({
+                active: true,
+                progress: 92,
+                title: nextTitle,
+                message: nextProcessingMessage,
+                fileName: nextFileName,
+                processing: true,
+            });
+        },
+    };
+}
+
+async function _editorUploadSingleVideoProject(file, options = {}) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiFormWithProgress("/video/editor/upload-video", formData, { method: "POST", ...(options || {}) });
+}
+
+async function _editorUploadSingleAudioProject(file, options = {}) {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("aspect_ratio", "9:16");
-    return apiForm("/video/editor/upload-audio-project", formData, { method: "POST" });
+    return apiFormWithProgress("/video/editor/upload-audio-project", formData, { method: "POST", ...(options || {}) });
 }
 
 async function _editorUploadSingleLayerImage(file) {
@@ -32272,7 +32348,7 @@ async function _editorUploadSingleLayerAudio(file) {
     return apiForm("/video/editor/upload-layer-audio", formData, { method: "POST" });
 }
 
-async function _editorUploadMediaSequenceProject(entries = []) {
+async function _editorUploadMediaSequenceProject(entries = [], options = {}) {
     const orderedEntries = Array.isArray(entries) ? entries.filter((entry) => entry?.file && entry?.kind) : [];
     if (!orderedEntries.length) {
         throw new Error("Nenhuma mídia válida foi enviada para o editor.");
@@ -32280,7 +32356,20 @@ async function _editorUploadMediaSequenceProject(entries = []) {
 
     const formData = new FormData();
     orderedEntries.forEach((entry) => formData.append("files", entry.file));
-    return apiForm("/video/editor/upload-media-sequence", formData, { method: "POST" });
+    return apiFormWithProgress("/video/editor/upload-media-sequence", formData, { method: "POST", ...(options || {}) });
+}
+
+async function _editorUploadImageSequenceProject(files = [], options = {}) {
+    const imageFiles = Array.isArray(files)
+        ? files.filter((file) => _editorGetLocalMediaKind(file) === "image")
+        : [];
+    if (!imageFiles.length) {
+        throw new Error("Nenhuma imagem válida foi enviada para o editor.");
+    }
+
+    const formData = new FormData();
+    imageFiles.forEach((file) => formData.append("images", file));
+    return apiFormWithProgress("/video/editor/upload-image-sequence", formData, { method: "POST", ...(options || {}) });
 }
 
 async function _editorAppendOrderedMediaEntries(entries = [], options = {}) {
@@ -32333,49 +32422,120 @@ async function _editorStartWithOrderedMediaEntries(entries = []) {
         return;
     }
 
-    if (orderedEntries.length > 1 && orderedEntries.some((entry) => entry.kind === "video")) {
-        closeModal("modal-editor-start");
-        showToast(`Preparando ${orderedEntries.length} mídia(s) no editor...`);
-        const payload = await _editorUploadMediaSequenceProject(orderedEntries);
-        await loadEditorVideosList();
-        if (!payload?.project_id) {
-            throw new Error("Projeto do editor não foi criado para a sequência de mídias.");
-        }
-        await openEditor(payload.project_id, {
-            restoreDraft: false,
-            initialMediaLayers: payload.layers || [],
-            initialImageDurationSeconds: Number(payload.image_duration_seconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS),
-            hideBaseVideoTrack: true,
-        });
-        showToast(`${orderedEntries.length} mídia(s) importada(s) na ordem selecionada.`, "success");
-        return;
-    }
+    const progressTitle = orderedEntries.length > 1
+        ? "Carregando mídias no editor"
+        : "Carregando vídeo no editor";
+    const progressFileName = _editorDescribeImportFiles(orderedEntries.map((entry) => entry.file));
 
-    const [firstEntry, ...restEntries] = orderedEntries;
-    if (firstEntry.kind === "image") {
-        await _editorStartWithUploadedImages([firstEntry.file]);
-    } else {
-        showToast(`Enviando ${orderedEntries.length} mídia(s) para o editor...`);
-        const payload = await _editorUploadSingleVideoProject(firstEntry.file);
+    closeModal("modal-editor-start");
+    _setEditorImportProgress({
+        active: true,
+        progress: 4,
+        title: progressTitle,
+        message: orderedEntries.length > 1
+            ? "Preparando envio das mídias..."
+            : "Preparando envio do vídeo...",
+        fileName: progressFileName,
+    });
+
+    try {
+        if (orderedEntries.length > 1 && orderedEntries.some((entry) => entry.kind === "video")) {
+            const payload = await _editorUploadMediaSequenceProject(
+                orderedEntries,
+                _editorCreateImportProgressOptions({
+                    title: progressTitle,
+                    fileName: progressFileName,
+                    uploadMessage: "Enviando mídias para o editor...",
+                    processingMessage: "Upload concluído. Decodificando e organizando mídias...",
+                })
+            );
+            await loadEditorVideosList();
+            if (!payload?.project_id) {
+                throw new Error("Projeto do editor não foi criado para a sequência de mídias.");
+            }
+            _setEditorImportProgress({
+                active: true,
+                progress: 97,
+                title: progressTitle,
+                message: "Montando timeline e abrindo o editor...",
+                fileName: progressFileName,
+                processing: true,
+            });
+            await openEditor(payload.project_id, {
+                restoreDraft: false,
+                initialMediaLayers: payload.layers || [],
+                initialImageDurationSeconds: Number(payload.image_duration_seconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS),
+                hideBaseVideoTrack: true,
+            });
+            _setEditorImportProgress({
+                active: true,
+                progress: 100,
+                title: progressTitle,
+                message: "Mídias prontas no editor.",
+                fileName: progressFileName,
+            });
+            showToast(`${orderedEntries.length} mídia(s) importada(s) na ordem selecionada.`, "success");
+            return;
+        }
+
+        const [firstEntry, ...restEntries] = orderedEntries;
+        if (firstEntry.kind === "image") {
+            await _editorStartWithUploadedImages([firstEntry.file]);
+            return;
+        }
+
+        const payload = await _editorUploadSingleVideoProject(
+            firstEntry.file,
+            _editorCreateImportProgressOptions({
+                title: progressTitle,
+                fileName: progressFileName,
+                uploadMessage: "Enviando vídeo para o editor...",
+                processingMessage: "Upload concluído. Decodificando vídeo...",
+            })
+        );
         await loadEditorVideosList();
         if (!payload?.project_id) {
             throw new Error("Projeto do editor não foi criado para o primeiro vídeo.");
         }
+        _setEditorImportProgress({
+            active: true,
+            progress: 97,
+            title: progressTitle,
+            message: "Montando timeline e abrindo o editor...",
+            fileName: progressFileName,
+            processing: true,
+        });
         await openEditor(payload.project_id, { restoreDraft: false });
-    }
 
-    if (!restEntries.length) {
-        showToast("Mídia enviada com sucesso.", "success");
-        return;
-    }
+        if (!restEntries.length) {
+            _setEditorImportProgress({
+                active: true,
+                progress: 100,
+                title: progressTitle,
+                message: "Vídeo pronto no editor.",
+                fileName: progressFileName,
+            });
+            showToast("Mídia enviada com sucesso.", "success");
+            return;
+        }
 
-    _editorSaveState();
-    const startTime = Math.max(0, Number(_editorGetTimelineDuration() || 0));
-    await _editorAppendOrderedMediaEntries(restEntries, { startTime });
-    _editorRenderTimeline();
-    _editorRenderMediaLayers();
-    _editorRenderProps();
-    showToast(`${orderedEntries.length} mídia(s) importada(s) na ordem selecionada.`, "success");
+        _editorSaveState();
+        const startTime = Math.max(0, Number(_editorGetTimelineDuration() || 0));
+        await _editorAppendOrderedMediaEntries(restEntries, { startTime });
+        _editorRenderTimeline();
+        _editorRenderMediaLayers();
+        _editorRenderProps();
+        _setEditorImportProgress({
+            active: true,
+            progress: 100,
+            title: progressTitle,
+            message: "Mídias prontas no editor.",
+            fileName: progressFileName,
+        });
+        showToast(`${orderedEntries.length} mídia(s) importada(s) na ordem selecionada.`, "success");
+    } finally {
+        _setEditorImportProgress({ active: false });
+    }
 }
 
 function _editorShouldConfirmMediaImportOrder(entries = []) {
@@ -32635,25 +32795,56 @@ async function _editorStartWithUploadedImages(files) {
 
     try {
         closeModal("modal-editor-start");
-        showToast(`Preparando ${imageFiles.length} imagem(ns) no editor...`);
-        const formData = new FormData();
-        imageFiles.forEach((file) => formData.append("images", file));
-        const payload = await apiForm("/video/editor/upload-image-sequence", formData, { method: "POST" });
+        const progressTitle = imageFiles.length > 1 ? "Carregando imagens no editor" : "Carregando imagem no editor";
+        const progressFileName = _editorDescribeImportFiles(imageFiles);
+        _setEditorImportProgress({
+            active: true,
+            progress: 4,
+            title: progressTitle,
+            message: imageFiles.length > 1 ? "Preparando envio das imagens..." : "Preparando envio da imagem...",
+            fileName: progressFileName,
+        });
+        const payload = await _editorUploadImageSequenceProject(
+            imageFiles,
+            _editorCreateImportProgressOptions({
+                title: progressTitle,
+                fileName: progressFileName,
+                uploadMessage: imageFiles.length > 1 ? "Enviando imagens para o editor..." : "Enviando imagem para o editor...",
+                processingMessage: imageFiles.length > 1 ? "Upload concluído. Decodificando imagens..." : "Upload concluído. Decodificando imagem...",
+            })
+        );
         await loadEditorVideosList();
 
         if (payload?.project_id) {
-            showToast(`${imageFiles.length} imagem(ns) enviada(s)! Abrindo editor...`, "success");
+            _setEditorImportProgress({
+                active: true,
+                progress: 97,
+                title: progressTitle,
+                message: "Montando timeline e abrindo o editor...",
+                fileName: progressFileName,
+                processing: true,
+            });
             await openEditor(payload.project_id, {
                 restoreDraft: false,
                 initialMediaLayers: payload.layers || [],
                 initialImageDurationSeconds: Number(payload.image_duration_seconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS),
             });
+            _setEditorImportProgress({
+                active: true,
+                progress: 100,
+                title: progressTitle,
+                message: imageFiles.length > 1 ? "Imagens prontas no editor." : "Imagem pronta no editor.",
+                fileName: progressFileName,
+            });
+            showToast(`${imageFiles.length} imagem(ns) enviada(s)! Abrindo editor...`, "success");
             return;
         }
 
         showToast("Sequência de imagens enviada com sucesso.", "success");
     } catch (err) {
         showToast("Erro ao preparar imagens no editor: " + (err?.message || "erro desconhecido"), "error");
+    } finally {
+        _setEditorImportProgress({ active: false });
     }
 }
 
@@ -32670,23 +32861,56 @@ async function _editorStartWithUploadedAudioFiles(files) {
 
     try {
         closeModal("modal-editor-start");
-        showToast("Preparando áudio no editor...");
-        const payload = await _editorUploadSingleAudioProject(audioFile);
+        const progressTitle = "Carregando áudio no editor";
+        const progressFileName = _editorDescribeImportFiles([audioFile]);
+        _setEditorImportProgress({
+            active: true,
+            progress: 4,
+            title: progressTitle,
+            message: "Preparando envio do áudio...",
+            fileName: progressFileName,
+        });
+        const payload = await _editorUploadSingleAudioProject(
+            audioFile,
+            _editorCreateImportProgressOptions({
+                title: progressTitle,
+                fileName: progressFileName,
+                uploadMessage: "Enviando áudio para o editor...",
+                processingMessage: "Upload concluído. Decodificando áudio...",
+            })
+        );
         await loadEditorVideosList();
 
         if (payload?.project_id) {
-            showToast("Áudio enviado! Abrindo editor...", "success");
+            _setEditorImportProgress({
+                active: true,
+                progress: 97,
+                title: progressTitle,
+                message: "Montando timeline e abrindo o editor...",
+                fileName: progressFileName,
+                processing: true,
+            });
             await openEditor(payload.project_id, {
                 restoreDraft: false,
                 initialMediaLayers: payload.layers || [],
                 hideBaseVideoTrack: true,
             });
+            _setEditorImportProgress({
+                active: true,
+                progress: 100,
+                title: progressTitle,
+                message: "Áudio pronto no editor.",
+                fileName: progressFileName,
+            });
+            showToast("Áudio enviado! Abrindo editor...", "success");
             return;
         }
 
         showToast("Áudio enviado com sucesso.", "success");
     } catch (err) {
         showToast("Erro ao preparar áudio no editor: " + (err?.message || "erro desconhecido"), "error");
+    } finally {
+        _setEditorImportProgress({ active: false });
     }
 }
 
@@ -37269,6 +37493,7 @@ window._editorClearSmartCuts = _editorClearSmartCuts;
 function _editorBuildSubtitlesPanelMarkup() {
     const isGenerating = _editor._subtitleGenerating;
     const hasSubs = _editor.subtitles.length > 0;
+    const bulkApplyMarkup = hasSubs ? _editorBuildSubtitleBulkApplyMarkup() : "";
 
     return `
         <div class="editor-sub-toolbar editor-sub-actions-row">
@@ -37348,7 +37573,27 @@ function _editorBuildSubtitlesPanelMarkup() {
                 `).join("")}
             </div>
         ` : ""}
+        ${bulkApplyMarkup}
         ${_editor.subtitleListOpen ? _editorSubtitleEditForm() : ""}
+    `;
+}
+
+function _editorBuildSubtitleBulkApplyMarkup() {
+    const selectedSubtitle = _editorGetSelectedSubtitleItem();
+    const otherCount = Math.max(0, _editor.subtitles.length - 1);
+    if (!selectedSubtitle || otherCount < 1) return "";
+
+    return `
+        <div class="editor-sub-bulk-actions">
+            <div class="editor-sub-bulk-copy">
+                <strong>Aplicar para todas</strong>
+                <span>Replicar a posição ou o tamanho desta legenda nas outras ${otherCount}.</span>
+            </div>
+            <div class="editor-sub-bulk-buttons">
+                <button class="editor-sub-bulk-btn" type="button" onclick="_editorApplySelectedSubtitleToAll('position')">Aplicar posição</button>
+                <button class="editor-sub-bulk-btn" type="button" onclick="_editorApplySelectedSubtitleToAll('size')">Aplicar tamanho</button>
+            </div>
+        </div>
     `;
 }
 
@@ -38347,6 +38592,40 @@ function _editorUpdateSubProp(id, prop, val) {
     _editorRenderTimeline();
 }
 window._editorUpdateSubProp = _editorUpdateSubProp;
+
+function _editorApplySelectedSubtitleToAll(scope = "position") {
+    const selectedSubtitle = _editorGetSelectedSubtitleItem();
+    const otherCount = Math.max(0, _editor.subtitles.length - 1);
+    if (!selectedSubtitle || otherCount < 1) return;
+
+    const shouldApplyPosition = scope === "position" || scope === "layout";
+    const shouldApplySize = scope === "size" || scope === "layout";
+    if (!shouldApplyPosition && !shouldApplySize) return;
+
+    _editorSaveState();
+    _editor.subtitles.forEach((subtitle) => {
+        if (String(subtitle.id) === String(selectedSubtitle.id)) return;
+        if (shouldApplyPosition) {
+            subtitle.x = Number(selectedSubtitle.x || 50);
+            subtitle.y = Number(selectedSubtitle.y || 82);
+        }
+        if (shouldApplySize) {
+            subtitle.fontSize = Number(selectedSubtitle.fontSize || 28);
+        }
+    });
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderTimeline();
+    _editorRenderProps();
+    _editorScheduleDraftPersist(120);
+
+    const appliedParts = [];
+    if (shouldApplyPosition) appliedParts.push("posição");
+    if (shouldApplySize) appliedParts.push("tamanho");
+    showToast(`${appliedParts.join(" e ")} aplicada às outras ${otherCount} legenda(s).`, "success");
+}
+window._editorApplySelectedSubtitleToAll = _editorApplySelectedSubtitleToAll;
 
 function _editorSetSubtitlesY(val, noRender = false) {
     if (!_editor.subtitles.length) return;

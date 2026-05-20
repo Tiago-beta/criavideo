@@ -10519,6 +10519,99 @@ th,
     outline-offset: 2px;
 }
 
+.editor-import-loading {
+    position: fixed;
+    inset: 0;
+    z-index: 3250;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(2, 8, 18, 0.52);
+    backdrop-filter: blur(8px);
+}
+
+.editor-import-loading[hidden] {
+    display: none !important;
+}
+
+.editor-import-loading-card {
+    position: relative;
+    overflow: hidden;
+    width: min(100%, 520px);
+    padding: 18px;
+    border-radius: 22px;
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    background: linear-gradient(180deg, rgba(9, 29, 49, 0.96), rgba(5, 18, 31, 0.98));
+    box-shadow: 0 24px 60px rgba(2, 8, 18, 0.42);
+}
+
+.editor-import-loading.is-processing .editor-import-loading-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, rgba(255, 255, 255, 0) 24%, rgba(255, 193, 79, 0.08) 48%, rgba(17, 201, 255, 0.14) 54%, rgba(255, 255, 255, 0) 76%);
+    transform: translateX(-100%);
+    animation: publishUploadShimmer 1.35s linear infinite;
+    pointer-events: none;
+}
+
+.editor-import-loading-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 12px;
+}
+
+.editor-import-loading-copy {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.editor-import-loading-copy strong {
+    color: #f5fbff;
+    font-size: 1rem;
+}
+
+.editor-import-loading-copy span {
+    color: #9cc4df;
+    font-size: 0.82rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.editor-import-loading-percent {
+    flex: 0 0 auto;
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #6fe4ff;
+}
+
+.editor-import-progress {
+    height: 11px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.editor-import-progress-fill {
+    background: linear-gradient(90deg, #00d4ff, #67e8f9, #5cf0ca);
+    background-size: 200% 100%;
+    animation: publishUploadShimmer 1.15s linear infinite;
+}
+
+.editor-import-loading.is-processing .editor-import-progress-fill {
+    background: linear-gradient(90deg, #00d4ff, #ffbf47, #67e8f9);
+}
+
+.editor-import-loading-status {
+    margin: 12px 0 0;
+    color: #cde7f7;
+    font-size: 0.92rem;
+    line-height: 1.5;
+}
+
 .editor-media-order-modal {
     max-width: 720px;
 }
@@ -17339,6 +17432,58 @@ th,
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.editor-sub-bulk-actions {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 212, 255, 0.16);
+    background: linear-gradient(180deg, rgba(10, 30, 48, 0.92), rgba(8, 22, 37, 0.96));
+}
+
+.editor-sub-bulk-copy {
+    display: grid;
+    gap: 3px;
+}
+
+.editor-sub-bulk-copy strong {
+    color: #f5fbff;
+    font-size: 12px;
+}
+
+.editor-sub-bulk-copy span {
+    color: #9cc4df;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.editor-sub-bulk-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.editor-sub-bulk-btn {
+    min-width: 0;
+    min-height: 34px;
+    padding: 0 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 212, 255, 0.18);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.18s, transform 0.18s, background 0.18s;
+}
+
+.editor-sub-bulk-btn:hover {
+    border-color: rgba(0, 212, 255, 0.38);
+    background: rgba(0, 212, 255, 0.08);
+    transform: translateY(-1px);
 }
 
 /* Color row */
