@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v495 loaded");
+console.log("[CriaVideo] app.js v496 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28446,6 +28446,7 @@ const _editor = {
     timelineZoom: 1,
     playbackRate: 1,
     mobileControlMode: "tools",
+    mobileSubtitleModalOpen: false,
     _virtualPlaybackActive: false,
     _virtualPlaybackRaf: 0,
     _virtualPlaybackLastTs: 0,
@@ -28671,6 +28672,8 @@ function _editorApplyMobileControlMode() {
     if (mobileActive) {
         _editorMovePlayhead(Number(_editor.timelineTime || 0));
     }
+
+    _editorRenderMobileSubtitleSheet();
 }
 
 function _editorSetMobileControlMode(mode = "tools") {
@@ -36186,6 +36189,11 @@ function _editorSelectTool(toolName) {
     if (toolName !== "trim") {
         _editorMobileTrackVolumeOpen = "";
     }
+    if (toolName === "subtitles" && _editorIsMobileViewport()) {
+        _editor.mobileSubtitleModalOpen = true;
+    } else if (toolName !== "subtitles") {
+        _editor.mobileSubtitleModalOpen = false;
+    }
     _editor.activeTool = toolName;
     document.querySelectorAll(".editor-tool-btn").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.tool === toolName);
@@ -36335,6 +36343,129 @@ window._editorSeekToSmartCut = _editorSeekToSmartCut;
 window._editorToggleSmartCut = _editorToggleSmartCut;
 window._editorClearSmartCuts = _editorClearSmartCuts;
 
+function _editorBuildSubtitlesPanelMarkup() {
+    const isGenerating = _editor._subtitleGenerating;
+    const hasSubs = _editor.subtitles.length > 0;
+    const selectedSub = _editor.subtitles.find((subtitle) => subtitle._selected) || _editor.subtitles[0] || null;
+    const subtitleY = Math.round(selectedSub?.y ?? 82);
+    const subtitleSize = Math.round(selectedSub?.fontSize ?? 28);
+
+    return `
+        <button class="editor-add-btn" onclick="_editorAutoSubtitles()" ${isGenerating ? "disabled" : ""}>
+            ${isGenerating
+                ? '<div class="spinner-small" style="width:14px;height:14px"></div> Gerando legendas...'
+                : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg> Gerar legendas automaticas'}
+        </button>
+        <button class="editor-add-btn" onclick="_editorAddSubtitle()" style="margin-top:4px">+ Adicionar legenda manual</button>
+        ${hasSubs ? `
+            <button class="editor-add-btn" onclick="_editorClearSubtitles()" style="margin-top:4px;border-color:rgba(239,68,68,0.3);color:#ef4444">Limpar todas</button>
+        ` : ""}
+        ${hasSubs ? `
+            <div class="editor-sub-toolbar" style="margin-top:8px">
+                <span class="editor-sub-count">${_editor.subtitles.length} trecho(s) gerado(s)</span>
+                <button
+                    class="editor-sub-icon-btn${_editor.subtitleListOpen ? " active" : ""}"
+                    onclick="_editorToggleSubtitleList()"
+                    title="Editar trechos"
+                    aria-label="Editar trechos"
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9"/>
+                        <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="editor-sub-quick-card">
+                <div class="editor-sub-quick-row">
+                    <span class="editor-sub-quick-label">Posicao</span>
+                    <div class="editor-sub-stepper">
+                        <button type="button" onclick="_editorNudgeSubtitlesY(-2)" aria-label="Subir legenda">↑</button>
+                        <input type="range" min="5" max="95" value="${subtitleY}" oninput="_editorSetSubtitlesY(this.value, true)">
+                        <button type="button" onclick="_editorNudgeSubtitlesY(2)" aria-label="Descer legenda">↓</button>
+                    </div>
+                    <span class="editor-sub-quick-value" data-editor-sub-y-value>${subtitleY}%</span>
+                </div>
+                <div class="editor-sub-quick-row">
+                    <span class="editor-sub-quick-label">Tamanho</span>
+                    <div class="editor-sub-stepper">
+                        <button type="button" onclick="_editorNudgeSubtitlesSize(-2)" aria-label="Reduzir legenda">-</button>
+                        <input type="range" min="14" max="72" value="${subtitleSize}" oninput="_editorSetSubtitlesFontSize(this.value, true)">
+                        <button type="button" onclick="_editorNudgeSubtitlesSize(2)" aria-label="Aumentar legenda">+</button>
+                    </div>
+                    <span class="editor-sub-quick-value" data-editor-sub-size-value>${subtitleSize}px</span>
+                </div>
+            </div>
+        ` : ""}
+        ${hasSubs && _editor.subtitleListOpen ? `
+            <div class="editor-props-group" style="margin-top:8px;max-height:200px;overflow-y:auto">
+                ${_editor.subtitles.map(s => `
+                    <div class="editor-subtitle-item${s._selected ? ' active' : ''}" onclick="_editorSelectSubtitle(${s.id})">
+                        <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
+                        <span class="sub-text">${esc(s.text)}</span>
+                        <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">✕</button>
+                    </div>
+                `).join("")}
+            </div>
+        ` : ""}
+        ${hasSubs ? `
+            <div class="editor-props-title" style="margin-top:12px">Estilos</div>
+            <div class="editor-subtitle-styles-grid">
+                ${SUBTITLE_STYLES.map(st => `
+                    <div class="editor-sub-style-card${(_editor.subtitles.find(s => s._selected) || {}).styleName === st.name ? ' active' : ''}" onclick="_editorApplySubStyle('${st.name}')">
+                        <div class="editor-sub-style-preview" style="font-family:${st.fontFamily};color:${st.fontColor};font-size:11px;font-weight:${st.bold ? 'bold' : 'normal'};font-style:${st.italic ? 'italic' : 'normal'};${st.bgColor ? 'background:' + st.bgColor + ';padding:2px 4px;border-radius:3px;' : ''}${st.outlineColor ? 'text-shadow:-1px -1px 0 ' + st.outlineColor + ',1px -1px 0 ' + st.outlineColor + ',-1px 1px 0 ' + st.outlineColor + ',1px 1px 0 ' + st.outlineColor + ';' : ''}">Abc</div>
+                        <span>${st.label}</span>
+                    </div>
+                `).join("")}
+            </div>
+        ` : ""}
+        ${_editor.subtitleListOpen ? _editorSubtitleEditForm() : ""}
+    `;
+}
+
+function _editorRenderMobileSubtitleSheet() {
+    const sheet = document.getElementById("editor-mobile-subtitles-sheet");
+    if (!sheet) return;
+
+    const shouldOpen = _editorIsMobileViewport()
+        && _editor.activeTool === "subtitles"
+        && _editor.mobileSubtitleModalOpen;
+
+    if (!shouldOpen) {
+        sheet.hidden = true;
+        sheet.classList.remove("open");
+        sheet.innerHTML = "";
+        return;
+    }
+
+    sheet.hidden = false;
+    sheet.classList.add("open");
+    sheet.innerHTML = `
+        <div class="editor-mobile-subtitles-sheet-header">
+            <div class="editor-mobile-subtitles-sheet-title">Legendas</div>
+            <button
+                class="editor-mobile-subtitles-sheet-close"
+                type="button"
+                onclick="_editorCloseMobileSubtitleSheet()"
+                aria-label="Fechar painel de legendas"
+            >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6 6 18"/>
+                    <path d="m6 6 12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="editor-mobile-subtitles-sheet-body">
+            ${_editorBuildSubtitlesPanelMarkup()}
+        </div>
+    `;
+}
+
+function _editorCloseMobileSubtitleSheet() {
+    _editor.mobileSubtitleModalOpen = false;
+    _editorRenderMobileSubtitleSheet();
+}
+window._editorCloseMobileSubtitleSheet = _editorCloseMobileSubtitleSheet;
+
 // ---------- Render properties panel based on tool ----------
 function _editorRenderProps() {
     const container = document.getElementById("editor-props-content");
@@ -36421,81 +36552,9 @@ function _editorRenderProps() {
             ${cuts.length ? '<button class="editor-add-btn editor-smartcuts-clear" onclick="_editorClearSmartCuts()">Limpar cortes</button>' : ""}
         `;
     } else if (tool === "subtitles") {
-        const isGenerating = _editor._subtitleGenerating;
-        const hasSubs = _editor.subtitles.length > 0;
-        const selectedSub = _editor.subtitles.find(s => s._selected) || _editor.subtitles[0] || null;
-        const subtitleY = Math.round(selectedSub?.y ?? 82);
-        const subtitleSize = Math.round(selectedSub?.fontSize ?? 28);
         container.innerHTML = `
             <div class="editor-props-title">Legendas</div>
-            <button class="editor-add-btn" onclick="_editorAutoSubtitles()" ${isGenerating ? "disabled" : ""}>
-                ${isGenerating
-                    ? '<div class="spinner-small" style="width:14px;height:14px"></div> Gerando legendas...'
-                    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg> Gerar legendas automaticas'}
-            </button>
-            <button class="editor-add-btn" onclick="_editorAddSubtitle()" style="margin-top:4px">+ Adicionar legenda manual</button>
-            ${hasSubs ? `
-                <button class="editor-add-btn" onclick="_editorClearSubtitles()" style="margin-top:4px;border-color:rgba(239,68,68,0.3);color:#ef4444">Limpar todas</button>
-            ` : ""}
-            ${hasSubs ? `
-                <div class="editor-sub-toolbar" style="margin-top:8px">
-                    <span class="editor-sub-count">${_editor.subtitles.length} trecho(s) gerado(s)</span>
-                    <button
-                        class="editor-sub-icon-btn${_editor.subtitleListOpen ? " active" : ""}"
-                        onclick="_editorToggleSubtitleList()"
-                        title="Editar trechos"
-                        aria-label="Editar trechos"
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 20h9"/>
-                            <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-                        </svg>
-                    </button>
-                </div>
-                <div class="editor-sub-quick-card">
-                    <div class="editor-sub-quick-row">
-                        <span class="editor-sub-quick-label">Posicao</span>
-                        <div class="editor-sub-stepper">
-                            <button type="button" onclick="_editorNudgeSubtitlesY(-2)" aria-label="Subir legenda">↑</button>
-                            <input type="range" min="5" max="95" value="${subtitleY}" oninput="_editorSetSubtitlesY(this.value, true)">
-                            <button type="button" onclick="_editorNudgeSubtitlesY(2)" aria-label="Descer legenda">↓</button>
-                        </div>
-                        <span class="editor-sub-quick-value" id="editor-sub-global-y-value">${subtitleY}%</span>
-                    </div>
-                    <div class="editor-sub-quick-row">
-                        <span class="editor-sub-quick-label">Tamanho</span>
-                        <div class="editor-sub-stepper">
-                            <button type="button" onclick="_editorNudgeSubtitlesSize(-2)" aria-label="Reduzir legenda">-</button>
-                            <input type="range" min="14" max="72" value="${subtitleSize}" oninput="_editorSetSubtitlesFontSize(this.value, true)">
-                            <button type="button" onclick="_editorNudgeSubtitlesSize(2)" aria-label="Aumentar legenda">+</button>
-                        </div>
-                        <span class="editor-sub-quick-value" id="editor-sub-global-size-value">${subtitleSize}px</span>
-                    </div>
-                </div>
-            ` : ""}
-            ${hasSubs && _editor.subtitleListOpen ? `
-                <div class="editor-props-group" id="editor-subtitle-list" style="margin-top:8px;max-height:200px;overflow-y:auto">
-                    ${_editor.subtitles.map(s => `
-                        <div class="editor-subtitle-item${s._selected ? ' active' : ''}" onclick="_editorSelectSubtitle(${s.id})">
-                            <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
-                            <span class="sub-text">${esc(s.text)}</span>
-                            <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">✕</button>
-                        </div>
-                    `).join("")}
-                </div>
-            ` : ""}
-            ${hasSubs ? `
-                <div class="editor-props-title" style="margin-top:12px">Estilos</div>
-                <div class="editor-subtitle-styles-grid" id="editor-sub-styles-grid">
-                    ${SUBTITLE_STYLES.map(st => `
-                        <div class="editor-sub-style-card${(_editor.subtitles.find(s=>s._selected)||{}).styleName === st.name ? ' active' : ''}" onclick="_editorApplySubStyle('${st.name}')">
-                            <div class="editor-sub-style-preview" style="font-family:${st.fontFamily};color:${st.fontColor};font-size:11px;font-weight:${st.bold?'bold':'normal'};font-style:${st.italic?'italic':'normal'};${st.bgColor?'background:'+st.bgColor+';padding:2px 4px;border-radius:3px;':''}${st.outlineColor?'text-shadow:-1px -1px 0 '+st.outlineColor+',1px -1px 0 '+st.outlineColor+',-1px 1px 0 '+st.outlineColor+',1px 1px 0 '+st.outlineColor+';':''}">Abc</div>
-                            <span>${st.label}</span>
-                        </div>
-                    `).join("")}
-                </div>
-            ` : ""}
-            ${_editor.subtitleListOpen ? _editorSubtitleEditForm() : ""}
+            ${_editorBuildSubtitlesPanelMarkup()}
         `;
     } else if (tool === "trim") {
         const hasExternalAudio = _editorShouldShowAudioTrack();
@@ -36800,6 +36859,7 @@ function _editorRenderProps() {
     }
 
     _editorRenderMobileStagePanel();
+    _editorRenderMobileSubtitleSheet();
 }
 
 // Text edit form
@@ -37302,6 +37362,7 @@ function _editorSelectSubtitle(id, openEditor = false) {
     _editor.selectedClip = { kind: "subtitle", id: String(id), track: "text" };
     if (openEditor) {
         _editor.subtitleListOpen = true;
+        _editor.mobileSubtitleModalOpen = true;
     }
 
     if (openEditor && _editor.activeTool !== "subtitles") {
@@ -37315,7 +37376,8 @@ function _editorSelectSubtitle(id, openEditor = false) {
 
     if (openEditor) {
         requestAnimationFrame(() => {
-            const textarea = document.querySelector("#editor-props-content textarea");
+            const textarea = document.querySelector("#editor-mobile-subtitles-sheet textarea")
+                || document.querySelector("#editor-props-content textarea");
             if (textarea) {
                 textarea.focus();
                 textarea.select();
@@ -37351,8 +37413,9 @@ function _editorSetSubtitlesY(val, noRender = false) {
     if (!_editor.subtitles.length) return;
     const targetY = Math.max(5, Math.min(95, parseInt(val, 10) || 82));
     _editor.subtitles.forEach(s => { s.y = targetY; });
-    const yLabel = document.getElementById("editor-sub-global-y-value");
-    if (yLabel) yLabel.textContent = `${targetY}%`;
+    document.querySelectorAll("[data-editor-sub-y-value]").forEach((label) => {
+        label.textContent = `${targetY}%`;
+    });
     const video = document.getElementById("editor-video");
     _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
     _editorRenderTimeline();
@@ -37371,8 +37434,9 @@ function _editorSetSubtitlesFontSize(val, noRender = false) {
     if (!_editor.subtitles.length) return;
     const targetSize = Math.max(14, Math.min(72, parseInt(val, 10) || 28));
     _editor.subtitles.forEach(s => { s.fontSize = targetSize; });
-    const sizeLabel = document.getElementById("editor-sub-global-size-value");
-    if (sizeLabel) sizeLabel.textContent = `${targetSize}px`;
+    document.querySelectorAll("[data-editor-sub-size-value]").forEach((label) => {
+        label.textContent = `${targetSize}px`;
+    });
     const video = document.getElementById("editor-video");
     _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
     _editorRenderTimeline();

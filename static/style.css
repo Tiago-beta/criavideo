@@ -14835,6 +14835,57 @@ th,
     font-variant-numeric: tabular-nums;
 }
 
+.editor-mobile-subtitles-sheet {
+    display: none;
+}
+
+.editor-mobile-subtitles-sheet[hidden] {
+    display: none !important;
+}
+
+.editor-mobile-subtitles-sheet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid rgba(225, 239, 252, 0.12);
+}
+
+.editor-mobile-subtitles-sheet-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.editor-mobile-subtitles-sheet-close {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid rgba(225, 239, 252, 0.12);
+    background: rgba(255,255,255,0.05);
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
+}
+
+.editor-mobile-subtitles-sheet-close:hover {
+    border-color: rgba(0, 212, 255, 0.35);
+    color: var(--accent);
+    background: rgba(0, 212, 255, 0.08);
+}
+
+.editor-mobile-subtitles-sheet-body {
+    padding: 12px 14px 14px;
+    overflow-y: auto;
+    min-height: 0;
+}
+
 .editor-aspect-selector {
     margin-left: auto;
     display: flex;
@@ -15816,6 +15867,9 @@ th,
         flex-shrink: 0;
         scrollbar-width: none;
         -ms-overflow-style: none;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+        touch-action: pan-x;
     }
 
     .editor-tools-panel::-webkit-scrollbar {
@@ -15837,8 +15891,10 @@ th,
 
     .editor-tool-btn {
         min-width: 56px;
+        flex: 0 0 auto;
         padding: 6px 4px;
         gap: 4px;
+        touch-action: pan-x;
     }
 
     .editor-transition-grid {
@@ -15909,6 +15965,9 @@ th,
         overflow-y: hidden;
         scrollbar-width: none;
         -ms-overflow-style: none;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+        touch-action: pan-x;
     }
 
     .editor-quick-actions::-webkit-scrollbar {
@@ -15921,6 +15980,11 @@ th,
 
     .editor-workspace.editor-mobile-actions-open .editor-quick-actions {
         display: flex;
+    }
+
+    .editor-quick-icon-btn {
+        flex: 0 0 auto;
+        touch-action: pan-x;
     }
 
     .editor-quick-actions .editor-mobile-mode-toggle {
@@ -15982,6 +16046,37 @@ th,
 
     .editor-props-panel .editor-props-title {
         display: none;
+    }
+
+    .editor-mobile-subtitles-sheet {
+        position: absolute;
+        left: 8px;
+        right: 8px;
+        bottom: max(8px, env(safe-area-inset-bottom, 0px));
+        z-index: 24;
+        display: flex;
+        flex-direction: column;
+        max-height: min(44vh, 420px);
+        min-height: 176px;
+        border: 1px solid rgba(98, 168, 220, 0.24);
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(10, 31, 49, 0.98), rgba(5, 18, 32, 0.98));
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+        backdrop-filter: blur(12px);
+        overflow: hidden;
+        pointer-events: auto;
+    }
+
+    .editor-mobile-subtitles-sheet-body {
+        padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .editor-mobile-subtitles-sheet .editor-subtitle-styles-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .editor-mobile-subtitles-sheet .editor-props-group textarea {
+        min-height: 78px;
     }
 
     .editor-timeline {
