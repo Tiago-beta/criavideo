@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v496 loaded");
+console.log("[CriaVideo] app.js v497 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28463,6 +28463,95 @@ let _editorProjectNameEditState = {
     saving: false,
 };
 
+let _editorMobileBarDragSuppressUntil = 0;
+
+function _editorBindMobileHorizontalBarDrag(container) {
+    if (!container || container.dataset.mobileBarDragBound === "1") return;
+    container.dataset.mobileBarDragBound = "1";
+
+    const drag = {
+        pointerId: null,
+        startX: 0,
+        startScrollLeft: 0,
+        active: false,
+    };
+
+    const finishDrag = (pointerId = drag.pointerId) => {
+        if (pointerId != null && typeof container.releasePointerCapture === "function") {
+            try {
+                container.releasePointerCapture(pointerId);
+            } catch (_) {
+                // Ignore missing capture release on browsers that do not support it.
+            }
+        }
+
+        if (drag.active) {
+            _editorMobileBarDragSuppressUntil = Date.now() + 180;
+        }
+
+        drag.pointerId = null;
+        drag.startX = 0;
+        drag.startScrollLeft = 0;
+        drag.active = false;
+        container.classList.remove("editor-mobile-bar-dragging");
+    };
+
+    container.addEventListener("pointerdown", (event) => {
+        if (!_editorIsMobileViewport()) return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+
+        drag.pointerId = event.pointerId;
+        drag.startX = event.clientX;
+        drag.startScrollLeft = Number(container.scrollLeft || 0);
+        drag.active = false;
+
+        if (typeof container.setPointerCapture === "function") {
+            try {
+                container.setPointerCapture(event.pointerId);
+            } catch (_) {
+                // Ignore browsers that refuse capture for this target.
+            }
+        }
+    });
+
+    container.addEventListener("pointermove", (event) => {
+        if (!_editorIsMobileViewport() || drag.pointerId !== event.pointerId) return;
+
+        const deltaX = event.clientX - drag.startX;
+        if (!drag.active && Math.abs(deltaX) < 6) {
+            return;
+        }
+
+        drag.active = true;
+        container.classList.add("editor-mobile-bar-dragging");
+        container.scrollLeft = Math.max(0, drag.startScrollLeft - deltaX);
+        event.preventDefault();
+    });
+
+    container.addEventListener("pointerup", (event) => {
+        if (drag.pointerId !== event.pointerId) return;
+        finishDrag(event.pointerId);
+    });
+
+    container.addEventListener("pointercancel", (event) => {
+        if (drag.pointerId !== event.pointerId) return;
+        finishDrag(event.pointerId);
+    });
+
+    container.addEventListener("lostpointercapture", () => {
+        if (drag.pointerId == null) return;
+        finishDrag();
+    });
+
+    container.addEventListener("click", (event) => {
+        if (!_editorIsMobileViewport()) return;
+        if (Date.now() >= _editorMobileBarDragSuppressUntil) return;
+        event.preventDefault();
+        event.stopPropagation();
+        _editorMobileBarDragSuppressUntil = 0;
+    }, true);
+}
+
 function _editorAttachPreviewSeekHandlers(videoEl) {
     if (!videoEl || videoEl._editorSeekHandlersAttached) return;
 
@@ -28598,6 +28687,9 @@ function _editorSyncMobileBarsPlacement() {
     const toolsPanel = document.getElementById("editor-tools-panel");
     const quickActions = document.getElementById("editor-quick-actions");
     if (!workspace || !main || !previewArea || !timeline || !toolsPanel || !quickActions) return;
+
+    _editorBindMobileHorizontalBarDrag(toolsPanel);
+    _editorBindMobileHorizontalBarDrag(quickActions);
 
     const useBottomBars = _editorIsMobileViewport() && !workspace.hidden;
     if (useBottomBars) {
