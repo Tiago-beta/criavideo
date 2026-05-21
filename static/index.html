@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260521-05">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260521-06">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 517;
+        var REQUIRED_VER = 518;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1333,16 +1333,14 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                                 </div>
                                 <strong>Imagens IA</strong>
-                                <small>Imagens geradas por inteligência artificial com narração</small>
-                                <span class="credit-badge credit-moderate">Custo: Moderado</span>
+                                <span class="credit-badge credit-moderate">Moderado</span>
                             </div>
                             <div class="video-type-card" data-type="realista" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Vídeo realista com Lite 2.0 Fast, Pro 3.1 Start, Cria 3.0 speed, Ultra High 1.0, Mega 2.0 Ultra e Avatar 3.1 Plus</small>
-                                <span class="credit-badge credit-high">Custo: Alto</span>
+                                <span class="credit-badge credit-high">Alto</span>
                             </div>
                         </div>
                     </div>
@@ -1469,9 +1467,9 @@
                             <div class="form-group">
                                 <label>Formato</label>
                                 <select id="wizard-aspect" class="input">
-                                    <option value="16:9">16:9 (YouTube)</option>
-                                    <option value="9:16">9:16 (TikTok/Reels)</option>
-                                    <option value="1:1">1:1 (Instagram)</option>
+                                    <option value="16:9">16:9</option>
+                                    <option value="9:16">9:16</option>
+                                    <option value="1:1">1:1</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -1488,11 +1486,6 @@
 
                     <!-- Step 7: Realistic Settings (only for Realista type) -->
                     <div class="wizard-step" data-step="7" hidden>
-                        <div class="realistic-info-banner">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                            <span>A IA vai otimizar seu tema em um prompt cinematográfico profissional para gerar o melhor vídeo possível</span>
-                        </div>
-
                         <div class="form-group">
                             <label>Persona de interação</label>
                             <div class="realistic-inspiration-tags" id="wizard-realistic-persona-tags">
@@ -1567,15 +1560,6 @@
                             </div>
                         </div>
 
-                        <div class="form-group" id="wizard-realistic-aspect-group">
-                            <label>Formato</label>
-                            <select id="wizard-realistic-aspect" class="input">
-                                <option value="16:9">16:9 (YouTube)</option>
-                                <option value="9:16">9:16 (TikTok/Reels)</option>
-                                <option value="1:1">1:1 (Instagram)</option>
-                            </select>
-                        </div>
-
                         <div class="form-group realistic-audio-toggle">
                             <div class="media-toggle-group">
                                 <label class="media-toggle-chip media-toggle-chip--compact">
@@ -1641,10 +1625,20 @@
                         </div>
                         <button class="btn btn-primary btn-sm wizard-next-btn" id="wizard-next" type="button">Próximo &rarr;</button>
                     </div>
-                    <button class="btn btn-primary btn-block btn-create-video" id="wizard-create-btn" type="button" hidden>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                        Criar Vídeo com IA
-                    </button>
+                    <div class="create-panel-action-row" id="wizard-create-action-row" data-mode="default" hidden>
+                        <div class="form-group create-panel-action-aspect" id="wizard-realistic-aspect-group" hidden>
+                            <label>Formato</label>
+                            <select id="wizard-realistic-aspect" class="input">
+                                <option value="16:9">16:9</option>
+                                <option value="9:16">9:16</option>
+                                <option value="1:1">1:1</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary btn-create-video" id="wizard-create-btn" type="button" hidden>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 4 1.5 3L20 8.5l-3.5 1.5L15 13l-1.5-3L10 8.5 13.5 7 15 4Z"/><path d="m6 15 1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z"/><path d="m3 21 9-9"/></svg>
+                            <span>Criar</span>
+                        </button>
+                    </div>
                     <div class="credit-estimate-row">
                         <div class="credit-estimate-pill" id="wizard-credit-estimate" hidden>Calculando custo...</div>
                         <button class="credit-add-btn" id="wizard-credit-add-btn" type="button" onclick="showCreditsPurchaseModal()" hidden>Adicionar</button>
@@ -2017,24 +2011,21 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                 </div>
                                 <strong>Imagens Próprias</strong>
-                                <small>Envie suas fotos e a IA cria o vídeo com narração</small>
-                                <span class="credit-badge credit-regular">Custo: Regular</span>
+                                <span class="credit-badge credit-regular">Regular</span>
                             </div>
                             <div class="video-type-card" data-type="imagens_ia" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                                 </div>
                                 <strong>Imagens IA</strong>
-                                <small>Imagens geradas por inteligência artificial com narração</small>
-                                <span class="credit-badge credit-moderate">Custo: Moderado</span>
+                                <span class="credit-badge credit-moderate">Moderado</span>
                             </div>
                             <div class="video-type-card" data-type="realista" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Vídeo realista com Lite 2.0 Fast, Pro 3.1 Start, Cria 3.0 speed, Ultra High 1.0, Mega 2.0 Ultra e Avatar 3.1 Plus</small>
-                                <span class="credit-badge credit-high">Custo: Alto</span>
+                                <span class="credit-badge credit-high">Alto</span>
                             </div>
                         </div>
                     </div>
@@ -2157,9 +2148,9 @@
                             <div class="form-group">
                                 <label>Formato</label>
                                 <select id="script-aspect" class="input">
-                                    <option value="16:9">16:9 (YouTube)</option>
-                                    <option value="9:16">9:16 (TikTok/Reels)</option>
-                                    <option value="1:1">1:1 (Instagram)</option>
+                                    <option value="16:9">16:9</option>
+                                    <option value="9:16">9:16</option>
+                                    <option value="1:1">1:1</option>
                                 </select>
                             </div>
                             <div class="form-group" id="script-photo-seconds-group" hidden>
@@ -2242,11 +2233,6 @@
 
                     <!-- Step 7: Realistic Settings (only for Realista type) -->
                     <div class="wizard-step" data-step="7" hidden>
-                        <div class="realistic-info-banner">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                            <span>A IA vai otimizar seu roteiro em um prompt cinematográfico profissional para gerar o melhor vídeo possível</span>
-                        </div>
-
                         <div class="form-group" id="script-realistic-persona-group">
                             <label>Persona de interação</label>
                             <div class="realistic-inspiration-tags" id="script-realistic-persona-tags">
@@ -2312,15 +2298,6 @@
                                 <button class="duration-option" data-value="56" type="button">56s</button>
                             </div>
                         </div>
-
-                        <div class="form-group" id="script-realistic-aspect-group">
-                            <label>Formato</label>
-                            <select id="script-realistic-aspect" class="input">
-                                <option value="16:9">16:9 (YouTube)</option>
-                                <option value="9:16">9:16 (TikTok/Reels)</option>
-                                <option value="1:1">1:1 (Instagram)</option>
-                            </select>
-                        </div>
                         <div id="script-realistic-narration-options" class="realistic-narration-options" hidden>
                             <div class="form-group">
                                 <label>Texto da narração</label>
@@ -2354,10 +2331,20 @@
                         </div>
                         <button class="btn btn-primary btn-sm wizard-next-btn" id="script-next" type="button">Próximo &rarr;</button>
                     </div>
-                    <button class="btn btn-primary btn-block btn-create-video" id="script-create-btn" type="button" hidden>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                        Criar Vídeo com IA
-                    </button>
+                    <div class="create-panel-action-row" id="script-create-action-row" data-mode="default" hidden>
+                        <div class="form-group create-panel-action-aspect" id="script-realistic-aspect-group" hidden>
+                            <label>Formato</label>
+                            <select id="script-realistic-aspect" class="input">
+                                <option value="16:9">16:9</option>
+                                <option value="9:16">9:16</option>
+                                <option value="1:1">1:1</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary btn-create-video" id="script-create-btn" type="button" hidden>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 4 1.5 3L20 8.5l-3.5 1.5L15 13l-1.5-3L10 8.5 13.5 7 15 4Z"/><path d="m6 15 1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z"/><path d="m3 21 9-9"/></svg>
+                            <span>Criar</span>
+                        </button>
+                    </div>
                     <div class="credit-estimate-row">
                         <div class="credit-estimate-pill" id="script-credit-estimate" hidden>Calculando custo...</div>
                         <button class="credit-add-btn" id="script-credit-add-btn" type="button" onclick="showCreditsPurchaseModal()" hidden>Adicionar</button>
@@ -4445,8 +4432,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260521-05"></script>
-    <script src="/video/static/pwa.js?v=20260521-05"></script>
+    <script src="/video/static/app.js?v=20260521-06"></script>
+    <script src="/video/static/pwa.js?v=20260521-06"></script>
 </body>
 </html>
 

@@ -5210,14 +5210,50 @@ th {
     display: none;
 }
 
-.create-panel--single-page .btn-create-video {
+.create-panel--single-page .create-panel-action-row {
     order: 98;
-    margin-top: 0;
 }
 
 .create-panel--single-page .credit-estimate-row {
     order: 99;
     justify-content: flex-start;
+}
+
+.create-panel-action-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: end;
+    gap: 12px;
+}
+
+.create-panel-action-row[data-mode="realistic"] {
+    grid-template-columns: minmax(0, 138px) auto;
+}
+
+.create-panel-action-row[data-mode="default"] .create-panel-action-aspect {
+    display: none;
+}
+
+.create-panel-action-row[data-mode="default"] .btn-create-video {
+    width: 100%;
+}
+
+.create-panel-action-row[data-mode="realistic"] .btn-create-video {
+    width: auto;
+    min-width: 138px;
+}
+
+.create-panel-action-aspect {
+    margin: 0;
+}
+
+.create-panel-action-aspect label {
+    margin-bottom: 6px;
+    font-size: 0.78rem;
+}
+
+.create-panel-action-aspect .input {
+    min-width: 0;
 }
 
 #create-panel-similar {
@@ -5721,13 +5757,44 @@ th {
 }
 
 .btn-create-video {
-    margin-top: 1rem;
-    display: flex;
+    margin-top: 0;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    font-size: 1rem;
-    padding: 14px 24px;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 224, 118, 0.9);
+    background: linear-gradient(180deg, rgba(255, 218, 92, 0.98), rgba(223, 159, 26, 0.96));
+    color: #2c2000;
+    font-size: 0.94rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    box-shadow: 0 16px 30px rgba(214, 152, 17, 0.22);
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+.btn-create-video:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: rgba(255, 236, 154, 0.98);
+    background: linear-gradient(180deg, rgba(255, 232, 124, 0.98), rgba(236, 172, 37, 0.96));
+    color: #241900;
+    box-shadow: 0 20px 36px rgba(214, 152, 17, 0.28);
+}
+
+.btn-create-video:disabled {
+    opacity: 0.62;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.btn-create-video svg {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
 }
 
 .script-actions {
@@ -9667,6 +9734,33 @@ th,
     margin-right: auto;
 }
 
+#create-panel-wizard .video-type-grid,
+#create-panel-script .video-type-grid {
+    gap: 10px;
+}
+
+#create-panel-wizard .video-type-card,
+#create-panel-script .video-type-card {
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 16px 10px 12px;
+    min-height: 132px;
+}
+
+#create-panel-wizard .video-type-card strong,
+#create-panel-script .video-type-card strong {
+    display: block;
+    font-size: 0.88rem;
+    line-height: 1.25;
+}
+
+#create-panel-wizard .credit-badge,
+#create-panel-script .credit-badge {
+    margin-top: 0;
+    padding: 3px 8px;
+    font-size: 0.64rem;
+}
+
 /* ── Mode Selection Cards (Step 0) ── */
 .create-mode-selection {
     text-align: center;
@@ -13390,25 +13484,33 @@ th,
         grid-template-columns: 1fr;
         gap: 10px;
     }
-    #wizard-video-type-grid,
-    #modal-new-automation .auto-video-type-grid {
-        grid-template-columns: 1fr;
+    #create-panel-wizard .video-type-grid,
+    #create-panel-script .video-type-grid {
+        grid-template-columns: repeat(auto-fit, minmax(102px, 1fr));
         max-width: none;
     }
-    .video-type-card {
-        flex-direction: row;
-        text-align: left;
-        padding: 14px 16px;
-        gap: 12px;
+    #create-panel-wizard .video-type-card,
+    #create-panel-script .video-type-card {
+        flex-direction: column;
+        text-align: center;
+        padding: 14px 10px 12px;
+        gap: 8px;
     }
-    .video-type-icon {
+    #create-panel-wizard .video-type-icon,
+    #create-panel-script .video-type-icon {
         width: 42px;
         height: 42px;
         flex-shrink: 0;
     }
-    .video-type-card strong,
-    .video-type-card small {
+    #create-panel-wizard .video-type-card strong,
+    #create-panel-script .video-type-card strong {
         display: block;
+    }
+    .create-panel-action-row[data-mode="realistic"] {
+        grid-template-columns: minmax(0, 124px) auto;
+    }
+    .create-panel-action-row[data-mode="realistic"] .btn-create-video {
+        min-width: 124px;
     }
 }
 

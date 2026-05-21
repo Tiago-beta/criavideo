@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v517 loaded");
+console.log("[CriaVideo] app.js v518 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -344,10 +344,12 @@ function _getAvatarEstimatePendingMessage(prefix) {
         : "Envie um audio ou escolha um trecho do Tevoxi para calcular o custo automaticamente.";
 }
 
+function _buildCreateCreditOnlyMessage(creditsNeeded) {
+    return `${_formatCreditsInt(creditsNeeded)} créditos`;
+}
+
 function _buildAvatarEstimateMessage(prefix, creditsNeeded, label) {
-    const durationSeconds = _getAvatarAutomaticDurationSeconds(prefix);
-    const durationChunk = durationSeconds > 0 ? ` • duracao automatica: ${durationSeconds}s` : "";
-    return `${label}: ${_formatCreditsInt(creditsNeeded)} créditos${durationChunk}${_buildBalanceSuffix(creditsNeeded)}`;
+    return _buildCreateCreditOnlyMessage(creditsNeeded);
 }
 
 async function _resolveLocalAudioFileDurationSeconds(file, fallbackDuration = 0) {
@@ -4715,7 +4717,7 @@ async function updateWizardCreditEstimate() {
         payload,
         (creditsNeeded) => _getRealisticSelectedEngine("wizard") === "avatar31"
             ? _buildAvatarEstimateMessage("wizard", creditsNeeded, "Custo")
-            : `Custo: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
+            : _buildCreateCreditOnlyMessage(creditsNeeded),
     );
 }
 
@@ -4736,7 +4738,7 @@ async function updateScriptCreditEstimate() {
         payload,
         (creditsNeeded) => _getRealisticSelectedEngine("script") === "avatar31"
             ? _buildAvatarEstimateMessage("script", creditsNeeded, "Custo estimado")
-            : `Custo estimado: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
+            : _buildCreateCreditOnlyMessage(creditsNeeded),
     );
 }
 
@@ -6291,6 +6293,20 @@ function _getCreateSinglePageVisibleSteps(prefix) {
         : [2, 1, 3, 4, 5, 6];
 }
 
+function _syncCreateActionRow(prefix) {
+    const actionRow = document.getElementById(`${prefix}-create-action-row`);
+    const createBtn = document.getElementById(`${prefix}-create-btn`);
+    const aspectGroup = document.getElementById(`${prefix}-realistic-aspect-group`);
+    if (!actionRow || !createBtn) return;
+
+    const isRealistic = _getSelectedCreateVideoType(prefix) === "realista";
+    actionRow.dataset.mode = isRealistic ? "realistic" : "default";
+    actionRow.hidden = !!createBtn.hidden;
+    if (aspectGroup) {
+        aspectGroup.hidden = !isRealistic;
+    }
+}
+
 function updateFlowUI(panelId, stepIndex, flow, prefix) {
     const panel = document.getElementById(panelId);
     if (!panel) return;
@@ -6327,6 +6343,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
         if (nextBtn) nextBtn.hidden = true;
         if (createBtn) createBtn.hidden = false;
         if (estimateBadge) estimateBadge.hidden = false;
+        _syncCreateActionRow(prefix);
 
         if (prefix === "wizard") {
             scheduleWizardCreditEstimate();
@@ -6359,6 +6376,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
     if (backBtn) backBtn.hidden = false; // Always show — step 1 goes back to mode selection
     if (nextBtn) nextBtn.hidden = stepIndex >= flow.length;
     if (createBtn) createBtn.hidden = stepIndex < flow.length;
+    _syncCreateActionRow(prefix);
 
     if (estimateBadge) {
         estimateBadge.hidden = !(createBtn && !createBtn.hidden);
