@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v511 loaded");
+console.log("[CriaVideo] app.js v512 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -38254,6 +38254,7 @@ function _editorAddText() {
     const t = Number(_editor.timelineTime || video?.currentTime || 0);
     const duration = Math.max(1, Number(options?.duration || 5));
     const maxEnd = Math.max(t + 0.1, Number(_editor.duration || (t + duration)));
+    const shouldStartInlineEdit = options?.inlineEdit !== undefined ? Boolean(options.inlineEdit) : !options;
     _editor.texts.forEach(x => x._selected = false);
     const newText = {
         id: _editorGenId(),
@@ -38271,8 +38272,8 @@ function _editorAddText() {
     };
     _editor.texts.push(newText);
     _editor.selectedClip = { kind: "text", id: String(newText.id) };
-    _editorInlineTextEditId = String(newText.id);
-    _editorInlineTextEditPendingFocus = String(newText.id);
+    _editorInlineTextEditId = shouldStartInlineEdit ? String(newText.id) : "";
+    _editorInlineTextEditPendingFocus = shouldStartInlineEdit ? String(newText.id) : "";
     _editorRefreshQuickActions();
     if (_editor.activeTool !== "text") {
         _editorSelectTool("text");
