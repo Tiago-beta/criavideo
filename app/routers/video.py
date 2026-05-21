@@ -2551,6 +2551,28 @@ def _pick_similar_scene_clause(raw: object, fallback: str) -> str:
     return text[0].lower() + text[1:] if len(text) > 1 else text.lower()
 
 
+def _build_similar_unified_scene_sequence(scene_prompts: list[str], context_summary: str = "") -> str:
+    source_items = [str(prompt or "").strip() for prompt in scene_prompts if str(prompt or "").strip()]
+    if not source_items and str(context_summary or "").strip():
+        source_items = [str(context_summary or "").strip()]
+
+    clauses = [_pick_similar_scene_clause(item, "") for item in source_items]
+    clauses = [clause for clause in clauses if clause]
+    if not clauses:
+        return "acompanha a mesma acao principal do video de referencia do inicio ao fim"
+    if len(clauses) == 1:
+        return f"comeca com {clauses[0]} e sustenta essa mesma acao ate a conclusao"
+    if len(clauses) == 2:
+        return f"comeca com {clauses[0]} e termina com {clauses[1]}"
+
+    parts = [f"comeca com {clauses[0]}"]
+    for idx, clause in enumerate(clauses[1:-1], start=1):
+        connector = "depois mostra" if idx == 1 else "em seguida mostra"
+        parts.append(f"{connector} {clause}")
+    parts.append(f"termina com {clauses[-1]}")
+    return ", ".join(parts)
+
+
 def _infer_similar_unified_camera_mode(text_blob: str, tags_data: dict[str, Any] | None = None) -> str:
     explicit_mode = str((tags_data or {}).get("similar_camera_mode") or "").strip().lower()
     if explicit_mode in {"fixed", "moving", "unspecified"}:
@@ -2621,15 +2643,15 @@ def _infer_similar_unified_soundscape(text_blob: str, transcript_text: str) -> s
     lowered = f"{text_blob} {transcript_text}".lower()
     sound_parts: list[str] = []
     if any(token in lowered for token in ("rain", "water", "ocean", "wave")):
-        sound_parts.append("rainfall, water movement")
+        sound_parts.append("chuva e agua em movimento")
     if any(token in lowered for token in ("street", "traffic", "city", "road", "car")):
-        sound_parts.append("distant traffic")
+        sound_parts.append("trafego distante")
     if any(token in lowered for token in ("workshop", "wood", "hammer", "tool", "table saw", "drill")):
-        sound_parts.append("subtle tool and material handling sounds")
+        sound_parts.append("sons sutis de ferramentas e manipulacao de materiais")
     if transcript_text:
-        sound_parts.append("any spoken dialogue present in the original clip")
+        sound_parts.append("qualquer fala presente no clipe original")
     if not sound_parts:
-        sound_parts.append("the original ambient soundscape")
+        sound_parts.append("a paisagem sonora ambiente original")
     return ", ".join(dict.fromkeys(sound_parts))
 
 
@@ -2637,93 +2659,105 @@ def _infer_similar_unified_lighting(text_blob: str) -> tuple[str, str]:
     lowered = text_blob.lower()
     if any(token in lowered for token in ("night", "neon", "club", "streetlight", "city at night")):
         return (
-            "mixed practical light, neon spill, and directional contrast",
-            "specular highlights, deep contrast, and reflective texture",
+            "luz pratica mista, reflexos de neon e contraste direcional",
+            "realces especulares, contraste profundo e textura refletiva",
         )
     if any(token in lowered for token in ("sunset", "golden hour", "dusk", "sunrise")):
         return (
-            "golden-hour sunlight with soft directional falloff",
-            "warm skin tones, gentle flare, and cinematic depth separation",
+            "luz de golden hour com caimento direcional suave",
+            "tons quentes, flare suave e separacao cinematografica de profundidade",
         )
     if any(token in lowered for token in ("indoor", "interior", "studio", "room", "kitchen", "office")):
         return (
-            "soft diffused interior light with natural practical highlights",
-            "clean skin detail, balanced contrast, and grounded realism",
+            "luz interna difusa com pontos praticos naturais",
+            "detalhe limpo, contraste equilibrado e realismo convincente",
         )
     return (
-        "natural daylight with directional softness",
-        "realistic contrast, soft shadows, and gentle depth separation",
+        "luz natural diurna com direcao suave",
+        "contraste realista, sombras suaves e separacao delicada de profundidade",
     )
 
 
 def _infer_similar_unified_subject(text_blob: str) -> str:
     lowered = text_blob.lower()
     if any(token in lowered for token in ("woman", "female", "girl")):
-        return "the same woman from the reference video, preserving age cues, body language, and identity"
+        return "a mesma mulher do video de referencia, preservando idade aparente, linguagem corporal e identidade"
     if any(token in lowered for token in ("man", "male", "boy")):
-        return "the same man from the reference video, preserving age cues, body language, and identity"
+        return "o mesmo homem do video de referencia, preservando idade aparente, linguagem corporal e identidade"
     if any(token in lowered for token in ("couple", "two people", "duo", "pair")):
-        return "the same pair of subjects from the reference video, preserving facial identity, proportions, and chemistry"
-    return "the main subject from the reference video, preserving identity cues, body language, and proportions"
+        return "a mesma dupla do video de referencia, preservando identidade facial, proporcoes e dinamica entre os personagens"
+    return "o personagem principal do video de referencia, preservando identidade, linguagem corporal e proporcoes"
 
 
 def _infer_similar_unified_camera_behavior(text_blob: str, camera_mode: str = "unspecified") -> str:
     lowered = text_blob.lower()
     if camera_mode == "fixed":
-        return "locked-off static framing, tripod-stable perspective, no pan, tilt, orbit, camera travel, or invented zoom"
+        return "enquadramento fixo, perspectiva estavel de tripe, sem pan, tilt, orbita, deslocamento de camera ou zoom inventado"
 
     behavior_parts: list[str] = []
     if any(token in lowered for token in ("handheld", "shake", "shaky", "micro-shake")):
-        behavior_parts.append("handheld micro-shakes")
+        behavior_parts.append("micro-tremores naturais de handheld")
     if any(token in lowered for token in ("tracking", "follow", "moving camera", "push in", "push-in")):
-        behavior_parts.append("subtle tracking adjustments")
+        behavior_parts.append("ajustes sutis de acompanhamento")
     if any(token in lowered for token in ("focus", "rack focus", "close-up", "close up", "macro")):
-        behavior_parts.append("natural focus breathing")
+        behavior_parts.append("respiracao natural de foco")
     if any(token in lowered for token in ("zoom", "zoom-in", "zoom out", "zoom-out")):
-        behavior_parts.append("gentle zoom corrections")
+        behavior_parts.append("correcoes suaves de zoom")
     if any(token in lowered for token in ("pan", "tilt", "low angle", "high angle", "orbit")):
-        behavior_parts.append("small pan and tilt corrections")
+        behavior_parts.append("pequenas correcoes de pan e tilt")
     if not behavior_parts:
         if camera_mode == "moving":
             behavior_parts = [
-                "natural camera movement matching the reference clip",
-                "minor reframing",
-                "natural focus breathing",
+                "movimento de camera natural seguindo o video de referencia",
+                "pequenos reenquadramentos",
+                "respiracao natural de foco",
             ]
         else:
             behavior_parts = [
-                "locked-off static framing",
-                "stable tripod perspective",
-                "no invented pan, tilt, orbit, or zoom",
+                "enquadramento fixo",
+                "perspectiva estavel de tripe",
+                "sem pan, tilt, orbita ou zoom inventado",
             ]
     return ", ".join(dict.fromkeys(behavior_parts))
 
 
 def _build_similar_unified_prompt_context(project: VideoProject, scenes: list[Any], tags_data: dict[str, Any]) -> str:
+    scene_prompts = [
+        _normalize_similar_unified_prompt_text(_scene_field(scene, "prompt", ""), limit=420)
+        for scene in (scenes or [])
+    ]
+    scene_prompts = [prompt for prompt in scene_prompts if prompt]
     lines = [
-        f"Project title: {str(project.title or '').strip() or 'Video Semelhante'}",
+        f"Titulo do projeto: {str(project.title or '').strip() or 'Video Semelhante'}",
         f"Aspect ratio: {str(project.aspect_ratio or '').strip() or '16:9'}",
+        f"Quantidade de cenas analisadas: {len(scenes or [])}",
     ]
     speech_detected = _similar_transcript_speech_detected(tags_data)
 
     camera_label = _normalize_similar_unified_prompt_text(tags_data.get("similar_camera_label"), limit=120)
     camera_guidance = _normalize_similar_unified_prompt_text(tags_data.get("similar_camera_guidance"), limit=320)
     if camera_label:
-        lines.extend(["", f"Detected camera profile: {camera_label}"])
+        lines.extend(["", f"Perfil de camera detectado: {camera_label}"])
     if camera_guidance:
-        lines.extend(["Camera guidance:", camera_guidance])
+        lines.extend(["Orientacao de camera:", camera_guidance])
 
     context_summary = _normalize_similar_unified_prompt_text(tags_data.get("similar_context_summary"), limit=1400)
     transcript_excerpt = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=900)
-    transcript_language = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_language_label_en"), limit=80)
+    transcript_language = _normalize_similar_unified_prompt_text(
+        tags_data.get("similar_transcript_language_label_pt") or tags_data.get("similar_transcript_language_label_en"),
+        limit=80,
+    )
+    story_sequence = _build_similar_unified_scene_sequence(scene_prompts, context_summary)
     if context_summary:
-        lines.extend(["", "Global visual context:", context_summary])
+        lines.extend(["", "Contexto visual global:", context_summary])
+    if story_sequence:
+        lines.extend(["", "Fluxo narrativo obrigatorio a preservar:", story_sequence])
     if speech_detected is not False and transcript_language:
-        lines.extend(["", f"Detected spoken language: {transcript_language}"])
+        lines.extend(["", f"Idioma falado detectado: {transcript_language}"])
     if speech_detected is not False and transcript_excerpt:
-        lines.extend(["", "Transcript/audio context:", transcript_excerpt])
+        lines.extend(["", "Contexto de fala/audio:", transcript_excerpt])
 
-    lines.extend(["", "Analyzed scene breakdown:"])
+    lines.extend(["", "Quebra cronologica por cena:"])
     for idx, scene in enumerate(scenes, start=1):
         start = float(_scene_field(scene, "start_time", 0.0) or 0.0)
         end = float(_scene_field(scene, "end_time", start) or start)
@@ -2731,11 +2765,11 @@ def _build_similar_unified_prompt_context(project: VideoProject, scenes: list[An
         spoken_text = ""
         if speech_detected is not False:
             spoken_text = _normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=180)
-        lines.append(f"Scene {idx} | {start:.1f}s - {end:.1f}s")
+        lines.append(f"Cena {idx} | {start:.1f}s - {end:.1f}s")
         if prompt_text:
-            lines.append(f"Prompt: {prompt_text}")
+            lines.append(f"Prompt da cena: {prompt_text}")
         if spoken_text:
-            lines.append(f"Spoken context{f' ({transcript_language})' if transcript_language else ''}: {spoken_text}")
+            lines.append(f"Contexto falado{f' ({transcript_language})' if transcript_language else ''}: {spoken_text}")
         lines.append("")
 
     return "\n".join(lines).strip()
@@ -2765,40 +2799,29 @@ def _build_similar_unified_prompt_fallback(project: VideoProject, scenes: list[A
     soundscape = _infer_similar_unified_soundscape(combined_text, transcript_excerpt)
     lighting, visual_effects = _infer_similar_unified_lighting(combined_text)
     subject = _infer_similar_unified_subject(combined_text)
-    location = "the same environment, spatial layout, and atmosphere seen in the reference video"
-    outfit = "the original wardrobe and styling visible in the reference"
-    accessories = "all props, work tools, and handheld objects already visible in the reference"
+    location = "o mesmo ambiente, a mesma disposicao espacial e a mesma atmosfera vistos no video de referencia"
+    outfit = "o figurino original e a mesma composicao visual vistos na referencia"
+    accessories = "todos os objetos, ferramentas e itens de mao que ja aparecem na referencia"
     camera_behavior = _infer_similar_unified_camera_behavior(combined_text, camera_mode)
-    dialogue_clause = _build_similar_unified_dialogue_clause(scenes, tags_data, locale="en")
-
-    intro_clause = _pick_similar_scene_clause(
-        scene_prompts[0] if scene_prompts else context_summary,
-        "the main subject enters the frame and establishes the core action",
-    )
-    middle_clause = _pick_similar_scene_clause(
-        scene_prompts[1] if len(scene_prompts) > 1 else scene_prompts[0] if scene_prompts else context_summary,
-        "the action develops with the same rhythm and environment",
-    )
-    climax_clause = _pick_similar_scene_clause(
-        scene_prompts[-2] if len(scene_prompts) > 2 else scene_prompts[-1] if scene_prompts else context_summary,
-        "the central visual beat peaks with clear momentum",
-    )
-    ending_clause = _pick_similar_scene_clause(
-        scene_prompts[-1] if scene_prompts else context_summary,
-        "the shot resolves on the same subject and atmosphere",
+    dialogue_clause = _build_similar_unified_dialogue_clause(scenes, tags_data, locale="pt")
+    story_sequence = _build_similar_unified_scene_sequence(scene_prompts, context_summary)
+    highlight_sentence = (
+        "A abertura precisa chamar atencao logo nos primeiros instantes, sem quebrar a cronologia da historia. "
+        if scene_prompts or context_summary
+        else ""
     )
 
     prompt = (
-        f"Ultra-realistic cinematic {camera} video set in {location}. "
-        f"Natural environmental audio including {soundscape}. "
-        f"Lighting consists of {lighting}, creating {visual_effects}. "
-        f"Main character is {subject}, maintaining consistent facial features. "
-        f"Outfit is {outfit} (strict lock). "
-        f"Accessories include {accessories}.\n\n"
-        f"The scene unfolds in one continuous shot: {intro_clause}, then {middle_clause}, "
-        f"followed by {climax_clause}, ending with {ending_clause}. "
+        f"Video cinematografico ultra-realista {camera} ambientado em {location}. "
+        f"Audio ambiente natural com {soundscape}. "
+        f"A iluminacao traz {lighting}, criando {visual_effects}. "
+        f"O personagem principal e {subject}. "
+        f"Figurino: {outfit} (travamento obrigatorio). "
+        f"Acessorios: {accessories}. "
+        f"{highlight_sentence}\n\n"
+        f"A cena se desenrola em um unico plano continuo: {story_sequence}. "
         f"{dialogue_clause + ' ' if dialogue_clause else ''}"
-        f"Camera behavior includes {camera_behavior}, maintaining a natural and immersive perspective."
+        f"Comportamento de camera: {camera_behavior}."
     )
     return _normalize_similar_unified_prompt_text(prompt, limit=2200)
 
@@ -2808,9 +2831,9 @@ def _is_similar_unified_prompt_valid(raw: object) -> bool:
     if len(text) < 120:
         return False
     required_parts = (
-        "Ultra-realistic cinematic ",
-        "The scene unfolds in one continuous shot:",
-        "Camera behavior includes ",
+        "Video cinematografico ultra-realista ",
+        "A cena se desenrola em um unico plano continuo:",
+        "Comportamento de camera:",
     )
     if any(part not in text for part in required_parts):
         return False
@@ -2828,20 +2851,29 @@ async def _generate_similar_unified_prompt(
     prompt_context = _build_similar_unified_prompt_context(project, scenes, tags_data)
     preferred_model = (settings.similar_analysis_model or "gpt-4o-mini").strip() or "gpt-4o-mini"
     system_prompt = (
-        "You transform a scene-by-scene reference video analysis into one single cinematic recreation prompt. "
-        "Return plain text only in English, never markdown, never JSON, never bullet lists, never surrounding quotes. "
-        "Follow this structure strictly: first paragraph starts with 'Ultra-realistic cinematic' and fills camera, location, sound, lighting, subject, outfit, and accessories. "
-        "Second paragraph starts with 'The scene unfolds in one continuous shot:' and describes beginning, middle, climax, ending, then camera behavior. "
-        "If spoken audio is present in the analysis, explicitly include who is speaking, the spoken language or locale, and the key dialogue or narration. "
-        "If the reference analysis indicates a fixed or locked-off camera, state that clearly and do not invent pans, tilts, zooms, handheld shake, or camera travel. "
-        "Never leave placeholders like [camera] or [location]. Infer missing details from the analysis."
+        "Voce transforma uma analise de video cena a cena em um unico prompt cinematografico em portugues do Brasil. "
+        "Retorne somente texto puro em portugues do Brasil, sem markdown, sem JSON, sem listas, sem comentarios extras e sem aspas externas. "
+        "Use obrigatoriamente dois paragrafos. O primeiro deve comecar com 'Video cinematografico ultra-realista' e preencher camera, ambiente, audio, iluminacao, personagem principal, figurino e acessorios. "
+        "O segundo deve comecar com 'A cena se desenrola em um unico plano continuo:' e reconstruir a historia inteira em ordem cronologica, incorporando TODAS as cenas analisadas, inclusive as cenas do meio. "
+        "A abertura do segundo paragrafo precisa ser forte e chamativa, aproveitando o melhor gancho visual que ja existe nas cenas analisadas, sem inventar eventos novos. "
+        "Se houver audio falado, diga quem fala, em qual idioma ou variante e qual e a fala, narracao ou assunto principal. "
+        "Feche o segundo paragrafo com 'Comportamento de camera:' seguido do comportamento de camera. "
+        "Se a analise indicar camera fixa ou locked-off, deixe isso explicito e nao invente pan, tilt, travelling, orbita, handheld, shake ou zoom. "
+        "Nunca deixe placeholders como [camera] ou [local]. Preencha tudo com base na analise."
     )
     user_prompt = (
-        "Use the analyzed video breakdown below to generate one unified prompt for recreating the whole video as a single continuous shot.\n\n"
-        "Output template to follow:\n"
-        "Ultra-realistic cinematic [camera type] video set in [location]. Natural environmental audio including [sounds]. Lighting consists of [lighting], creating [visual effects]. Main character is [full description], maintaining consistent facial features. Outfit is [description] (strict lock). Accessories include [description].\n\n"
-        "The scene unfolds in one continuous shot: [beginning], then [middle], followed by [climax], ending with [ending]. If there is spoken audio, add one sentence stating who speaks, in which language or locale, and the key spoken line or topic. Camera behavior includes [movement, imperfections, focus, zoom], maintaining a natural and immersive perspective.\n\n"
-        "Analyzed data:\n"
+        "Use a analise detalhada abaixo para criar um unico prompt em portugues do Brasil que recrie todo o video como um unico plano continuo.\n\n"
+        "Regras obrigatorias:\n"
+        "- Use todo o contexto global, a transcricao e a quebra cronologica por cena.\n"
+        "- Todas as cenas analisadas precisam aparecer na historia final, mesmo que condensadas.\n"
+        "- Preserve a mesma continuidade visual, o mesmo personagem, o mesmo figurino, o mesmo ambiente e a mesma progressao dramatica.\n"
+        "- A abertura precisa chamar atencao usando o melhor gancho visual que ja existe na analise.\n"
+        "- Nao invente movimento de camera se a analise indicar camera fixa ou travada.\n"
+        "- Retorne somente dois paragrafos em texto puro.\n\n"
+        "Formato obrigatorio:\n"
+        "Video cinematografico ultra-realista [tipo de camera] ambientado em [local]. Audio ambiente natural com [sons]. A iluminacao traz [descricao], criando [efeito visual]. O personagem principal e [descricao completa]. Figurino: [descricao] (travamento obrigatorio). Acessorios: [descricao].\n\n"
+        "A cena se desenrola em um unico plano continuo: [recontar a historia inteira em ordem cronologica, usando todas as cenas analisadas]. Se houver fala, inclua quem fala, em qual idioma ou variante e qual e a linha ou o assunto principal. Comportamento de camera: [movimento, estabilidade, foco e pequenas imperfeicoes].\n\n"
+        "Dados analisados:\n"
         f"{prompt_context}"
     )
 

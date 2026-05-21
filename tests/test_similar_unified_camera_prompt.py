@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from app.routers.video import _build_similar_unified_prompt_fallback
+from app.routers.video import _build_similar_unified_prompt_fallback, _is_similar_unified_prompt_valid
 
 
 class TestSimilarUnifiedCameraPrompt(unittest.TestCase):
@@ -24,9 +24,47 @@ class TestSimilarUnifiedCameraPrompt(unittest.TestCase):
 
         prompt = _build_similar_unified_prompt_fallback(project, scenes, tags_data)
 
-        self.assertIn("Ultra-realistic cinematic locked-off video", prompt)
-        self.assertIn("locked-off static framing", prompt)
+        self.assertIn("Video cinematografico ultra-realista locked-off", prompt)
+        self.assertIn("A cena se desenrola em um unico plano continuo:", prompt)
+        self.assertIn("Comportamento de camera: enquadramento fixo", prompt)
         self.assertNotIn("handheld micro-shakes", prompt)
+        self.assertTrue(_is_similar_unified_prompt_valid(prompt))
+
+    def test_unified_fallback_preserves_all_scene_prompts_in_order(self):
+        project = SimpleNamespace(title="Historia semelhante", aspect_ratio="16:9")
+        scenes = [
+            {
+                "prompt": "Uma mulher abre a porta da cozinha e entra com pressa, segurando uma sacola vermelha.",
+                "start_time": 0.0,
+                "end_time": 3.0,
+                "lyrics_segment": "",
+            },
+            {
+                "prompt": "Ela atravessa o corredor, olha para a janela e percebe algo estranho do lado de fora.",
+                "start_time": 3.0,
+                "end_time": 6.0,
+                "lyrics_segment": "",
+            },
+            {
+                "prompt": "A mulher corre para a sala, abraca a crianca e fecha a cortina enquanto o vento aumenta.",
+                "start_time": 6.0,
+                "end_time": 9.0,
+                "lyrics_segment": "",
+            },
+        ]
+
+        prompt = _build_similar_unified_prompt_fallback(project, scenes, {})
+
+        first_idx = prompt.find("uma mulher abre a porta da cozinha")
+        second_idx = prompt.find("ela atravessa o corredor")
+        third_idx = prompt.find("a mulher corre para a sala")
+
+        self.assertGreaterEqual(first_idx, 0)
+        self.assertGreaterEqual(second_idx, 0)
+        self.assertGreaterEqual(third_idx, 0)
+        self.assertLess(first_idx, second_idx)
+        self.assertLess(second_idx, third_idx)
+        self.assertTrue(_is_similar_unified_prompt_valid(prompt))
 
 
 if __name__ == "__main__":
