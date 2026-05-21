@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v514 loaded");
+console.log("[CriaVideo] app.js v515 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4107,6 +4107,7 @@ let similarState = {
     progress: 0,
     bulkFrameTextRemovalBusy: false,
     activeUploadSceneId: 0,
+    activeUploadSceneFrameTarget: "",
     sourceVideoFile: null,
     sourceVideoObjectUrl: "",
     sourceVideoName: "",
@@ -7545,6 +7546,95 @@ function _getSimilarProjectScene(sceneId) {
     return scenes.find((scene) => Number(scene?.id || 0) === targetId) || null;
 }
 
+function _setSimilarSceneBoundaryFramePreview(sceneId, frameTarget, previewUrl = "") {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return;
+
+    const previewKey = _normalizeSimilarSceneFrameTarget(frameTarget) === "end"
+        ? "frameEndPreviewUrl"
+        : "frameStartPreviewUrl";
+    const nextPreviewUrl = String(previewUrl || "").trim();
+    const nextDraft = {
+        ...(similarState.sceneDraftsBySceneId[key] || {}),
+    };
+    const previousPreviewUrl = String(nextDraft[previewKey] || "").trim();
+    if (previousPreviewUrl && previousPreviewUrl !== nextPreviewUrl) {
+        _revokeSimilarPreviewUrl(previousPreviewUrl);
+    }
+
+    if (nextPreviewUrl) {
+        nextDraft[previewKey] = nextPreviewUrl;
+    } else {
+        delete nextDraft[previewKey];
+    }
+
+    if (Object.keys(nextDraft).length) {
+        similarState.sceneDraftsBySceneId[key] = nextDraft;
+    } else {
+        delete similarState.sceneDraftsBySceneId[key];
+    }
+}
+
+function _getSimilarSceneBoundaryFramePreview(sceneId, frameTarget) {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return "";
+    const draft = similarState.sceneDraftsBySceneId[key] || {};
+    return _normalizeSimilarSceneFrameTarget(frameTarget) === "end"
+        ? String(draft.frameEndPreviewUrl || "").trim()
+        : String(draft.frameStartPreviewUrl || "").trim();
+}
+
+function _patchSimilarSceneBoundaryFrameSnapshot(sceneId, frameTarget, frameUrl) {
+    const normalizedFrameTarget = _normalizeSimilarSceneFrameTarget(frameTarget);
+    const resolvedFrameUrl = String(frameUrl || "").trim();
+    const scenes = Array.isArray(similarState.lastProjectSnapshot?.scenes)
+        ? similarState.lastProjectSnapshot.scenes
+        : [];
+    if (!resolvedFrameUrl || !scenes.length) return;
+
+    const targetId = Number(sceneId || 0);
+    if (!targetId) return;
+
+    const sceneIndex = scenes.findIndex((scene) => Number(scene?.id || 0) === targetId);
+    if (sceneIndex < 0) return;
+
+    const currentScene = scenes[sceneIndex];
+    currentScene.clip_url = "";
+    currentScene.clip_path = "";
+    currentScene.scene_type = "image";
+
+    if (normalizedFrameTarget === "end") {
+        currentScene.reference_frame_end_url = resolvedFrameUrl;
+        const nextScene = scenes[sceneIndex + 1];
+        if (nextScene) {
+            nextScene.reference_frame_url = resolvedFrameUrl;
+            nextScene.reference_frame_text_detected = false;
+            nextScene.reference_frame_text_excerpt = "";
+            nextScene.clip_url = "";
+            nextScene.clip_path = "";
+            nextScene.scene_type = "image";
+        }
+        return;
+    }
+
+    currentScene.reference_frame_url = resolvedFrameUrl;
+    currentScene.reference_frame_text_detected = false;
+    currentScene.reference_frame_text_excerpt = "";
+    const previousScene = scenes[sceneIndex - 1];
+    if (previousScene) {
+        previousScene.reference_frame_end_url = resolvedFrameUrl;
+    }
+}
+
+function _resetSimilarSceneUploadIntent() {
+    similarState.activeUploadSceneId = 0;
+    similarState.activeUploadSceneFrameTarget = "";
+    const input = document.getElementById("similar-scene-image-input");
+    if (input) {
+        input.multiple = true;
+    }
+}
+
 function _setSimilarSceneServerPromptValue(sceneId, promptValue) {
     const targetId = Number(sceneId || 0);
     if (!targetId) return;
@@ -8153,6 +8243,9 @@ function _clearAllSimilarScenePendingUploads() {
 function _forgetSimilarSceneDraft(sceneId) {
     const key = _similarSceneStateKey(sceneId);
     if (!key) return;
+    const draft = similarState.sceneDraftsBySceneId[key] || {};
+    _revokeSimilarPreviewUrl(draft.frameStartPreviewUrl);
+    _revokeSimilarPreviewUrl(draft.frameEndPreviewUrl);
     delete similarState.sceneDraftsBySceneId[key];
 }
 
@@ -8679,8 +8772,12 @@ function _renderSimilarScenes(project, options = {}) {
         const hasClipPreview = !!clipUrlRaw.trim();
         const startFrameUrlRaw = String(scene.reference_frame_url || scene.reference_frame_path || "").trim();
         const endFrameUrlRaw = String(scene.reference_frame_end_url || scene.reference_frame_end_path || "").trim();
-        const hasReferenceFrame = !!startFrameUrlRaw;
-        const hasBoundaryFrame = hasReferenceFrame || !!endFrameUrlRaw;
+        const startFramePreviewUrlRaw = _getSimilarSceneBoundaryFramePreview(sceneId, "start");
+        const endFramePreviewUrlRaw = _getSimilarSceneBoundaryFramePreview(sceneId, "end");
+        const renderedStartFrameUrlRaw = startFramePreviewUrlRaw || startFrameUrlRaw;
+        const renderedEndFrameUrlRaw = endFramePreviewUrlRaw || endFrameUrlRaw;
+        const hasReferenceFrame = !!renderedStartFrameUrlRaw;
+        const hasBoundaryFrame = hasReferenceFrame || !!renderedEndFrameUrlRaw;
         const isGeneratingSceneClip = activeBusySceneIds.has(sceneId) && (
             ["generating_scene", "regenerating_scene", "generating_previews"].includes(activeBusyStage)
             || activeBusySceneIds.size > 0
@@ -8805,7 +8902,7 @@ function _renderSimilarScenes(project, options = {}) {
         const frameGalleryItems = hasReferenceFrame
             ? [
                 buildFrameGalleryItem({
-                    url: startFrameUrlRaw,
+                    url: renderedStartFrameUrlRaw,
                     alt: startFrameAltRaw,
                     badge: "Entrada",
                     downloadName: startFrameDownloadName,
@@ -8814,17 +8911,17 @@ function _renderSimilarScenes(project, options = {}) {
                     clipBusyMarkup: sceneClipBusyMarkup,
                     overlayActionsMarkup: `
                         <div class="similar-frame-image-actions">
-                            <a class="similar-frame-image-action" href="${esc(startFrameUrlRaw)}" download="${startFrameDownloadName}" title="Baixar entrada" aria-label="Baixar entrada">${similarActionIcons.download}</a>
+                            <a class="similar-frame-image-action" href="${esc(renderedStartFrameUrlRaw)}" download="${startFrameDownloadName}" title="Baixar entrada" aria-label="Baixar entrada">${similarActionIcons.download}</a>
                             <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'start')" title="Editar frame inicial" aria-label="Editar frame inicial" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
                         </div>
                     `,
                 }),
             ]
             : [];
-        if (endFrameUrlRaw) {
+        if (renderedEndFrameUrlRaw) {
             frameGalleryItems.push(
                 buildFrameGalleryItem({
-                    url: endFrameUrlRaw,
+                    url: renderedEndFrameUrlRaw,
                     alt: endFrameAltRaw,
                     badge: "Saida",
                     downloadName: endFrameDownloadName,
@@ -8832,7 +8929,7 @@ function _renderSimilarScenes(project, options = {}) {
                     clipBusyMarkup: sceneClipBusyMarkup,
                     overlayActionsMarkup: `
                         <div class="similar-frame-image-actions">
-                            <a class="similar-frame-image-action" href="${esc(endFrameUrlRaw)}" download="${endFrameDownloadName}" title="Baixar saida" aria-label="Baixar saida">${similarActionIcons.download}</a>
+                            <a class="similar-frame-image-action" href="${esc(renderedEndFrameUrlRaw)}" download="${endFrameDownloadName}" title="Baixar saida" aria-label="Baixar saida">${similarActionIcons.download}</a>
                             <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'end')" title="Editar frame final" aria-label="Editar frame final" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
                         </div>
                     `,
@@ -13328,10 +13425,14 @@ async function similarSaveScene(sceneId, options = {}) {
     }
 }
 
-function similarUploadSceneImage(sceneId) {
+function similarUploadSceneImage(sceneId, { frameTarget = "" } = {}) {
     const input = document.getElementById("similar-scene-image-input");
     if (!input) return;
     similarState.activeUploadSceneId = Number(sceneId || 0);
+    similarState.activeUploadSceneFrameTarget = frameTarget
+        ? _normalizeSimilarSceneFrameTarget(frameTarget)
+        : "";
+    input.multiple = !similarState.activeUploadSceneFrameTarget;
     input.value = "";
     input.click();
 }
@@ -13343,7 +13444,85 @@ function similarUploadFrameReference(sceneId, frameTarget = "") {
             frameTarget: _normalizeSimilarSceneFrameTarget(frameTarget),
         });
     }
-    similarUploadSceneImage(sceneId);
+    similarUploadSceneImage(sceneId, { frameTarget });
+}
+
+async function _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files) {
+    const projectId = Number(similarState.projectId || 0);
+    const normalizedFrameTarget = _normalizeSimilarSceneFrameTarget(frameTarget);
+    const selectedFiles = Array.from(files || []).slice(0, 1);
+    const frameLabelLower = _getSimilarSceneFrameLabel(normalizedFrameTarget, { lower: true });
+    if (!projectId || !sceneId || !selectedFiles.length) {
+        return;
+    }
+
+    const file = selectedFiles[0];
+    if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+        throw new Error("Use somente imagens JPG, PNG ou WebP.");
+    }
+
+    const scene = _getSimilarProjectScene(sceneId);
+    const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+    const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
+    const localPreviewUrl = URL.createObjectURL(file);
+    _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, localPreviewUrl);
+    _setSimilarSceneFrameEditorDraft(sceneId, {
+        open: true,
+        frameTarget: normalizedFrameTarget,
+        frameBusy: true,
+        frameBusyLabel: normalizedFrameTarget === "end"
+            ? "Atualizando o frame final com a foto enviada..."
+            : "Atualizando o frame inicial com a foto enviada...",
+    });
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+    _setSimilarStatus(`Atualizando o ${frameLabelLower} com a nova foto...`, "running");
+    _queueSimilarScroll({ sceneId, preferStatus: true });
+
+    try {
+        const uploaded = await uploadTempFileWithRetry(file, "image", frameLabelLower, { showProgress: false });
+        const uploadId = String(uploaded?.upload_id || "").trim();
+        if (!uploadId) {
+            throw new Error("Upload da imagem retornou sem identificador. Tente novamente.");
+        }
+
+        const response = await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/boundary-frame`, {
+            method: "POST",
+            body: JSON.stringify({
+                frame_kind: normalizedFrameTarget,
+                generate_from_prompt: false,
+                prompt_override: promptOverride,
+                image_upload_ids: [uploadId],
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+
+        _patchSimilarSceneBoundaryFrameSnapshot(sceneId, normalizedFrameTarget, response?.frame_url || "");
+        _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, "");
+        _setSimilarSceneFrameEditorDraft(sceneId, {
+            open: true,
+            frameTarget: normalizedFrameTarget,
+            frameBusy: false,
+            frameBusyLabel: "",
+        });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+        showToast(normalizedFrameTarget === "end" ? "Frame final atualizado." : "Frame inicial atualizado.", "success");
+        await _refreshSimilarProject({ silent: true });
+    } catch (error) {
+        _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, "");
+        _setSimilarSceneFrameEditorDraft(sceneId, {
+            frameTarget: normalizedFrameTarget,
+            frameBusy: false,
+            frameBusyLabel: "",
+        });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+        throw error;
+    }
 }
 
 function _applySimilarNarrationToPrompt(sceneId, { closeEditor = false, notify = false } = {}) {
@@ -13371,15 +13550,24 @@ function _applySimilarNarrationToPrompt(sceneId, { closeEditor = false, notify =
 async function _handleSimilarSceneImageInput(event) {
     const projectId = Number(similarState.projectId || 0);
     const sceneId = Number(similarState.activeUploadSceneId || 0);
+    const frameTarget = String(similarState.activeUploadSceneFrameTarget || "").trim();
     const files = Array.from(event.target?.files || []);
     event.target.value = "";
 
     if (!projectId || !sceneId || !files.length) {
-        similarState.activeUploadSceneId = 0;
+        _resetSimilarSceneUploadIntent();
         return;
     }
 
     try {
+        if (frameTarget) {
+            if (files.length > 1) {
+                showToast("Para substituir o frame, envie uma imagem por vez. So a primeira foi usada.", "info");
+            }
+            await _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files);
+            return;
+        }
+
         const existingUploads = _getSimilarScenePendingUploads(sceneId);
         const remainingSlots = Math.max(0, 6 - existingUploads.length);
         if (!remainingSlots) {
@@ -13419,7 +13607,7 @@ async function _handleSimilarSceneImageInput(event) {
     } catch (error) {
         showToast(`Erro ao enviar imagem: ${error.message}`, "error");
     } finally {
-        similarState.activeUploadSceneId = 0;
+        _resetSimilarSceneUploadIntent();
     }
 }
 
