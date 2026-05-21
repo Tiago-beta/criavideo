@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260521-04">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260521-05">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 516;
+        var REQUIRED_VER = 517;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1500,7 +1500,7 @@
                                 <button class="style-tag" type="button" data-persona="mulher">Mulher</button>
                                 <button class="style-tag" type="button" data-persona="crianca">Criança</button>
                                 <button class="style-tag" type="button" data-persona="familia">Família</button>
-                                <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
+                                <button class="style-tag" type="button" data-persona="natureza">Natureza</button>
                                 <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
                                 <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
                             </div>
@@ -1704,15 +1704,13 @@
                                 <div id="script-photo-count" class="photo-count" hidden>
                                     <span id="script-photo-num">0</span> / 20 fotos
                                 </div>
-                                <div id="script-narration-choice" class="narration-choice" hidden>
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="script-create-narration" checked onchange="toggleScriptNarration()">
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                    <div class="narration-choice-text">
-                                        <strong>Criar narração com IA</strong>
-                                    </div>
-                                </div>
+                            </div>
+                            <div class="form-group realistic-audio-toggle" id="script-seedance-last-frame-group" hidden>
+                                <label class="toggle-label">
+                                    <input type="checkbox" id="script-seedance-last-frame">
+                                    <span>Ultima imagem = quadro final</span>
+                                </label>
+                                <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                             </div>
                         </div>
 
@@ -2043,6 +2041,29 @@
 
                     <!-- Step 3: Tone -->
                     <div class="wizard-step" data-step="3" hidden>
+                        <div id="script-narration-choice" class="narration-choice" hidden>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="script-create-narration" checked onchange="toggleScriptNarration()">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <div class="narration-choice-text">
+                                <strong>Adicionar narração</strong>
+                            </div>
+                        </div>
+                        <div class="form-group" id="script-bgm-group">
+                            <div class="subtitle-toggle-row" style="margin-bottom:10px">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="script-enable-bgm" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <span class="subtitle-toggle-label">Adicionar música de fundo</span>
+                            </div>
+                            <small id="script-bgm-lock-hint" class="field-hint" hidden>Com Tevoxi ativo, o trecho selecionado vira o áudio principal e o fundo musical fica desativado.</small>
+                            <div id="script-bgm-upload-area">
+                                <small class="field-hint" style="margin-bottom:6px;display:block">Envie seu próprio áudio ou deixe vazio para gerar automaticamente.</small>
+                                <input id="script-bgm-file" type="file" class="input" accept="audio/*">
+                            </div>
+                        </div>
                         <h3 class="wizard-question">Qual o tom da narração?</h3>
                         <div class="wizard-grid">
                             <button class="wizard-option" data-value="informativo" type="button">Informativo</button>
@@ -2175,21 +2196,6 @@
                                 </div>
                                 <small class="field-hint">Disponível apenas quando usar música do Tevoxi.</small>
                             </div>
-                            <div class="form-group" id="script-bgm-group">
-                                <label>Fundo musical</label>
-                                <div class="subtitle-toggle-row" style="margin-bottom:10px">
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="script-enable-bgm" checked>
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                    <span class="subtitle-toggle-label">Ativar fundo musical</span>
-                                </div>
-                                <small id="script-bgm-lock-hint" class="field-hint" hidden>Com Tevoxi ativo, o trecho selecionado vira o áudio principal e o fundo musical fica desativado.</small>
-                                <div id="script-bgm-upload-area">
-                                    <small class="field-hint" style="margin-bottom:6px;display:block">Envie seu próprio áudio ou deixe vazio para gerar automaticamente.</small>
-                                    <input id="script-bgm-file" type="file" class="input" accept="audio/*">
-                                </div>
-                            </div>
                             <div class="form-group">
                                 <label>Thumbnail personalizada</label>
                                 <small class="field-hint" style="margin-bottom:6px;display:block">Envie uma imagem para usar como capa do vídeo. Se vazio, será gerada automaticamente.</small>
@@ -2248,7 +2254,7 @@
                                 <button class="style-tag" type="button" data-persona="mulher">Mulher</button>
                                 <button class="style-tag" type="button" data-persona="crianca">Criança</button>
                                 <button class="style-tag" type="button" data-persona="familia">Família</button>
-                                <button class="style-tag selected" type="button" data-persona="natureza">Natureza</button>
+                                <button class="style-tag" type="button" data-persona="natureza">Natureza</button>
                                 <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
                                 <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
                             </div>
@@ -2294,14 +2300,6 @@
                             </div>
                         </div>
 
-                        <div class="form-group realistic-audio-toggle" id="script-seedance-last-frame-group" hidden>
-                            <label class="toggle-label">
-                                <input type="checkbox" id="script-seedance-last-frame">
-                                <span>Ultima imagem = quadro final</span>
-                            </label>
-                            <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
-                        </div>
-
                         <div class="form-group" id="script-realistic-duration-group">
                             <label>Duração</label>
                             <div class="duration-options" id="script-realistic-duration">
@@ -2323,21 +2321,6 @@
                                 <option value="1:1">1:1 (Instagram)</option>
                             </select>
                         </div>
-
-                        <div class="form-group realistic-audio-toggle">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="script-realistic-music">
-                                <span>Adicionar música de fundo</span>
-                            </label>
-                        </div>
-
-                        <div class="form-group realistic-audio-toggle">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="script-realistic-narration">
-                                <span>Adicionar narração</span>
-                            </label>
-                        </div>
-
                         <div id="script-realistic-narration-options" class="realistic-narration-options" hidden>
                             <div class="form-group">
                                 <label>Texto da narração</label>
@@ -4462,8 +4445,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260521-04"></script>
-    <script src="/video/static/pwa.js?v=20260521-04"></script>
+    <script src="/video/static/app.js?v=20260521-05"></script>
+    <script src="/video/static/pwa.js?v=20260521-05"></script>
 </body>
 </html>
 

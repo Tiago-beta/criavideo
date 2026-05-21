@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v516 loaded");
+console.log("[CriaVideo] app.js v517 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -409,7 +409,40 @@ function _syncSeedanceLastFrameToggle(prefix) {
     const toggleGroup = document.getElementById(`${prefix}-seedance-last-frame-group`);
     if (!toggleGroup) return;
     const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
-    toggleGroup.hidden = !_isSeedanceFamilyEngine(engine);
+    if (!_isSeedanceFamilyEngine(engine)) {
+        toggleGroup.hidden = true;
+        return;
+    }
+    if (prefix !== "script") {
+        toggleGroup.hidden = false;
+        return;
+    }
+    const isRealistic = _getSelectedCreateVideoType("script") === "realista";
+    const usePhotos = !!document.getElementById("script-use-photos")?.checked;
+    toggleGroup.hidden = !(isRealistic && usePhotos);
+}
+
+function _getSelectedCreatePersonaType(prefix) {
+    const selected = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
+    if (!selected?.dataset?.persona) {
+        return "";
+    }
+    return _normalizeRealisticPersonaType(selected.dataset.persona || "");
+}
+
+function _clearCreatePersonaPreview(prefix) {
+    const preview = document.getElementById(`${prefix}-realistic-persona-preview`);
+    if (!preview) return;
+    preview.innerHTML = '<div class="realistic-persona-empty">Opcional: escolha uma persona apenas se quiser guiar a interação da cena.</div>';
+}
+
+function _syncCreatePersonaUi(prefix) {
+    const selectedPersona = _getSelectedCreatePersonaType(prefix);
+    if (!selectedPersona) {
+        _clearCreatePersonaPreview(prefix);
+        return;
+    }
+    _refreshPersonaContext(prefix, selectedPersona);
 }
 
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
@@ -4376,10 +4409,12 @@ function _buildRealisticEstimatePayload(prefix) {
         ? !!document.getElementById("auto-realistic-subtitles")?.checked
         : false;
 
-    const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
-    const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
     const contextKey = prefix === "auto" ? "auto" : prefix;
-    const disablePersonaReference = _isPersonaNoReferenceEnabled(contextKey, interactionPersona);
+    const selectedPersona = (prefix === "wizard" || prefix === "script")
+        ? _getSelectedCreatePersonaType(prefix)
+        : _normalizeRealisticPersonaType(document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`)?.dataset.persona || "natureza");
+    const interactionPersona = selectedPersona || "none";
+    const disablePersonaReference = !selectedPersona || _isPersonaNoReferenceEnabled(contextKey, selectedPersona);
     const hasScriptPhotoReference = prefix === "script"
         ? (!!document.getElementById("script-use-photos")?.checked && scriptPhotos.length > 0)
         : false;
@@ -5881,15 +5916,30 @@ function initCreateWizard() {
         if (personaTag) {
             const group = personaTag.closest(".realistic-inspiration-tags");
             if (group) {
+                const wasSelected = personaTag.classList.contains("selected");
+                const isWizardCreatePersonaGroup = group.id === "wizard-realistic-persona-tags";
+                const isScriptCreatePersonaGroup = group.id === "script-realistic-persona-tags";
                 group.querySelectorAll(".style-tag").forEach((t) => t.classList.remove("selected"));
+
+                if ((isWizardCreatePersonaGroup || isScriptCreatePersonaGroup) && wasSelected) {
+                    if (isWizardCreatePersonaGroup) {
+                        _syncCreatePersonaUi("wizard");
+                        scheduleWizardCreditEstimate();
+                    } else {
+                        _syncCreatePersonaUi("script");
+                        scheduleScriptCreditEstimate();
+                    }
+                    return;
+                }
+
                 personaTag.classList.add("selected");
 
                 const selectedPersona = _normalizeRealisticPersonaType(personaTag.dataset.persona || "natureza");
-                if (group.id === "wizard-realistic-persona-tags") {
-                    _refreshPersonaContext("wizard", selectedPersona);
+                if (isWizardCreatePersonaGroup) {
+                    _syncCreatePersonaUi("wizard");
                     scheduleWizardCreditEstimate();
-                } else if (group.id === "script-realistic-persona-tags") {
-                    _refreshPersonaContext("script", selectedPersona);
+                } else if (isScriptCreatePersonaGroup) {
+                    _syncCreatePersonaUi("script");
                     scheduleScriptCreditEstimate();
                 } else if (group.id === "ai-suggest-persona-tags") {
                     setSelectedRealisticPersona(selectedPersona);
@@ -6183,12 +6233,14 @@ function switchCreateMode(mode) {
         const topicInspirationEl = document.getElementById("wizard-topic-inspiration");
         if (topicInspirationEl) topicInspirationEl.hidden = wizardData.videoType !== "realista";
         updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
+        _syncCreatePersonaUi("wizard");
     } else if (mode === "script") {
         scriptData.videoType = _getSelectedCreateVideoType("script");
         adaptScriptStepForVideoType(scriptData.videoType);
         updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
         _updateScriptSubtitlePositionVisibility();
         _updateScriptDetailsForTevoxiMode();
+        _syncCreatePersonaUi("script");
     } else if (mode === "similar") {
         if (similarState.projectId > 0) {
             if (similarState.lastProjectSnapshot) {
@@ -14463,8 +14515,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         }
     }
     const engineLabel = getRealisticEngineLabel(engine);
-    const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
-    const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
+    const selectedPersona = _getSelectedCreatePersonaType(prefix);
+    const interactionPersona = selectedPersona || "none";
     let personaProfileId = 0;
     let personaProfileIds = [];
 
@@ -14500,19 +14552,19 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
 
     try {
         const contextKey = prefix === "wizard" ? "wizard" : "script";
-        const disablePersonaReference = _isPersonaNoReferenceEnabled(contextKey, interactionPersona);
+        const disablePersonaReference = !selectedPersona || _isPersonaNoReferenceEnabled(contextKey, selectedPersona);
         if (disablePersonaReference) {
             personaProfileIds = [];
             personaProfileId = 0;
         } else {
-            personaProfileIds = await _ensurePersonaSelections(contextKey, interactionPersona);
+            personaProfileIds = await _ensurePersonaSelections(contextKey, selectedPersona);
             personaProfileId = personaProfileIds[0] || 0;
         }
 
         const selectedPersonaProfiles = disablePersonaReference
             ? []
             : personaProfileIds
-                .map((sid) => _getPersonaProfiles(interactionPersona).find((profile) => (parseInt(profile?.id || "0", 10) || 0) === sid))
+                .map((sid) => _getPersonaProfiles(selectedPersona).find((profile) => (parseInt(profile?.id || "0", 10) || 0) === sid))
                 .filter(Boolean)
                 .slice(0, 4);
 
@@ -14996,10 +15048,6 @@ function resetCreateWizard(options = {}) {
         }
         tag.classList.remove("selected");
     });
-    const defWizardPersona = document.querySelector('#wizard-realistic-persona-tags [data-persona="natureza"]');
-    if (defWizardPersona) defWizardPersona.classList.add("selected");
-    const defScriptPersona = document.querySelector('#script-realistic-persona-tags [data-persona="natureza"]');
-    if (defScriptPersona) defScriptPersona.classList.add("selected");
     const defAiPersona = document.querySelector('#ai-suggest-persona-tags [data-persona="natureza"]');
     if (defAiPersona) {
         document.querySelectorAll("#ai-suggest-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
@@ -15032,8 +15080,8 @@ function resetCreateWizard(options = {}) {
     _personaNoReferenceByContext.wizard = {};
     _personaNoReferenceByContext.script = {};
     _personaNoReferenceByContext.ai = {};
-    _refreshPersonaContext("wizard", "natureza");
-    _refreshPersonaContext("script", "natureza");
+    _clearCreatePersonaPreview("wizard");
+    _clearCreatePersonaPreview("script");
     _refreshPersonaContext("ai", "natureza");
     if (!preserveScriptImageCreatorState) {
         _personaSelectionByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
@@ -18963,7 +19011,9 @@ function toggleScriptPhotoDependentFields() {
     const subtitlesGroup = document.getElementById("script-subtitles-group");
     if (imageSecondsGroup) imageSecondsGroup.hidden = !usePhotos || useVideo;
     // Subtitles group is always visible so user can toggle subtitles for any mode
+    updateNarrationChoiceVisibility();
     _updateScriptRealisticPersonaVisibility();
+    _syncSeedanceLastFrameToggle("script");
 }
 
 function toggleScriptNarration() {
@@ -18991,21 +19041,13 @@ function toggleScriptNarration() {
 }
 
 function updateNarrationChoiceVisibility() {
-    const usePhotos = document.getElementById("script-use-photos").checked;
     const narChoice = document.getElementById("script-narration-choice");
     const narCb = document.getElementById("script-create-narration");
-    // In realistic mode, never show narration choice
-    if (scriptData.videoType === "realista") {
-        if (narChoice) narChoice.hidden = true;
-        toggleScriptNarration();
-        return;
-    }
-    const wasHidden = narChoice ? narChoice.hidden : true;
-    const shouldShow = usePhotos && scriptPhotos.length > 0;
+    const useVideo = document.getElementById("script-use-video") ? document.getElementById("script-use-video").checked : false;
+    const shouldShow = _getSelectedCreateVideoType("script") !== "realista" && !useVideo;
     if (narChoice) narChoice.hidden = !shouldShow;
-    // When photos are first added, default narration to OFF
-    if (shouldShow && wasHidden && narCb) {
-        narCb.checked = false;
+    if (!shouldShow && narCb) {
+        narCb.checked = true;
     }
     toggleScriptNarration();
 }
@@ -19403,9 +19445,12 @@ function adaptScriptStepForVideoType(videoType) {
             : "Cole ou escreva o roteiro completo da narração aqui...";
     }
     updateScriptVideoAreaVisibility();
+    updateNarrationChoiceVisibility();
     _updateScriptDetailsForTevoxiMode();
     _updateScriptSubtitlePositionVisibility();
     _updateScriptRealisticPersonaVisibility();
+    _syncSeedanceLastFrameToggle("script");
+    _syncCreatePersonaUi("script");
 }
 
 function _normalizeRealisticPersonaType(value) {

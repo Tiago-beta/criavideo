@@ -5211,10 +5211,12 @@ th {
 }
 
 .create-panel--single-page .btn-create-video {
+    order: 98;
     margin-top: 0;
 }
 
 .create-panel--single-page .credit-estimate-row {
+    order: 99;
     justify-content: flex-start;
 }
 
