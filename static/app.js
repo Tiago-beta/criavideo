@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v476 loaded");
+console.log("[CriaVideo] app.js v477 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -5784,6 +5784,21 @@ function initCreateWizard() {
             if (!card) return;
             grid.querySelectorAll(".video-type-card").forEach((c) => c.classList.remove("selected"));
             card.classList.add("selected");
+
+            const selectedType = card.dataset.type || "imagens_ia";
+            if (grid.id === "wizard-video-type-grid") {
+                wizardData.videoType = selectedType;
+                const topicInspirationEl = document.getElementById("wizard-topic-inspiration");
+                if (topicInspirationEl) topicInspirationEl.hidden = selectedType !== "realista";
+                updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
+                return;
+            }
+
+            if (grid.id === "script-video-type-grid") {
+                scriptData.videoType = selectedType;
+                adaptScriptStepForVideoType(selectedType);
+                updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+            }
         });
     });
 
@@ -6054,7 +6069,15 @@ function switchCreateMode(mode) {
 
     if (mode === "library") {
         populateSongSelector();
+    } else if (mode === "wizard") {
+        wizardData.videoType = _getSelectedCreateVideoType("wizard");
+        const topicInspirationEl = document.getElementById("wizard-topic-inspiration");
+        if (topicInspirationEl) topicInspirationEl.hidden = wizardData.videoType !== "realista";
+        updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
     } else if (mode === "script") {
+        scriptData.videoType = _getSelectedCreateVideoType("script");
+        adaptScriptStepForVideoType(scriptData.videoType);
+        updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
         _updateScriptSubtitlePositionVisibility();
         _updateScriptDetailsForTevoxiMode();
     } else if (mode === "similar") {
@@ -6086,10 +6109,71 @@ function switchCreateMode(mode) {
 
 // ── Flow-based Wizard UI Update ──
 
+function _isSinglePageCreatePanel(panel) {
+    return !!(panel && panel.classList && panel.classList.contains("create-panel--single-page"));
+}
+
+function _getSelectedCreateVideoType(prefix) {
+    const gridId = prefix === "wizard" ? "wizard-video-type-grid" : "script-video-type-grid";
+    const selectedCard = document.querySelector(`#${gridId} .video-type-card.selected`);
+    if (selectedCard?.dataset?.type) {
+        return selectedCard.dataset.type;
+    }
+    return prefix === "wizard"
+        ? (wizardData.videoType || "imagens_ia")
+        : (scriptData.videoType || "imagens_ia");
+}
+
+function _getCreateSinglePageVisibleSteps(prefix) {
+    return _getSelectedCreateVideoType(prefix) === "realista"
+        ? [2, 1, 7]
+        : [2, 1, 3, 4, 5, 6];
+}
+
 function updateFlowUI(panelId, stepIndex, flow, prefix) {
     const panel = document.getElementById(panelId);
     if (!panel) return;
+    const isSinglePage = _isSinglePageCreatePanel(panel);
     const currentDataStep = flow[stepIndex - 1];
+    const dotsContainer = document.getElementById(`${prefix}-dots-container`);
+    const backBtn = document.getElementById(`${prefix}-back`);
+    const nextBtn = document.getElementById(`${prefix}-next`);
+    const createBtn = document.getElementById(`${prefix}-create-btn`);
+    const estimateBadge = document.getElementById(`${prefix}-credit-estimate`);
+    const nav = panel.querySelector(".wizard-nav");
+
+    if (nav) {
+        nav.classList.toggle("wizard-nav--single-page", isSinglePage);
+    }
+
+    if (isSinglePage) {
+        const visibleSteps = new Set(_getCreateSinglePageVisibleSteps(prefix));
+
+        panel.querySelectorAll(".wizard-step").forEach((s) => {
+            const show = visibleSteps.has(parseInt(s.dataset.step, 10));
+            s.hidden = !show;
+            s.classList.remove("wizard-step-enter");
+            if (show) {
+                requestAnimationFrame(() => s.classList.add("wizard-step-enter"));
+            }
+        });
+
+        if (dotsContainer) {
+            dotsContainer.hidden = true;
+            dotsContainer.innerHTML = "";
+        }
+        if (backBtn) backBtn.hidden = false;
+        if (nextBtn) nextBtn.hidden = true;
+        if (createBtn) createBtn.hidden = false;
+        if (estimateBadge) estimateBadge.hidden = false;
+
+        if (prefix === "wizard") {
+            scheduleWizardCreditEstimate();
+        } else if (prefix === "script") {
+            scheduleScriptCreditEstimate();
+        }
+        return;
+    }
 
     // Show/hide steps
     panel.querySelectorAll(".wizard-step").forEach((s) => {
@@ -6103,22 +6187,18 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
     });
 
     // Update dots dynamically
-    const dotsContainer = document.getElementById(`${prefix}-dots-container`);
     if (dotsContainer) {
+        dotsContainer.hidden = false;
         dotsContainer.innerHTML = flow.map((_, i) =>
             `<span class="wizard-dot${i < stepIndex ? ' active' : ''}"></span>`
         ).join('');
     }
 
     // Update buttons
-    const backBtn = document.getElementById(`${prefix}-back`);
-    const nextBtn = document.getElementById(`${prefix}-next`);
-    const createBtn = document.getElementById(`${prefix}-create-btn`);
     if (backBtn) backBtn.hidden = false; // Always show — step 1 goes back to mode selection
     if (nextBtn) nextBtn.hidden = stepIndex >= flow.length;
     if (createBtn) createBtn.hidden = stepIndex < flow.length;
 
-    const estimateBadge = document.getElementById(`${prefix}-credit-estimate`);
     if (estimateBadge) {
         estimateBadge.hidden = !(createBtn && !createBtn.hidden);
     }
@@ -14117,6 +14197,50 @@ function resetCreateWizard(options = {}) {
 
 // ── Wizard (Assistente) Navigation ──
 
+function _resolveCreateToneSelection(prefix) {
+    const panelId = prefix === "wizard" ? "create-panel-wizard" : "create-panel-script";
+    const selected = document.querySelector(`#${panelId} .wizard-step[data-step='3'] .wizard-option.selected`);
+    return selected ? String(selected.dataset.value || "").trim() : "";
+}
+
+function _resolveCreateVoiceSelection(prefix) {
+    const panelId = prefix === "wizard" ? "create-panel-wizard" : "create-panel-script";
+    const personaSel = document.querySelector(`#${prefix}-persona-list .persona-item.selected`);
+    const builtinSel = document.querySelector(`#${panelId} .wizard-step[data-step='4'] .wizard-option[data-voice-type='builtin'].selected`);
+    const elevenlabsSel = document.querySelector(`#${panelId} .wizard-step[data-step='4'] .wizard-option[data-voice-type='elevenlabs'].selected`);
+    const sunoSel = document.querySelector(`#${panelId} .wizard-step[data-step='4'] .wizard-option[data-voice-type='suno'].selected`);
+
+    if (personaSel) {
+        return {
+            voice: personaSel.dataset.value || "",
+            voiceProfileId: parseInt(personaSel.dataset.profileId || "0", 10) || 0,
+            voiceType: "custom",
+        };
+    }
+    if (sunoSel) {
+        return {
+            voice: sunoSel.dataset.value || "",
+            voiceProfileId: 0,
+            voiceType: "suno",
+        };
+    }
+    if (elevenlabsSel) {
+        return {
+            voice: elevenlabsSel.dataset.value || "",
+            voiceProfileId: 0,
+            voiceType: "elevenlabs",
+        };
+    }
+    if (builtinSel) {
+        return {
+            voice: builtinSel.dataset.value || "",
+            voiceProfileId: 0,
+            voiceType: "builtin",
+        };
+    }
+    return null;
+}
+
 function wizardNext() {
     const flow = getWizardFlow();
     const currentDataStep = flow[wizardStep - 1];
@@ -14185,6 +14309,21 @@ function wizardBack() {
 }
 
 async function handleWizardCreate() {
+    const selectedVideoType = _getSelectedCreateVideoType("wizard");
+    if (!selectedVideoType) {
+        alert("Escolha o tipo de vídeo.");
+        return;
+    }
+    wizardData.videoType = selectedVideoType;
+
+    const topic = document.getElementById("wizard-topic").value.trim();
+    if (!topic) {
+        alert("Digite o tema do vídeo.");
+        return;
+    }
+    wizardData.topic = topic;
+    wizardData.realisticStyle = document.querySelector("#wizard-topic-style-tags .style-tag.selected")?.dataset.style || "";
+
     // Check if this is a realistic video
     if (wizardData.videoType === "realista") {
         await handleRealisticVideoCreate(
@@ -14199,6 +14338,22 @@ async function handleWizardCreate() {
         );
         return;
     }
+
+    const tone = _resolveCreateToneSelection("wizard");
+    if (!tone) {
+        alert("Escolha o tom da narração.");
+        return;
+    }
+    wizardData.tone = tone;
+
+    const voiceSelection = _resolveCreateVoiceSelection("wizard");
+    if (!voiceSelection) {
+        alert("Escolha a voz.");
+        return;
+    }
+    wizardData.voice = voiceSelection.voice;
+    wizardData.voiceProfileId = voiceSelection.voiceProfileId;
+    wizardData.voiceType = voiceSelection.voiceType;
 
     // Collect step 5 (style) + step 6 (duration/format) data
     const durBtn = document.querySelector("#create-panel-wizard .duration-option.selected");
@@ -14451,6 +14606,14 @@ function scriptBack() {
 }
 
 async function handleScriptCreate() {
+    const selectedVideoType = _getSelectedCreateVideoType("script");
+    if (!selectedVideoType) {
+        alert("Escolha o tipo de vídeo.");
+        return;
+    }
+    scriptData.videoType = selectedVideoType;
+    adaptScriptStepForVideoType(scriptData.videoType);
+
     // Check if this is a realistic video
     if (scriptData.videoType === "realista") {
         const scriptText = document.getElementById("script-text").value.trim();
@@ -14516,6 +14679,29 @@ async function handleScriptCreate() {
     scriptData.text = (scriptData.useCustomAudio || scriptData.useTevoxiAudio)
         ? scriptData.text
         : (createNarration ? scriptData.text : "");
+
+    const requiresAiNarrationSelection = !!(scriptData.text && !scriptData.useCustomAudio && !scriptData.useTevoxiAudio && scriptData.createNarration);
+    if (requiresAiNarrationSelection) {
+        const tone = _resolveCreateToneSelection("script");
+        if (!tone) {
+            alert("Escolha o tom da narração.");
+            return;
+        }
+        const voiceSelection = _resolveCreateVoiceSelection("script");
+        if (!voiceSelection) {
+            alert("Escolha a voz.");
+            return;
+        }
+        scriptData.tone = tone;
+        scriptData.voice = voiceSelection.voice;
+        scriptData.voiceProfileId = voiceSelection.voiceProfileId;
+        scriptData.voiceType = voiceSelection.voiceType;
+    } else {
+        scriptData.tone = "informativo";
+        scriptData.voice = "onyx";
+        scriptData.voiceProfileId = 0;
+        scriptData.voiceType = "builtin";
+    }
     scriptData.enableSubtitles = document.getElementById("script-enable-subtitles").checked;
 
     const subtitlePosEl = document.getElementById("script-subtitle-position-y");
